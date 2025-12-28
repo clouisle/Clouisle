@@ -7,13 +7,13 @@
 import ast
 import math
 import operator
-from typing import Any
+from typing import Any, Callable
 
 from ..registry import tool_registry, ToolParameter
 
 
-# 安全的运算符映射
-SAFE_OPERATORS = {
+# 安全的二元运算符映射
+SAFE_BINARY_OPERATORS: dict[type, Callable[[Any, Any], Any]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -21,6 +21,10 @@ SAFE_OPERATORS = {
     ast.FloorDiv: operator.floordiv,
     ast.Mod: operator.mod,
     ast.Pow: operator.pow,
+}
+
+# 安全的一元运算符映射
+SAFE_UNARY_OPERATORS: dict[type, Callable[[Any], Any]] = {
     ast.USub: operator.neg,
     ast.UAdd: operator.pos,
 }
@@ -65,7 +69,7 @@ class SafeEvaluator(ast.NodeVisitor):
 
     def visit_BinOp(self, node: ast.BinOp) -> Any:
         op_type = type(node.op)
-        if op_type not in SAFE_OPERATORS:
+        if op_type not in SAFE_BINARY_OPERATORS:
             raise ValueError(f"Unsupported operator: {op_type.__name__}")
 
         left = self.visit(node.left)
@@ -75,15 +79,15 @@ class SafeEvaluator(ast.NodeVisitor):
         if op_type == ast.Pow and isinstance(right, (int, float)) and right > 1000:
             raise ValueError("Exponent too large")
 
-        return SAFE_OPERATORS[op_type](left, right)
+        return SAFE_BINARY_OPERATORS[op_type](left, right)
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         op_type = type(node.op)
-        if op_type not in SAFE_OPERATORS:
+        if op_type not in SAFE_UNARY_OPERATORS:
             raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
 
         operand = self.visit(node.operand)
-        return SAFE_OPERATORS[op_type](operand)
+        return SAFE_UNARY_OPERATORS[op_type](operand)
 
     def visit_Call(self, node: ast.Call) -> Any:
         if not isinstance(node.func, ast.Name):
@@ -301,6 +305,7 @@ async def unit_convert(
 
     units = conversions[unit_type]
     # 转换: 源单位 -> 基准单位 -> 目标单位
+    assert isinstance(units, dict)
     base_value = value * units[from_unit]
     result = base_value / units[to_unit]
 

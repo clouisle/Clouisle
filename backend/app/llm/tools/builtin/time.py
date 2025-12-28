@@ -4,7 +4,7 @@
 提供获取当前时间、日期格式化等功能。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
 from ..registry import tool_registry, ToolParameter
@@ -20,6 +20,7 @@ async def get_current_time(timezone_name: str = "UTC") -> dict:
     Returns:
         包含时间信息的字典
     """
+    tz: tzinfo
     try:
         tz = ZoneInfo(timezone_name)
     except Exception:
@@ -54,6 +55,7 @@ async def format_datetime(
     Returns:
         格式化后的时间字符串
     """
+    tz: tzinfo
     try:
         tz = ZoneInfo(timezone_name)
     except Exception:
