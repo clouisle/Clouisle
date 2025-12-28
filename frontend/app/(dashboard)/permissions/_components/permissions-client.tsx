@@ -370,7 +370,7 @@ export function PermissionsClient() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
-              <SelectTrigger className="w-[70px] h-8">
+              <SelectTrigger size="sm" className="w-[70px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent side="top" alignItemWithTrigger={false}>

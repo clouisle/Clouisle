@@ -146,9 +146,9 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
   }
   
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 64px)' }}>
+    <div className="flex flex-col px-8" style={{ height: 'calc(100vh - 56px)' }}>
       {/* 页头 */}
-      <div className="flex-none flex items-center gap-3 px-4 py-3">
+      <div className="flex-none flex items-center gap-3 py-3">
         <Button 
           variant="ghost" 
           size="icon" 

@@ -16,6 +16,7 @@ import {
   LogOut,
   User,
   Palette,
+  AppWindow,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -42,9 +43,9 @@ const navItems = [
     exact: true,
   },
   {
-    key: 'workspace',
-    href: '/app/workspace',
-    icon: Grid3x3,
+    key: 'apps',
+    href: '/app/apps',
+    icon: AppWindow,
   },
   {
     key: 'kb',

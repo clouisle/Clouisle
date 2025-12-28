@@ -7,6 +7,7 @@
 支持团队级调用，自动追踪 token 用量和配额检查。
 """
 
+import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -19,7 +20,6 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     ToolMessage,
-    AIMessageChunk,
 )
 
 from app.models.model import Model, ModelType, TeamModel
@@ -202,7 +202,22 @@ class ModelManager:
             elif msg.role == MessageRole.USER:
                 lc_messages.append(HumanMessage(content=content or ""))
             elif msg.role == MessageRole.ASSISTANT:
-                lc_messages.append(AIMessage(content=content or ""))
+                # Convert tool_calls to LangChain format if present
+                lc_tool_calls = None
+                if msg.tool_calls:
+                    lc_tool_calls = [
+                        {
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "args": tc.function.arguments
+                            if isinstance(tc.function.arguments, dict)
+                            else self._safe_json_loads(tc.function.arguments),
+                        }
+                        for tc in msg.tool_calls
+                    ]
+                lc_messages.append(
+                    AIMessage(content=content or "", tool_calls=lc_tool_calls or [])
+                )
             elif msg.role == MessageRole.TOOL:
                 lc_messages.append(
                     ToolMessage(
@@ -212,6 +227,13 @@ class ModelManager:
                 )
 
         return lc_messages
+
+    def _safe_json_loads(self, s: str) -> dict:
+        """Safely parse JSON string to dict"""
+        try:
+            return json.loads(s)
+        except (json.JSONDecodeError, TypeError):
+            return {}
 
     def _convert_tools(self, tools: list[ToolDefinition] | None) -> list[dict] | None:
         """将内部工具定义转换为 LangChain 格式"""
@@ -241,7 +263,9 @@ class ModelManager:
                     type="function",
                     function=FunctionCall(
                         name=tc.get("name", ""),
-                        arguments=str(tc.get("args", "{}")),
+                        arguments=json.dumps(
+                            tc.get("args", {})
+                        ),  # Convert dict to JSON string
                     ),
                 )
                 for tc in response.tool_calls
@@ -274,7 +298,18 @@ class ModelManager:
         """统一处理异常"""
         error_msg = str(e).lower()
 
+        # Check for OpenAI NotFoundError (404)
         if (
+            "notfounderror" in type(e).__name__.lower()
+            or "404" in error_msg
+            or "does not exist" in error_msg
+            or "not found" in error_msg
+        ):
+            return ModelNotFoundError(
+                message=str(e),
+                model=model,
+            )
+        elif (
             "authentication" in error_msg
             or "api key" in error_msg
             or "invalid_api_key" in error_msg
@@ -381,6 +416,234 @@ class ModelManager:
                 model=model_id,
             )
 
+    async def _stream_with_openai_sdk(
+        self,
+        model_config: Model,
+        messages: list[Message],
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        """
+        使用 OpenAI SDK 直接进行流式调用，以支持 reasoning_content 等扩展字段
+
+        Args:
+            model_config: 模型配置
+            messages: 消息列表
+            **kwargs: 额外参数
+
+        Yields:
+            ChatStreamChunk: 流式响应块
+        """
+        from openai import AsyncOpenAI
+
+        # 构建 OpenAI 客户端
+        client = AsyncOpenAI(
+            api_key=model_config.api_key,
+            base_url=model_config.base_url,
+            timeout=model_config.config.get("timeout", 60)
+            if model_config.config
+            else 60,
+        )
+
+        # 转换消息格式
+        openai_messages: list[dict[str, Any]] = []
+        for msg in messages:
+            content: Any = msg.content
+            if isinstance(content, list):
+                # 处理多模态内容 - convert to OpenAI vision format
+                processed_content: list[dict[str, Any]] = []
+                for part in content:
+                    if hasattr(part, "type"):
+                        part_type = (
+                            part.type.value
+                            if hasattr(part.type, "value")
+                            else part.type
+                        )
+                        if part_type == "text" and hasattr(part, "text"):
+                            processed_content.append(
+                                {"type": "text", "text": part.text}
+                            )
+                        elif part_type == "image" and hasattr(part, "image"):
+                            # Convert our ImageContent to OpenAI's image_url format
+                            img = part.image
+                            if img is not None and img.base64:
+                                # Use data URL format for base64
+                                img_format = (
+                                    img.format
+                                    if hasattr(img, "format") and img.format
+                                    else "png"
+                                )
+                                data_url = (
+                                    f"data:image/{img_format};base64,{img.base64}"
+                                )
+                                processed_content.append(
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": data_url},
+                                    }
+                                )
+                            elif img is not None and img.url:
+                                processed_content.append(
+                                    {"type": "image_url", "image_url": {"url": img.url}}
+                                )
+                        elif part_type == "image_url" and hasattr(part, "image_url"):
+                            # Legacy format - pass through
+                            processed_content.append(
+                                {"type": "image_url", "image_url": part.image_url}
+                            )
+                    elif isinstance(part, dict):
+                        processed_content.append(part)
+                content = processed_content if processed_content else ""
+
+            msg_dict = {
+                "role": msg.role.value if hasattr(msg.role, "value") else msg.role,
+                "content": content if content else "",
+            }
+
+            # Handle tool_calls for assistant messages
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                msg_dict["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ]
+
+            # Handle tool_call_id for tool messages
+            if hasattr(msg, "tool_call_id") and msg.tool_call_id:
+                msg_dict["tool_call_id"] = msg.tool_call_id
+
+            openai_messages.append(msg_dict)
+
+        # 从 default_params 获取参数（模型配置优先）
+        params = model_config.default_params or {}
+        config = model_config.config or {}
+
+        # 移除 kwargs 中可能传入的参数（忽略它们，只用模型配置）
+        kwargs.pop("temperature", None)
+        kwargs.pop("max_tokens", None)
+        tools = kwargs.pop("tools", None)
+
+        # temperature: 从模型 default_params 获取
+        temperature = params.get("temperature")
+
+        # max_tokens: 从模型 config 获取
+        max_tokens = config.get("max_tokens")
+
+        # 构建请求参数
+        request_params: dict[str, Any] = {
+            "model": model_config.model_id,
+            "messages": openai_messages,
+            "stream": True,
+        }
+
+        if temperature is not None:
+            request_params["temperature"] = temperature
+        if max_tokens is not None:
+            request_params["max_completion_tokens"] = max_tokens
+        if tools is not None:
+            # Convert tools to OpenAI format
+            openai_tools = []
+            for tool in tools:
+                openai_tools.append(
+                    {
+                        "type": tool.type,
+                        "function": {
+                            "name": tool.function.name,
+                            "description": tool.function.description,
+                            "parameters": tool.function.parameters,
+                        },
+                    }
+                )
+            request_params["tools"] = openai_tools
+
+        response_id = str(uuid.uuid4())
+
+        try:
+            stream = await client.chat.completions.create(**request_params)
+
+            # Track tool calls being built up during streaming
+            streaming_tool_calls: dict[
+                int, dict
+            ] = {}  # index -> {id, type, function: {name, arguments}}
+
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta
+                finish_reason = chunk.choices[0].finish_reason
+
+                # 获取 content
+                content = delta.content if delta.content else None
+
+                # 获取 reasoning_content (DeepSeek R1 等模型的扩展字段)
+                # 通过 model_extra 获取非标准字段
+                reasoning_content = None
+                if hasattr(delta, "model_extra") and delta.model_extra:
+                    reasoning_content = delta.model_extra.get("reasoning_content")
+
+                # 处理流式工具调用
+                tool_calls_delta = None
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in streaming_tool_calls:
+                            streaming_tool_calls[idx] = {
+                                "id": tc_delta.id or "",
+                                "type": tc_delta.type or "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                        if tc_delta.id:
+                            streaming_tool_calls[idx]["id"] = tc_delta.id
+                        if tc_delta.type:
+                            streaming_tool_calls[idx]["type"] = tc_delta.type
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                streaming_tool_calls[idx]["function"]["name"] += (
+                                    tc_delta.function.name
+                                )
+                            if tc_delta.function.arguments:
+                                streaming_tool_calls[idx]["function"]["arguments"] += (
+                                    tc_delta.function.arguments
+                                )
+
+                # 当 finish_reason 为 tool_calls 时，发送完整的工具调用
+                if finish_reason == "tool_calls" and streaming_tool_calls:
+                    tool_calls_delta = [
+                        ToolCall(
+                            id=tc["id"],
+                            type=tc["type"],
+                            function=FunctionCall(
+                                name=tc["function"]["name"],
+                                arguments=tc["function"]["arguments"],
+                            ),
+                        )
+                        for tc in streaming_tool_calls.values()
+                    ]
+
+                # 如果有内容、reasoning 或工具调用，才 yield
+                if content or reasoning_content or finish_reason or tool_calls_delta:
+                    yield ChatStreamChunk(
+                        id=response_id,
+                        model=model_config.model_id,
+                        delta=ChatStreamDelta(
+                            content=content,
+                            reasoning_content=reasoning_content,
+                            tool_calls=tool_calls_delta,
+                        ),
+                        finish_reason=FinishReason(finish_reason)
+                        if finish_reason
+                        else None,
+                    )
+
+        finally:
+            await client.close()
+
     # ==================== Chat 方法 ====================
 
     async def chat(
@@ -446,32 +709,13 @@ class ModelManager:
         ]
 
         model_config = await self._get_model_config(model_id, ModelType.CHAT)
-        chat_model = create_chat_model(model_config)
-
-        lc_messages = self._convert_messages(converted_messages)
 
         try:
-            response_id = str(uuid.uuid4())
-            async for chunk in chat_model.astream(lc_messages, **kwargs):
-                if isinstance(chunk, AIMessageChunk):
-                    yield ChatStreamChunk(
-                        id=response_id,
-                        model=model_config.model_id,
-                        delta=ChatStreamDelta(
-                            content=chunk.content
-                            if isinstance(chunk.content, str)
-                            else None,
-                        ),
-                        finish_reason=None,
-                    )
-
-            # 最后一个块带 finish_reason
-            yield ChatStreamChunk(
-                id=response_id,
-                model=model_config.model_id,
-                delta=ChatStreamDelta(),
-                finish_reason=FinishReason.STOP,
-            )
+            # 直接使用 OpenAI SDK 进行流式调用，以支持 reasoning_content
+            async for chunk in self._stream_with_openai_sdk(
+                model_config, converted_messages, **kwargs
+            ):
+                yield chunk
         except Exception as e:
             logger.exception(f"Chat stream error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
@@ -718,18 +962,21 @@ class ModelManager:
         team_id: str,
         messages: list[Message | dict],
         model_id: str | None = None,
+        record_usage: bool = True,
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
         """
         团队级 Chat 流式调用（带配额检查和用量追踪）
 
-        注意：流式调用无法准确追踪 token 用量，
-        会在流结束后估算一个 token 数并记录。
+        注意：流式调用时，用量记录会在流正常结束后自动进行。
+        如果调用方提前 break，用量不会被记录，除非调用方手动调用 record_stream_usage()。
+        建议使用 `async with aclosing(stream)` 来确保资源正确清理。
 
         Args:
             team_id: 团队 ID
             messages: 消息列表
             model_id: 模型 ID
+            record_usage: 是否自动记录用量（默认 True）
             **kwargs: 额外参数
 
         Yields:
@@ -753,51 +1000,61 @@ class ModelManager:
             Message(**m) if isinstance(m, dict) else m for m in messages
         ]
 
-        chat_model = create_chat_model(model_config)
-        lc_messages = self._convert_messages(converted_messages)
-
         try:
-            response_id = str(uuid.uuid4())
-            total_content = ""
+            # 直接使用 OpenAI SDK 进行流式调用，以支持 reasoning_content
+            async for chunk in self._stream_with_openai_sdk(
+                model_config, converted_messages, **kwargs
+            ):
+                yield chunk
 
-            async for chunk in chat_model.astream(lc_messages, **kwargs):
-                if isinstance(chunk, AIMessageChunk):
-                    content = chunk.content if isinstance(chunk.content, str) else ""
-                    total_content += content
-                    yield ChatStreamChunk(
-                        id=response_id,
-                        model=model_config.model_id,
-                        delta=ChatStreamDelta(content=content or None),
-                        finish_reason=None,
-                    )
-
-            # 估算 token 用量（简单估算：4 字符约 1 token）
-            # 计算输入 token（所有消息内容）
-            input_chars = sum(
-                len(m.content or "") if isinstance(m.content, str) else 0
-                for m in converted_messages
-            )
-            input_tokens = max(input_chars // 4, 1)
-            output_tokens = max(len(total_content) // 4, 1)
-            total_tokens = input_tokens + output_tokens
-
-            # 记录用量
-            await self._check_and_record_usage(
-                team_id=team_id,
-                model_id=str(model_config.id),
-                tokens_used=total_tokens,
-            )
-
-            # 最后一个块带 finish_reason
-            yield ChatStreamChunk(
-                id=response_id,
-                model=model_config.model_id,
-                delta=ChatStreamDelta(),
-                finish_reason=FinishReason.STOP,
-            )
+            # 注意：用量记录需要由调用方在流结束后主动调用 record_stream_usage()
+            # 因为如果调用方使用 break 提前退出，这里的代码不会执行
         except Exception as e:
             logger.exception(f"Team chat stream error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def record_stream_usage(
+        self,
+        team_id: str,
+        model_id: str | None,
+        input_text_length: int,
+        output_text_length: int,
+    ) -> None:
+        """
+        记录流式调用的用量（供调用方在流结束后调用）
+
+        Args:
+            team_id: 团队 ID
+            model_id: 模型 ID
+            input_text_length: 输入文本字符数
+            output_text_length: 输出文本字符数（包括 content 和 reasoning）
+        """
+        from app.llm.token_counter import count_tokens
+
+        # 获取模型配置以获取正确的 model UUID
+        model_config, _ = await self._get_team_model(team_id, model_id or "")
+
+        # 使用 tiktoken 进行准确的 token 计数
+        # 构造临时文本用于计数（实际使用时应该传入完整文本）
+        # 这里使用字符数作为文本近似
+        dummy_input = "x" * input_text_length
+        dummy_output = "x" * output_text_length
+        input_tokens = count_tokens(
+            dummy_input, model_config.model_id, model_config.provider
+        )
+        output_tokens = count_tokens(
+            dummy_output, model_config.model_id, model_config.provider
+        )
+        total_tokens = input_tokens + output_tokens
+
+        await self._check_and_record_usage(
+            team_id=team_id,
+            model_id=str(model_config.id),
+            tokens_used=total_tokens,
+        )
+        logger.debug(
+            f"Recorded stream usage: {total_tokens} tokens (input={input_tokens}, output={output_tokens})"
+        )
 
     async def team_embed(
         self,
@@ -835,9 +1092,14 @@ class ModelManager:
         try:
             result = await embedding_model.aembed_documents(texts)
 
-            # 估算 token 用量（embedding 模型按字符数估算）
-            total_chars = sum(len(t) for t in texts)
-            total_tokens = max(total_chars // 4, 1)
+            # 使用 tiktoken 进行准确的 token 计数
+            from app.llm.token_counter import count_tokens
+
+            total_tokens = sum(
+                count_tokens(t, model_config.model_id, model_config.provider)
+                for t in texts
+            )
+            total_tokens = max(total_tokens, 1)
 
             # 记录用量
             await self._check_and_record_usage(

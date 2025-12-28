@@ -103,6 +103,7 @@ class ChatStreamDelta(BaseModel):
 
     role: MessageRole | None = Field(default=None, description="角色")
     content: str | None = Field(default=None, description="增量内容")
+    reasoning_content: str | None = Field(default=None, description="思维链内容增量")
     tool_calls: list[ToolCall] | None = Field(default=None, description="工具调用")
 
 

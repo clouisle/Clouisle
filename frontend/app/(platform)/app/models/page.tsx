@@ -153,7 +153,7 @@ export default function ModelsPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="py-6">
+      <div className="py-6 px-8 h-full overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <Skeleton className="h-9 w-32" />
@@ -175,7 +175,7 @@ export default function ModelsPage() {
   }
 
   return (
-    <div className="py-6">
+    <div className="py-6 px-8 h-full overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>

@@ -91,6 +91,37 @@ async def init_db():
             "scope": "model",
             "description": "Delete model configurations",
         },
+        # Agent permissions
+        {
+            "code": "agent:read",
+            "scope": "agent",
+            "description": "Read agents",
+        },
+        {
+            "code": "agent:create",
+            "scope": "agent",
+            "description": "Create agents",
+        },
+        {
+            "code": "agent:update",
+            "scope": "agent",
+            "description": "Update agents",
+        },
+        {
+            "code": "agent:delete",
+            "scope": "agent",
+            "description": "Delete agents",
+        },
+        {
+            "code": "agent:publish",
+            "scope": "agent",
+            "description": "Publish/unpublish agents",
+        },
+        {
+            "code": "agent:chat",
+            "scope": "agent",
+            "description": "Chat with agents",
+        },
         # System wildcard permission
         {"code": "*", "scope": "system", "description": "All permissions (superuser)"},
     ]

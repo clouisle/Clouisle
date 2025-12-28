@@ -182,7 +182,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="py-6 space-y-6">
+      <div className="py-6 px-8 space-y-6">
         <div className="mb-6">
           <Skeleton className="h-9 w-32" />
           <Skeleton className="h-5 w-64 mt-1" />
@@ -224,7 +224,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="py-6 space-y-6">
+    <div className="py-6 px-8 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">{t('profile')}</h1>
         <p className="text-muted-foreground mt-1">{t('profileDescription')}</p>

@@ -11,9 +11,9 @@ function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogTrigger({ id, ...props }: DialogPrimitive.Trigger.Props) {
+function DialogTrigger({ id, className, ...props }: DialogPrimitive.Trigger.Props) {
   const reactId = React.useId()
-  return <DialogPrimitive.Trigger id={id ?? reactId} data-slot="dialog-trigger" {...props} />
+  return <DialogPrimitive.Trigger id={id ?? reactId} data-slot="dialog-trigger" className={cn("cursor-pointer", className)} {...props} />
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {

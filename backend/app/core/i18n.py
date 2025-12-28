@@ -661,6 +661,105 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Failed to dispatch processing task. Please check if Redis is running.",
         "zh": "任务调度失败。请检查 Redis 是否正常运行。",
     },
+    # Agent messages
+    "agent_created": {
+        "en": "Agent created successfully",
+        "zh": "智能体创建成功",
+    },
+    "agent_updated": {
+        "en": "Agent updated successfully",
+        "zh": "智能体更新成功",
+    },
+    "agent_deleted": {
+        "en": "Agent deleted successfully",
+        "zh": "智能体删除成功",
+    },
+    "agent_not_found": {
+        "en": "Agent not found",
+        "zh": "智能体未找到",
+    },
+    "agent_published": {
+        "en": "Agent published successfully",
+        "zh": "智能体发布成功",
+    },
+    "agent_unpublished": {
+        "en": "Agent unpublished successfully",
+        "zh": "智能体已取消发布",
+    },
+    "agent_duplicated": {
+        "en": "Agent duplicated successfully",
+        "zh": "智能体复制成功",
+    },
+    "agent_not_published": {
+        "en": "Agent is not published",
+        "zh": "智能体未发布",
+    },
+    "agent_access_denied": {
+        "en": "You don't have access to this agent",
+        "zh": "您无权访问此智能体",
+    },
+    # Conversation messages
+    "conversation_created": {
+        "en": "Conversation created successfully",
+        "zh": "对话创建成功",
+    },
+    "conversation_updated": {
+        "en": "Conversation updated successfully",
+        "zh": "对话更新成功",
+    },
+    "conversation_deleted": {
+        "en": "Conversation deleted successfully",
+        "zh": "对话删除成功",
+    },
+    "conversation_not_found": {
+        "en": "Conversation not found",
+        "zh": "对话未找到",
+    },
+    "message_deleted": {
+        "en": "Message deleted successfully",
+        "zh": "消息删除成功",
+    },
+    "message_not_found": {
+        "en": "Message not found",
+        "zh": "消息未找到",
+    },
+    "chat_success": {
+        "en": "Chat completed successfully",
+        "zh": "对话完成",
+    },
+    # Tool messages
+    "tool_not_found": {
+        "en": "Tool not found",
+        "zh": "工具未找到",
+    },
+    "tool_created": {
+        "en": "Tool created successfully",
+        "zh": "工具创建成功",
+    },
+    "tool_updated": {
+        "en": "Tool updated successfully",
+        "zh": "工具更新成功",
+    },
+    "tool_deleted": {
+        "en": "Tool deleted successfully",
+        "zh": "工具删除成功",
+    },
+    "tool_duplicated": {
+        "en": "Tool duplicated successfully",
+        "zh": "工具复制成功",
+    },
+    "tool_name_exists": {
+        "en": "Tool with this name already exists",
+        "zh": "该工具名称已存在",
+    },
+    "tool_execute_success": {
+        "en": "Tool executed successfully",
+        "zh": "工具执行成功",
+    },
+    "tool_execute_error": {
+        "en": "Tool execution failed: {error}",
+        "zh": "工具执行失败：{error}",
+    },
 }
 
 
