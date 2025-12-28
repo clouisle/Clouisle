@@ -11,6 +11,145 @@
 
 ### 新增 (Added)
 
+#### Chat 模块 - 通用聊天组件系统与 MCP 工具支持 (#22)
+
+##### 前端 Chat 组件库
+
+创建了一套完整的可复用 Chat 组件库，位于 `/frontend/components/chat/`：
+
+- **Chat 主组件** (`chat.tsx`)：组合 Container + Input 的完整聊天界面
+- **消息容器** (`chat-container.tsx`)：支持自动滚动、Streamdown 渲染
+- **输入框** (`chat-input.tsx`)：OpenAI 风格设计，支持 IME 输入法、文件附件
+- **消息组件** (`message.tsx`)：集成 ChainOfThought，支持多种消息类型
+- **变量表单** (`variable-form.tsx`)：Agent 变量输入表单
+
+##### 消息部件系统
+
+位于 `/frontend/components/chat/message-parts/`：
+
+- **文本内容** (`text-content.tsx`)：Markdown 渲染、流式光标、引用标记
+- **推理内容** (`reasoning-content.tsx`)：思维链展示、可折叠
+- **工具调用** (`tool-content.tsx`)：工具执行状态、输入/输出展示
+- **文件内容** (`file-content.tsx`)：图片预览、文件信息展示
+- **来源内容** (`source-content.tsx`)：RAG 来源聚合、分段弹窗
+
+##### AI 元素组件库
+
+位于 `/frontend/components/ai-elements/`：
+
+- **ChainOfThought** (`chain-of-thought.tsx`)：聚合展示 RAG/推理/生成步骤，3秒自动折叠
+- **Shimmer** (`shimmer.tsx`)：加载闪烁动画
+- **Tool** (`tool.tsx`)：工具调用状态组件
+- **Message** (`message.tsx`)：消息基础组件
+
+##### useChat Hook
+
+实现了完整的 Chat 状态管理 Hook (`/frontend/hooks/use-chat.ts`)：
+
+- SSE 事件流解析
+- TaskState 跟踪（RAG、生成状态）
+- 流式中断支持（AbortController）
+- 消息版本管理
+
+##### 后端 SSE 流式响应
+
+实现了完整的 Server-Sent Events 流式响应 (`/backend/app/api/v1/endpoints/chat.py`)：
+
+| 事件类型 | 数据 | 说明 |
+|----------|------|------|
+| `message_start` | `{conversation_id, message_id}` | 消息开始 |
+| `rag_start` | `{}` | RAG 检索开始 |
+| `rag_context` | `{documents: [...]}` | RAG 检索结果 |
+| `reasoning_start` | `{}` | 推理开始 |
+| `reasoning_delta` | `{delta: string}` | 推理内容增量 |
+| `reasoning_end` | `{duration: number}` | 推理结束 |
+| `content_delta` | `{delta: string}` | 回复内容增量 |
+| `tool_call` | `{tool_name, arguments}` | 工具调用 |
+| `tool_result` | `{tool_name, result}` | 工具结果 |
+| `message_end` | `{usage, task_state}` | 消息结束 |
+| `error` | `{code, message}` | 错误 |
+
+##### MCP (Model Context Protocol) 工具支持
+
+- **MCP 客户端** (`/backend/app/llm/tools/mcp_client.py`)：
+  - 支持 `stdio` 和 `sse` 两种传输方式
+  - 工具发现与执行
+  - 连接池管理
+  - 超时处理
+
+- **MCP 工具类型定义** (`/backend/app/llm/tools/types.py`)：
+  - `McpToolInfo`：MCP 工具信息
+  - `McpToolResult`：MCP 工具执行结果
+
+- **工具注册表** (`/backend/app/llm/tools/registry.py`)：
+  - 统一的工具执行接口
+  - 支持内置工具、自定义工具、MCP 工具
+
+##### 内置工具
+
+位于 `/backend/app/llm/tools/builtin/`：
+
+- **计算器** (`calculator.py`)：数学表达式计算、单位换算
+- **时间工具** (`time.py`)：当前时间、时区转换
+
+##### 消息版本管理
+
+实现了消息版本系统，支持消息重新生成：
+
+- `parent_id`：父消息 ID（版本组）
+- `is_active`：当前激活版本
+- `version_number`：版本号
+- API 端点：`/messages/{id}/versions`、`/messages/{id}/switch-version`、`/messages/{id}/regenerate`
+
+##### Token 计数优化
+
+- **tiktoken 集成** (`/backend/app/llm/token_counter.py`)：
+  - 准确的 token 计数
+  - 多模型支持（GPT-4、Claude、Gemini）
+  - 自动回退到字符估算
+
+##### 共享工具执行器
+
+- **executors.py** (`/backend/app/llm/tools/executors.py`)：
+  - HTTP 工具执行（支持模板变量替换）
+  - 统一的结果格式化
+
+##### 新增依赖
+
+- 后端：`tiktoken>=0.7.0`（Token 计数）
+- 后端：`mcp` 相关依赖（MCP 协议支持）
+
+### 修复 (Fixed)
+
+#### PR Review 修复
+
+- **N+1 查询优化**：Agent 列表页批量获取模型信息，避免循环查询
+- **竞态条件修复**：使用 Tortoise ORM `F()` 表达式进行原子更新
+- **代码复用**：提取 `executors.py` 共享 HTTP 工具执行逻辑
+- **Token 计数准确性**：使用 tiktoken 替代字符估算
+
+#### TypeScript 构建错误修复
+
+- **Select 组件类型**：处理 `value` 可能为 `null` 的情况
+- **Button 类型兼容**：修复 base-ui Button `type` prop 类型
+- **HoverCard delay props**：移除不支持的 `openDelay`/`closeDelay`
+- **ChatImageContent 类型**：添加缺失的 `type` 属性
+
+#### mypy 类型错误修复
+
+- **ResponseCode 枚举**：添加 `BAD_REQUEST`、`INTERNAL_ERROR`、`FORBIDDEN`
+- **Model FK 类型**：`Tool.team_id`、`Agent.model_id` 等改为 `UUID` 类型
+- **QuerySet 操作**：使用 `Q()` 对象替代 `|` 运算符
+- **ImageContent None 检查**：添加 `img is not None` 条件
+- **变量类型冲突**：重命名 `result` 变量避免 MCP/HTTP/code 类型混淆
+
+#### 其他修复
+
+- **ESLint @ts-ignore**：移除不必要的类型忽略注释
+- **Ruff 格式化**：修复 87 个文件的代码格式
+
+---
+
 #### 应用模块 - Agent 编排页面重构
 
 ##### 布局重构

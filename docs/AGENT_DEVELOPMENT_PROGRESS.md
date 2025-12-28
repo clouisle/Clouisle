@@ -1,6 +1,6 @@
 # Agent 模块开发进度
 
-> 最后更新：2025-12-27
+> 最后更新：2025-12-28
 
 ## 概述
 
@@ -27,6 +27,10 @@ frontend/components/chat/
 ├── variable-form.tsx        # 变量表单组件
 └── message-parts/           # 消息部件
     ├── index.ts             # 部件导出
+    ├── text-content.tsx     # 文本内容（Markdown、引用标记）
+    ├── reasoning-content.tsx # 推理内容（思维链）
+    ├── tool-content.tsx     # 工具调用内容
+    ├── file-content.tsx     # 文件内容（图片预览）
     └── source-content.tsx   # 来源引用（支持文档聚合和分段弹窗）
 ```
 
@@ -561,13 +565,15 @@ interface ChatInputFile {
 - [x] **流式响应**：实现 SSE 流式消息接收 ✅
 - [x] **RAG 来源展示**：展示知识库检索结果来源 ✅
 - [x] **ChainOfThought**：聚合展示处理步骤 ✅
+- [x] **MCP 工具支持**：对接 MCP Server ✅
+- [x] **内置工具**：计算器、时间工具 ✅
+- [x] **消息版本管理**：支持消息重新生成 ✅
 - [ ] **错误处理**：网络错误、超时、配额超限等
 - [ ] **消息复制**：复制助手消息内容
 
 ### 4.2 中期 (P1)
 
-- [ ] **工具调用集成**：对接实际工具执行
-- [ ] **MCP 工具支持**：对接 MCP Server
+- [x] **工具调用集成**：对接实际工具执行 ✅
 - [ ] **历史消息加载**：加载历史对话
 - [ ] **消息重试**：重新生成助手回复
 - [ ] **对话管理**：对话列表、删除、重命名
@@ -582,7 +588,101 @@ interface ChatInputFile {
 
 ---
 
-## 5. 相关文件
+## 5. 后端架构
+
+### 5.1 LLM 工具系统
+
+```
+backend/app/llm/tools/
+├── __init__.py              # 导出 tool_registry
+├── registry.py              # 工具注册表（统一执行接口）
+├── types.py                 # 工具类型定义
+├── executors.py             # 共享执行器（HTTP 工具）
+├── mcp_client.py            # MCP 客户端（stdio/sse 传输）
+├── sandbox.py               # 代码沙箱执行
+└── builtin/                 # 内置工具
+    ├── __init__.py
+    ├── calculator.py        # 计算器（数学表达式、单位换算）
+    └── time.py              # 时间工具（当前时间、时区转换）
+```
+
+### 5.2 工具注册表 (registry.py)
+
+```python
+from app.llm.tools import tool_registry
+
+# 获取所有内置工具定义
+tools = tool_registry.list_tools()
+
+# 执行工具
+result = await tool_registry.execute("calculator", {"expression": "2+2"})
+```
+
+### 5.3 MCP 客户端 (mcp_client.py)
+
+支持两种传输方式：
+
+```python
+# stdio 传输（本地进程）
+mcp_config = {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "env": {"HOME": "/Users/xxx"}
+}
+
+# sse 传输（远程服务）
+mcp_config = {
+    "transport": "sse",
+    "url": "http://localhost:3000/sse"
+}
+
+# 获取工具列表
+tools = await get_mcp_tools(mcp_config)
+
+# 执行工具
+result = await execute_mcp_tool(mcp_config, "read_file", {"path": "/tmp/test.txt"})
+```
+
+### 5.4 Token 计数 (token_counter.py)
+
+使用 tiktoken 进行准确的 token 计数：
+
+```python
+from app.llm.token_counter import count_tokens
+
+# 自动选择编码器
+tokens = count_tokens("Hello, world!", model_id="gpt-4o", provider="openai")
+
+# 支持的模型映射
+# - OpenAI: gpt-4o, gpt-4, gpt-3.5-turbo -> cl100k_base
+# - Claude: claude-3-* -> cl100k_base (近似)
+# - Gemini: gemini-* -> cl100k_base (近似)
+```
+
+### 5.5 消息版本管理
+
+数据库字段：
+
+```python
+class Message(models.Model):
+    # 版本支持
+    parent_id = fields.UUIDField(null=True)      # 父消息 ID（版本组根）
+    is_active = fields.BooleanField(default=True) # 当前激活版本
+    version_number = fields.IntField(default=1)   # 版本号
+```
+
+API 端点：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/messages/{id}/versions` | 获取所有版本 |
+| POST | `/messages/{id}/switch-version` | 切换版本 |
+| POST | `/messages/{id}/regenerate` | 重新生成（创建新版本） |
+
+---
+
+## 6. 相关文件
 
 | 文件 | 说明 |
 |------|------|
@@ -594,11 +694,17 @@ interface ChatInputFile {
 | `/frontend/app/(platform)/app/apps/[id]/_components/agent-preview-panel.tsx` | Agent 预览面板 |
 | `/backend/app/api/v1/endpoints/chat.py` | 后端对话 API（SSE 流式） |
 | `/backend/app/schemas/agent.py` | Agent Schema（含 SSE 事件类型） |
+| `/backend/app/llm/tools/` | LLM 工具系统 |
+| `/backend/app/llm/tools/mcp_client.py` | MCP 客户端 |
+| `/backend/app/llm/tools/registry.py` | 工具注册表 |
+| `/backend/app/llm/tools/builtin/` | 内置工具 |
+| `/backend/app/llm/token_counter.py` | Token 计数器 |
 | `/docs/design/AGENT_WORKFLOW_SPEC.md` | Agent & Workflow 设计规范 |
+| `/docs/design/TOOL_SYSTEM_SPEC.md` | 工具系统设计规范 |
 
 ---
 
-## 6. 更新日志
+## 7. 更新日志
 
 | 日期 | 更新内容 |
 |------|----------|
@@ -616,3 +722,11 @@ interface ChatInputFile {
 | 2025-12-27 | 引用标记系统：[[cite:N]] 渲染为 Tooltip 徽章 |
 | 2025-12-27 | 修复页面高度溢出：scrollTop 替代 scrollIntoView |
 | 2025-12-27 | 修复输入框 IME 问题：onCompositionStart/End 处理中文输入法 |
+| 2025-12-28 | **MCP 工具支持**：实现 mcp_client.py，支持 stdio/sse 传输 |
+| 2025-12-28 | **内置工具**：calculator.py（数学计算、单位换算）、time.py（时间、时区） |
+| 2025-12-28 | **工具注册表**：registry.py 统一工具执行接口 |
+| 2025-12-28 | **共享执行器**：executors.py 提取 HTTP 工具执行逻辑 |
+| 2025-12-28 | **Token 计数**：token_counter.py 集成 tiktoken |
+| 2025-12-28 | **消息版本管理**：parent_id, is_active, version_number 字段 |
+| 2025-12-28 | **PR Review 修复**：N+1 查询优化、竞态条件修复、代码复用 |
+| 2025-12-28 | **类型修复**：mypy 类型错误、TypeScript 构建错误、ESLint 错误 |
