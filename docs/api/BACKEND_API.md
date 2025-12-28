@@ -802,6 +802,298 @@ curl -X POST "http://localhost:8000/api/v1/teams/{team_id}/transfer-ownership?ne
 
 ---
 
+## API 密钥接口 (API Keys)
+
+API 密钥用于程序化访问 API，支持细粒度的权限控制和速率限制。
+
+### 安全机制
+
+- **密钥生成**: 使用 `secrets.token_urlsafe(32)` 生成 43 字符的安全随机密钥
+- **密钥存储**: 仅存储密钥哈希值（使用密码哈希算法），原始密钥不保存
+- **密钥前缀**: 保存前 12 个字符作为标识，便于用户识别
+- **一次性显示**: 完整密钥仅在创建时返回一次，之后无法再获取
+
+### 密钥格式
+
+| 字段 | 说明 |
+|------|------|
+| key | 完整密钥，43 字符，格式如 `sk_abc123...` |
+| key_prefix | 密钥前 12 字符，用于识别 |
+| key_hash | 密钥哈希值，用于验证 |
+
+---
+
+### 获取 API 密钥列表
+
+- **URL**: `GET /api/v1/api-keys/`
+- **认证**: 需要
+- **权限**: `apikey:read`
+
+**查询参数**:
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| page | int | 1 | 页码 |
+| page_size | int | 20 | 每页数量 |
+| user_id | UUID | - | 按用户筛选（管理员可用） |
+
+**权限说明**:
+- 超级管理员可查看所有密钥
+- 普通用户只能查看自己的密钥
+- 使用 `user_id` 参数筛选时，非管理员只能查看自己的密钥
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "name": "Production API Key",
+        "key_prefix": "sk_abc123xyz",
+        "user_id": "660e8400-e29b-41d4-a716-446655440001",
+        "user": {
+          "id": "660e8400-e29b-41d4-a716-446655440001",
+          "username": "developer",
+          "nickname": "Dev User"
+        },
+        "scopes": ["read", "write"],
+        "rate_limit": 1000,
+        "is_active": true,
+        "expires_at": "2026-01-01T00:00:00Z",
+        "last_used_at": "2025-01-15T10:30:00Z",
+        "created_at": "2025-01-01T00:00:00Z",
+        "updated_at": "2025-01-01T00:00:00Z"
+      }
+    ],
+    "total": 10,
+    "page": 1,
+    "page_size": 20
+  },
+  "msg": "success"
+}
+```
+
+---
+
+### 获取 API 密钥统计
+
+- **URL**: `GET /api/v1/api-keys/stats`
+- **认证**: 需要
+- **权限**: `apikey:read`
+
+返回 API 密钥的统计信息。
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "total": 15,
+    "active": 12,
+    "inactive": 3
+  },
+  "msg": "success"
+}
+```
+
+---
+
+### 创建 API 密钥
+
+- **URL**: `POST /api/v1/api-keys/`
+- **认证**: 需要
+- **权限**: `apikey:create`
+
+**请求参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 是 | 密钥名称（1-100 字符） |
+| scopes | string[] | 否 | 权限范围列表，默认 `["read"]` |
+| rate_limit | int | 否 | 速率限制（每分钟请求数），默认 `1000` |
+| expires_at | datetime | 否 | 过期时间，留空表示永不过期 |
+
+**请求示例**:
+```json
+{
+  "name": "My API Key",
+  "scopes": ["read", "write"],
+  "rate_limit": 500,
+  "expires_at": "2026-01-01T00:00:00Z"
+}
+```
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "My API Key",
+    "key": "sk_abc123xyz789def456ghi...",
+    "key_prefix": "sk_abc123xyz7",
+    "user_id": "660e8400-e29b-41d4-a716-446655440001",
+    "user": {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "username": "developer",
+      "nickname": "Dev User"
+    },
+    "scopes": ["read", "write"],
+    "rate_limit": 500,
+    "is_active": true,
+    "expires_at": "2026-01-01T00:00:00Z",
+    "last_used_at": null,
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-01-15T10:00:00Z"
+  },
+  "msg": "API key created successfully"
+}
+```
+
+⚠️ **重要**: 响应中的 `key` 字段包含完整密钥，**仅在创建时返回一次**，请妥善保存。
+
+---
+
+### 获取指定 API 密钥
+
+- **URL**: `GET /api/v1/api-keys/{api_key_id}`
+- **认证**: 需要
+- **权限**: `apikey:read`
+
+**权限说明**: 普通用户只能获取自己的密钥。
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "My API Key",
+    "key_prefix": "sk_abc123xyz7",
+    "user_id": "660e8400-e29b-41d4-a716-446655440001",
+    "user": {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "username": "developer",
+      "nickname": "Dev User"
+    },
+    "scopes": ["read", "write"],
+    "rate_limit": 500,
+    "is_active": true,
+    "expires_at": "2026-01-01T00:00:00Z",
+    "last_used_at": "2025-01-15T10:30:00Z",
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-01-15T10:00:00Z"
+  },
+  "msg": "success"
+}
+```
+
+---
+
+### 更新 API 密钥
+
+- **URL**: `PUT /api/v1/api-keys/{api_key_id}`
+- **认证**: 需要
+- **权限**: `apikey:update`
+
+**请求参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 否 | 密钥名称 |
+| scopes | string[] | 否 | 权限范围列表 |
+| rate_limit | int | 否 | 速率限制 |
+| expires_at | datetime | 否 | 过期时间 |
+
+**请求示例**:
+```json
+{
+  "name": "Updated API Key Name",
+  "rate_limit": 2000
+}
+```
+
+**权限说明**: 普通用户只能更新自己的密钥。
+
+---
+
+### 删除 API 密钥
+
+- **URL**: `DELETE /api/v1/api-keys/{api_key_id}`
+- **认证**: 需要
+- **权限**: `apikey:delete`
+
+**权限说明**: 普通用户只能删除自己的密钥。
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": null,
+  "msg": "API key deleted successfully"
+}
+```
+
+---
+
+### 激活 API 密钥
+
+- **URL**: `POST /api/v1/api-keys/{api_key_id}/activate`
+- **认证**: 需要
+- **权限**: `apikey:update`
+
+**权限说明**: 普通用户只能激活自己的密钥。
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "My API Key",
+    "is_active": true,
+    ...
+  },
+  "msg": "API key activated successfully"
+}
+```
+
+**错误响应**:
+- `404`: 密钥不存在
+- `400`: 密钥已经是激活状态
+
+---
+
+### 禁用 API 密钥
+
+- **URL**: `POST /api/v1/api-keys/{api_key_id}/deactivate`
+- **认证**: 需要
+- **权限**: `apikey:update`
+
+**权限说明**: 普通用户只能禁用自己的密钥。
+
+**响应示例**:
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "My API Key",
+    "is_active": false,
+    ...
+  },
+  "msg": "API key deactivated successfully"
+}
+```
+
+**错误响应**:
+- `404`: 密钥不存在
+- `400`: 密钥已经是禁用状态
+
+---
+
 ## 内置数据
 
 ### 系统权限
@@ -814,6 +1106,10 @@ curl -X POST "http://localhost:8000/api/v1/teams/{team_id}/transfer-ownership?ne
 | `user:update` | user | 更新用户 |
 | `user:delete` | user | 删除用户 |
 | `user:manage` | user | 管理用户、角色、权限 |
+| `apikey:read` | apikey | 读取 API 密钥 |
+| `apikey:create` | apikey | 创建 API 密钥 |
+| `apikey:update` | apikey | 更新 API 密钥 |
+| `apikey:delete` | apikey | 删除 API 密钥 |
 
 ### 系统角色
 

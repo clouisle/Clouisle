@@ -11,6 +11,88 @@
 
 ### 新增 (Added)
 
+#### API 密钥管理 - 完整实现 (#23)
+
+##### 后端 (Backend)
+
+- **APIKey 模型** (`/backend/app/models/api_key.py`)：
+  - `id`: UUID 主键
+  - `name`: 密钥名称
+  - `key_prefix`: 密钥前缀（12 字符），用于识别
+  - `key_hash`: 密钥哈希值，使用密码哈希算法存储
+  - `user`: 外键关联用户
+  - `scopes`: JSON 字段，权限范围列表
+  - `rate_limit`: 速率限制（每分钟请求数）
+  - `is_active`: 启用状态
+  - `expires_at`: 过期时间
+  - `last_used_at`: 最后使用时间
+  - `generate_key()`: 生成安全随机密钥
+  - `verify_key()`: 验证密钥
+
+- **API 密钥端点** (`/api/v1/api-keys/`)：
+  - `GET /`: 获取密钥列表，支持 `user_id` 筛选
+  - `GET /stats`: 获取统计信息（总数、激活、禁用）
+  - `POST /`: 创建密钥，返回完整密钥（仅一次）
+  - `GET /{id}`: 获取单个密钥详情
+  - `PUT /{id}`: 更新密钥信息
+  - `DELETE /{id}`: 删除密钥
+  - `POST /{id}/activate`: 激活密钥
+  - `POST /{id}/deactivate`: 禁用密钥
+
+- **权限控制**：
+  - 超级管理员可查看和管理所有密钥
+  - 普通用户只能管理自己的密钥
+  - 新增权限：`apikey:read`、`apikey:create`、`apikey:update`、`apikey:delete`
+
+- **安全特性**：
+  - 使用 `secrets.token_urlsafe(32)` 生成 43 字符安全密钥
+  - 密钥使用密码哈希算法存储，原始值不保存
+  - 完整密钥仅在创建时返回一次
+
+##### 前端 (Frontend)
+
+- **管理后台 API 密钥页面** (`/api-keys`)：
+  - 密钥列表表格，支持批量选择
+  - 搜索过滤（名称、前缀）
+  - 状态筛选（全部/已启用/已禁用）
+  - 用户筛选下拉框
+  - 创建密钥对话框
+  - 编辑密钥对话框
+  - 删除确认对话框
+  - 新建密钥展示对话框（一次性复制）
+  - 激活/禁用操作
+  - 分页支持
+
+- **用户设置 API 密钥页面** (`/settings/api-keys`)：
+  - 个人密钥列表
+  - 创建/删除密钥
+  - 密钥复制功能
+
+- **UI 组件**：
+  - `api-keys-client.tsx`: 管理后台主组件
+  - `api-key-dialog.tsx`: 创建/编辑对话框
+  - `delete-api-key-dialog.tsx`: 删除确认
+  - `show-key-dialog.tsx`: 新密钥展示
+
+- **API 客户端** (`/frontend/lib/api/api-keys.ts`)：
+  - 完整的 TypeScript 类型定义
+  - CRUD 操作方法
+  - 用户筛选支持
+
+##### 国际化
+
+- 新增 `apiKeys` 命名空间翻译（中英文）
+- 导航菜单翻译
+
+##### 导航更新
+
+- 管理后台侧边栏添加「API 密钥」入口
+- 用户设置页面添加「API 密钥」入口
+
+---
+
+### 新增 (Added)
+
 #### 知识库模块 - 动态 Embedding 维度支持
 
 ##### 多维度 Embedding 向量存储
