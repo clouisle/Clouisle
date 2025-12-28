@@ -209,7 +209,7 @@ export function KnowledgeBaseDialog({
             {!isEditing && (
               <div className="space-y-2">
                 <Label htmlFor="team">{t('team')}</Label>
-                <Select value={teamId} onValueChange={setTeamId}>
+                <Select value={teamId} onValueChange={(v) => v && setTeamId(v)}>
                   <SelectTrigger id="team" className="w-full">
                     <SelectValue>
                       {teamId 
@@ -258,7 +258,7 @@ export function KnowledgeBaseDialog({
               <Label htmlFor="embeddingModel">{t('embeddingModel')}</Label>
               <Select 
                 value={embeddingModelId} 
-                onValueChange={setEmbeddingModelId}
+                onValueChange={(v) => v && setEmbeddingModelId(v)}
                 disabled={isEditing}
               >
                 <SelectTrigger id="embeddingModel" className="w-full">

@@ -8,6 +8,7 @@ const alertVariants = cva("grid gap-0.5 rounded-lg border px-4 py-3 text-left te
     variant: {
       default: "bg-card text-card-foreground",
       destructive: "text-destructive bg-card *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+      warning: "text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900 dark:text-amber-500 *:data-[slot=alert-description]:text-amber-600/90 dark:*:data-[slot=alert-description]:text-amber-500/90 *:[svg]:text-current",
     },
   },
   defaultVariants: {

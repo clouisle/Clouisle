@@ -1203,6 +1203,51 @@
       "cancel": "取消",
       "prev": "上一页",
       "next": "下一页"
+    },
+    "apiAccess": {
+      "title": "访问 API",
+      "description": "通过 API 集成此 Agent 到您的应用程序中",
+      "manageApiKeys": "管理 API 密钥",
+      "draftWarningTitle": "Agent 未发布",
+      "draftWarningDescription": "此 Agent 当前为草稿状态，API 调用可能无法正常工作。请先发布 Agent。",
+      "endpoint": "API 端点",
+      "endpointDescription": "使用 POST 请求发送消息并接收流式响应。",
+      "authentication": "认证方式",
+      "authDescription": "在请求头中使用 Bearer Token 进行认证。您可以在设置中创建和管理 API 密钥。",
+      "requestBody": "请求参数",
+      "parameter": "参数",
+      "type": "类型",
+      "required": "必填",
+      "paramDescription": "说明",
+      "yes": "是",
+      "no": "否",
+      "params": {
+        "query": "用户输入的消息内容",
+        "conversationId": "会话 ID，留空则创建新会话",
+        "variables": "Agent 变量的值（如果定义了变量）"
+      },
+      "responseFormat": "响应格式",
+      "sseDescription": "响应使用 Server-Sent Events (SSE) 格式进行流式传输。以下是可能接收到的事件类型：",
+      "event": "事件",
+      "eventDescription": "说明",
+      "events": {
+        "messageStart": "消息开始，包含 conversation_id 和 message_id",
+        "ragStart": "RAG 检索开始",
+        "ragContext": "RAG 检索结果，包含相关文档",
+        "reasoningStart": "推理开始（如果模型支持）",
+        "reasoningDelta": "推理内容增量",
+        "reasoningEnd": "推理结束，包含耗时",
+        "contentDelta": "回复内容增量",
+        "toolCall": "工具调用，包含工具名称和参数",
+        "toolResult": "工具执行结果",
+        "messageEnd": "消息结束，包含 token 用量统计",
+        "error": "错误信息"
+      },
+      "codeExamples": "代码示例",
+      "agentVariables": "Agent 变量",
+      "variablesDescription": "此 Agent 定义了以下变量，需要在请求中提供对应的值：",
+      "variableName": "变量名",
+      "displayName": "显示名称"
     }
   },
   "apps": {

@@ -1203,6 +1203,51 @@
       "cancel": "Cancel",
       "prev": "Previous",
       "next": "Next"
+    },
+    "apiAccess": {
+      "title": "API Access",
+      "description": "Integrate this Agent into your applications via API",
+      "manageApiKeys": "Manage API Keys",
+      "draftWarningTitle": "Agent Not Published",
+      "draftWarningDescription": "This Agent is currently in draft status. API calls may not work properly. Please publish the Agent first.",
+      "endpoint": "API Endpoint",
+      "endpointDescription": "Send messages using POST requests and receive streaming responses.",
+      "authentication": "Authentication",
+      "authDescription": "Use Bearer Token authentication in the request header. You can create and manage API keys in settings.",
+      "requestBody": "Request Parameters",
+      "parameter": "Parameter",
+      "type": "Type",
+      "required": "Required",
+      "paramDescription": "Description",
+      "yes": "Yes",
+      "no": "No",
+      "params": {
+        "query": "The user's message content",
+        "conversationId": "Conversation ID, leave empty to create a new conversation",
+        "variables": "Values for Agent variables (if defined)"
+      },
+      "responseFormat": "Response Format",
+      "sseDescription": "Responses are streamed using Server-Sent Events (SSE) format. Here are the possible event types:",
+      "event": "Event",
+      "eventDescription": "Description",
+      "events": {
+        "messageStart": "Message started, contains conversation_id and message_id",
+        "ragStart": "RAG retrieval started",
+        "ragContext": "RAG retrieval results with relevant documents",
+        "reasoningStart": "Reasoning started (if model supports)",
+        "reasoningDelta": "Reasoning content delta",
+        "reasoningEnd": "Reasoning ended with duration",
+        "contentDelta": "Response content delta",
+        "toolCall": "Tool call with tool name and arguments",
+        "toolResult": "Tool execution result",
+        "messageEnd": "Message ended with token usage statistics",
+        "error": "Error message"
+      },
+      "codeExamples": "Code Examples",
+      "agentVariables": "Agent Variables",
+      "variablesDescription": "This Agent has the following variables defined. You need to provide values for them in your requests:",
+      "variableName": "Variable Name",
+      "displayName": "Display Name"
     }
   },
   "apps": {
