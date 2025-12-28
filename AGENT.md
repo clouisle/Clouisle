@@ -130,7 +130,7 @@ frontend/
 - **禁止使用原生 `title` 属性作为提示**，必须使用 shadcn 的 `Tooltip` 组件
 - **Select 组件在 Dialog/Modal 中使用时**，必须添加 `alignItemWithTrigger={false}` 属性，否则下拉框会遮盖触发器：
   ```tsx
-  <SelectContent side="bottom" alignItemWithTrigger={false}>
+  <SelectContent alignItemWithTrigger={false}>
     {/* items */}
   </SelectContent>
   ```
@@ -158,6 +158,27 @@ frontend/
       if (/^\d*\.?\d*$/.test(e.target.value)) setValue(e.target.value)
     }}
   />
+  ```
+
+**交互样式规范**：
+- **可操作元素必须设置正确的鼠标样式**：所有可点击、可拖拽、可交互的元素都需要添加相应的 `cursor` 样式
+  - 可点击元素（按钮、链接、可点击卡片）：`cursor-pointer`
+  - 拖拽元素：`cursor-grab`（拖拽中使用 `cursor-grabbing`）
+  - 禁用元素：`cursor-not-allowed`
+  - 等待状态：`cursor-wait`
+  - 可调整大小：`cursor-resize` / `cursor-col-resize` / `cursor-row-resize`
+  - 文本输入：`cursor-text`
+  ```tsx
+  // ✅ 正确：可点击卡片添加 cursor-pointer
+  <div onClick={handleClick} className="cursor-pointer hover:bg-accent">
+    ...
+  </div>
+  
+  // ❌ 错误：可点击但没有鼠标样式提示
+  <div onClick={handleClick}>
+    ...
+  </div>
+  ```
   ```
 
 ### Infrastructure

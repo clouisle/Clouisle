@@ -9,6 +9,21 @@ from .knowledge_base import (
     DocumentStatus,
     DocumentType,
 )
+from .agent import (
+    Agent,
+    AgentKnowledgeBase,
+    AgentStatus,
+    AgentVisibility,
+    Conversation,
+    Message,
+    MessageRole,
+)
+from .tool import (
+    Tool,
+    ToolType,
+    CustomToolType,
+    ToolCategory,
+)
 
 __all__ = [
     "User",
@@ -30,4 +45,15 @@ __all__ = [
     "KnowledgeBaseStatus",
     "DocumentStatus",
     "DocumentType",
+    "Agent",
+    "AgentKnowledgeBase",
+    "AgentStatus",
+    "AgentVisibility",
+    "Conversation",
+    "Message",
+    "MessageRole",
+    "Tool",
+    "ToolType",
+    "CustomToolType",
+    "ToolCategory",
 ]

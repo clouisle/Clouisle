@@ -1,0 +1,571 @@
+import { api } from './client'
+
+// ============ Types ============
+
+export interface PageData<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface TeamInfo {
+  id: string
+  name: string
+  avatar_url?: string | null
+}
+
+export interface CreatorInfo {
+  id: string
+  username: string
+  avatar_url?: string | null
+}
+
+export interface ModelInfo {
+  id: string
+  name: string
+  provider: string
+  model_id: string
+}
+
+export interface KnowledgeBaseInfo {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  document_count: number
+}
+
+// ============ Tool & Variable Types ============
+
+export interface ToolConfig {
+  type: 'builtin' | 'custom' | 'mcp'
+  name?: string | null
+  tool_id?: string | null  // for custom tools
+  server_id?: string | null  // for mcp tools
+  config?: Record<string, unknown> | null
+}
+
+export type VariableType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox'
+
+export interface VariableDefinition {
+  name: string
+  type: VariableType
+  label?: string | null
+  required: boolean
+  hidden?: boolean
+  default?: string | null
+  description?: string | null
+  options?: string[] | null
+  min?: number | null
+  max?: number | null
+  maxLength?: number | null
+}
+
+export interface AgentKnowledgeBaseConfig {
+  knowledge_base_id: string
+  retrieval_top_k: number
+  score_threshold: number
+}
+
+// ============ Agent Types ============
+
+export type AgentStatus = 'draft' | 'published'
+export type AgentVisibility = 'private' | 'team' | 'public'
+export type RAGMode = 'off' | 'auto' | 'agentic'
+
+export interface AgentKnowledgeBaseOut {
+  id: string
+  knowledge_base: KnowledgeBaseInfo
+  retrieval_top_k: number
+  score_threshold: number
+}
+
+export interface Agent {
+  id: string
+  team: TeamInfo
+  name: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  model_id?: string | null
+  model?: ModelInfo | null
+  system_prompt?: string | null
+  max_iterations: number
+  tools_config: ToolConfig[]
+  variables: VariableDefinition[]
+  opening_message?: string | null
+  suggested_questions: string[]
+  knowledge_bases: AgentKnowledgeBaseOut[]
+  enable_vision: boolean
+  rag_mode: RAGMode
+  status: AgentStatus
+  visibility: AgentVisibility
+  conversation_count: number
+  message_count: number
+  created_by?: CreatorInfo | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentListItem {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  team: TeamInfo
+  model?: ModelInfo | null
+  status: AgentStatus
+  visibility: AgentVisibility
+  conversation_count: number
+  message_count: number
+  created_by?: CreatorInfo | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentCreateInput {
+  team_id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  model_id?: string | null
+  system_prompt?: string | null
+  max_iterations?: number
+  tools_config?: ToolConfig[]
+  knowledge_base_configs?: AgentKnowledgeBaseConfig[]
+  variables?: VariableDefinition[]
+  opening_message?: string | null
+  suggested_questions?: string[]
+  enable_vision?: boolean
+  rag_mode?: RAGMode
+  visibility?: AgentVisibility
+}
+
+export interface AgentUpdateInput {
+  name?: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  model_id?: string | null
+  system_prompt?: string | null
+  max_iterations?: number
+  tools_config?: ToolConfig[]
+  knowledge_base_configs?: AgentKnowledgeBaseConfig[]
+  variables?: VariableDefinition[]
+  opening_message?: string | null
+  suggested_questions?: string[]
+  enable_vision?: boolean
+  rag_mode?: RAGMode
+  visibility?: AgentVisibility
+}
+
+export interface AgentQueryParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  status?: AgentStatus
+  visibility?: AgentVisibility
+}
+
+// ============ Conversation Types ============
+
+export interface Conversation {
+  id: string
+  agent_id: string
+  agent_name?: string | null
+  agent_icon?: string | null
+  title?: string | null
+  variables: Record<string, unknown>
+  message_count: number
+  token_usage: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationListItem {
+  id: string
+  agent_id: string
+  agent_name?: string | null
+  agent_icon?: string | null
+  title?: string | null
+  message_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationUpdateInput {
+  title?: string
+}
+
+// ============ Message Types ============
+
+export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
+
+export interface Message {
+  id: string
+  conversation_id: string
+  role: MessageRole
+  content: string
+  tool_calls?: Record<string, unknown>[] | null
+  tool_call_id?: string | null
+  tool_name?: string | null
+  model_used?: string | null
+  token_usage?: { prompt: number; completion: number } | null
+  duration_ms?: number | null
+  rag_context?: Record<string, unknown>[] | null
+  created_at: string
+  // Version fields
+  parent_id?: string | null
+  is_active?: boolean
+  version_number?: number
+  version_count?: number
+  versions?: MessageVersion[] | null
+}
+
+export interface MessageVersion {
+  id: string
+  version_number: number
+  is_active: boolean
+  content: string
+  created_at: string
+}
+
+export interface ConversationWithMessages extends Conversation {
+  messages: Message[]
+}
+
+// ============ Chat Types ============
+
+export interface ChatImageContent {
+  type: 'image_url'
+  url: string
+}
+
+export interface HistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  message: string
+  images?: ChatImageContent[]
+  conversation_id?: string | null
+  variables?: Record<string, unknown>
+  /** Override conversation history for version switching / regeneration */
+  history_override?: HistoryMessage[] | null
+}
+
+export interface ChatResponse {
+  conversation_id: string
+  message: Message
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null
+}
+
+// SSE Event Types
+export type SSEEventType = 
+  | 'message_start'
+  | 'content_delta'
+  | 'reasoning_start'
+  | 'reasoning_delta'
+  | 'reasoning_end'
+  | 'tool_call'
+  | 'tool_result'
+  | 'rag_start'
+  | 'rag_context'
+  | 'message_end'
+  | 'error'
+
+export interface SSEMessageStart {
+  conversation_id: string
+  message_id: string
+}
+
+export interface SSEContentDelta {
+  delta: string
+}
+
+export interface SSERagContext {
+  contexts: Array<{
+    kb_id: string
+    kb_name: string
+    document_id: string
+    document_name: string
+    content: string
+    score: number
+  }>
+}
+
+export interface SSEMessageEnd {
+  usage: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
+export interface SSEError {
+  code: number
+  msg: string
+  quota_type?: string
+}
+
+export interface SSEToolCall {
+  tool_call_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+}
+
+export interface SSEToolResult {
+  tool_call_id: string
+  tool_name: string
+  result: string
+  is_error?: boolean
+}
+
+// ============ Agent API ============
+
+export const agentsApi = {
+  /**
+   * 获取 Agent 列表
+   */
+  getAgents: async (params: AgentQueryParams = {}): Promise<PageData<AgentListItem>> => {
+    const { page = 1, pageSize = 20, search, status, visibility } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (search) queryParams.append('search', search)
+    if (status) queryParams.append('status', status)
+    if (visibility) queryParams.append('visibility', visibility)
+    return api.get<PageData<AgentListItem>>(`/agents?${queryParams.toString()}`)
+  },
+
+  /**
+   * 获取单个 Agent
+   */
+  getAgent: async (id: string): Promise<Agent> => {
+    return api.get<Agent>(`/agents/${id}`)
+  },
+
+  /**
+   * 创建 Agent
+   */
+  createAgent: async (data: AgentCreateInput): Promise<Agent> => {
+    return api.post<Agent>('/agents', data)
+  },
+
+  /**
+   * 更新 Agent
+   */
+  updateAgent: async (id: string, data: AgentUpdateInput): Promise<Agent> => {
+    return api.put<Agent>(`/agents/${id}`, data)
+  },
+
+  /**
+   * 删除 Agent
+   */
+  deleteAgent: async (id: string): Promise<void> => {
+    return api.delete<void>(`/agents/${id}`)
+  },
+
+  /**
+   * 发布 Agent
+   */
+  publishAgent: async (id: string): Promise<Agent> => {
+    return api.post<Agent>(`/agents/${id}/publish`)
+  },
+
+  /**
+   * 取消发布 Agent
+   */
+  unpublishAgent: async (id: string): Promise<Agent> => {
+    return api.post<Agent>(`/agents/${id}/unpublish`)
+  },
+
+  /**
+   * 复制 Agent
+   */
+  duplicateAgent: async (id: string): Promise<Agent> => {
+    return api.post<Agent>(`/agents/${id}/duplicate`)
+  },
+
+  // ============ Conversation API ============
+
+  /**
+   * 获取 Agent 的对话列表
+   */
+  getAgentConversations: async (
+    agentId: string,
+    params: { page?: number; pageSize?: number } = {}
+  ): Promise<PageData<ConversationListItem>> => {
+    const { page = 1, pageSize = 20 } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    return api.get<PageData<ConversationListItem>>(
+      `/agents/${agentId}/conversations?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取对话详情（含消息）
+   */
+  getConversation: async (conversationId: string): Promise<ConversationWithMessages> => {
+    return api.get<ConversationWithMessages>(`/agents/conversations/${conversationId}`)
+  },
+
+  /**
+   * 更新对话
+   */
+  updateConversation: async (
+    conversationId: string,
+    data: ConversationUpdateInput
+  ): Promise<Conversation> => {
+    return api.patch<Conversation>(`/agents/conversations/${conversationId}`, data)
+  },
+
+  /**
+   * 删除对话
+   */
+  deleteConversation: async (conversationId: string): Promise<void> => {
+    return api.delete<void>(`/agents/conversations/${conversationId}`)
+  },
+
+  /**
+   * 删除消息
+   */
+  deleteMessage: async (agentId: string, conversationId: string, messageId: string): Promise<void> => {
+    return api.delete<void>(`/agents/${agentId}/conversations/${conversationId}/messages/${messageId}`)
+  },
+
+  // ============ Message Version API ============
+
+  /**
+   * 获取消息的所有版本
+   */
+  getMessageVersions: async (agentId: string, messageId: string): Promise<MessageVersion[]> => {
+    return api.get<MessageVersion[]>(`/agents/${agentId}/messages/${messageId}/versions`)
+  },
+
+  /**
+   * 切换消息版本
+   */
+  switchMessageVersion: async (agentId: string, messageId: string, versionId: string): Promise<Message> => {
+    return api.post<Message>(`/agents/${agentId}/messages/${messageId}/switch-version`, {
+      version_id: versionId,
+    })
+  },
+
+  /**
+   * 重新生成消息（流式 SSE）
+   */
+  regenerateStream: (
+    agentId: string,
+    messageId: string,
+    variables?: Record<string, unknown>
+  ): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+    
+    const stream = fetch(`${baseUrl}/agents/${agentId}/messages/${messageId}/regenerate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ variables }),
+      signal: controller.signal,
+    })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+
+  // ============ Chat API ============
+
+  /**
+   * 发送消息（非流式）
+   */
+  chat: async (agentId: string, data: ChatRequest): Promise<ChatResponse> => {
+    return api.post<ChatResponse>(`/agents/${agentId}/chat`, data)
+  },
+
+  /**
+   * 发送消息（流式 SSE）
+   * 返回一个 ReadableStream，调用方需要自行处理 SSE 事件
+   */
+  chatStream: (agentId: string, data: ChatRequest): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+    
+    const stream = fetch(`${baseUrl}/agents/${agentId}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+}
+
+// ============ SSE Parser Utility ============
+
+export interface SSEEvent {
+  event: SSEEventType
+  data: unknown
+}
+
+/**
+ * 解析 SSE 流
+ */
+export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEvent> {
+  const reader = response.body?.getReader()
+  if (!reader) return
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    let currentEvent: SSEEventType | null = null
+    let currentData = ''
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim() as SSEEventType
+      } else if (line.startsWith('data: ')) {
+        currentData = line.slice(6)
+      } else if (line === '' && currentEvent && currentData) {
+        try {
+          yield {
+            event: currentEvent,
+            data: JSON.parse(currentData),
+          }
+        } catch {
+          // Ignore parse errors
+        }
+        currentEvent = null
+        currentData = ''
+      }
+    }
+  }
+}

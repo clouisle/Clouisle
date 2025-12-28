@@ -1,0 +1,825 @@
+"""
+Agent API endpoints.
+Provides CRUD operations for agents and conversations.
+"""
+
+import logging
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+
+from app.api import deps
+from app.models.user import User, Team, TeamMember
+from app.models.model import TeamModel, Model
+from app.models.knowledge_base import KnowledgeBase
+from app.models.agent import (
+    Agent,
+    AgentKnowledgeBase,
+    AgentStatus,
+    AgentVisibility,
+    Conversation,
+    Message,
+)
+from app.schemas.agent import (
+    AgentCreate,
+    AgentUpdate,
+    AgentOut,
+    AgentListOut,
+    AgentKnowledgeBaseOut,
+    ModelInfo,
+    KnowledgeBaseInfo,
+    TeamInfo,
+    CreatorInfo,
+    ConversationOut,
+    ConversationListOut,
+    ConversationUpdate,
+    ConversationWithMessages,
+    MessageOut,
+)
+from app.schemas.response import (
+    Response,
+    PageData,
+    ResponseCode,
+    BusinessError,
+    success,
+)
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+# ============ Helper Functions ============
+
+
+async def check_team_access(
+    team_id: UUID, user: User, require_admin: bool = False
+) -> Team:
+    """Check if user has access to the team."""
+    team = await Team.filter(id=team_id).first()
+    if not team:
+        raise BusinessError(
+            code=ResponseCode.TEAM_NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    if user.is_superuser:
+        return team
+
+    membership = await TeamMember.filter(team=team, user=user).first()
+    if not membership:
+        raise BusinessError(
+            code=ResponseCode.NOT_TEAM_MEMBER,
+            msg_key="not_team_member",
+            status_code=403,
+        )
+
+    if require_admin and membership.role not in ["owner", "admin"]:
+        raise BusinessError(
+            code=ResponseCode.TEAM_ADMIN_REQUIRED,
+            msg_key="team_admin_required",
+            status_code=403,
+        )
+
+    return team
+
+
+async def check_agent_access(
+    agent_id: UUID, user: User, require_write: bool = False
+) -> Agent:
+    """Check if user has access to the agent."""
+    agent = (
+        await Agent.filter(id=agent_id)
+        .prefetch_related(
+            "team", "created_by", "model", "agent_knowledge_bases__knowledge_base"
+        )
+        .first()
+    )
+    if not agent:
+        raise BusinessError(
+            code=ResponseCode.AGENT_NOT_FOUND,
+            msg_key="agent_not_found",
+            status_code=404,
+        )
+
+    # Check visibility and team access
+    if agent.visibility == AgentVisibility.PRIVATE:
+        # Only creator can access private agents
+        if agent.created_by.id != user.id and not user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
+    else:
+        # Team visibility - check team membership
+        await check_team_access(agent.team.id, user, require_admin=require_write)
+
+    return agent
+
+
+async def get_model_info(team_model: TeamModel | None) -> ModelInfo | None:
+    """Get model info from TeamModel."""
+    if not team_model:
+        return None
+    model = await Model.filter(id=team_model.model_id).first()
+    if not model:
+        return None
+    return ModelInfo(
+        id=team_model.id,
+        name=model.name,
+        provider=model.provider,
+        model_id=model.model_id,
+    )
+
+
+async def build_agent_out(agent: Agent) -> dict:
+    """Build AgentOut response with all relations."""
+    # Get model info
+    model_info = None
+    if agent.model_id:
+        team_model = (
+            await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+        )
+        if team_model:
+            model_info = ModelInfo(
+                id=team_model.id,
+                name=team_model.model.name,
+                provider=team_model.model.provider,
+                model_id=team_model.model.model_id,
+            )
+
+    # Get knowledge bases
+    kb_associations = await AgentKnowledgeBase.filter(
+        agent_id=agent.id
+    ).prefetch_related("knowledge_base")
+    knowledge_bases = []
+    for akb in kb_associations:
+        kb = akb.knowledge_base
+        knowledge_bases.append(
+            AgentKnowledgeBaseOut(
+                id=akb.id,
+                knowledge_base=KnowledgeBaseInfo(
+                    id=kb.id,
+                    name=kb.name,
+                    description=kb.description,
+                    icon=kb.icon,
+                    document_count=kb.document_count,
+                ),
+                retrieval_top_k=akb.retrieval_top_k,
+                score_threshold=akb.score_threshold,
+            )
+        )
+
+    # Manually build the dict to avoid QuerySet issues with ForeignKey fields
+    agent_data = {
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "icon": agent.icon,
+        "avatar_url": agent.avatar_url,
+        "team": TeamInfo.model_validate(agent.team).model_dump(),
+        "model_id": str(agent.model_id) if agent.model_id else None,
+        "model": model_info.model_dump() if model_info else None,
+        "system_prompt": agent.system_prompt,
+        "max_iterations": agent.max_iterations,
+        "tools_config": agent.tools_config or [],
+        "enable_vision": agent.enable_vision,
+        "rag_mode": agent.rag_mode.value
+        if hasattr(agent.rag_mode, "value")
+        else agent.rag_mode,
+        "variables": agent.variables or [],
+        "opening_message": agent.opening_message,
+        "suggested_questions": agent.suggested_questions or [],
+        "knowledge_bases": [kb.model_dump() for kb in knowledge_bases],
+        "status": agent.status.value
+        if hasattr(agent.status, "value")
+        else agent.status,
+        "visibility": agent.visibility.value
+        if hasattr(agent.visibility, "value")
+        else agent.visibility,
+        "conversation_count": agent.conversation_count,
+        "message_count": agent.message_count,
+        "created_by": CreatorInfo.model_validate(agent.created_by).model_dump()
+        if agent.created_by
+        else None,
+        "created_at": agent.created_at,
+        "updated_at": agent.updated_at,
+    }
+    return agent_data
+
+
+async def build_agent_list_out(agent: Agent) -> dict:
+    """Build AgentListOut response."""
+    model_info = None
+    if agent.model_id:
+        team_model = (
+            await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+        )
+        if team_model:
+            model_info = ModelInfo(
+                id=team_model.id,
+                name=team_model.model.name,
+                provider=team_model.model.provider,
+                model_id=team_model.model.model_id,
+            )
+
+    # Manually build the dict to avoid QuerySet issues with ForeignKey fields
+    agent_data = {
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "icon": agent.icon,
+        "avatar_url": agent.avatar_url,
+        "team": TeamInfo.model_validate(agent.team).model_dump(),
+        "model": model_info.model_dump() if model_info else None,
+        "status": agent.status.value
+        if hasattr(agent.status, "value")
+        else agent.status,
+        "visibility": agent.visibility.value
+        if hasattr(agent.visibility, "value")
+        else agent.visibility,
+        "conversation_count": agent.conversation_count,
+        "message_count": agent.message_count,
+        "created_by": CreatorInfo.model_validate(agent.created_by).model_dump()
+        if agent.created_by
+        else None,
+        "created_at": agent.created_at,
+        "updated_at": agent.updated_at,
+    }
+    return agent_data
+
+
+# ============ Agent CRUD ============
+
+
+@router.get("/", response_model=Response[PageData[AgentListOut]])
+async def list_agents(
+    team_id: UUID | None = None,
+    status: str | None = None,
+    visibility: str | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    List agents.
+    If team_id is provided, list agents for that team.
+    Otherwise, list all agents the user has access to.
+    """
+    query = Agent.all()
+
+    if team_id:
+        await check_team_access(team_id, current_user)
+        query = query.filter(team_id=team_id)
+    elif not current_user.is_superuser:
+        # Get teams user belongs to
+        memberships = await TeamMember.filter(user=current_user).values_list(
+            "team_id", flat=True
+        )
+        # Show team agents + own private agents
+        query = query.filter(team_id__in=memberships).filter(
+            # Either team visibility or own private agents
+            visibility__in=[AgentVisibility.TEAM, AgentVisibility.PUBLIC]
+        ) | query.filter(
+            created_by=current_user,
+            visibility=AgentVisibility.PRIVATE,
+        )
+
+    if status:
+        query = query.filter(status=status)
+
+    if visibility:
+        query = query.filter(visibility=visibility)
+
+    if keyword:
+        query = query.filter(name__icontains=keyword) | query.filter(
+            description__icontains=keyword
+        )
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    agents = (
+        await query.prefetch_related("team", "created_by").offset(skip).limit(page_size)
+    )
+
+    # Build response with model info
+    agent_list = []
+    for agent in agents:
+        agent_data = await build_agent_list_out(agent)
+        agent_list.append(agent_data)
+
+    return success(
+        data={
+            "items": agent_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.post("/", response_model=Response[AgentOut])
+async def create_agent(
+    *,
+    agent_in: AgentCreate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Create a new agent."""
+    # Check team access
+    team = await check_team_access(agent_in.team_id, current_user)
+
+    # Validate model_id if provided
+    if agent_in.model_id:
+        team_model = await TeamModel.filter(
+            id=agent_in.model_id,
+            team_id=agent_in.team_id,
+            is_enabled=True,
+        ).first()
+        if not team_model:
+            raise BusinessError(
+                code=ResponseCode.MODEL_NOT_AUTHORIZED,
+                msg_key="model_not_authorized",
+            )
+
+    # Validate knowledge bases
+    for kb_config in agent_in.knowledge_base_configs:
+        kb = await KnowledgeBase.filter(
+            id=kb_config.knowledge_base_id,
+            team_id=agent_in.team_id,
+        ).first()
+        if not kb:
+            raise BusinessError(
+                code=ResponseCode.KB_NOT_FOUND,
+                msg_key="kb_not_found",
+                status_code=404,
+            )
+
+    # Create agent
+    agent = await Agent.create(
+        name=agent_in.name,
+        description=agent_in.description,
+        icon=agent_in.icon,
+        avatar_url=agent_in.avatar_url,
+        team=team,
+        model_id=agent_in.model_id,
+        system_prompt=agent_in.system_prompt,
+        max_iterations=agent_in.max_iterations,
+        tools_config=[t.model_dump() for t in agent_in.tools_config],
+        enable_vision=agent_in.enable_vision,
+        rag_mode=agent_in.rag_mode,
+        variables=[v.model_dump() for v in agent_in.variables],
+        opening_message=agent_in.opening_message,
+        suggested_questions=agent_in.suggested_questions,
+        visibility=agent_in.visibility,
+        created_by=current_user,
+    )
+
+    # Create knowledge base associations
+    for kb_config in agent_in.knowledge_base_configs:
+        await AgentKnowledgeBase.create(
+            agent=agent,
+            knowledge_base_id=kb_config.knowledge_base_id,
+            retrieval_top_k=kb_config.retrieval_top_k,
+            score_threshold=kb_config.score_threshold,
+        )
+
+    # Reload with relations
+    agent = await Agent.get(id=agent.id).prefetch_related("team", "created_by")
+    agent_data = await build_agent_out(agent)
+    return success(data=agent_data, msg_key="agent_created")
+
+
+@router.get("/{agent_id}", response_model=Response[AgentOut])
+async def get_agent(
+    agent_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Get agent by ID."""
+    agent = await check_agent_access(agent_id, current_user)
+    agent_data = await build_agent_out(agent)
+    return success(data=agent_data)
+
+
+@router.put("/{agent_id}", response_model=Response[AgentOut])
+async def update_agent(
+    *,
+    agent_id: UUID,
+    agent_in: AgentUpdate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Update an agent."""
+    agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    # Update basic fields
+    if agent_in.name is not None:
+        agent.name = agent_in.name
+    if agent_in.description is not None:
+        agent.description = agent_in.description
+    if agent_in.icon is not None:
+        agent.icon = agent_in.icon
+    if agent_in.avatar_url is not None:
+        agent.avatar_url = agent_in.avatar_url
+    if agent_in.system_prompt is not None:
+        agent.system_prompt = agent_in.system_prompt
+    if agent_in.max_iterations is not None:
+        agent.max_iterations = agent_in.max_iterations
+    if agent_in.opening_message is not None:
+        agent.opening_message = agent_in.opening_message
+    if agent_in.suggested_questions is not None:
+        agent.suggested_questions = agent_in.suggested_questions
+    if agent_in.visibility is not None:
+        agent.visibility = agent_in.visibility
+
+    # Update model_id
+    if agent_in.model_id is not None:
+        team_model = await TeamModel.filter(
+            id=agent_in.model_id,
+            team_id=agent.team_id,
+            is_enabled=True,
+        ).first()
+        if not team_model:
+            raise BusinessError(
+                code=ResponseCode.MODEL_NOT_AUTHORIZED,
+                msg_key="model_not_authorized",
+            )
+        agent.model_id = agent_in.model_id
+
+    # Update tools config
+    if agent_in.tools_config is not None:
+        agent.tools_config = [t.model_dump() for t in agent_in.tools_config]
+
+    # Update enable_vision
+    if agent_in.enable_vision is not None:
+        agent.enable_vision = agent_in.enable_vision
+
+    # Update rag_mode
+    if agent_in.rag_mode is not None:
+        agent.rag_mode = agent_in.rag_mode
+
+    # Update variables
+    if agent_in.variables is not None:
+        agent.variables = [v.model_dump() for v in agent_in.variables]
+
+    await agent.save()
+
+    # Update knowledge bases if provided
+    if agent_in.knowledge_base_configs is not None:
+        # Delete existing associations
+        await AgentKnowledgeBase.filter(agent_id=agent.id).delete()
+
+        # Create new associations
+        for kb_config in agent_in.knowledge_base_configs:
+            kb = await KnowledgeBase.filter(
+                id=kb_config.knowledge_base_id,
+                team_id=agent.team_id,
+            ).first()
+            if not kb:
+                raise BusinessError(
+                    code=ResponseCode.KB_NOT_FOUND,
+                    msg_key="kb_not_found",
+                    status_code=404,
+                )
+            await AgentKnowledgeBase.create(
+                agent=agent,
+                knowledge_base_id=kb_config.knowledge_base_id,
+                retrieval_top_k=kb_config.retrieval_top_k,
+                score_threshold=kb_config.score_threshold,
+            )
+
+    # Reload with relations
+    agent = await Agent.get(id=agent_id).prefetch_related("team", "created_by")
+    agent_data = await build_agent_out(agent)
+    return success(data=agent_data, msg_key="agent_updated")
+
+
+@router.delete("/{agent_id}", response_model=Response[dict])
+async def delete_agent(
+    agent_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Delete an agent and all its conversations."""
+    agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    # Delete agent (cascades to conversations, messages, knowledge base associations)
+    await agent.delete()
+
+    return success(data={"id": str(agent_id)}, msg_key="agent_deleted")
+
+
+@router.post("/{agent_id}/publish", response_model=Response[AgentOut])
+async def publish_agent(
+    agent_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Publish an agent."""
+    agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    agent.status = AgentStatus.PUBLISHED
+    await agent.save()
+
+    agent_data = await build_agent_out(agent)
+    return success(data=agent_data, msg_key="agent_published")
+
+
+@router.post("/{agent_id}/unpublish", response_model=Response[AgentOut])
+async def unpublish_agent(
+    agent_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Unpublish an agent."""
+    agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    agent.status = AgentStatus.DRAFT
+    await agent.save()
+
+    agent_data = await build_agent_out(agent)
+    return success(data=agent_data, msg_key="agent_unpublished")
+
+
+@router.post("/{agent_id}/duplicate", response_model=Response[AgentOut])
+async def duplicate_agent(
+    agent_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Duplicate an agent."""
+    agent = await check_agent_access(agent_id, current_user)
+
+    # Create a copy
+    new_agent = await Agent.create(
+        name=f"{agent.name} (Copy)",
+        description=agent.description,
+        icon=agent.icon,
+        avatar_url=agent.avatar_url,
+        team_id=agent.team_id,
+        model_id=agent.model_id,
+        system_prompt=agent.system_prompt,
+        max_iterations=agent.max_iterations,
+        tools_config=agent.tools_config,
+        enable_vision=agent.enable_vision,
+        rag_mode=agent.rag_mode,
+        variables=agent.variables,
+        opening_message=agent.opening_message,
+        suggested_questions=agent.suggested_questions,
+        visibility=AgentVisibility.PRIVATE,  # Copy is always private
+        status=AgentStatus.DRAFT,  # Copy is always draft
+        created_by=current_user,
+    )
+
+    # Copy knowledge base associations
+    kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id)
+    for akb in kb_associations:
+        await AgentKnowledgeBase.create(
+            agent=new_agent,
+            knowledge_base_id=akb.knowledge_base_id,
+            retrieval_top_k=akb.retrieval_top_k,
+            score_threshold=akb.score_threshold,
+        )
+
+    # Reload with relations
+    new_agent = await Agent.get(id=new_agent.id).prefetch_related("team", "created_by")
+    agent_data = await build_agent_out(new_agent)
+    return success(data=agent_data, msg_key="agent_duplicated")
+
+
+# ============ Conversations ============
+
+
+@router.get(
+    "/{agent_id}/conversations", response_model=Response[PageData[ConversationListOut]]
+)
+async def list_agent_conversations(
+    agent_id: UUID,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """List conversations for an agent (only user's own conversations)."""
+    agent = await check_agent_access(agent_id, current_user)
+
+    query = Conversation.filter(agent_id=agent_id, user=current_user)
+    total = await query.count()
+    skip = (page - 1) * page_size
+    conversations = await query.offset(skip).limit(page_size)
+
+    # Add agent info to each conversation
+    conv_list = []
+    for conv in conversations:
+        conv_data = ConversationListOut.model_validate(conv).model_dump()
+        conv_data["agent_name"] = agent.name
+        conv_data["agent_icon"] = agent.icon
+        conv_list.append(conv_data)
+
+    return success(
+        data={
+            "items": conv_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.get("/conversations/my", response_model=Response[PageData[ConversationListOut]])
+async def list_my_conversations(
+    agent_id: UUID | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """List all conversations for current user."""
+    query = Conversation.filter(user=current_user)
+
+    if agent_id:
+        query = query.filter(agent_id=agent_id)
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    conversations = await query.prefetch_related("agent").offset(skip).limit(page_size)
+
+    conv_list = []
+    for conv in conversations:
+        conv_data = ConversationListOut.model_validate(conv).model_dump()
+        conv_data["agent_name"] = conv.agent.name
+        conv_data["agent_icon"] = conv.agent.icon
+        conv_list.append(conv_data)
+
+    return success(
+        data={
+            "items": conv_list,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=Response[ConversationWithMessages],
+)
+async def get_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Get conversation with messages."""
+    conversation = (
+        await Conversation.filter(
+            id=conversation_id,
+            user=current_user,
+        )
+        .prefetch_related("agent")
+        .first()
+    )
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    # Get only active messages
+    messages = await Message.filter(
+        conversation_id=conversation.id,
+        is_active=True,
+    ).order_by("created_at")
+
+    # Build message outputs with version count
+    messages_out = []
+    for m in messages:
+        msg_data = MessageOut.model_validate(m).model_dump()
+        # Calculate version count for this message
+        root_id = m.parent_id if m.parent_id else m.id
+        version_count = (
+            await Message.filter(parent_id=root_id).count() + 1
+        )  # +1 for the root
+        msg_data["version_count"] = version_count
+        messages_out.append(msg_data)
+
+    # First convert to ConversationOut, then build ConversationWithMessages
+    conv_out = ConversationOut.model_validate(conversation)
+    conv_data = conv_out.model_dump()
+    conv_data["agent_name"] = conversation.agent.name
+    conv_data["agent_icon"] = conversation.agent.icon
+    conv_data["messages"] = messages_out
+
+    return success(data=conv_data)
+
+
+@router.patch(
+    "/conversations/{conversation_id}", response_model=Response[ConversationOut]
+)
+async def update_conversation(
+    *,
+    conversation_id: UUID,
+    conv_in: ConversationUpdate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Update conversation (e.g., rename)."""
+    conversation = (
+        await Conversation.filter(
+            id=conversation_id,
+            user=current_user,
+        )
+        .prefetch_related("agent")
+        .first()
+    )
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    if conv_in.title is not None:
+        conversation.title = conv_in.title
+        await conversation.save()
+
+    conv_data = ConversationOut.model_validate(conversation).model_dump()
+    conv_data["agent_name"] = conversation.agent.name
+    conv_data["agent_icon"] = conversation.agent.icon
+
+    return success(data=conv_data, msg_key="conversation_updated")
+
+
+@router.delete("/conversations/{conversation_id}", response_model=Response[dict])
+async def delete_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Delete a conversation."""
+    conversation = await Conversation.filter(
+        id=conversation_id,
+        user=current_user,
+    ).first()
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    # Update agent stats
+    agent = await Agent.get(id=conversation.agent_id)
+    agent.conversation_count = max(0, agent.conversation_count - 1)
+    agent.message_count = max(0, agent.message_count - conversation.message_count)
+    await agent.save()
+
+    # Delete conversation (cascades to messages)
+    await conversation.delete()
+
+    return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
+
+
+@router.delete(
+    "/conversations/{conversation_id}/messages/{message_id}",
+    response_model=Response[dict],
+)
+async def delete_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Delete a message from a conversation."""
+    conversation = await Conversation.filter(
+        id=conversation_id,
+        user=current_user,
+    ).first()
+
+    if not conversation:
+        raise BusinessError(
+            code=ResponseCode.CONVERSATION_NOT_FOUND,
+            msg_key="conversation_not_found",
+            status_code=404,
+        )
+
+    message = await Message.filter(
+        id=message_id,
+        conversation_id=conversation_id,
+    ).first()
+
+    if not message:
+        raise BusinessError(
+            code=ResponseCode.MESSAGE_NOT_FOUND,
+            msg_key="message_not_found",
+            status_code=404,
+        )
+
+    # Update stats
+    conversation.message_count = max(0, conversation.message_count - 1)
+    if message.token_usage:
+        tokens = message.token_usage.get("prompt", 0) + message.token_usage.get(
+            "completion", 0
+        )
+        conversation.token_usage = max(0, conversation.token_usage - tokens)
+    await conversation.save()
+
+    # Delete message
+    await message.delete()
+
+    return success(data={"id": str(message_id)}, msg_key="message_deleted")

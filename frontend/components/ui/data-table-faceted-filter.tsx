@@ -64,7 +64,7 @@ export function DataTableFacetedFilter({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
-          "border-input hover:bg-accent hover:text-accent-foreground inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-dashed bg-transparent px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+          "border-input hover:bg-accent hover:text-accent-foreground inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-dashed bg-transparent px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
           selectedValues.size > 0 && "border-solid"
         )}
       >
@@ -151,7 +151,7 @@ export function DataTableFacetedFilter({
             <div className="p-1">
               <button
                 onClick={clearFilters}
-                className="w-full rounded-sm px-2 py-1.5 text-center text-sm hover:bg-accent"
+                className="w-full rounded-sm px-2 py-1.5 text-center text-sm hover:bg-accent cursor-pointer"
               >
                 {t('clearFilters')}
               </button>

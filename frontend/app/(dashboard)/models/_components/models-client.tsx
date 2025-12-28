@@ -528,7 +528,7 @@ export function ModelsClient() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Select value={String(pageSize)} onValueChange={(v) => { if (v) { setPageSize(Number(v)); setPage(1) } }}>
-              <SelectTrigger className="w-17.5 h-8">
+              <SelectTrigger size="sm" className="w-17.5">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent side="top" alignItemWithTrigger={false}>

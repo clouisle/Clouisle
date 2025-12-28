@@ -9,8 +9,8 @@ function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
-function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+function PopoverTrigger({ className, ...props }: PopoverPrimitive.Trigger.Props) {
+  return <PopoverPrimitive.Trigger data-slot="popover-trigger" className={cn("cursor-pointer", className)} {...props} />
 }
 
 function PopoverPortal({ ...props }: PopoverPrimitive.Portal.Props) {
@@ -63,6 +63,10 @@ function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />
 }
 
+function PopoverAnchor({ ...props }: PopoverPrimitive.Anchor.Props) {
+  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
+}
+
 export {
   Popover,
   PopoverTrigger,
@@ -70,4 +74,5 @@ export {
   PopoverContent,
   PopoverArrow,
   PopoverClose,
+  PopoverAnchor,
 }

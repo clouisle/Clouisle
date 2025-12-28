@@ -20,6 +20,11 @@ from app.schemas.response import success, error, ResponseCode, BusinessError
 # Import celery app to ensure tasks are bound correctly when API sends tasks
 from app.core.celery import celery_app  # noqa: F401
 
+# Register builtin tools
+from app.llm.tools.builtin import register_all_builtin_tools
+
+register_all_builtin_tools()
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,

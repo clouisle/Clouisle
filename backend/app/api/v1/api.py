@@ -11,6 +11,9 @@ from app.api.v1.endpoints import (
     upload,
     models,
     knowledge_bases,
+    agents,
+    chat,
+    tools,
 )
 
 api_router = APIRouter()
@@ -30,3 +33,6 @@ api_router.include_router(models.router, prefix="/models", tags=["models"])
 api_router.include_router(
     knowledge_bases.router, prefix="/knowledge-bases", tags=["knowledge-bases"]
 )
+api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
+api_router.include_router(chat.router, prefix="/agents", tags=["chat"])
+api_router.include_router(tools.router, prefix="/tools", tags=["tools"])

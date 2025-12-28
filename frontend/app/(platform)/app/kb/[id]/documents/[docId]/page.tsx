@@ -8,7 +8,7 @@ export default async function DocumentDetailPage({
   const { id, docId } = await params
   
   return (
-    <div className="h-[calc(100vh-64px)] overflow-hidden">
+    <div className="h-[calc(100vh-56px)] overflow-hidden px-8 py-4">
       <DocumentDetailClient knowledgeBaseId={id} documentId={docId} />
     </div>
   )

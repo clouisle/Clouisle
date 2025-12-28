@@ -123,7 +123,7 @@ export default function PlatformHomePage() {
   // 等待团队加载
   if (isTeamLoading) {
     return (
-      <div className="py-6 flex items-center justify-center min-h-100">
+      <div className="py-6 px-8 flex items-center justify-center min-h-100">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     )
@@ -153,7 +153,7 @@ export default function PlatformHomePage() {
   ] as const
 
   return (
-    <div className="py-6 space-y-8">
+    <div className="py-6 px-8 space-y-8">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>

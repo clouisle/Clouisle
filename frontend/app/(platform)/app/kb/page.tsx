@@ -19,6 +19,7 @@ import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ export default function KnowledgeBasePage() {
   
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
+  const [searchQuery, setSearchQuery] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editingKb, setEditingKb] = React.useState<KnowledgeBase | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
@@ -119,10 +121,20 @@ export default function KnowledgeBasePage() {
     fetchKnowledgeBases()
   }
 
+  // 过滤知识库
+  const filteredKnowledgeBases = React.useMemo(() => {
+    if (!searchQuery) return knowledgeBases
+    const query = searchQuery.toLowerCase()
+    return knowledgeBases.filter(kb => 
+      kb.name.toLowerCase().includes(query) ||
+      (kb.description && kb.description.toLowerCase().includes(query))
+    )
+  }, [knowledgeBases, searchQuery])
+
   // Loading state
   if (isLoading) {
     return (
-      <div className="py-6">
+      <div className="py-6 px-8 h-full overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <Skeleton className="h-9 w-32" />
@@ -139,7 +151,7 @@ export default function KnowledgeBasePage() {
   }
 
   return (
-    <div className="py-6">
+    <div className="py-6 px-8 h-full overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -147,6 +159,19 @@ export default function KnowledgeBasePage() {
           <p className="text-muted-foreground mt-1">
             {t('kb.description')}
           </p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="flex items-center gap-2 mb-6">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder={kbT('searchPlaceholder')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 w-64 h-9"
+          />
         </div>
       </div>
 
@@ -167,7 +192,7 @@ export default function KnowledgeBasePage() {
         </Card>
 
         {/* Knowledge Base Cards */}
-        {knowledgeBases.map((kb) => (
+        {filteredKnowledgeBases.map((kb) => (
           <Card key={kb.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
             <Link href={`/app/kb/${kb.id}`} className="flex flex-col justify-between px-2.5 py-4 h-full">
               <div className="flex items-center gap-2">
@@ -239,12 +264,21 @@ export default function KnowledgeBasePage() {
         ))}
       </div>
 
-      {/* Empty State (when no knowledge bases) */}
+      {/* Empty State (when no knowledge bases or no search results) */}
       {knowledgeBases.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>{t('kb.noKbs')}</p>
           <p className="text-sm mt-1">{t('kb.createKbHint')}</p>
+        </div>
+      )}
+      {knowledgeBases.length > 0 && filteredKnowledgeBases.length === 0 && searchQuery && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>{kbT('noSearchResults')}</p>
+          <Button variant="outline" className="mt-4" onClick={() => setSearchQuery('')}>
+            {commonT('clearFilters')}
+          </Button>
         </div>
       )}
 

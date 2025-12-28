@@ -10,9 +10,9 @@ export default function PlatformLayout({
 }) {
   return (
     <TeamProvider>
-      <div className="min-h-screen flex flex-col">
+      <div className="h-screen flex flex-col overflow-hidden">
         <PlatformHeader />
-        <main className="flex-1 px-8">
+        <main className="flex-1 relative overflow-hidden">
           {children}
         </main>
       </div>
