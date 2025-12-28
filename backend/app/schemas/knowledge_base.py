@@ -129,6 +129,9 @@ class KnowledgeBase(KnowledgeBaseBase):
     status: str
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
+    embedding_dimension: Optional[int] = Field(
+        None, description="Embedding vector dimension (set after first document processing)"
+    )
     settings: Optional[dict] = None
     document_count: int
     total_chunks: int
@@ -152,6 +155,9 @@ class KnowledgeBaseList(BaseModel):
     status: str
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
+    embedding_dimension: Optional[int] = Field(
+        None, description="Embedding vector dimension"
+    )
     document_count: int
     total_chunks: int
     total_tokens: int
@@ -373,3 +379,9 @@ class KnowledgeBaseStats(BaseModel):
     total_tokens: int
     documents_by_status: dict
     documents_by_type: dict
+    # Embedding configuration
+    embedding_dimension: Optional[int] = Field(
+        None, description="Embedding vector dimension"
+    )
+    # Embedding statistics
+    embedding_stats: Optional[dict] = None

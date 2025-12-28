@@ -1,5 +1,7 @@
 import logging
 
+from tortoise import Tortoise
+
 from app.models.user import Role, Permission
 from app.models.site_setting import init_default_settings
 
@@ -8,6 +10,68 @@ logger = logging.getLogger(__name__)
 
 # System role name constant
 SUPER_ADMIN_ROLE = "Super Admin"
+
+
+# Common embedding dimensions
+EMBEDDING_DIMENSIONS = [768, 1024, 1536, 3072]
+
+
+async def init_pgvector():
+    """
+    Initialize pgvector extension and create embedding columns for different dimensions.
+    
+    Supports multiple embedding dimensions to accommodate different models:
+    - 768: BGE models, Silicon Flow Chinese models
+    - 1024: Cohere embed-multilingual-v3.0, some BGE models
+    - 1536: OpenAI text-embedding-ada-002, text-embedding-3-small
+    - 3072: OpenAI text-embedding-3-large
+    
+    Each dimension has its own column and HNSW index for optimal performance.
+    """
+    logger.info("Initializing pgvector extension...")
+    
+    conn = Tortoise.get_connection("default")
+    
+    # Enable pgvector extension
+    try:
+        await conn.execute_query("CREATE EXTENSION IF NOT EXISTS vector")
+        logger.info("pgvector extension enabled")
+    except Exception as e:
+        logger.warning(f"Could not create pgvector extension (may already exist or not supported): {e}")
+    
+    # Create embedding columns for each supported dimension
+    for dim in EMBEDDING_DIMENSIONS:
+        col_name = f"embedding_{dim}"
+        
+        # Check if column exists
+        _, rows = await conn.execute_query(f"""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'document_chunks' AND column_name = '{col_name}'
+        """)
+        
+        if rows:
+            logger.info(f"Column {col_name} already exists")
+        else:
+            try:
+                await conn.execute_query(f"""
+                    ALTER TABLE document_chunks 
+                    ADD COLUMN {col_name} vector({dim})
+                """)
+                logger.info(f"Added {col_name} column to document_chunks table")
+            except Exception as e:
+                logger.warning(f"Could not add {col_name} column: {e}")
+        
+        # Create HNSW index for this dimension
+        index_name = f"document_chunks_{col_name}_hnsw_idx"
+        try:
+            await conn.execute_query(f"""
+                CREATE INDEX IF NOT EXISTS {index_name}
+                ON document_chunks 
+                USING hnsw ({col_name} vector_cosine_ops)
+            """)
+            logger.info(f"Created HNSW index {index_name}")
+        except Exception as e:
+            logger.warning(f"Could not create index {index_name}: {e}")
 
 
 async def init_db():
@@ -165,5 +229,8 @@ async def init_db():
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")
     await init_default_settings()
+
+    # 4. Initialize pgvector for vector storage
+    await init_pgvector()
 
     logger.info("Database initialization complete.")

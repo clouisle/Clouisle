@@ -1,23 +1,153 @@
 """
 Vector store service for knowledge base.
 Uses pgvector for vector storage and similarity search.
+
+Supports dynamic embedding dimensions - each knowledge base can use a different
+embedding model with different dimensions. Embedding columns are created dynamically
+as needed (embedding_768, embedding_1024, embedding_1536, etc.).
 """
 
+import json
 import logging
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 import jieba
+from tortoise import Tortoise
 
-from app.llm import model_manager
-from app.models.knowledge_base import DocumentChunk, Document
+from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
 from app.services.usage_tracker import QuotaExceededError
+
+# Avoid circular import - import model_manager lazily
+if TYPE_CHECKING:
+    from app.llm import model_manager as _model_manager
 
 logger = logging.getLogger(__name__)
 
 # Initialize jieba (disable verbose output)
 jieba.setLogLevel(logging.WARNING)
+
+# Cache for existing embedding columns to avoid repeated DB queries
+_existing_columns: set[int] = set()
+
+
+def _get_model_manager():
+    """Get model manager lazily to avoid circular import."""
+    from app.llm import model_manager
+    return model_manager
+
+
+async def ensure_embedding_column(dimension: int) -> str:
+    """
+    Ensure embedding column for specified dimension exists.
+    Creates the column and HNSW index if they don't exist.
+    
+    Args:
+        dimension: Embedding dimension (768, 1024, 1536, etc.)
+        
+    Returns:
+        Column name (e.g., "embedding_768")
+    """
+    global _existing_columns
+    
+    col_name = f"embedding_{dimension}"
+    
+    # Check cache first
+    if dimension in _existing_columns:
+        return col_name
+    
+    conn = Tortoise.get_connection("default")
+    
+    # Check if column exists in database
+    _, rows = await conn.execute_query(f"""
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'document_chunks' AND column_name = '{col_name}'
+    """)
+    
+    if rows:
+        _existing_columns.add(dimension)
+        logger.debug(f"Column {col_name} already exists")
+        return col_name
+    
+    # Create column
+    try:
+        await conn.execute_query(f"""
+            ALTER TABLE document_chunks 
+            ADD COLUMN {col_name} vector({dimension})
+        """)
+        logger.info(f"Created embedding column: {col_name}")
+    except Exception as e:
+        # Column might have been created by another process
+        logger.warning(f"Could not create column {col_name}: {e}")
+    
+    # Create HNSW index for this dimension
+    index_name = f"document_chunks_{col_name}_hnsw_idx"
+    try:
+        await conn.execute_query(f"""
+            CREATE INDEX IF NOT EXISTS {index_name}
+            ON document_chunks 
+            USING hnsw ({col_name} vector_cosine_ops)
+        """)
+        logger.info(f"Created HNSW index: {index_name}")
+    except Exception as e:
+        logger.warning(f"Could not create index {index_name}: {e}")
+    
+    _existing_columns.add(dimension)
+    return col_name
+
+
+async def get_kb_embedding_dimension(kb_id: UUID) -> int | None:
+    """
+    Get the embedding dimension for a knowledge base.
+    
+    Args:
+        kb_id: Knowledge base ID
+        
+    Returns:
+        Embedding dimension or None if not set
+    """
+    kb = await KnowledgeBase.get_or_none(id=kb_id)
+    if kb:
+        return kb.embedding_dimension
+    return None
+
+
+async def set_kb_embedding_dimension(kb_id: UUID, dimension: int) -> bool:
+    """
+    Set the embedding dimension for a knowledge base.
+    This should only be called once when processing the first document.
+    
+    Args:
+        kb_id: Knowledge base ID
+        dimension: Embedding dimension
+        
+    Returns:
+        True if set successfully, False if already set
+    """
+    kb = await KnowledgeBase.get_or_none(id=kb_id)
+    if not kb:
+        logger.error(f"Knowledge base {kb_id} not found")
+        return False
+    
+    if kb.embedding_dimension is not None:
+        if kb.embedding_dimension != dimension:
+            logger.warning(
+                f"KB {kb_id} already has dimension {kb.embedding_dimension}, "
+                f"cannot change to {dimension}"
+            )
+            return False
+        return True
+    
+    kb.embedding_dimension = dimension
+    await kb.save()
+    logger.info(f"Set embedding dimension for KB {kb_id} to {dimension}")
+    return True
+
+
+class DimensionMismatchError(Exception):
+    """Raised when embedding dimension doesn't match knowledge base dimension."""
+    pass
 
 
 class VectorStore:
@@ -29,12 +159,14 @@ class VectorStore:
     - Vector storage in PostgreSQL with pgvector
     - Similarity search
     - Token usage tracking (when team_id is provided)
+    - Dynamic embedding dimension management
     """
 
     def __init__(
         self,
         embedding_model_id: str | None = None,
         team_id: str | None = None,
+        embedding_dimension: int | None = None,
     ):
         """
         Initialize vector store.
@@ -42,9 +174,97 @@ class VectorStore:
         Args:
             embedding_model_id: Optional embedding model ID to use
             team_id: Optional team ID for usage tracking
+            embedding_dimension: Optional embedding dimension (detected from model if not provided)
         """
         self.embedding_model_id = embedding_model_id
         self.team_id = team_id
+        self.embedding_dimension = embedding_dimension
+        self._detected_dimension: int | None = None
+
+    def _get_column_name(self, dimension: int | None = None) -> str:
+        """Get the embedding column name for the given dimension."""
+        dim = dimension or self.embedding_dimension or self._detected_dimension
+        if not dim:
+            raise ValueError("Embedding dimension not set")
+        return f"embedding_{dim}"
+
+    def _format_vector(self, embedding: list[float]) -> str:
+        """
+        Format embedding vector for pgvector.
+
+        Args:
+            embedding: List of floats
+
+        Returns:
+            pgvector formatted string "[0.1,0.2,...]"
+        """
+        return "[" + ",".join(str(x) for x in embedding) + "]"
+
+    async def _store_embedding(
+        self, chunk_id: UUID, embedding: list[float], dimension: int | None = None
+    ) -> None:
+        """
+        Store embedding vector in pgvector column.
+
+        Args:
+            chunk_id: Chunk ID
+            embedding: Embedding vector
+            dimension: Embedding dimension (uses detected/configured dimension if not provided)
+        """
+        dim = dimension or self.embedding_dimension or self._detected_dimension
+        if not dim:
+            dim = len(embedding)
+            self._detected_dimension = dim
+        
+        # Ensure column exists
+        col_name = await ensure_embedding_column(dim)
+        
+        conn = Tortoise.get_connection("default")
+        vector_str = self._format_vector(embedding)
+        await conn.execute_query(
+            f"UPDATE document_chunks SET {col_name} = $1::vector WHERE id = $2",
+            [vector_str, str(chunk_id)],
+        )
+
+    async def _batch_store_embeddings(
+        self, chunk_ids: list[UUID], embeddings: list[list[float]], dimension: int | None = None
+    ) -> None:
+        """
+        Batch store embedding vectors in pgvector column.
+
+        Args:
+            chunk_ids: List of chunk IDs
+            embeddings: List of embedding vectors
+            dimension: Embedding dimension (uses detected/configured dimension if not provided)
+        """
+        if not chunk_ids or not embeddings:
+            return
+        
+        # Detect dimension from embeddings
+        dim = dimension or self.embedding_dimension or self._detected_dimension
+        if not dim and embeddings:
+            dim = len(embeddings[0])
+            self._detected_dimension = dim
+        
+        if not dim:
+            raise ValueError("Cannot determine embedding dimension")
+        
+        # Ensure column exists
+        col_name = await ensure_embedding_column(dim)
+
+        conn = Tortoise.get_connection("default")
+
+        # Use simple individual updates - more reliable than complex CASE WHEN
+        for chunk_id, embedding in zip(chunk_ids, embeddings):
+            vector_str = self._format_vector(embedding)
+            try:
+                await conn.execute_query(
+                    f"UPDATE document_chunks SET {col_name} = $1::vector WHERE id = $2::uuid",
+                    [vector_str, str(chunk_id)],
+                )
+            except Exception as e:
+                logger.error(f"Failed to store embedding for chunk {chunk_id}: {e}")
+                raise
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """
@@ -58,6 +278,8 @@ class VectorStore:
         """
         if not texts:
             return []
+
+        model_manager = _get_model_manager()
 
         try:
             # Use team-level embedding if team_id is provided
@@ -89,6 +311,8 @@ class VectorStore:
         Returns:
             Embedding vector
         """
+        model_manager = _get_model_manager()
+
         try:
             # Use team-level embedding if team_id is provided
             if self.team_id and self.embedding_model_id:
@@ -114,16 +338,24 @@ class VectorStore:
         self,
         document: Document,
         chunks: list[dict[str, Any]],
+        kb_id: UUID | None = None,
     ) -> list[DocumentChunk]:
         """
-        Store document chunks with embeddings.
+        Store document chunks with embeddings in pgvector.
+        
+        On first document processing, detects embedding dimension and records it
+        in the knowledge base. Subsequent documents must use the same dimension.
 
         Args:
             document: Parent document
             chunks: List of chunk dicts with content, index, etc.
+            kb_id: Optional knowledge base ID for dimension management
 
         Returns:
             List of created DocumentChunk objects
+            
+        Raises:
+            DimensionMismatchError: If embedding dimension doesn't match KB dimension
         """
         if not chunks:
             return []
@@ -131,12 +363,32 @@ class VectorStore:
         # Generate embeddings for all chunks
         texts = [c["content"] for c in chunks]
         embeddings = await self.embed_texts(texts)
+        
+        # Detect dimension
+        detected_dim = len(embeddings[0]) if embeddings else None
+        if detected_dim:
+            self._detected_dimension = detected_dim
+        
+        # Handle KB dimension management
+        if kb_id:
+            kb_dim = await get_kb_embedding_dimension(kb_id)
+            
+            if kb_dim is None:
+                # First document - set KB dimension
+                await set_kb_embedding_dimension(kb_id, detected_dim)
+                logger.info(f"Set KB {kb_id} embedding dimension to {detected_dim}")
+            elif kb_dim != detected_dim:
+                # Dimension mismatch
+                raise DimensionMismatchError(
+                    f"Embedding dimension mismatch: KB uses {kb_dim}, "
+                    f"but model produces {detected_dim}. "
+                    f"Please use a model with {kb_dim}-dimensional embeddings."
+                )
 
         # Create chunk records
         created_chunks = []
+        chunk_ids = []
         for chunk_data, embedding in zip(chunks, embeddings):
-            # Store embedding reference
-            # In production, store actual vector in pgvector column
             embedding_id = f"doc_{document.id}_chunk_{chunk_data['chunk_index']}"
 
             chunk = await DocumentChunk.create(
@@ -148,10 +400,17 @@ class VectorStore:
                 embedding_id=embedding_id,
             )
 
-            # TODO: Store actual embedding vector
-            # await self._store_embedding(chunk.id, embedding)
-
             created_chunks.append(chunk)
+            chunk_ids.append(chunk.id)
+
+        # Batch store embeddings in pgvector
+        try:
+            await self._batch_store_embeddings(chunk_ids, embeddings, detected_dim)
+            logger.info(f"Stored {len(embeddings)} embeddings (dim={detected_dim}) for document {document.id}")
+        except Exception as e:
+            logger.error(f"Error storing embeddings for document {document.id}: {e}")
+            # Re-raise so we know there's a problem
+            raise
 
         return created_chunks
 
@@ -163,6 +422,7 @@ class VectorStore:
         top_k: int = 5,
         score_threshold: float = 0.0,
         filter_doc_ids: list[UUID] | None = None,
+        embedding_dimension: int | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search knowledge base using specified search mode.
@@ -174,14 +434,23 @@ class VectorStore:
             top_k: Number of results to return
             score_threshold: Minimum similarity score (0-1)
             filter_doc_ids: Optional list of document IDs to filter
+            embedding_dimension: Optional embedding dimension (auto-detected from KB if not provided)
 
         Returns:
             List of search results with chunk info and scores
         """
+        # Get KB dimension if not provided
+        if embedding_dimension is None:
+            embedding_dimension = await get_kb_embedding_dimension(kb_id)
+        
+        # Store dimension for vector operations
+        if embedding_dimension:
+            self.embedding_dimension = embedding_dimension
+        
         results: list[dict[str, Any]] = []
 
         if search_mode == "vector":
-            results = await self._vector_search(kb_id, query, top_k * 2, filter_doc_ids)
+            results = await self._vector_search(kb_id, query, top_k * 2, filter_doc_ids, embedding_dimension)
         elif search_mode == "fulltext":
             results = await self._fulltext_search(
                 kb_id, query, top_k * 2, filter_doc_ids
@@ -189,7 +458,7 @@ class VectorStore:
         else:  # hybrid
             # Get results from both methods
             vector_results = await self._vector_search(
-                kb_id, query, top_k, filter_doc_ids
+                kb_id, query, top_k, filter_doc_ids, embedding_dimension
             )
             fulltext_results = await self._fulltext_search(
                 kb_id, query, top_k, filter_doc_ids
@@ -211,70 +480,124 @@ class VectorStore:
         query: str,
         limit: int,
         filter_doc_ids: list[UUID] | None = None,
+        embedding_dimension: int | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Vector similarity search using embeddings.
-        For now, uses database-level filtering + content similarity estimation.
-        TODO: Replace with actual pgvector cosine similarity when embeddings are stored.
+        Vector similarity search using pgvector cosine distance.
+
+        Args:
+            kb_id: Knowledge base ID
+            query: Search query
+            limit: Max results to return
+            filter_doc_ids: Optional document ID filter
+            embedding_dimension: Embedding dimension for column selection
+
+        Returns:
+            List of search results with similarity scores
         """
+        # Get dimension from KB if not provided
+        dim = embedding_dimension or self.embedding_dimension or self._detected_dimension
+        if not dim:
+            dim = await get_kb_embedding_dimension(kb_id)
+        
+        if not dim:
+            logger.warning(f"No embedding dimension for KB {kb_id}, using fulltext search")
+            return await self._fulltext_search(kb_id, query, limit, filter_doc_ids)
+        
+        col_name = f"embedding_{dim}"
+        
         try:
-            # Generate query embedding (for future use)
-            await self.embed_query(query)
+            # Generate query embedding
+            query_embedding = await self.embed_query(query)
         except Exception as e:
-            logger.warning(f"Failed to generate embedding: {e}")
-            # Continue without embedding - fall back to content matching
+            logger.warning(f"Failed to generate embedding for vector search: {e}")
+            # Fall back to fulltext search
+            return await self._fulltext_search(kb_id, query, limit, filter_doc_ids)
+        
+        # Validate dimension match
+        if len(query_embedding) != dim:
+            logger.warning(
+                f"Query embedding dimension {len(query_embedding)} doesn't match "
+                f"KB dimension {dim}, falling back to fulltext search"
+            )
+            return await self._fulltext_search(kb_id, query, limit, filter_doc_ids)
 
-        # Extract key terms from query for database filtering
-        query_terms = self._extract_search_terms(query)
+        conn = Tortoise.get_connection("default")
+        vector_str = self._format_vector(query_embedding)
 
-        # Build base query
-        query_filter = DocumentChunk.filter(
-            document__knowledge_base_id=kb_id
-        ).prefetch_related("document")
+        logger.debug(f"Vector search: query length={len(query)}, embedding dim={len(query_embedding)}, column={col_name}")
 
+        # Build the query with optional document filter
         if filter_doc_ids:
-            query_filter = query_filter.filter(document_id__in=filter_doc_ids)
+            doc_ids_str = ", ".join(f"'{str(did)}'" for did in filter_doc_ids)
+            filter_clause = f"AND dc.document_id IN ({doc_ids_str})"
+        else:
+            filter_clause = ""
 
-        # Use database-level LIKE filtering to reduce candidates
-        # Build OR conditions for each term
-        from tortoise.expressions import Q
+        # Use cosine distance (<=>) for similarity search
+        # pgvector cosine distance range is [0, 2], where:
+        #   0 = identical vectors
+        #   1 = orthogonal vectors  
+        #   2 = opposite vectors
+        # Convert to similarity score [0, 1]: similarity = 1 - (distance / 2)
+        query_sql = f"""
+            SELECT 
+                dc.id as chunk_id,
+                dc.document_id,
+                dc.content,
+                dc.chunk_index,
+                dc.metadata,
+                d.name as document_name,
+                1 - (dc.{col_name} <=> $1::vector) / 2 as similarity
+            FROM document_chunks dc
+            JOIN documents d ON dc.document_id = d.id
+            WHERE d.knowledge_base_id = $2
+                AND dc.{col_name} IS NOT NULL
+                {filter_clause}
+            ORDER BY dc.{col_name} <=> $1::vector
+            LIMIT $3
+        """
 
-        if query_terms:
-            or_conditions = Q()
-            for term in query_terms[:5]:  # Limit to 5 terms
-                or_conditions |= Q(content__icontains=term)
-            query_filter = query_filter.filter(or_conditions)
+        try:
+            _, rows = await conn.execute_query(
+                query_sql, [vector_str, str(kb_id), limit]
+            )
+            logger.debug(f"Vector search returned {len(rows)} results")
+        except Exception as e:
+            logger.error(f"Vector search query failed: {e}")
+            # Fall back to fulltext search
+            return await self._fulltext_search(kb_id, query, limit, filter_doc_ids)
 
-        # Get filtered chunks (much smaller set)
-        chunks = await query_filter.limit(limit * 3)
+        # If no results with embeddings, fall back to fulltext
+        if not rows:
+            logger.info(f"No vectors found for kb {kb_id}, falling back to fulltext search")
+            return await self._fulltext_search(kb_id, query, limit, filter_doc_ids)
 
         results = []
-        query_lower = query.lower()
-        for chunk in chunks:
-            # Quick scoring based on term matches
-            score = self._quick_similarity_score(
-                query_lower, query_terms, chunk.content.lower()
+        for row in rows:
+            # Parse metadata JSON if present
+            metadata = row.get("metadata")
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = None
+
+            similarity = float(row.get("similarity", 0))
+
+            results.append(
+                {
+                    "chunk_id": row["chunk_id"],
+                    "document_id": row["document_id"],
+                    "document_name": row["document_name"],
+                    "content": row["content"],
+                    "score": round(similarity, 4),
+                    "metadata": metadata,
+                    "search_type": "vector",
+                }
             )
 
-            if score > 0:
-                results.append(
-                    {
-                        "chunk_id": chunk.id,
-                        "document_id": chunk.document.id,
-                        "document_name": chunk.document.name,
-                        "content": chunk.content,
-                        "score": score,
-                        "metadata": chunk.metadata,
-                        "search_type": "vector",
-                    }
-                )
-
-        # Sort by score
-        results.sort(
-            key=lambda x: float(x.get("score") or 0.0),  # type: ignore[arg-type]
-            reverse=True,
-        )
-        return results[:limit]
+        return results
 
     async def _fulltext_search(
         self,
@@ -284,12 +607,14 @@ class VectorStore:
         filter_doc_ids: list[UUID] | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Full-text search using database-level filtering.
+        Full-text search using database-level filtering and keyword matching.
         """
         # Extract key terms from query
         query_terms = self._extract_search_terms(query)
 
         # Build base query
+        from tortoise.expressions import Q
+
         query_filter = DocumentChunk.filter(
             document__knowledge_base_id=kb_id
         ).prefetch_related("document")
@@ -298,8 +623,6 @@ class VectorStore:
             query_filter = query_filter.filter(document_id__in=filter_doc_ids)
 
         # Use database-level filtering
-        from tortoise.expressions import Q
-
         if query_terms:
             or_conditions = Q()
             for term in query_terms[:5]:
@@ -324,7 +647,7 @@ class VectorStore:
                         "document_id": chunk.document.id,
                         "document_name": chunk.document.name,
                         "content": chunk.content,
-                        "score": score,
+                        "score": min(1.0, score),
                         "metadata": chunk.metadata,
                         "search_type": "fulltext",
                     }
@@ -332,7 +655,7 @@ class VectorStore:
 
         # Sort by score
         results.sort(
-            key=lambda x: float(x.get("score") or 0.0),  # type: ignore[arg-type]
+            key=lambda x: float(x.get("score") or 0.0),
             reverse=True,
         )
         return results[:limit]
@@ -553,11 +876,8 @@ class VectorStore:
         Returns:
             Number of deleted vectors
         """
-        # Delete chunks (vectors stored with chunks)
+        # Delete chunks (vectors stored with chunks in embedding column)
         deleted = await DocumentChunk.filter(document_id=document_id).delete()
-
-        # TODO: Delete from pgvector index if stored separately
-
         return deleted
 
     async def delete_chunk_vector(self, chunk_id: UUID) -> bool:
@@ -570,9 +890,9 @@ class VectorStore:
         Returns:
             True if deleted
         """
-        # TODO: Delete from pgvector index if stored separately
-        # For now, the chunk deletion handles this
-        return True
+        # Chunk deletion handles embedding deletion since embedding is a column
+        deleted = await DocumentChunk.filter(id=chunk_id).delete()
+        return deleted > 0
 
     async def update_chunk_vector(self, chunk: DocumentChunk) -> bool:
         """
@@ -586,14 +906,14 @@ class VectorStore:
         """
         try:
             # Generate new embedding
-            await self.embed_query(chunk.content)
+            embedding = await self.embed_query(chunk.content)
 
             # Update embedding reference
             chunk.embedding_id = f"chunk_{chunk.id}_updated"
             await chunk.save()
 
-            # TODO: Store actual embedding vector in pgvector
-            # await self._update_embedding(chunk.id, embedding)
+            # Store actual embedding vector in pgvector
+            await self._store_embedding(chunk.id, embedding)
 
             logger.info(f"Updated vector for chunk {chunk.id}")
             return True
@@ -614,14 +934,14 @@ class VectorStore:
         """
         try:
             # Generate embedding
-            await self.embed_query(chunk.content)
+            embedding = await self.embed_query(chunk.content)
 
             # Store embedding reference
             chunk.embedding_id = f"kb_{kb_id}_chunk_{chunk.id}"
             await chunk.save()
 
-            # TODO: Store actual embedding vector in pgvector
-            # await self._store_embedding(chunk.id, embedding)
+            # Store actual embedding vector in pgvector
+            await self._store_embedding(chunk.id, embedding)
 
             logger.info(f"Added vector for chunk {chunk.id}")
             return True
@@ -651,6 +971,165 @@ class VectorStore:
         deleted = await DocumentChunk.filter(document_id__in=documents).delete()
 
         return deleted
+
+    async def migrate_existing_chunks(
+        self,
+        batch_size: int = 100,
+        kb_id: UUID | None = None,
+    ) -> dict[str, int]:
+        """
+        Migrate existing chunks that don't have embeddings stored.
+        This is useful for updating old data after enabling pgvector.
+
+        Args:
+            batch_size: Number of chunks to process at a time
+            kb_id: Optional knowledge base ID to limit migration
+
+        Returns:
+            Dict with migration statistics
+        """
+        stats = {"processed": 0, "success": 0, "failed": 0, "skipped": 0}
+
+        # Get KB dimension if specified
+        dim = None
+        if kb_id:
+            dim = await get_kb_embedding_dimension(kb_id)
+        
+        col_name = f"embedding_{dim}" if dim else None
+
+        # Build query for chunks without embeddings
+        conn = Tortoise.get_connection("default")
+
+        if kb_id and col_name:
+            # Get chunks for specific KB using the KB's dimension column
+            query = f"""
+                SELECT dc.id, dc.content
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE d.knowledge_base_id = $1
+                    AND dc.{col_name} IS NULL
+                ORDER BY dc.created_at
+                LIMIT $2
+            """
+            params = [str(kb_id), batch_size]
+        else:
+            # For general migration, we need to detect dimension per chunk
+            logger.warning("General migration without KB ID not supported in dynamic dimension mode")
+            return stats
+
+        while True:
+            _, rows = await conn.execute_query(query, params)
+
+            if not rows:
+                break
+
+            chunk_ids = []
+            contents = []
+
+            for row in rows:
+                chunk_ids.append(row["id"])
+                contents.append(row["content"])
+
+            stats["processed"] += len(rows)
+
+            try:
+                # Generate embeddings
+                embeddings = await self.embed_texts(contents)
+                
+                # Validate dimension
+                if embeddings and dim and len(embeddings[0]) != dim:
+                    logger.error(
+                        f"Embedding dimension mismatch in migration: "
+                        f"expected {dim}, got {len(embeddings[0])}"
+                    )
+                    stats["failed"] += len(rows)
+                    break
+
+                # Store embeddings
+                await self._batch_store_embeddings(chunk_ids, embeddings, dim)
+
+                stats["success"] += len(rows)
+                logger.info(f"Migrated {len(rows)} chunks")
+            except Exception as e:
+                logger.error(f"Error migrating batch: {e}")
+                stats["failed"] += len(rows)
+
+            # If we got fewer rows than batch_size, we're done
+            if len(rows) < batch_size:
+                break
+
+        logger.info(
+            f"Migration complete: {stats['success']} success, "
+            f"{stats['failed']} failed, {stats['skipped']} skipped"
+        )
+        return stats
+
+    async def get_embedding_stats(self, kb_id: UUID | None = None) -> dict[str, int]:
+        """
+        Get statistics about embeddings in the database.
+
+        Args:
+            kb_id: Optional knowledge base ID to limit stats
+
+        Returns:
+            Dict with stats (total, with_embedding, without_embedding, dimension)
+        """
+        conn = Tortoise.get_connection("default")
+        
+        # Get KB dimension
+        dim = None
+        if kb_id:
+            dim = await get_kb_embedding_dimension(kb_id)
+        
+        col_name = f"embedding_{dim}" if dim else None
+
+        if kb_id and col_name:
+            query = f"""
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(dc.{col_name}) as with_embedding
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE d.knowledge_base_id = $1
+            """
+            params = [str(kb_id)]
+        elif kb_id:
+            # KB exists but no dimension set yet - count all chunks
+            query = """
+                SELECT 
+                    COUNT(*) as total,
+                    0 as with_embedding
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE d.knowledge_base_id = $1
+            """
+            params = [str(kb_id)]
+        else:
+            # General stats - just count total chunks
+            query = """
+                SELECT 
+                    COUNT(*) as total,
+                    0 as with_embedding
+                FROM document_chunks
+            """
+            params = []
+
+        _, rows = await conn.execute_query(query, params)
+        row = rows[0] if rows else {"total": 0, "with_embedding": 0}
+
+        total = int(row.get("total", 0))
+        with_embedding = int(row.get("with_embedding", 0))
+
+        result = {
+            "total": total,
+            "with_embedding": with_embedding,
+            "without_embedding": total - with_embedding,
+        }
+        
+        if dim:
+            result["dimension"] = dim
+        
+        return result
 
 
 # Global instance

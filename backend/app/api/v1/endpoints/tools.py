@@ -128,7 +128,7 @@ def get_builtin_tools() -> list[ToolOut]:
     return tools
 
 
-def db_tool_to_out(tool: Tool) -> ToolOut:
+def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
     """将数据库工具转换为输出格式"""
     return ToolOut(
         id=tool.id,
@@ -148,6 +148,8 @@ def db_tool_to_out(tool: Tool) -> ToolOut:
         http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
         code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
         mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
+        team_id=tool.team_id,
+        created_by_name=creator_name,
     )
 
 
@@ -196,21 +198,27 @@ async def list_tools(
     # 获取内置工具
     builtin_tools = get_builtin_tools()
 
-    # 获取团队的自定义工具
+    # 获取团队的自定义工具（预加载创建者信息）
     custom_db_tools = await Tool.filter(
         team_id=team_id,
         type=DBToolType.CUSTOM,
-    ).order_by("-updated_at")
+    ).prefetch_related("created_by").order_by("-updated_at")
 
-    custom_tools = [db_tool_to_out(t) for t in custom_db_tools]
+    custom_tools = []
+    for t in custom_db_tools:
+        creator_name = t.created_by.username if t.created_by else None
+        custom_tools.append(db_tool_to_out(t, creator_name))
 
-    # 获取团队的 MCP 工具
+    # 获取团队的 MCP 工具（预加载创建者信息）
     mcp_db_tools = await Tool.filter(
         team_id=team_id,
         type=DBToolType.MCP,
-    ).order_by("-updated_at")
+    ).prefetch_related("created_by").order_by("-updated_at")
 
-    mcp_tools = [db_tool_to_out(t) for t in mcp_db_tools]
+    mcp_tools = []
+    for t in mcp_db_tools:
+        creator_name = t.created_by.username if t.created_by else None
+        mcp_tools.append(db_tool_to_out(t, creator_name))
 
     return success(
         data=ToolListOut(

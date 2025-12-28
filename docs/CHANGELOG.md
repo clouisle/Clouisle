@@ -11,6 +11,70 @@
 
 ### 新增 (Added)
 
+#### 知识库模块 - 动态 Embedding 维度支持
+
+##### 多维度 Embedding 向量存储
+
+实现了动态 embedding 维度支持，允许不同知识库使用不同维度的 embedding 模型：
+
+- **KnowledgeBase 模型扩展**：
+  - 新增 `embedding_dimension` 字段，记录知识库使用的向量维度
+  - 首次处理文档时自动检测并锁定维度
+  - 后续文档必须使用相同维度的模型
+
+- **动态向量列管理**：
+  - 支持多种维度：768 (BGE)、1024 (Cohere)、1536 (OpenAI ada)、3072 (OpenAI large)
+  - 按需创建 embedding 列：`embedding_768`、`embedding_1024` 等
+  - 每个维度独立的 HNSW 索引，优化搜索性能
+
+- **pgvector 初始化优化** (`init_pgvector`):
+  - 启动时预创建常用维度的列和索引
+  - 运行时动态创建新维度列（`ensure_embedding_column`）
+
+- **向量存储服务重构** (`vector_store.py`):
+  - `ensure_embedding_column(dimension)`: 确保指定维度的列存在
+  - `get_kb_embedding_dimension(kb_id)`: 获取知识库的向量维度
+  - `set_kb_embedding_dimension(kb_id, dimension)`: 设置知识库维度
+  - `DimensionMismatchError`: 维度不匹配异常
+
+- **API 响应扩展**：
+  - `KnowledgeBase` schema 新增 `embedding_dimension` 字段
+  - `KnowledgeBaseStats` 新增 `embedding_dimension` 字段
+  - 统计 API 返回维度信息
+
+- **数据迁移脚本** (`backend/app/scripts/migrate_embeddings.py`):
+  - 自动检测现有 embedding 列的维度
+  - 迁移数据到新的维度列
+  - 为现有知识库设置 `embedding_dimension`
+
+##### 文档处理流程优化
+
+- **维度自动检测**：
+  - 首次处理文档时检测 embedding 模型输出的维度
+  - 自动创建对应维度的数据库列
+  - 将维度记录到知识库
+
+- **维度一致性检查**：
+  - 处理文档时验证 embedding 维度与知识库维度一致
+  - 不一致时抛出 `DimensionMismatchError`，提示用户更换模型
+
+##### 预览页面分块设置同步
+
+- **设置变更清除预览**：
+  - 修改分块设置（chunk_size、chunk_overlap、separator、clean_text）时自动清除已生成的预览
+  - 强制用户重新预览后才能处理，确保分块结果与设置一致
+
+### 修复 (Fixed)
+
+#### Select 组件控制状态警告
+
+- 修复 `KnowledgeBaseDialog` 中 Select 组件从 uncontrolled 变为 controlled 的警告
+- 将 `teamId` 和 `embeddingModelId` 初始值从 `null` 改为空字符串 `''`
+
+---
+
+### 新增 (Added)
+
 #### Chat 模块 - 通用聊天组件系统与 MCP 工具支持 (#22)
 
 ##### 前端 Chat 组件库

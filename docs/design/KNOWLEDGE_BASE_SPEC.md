@@ -319,9 +319,10 @@ dependencies = [
 | 文本分块 | ✅ 完成 | 支持 chunk_size, chunk_overlap, separator 配置 |
 | Celery 异步任务 | ✅ 完成 | 后台处理大文档 |
 | 向量生成 | ✅ 完成 | 通过 embedding_model 配置 |
-| pgvector 存储 | 🔲 待实现 | 当前使用关键词匹配 |
-| 语义搜索 | 🔲 待实现 | 当前使用 jieba 分词 + ILIKE 关键词匹配 |
-| 混合搜索 | ✅ 完成 | RRF 融合算法 (当前基于关键词) |
+| pgvector 存储 | ✅ 完成 | 动态维度列支持 (embedding_768, embedding_1536 等) |
+| 语义搜索 | ✅ 完成 | pgvector 余弦距离搜索 |
+| 混合搜索 | ✅ 完成 | RRF 融合算法 (向量 + jieba 全文) |
+| 动态维度支持 | ✅ 完成 | 按需创建维度列，KB 级别维度绑定 |
 | 文档下载 | ✅ 完成 | Authorization Bearer Token 鉴权 |
 | 前端 UI (后台) | ✅ 完成 | 完整的知识库管理界面 |
 | 前端 UI (中台) | ✅ 完成 | 平台级知识库管理 |
@@ -438,3 +439,133 @@ uploads/documents/{knowledge_base_id}/{YYYY}/{MM}/{filename}
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 uploads_dir = project_root / "uploads" / "documents"
 ```
+
+### 10.5 动态 Embedding 维度支持
+
+#### 10.5.1 设计背景
+
+不同的 Embedding 模型输出不同维度的向量：
+- text-embedding-3-small: 1536 维
+- text-embedding-3-large: 3072 维
+- nomic-embed-text: 768 维
+- 其他模型: 可能是 512, 1024 等维度
+
+系统需要支持不同知识库使用不同维度的 Embedding 模型。
+
+#### 10.5.2 数据库设计
+
+采用多维度列方案，在 `documentchunk` 表中创建多个向量列：
+
+```sql
+-- 预创建常用维度列
+ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_768 vector(768);
+ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_1024 vector(1024);
+ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_1536 vector(1536);
+ALTER TABLE documentchunk ADD COLUMN IF NOT EXISTS embedding_3072 vector(3072);
+
+-- 为每个维度列创建 HNSW 索引
+CREATE INDEX IF NOT EXISTS idx_chunk_embedding_768
+ON documentchunk USING hnsw (embedding_768 vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- ... 其他维度类似
+```
+
+#### 10.5.3 知识库维度绑定
+
+每个知识库绑定到一个特定的 Embedding 维度，确保同一知识库内所有文档使用相同维度：
+
+```python
+class KnowledgeBase(Model):
+    # ... 其他字段
+    embedding_dimension = fields.IntField(null=True)  # 首次处理时自动设置
+```
+
+**绑定规则**：
+- 首次处理文档时，根据 Embedding 模型输出的维度自动设置
+- 一旦设置后不可更改（除非清空所有文档）
+- 切换 Embedding 模型时检查维度兼容性
+
+#### 10.5.4 核心实现
+
+**存储流程** (backend/app/services/vector_store.py):
+
+```python
+class VectorStore:
+    async def store_chunks(self, chunks, kb_id):
+        # 1. 检测向量维度
+        dimension = len(chunks[0].embedding)
+        
+        # 2. 获取知识库已有维度
+        kb_dimension = await get_kb_embedding_dimension(kb_id)
+        
+        # 3. 维度一致性检查
+        if kb_dimension and kb_dimension != dimension:
+            raise DimensionMismatchError(
+                f"知识库已绑定 {kb_dimension} 维度, "
+                f"当前模型输出 {dimension} 维度"
+            )
+        
+        # 4. 首次处理时设置维度
+        if not kb_dimension:
+            await set_kb_embedding_dimension(kb_id, dimension)
+        
+        # 5. 确保对应维度列存在
+        await ensure_embedding_column(dimension)
+        
+        # 6. 存储到对应列
+        column_name = f"embedding_{dimension}"
+        # ... 执行存储
+```
+
+**搜索流程**:
+
+```python
+async def search(self, query, query_embedding, kb_id):
+    # 1. 获取知识库的维度
+    dimension = await get_kb_embedding_dimension(kb_id)
+    
+    # 2. 使用对应的维度列进行搜索
+    column_name = f"embedding_{dimension}"
+    
+    # 3. pgvector 余弦距离搜索
+    results = await self._vector_search(
+        column_name, query_embedding, kb_id, top_k
+    )
+```
+
+#### 10.5.5 错误处理
+
+当维度不匹配时，返回特定错误类型：
+
+```python
+class DimensionMismatchError(Exception):
+    """Embedding 维度不匹配异常"""
+    pass
+```
+
+前端展示友好错误信息：
+```typescript
+// tasks/knowledge_base.py 返回
+{
+    "success": false,
+    "error": "dimension_mismatch",
+    "message": "知识库已绑定 768 维度, 当前模型输出 1536 维度..."
+}
+```
+
+#### 10.5.6 迁移脚本
+
+现有数据迁移脚本 (backend/app/scripts/migrate_embeddings.py):
+
+```bash
+# 检测现有向量维度并迁移到新列
+cd backend
+python -m app.scripts.migrate_embeddings
+```
+
+功能：
+1. 检测现有 `embedding` 列的向量维度
+2. 创建对应的新维度列（如 `embedding_768`）
+3. 将数据从旧列迁移到新列
+4. 更新知识库的 `embedding_dimension` 字段

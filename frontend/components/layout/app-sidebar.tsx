@@ -21,6 +21,7 @@ import {
   Database,
   AppWindow,
   MessageSquare,
+  Wrench,
 } from 'lucide-react'
 import { authApi, type User } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -143,6 +144,11 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('models'),
       url: '/models',
       icon: Bot,
+    },
+    {
+      title: t('tools'),
+      url: '/tools',
+      icon: Wrench,
     },
   ]
 

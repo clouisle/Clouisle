@@ -383,6 +383,10 @@ async def get_knowledge_base_stats(
         kb.total_tokens = total_tokens
         await kb.save()
 
+    # Get embedding statistics
+    vector_store = VectorStore()
+    embedding_stats = await vector_store.get_embedding_stats(kb_id)
+
     return success(
         data={
             "id": kb.id,
@@ -392,6 +396,8 @@ async def get_knowledge_base_stats(
             "total_tokens": total_tokens,
             "documents_by_status": by_status,
             "documents_by_type": by_type,
+            "embedding_dimension": kb.embedding_dimension,
+            "embedding_stats": embedding_stats,
         }
     )
 

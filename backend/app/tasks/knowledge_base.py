@@ -13,7 +13,7 @@ from app.models.knowledge_base import (
     DocumentStatus,
 )
 from app.services.document_processor import document_processor
-from app.services.vector_store import VectorStore
+from app.services.vector_store import VectorStore, DimensionMismatchError
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,10 @@ def process_document_task(self, document_id: str) -> dict:
             )
 
             # Store chunks with embeddings
-            created_chunks = await vector_store.store_chunks(document, chunks)
+            # Pass kb_id to enable dimension management:
+            # - First document sets the KB's embedding dimension
+            # - Subsequent documents must match the dimension
+            created_chunks = await vector_store.store_chunks(document, chunks, kb_id=kb.id)
 
             # Calculate totals
             total_tokens = sum(c.token_count for c in created_chunks)
@@ -147,6 +150,21 @@ def process_document_task(self, document_id: str) -> dict:
                 "document_id": document_id,
                 "chunk_count": len(created_chunks),
                 "token_count": total_tokens,
+            }
+
+        except DimensionMismatchError as e:
+            logger.error(f"Dimension mismatch for document {document_id}: {e}")
+            
+            # Update document status with specific error
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = str(e)[:500]
+            await document.save()
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": str(e),
+                "error_type": "dimension_mismatch",
             }
 
         except Exception as e:
@@ -346,8 +364,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
             if not chunks:
                 raise ValueError("No chunks generated from document")
 
-            # Store chunks with embeddings
-            created_chunks = await vector_store.store_chunks(document, chunks)
+            # Store chunks with embeddings (pass kb_id for dimension management)
+            created_chunks = await vector_store.store_chunks(document, chunks, kb_id=kb.id)
 
             # Calculate totals
             total_tokens = sum(c.token_count for c in created_chunks)
@@ -377,6 +395,20 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 "token_count": total_tokens,
                 "chunk_size": chunk_size,
                 "chunk_overlap": chunk_overlap,
+            }
+
+        except DimensionMismatchError as e:
+            logger.error(f"Dimension mismatch rechunking document {document_id}: {e}")
+            
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = str(e)[:500]
+            await document.save()
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": str(e),
+                "error_type": "dimension_mismatch",
             }
 
         except Exception as e:

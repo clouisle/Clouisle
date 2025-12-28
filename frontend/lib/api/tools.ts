@@ -73,13 +73,13 @@ export interface Tool {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
+  team_id?: string
+  created_by_name?: string
 }
 
 export interface ToolDetail extends Tool {
-  team_id?: string
   created_at?: string
   updated_at?: string
-  created_by_name?: string
 }
 
 export interface ToolListResponse {

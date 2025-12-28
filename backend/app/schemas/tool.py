@@ -131,6 +131,10 @@ class ToolOut(BaseModel):
         default=None, description="MCP Server 配置"
     )
 
+    # 用于后台管理的额外字段
+    team_id: UUID | None = Field(default=None, description="所属团队")
+    created_by_name: str | None = Field(default=None, description="创建者名称")
+
 
 class ToolListOut(BaseModel):
     """工具列表输出"""

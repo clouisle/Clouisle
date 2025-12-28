@@ -473,6 +473,8 @@ class TextChunker:
             chunks = self._split_recursive(text, target_chars, overlap_chars)
 
         result = []
+
+        # Add content chunks
         for idx, chunk_text in enumerate(chunks):
             result.append(
                 {

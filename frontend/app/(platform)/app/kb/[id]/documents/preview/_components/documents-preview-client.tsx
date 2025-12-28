@@ -78,6 +78,23 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     clean_text: true,
   })
 
+  // 当设置变更时清除所有预览（用户需要重新预览）
+  const handleSettingsChange = React.useCallback((newSettings: ProcessInput | ((prev: ProcessInput) => ProcessInput)) => {
+    setSettings(newSettings)
+    // 清除所有文档的预览分块
+    setDocumentsState(prev => {
+      const updated: Record<string, DocumentPreviewState> = {}
+      Object.entries(prev).forEach(([docId, state]) => {
+        updated[docId] = {
+          ...state,
+          previewChunks: [],
+          previewStats: null,
+        }
+      })
+      return updated
+    })
+  }, [])
+
   // 加载知识库和文档信息
   const loadData = React.useCallback(async () => {
     if (documentIds.length === 0) {
@@ -183,8 +200,9 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
 
   // 预览全部文档
   const handlePreviewAll = async () => {
+    // 获取所有可处理的文档（排除 processing 状态）
     const pendingDocs = Object.entries(documentsState)
-      .filter(([, state]) => state.document?.status === 'pending')
+      .filter(([, state]) => state.document && state.document.status !== 'processing')
       .map(([id]) => id)
 
     // 标记所有待处理的文档为预览中
@@ -469,13 +487,14 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     }, 0)
   }
 
+  // 可处理的文档数量（pending、completed、error 状态，排除 processing）
   const pendingCount = Object.values(documentsState).filter(
-    state => state.document?.status === 'pending'
+    state => state.document && state.document.status !== 'processing'
   ).length
 
-  // 有预览分块且待处理的文档数量（可以直接处理）
+  // 有预览分块且可处理的文档数量（可以直接处理）
   const readyToProcessCount = Object.values(documentsState).filter(
-    state => state.document?.status === 'pending' && state.previewChunks && state.previewChunks.length > 0
+    state => state.document?.status !== 'processing' && state.previewChunks && state.previewChunks.length > 0
   ).length
 
   const validDocuments = Object.entries(documentsState).filter(([, state]) => state.document)
@@ -757,7 +776,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                 min={100}
                 max={2000}
                 value={settings.chunk_size}
-                onChange={(e) => setSettings(prev => ({
+                onChange={(e) => handleSettingsChange(prev => ({
                   ...prev,
                   chunk_size: parseInt(e.target.value) || 500
                 }))}
@@ -777,7 +796,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                 value={settings.chunk_overlap}
                 onChange={(e) => {
                   const val = parseInt(e.target.value)
-                  setSettings(prev => ({
+                  handleSettingsChange(prev => ({
                     ...prev,
                     chunk_overlap: isNaN(val) ? 0 : val
                   }))
@@ -795,7 +814,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                 type="text"
                 placeholder={t('separatorPlaceholder')}
                 value={settings.separator || ''}
-                onChange={(e) => setSettings(prev => ({
+                onChange={(e) => handleSettingsChange(prev => ({
                   ...prev,
                   separator: e.target.value
                 }))}
@@ -815,7 +834,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
               <Switch
                 id="clean_text"
                 checked={settings.clean_text ?? true}
-                onCheckedChange={(checked) => setSettings(prev => ({
+                onCheckedChange={(checked) => handleSettingsChange(prev => ({
                   ...prev,
                   clean_text: checked
                 }))}
