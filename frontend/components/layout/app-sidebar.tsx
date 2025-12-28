@@ -11,6 +11,7 @@ import {
   Users,
   Shield,
   Key,
+  KeyRound,
   Settings,
   HelpCircle,
   LogOut,
@@ -139,6 +140,11 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('permissions'),
       url: '/permissions',
       icon: Key,
+    },
+    {
+      title: t('apiKeys'),
+      url: '/api-keys',
+      icon: KeyRound,
     },
     {
       title: t('models'),

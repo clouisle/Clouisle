@@ -17,6 +17,7 @@ export default function SettingsLayout({
   const settingsNav = [
     { title: t('profile'), href: '/settings/profile', description: t('profileDescription') },
     { title: t('account'), href: '/settings/account', description: t('accountDescription') },
+    { title: t('apiKeys'), href: '/settings/api-keys', description: t('apiKeysDescription') },
   ]
 
   return (

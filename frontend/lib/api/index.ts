@@ -103,3 +103,13 @@ export {
   type McpToolInfo,
 } from './tools'
 
+export {
+  apiKeysApi,
+  type APIKey,
+  type APIKeyWithSecret,
+  type APIKeyStats,
+  type APIKeyCreateInput,
+  type APIKeyUpdateInput,
+  type APIKeyQueryParams,
+} from './api-keys'
+

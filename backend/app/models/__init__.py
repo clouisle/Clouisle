@@ -24,6 +24,7 @@ from .tool import (
     CustomToolType,
     ToolCategory,
 )
+from .api_key import APIKey
 
 __all__ = [
     "User",
@@ -56,4 +57,5 @@ __all__ = [
     "ToolType",
     "CustomToolType",
     "ToolCategory",
+    "APIKey",
 ]
