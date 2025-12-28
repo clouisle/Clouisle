@@ -52,7 +52,6 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   
   const {
     messages,
-    status,
     error,
     isLoading,
     isStreaming,

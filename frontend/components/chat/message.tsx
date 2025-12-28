@@ -510,12 +510,12 @@ function TextWithCitations({
   const hasSources = sources.length > 0
 
   // Citation marker format: [[cite:N]]
-  const CITE_REGEX = /\[\[cite:(\d+)\]\]/g
+  const createCiteRegex = () => /\[\[cite:(\d+)\]\]/g
 
   // Process text: strip citations if no sources
   const processedText = React.useMemo(() => {
     if (!hasSources) {
-      return text.replace(CITE_REGEX, '')
+      return text.replace(createCiteRegex(), '')
     }
     return text
   }, [text, hasSources])
@@ -537,9 +537,7 @@ function TextWithCitations({
     const nodesToProcess: Text[] = []
     let node: Text | null
     while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent && CITE_REGEX.test(node.textContent)) {
-        // Reset regex lastIndex after test
-        CITE_REGEX.lastIndex = 0
+      if (node.textContent && createCiteRegex().test(node.textContent)) {
         nodesToProcess.push(node)
       }
     }
@@ -556,9 +554,9 @@ function TextWithCitations({
       const fragment = document.createDocumentFragment()
       let lastIndex = 0
       let match
+      const citeRegex = createCiteRegex()
 
-      CITE_REGEX.lastIndex = 0
-      while ((match = CITE_REGEX.exec(content)) !== null) {
+      while ((match = citeRegex.exec(content)) !== null) {
         // Add text before citation
         if (match.index > lastIndex) {
           fragment.appendChild(
@@ -575,7 +573,7 @@ function TextWithCitations({
         fragment.appendChild(span)
 
         newTargets.push({ element: span, index: citationIndex })
-        lastIndex = CITE_REGEX.lastIndex
+        lastIndex = citeRegex.lastIndex
       }
 
       // Add remaining text

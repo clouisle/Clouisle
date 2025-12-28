@@ -2,7 +2,6 @@
 
 import { useState, useRef, useCallback, KeyboardEvent } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Tooltip,
@@ -10,7 +9,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Send,
   Plus,
   StopCircle,
   Loader2,
@@ -59,8 +57,6 @@ export function ChatInput({
   acceptedFileTypes = 'image/*,.pdf,.doc,.docx,.txt,.md',
   maxFiles = 5,
   className,
-  minRows = 1,
-  maxRows = 6,
 }: ChatInputProps) {
   const t = useTranslations('chat.input');
   const [internalValue, setInternalValue] = useState('');

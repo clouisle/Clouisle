@@ -111,6 +111,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
         onChange(variable.default)
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
   const inputClassName = compact ? 'h-7 text-xs' : ''

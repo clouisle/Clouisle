@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import {
@@ -138,13 +138,7 @@ export default function CodeToolPage() {
 
   const isEditing = !!toolId
 
-  useEffect(() => {
-    if (toolId) {
-      loadTool(toolId)
-    }
-  }, [toolId])
-
-  const loadTool = async (id: string) => {
+  const loadTool = useCallback(async (id: string) => {
     setIsLoading(true)
     try {
       const tool = await toolsApi.getById(id)
@@ -173,7 +167,13 @@ export default function CodeToolPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [t, router])
+
+  useEffect(() => {
+    if (toolId) {
+      loadTool(toolId)
+    }
+  }, [toolId, loadTool])
 
   // 参数管理
   const addParameter = () => {

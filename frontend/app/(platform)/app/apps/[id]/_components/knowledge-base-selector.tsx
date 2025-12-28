@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl'
 import {
   Database,
   Plus,
-  X,
   Settings2,
   Trash2,
 } from 'lucide-react'
@@ -14,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -272,8 +270,6 @@ export function KnowledgeBaseSelector({
     )
     onChange(newConfigs)
   }
-
-  const selectedIds = configs.map(c => c.knowledge_base_id)
 
   if (displayItems.length === 0) {
     return (

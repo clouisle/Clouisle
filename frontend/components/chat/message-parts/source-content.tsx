@@ -86,19 +86,18 @@ export function SourceContent({ sources, className }: SourceContentProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<GroupedDocument | null>(null);
 
-  if (!sources || sources.length === 0) {
-    return null;
-  }
-
-  const urlSources = sources.filter(
-    (s): s is SourceUrlPart => s.type === 'source-url'
+  const urlSources = useMemo(() => 
+    sources?.filter((s): s is SourceUrlPart => s.type === 'source-url') ?? [],
+    [sources]
   );
-  const documentSources = sources.filter(
-    (s): s is SourceDocumentPart => s.type === 'source-document'
+  const documentSources = useMemo(() =>
+    sources?.filter((s): s is SourceDocumentPart => s.type === 'source-document') ?? [],
+    [sources]
   );
 
   // Group document sources by documentId or documentName
   const groupedDocuments = useMemo(() => {
+    if (!sources || sources.length === 0) return [];
     const groups = new Map<string, GroupedDocument>();
     
     for (const doc of documentSources) {
@@ -117,7 +116,11 @@ export function SourceContent({ sources, className }: SourceContentProps) {
     }
     
     return Array.from(groups.values());
-  }, [documentSources, t]);
+  }, [sources, documentSources, t]);
+
+  if (!sources || sources.length === 0) {
+    return null;
+  }
 
   // Count unique sources (URLs + unique documents)
   const uniqueSourceCount = urlSources.length + groupedDocuments.length;

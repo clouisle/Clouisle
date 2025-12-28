@@ -24,7 +24,6 @@ import type {
   TaskPart,
   ToolCallPart,
   ToolResultPart,
-  ImagePart,
 } from '@/components/chat'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -199,14 +198,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         onStreamStart?.()
 
         // Content segments - tracks text and tool calls in order
-        let segments: ContentSegment[] = []
+        const segments: ContentSegment[] = []
         // Current reasoning content being built
         let currentReasoning = ''
         let reasoningStartTime = 0
         // RAG sources
-        let ragSources: SourceDocumentPart[] = []
+        const ragSources: SourceDocumentPart[] = []
         // Task state for showing progress
-        let taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
 
         // Helper to get or create current text segment
         const getCurrentTextSegment = (): ContentSegment => {
@@ -807,11 +806,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         onStreamStart?.()
 
         // Content segments
-        let segments: ContentSegment[] = []
+        const segments: ContentSegment[] = []
         let currentReasoning = ''
         let reasoningStartTime = 0
-        let ragSources: SourceDocumentPart[] = []
-        let taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const ragSources: SourceDocumentPart[] = []
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
         let newMessageId = messageId  // May be updated by message_start
 
         // Helper functions

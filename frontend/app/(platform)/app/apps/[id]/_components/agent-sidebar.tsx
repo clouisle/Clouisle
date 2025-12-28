@@ -14,7 +14,6 @@ import {
   Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import type { Agent } from '@/lib/api'
 
 interface AgentSidebarProps {

@@ -6,7 +6,6 @@ import {
   Plus,
   Wrench,
   Trash2,
-  Play,
   AlertCircle,
   Search,
   Check,
@@ -322,7 +321,6 @@ function ToolDisplayItem({ tool, config, onDelete }: ToolDisplayItemProps) {
   const t = useTranslations('agents.orchestration.tools')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const isMissing = !tool
-  const category = tool ? (categoryConfig[tool.category] || categoryConfig.other) : categoryConfig.other
 
   // 获取显示名称
   const displayName = tool?.display_name || config.name || config.tool_id || config.server_id || t('unknownTool')
@@ -401,29 +399,6 @@ export function ToolSelector({
       return { config, tool: tool || null }
     })
   }, [toolsConfig, availableTools])
-
-  // 用于判断工具是否已选中 - 需要同时考虑 name 和 id
-  const selectedToolNames = selectedTools
-    .filter((t) => t.tool)
-    .map((t) => t.tool!.name)
-  const selectedToolIds = selectedTools
-    .filter((t) => t.tool)
-    .map((t) => t.tool!.id)
-
-  const handleAddTool = (tool: Tool) => {
-    let newConfig: ToolConfig
-    
-    if (tool.type === 'builtin') {
-      newConfig = { type: 'builtin', name: tool.name }
-    } else if (tool.type === 'mcp') {
-      newConfig = { type: 'mcp', server_id: tool.id }
-    } else {
-      // custom tool - use tool_id
-      newConfig = { type: 'custom', tool_id: tool.id, name: tool.name }
-    }
-
-    onChange([...toolsConfig, newConfig])
-  }
 
   const handleDeleteTool = (config: ToolConfig) => {
     onChange(

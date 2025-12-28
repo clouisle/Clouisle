@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode } from '@/lib/api'
+import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -37,7 +37,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [openingMessage, setOpeningMessage] = React.useState('')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>([])
   const [visibility, setVisibility] = React.useState<AgentVisibility>('private')
-  const [toolsConfig, setToolsConfig] = React.useState<any[]>([])
+  const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>([])
   const [variables, setVariables] = React.useState<VariableDefinition[]>([])
   const [knowledgeBaseConfigs, setKnowledgeBaseConfigs] = React.useState<AgentKnowledgeBaseConfig[]>([])
   const [ragMode, setRagMode] = React.useState<RAGMode>('agentic')

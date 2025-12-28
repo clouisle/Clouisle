@@ -320,15 +320,16 @@ interface VariableItemProps {
 }
 
 function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
-  const TypeIcon = getTypeIcon(variable.type)
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
+  const typeConfig = variableTypes.find((t) => t.value === variable.type)
+  const TypeIcon = typeConfig?.icon || Type
 
   return (
     <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors group ${
       isDeleteHover ? 'bg-destructive/10 border-destructive/30' : 'bg-background hover:bg-muted/30'
     }`}>
       <div className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center shrink-0">
-        <TypeIcon className="h-3 w-3 text-muted-foreground" />
+        {React.createElement(TypeIcon, { className: "h-3 w-3 text-muted-foreground" })}
       </div>
       <div className="flex items-center gap-1.5 text-primary">
         <span className="text-xs font-mono opacity-60">{'{x}'}</span>
@@ -374,7 +375,7 @@ function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
             </Badge>
           )}
           <span className="text-[10px] text-muted-foreground">{typeToDataType[variable.type]}</span>
-          <TypeIcon className="h-3 w-3 text-muted-foreground" />
+          {React.createElement(TypeIcon, { className: "h-3 w-3 text-muted-foreground" })}
         </div>
       </div>
     </div>

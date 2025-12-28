@@ -21,9 +21,6 @@ import {
   Settings,
 } from 'lucide-react'
 
-// 为需要配置的内置工具列表
-const BUILTIN_TOOLS_REQUIRING_CONFIG = ['tavily_search', 'web_scrape']
-
 interface ToolCardProps {
   tool: Tool
   onSelect?: (tool: Tool) => void

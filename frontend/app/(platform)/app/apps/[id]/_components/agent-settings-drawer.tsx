@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl'
 import { Bot, ChevronDown, MessageSquare, Wrench, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -123,20 +122,16 @@ export function AgentSettingsDrawer({
   const { currentTeam } = useTeam()
 
   const [teamModels, setTeamModels] = React.useState<TeamModel[]>([])
-  const [isLoadingModels, setIsLoadingModels] = React.useState(false)
 
   // Load models
   React.useEffect(() => {
     const loadModels = async () => {
       if (!currentTeam || !open) return
-      setIsLoadingModels(true)
       try {
         const models = await teamModelsApi.getTeamModels(currentTeam.id, 'chat')
         setTeamModels(models.filter((m) => m.is_enabled))
       } catch {
         // Ignore errors
-      } finally {
-        setIsLoadingModels(false)
       }
     }
     loadModels()
@@ -149,17 +144,12 @@ export function AgentSettingsDrawer({
     return tm?.model || agent.model
   }, [modelId, teamModels, agent.model])
 
-  const selectedTeamModel = React.useMemo(() => {
-    if (!modelId) return null
-    return teamModels.find((m) => m.id === modelId)
-  }, [modelId, teamModels])
-
   // Check if model supports function calling
   const modelSupportsFunctionCall = React.useMemo(() => {
     // If we don't have full model info, assume it doesn't support
     // In a real implementation, we'd check model.capabilities.supports_function_call
     return true // Default to true for now
-  }, [selectedModel])
+  }, [])
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

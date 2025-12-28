@@ -3,13 +3,11 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
-import { Search, Calendar, Filter, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react'
+import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,

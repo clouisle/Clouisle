@@ -11,6 +11,7 @@ import time
 from enum import Enum
 from typing import Any
 from uuid import UUID
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -28,6 +29,7 @@ from app.models.agent import (
     Message,
     MessageRole,
 )
+
 from app.schemas.agent import (
     ChatRequest,
     ChatResponse,
@@ -44,6 +46,9 @@ from app.schemas.response import (
     success,
 )
 from app.llm.tools import tool_registry
+
+if TYPE_CHECKING:
+    from app.models.tool import Tool
 
 
 # Local message types to avoid circular import

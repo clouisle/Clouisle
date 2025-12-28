@@ -43,7 +43,7 @@ export const TextContent = memo(
     const isStreaming = part.state === 'streaming'
     
     // Process citations
-    const { processedText, citations } = React.useMemo(
+    const { processedText } = React.useMemo(
       () => processCitations(part.text, sources),
       [part.text, sources]
     )

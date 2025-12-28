@@ -11,9 +11,6 @@ import {
   ChevronDownIcon,
   CircleIcon,
   Loader2Icon,
-  SearchIcon,
-  BrainIcon,
-  SparklesIcon,
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
@@ -162,18 +159,6 @@ export const TaskContent = memo(
   }
 );
 TaskContent.displayName = "TaskContent";
-
-// Preset Task Types
-export type TaskType = "rag" | "thinking" | "generating";
-
-const taskPresets: Record<
-  TaskType,
-  { icon: LucideIcon; titleKey: string }
-> = {
-  rag: { icon: SearchIcon, titleKey: "searchingKnowledge" },
-  thinking: { icon: BrainIcon, titleKey: "thinking" },
-  generating: { icon: SparklesIcon, titleKey: "generating" },
-};
 
 // Task List Container
 export type TaskListProps = ComponentProps<"div">;

@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { 
   Sheet,
   SheetContent, 
@@ -71,6 +70,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
     if (open && tool?.type === 'mcp') {
       loadMcpTools()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tool])
 
   // 获取当前选中的 MCP 工具参数

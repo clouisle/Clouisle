@@ -107,6 +107,7 @@ export function PromptEditor({
   placeholder,
   className,
 }: PromptEditorProps) {
+  'use no memo'  // Disable React Compiler optimization for this component
   const containerRef = React.useRef<HTMLDivElement>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const highlightRef = React.useRef<HTMLDivElement>(null)
@@ -119,7 +120,8 @@ export function PromptEditor({
 
   // 获取未定义的变量
   const referencedVars = parseVariableReferences(value)
-  const definedVarNames = variables.map(v => v.name)
+  // Stabilize definedVarNames with useMemo to prevent React Compiler issues
+  const definedVarNames = React.useMemo(() => variables.map(v => v.name), [variables])
   const undefinedVars = referencedVars.filter(name => !definedVarNames.includes(name))
 
   // 过滤变量建议
@@ -179,6 +181,31 @@ export function PromptEditor({
     }
   }, [onChange, updatePosition])
 
+  // 插入变量
+  const insertVariable = React.useCallback((varName: string) => {
+    const textarea = textareaRef.current
+    if (!textarea || variableStartPosRef.current === -1) return
+
+    const startPos = variableStartPosRef.current
+    const textBefore = value.substring(0, startPos)
+    const cursorPos = textarea.selectionStart
+    const textAfter = value.substring(cursorPos)
+
+    const newValue = textBefore + `{{${varName}}}` + textAfter
+    onChange(newValue)
+    
+    setShowSuggestions(false)
+    setSearchQuery('')
+    variableStartPosRef.current = -1
+
+    // 设置光标位置到变量后面
+    const newCursorPos = startPos + varName.length + 4
+    requestAnimationFrame(() => {
+      textarea.focus()
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    })
+  }, [value, onChange])
+
   // 处理键盘事件
   const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!showSuggestions) return
@@ -210,32 +237,7 @@ export function PromptEditor({
         setShowSuggestions(false)
         break
     }
-  }, [showSuggestions, filteredVariables, selectedIndex])
-
-  // 插入变量
-  const insertVariable = React.useCallback((varName: string) => {
-    const textarea = textareaRef.current
-    if (!textarea || variableStartPosRef.current === -1) return
-
-    const startPos = variableStartPosRef.current
-    const textBefore = value.substring(0, startPos)
-    const cursorPos = textarea.selectionStart
-    const textAfter = value.substring(cursorPos)
-
-    const newValue = textBefore + `{{${varName}}}` + textAfter
-    onChange(newValue)
-    
-    setShowSuggestions(false)
-    setSearchQuery('')
-    variableStartPosRef.current = -1
-
-    // 设置光标位置到变量后面
-    const newCursorPos = startPos + varName.length + 4
-    requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    })
-  }, [value, onChange])
+  }, [showSuggestions, filteredVariables, selectedIndex, insertVariable])
 
   // 处理失焦
   const handleBlur = React.useCallback((e: React.FocusEvent) => {

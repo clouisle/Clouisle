@@ -151,7 +151,7 @@ export function AgentOrchestrationForm({
 
   // Data loading
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
-  const { tools: availableTools, loading: toolsLoading } = useTools()
+  const { tools: availableTools } = useTools()
 
   // Load knowledge bases
   React.useEffect(() => {
@@ -180,7 +180,7 @@ export function AgentOrchestrationForm({
       enable_vision: enableVision,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, ragMode])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length

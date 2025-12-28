@@ -1,15 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Button } from '@/components/ui/button';
 import {
-  ChevronRight,
   FileIcon,
   FileImage,
   FileVideo,
@@ -74,13 +71,11 @@ function formatFileSize(bytes?: number): string {
 }
 
 export function FileContent({ file, className }: FileContentProps) {
-  const t = useTranslations('chat.file');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const category = getFileCategory(file.mimeType);
   const IconComponent = FILE_ICONS[category] || FILE_ICONS.default;
   const isImage = category === 'image';
-  const canPreview = isImage && file.url;
 
   return (
     <div className={cn('my-2', className)}>
@@ -150,8 +145,6 @@ interface FileListContentProps {
 }
 
 export function FileListContent({ files, className }: FileListContentProps) {
-  const t = useTranslations('chat.file');
-
   if (!files || files.length === 0) return null;
 
   // Group images separately for grid display
