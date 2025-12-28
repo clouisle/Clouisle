@@ -216,7 +216,7 @@ async def build_agent_list_out(
     agent: Agent, model_info_map: dict[str, ModelInfo] | None = None
 ) -> dict:
     """Build AgentListOut response.
-    
+
     Args:
         agent: Agent instance
         model_info_map: Optional pre-fetched model info mapping (model_id -> ModelInfo)
@@ -229,7 +229,9 @@ async def build_agent_list_out(
         else:
             # Fallback to individual query
             team_model = (
-                await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+                await TeamModel.filter(id=agent.model_id)
+                .prefetch_related("model")
+                .first()
             )
             if team_model:
                 model_info = ModelInfo(
@@ -725,13 +727,16 @@ async def get_conversation(
     version_counts: dict[str, int] = {}
     if root_ids:
         # Count children for each parent_id
-        child_counts = await Message.filter(
-            parent_id__in=list(root_ids)
-        ).annotate(count=Count("id")).group_by("parent_id").values("parent_id", "count")
-        
+        child_counts = (
+            await Message.filter(parent_id__in=list(root_ids))
+            .annotate(count=Count("id"))
+            .group_by("parent_id")
+            .values("parent_id", "count")
+        )
+
         for item in child_counts:
             version_counts[str(item["parent_id"])] = item["count"] + 1  # +1 for root
-        
+
         # For root messages without children, set count to 1
         for root_id in root_ids:
             if str(root_id) not in version_counts:
@@ -859,9 +864,9 @@ async def delete_message(
     # Update stats atomically to prevent race conditions
     tokens_to_remove = 0
     if message.token_usage:
-        tokens_to_remove = message.token_usage.get("prompt", 0) + message.token_usage.get(
-            "completion", 0
-        )
+        tokens_to_remove = message.token_usage.get(
+            "prompt", 0
+        ) + message.token_usage.get("completion", 0)
 
     await Conversation.filter(id=conversation.id).update(
         message_count=F("message_count") - 1,

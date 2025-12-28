@@ -737,14 +737,13 @@ async def chat(
 
         await Conversation.filter(id=conversation.id).update(
             message_count=F("message_count") + 2,
-            token_usage=F("token_usage") + (response.usage.total_tokens if response.usage else 0),
+            token_usage=F("token_usage")
+            + (response.usage.total_tokens if response.usage else 0),
             **title_update,
         )
 
         # Update agent stats atomically
-        await Agent.filter(id=agent.id).update(
-            message_count=F("message_count") + 2
-        )
+        await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
 
         return success(
             data=ChatResponse(
@@ -1238,9 +1237,7 @@ async def chat_stream(
             )
 
             # Update agent stats atomically
-            await Agent.filter(id=agent.id).update(
-                message_count=F("message_count") + 2
-            )
+            await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
 
             # Send message_end event with version info
             yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"

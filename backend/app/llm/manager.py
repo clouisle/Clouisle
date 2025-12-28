@@ -1039,8 +1039,12 @@ class ModelManager:
         # 这里使用字符数作为文本近似
         dummy_input = "x" * input_text_length
         dummy_output = "x" * output_text_length
-        input_tokens = count_tokens(dummy_input, model_config.model_id, model_config.provider)
-        output_tokens = count_tokens(dummy_output, model_config.model_id, model_config.provider)
+        input_tokens = count_tokens(
+            dummy_input, model_config.model_id, model_config.provider
+        )
+        output_tokens = count_tokens(
+            dummy_output, model_config.model_id, model_config.provider
+        )
         total_tokens = input_tokens + output_tokens
 
         await self._check_and_record_usage(
@@ -1090,6 +1094,7 @@ class ModelManager:
 
             # 使用 tiktoken 进行准确的 token 计数
             from app.llm.token_counter import count_tokens
+
             total_tokens = sum(
                 count_tokens(t, model_config.model_id, model_config.provider)
                 for t in texts

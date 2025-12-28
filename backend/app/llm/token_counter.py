@@ -44,7 +44,9 @@ def get_encoding(encoding_name: str) -> tiktoken.Encoding:
     return tiktoken.get_encoding(encoding_name)
 
 
-def get_encoding_for_model(model_id: str, provider: str | None = None) -> tiktoken.Encoding:
+def get_encoding_for_model(
+    model_id: str, provider: str | None = None
+) -> tiktoken.Encoding:
     """
     Get the appropriate tiktoken encoding for a model.
 
@@ -64,14 +66,18 @@ def get_encoding_for_model(model_id: str, provider: str | None = None) -> tiktok
     # Try provider-level match
     if provider:
         provider_lower = provider.lower()
-        encoding_name = PROVIDER_ENCODING_MAP.get(provider_lower, PROVIDER_ENCODING_MAP["default"])
+        encoding_name = PROVIDER_ENCODING_MAP.get(
+            provider_lower, PROVIDER_ENCODING_MAP["default"]
+        )
         return get_encoding(encoding_name)
 
     # Fall back to default
     return get_encoding(MODEL_ENCODING_MAP["default"])
 
 
-def count_tokens(text: str, model_id: str = "gpt-4", provider: str | None = None) -> int:
+def count_tokens(
+    text: str, model_id: str = "gpt-4", provider: str | None = None
+) -> int:
     """
     Count tokens in a text string.
 
@@ -133,7 +139,9 @@ def count_message_tokens(
                     for item in value:
                         if isinstance(item, dict):
                             if item.get("type") == "text":
-                                total_tokens += len(encoding.encode(item.get("text", "")))
+                                total_tokens += len(
+                                    encoding.encode(item.get("text", ""))
+                                )
                             # Image tokens are handled separately by the model
                 if key == "name":
                     total_tokens += tokens_per_name
