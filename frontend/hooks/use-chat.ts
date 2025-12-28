@@ -198,12 +198,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         onStreamStart?.()
 
         // Content segments - tracks text and tool calls in order
-        const segments: ContentSegment[] = []
+        let segments: ContentSegment[] = []
         // Current reasoning content being built
         let currentReasoning = ''
         let reasoningStartTime = 0
         // RAG sources
-        const ragSources: SourceDocumentPart[] = []
+        let ragSources: SourceDocumentPart[] = []
         // Task state for showing progress
         const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
 
@@ -764,6 +764,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             // Extract images if any
             const imageParts = userMessage.parts.filter(p => p.type === 'image')
             const images: ChatImageContent[] = imageParts.map(p => ({
+              type: 'image_url' as const,
               url: 'url' in p ? p.url : '',
             })).filter(img => img.url)
             
@@ -809,7 +810,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const segments: ContentSegment[] = []
         let currentReasoning = ''
         let reasoningStartTime = 0
-        const ragSources: SourceDocumentPart[] = []
+        let ragSources: SourceDocumentPart[] = []
         const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
         let newMessageId = messageId  // May be updated by message_start
 
