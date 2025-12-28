@@ -95,5 +95,6 @@ export {
   type ToolUpdateInput,
   type ToolExecuteRequest,
   type ToolExecuteResponse,
+  type McpToolInfo,
 } from './tools'
 
