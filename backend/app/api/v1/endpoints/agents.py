@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from tortoise.expressions import F
+from tortoise.expressions import F, Q
 from tortoise.functions import Count
 
 from app.api import deps
@@ -22,6 +22,7 @@ from app.models.agent import (
     AgentVisibility,
     Conversation,
     Message,
+    RAGMode,
 )
 from app.schemas.agent import (
     AgentCreate,
@@ -296,12 +297,12 @@ async def list_agents(
             "team_id", flat=True
         )
         # Show team agents + own private agents
-        query = query.filter(team_id__in=memberships).filter(
-            # Either team visibility or own private agents
-            visibility__in=[AgentVisibility.TEAM, AgentVisibility.PUBLIC]
-        ) | query.filter(
-            created_by=current_user,
-            visibility=AgentVisibility.PRIVATE,
+        query = query.filter(
+            Q(
+                team_id__in=memberships,
+                visibility__in=[AgentVisibility.TEAM, AgentVisibility.PUBLIC],
+            )
+            | Q(created_by=current_user, visibility=AgentVisibility.PRIVATE)
         )
 
     if status:
@@ -311,8 +312,8 @@ async def list_agents(
         query = query.filter(visibility=visibility)
 
     if keyword:
-        query = query.filter(name__icontains=keyword) | query.filter(
-            description__icontains=keyword
+        query = query.filter(
+            Q(name__icontains=keyword) | Q(description__icontains=keyword)
         )
 
     total = await query.count()
@@ -460,7 +461,7 @@ async def update_agent(
     if agent_in.suggested_questions is not None:
         agent.suggested_questions = agent_in.suggested_questions
     if agent_in.visibility is not None:
-        agent.visibility = agent_in.visibility
+        agent.visibility = AgentVisibility(agent_in.visibility)
 
     # Update model_id
     if agent_in.model_id is not None:
@@ -486,7 +487,7 @@ async def update_agent(
 
     # Update rag_mode
     if agent_in.rag_mode is not None:
-        agent.rag_mode = agent_in.rag_mode
+        agent.rag_mode = RAGMode(agent_in.rag_mode)
 
     # Update variables
     if agent_in.variables is not None:

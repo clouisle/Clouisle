@@ -445,12 +445,12 @@ class ModelManager:
         )
 
         # 转换消息格式
-        openai_messages = []
+        openai_messages: list[dict[str, Any]] = []
         for msg in messages:
-            content = msg.content
+            content: Any = msg.content
             if isinstance(content, list):
                 # 处理多模态内容 - convert to OpenAI vision format
-                processed_content = []
+                processed_content: list[dict[str, Any]] = []
                 for part in content:
                     if hasattr(part, "type"):
                         part_type = (
@@ -465,7 +465,7 @@ class ModelManager:
                         elif part_type == "image" and hasattr(part, "image"):
                             # Convert our ImageContent to OpenAI's image_url format
                             img = part.image
-                            if img.base64:
+                            if img is not None and img.base64:
                                 # Use data URL format for base64
                                 img_format = (
                                     img.format
@@ -481,7 +481,7 @@ class ModelManager:
                                         "image_url": {"url": data_url},
                                     }
                                 )
-                            elif img.url:
+                            elif img is not None and img.url:
                                 processed_content.append(
                                     {"type": "image_url", "image_url": {"url": img.url}}
                                 )

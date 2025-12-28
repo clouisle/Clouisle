@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
@@ -72,7 +73,7 @@ class Agent(models.Model):
         null=True,
         description="LLM model to use (null = team default)",
     )
-    model_id: fields.Field[str | None]  # type: ignore[assignment]
+    model_id: UUID | None  # type: ignore[assignment]
 
     # Prompt configuration
     system_prompt = fields.TextField(null=True, description="System prompt")
@@ -160,12 +161,14 @@ class AgentKnowledgeBase(models.Model):
         related_name="agent_knowledge_bases",
         on_delete=fields.CASCADE,
     )
+    agent_id: UUID  # type: ignore[assignment]
 
     knowledge_base: fields.ForeignKeyRelation["KnowledgeBase"] = fields.ForeignKeyField(
         "models.KnowledgeBase",
         related_name="agent_knowledge_bases",
         on_delete=fields.CASCADE,
     )
+    knowledge_base_id: UUID  # type: ignore[assignment]
 
     # RAG configuration
     retrieval_top_k = fields.IntField(
@@ -209,12 +212,14 @@ class Conversation(models.Model):
         related_name="conversations",
         on_delete=fields.CASCADE,
     )
+    agent_id: UUID  # type: ignore[assignment]
 
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User",
         related_name="conversations",
         on_delete=fields.CASCADE,
     )
+    user_id: UUID  # type: ignore[assignment]
 
     # Conversation info
     title = fields.CharField(
@@ -258,6 +263,7 @@ class Message(models.Model):
         related_name="messages",
         on_delete=fields.CASCADE,
     )
+    conversation_id: UUID  # type: ignore[assignment]
 
     # Message content
     role = fields.CharEnumField(MessageRole, description="Message role")

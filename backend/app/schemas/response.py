@@ -15,6 +15,9 @@ class ResponseCode(IntEnum):
     # 通用错误 (1000-1999)
     UNKNOWN_ERROR = 1000
     VALIDATION_ERROR = 1001
+    BAD_REQUEST = 1002
+    INTERNAL_ERROR = 1003
+    FORBIDDEN = 1004
 
     # 认证错误 (2000-2999)
     UNAUTHORIZED = 2000

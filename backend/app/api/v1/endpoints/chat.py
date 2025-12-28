@@ -446,17 +446,17 @@ async def execute_tool_call(
                 )
 
             # Execute MCP tool
-            result = await execute_mcp_tool(
+            mcp_result = await execute_mcp_tool(
                 mcp_tool.mcp_config, actual_tool_name, arguments
             )
 
-            if result.success:
-                if isinstance(result.result, (dict, list)):
-                    return json.dumps(result.result, ensure_ascii=False)
-                return str(result.result) if result.result is not None else ""
+            if mcp_result.success:
+                if isinstance(mcp_result.result, (dict, list)):
+                    return json.dumps(mcp_result.result, ensure_ascii=False)
+                return str(mcp_result.result) if mcp_result.result is not None else ""
             else:
                 return json.dumps(
-                    {"error": result.error or "MCP tool execution failed"},
+                    {"error": mcp_result.error or "MCP tool execution failed"},
                     ensure_ascii=False,
                 )
 
@@ -474,11 +474,11 @@ async def execute_tool_call(
 
             # Execute based on custom_type
             if custom_tool.custom_type == CustomToolType.HTTP:
-                result = await execute_http_tool(custom_tool, arguments)
-                return result
+                http_result = await execute_http_tool(custom_tool, arguments)
+                return http_result
             elif custom_tool.custom_type == CustomToolType.CODE:
-                result = await execute_code_tool(custom_tool, arguments)
-                return result
+                code_result = await execute_code_tool(custom_tool, arguments)
+                return code_result
             else:
                 return json.dumps(
                     {
@@ -705,7 +705,7 @@ async def chat(
         # Call LLM with team-level tracking
         response = await model_manager.team_chat(
             team_id=str(agent.team_id),
-            messages=messages,
+            messages=[m.model_dump() for m in messages],
             model_id=model_id,
         )
 

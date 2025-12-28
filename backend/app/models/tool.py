@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
@@ -57,7 +58,7 @@ class Tool(models.Model):
         on_delete=fields.CASCADE,
         description="Team that owns this tool",
     )
-    team_id: fields.Field[str]  # type: ignore[assignment]
+    team_id: UUID  # type: ignore[assignment]
 
     # Basic info
     name = fields.CharField(
