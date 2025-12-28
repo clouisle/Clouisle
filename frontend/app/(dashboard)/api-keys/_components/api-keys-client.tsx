@@ -17,6 +17,7 @@ import {
   ChevronsRight,
   Copy,
   Check,
+  Bot,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiKeysApi, usersApi, type APIKey, type PageData, type APIKeyStats } from '@/lib/api'
@@ -381,6 +382,7 @@ export function APIKeysClient() {
               <TableHead>{t('name')}</TableHead>
               <TableHead>{t('keyPrefix')}</TableHead>
               <TableHead>{t('owner')}</TableHead>
+              <TableHead>{t('agents')}</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('rateLimit')}</TableHead>
               <TableHead>{t('expiresAt')}</TableHead>
@@ -392,13 +394,13 @@ export function APIKeysClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center">
+                <TableCell colSpan={11} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
             ) : filteredKeys.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
                   {t('noKeys')}
                 </TableCell>
               </TableRow>
@@ -424,8 +426,47 @@ export function APIKeysClient() {
                   </TableCell>
                   <TableCell>
                     <span className="text-muted-foreground">
-                      {apiKey.user?.nickname || apiKey.user?.username || '-'}
+                      {apiKey.user?.username || '-'}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {apiKey.agents && apiKey.agents.length > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        {apiKey.agents.slice(0, 2).map((agent) => (
+                          <Tooltip key={agent.id}>
+                            <TooltipTrigger
+                              render={
+                                <span className="flex items-center gap-1 text-sm bg-muted px-2 py-0.5 rounded">
+                                  {agent.icon ? (
+                                    <img src={agent.icon} alt={agent.name} className="h-4 w-4 rounded object-cover" />
+                                  ) : (
+                                    <Bot className="h-3 w-3" />
+                                  )}
+                                  <span className="max-w-[80px] truncate">{agent.name}</span>
+                                </span>
+                              }
+                            />
+                            <TooltipContent>{agent.name}</TooltipContent>
+                          </Tooltip>
+                        ))}
+                        {apiKey.agents.length > 2 && (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <span className="text-sm text-muted-foreground">
+                                  +{apiKey.agents.length - 2}
+                                </span>
+                              }
+                            />
+                            <TooltipContent>
+                              {apiKey.agents.slice(2).map(a => a.name).join(', ')}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">{t('allAgents')}</span>
+                    )}
                   </TableCell>
                   <TableCell>{getStatusBadge(apiKey)}</TableCell>
                   <TableCell className="text-muted-foreground">

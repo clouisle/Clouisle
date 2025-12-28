@@ -93,6 +93,76 @@
 
 ### 新增 (Added)
 
+#### Agent 监控页面 - 统计与可视化
+
+实现了 Agent 编排页面中的监控（Monitor）功能，提供使用统计和性能指标的可视化展示。
+
+##### 后端 (Backend)
+
+- **Agent 统计 API** (`/backend/app/api/v1/endpoints/agent_stats.py`)：
+  - `GET /agents/{agent_id}/stats` - 获取总体统计数据
+    - 对话数、消息数（按角色分类）
+    - Token 用量（prompt/completion）
+    - 平均响应时间
+    - 活跃用户数
+    - 工具调用次数
+  - `GET /agents/{agent_id}/stats/trends` - 获取趋势数据
+    - 支持 24h/7d/30d 时间范围
+    - 按小时/天粒度聚合
+    - 返回对话数、消息数、Token、响应时间时序数据
+  - `GET /agents/{agent_id}/stats/tool-usage` - 获取工具使用统计
+    - 按工具名称聚合调用次数
+    - 支持多种 tool_call 数据格式
+  - `GET /agents/{agent_id}/stats/recent-conversations` - 获取最近对话列表
+
+##### 前端 (Frontend)
+
+- **Chart UI 组件** (`/frontend/components/ui/chart.tsx`)：
+  - 基于 recharts 的 shadcn 风格封装
+  - `ChartContainer` - 响应式图表容器
+  - `ChartTooltip` / `ChartTooltipContent` - 自定义悬浮提示
+  - `ChartLegend` / `ChartLegendContent` - 图例组件
+  - 支持深色/浅色主题自适应
+
+- **监控页面** (`/frontend/app/(platform)/app/apps/[id]/monitor/page.tsx`)：
+  - 概览统计卡片：对话数、消息数、Token 用量、平均响应时间、活跃用户、工具调用
+  - 对话趋势图（Area Chart）- 显示对话数和消息数变化
+  - Token 用量趋势图 - 显示总 Token 消耗变化
+  - 响应时间趋势图 - 显示平均响应时间变化
+  - 工具使用分布图（Bar Chart）- 显示各工具调用次数
+  - 最近对话列表 - 显示最新 5 条对话
+  - 时间段筛选（24 小时 / 7 天 / 30 天）
+
+- **API 客户端** (`/frontend/lib/api/agents.ts`)：
+  - 新增 `agentStatsApi` 对象
+  - 类型定义：`AgentStats`、`AgentTrends`、`AgentToolUsage`、`RecentConversationItem`
+
+##### 图表主题适配
+
+- **深色模式颜色**（`globals.css`）：
+  - `--chart-1`: 青色 (对话数)
+  - `--chart-2`: 绿色 (消息数)
+  - `--chart-3`: 紫色 (Token)
+  - `--chart-4`: 橙色 (响应时间)
+  - `--chart-5`: 粉色 (工具使用)
+- 图表配置使用 `theme` 对象分别定义 light/dark 颜色
+
+##### 国际化
+
+- 新增 `agents.monitor` 命名空间翻译（中英文）
+  - 页面描述、时间段选项
+  - 统计指标名称
+  - 图表标题和描述
+  - 图表数据标签
+
+##### 依赖
+
+- 新增 `recharts` 图表库
+
+---
+
+### 新增 (Added)
+
 #### 知识库模块 - 动态 Embedding 维度支持
 
 ##### 多维度 Embedding 向量存储

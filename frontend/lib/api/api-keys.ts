@@ -4,7 +4,12 @@ import type { PageData } from './users'
 export interface APIKeyUser {
   id: string
   username: string
-  nickname?: string | null
+}
+
+export interface APIKeyAgent {
+  id: string
+  name: string
+  icon?: string | null
 }
 
 export interface APIKey {
@@ -18,6 +23,7 @@ export interface APIKey {
   is_active: boolean
   expires_at: string | null
   last_used_at: string | null
+  agents: APIKeyAgent[]
   created_at: string
   updated_at: string
 }
@@ -38,6 +44,7 @@ export interface APIKeyCreateInput {
   scopes?: string[]
   rate_limit?: number
   expires_at?: string | null
+  agent_ids?: string[]
 }
 
 export interface APIKeyUpdateInput {
@@ -46,6 +53,7 @@ export interface APIKeyUpdateInput {
   rate_limit?: number
   expires_at?: string | null
   is_active?: boolean
+  agent_ids?: string[]
 }
 
 export interface APIKeyQueryParams {

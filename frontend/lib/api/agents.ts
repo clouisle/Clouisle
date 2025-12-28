@@ -572,6 +572,107 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
   }
 }
 
+// ============ Agent Stats Types ============
+
+export interface AgentStatsOverview {
+  total_conversations: number
+  total_messages: number
+  user_messages: number
+  assistant_messages: number
+  tool_messages: number
+  active_users: number
+}
+
+export interface AgentStatsTokens {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+export interface AgentStatsPerformance {
+  avg_response_time_ms: number
+}
+
+export interface AgentStatsTools {
+  tool_call_count: number
+}
+
+export interface AgentStats {
+  period: string
+  overview: AgentStatsOverview
+  tokens: AgentStatsTokens
+  performance: AgentStatsPerformance
+  tools: AgentStatsTools
+}
+
+export interface AgentTrendDataPoint {
+  timestamp: string
+  label: string
+  conversations: number
+  messages: number
+  tokens: number
+  avg_response_time_ms: number
+}
+
+export interface AgentTrends {
+  period: string
+  granularity: string
+  data: AgentTrendDataPoint[]
+}
+
+export interface ToolUsageItem {
+  name: string
+  count: number
+}
+
+export interface AgentToolUsage {
+  period: string
+  tools: ToolUsageItem[]
+  total_calls: number
+}
+
+export interface RecentConversationItem {
+  id: string
+  title?: string | null
+  user?: { id: string; username: string } | null
+  message_count: number
+  token_usage: number
+  created_at: string
+  updated_at: string
+}
+
+// ============ Agent Stats API ============
+
+export const agentStatsApi = {
+  /**
+   * 获取 Agent 统计概览
+   */
+  getStats: async (agentId: string, period: string = '7d'): Promise<AgentStats> => {
+    return api.get<AgentStats>(`/agents/${agentId}/stats?period=${period}`)
+  },
+
+  /**
+   * 获取 Agent 趋势数据（用于图表）
+   */
+  getTrends: async (agentId: string, period: string = '7d'): Promise<AgentTrends> => {
+    return api.get<AgentTrends>(`/agents/${agentId}/stats/trends?period=${period}`)
+  },
+
+  /**
+   * 获取工具使用统计
+   */
+  getToolUsage: async (agentId: string, period: string = '7d'): Promise<AgentToolUsage> => {
+    return api.get<AgentToolUsage>(`/agents/${agentId}/stats/tool-usage?period=${period}`)
+  },
+
+  /**
+   * 获取最近对话
+   */
+  getRecentConversations: async (agentId: string, limit: number = 10): Promise<RecentConversationItem[]> => {
+    return api.get<RecentConversationItem[]>(`/agents/${agentId}/stats/recent-conversations?limit=${limit}`)
+  },
+}
+
 // ============ Admin Conversation Types ============
 
 export interface AdminConversationListItem extends ConversationListItem {

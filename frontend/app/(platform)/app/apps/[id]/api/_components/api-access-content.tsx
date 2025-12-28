@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Tabs,
@@ -94,7 +93,7 @@ export function ApiAccessContent({ agent }: ApiAccessContentProps) {
   
   // Sample request body
   const sampleRequestBody = JSON.stringify({
-    query: "Hello, how can you help me?",
+    message: "Hello, how can you help me?",
     conversation_id: null,
     variables: {},
   }, null, 2)
@@ -105,7 +104,7 @@ export function ApiAccessContent({ agent }: ApiAccessContentProps) {
   -H "Content-Type: application/json" \\
   -H "Accept: text/event-stream" \\
   -d '${JSON.stringify({
-    query: "Hello, how can you help me?",
+    message: "Hello, how can you help me?",
     conversation_id: null,
     variables: {},
   })}'`
@@ -123,7 +122,7 @@ headers = {
     "Accept": "text/event-stream",
 }
 data = {
-    "query": "Hello, how can you help me?",
+    "message": "Hello, how can you help me?",
     "conversation_id": None,
     "variables": {},
 }
@@ -150,7 +149,7 @@ const response = await fetch(
       "Accept": "text/event-stream",
     },
     body: JSON.stringify({
-      query: "Hello, how can you help me?",
+      message: "Hello, how can you help me?",
       conversation_id: null,
       variables: {},
     }),
@@ -191,7 +190,7 @@ while (true) {
   ]
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="border-b px-6 py-4 shrink-0">
         <div className="flex items-center justify-between">
@@ -213,7 +212,7 @@ while (true) {
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-6 max-w-4xl space-y-8">
           {/* Agent Status Alert */}
           {agent.status === 'draft' && (
@@ -257,10 +256,10 @@ while (true) {
                   </thead>
                   <tbody>
                     <tr className="border-t">
-                      <td className="px-4 py-2"><code>query</code></td>
+                      <td className="px-4 py-2"><code>message</code></td>
                       <td className="px-4 py-2">string</td>
                       <td className="px-4 py-2">{t('yes')}</td>
-                      <td className="px-4 py-2 text-muted-foreground">{t('params.query')}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{t('params.message')}</td>
                     </tr>
                     <tr className="border-t">
                       <td className="px-4 py-2"><code>conversation_id</code></td>
@@ -324,6 +323,46 @@ while (true) {
             </Tabs>
           </Section>
 
+          {/* Multi-turn Conversation */}
+          <Section title={t('multiTurn.title')}>
+            <p className="text-sm text-muted-foreground mb-3">{t('multiTurn.description')}</p>
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('multiTurn.step1Title')}</h4>
+                <p className="text-sm text-muted-foreground mb-2">{t('multiTurn.step1Description')}</p>
+                <CodeBlock 
+                  code={JSON.stringify({
+                    message: "Hello, I'd like to know about your products",
+                    conversation_id: null,
+                    variables: {}
+                  }, null, 2)} 
+                  language="json" 
+                />
+              </div>
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('multiTurn.step2Title')}</h4>
+                <p className="text-sm text-muted-foreground mb-2">{t('multiTurn.step2Description')}</p>
+                <CodeBlock 
+                  code={`event: message_start
+data: {"conversation_id": "550e8400-e29b-41d4-a716-446655440000", "message_id": "..."}`} 
+                  language="text" 
+                />
+              </div>
+              <div>
+                <h4 className="text-sm font-medium mb-2">{t('multiTurn.step3Title')}</h4>
+                <p className="text-sm text-muted-foreground mb-2">{t('multiTurn.step3Description')}</p>
+                <CodeBlock 
+                  code={JSON.stringify({
+                    message: "What discounts do you have?",
+                    conversation_id: "550e8400-e29b-41d4-a716-446655440000",
+                    variables: {}
+                  }, null, 2)} 
+                  language="json" 
+                />
+              </div>
+            </div>
+          </Section>
+
           {/* Variables Info */}
           {agent.variables && agent.variables.length > 0 && (
             <Section title={t('agentVariables')}>
@@ -352,7 +391,7 @@ while (true) {
               </div>
               <CodeBlock 
                 code={JSON.stringify({
-                  query: "Your question here",
+                  message: "Your question here",
                   variables: agent.variables.reduce((acc, v) => ({
                     ...acc,
                     [v.name]: v.type === 'checkbox' ? false : v.type === 'number' ? 0 : "value"
@@ -364,7 +403,7 @@ while (true) {
             </Section>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }

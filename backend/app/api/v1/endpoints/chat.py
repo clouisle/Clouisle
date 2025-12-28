@@ -671,13 +671,29 @@ Remember: Only use [[cite:N]] citations when you actually use information from t
 async def chat(
     agent_id: UUID,
     chat_in: ChatRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: tuple[User, "APIKey | None"] = Depends(deps.get_current_user_or_api_key),
 ) -> Any:
     """
     Chat with an agent (non-streaming).
+    Supports both JWT Token and API Key authentication.
 
     Creates a new conversation if conversation_id is not provided.
     """
+    from app.models.api_key import APIKey
+    
+    current_user, api_key = auth_result
+    
+    # 检查用户是否激活
+    if not current_user.is_active:
+        raise BusinessError(
+            code=ResponseCode.INACTIVE_USER,
+            msg_key="inactive_user",
+            status_code=401,
+        )
+    
+    # 如果使用 API Key，检查是否有权访问该 Agent
+    await deps.check_api_key_agent_access(api_key, agent_id)
+    
     start_time = time.time()
 
     agent = await check_agent_chat_access(agent_id, current_user)
@@ -787,10 +803,11 @@ async def chat(
 async def chat_stream(
     agent_id: UUID,
     chat_in: ChatRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    auth_result: tuple[User, "APIKey | None"] = Depends(deps.get_current_user_or_api_key),
 ) -> StreamingResponse:
     """
     Chat with an agent (streaming via SSE).
+    Supports both JWT Token and API Key authentication.
 
     Returns Server-Sent Events with the following event types:
     - message_start: {"conversation_id": "...", "message_id": "..."}
@@ -801,6 +818,21 @@ async def chat_stream(
     - message_end: {"usage": {...}}
     - error: {"code": ..., "msg": "..."}
     """
+    from app.models.api_key import APIKey
+    
+    current_user, api_key = auth_result
+    
+    # 检查用户是否激活
+    if not current_user.is_active:
+        raise BusinessError(
+            code=ResponseCode.INACTIVE_USER,
+            msg_key="inactive_user",
+            status_code=401,
+        )
+    
+    # 如果使用 API Key，检查是否有权访问该 Agent
+    await deps.check_api_key_agent_access(api_key, agent_id)
+    
     agent = await check_agent_chat_access(agent_id, current_user)
     conversation = await get_or_create_conversation(
         agent, current_user, chat_in.conversation_id, chat_in.variables

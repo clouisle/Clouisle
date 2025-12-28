@@ -1222,8 +1222,8 @@
       "yes": "Yes",
       "no": "No",
       "params": {
-        "query": "The user's message content",
-        "conversationId": "Conversation ID, leave empty to create a new conversation",
+        "message": "The user's message content",
+        "conversationId": "Conversation ID for multi-turn dialogue. Leave empty (null) for first message, the response will return a conversation_id in the message_start event. Use this ID in subsequent requests to continue the conversation with context.",
         "variables": "Values for Agent variables (if defined)"
       },
       "responseFormat": "Response Format",
@@ -1244,10 +1244,59 @@
         "error": "Error message"
       },
       "codeExamples": "Code Examples",
+      "multiTurn": {
+        "title": "Multi-turn Conversation",
+        "description": "To maintain conversation context across multiple requests, use the conversation_id returned in the first response.",
+        "step1Title": "Step 1: First Request",
+        "step1Description": "Send the first message with conversation_id set to null to create a new conversation:",
+        "step2Title": "Step 2: Get Conversation ID",
+        "step2Description": "The message_start event in the response will contain the conversation_id:",
+        "step3Title": "Step 3: Continue Conversation",
+        "step3Description": "Use the returned conversation_id in subsequent requests to continue the conversation with context:"
+      },
       "agentVariables": "Agent Variables",
       "variablesDescription": "This Agent has the following variables defined. You need to provide values for them in your requests:",
       "variableName": "Variable Name",
       "displayName": "Display Name"
+    },
+    "monitor": {
+      "title": "Monitor",
+      "description": "View usage statistics and performance metrics for this Agent",
+      "period": {
+        "24h": "Last 24 hours",
+        "7d": "Last 7 days",
+        "30d": "Last 30 days"
+      },
+      "stats": {
+        "conversations": "Conversations",
+        "messages": "Messages",
+        "tokens": "Tokens",
+        "avgResponseTime": "Avg Response Time",
+        "activeUsers": "Active Users",
+        "toolCalls": "Tool Calls"
+      },
+      "charts": {
+        "conversationTrend": "Conversation Trend",
+        "conversationTrendDesc": "Number of conversations and messages over time",
+        "tokenUsage": "Token Usage",
+        "tokenUsageDesc": "Total tokens consumed over time",
+        "responseTime": "Response Time",
+        "responseTimeDesc": "Average response time over time",
+        "toolUsage": "Tool Usage",
+        "toolUsageDesc": "Distribution of tool calls",
+        "conversations": "Conversations",
+        "messages": "Messages",
+        "tokens": "Tokens",
+        "avgResponseTime": "Avg Response Time",
+        "calls": "Calls"
+      },
+      "recentConversations": "Recent Conversations",
+      "recentConversationsDesc": "Latest conversations with this Agent",
+      "untitledConversation": "Untitled Conversation",
+      "anonymous": "Anonymous",
+      "messagesCount": "messages",
+      "noConversations": "No conversations yet",
+      "noToolUsage": "No tool usage data"
     }
   },
   "apps": {
@@ -1851,6 +1900,11 @@
     "keyCreatedDescription": "Your new API key has been created. Please copy and save it now - you won't be able to see it again.",
     "keyWarning": "Make sure to copy your API key now. You won't be able to see it again!",
     "copied": "Copied to clipboard",
-    "copyFailed": "Failed to copy"
+    "copyFailed": "Failed to copy",
+    "allowedAgents": "Allowed Applications",
+    "allowedAgentsHint": "Select which applications this API key can access. Leave empty to allow all applications.",
+    "noAgentsAvailable": "No published applications available.",
+    "agents": "Applications",
+    "allAgents": "All Applications"
   }
 }

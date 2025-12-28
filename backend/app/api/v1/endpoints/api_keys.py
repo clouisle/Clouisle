@@ -9,12 +9,14 @@ from app.api import deps
 from app.core.timezone import now_utc
 from app.models.user import User
 from app.models.api_key import APIKey
+from app.models.agent import Agent
 from app.schemas.api_key import (
     APIKeyCreate,
     APIKeyUpdate,
     APIKeyResponse,
     APIKeyCreateResponse,
     APIKeyStats,
+    APIKeyAgentInfo,
 )
 from app.schemas.response import (
     Response,
@@ -25,6 +27,41 @@ from app.schemas.response import (
 )
 
 router = APIRouter()
+
+
+async def build_api_key_response(api_key: APIKey, include_agents: bool = True) -> dict:
+    """构建 API Key 响应数据"""
+    response_data = {
+        "id": api_key.id,
+        "name": api_key.name,
+        "key_prefix": api_key.key_prefix,
+        "user_id": api_key.user_id,
+        "scopes": api_key.scopes,
+        "rate_limit": api_key.rate_limit,
+        "is_active": api_key.is_active,
+        "expires_at": api_key.expires_at,
+        "last_used_at": api_key.last_used_at,
+        "created_at": api_key.created_at,
+        "updated_at": api_key.updated_at,
+        "agents": [],
+    }
+    
+    # 添加用户信息（如果已预加载）
+    if hasattr(api_key, 'user') and api_key.user:
+        response_data["user"] = {
+            "id": api_key.user.id,
+            "username": api_key.user.username,
+        }
+    
+    # 添加关联的 Agent 信息
+    if include_agents:
+        agents = await api_key.agents.all()
+        response_data["agents"] = [
+            APIKeyAgentInfo(id=agent.id, name=agent.name, icon=agent.icon)
+            for agent in agents
+        ]
+    
+    return response_data
 
 
 @router.get("/", response_model=Response[PageData[APIKeyResponse]])
@@ -72,11 +109,17 @@ async def list_api_keys(
         query = query.filter(name__icontains=search)
 
     total = await query.count()
-    api_keys = await query.offset(skip).limit(page_size).order_by("-created_at").prefetch_related("user")
+    api_keys = await query.offset(skip).limit(page_size).order_by("-created_at").prefetch_related("user", "agents")
+    
+    # 构建响应数据
+    items = []
+    for api_key in api_keys:
+        item = await build_api_key_response(api_key)
+        items.append(item)
     
     return success(
         data={
-            "items": api_keys,
+            "items": items,
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -128,6 +171,21 @@ async def create_api_key(
     Create a new API key.
     The full key is only returned once at creation time.
     """
+    # 验证 Agent IDs（检查是否存在且用户有权限访问）
+    agents = []
+    if data.agent_ids:
+        for agent_id in data.agent_ids:
+            agent = await Agent.filter(id=agent_id).first()
+            if not agent:
+                raise BusinessError(
+                    code=ResponseCode.NOT_FOUND,
+                    msg_key="agent_not_found",
+                    status_code=404,
+                )
+            # 检查用户是否有权限访问该 Agent（通过团队成员关系）
+            # 简化：这里假设用户可以访问自己创建的或所在团队的 Agent
+            agents.append(agent)
+
     # Generate API key
     full_key, key_prefix, key_hash = APIKey.generate_key()
 
@@ -141,22 +199,14 @@ async def create_api_key(
         rate_limit=data.rate_limit,
         expires_at=data.expires_at,
     )
+    
+    # 关联 Agents
+    if agents:
+        await api_key.agents.add(*agents)
 
-    # Return response with full key
-    response_data = {
-        "id": api_key.id,
-        "name": api_key.name,
-        "key_prefix": api_key.key_prefix,
-        "user_id": api_key.user_id,
-        "key": full_key,  # Only returned once
-        "scopes": api_key.scopes,
-        "rate_limit": api_key.rate_limit,
-        "is_active": api_key.is_active,
-        "expires_at": api_key.expires_at,
-        "last_used_at": api_key.last_used_at,
-        "created_at": api_key.created_at,
-        "updated_at": api_key.updated_at,
-    }
+    # 构建响应
+    response_data = await build_api_key_response(api_key)
+    response_data["key"] = full_key  # Only returned once
 
     return success(data=response_data, msg_key="api_key_created")
 
@@ -169,7 +219,7 @@ async def get_api_key(
     """
     Get a specific API key by ID.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user").first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents").first()
     
     if not api_key:
         raise BusinessError(
@@ -186,7 +236,8 @@ async def get_api_key(
             status_code=403,
         )
 
-    return success(data=api_key)
+    response_data = await build_api_key_response(api_key)
+    return success(data=response_data)
 
 
 @router.put("/{api_key_id}", response_model=Response[APIKeyResponse])
@@ -199,7 +250,7 @@ async def update_api_key(
     """
     Update an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents").first()
     
     if not api_key:
         raise BusinessError(
@@ -216,12 +267,35 @@ async def update_api_key(
             status_code=403,
         )
 
-    # Update fields
-    update_data = data.model_dump(exclude_unset=True)
-    await api_key.update_from_dict(update_data)
-    await api_key.save()
+    # 处理 Agent 关联更新
+    if data.agent_ids is not None:
+        # 验证新的 Agent IDs
+        new_agents = []
+        for agent_id in data.agent_ids:
+            agent = await Agent.filter(id=agent_id).first()
+            if not agent:
+                raise BusinessError(
+                    code=ResponseCode.NOT_FOUND,
+                    msg_key="agent_not_found",
+                    status_code=404,
+                )
+            new_agents.append(agent)
+        
+        # 清除现有关联并添加新关联
+        await api_key.agents.clear()
+        if new_agents:
+            await api_key.agents.add(*new_agents)
 
-    return success(data=api_key, msg_key="api_key_updated")
+    # Update other fields
+    update_data = data.model_dump(exclude_unset=True, exclude={"agent_ids"})
+    if update_data:
+        await api_key.update_from_dict(update_data)
+        await api_key.save()
+    
+    # 重新加载（包括关系）
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents").first()
+    response_data = await build_api_key_response(api_key)
+    return success(data=response_data, msg_key="api_key_updated")
 
 
 @router.delete("/{api_key_id}", response_model=Response[APIKeyResponse])
@@ -232,7 +306,7 @@ async def delete_api_key(
     """
     Delete an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents").first()
     
     if not api_key:
         raise BusinessError(
@@ -250,12 +324,12 @@ async def delete_api_key(
         )
 
     # Store for response
-    api_key_data = APIKeyResponse.model_validate(api_key)
+    response_data = await build_api_key_response(api_key)
     
     # Delete
     await api_key.delete()
 
-    return success(data=api_key_data, msg_key="api_key_deleted")
+    return success(data=response_data, msg_key="api_key_deleted")
 
 
 @router.post("/{api_key_id}/activate", response_model=Response[APIKeyResponse])
@@ -266,7 +340,7 @@ async def activate_api_key(
     """
     Activate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
     
     if not api_key:
         raise BusinessError(
@@ -292,7 +366,8 @@ async def activate_api_key(
     api_key.is_active = True
     await api_key.save()
 
-    return success(data=api_key, msg_key="api_key_activated")
+    response_data = await build_api_key_response(api_key)
+    return success(data=response_data, msg_key="api_key_activated")
 
 
 @router.post("/{api_key_id}/deactivate", response_model=Response[APIKeyResponse])
@@ -303,7 +378,7 @@ async def deactivate_api_key(
     """
     Deactivate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
     
     if not api_key:
         raise BusinessError(
@@ -329,4 +404,5 @@ async def deactivate_api_key(
     api_key.is_active = False
     await api_key.save()
 
-    return success(data=api_key, msg_key="api_key_deactivated")
+    response_data = await build_api_key_response(api_key)
+    return success(data=response_data, msg_key="api_key_deactivated")

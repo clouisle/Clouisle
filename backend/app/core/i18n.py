@@ -763,8 +763,51 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_execute_error": {
         "en": "Tool execution failed: {error}",
         "zh": "工具执行失败：{error}",
+    },    # API Key messages
+    "api_key_created": {
+        "en": "API key created successfully",
+        "zh": "API 密钥创建成功",
     },
-}
+    "api_key_updated": {
+        "en": "API key updated successfully",
+        "zh": "API 密钥更新成功",
+    },
+    "api_key_deleted": {
+        "en": "API key deleted successfully",
+        "zh": "API 密钥删除成功",
+    },
+    "api_key_not_found": {
+        "en": "API key not found",
+        "zh": "API 密钥未找到",
+    },
+    "api_key_activated": {
+        "en": "API key activated successfully",
+        "zh": "API 密钥已激活",
+    },
+    "api_key_deactivated": {
+        "en": "API key deactivated successfully",
+        "zh": "API 密钥已禁用",
+    },
+    "api_key_already_active": {
+        "en": "API key is already active",
+        "zh": "API 密钥已经是激活状态",
+    },
+    "api_key_already_inactive": {
+        "en": "API key is already inactive",
+        "zh": "API 密钥已经是禁用状态",
+    },
+    "invalid_api_key": {
+        "en": "Invalid API key",
+        "zh": "无效的 API 密钥",
+    },
+    "api_key_expired": {
+        "en": "API key has expired",
+        "zh": "API 密钥已过期",
+    },
+    "api_key_no_agent_access": {
+        "en": "This API key does not have access to the requested Agent",
+        "zh": "此 API 密钥无权访问请求的 Agent",
+    },}
 
 
 def get_language() -> str:

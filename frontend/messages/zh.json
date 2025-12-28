@@ -1222,8 +1222,8 @@
       "yes": "是",
       "no": "否",
       "params": {
-        "query": "用户输入的消息内容",
-        "conversationId": "会话 ID，留空则创建新会话",
+        "message": "用户输入的消息内容",
+        "conversationId": "多轮对话的会话 ID。首次发送消息时留空（null），响应的 message_start 事件中会返回 conversation_id。后续请求中使用该 ID 即可带上下文继续对话。",
         "variables": "Agent 变量的值（如果定义了变量）"
       },
       "responseFormat": "响应格式",
@@ -1244,10 +1244,59 @@
         "error": "错误信息"
       },
       "codeExamples": "代码示例",
+      "multiTurn": {
+        "title": "多轮对话",
+        "description": "要在多次请求之间保持对话上下文，请使用第一次响应中返回的 conversation_id。",
+        "step1Title": "第一步：首次请求",
+        "step1Description": "发送第一条消息时，将 conversation_id 设为 null 来创建新会话：",
+        "step2Title": "第二步：获取会话 ID",
+        "step2Description": "响应中的 message_start 事件会包含 conversation_id：",
+        "step3Title": "第三步：继续对话",
+        "step3Description": "在后续请求中使用返回的 conversation_id，即可带上下文继续对话："
+      },
       "agentVariables": "Agent 变量",
       "variablesDescription": "此 Agent 定义了以下变量，需要在请求中提供对应的值：",
       "variableName": "变量名",
       "displayName": "显示名称"
+    },
+    "monitor": {
+      "title": "监控",
+      "description": "查看此 Agent 的使用统计和性能指标",
+      "period": {
+        "24h": "最近 24 小时",
+        "7d": "最近 7 天",
+        "30d": "最近 30 天"
+      },
+      "stats": {
+        "conversations": "对话数",
+        "messages": "消息数",
+        "tokens": "Token 用量",
+        "avgResponseTime": "平均响应时间",
+        "activeUsers": "活跃用户",
+        "toolCalls": "工具调用"
+      },
+      "charts": {
+        "conversationTrend": "对话趋势",
+        "conversationTrendDesc": "对话数和消息数随时间变化",
+        "tokenUsage": "Token 用量",
+        "tokenUsageDesc": "总 Token 消耗随时间变化",
+        "responseTime": "响应时间",
+        "responseTimeDesc": "平均响应时间随时间变化",
+        "toolUsage": "工具使用",
+        "toolUsageDesc": "工具调用分布",
+        "conversations": "对话数",
+        "messages": "消息数",
+        "tokens": "Token",
+        "avgResponseTime": "平均响应时间",
+        "calls": "调用次数"
+      },
+      "recentConversations": "最近对话",
+      "recentConversationsDesc": "与此 Agent 的最新对话",
+      "untitledConversation": "未命名对话",
+      "anonymous": "匿名用户",
+      "messagesCount": "条消息",
+      "noConversations": "暂无对话",
+      "noToolUsage": "暂无工具使用数据"
     }
   },
   "apps": {
@@ -1849,6 +1898,11 @@
     "keyCreatedDescription": "您的新 API 密钥已创建。请立即复制保存 - 之后将无法再次查看。",
     "keyWarning": "请务必立即复制您的 API 密钥，之后将无法再次查看！",
     "copied": "已复制到剪贴板",
-    "copyFailed": "复制失败"
+    "copyFailed": "复制失败",
+    "allowedAgents": "允许访问的应用",
+    "allowedAgentsHint": "选择此 API 密钥可以访问的应用。留空则允许访问所有应用。",
+    "noAgentsAvailable": "没有已发布的应用可用。",
+    "agents": "应用",
+    "allAgents": "所有应用"
   }
 }

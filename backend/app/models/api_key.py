@@ -19,13 +19,21 @@ class APIKey(models.Model):
         "models.User", related_name="api_keys", on_delete=fields.CASCADE
     )
     
+    # 关联可访问的 Agent（多对多）
+    agents: fields.ManyToManyRelation["Agent"] = fields.ManyToManyField(  # type: ignore
+        "models.Agent",
+        related_name="api_keys",
+        through="api_key_agents",
+        description="Agents this API key can access"
+    )
+    
     # 权限和限制
     scopes = fields.JSONField(
         default=list,
         description="List of permission scopes, empty means full access"
     )
     rate_limit = fields.IntField(
-        default=0, description="Rate limit per minute, 0 means unlimited"
+        default=1000, description="Rate limit per minute, 0 means unlimited"
     )
     
     # 状态
