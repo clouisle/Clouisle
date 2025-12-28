@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     agents,
     chat,
     tools,
+    conversations,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,6 @@ api_router.include_router(
 api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(chat.router, prefix="/agents", tags=["chat"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
+api_router.include_router(
+    conversations.router, prefix="/conversations", tags=["conversations"]
+)

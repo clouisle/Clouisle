@@ -20,6 +20,7 @@ import {
   Bot,
   Database,
   AppWindow,
+  MessageSquare,
 } from 'lucide-react'
 import { authApi, type User } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -114,6 +115,11 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('knowledgeBases'),
       url: '/knowledge-bases',
       icon: Database,
+    },
+    {
+      title: t('conversations'),
+      url: '/conversations',
+      icon: MessageSquare,
     },
   ]
 

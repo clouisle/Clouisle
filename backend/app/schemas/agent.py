@@ -299,6 +299,9 @@ class ConversationListOut(BaseModel):
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
+    # User info for admin view
+    user_id: UUID | None = None
+    user_name: str | None = None
 
     class Config:
         from_attributes = True

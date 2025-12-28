@@ -34,6 +34,7 @@
     "dashboard": "Dashboard",
     "teams": "Teams",
     "knowledgeBases": "Knowledge Bases",
+    "conversations": "Conversations",
     "users": "Users",
     "roles": "Roles",
     "permissions": "Permissions",
@@ -1181,7 +1182,9 @@
       "modelUsed": "Model used",
       "tokenBreakdown": "Input {prompt} / Output {completion}",
       "responseDuration": "Response duration",
-      "ragContextCount": "{count} reference documents",
+      "ragContextCount": "{count} sources",
+      "segment": "Segment {index}",
+      "relevance": "Relevance {score}%",
       "delete": "Delete",
       "deleteConfirmTitle": "Delete Conversation",
       "deleteConfirmDescription": "Are you sure you want to delete this conversation? This action cannot be undone and all messages will be permanently deleted.",
@@ -1520,5 +1523,70 @@
     "thresholdHint": "Minimum similarity score for results",
     "searchPlaceholder": "Enter your search query...",
     "search": "Search"
+  },
+  "conversations": {
+    "title": "Conversations",
+    "description": "View and manage all conversations across the system",
+    "fetchError": "Failed to fetch conversations",
+    "fetchDetailError": "Failed to fetch conversation details",
+    "deleteSuccess": "Conversation deleted successfully",
+    "deleteError": "Failed to delete conversation",
+    "batchDeleteSuccess": "{count} conversations deleted",
+    "untitled": "Untitled Conversation",
+    "noConversations": "No conversations yet",
+    "noSearchResults": "No conversations match your search",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "confirmDelete": "Delete",
+    "deleteTitle": "Delete Conversation",
+    "deleteDescription": "Are you sure you want to delete this conversation? This action cannot be undone.",
+    "batchDelete": "Delete ({count})",
+    "batchDeleteTitle": "Delete Conversations",
+    "batchDeleteDescription": "Are you sure you want to delete {count} conversations? This action cannot be undone.",
+    "selected": "selected",
+    "rowsPerPage": "Rows per page",
+    "pageInfo": "Page {page} of {total}",
+    "filters": {
+      "allTeams": "All Teams",
+      "allAgents": "All Agents",
+      "searchPlaceholder": "Search by title...",
+      "team": "Team",
+      "agent": "Agent",
+      "user": "User",
+      "title": "Title",
+      "untitledOnly": "Untitled Only"
+    },
+    "table": {
+      "title": "Title",
+      "agent": "Agent",
+      "user": "User",
+      "messages": "Messages",
+      "updatedAt": "Updated"
+    },
+    "pagination": {
+      "showing": "Showing {from}-{to} of {total}",
+      "prev": "Previous",
+      "next": "Next"
+    },
+    "stats": {
+      "totalConversations": "Total Conversations",
+      "totalMessages": "Total Messages",
+      "avgMessagesPerConversation": "Avg Messages/Conv",
+      "topAgent": "Top Agent"
+    },
+    "drawer": {
+      "user": "User",
+      "assistant": "Assistant",
+      "toolCalled": "Called",
+      "toolCompleted": "Completed",
+      "parameters": "Parameters",
+      "result": "Result",
+      "modelUsed": "Model used",
+      "tokenBreakdown": "Prompt: {prompt}, Completion: {completion}",
+      "responseDuration": "Response duration",
+      "ragContext": "{count} sources",
+      "segment": "Segment {index}",
+      "relevance": "Relevance {score}%"
+    }
   }
 }

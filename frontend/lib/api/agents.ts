@@ -168,6 +168,7 @@ export interface AgentQueryParams {
   search?: string
   status?: AgentStatus
   visibility?: AgentVisibility
+  teamId?: string
 }
 
 // ============ Conversation Types ============
@@ -332,13 +333,14 @@ export const agentsApi = {
    * 获取 Agent 列表
    */
   getAgents: async (params: AgentQueryParams = {}): Promise<PageData<AgentListItem>> => {
-    const { page = 1, pageSize = 20, search, status, visibility } = params
+    const { page = 1, pageSize = 20, search, status, visibility, teamId } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (search) queryParams.append('search', search)
+    if (search) queryParams.append('keyword', search)
     if (status) queryParams.append('status', status)
     if (visibility) queryParams.append('visibility', visibility)
+    if (teamId) queryParams.append('team_id', teamId)
     return api.get<PageData<AgentListItem>>(`/agents?${queryParams.toString()}`)
   },
 
@@ -569,3 +571,96 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
     }
   }
 }
+
+// ============ Admin Conversation Types ============
+
+export interface AdminConversationListItem extends ConversationListItem {
+  user_id?: string
+  user_name?: string | null
+}
+
+export interface AdminConversationWithMessages extends ConversationWithMessages {
+  user_id?: string
+  user_name?: string | null
+}
+
+export interface ConversationStats {
+  total_conversations: number
+  total_messages: number
+  conversations_by_agent: Array<{
+    agent_id: string
+    agent_name: string
+    agent_icon?: string | null
+    count: number
+  }>
+}
+
+export interface AdminConversationQueryParams {
+  team_id?: string
+  agent_id?: string
+  user_id?: string
+  search?: string
+  untitled_only?: boolean
+  page?: number
+  pageSize?: number
+}
+
+// ============ Admin Conversation API ============
+
+export const conversationsApi = {
+  /**
+   * 获取所有对话列表（管理员）
+   */
+  listAll: async (
+    params: AdminConversationQueryParams = {}
+  ): Promise<PageData<AdminConversationListItem>> => {
+    const { page = 1, pageSize = 20, team_id, agent_id, user_id, search, untitled_only } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (team_id) queryParams.append('team_id', team_id)
+    if (agent_id) queryParams.append('agent_id', agent_id)
+    if (user_id) queryParams.append('user_id', user_id)
+    if (search) queryParams.append('search', search)
+    if (untitled_only) queryParams.append('untitled_only', 'true')
+    return api.get<PageData<AdminConversationListItem>>(
+      `/conversations?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取对话统计数据
+   */
+  getStats: async (teamId?: string): Promise<ConversationStats> => {
+    const queryParams = new URLSearchParams()
+    if (teamId) queryParams.append('team_id', teamId)
+    const query = queryParams.toString()
+    return api.get<ConversationStats>(`/conversations/stats${query ? `?${query}` : ''}`)
+  },
+
+  /**
+   * 获取对话详情（管理员）
+   */
+  getDetail: async (conversationId: string): Promise<AdminConversationWithMessages> => {
+    return api.get<AdminConversationWithMessages>(`/conversations/${conversationId}`)
+  },
+
+  /**
+   * 删除对话（管理员）
+   */
+  delete: async (conversationId: string): Promise<void> => {
+    return api.delete<void>(`/conversations/${conversationId}`)
+  },
+
+  /**
+   * 批量删除对话（管理员）
+   */
+  batchDelete: async (ids: string[]): Promise<{ deleted_count: number; ids: string[] }> => {
+    const queryParams = new URLSearchParams()
+    ids.forEach((id) => queryParams.append('ids', id))
+    return api.delete<{ deleted_count: number; ids: string[] }>(
+      `/conversations?${queryParams.toString()}`
+    )
+  },
+}
+

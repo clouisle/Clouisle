@@ -2,10 +2,11 @@
 
 import * as React from 'react'
 import { useTranslations, useLocale } from 'next-intl'
-import { Clock, Zap, Loader2, WrenchIcon, CheckCircle2, ChevronDown } from 'lucide-react'
+import { Clock, Zap, Loader2, WrenchIcon, CheckCircle2, ChevronDown, User, Trash2 } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,13 +25,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { CodeBlock } from '@/components/ai-elements/code-block'
-import type { ConversationWithMessages, Message } from '@/lib/api'
+import type { AdminConversationWithMessages, Message } from '@/lib/api'
 
 interface ConversationDrawerProps {
-  conversation: ConversationWithMessages | null
+  conversation: AdminConversationWithMessages | null
   isLoading: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
+  onDelete?: (id: string) => void
 }
 
 // Helper to format relative time
@@ -85,8 +87,9 @@ export function ConversationDrawer({
   isLoading,
   open,
   onOpenChange,
+  onDelete,
 }: ConversationDrawerProps) {
-  const t = useTranslations('agents.logs')
+  const t = useTranslations('conversations')
   const locale = useLocale()
 
   // Calculate total tokens
@@ -107,25 +110,60 @@ export function ConversationDrawer({
         ) : conversation ? (
           <>
             <SheetHeader className="px-6 py-4 border-b shrink-0">
-              <SheetTitle className="text-lg">
-                {conversation.title || t('untitledConversation')}
-              </SheetTitle>
-              <SheetDescription className="flex items-center gap-4 text-sm">
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3.5 w-3.5" />
-                  {formatDateTime(conversation.created_at, locale)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Zap className="h-3.5 w-3.5" />
-                  {totalTokens.toLocaleString()} tokens
-                </span>
-              </SheetDescription>
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <SheetTitle className="text-lg truncate pr-4">
+                    {conversation.title || t('untitled')}
+                  </SheetTitle>
+                  <SheetDescription className="flex flex-col gap-1 text-sm mt-1">
+                    <span className="flex items-center gap-4">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatDateTime(conversation.created_at, locale)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Zap className="h-3.5 w-3.5" />
+                        {totalTokens.toLocaleString()} tokens
+                      </span>
+                    </span>
+                    {/* Admin info: user */}
+                    {conversation.user_name && (
+                      <span className="flex items-center gap-1">
+                        <User className="h-3.5 w-3.5" />
+                        {conversation.user_name}
+                      </span>
+                    )}
+                  </SheetDescription>
+                </div>
+                {onDelete && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => onDelete(conversation.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Agent info */}
+              {conversation.agent_name && (
+                <div className="mt-2">
+                  <Badge variant="secondary" className="text-xs">
+                    {conversation.agent_icon && (
+                      <img src={conversation.agent_icon} alt="" className="mr-1 h-4 w-4 rounded object-cover" />
+                    )}
+                    {conversation.agent_name}
+                  </Badge>
+                </div>
+              )}
 
               {/* Variables if any */}
               {conversation.variables && Object.keys(conversation.variables).length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {Object.entries(conversation.variables).map(([key, value]) => (
-                    <Badge key={key} variant="secondary" className="text-xs">
+                    <Badge key={key} variant="outline" className="text-xs">
                       {key}: {String(value)}
                     </Badge>
                   ))}
@@ -154,7 +192,7 @@ interface MessageItemProps {
 }
 
 function MessageItem({ message, locale }: MessageItemProps) {
-  const t = useTranslations('agents.logs')
+  const t = useTranslations('conversations')
   const isUser = message.role === 'user'
   const isAssistant = message.role === 'assistant'
   const isTool = message.role === 'tool'
@@ -196,7 +234,7 @@ function MessageItem({ message, locale }: MessageItemProps) {
       {/* Role & Time */}
       <div className={cn('flex items-center gap-2 mb-1.5', isUser && 'flex-row-reverse')}>
         <span className="text-xs font-medium">
-          {isUser ? t('user') : t('assistant')}
+          {isUser ? t('drawer.user') : t('drawer.assistant')}
         </span>
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(message.created_at, locale)}
@@ -234,85 +272,12 @@ function MessageItem({ message, locale }: MessageItemProps) {
   )
 }
 
-// RAG Context section - 参考 chat 的 source-content 风格
-function RagContextSection({ ragContext }: { ragContext: Record<string, unknown>[] }) {
-  const t = useTranslations('agents.logs')
-  const [isOpen, setIsOpen] = React.useState(false)
-
-  return (
-    <div className="mt-2 overflow-hidden">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors cursor-pointer">
-          <span>{t('ragContextCount', { count: ragContext.length })}</span>
-          <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", isOpen && "rotate-180")} />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 space-y-1">
-          {ragContext.map((ctx, index) => (
-            <RagSourceItem key={index} ctx={ctx} index={index} />
-          ))}
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
-  )
-}
-
-// 单个来源项组件
-function RagSourceItem({ ctx, index }: { ctx: Record<string, unknown>; index: number }) {
-  const t = useTranslations('agents.logs')
-  const [isOpen, setIsOpen] = React.useState(false)
-  
-  const content = (ctx.content as string) || (ctx.text as string) || JSON.stringify(ctx)
-  const source = (ctx.source as string) || (ctx.document_name as string) || (ctx.file_name as string)
-  const score = ctx.score as number | undefined
-  
-  // 截取预览内容
-  const getPreviewContent = () => {
-    if (content.length <= 60) return content
-    return content.slice(0, 60) + '...'
-  }
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
-      <CollapsibleTrigger className="w-full text-left">
-        <div className="flex items-start gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors">
-          <div className="mt-0.5 shrink-0">
-            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <span className="shrink-0">{source || t('segment', { index: index + 1 })}</span>
-              {score !== undefined && (
-                <span className="text-primary/70 shrink-0">
-                  {t('relevance', { score: Math.round(score * 100) })}
-                </span>
-              )}
-            </div>
-            {!isOpen && (
-              <div className="text-sm text-muted-foreground line-clamp-1">
-                {getPreviewContent()}
-              </div>
-            )}
-          </div>
-        </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="p-3 ml-6 border-l-2 border-muted">
-          <div className="text-sm whitespace-pre-wrap break-all">
-            {content}
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
 // Tool call message (assistant calling a tool)
 function ToolCallMessage({ toolCall }: { toolCall: Record<string, unknown> }) {
+  const t = useTranslations('conversations')
   const [open, setOpen] = React.useState(false)
   
   // Handle different tool_call structures
-  // Standard OpenAI format: { id, type, function: { name, arguments } }
-  // Or direct format: { name, arguments }
   let toolName = 'unknown'
   let args: string | undefined
 
@@ -321,7 +286,6 @@ function ToolCallMessage({ toolCall }: { toolCall: Record<string, unknown> }) {
     toolName = (functionData.name as string) || 'unknown'
     args = functionData.arguments as string | undefined
   } else if (toolCall.name) {
-    // Direct format
     toolName = toolCall.name as string
     args = toolCall.arguments as string | undefined
   }
@@ -337,20 +301,22 @@ function ToolCallMessage({ toolCall }: { toolCall: Record<string, unknown> }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="w-full rounded-md border">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 p-3 hover:bg-muted/50">
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 p-3 hover:bg-muted/50 cursor-pointer">
         <div className="flex items-center gap-2">
           <WrenchIcon className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium text-sm">{toolName}</span>
           <Badge variant="secondary" className="text-xs gap-1">
             <CheckCircle2 className="h-3 w-3 text-green-600" />
-            已调用
+            {t('drawer.toolCalled')}
           </Badge>
         </div>
         <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="border-t p-3 space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">参数</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            {t('drawer.parameters')}
+          </h4>
           <div className="rounded-md bg-muted/50">
             <CodeBlock code={parsedArgs ? (typeof parsedArgs === 'string' ? parsedArgs : JSON.stringify(parsedArgs, null, 2)) : '{}'} language="json" />
           </div>
@@ -362,6 +328,7 @@ function ToolCallMessage({ toolCall }: { toolCall: Record<string, unknown> }) {
 
 // Tool result message
 function ToolResultMessage({ message }: { message: Message }) {
+  const t = useTranslations('conversations')
   const [open, setOpen] = React.useState(false)
   const toolName = message.tool_name || 'unknown'
 
@@ -377,20 +344,22 @@ function ToolResultMessage({ message }: { message: Message }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="w-full rounded-md border">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 p-3 hover:bg-muted/50">
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 p-3 hover:bg-muted/50 cursor-pointer">
         <div className="flex items-center gap-2">
           <WrenchIcon className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium text-sm">{toolName}</span>
           <Badge variant="secondary" className="text-xs gap-1">
             <CheckCircle2 className="h-3 w-3 text-green-600" />
-            完成
+            {t('drawer.toolCompleted')}
           </Badge>
         </div>
         <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="border-t p-3 space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">结果</h4>
+          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            {t('drawer.result')}
+          </h4>
           <div className="rounded-md bg-muted/50 overflow-x-auto">
             {isJson ? (
               <CodeBlock code={content} language="json" />
@@ -413,7 +382,7 @@ function MessageMeta({ message, t }: { message: Message; t: ReturnType<typeof us
           <TooltipTrigger>
             <span className="cursor-help">{message.model_used}</span>
           </TooltipTrigger>
-          <TooltipContent>{t('modelUsed')}</TooltipContent>
+          <TooltipContent>{t('drawer.modelUsed')}</TooltipContent>
         </Tooltip>
       )}
       {message.token_usage && (
@@ -424,7 +393,7 @@ function MessageMeta({ message, t }: { message: Message; t: ReturnType<typeof us
             </span>
           </TooltipTrigger>
           <TooltipContent>
-            {t('tokenBreakdown', {
+            {t('drawer.tokenBreakdown', {
               prompt: message.token_usage.prompt || 0,
               completion: message.token_usage.completion || 0,
             })}
@@ -436,9 +405,81 @@ function MessageMeta({ message, t }: { message: Message; t: ReturnType<typeof us
           <TooltipTrigger>
             <span className="cursor-help">{message.duration_ms}ms</span>
           </TooltipTrigger>
-          <TooltipContent>{t('responseDuration')}</TooltipContent>
+          <TooltipContent>{t('drawer.responseDuration')}</TooltipContent>
         </Tooltip>
       )}
     </div>
+  )
+}
+
+// RAG Context section - 参考 chat 的 source-content 风格
+function RagContextSection({ ragContext }: { ragContext: Record<string, unknown>[] }) {
+  const t = useTranslations('conversations')
+  const [isOpen, setIsOpen] = React.useState(false)
+
+  return (
+    <div className="mt-2 overflow-hidden">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors cursor-pointer">
+          <span>{t('drawer.ragContext', { count: ragContext.length })}</span>
+          <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", isOpen && "rotate-180")} />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 space-y-1">
+          {ragContext.map((ctx, index) => (
+            <RagSourceItem key={index} ctx={ctx} index={index} />
+          ))}
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  )
+}
+
+// 单个来源项组件
+function RagSourceItem({ ctx, index }: { ctx: Record<string, unknown>; index: number }) {
+  const t = useTranslations('conversations')
+  const [isOpen, setIsOpen] = React.useState(false)
+  
+  const content = (ctx.content as string) || (ctx.text as string) || JSON.stringify(ctx)
+  const source = (ctx.source as string) || (ctx.document_name as string) || (ctx.file_name as string)
+  const score = ctx.score as number | undefined
+  
+  // 截取预览内容
+  const getPreviewContent = () => {
+    if (content.length <= 60) return content
+    return content.slice(0, 60) + '...'
+  }
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+      <CollapsibleTrigger className="w-full text-left">
+        <div className="flex items-start gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors">
+          <div className="mt-0.5 shrink-0">
+            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+              <span className="shrink-0">{source || t('drawer.segment', { index: index + 1 })}</span>
+              {score !== undefined && (
+                <span className="text-primary/70 shrink-0">
+                  {t('drawer.relevance', { score: Math.round(score * 100) })}
+                </span>
+              )}
+            </div>
+            {!isOpen && (
+              <div className="text-sm text-muted-foreground line-clamp-1">
+                {getPreviewContent()}
+              </div>
+            )}
+          </div>
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="p-3 ml-6 border-l-2 border-muted">
+          <div className="text-sm whitespace-pre-wrap break-all">
+            {content}
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

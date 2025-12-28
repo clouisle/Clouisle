@@ -46,6 +46,7 @@ export {
 
 export {
   agentsApi,
+  conversationsApi,
   parseSSEStream,
   type Agent,
   type AgentListItem,
@@ -78,6 +79,10 @@ export {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type AdminConversationListItem,
+  type AdminConversationWithMessages,
+  type ConversationStats,
+  type AdminConversationQueryParams,
 } from './agents'
 
 export {

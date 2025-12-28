@@ -711,6 +711,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Conversation deleted successfully",
         "zh": "对话删除成功",
     },
+    "conversations_deleted": {
+        "en": "Conversations deleted successfully",
+        "zh": "对话批量删除成功",
+    },
     "conversation_not_found": {
         "en": "Conversation not found",
         "zh": "对话未找到",

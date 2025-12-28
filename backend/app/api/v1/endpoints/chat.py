@@ -21,6 +21,7 @@ from tortoise.expressions import F
 from app.api import deps
 from app.models.user import User
 from app.models.model import TeamModel
+from app.models.user import TeamMember
 from app.models.agent import (
     Agent,
     AgentKnowledgeBase,
@@ -107,6 +108,18 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
                 msg_key="agent_access_denied",
                 status_code=403,
             )
+    elif agent.visibility == AgentVisibility.TEAM:
+        # Check if user is a member of the agent's team
+        if not user.is_superuser:
+            is_member = await TeamMember.filter(
+                team_id=agent.team_id, user_id=user.id
+            ).exists()
+            if not is_member:
+                raise BusinessError(
+                    code=ResponseCode.AGENT_ACCESS_DENIED,
+                    msg_key="agent_access_denied",
+                    status_code=403,
+                )
 
     return agent
 
@@ -1232,7 +1245,7 @@ async def chat_stream(
 
             await Conversation.filter(id=conversation.id).update(
                 message_count=F("message_count") + 2,
-                token_usage=F("token_usage") + input_tokens + output_tokens,
+                token_usage=F("token_usage") + (input_tokens + output_tokens),
                 **title_update,
             )
 
