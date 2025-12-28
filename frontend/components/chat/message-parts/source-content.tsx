@@ -56,7 +56,7 @@ function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: n
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <span className="shrink-0">{t('segment', { index: index + 1 })}</span>
-              {segment.metadata?.score && (
+              {typeof segment.metadata?.score === 'number' && (
                 <span className="text-primary/70 shrink-0">
                   {t('relevance', { score: Math.round(segment.metadata.score * 100) })}
                 </span>

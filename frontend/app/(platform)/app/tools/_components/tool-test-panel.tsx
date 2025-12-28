@@ -195,11 +195,11 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
                 </div>
               ) : mcpTools.length > 0 ? (
                 <Select value={selectedMcpTool} onValueChange={(v) => {
-                  setSelectedMcpTool(v)
+                  setSelectedMcpTool(v ?? '')
                   setArgs({}) // 切换工具时清空参数
                 }}>
                   <SelectTrigger>
-                    <SelectValue placeholder={t('selectTool')} />
+                    <SelectValue>{selectedMcpTool || t('selectTool')}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {mcpTools.map((mcpTool) => (

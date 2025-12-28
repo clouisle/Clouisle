@@ -63,10 +63,6 @@ function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />
 }
 
-function PopoverAnchor({ ...props }: PopoverPrimitive.Anchor.Props) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
-}
-
 export {
   Popover,
   PopoverTrigger,
@@ -74,5 +70,4 @@ export {
   PopoverContent,
   PopoverArrow,
   PopoverClose,
-  PopoverAnchor,
 }

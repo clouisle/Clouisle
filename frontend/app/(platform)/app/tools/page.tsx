@@ -381,7 +381,7 @@ export default function ToolsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('tools.confirmDelete')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('tools.deleteToolConfirm', { name: deletingTool?.display_name })}
+              {t('tools.deleteToolConfirm', { name: deletingTool?.display_name ?? '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

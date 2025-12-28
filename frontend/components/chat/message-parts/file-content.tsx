@@ -20,7 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { FilePart } from '../types';
 
-interface FileContentProps {
+export interface FileContentProps {
   file: FilePart;
   className?: string;
 }
@@ -128,7 +128,6 @@ export function FileContent({ file, className }: FileContentProps) {
           <a
             href={file.url}
             download={file.name}
-            title={t('download')}
             className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             <Download className="h-4 w-4" />
