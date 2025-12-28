@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from tortoise.expressions import F
 
 from app.api import deps
 from app.models.user import User
@@ -135,9 +136,10 @@ async def get_or_create_conversation(
         variables=variables,
     )
 
-    # Update agent stats
-    agent.conversation_count += 1
-    await agent.save()
+    # Update agent stats atomically to prevent race conditions
+    await Agent.filter(id=agent.id).update(
+        conversation_count=F("conversation_count") + 1
+    )
 
     return conversation
 
@@ -499,100 +501,17 @@ async def execute_http_tool(tool: "Tool", arguments: dict) -> str:
     """
     Execute an HTTP-based custom tool.
     """
-    import httpx
+    from app.llm.tools.executors import (
+        execute_http_tool as shared_execute_http_tool,
+        format_http_result_for_llm,
+    )
 
-    config = tool.http_config
-    method = config.get("method", "GET").upper()
-    url = config.get("url", "")
-    headers = config.get("headers", {})
-    timeout = config.get("timeout", 30)
-    response_path = config.get("response_path")
-
-    # Replace template variables in URL
-    for key, value in arguments.items():
-        url = url.replace(f"{{{{{key}}}}}", str(value))
-
-    # Replace template variables in headers
-    for header_key, header_value in headers.items():
-        for key, value in arguments.items():
-            headers[header_key] = header_value.replace(f"{{{{{key}}}}}", str(value))
-        # Also replace credentials
-        for cred_key, cred_value in tool.credentials.items():
-            headers[header_key] = headers[header_key].replace(
-                f"{{{{{cred_key}}}}}", str(cred_value)
-            )
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if method == "GET":
-                query_params = config.get("query_params", {})
-                # Replace template variables in query params
-                for param_key, param_value in query_params.items():
-                    for key, value in arguments.items():
-                        query_params[param_key] = str(param_value).replace(
-                            f"{{{{{key}}}}}", str(value)
-                        )
-                response = await client.get(url, headers=headers, params=query_params)
-            elif method == "POST":
-                body_template = config.get("body_template", "{}")
-                # Replace template variables in body
-                body = body_template
-                for key, value in arguments.items():
-                    body = body.replace(
-                        f"{{{{{key}}}}}",
-                        json.dumps(value)
-                        if isinstance(value, (dict, list))
-                        else str(value),
-                    )
-                response = await client.post(url, headers=headers, content=body)
-            elif method == "PUT":
-                body_template = config.get("body_template", "{}")
-                body = body_template
-                for key, value in arguments.items():
-                    body = body.replace(
-                        f"{{{{{key}}}}}",
-                        json.dumps(value)
-                        if isinstance(value, (dict, list))
-                        else str(value),
-                    )
-                response = await client.put(url, headers=headers, content=body)
-            elif method == "DELETE":
-                response = await client.delete(url, headers=headers)
-            else:
-                return json.dumps(
-                    {"error": f"Unsupported HTTP method: {method}"}, ensure_ascii=False
-                )
-
-            response.raise_for_status()
-
-            # Parse response
-            try:
-                result = response.json()
-
-                # Extract specific path if configured
-                if response_path:
-                    for key in response_path.split("."):
-                        if isinstance(result, dict):
-                            result = result.get(key, result)
-
-                return (
-                    json.dumps(result, ensure_ascii=False)
-                    if isinstance(result, (dict, list))
-                    else str(result)
-                )
-            except json.JSONDecodeError:
-                return response.text
-
-    except httpx.HTTPStatusError as e:
-        return json.dumps(
-            {
-                "error": f"HTTP error: {e.response.status_code}",
-                "detail": e.response.text[:500],
-            },
-            ensure_ascii=False,
-        )
-    except Exception as e:
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+    result = await shared_execute_http_tool(
+        http_config=tool.http_config,
+        arguments=arguments,
+        credentials=tool.credentials,
+    )
+    return format_http_result_for_llm(result)
 
 
 async def execute_code_tool(tool: "Tool", arguments: dict) -> str:
@@ -808,19 +727,24 @@ async def chat(
             else None,
         )
 
-        # Update conversation stats
-        conversation.message_count += 2
-        conversation.token_usage += response.usage.total_tokens if response.usage else 0
+        # Update conversation stats atomically
+        title_update = {}
         if not conversation.title:
             # Auto-generate title from first message
-            conversation.title = chat_in.message[:50] + (
+            title_update["title"] = chat_in.message[:50] + (
                 "..." if len(chat_in.message) > 50 else ""
             )
-        await conversation.save()
 
-        # Update agent stats
-        agent.message_count += 2
-        await agent.save()
+        await Conversation.filter(id=conversation.id).update(
+            message_count=F("message_count") + 2,
+            token_usage=F("token_usage") + (response.usage.total_tokens if response.usage else 0),
+            **title_update,
+        )
+
+        # Update agent stats atomically
+        await Agent.filter(id=agent.id).update(
+            message_count=F("message_count") + 2
+        )
 
         return success(
             data=ChatResponse(
@@ -1300,18 +1224,23 @@ async def chat_stream(
             }
             await assistant_msg.save()
 
-            # Update conversation stats
-            conversation.message_count += 2
-            conversation.token_usage += input_tokens + output_tokens
+            # Update conversation stats atomically
+            title_update = {}
             if not conversation.title:
-                conversation.title = chat_in.message[:50] + (
+                title_update["title"] = chat_in.message[:50] + (
                     "..." if len(chat_in.message) > 50 else ""
                 )
-            await conversation.save()
 
-            # Update agent stats
-            agent.message_count += 2
-            await agent.save()
+            await Conversation.filter(id=conversation.id).update(
+                message_count=F("message_count") + 2,
+                token_usage=F("token_usage") + input_tokens + output_tokens,
+                **title_update,
+            )
+
+            # Update agent stats atomically
+            await Agent.filter(id=agent.id).update(
+                message_count=F("message_count") + 2
+            )
 
             # Send message_end event with version info
             yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"

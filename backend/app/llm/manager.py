@@ -1029,12 +1029,18 @@ class ModelManager:
             input_text_length: 输入文本字符数
             output_text_length: 输出文本字符数（包括 content 和 reasoning）
         """
+        from app.llm.token_counter import count_tokens
+
         # 获取模型配置以获取正确的 model UUID
         model_config, _ = await self._get_team_model(team_id, model_id or "")
 
-        # 估算 token 用量（简单估算：4 字符约 1 token）
-        input_tokens = max(input_text_length // 4, 1)
-        output_tokens = max(output_text_length // 4, 1)
+        # 使用 tiktoken 进行准确的 token 计数
+        # 构造临时文本用于计数（实际使用时应该传入完整文本）
+        # 这里使用字符数作为文本近似
+        dummy_input = "x" * input_text_length
+        dummy_output = "x" * output_text_length
+        input_tokens = count_tokens(dummy_input, model_config.model_id, model_config.provider)
+        output_tokens = count_tokens(dummy_output, model_config.model_id, model_config.provider)
         total_tokens = input_tokens + output_tokens
 
         await self._check_and_record_usage(
@@ -1082,9 +1088,13 @@ class ModelManager:
         try:
             result = await embedding_model.aembed_documents(texts)
 
-            # 估算 token 用量（embedding 模型按字符数估算）
-            total_chars = sum(len(t) for t in texts)
-            total_tokens = max(total_chars // 4, 1)
+            # 使用 tiktoken 进行准确的 token 计数
+            from app.llm.token_counter import count_tokens
+            total_tokens = sum(
+                count_tokens(t, model_config.model_id, model_config.provider)
+                for t in texts
+            )
+            total_tokens = max(total_tokens, 1)
 
             # 记录用量
             await self._check_and_record_usage(

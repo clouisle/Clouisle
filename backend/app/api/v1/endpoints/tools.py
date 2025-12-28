@@ -24,6 +24,7 @@ from app.models.tool import (
 from app.llm.tools import tool_registry
 from app.llm.tools.sandbox import execute_code
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
+from app.llm.tools.executors import execute_http_tool
 from app.schemas.response import (
     Response,
     ResponseCode,
@@ -177,80 +178,6 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         updated_at=tool.updated_at.isoformat() if tool.updated_at else None,
         created_by_name=creator_name,
     )
-
-
-async def execute_http_tool(
-    http_config: dict,
-    arguments: dict[str, Any],
-    credentials: dict[str, str],
-) -> dict:
-    """执行 HTTP 工具"""
-
-    def replace_vars(text: str, vars_dict: dict) -> str:
-        for key, value in vars_dict.items():
-            text = text.replace(f"{{{{{key}}}}}", str(value))
-        return text
-
-    # 合并参数和凭证
-    all_vars = {**arguments, **credentials}
-
-    url = replace_vars(http_config.get("url", ""), all_vars)
-    method = http_config.get("method", "GET")
-    timeout = http_config.get("timeout", 30)
-
-    headers = {
-        k: replace_vars(v, all_vars) for k, v in http_config.get("headers", {}).items()
-    }
-
-    query_params = {
-        k: replace_vars(v, all_vars)
-        for k, v in http_config.get("query_params", {}).items()
-    }
-
-    body = None
-    body_template = http_config.get("body_template")
-    if body_template and method in ["POST", "PUT", "PATCH"]:
-        body_str = replace_vars(body_template, all_vars)
-        try:
-            body = json.loads(body_str)
-        except json.JSONDecodeError:
-            body = body_str
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                params=query_params,
-                json=body if isinstance(body, dict) else None,
-                content=body if isinstance(body, str) else None,
-            )
-
-            try:
-                result = response.json()
-            except Exception:
-                result = response.text
-
-            # 提取指定路径的数据
-            response_path = http_config.get("response_path")
-            if response_path and isinstance(result, dict):
-                for key in response_path.split("."):
-                    if isinstance(result, dict) and key in result:
-                        result = result[key]
-                    else:
-                        break
-
-            return {
-                "success": response.is_success,
-                "status_code": response.status_code,
-                "result": result,
-            }
-
-    except httpx.TimeoutException:
-        return {"success": False, "error": "Request timeout"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 
 # ============ API Endpoints ============

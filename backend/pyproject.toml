@@ -32,6 +32,8 @@ dependencies = [
     # Document processing
     "markitdown[pdf,xlsx,xls]>=0.0.1a3",
     "jieba>=0.42.1",
+    # Token counting
+    "tiktoken>=0.7.0",
 ]
 
 [dependency-groups]

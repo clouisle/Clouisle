@@ -8,6 +8,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from tortoise.expressions import F
+from tortoise.functions import Count
 
 from app.api import deps
 from app.models.user import User, Team, TeamMember
@@ -210,20 +212,32 @@ async def build_agent_out(agent: Agent) -> dict:
     return agent_data
 
 
-async def build_agent_list_out(agent: Agent) -> dict:
-    """Build AgentListOut response."""
+async def build_agent_list_out(
+    agent: Agent, model_info_map: dict[str, ModelInfo] | None = None
+) -> dict:
+    """Build AgentListOut response.
+    
+    Args:
+        agent: Agent instance
+        model_info_map: Optional pre-fetched model info mapping (model_id -> ModelInfo)
+    """
     model_info = None
     if agent.model_id:
-        team_model = (
-            await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
-        )
-        if team_model:
-            model_info = ModelInfo(
-                id=team_model.id,
-                name=team_model.model.name,
-                provider=team_model.model.provider,
-                model_id=team_model.model.model_id,
+        # Use pre-fetched model info if available (batch query optimization)
+        if model_info_map and str(agent.model_id) in model_info_map:
+            model_info = model_info_map[str(agent.model_id)]
+        else:
+            # Fallback to individual query
+            team_model = (
+                await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
             )
+            if team_model:
+                model_info = ModelInfo(
+                    id=team_model.id,
+                    name=team_model.model.name,
+                    provider=team_model.model.provider,
+                    model_id=team_model.model.model_id,
+                )
 
     # Manually build the dict to avoid QuerySet issues with ForeignKey fields
     agent_data = {
@@ -305,10 +319,23 @@ async def list_agents(
         await query.prefetch_related("team", "created_by").offset(skip).limit(page_size)
     )
 
-    # Build response with model info
+    # Batch fetch all model info to avoid N+1 queries
+    model_ids = [a.model_id for a in agents if a.model_id]
+    model_info_map: dict[str, ModelInfo] = {}
+    if model_ids:
+        team_models = await TeamModel.filter(id__in=model_ids).prefetch_related("model")
+        for tm in team_models:
+            model_info_map[str(tm.id)] = ModelInfo(
+                id=tm.id,
+                name=tm.model.name,
+                provider=tm.model.provider,
+                model_id=tm.model.model_id,
+            )
+
+    # Build response with pre-fetched model info
     agent_list = []
     for agent in agents:
-        agent_data = await build_agent_list_out(agent)
+        agent_data = await build_agent_list_out(agent, model_info_map)
         agent_list.append(agent_data)
 
     return success(
@@ -687,16 +714,35 @@ async def get_conversation(
         is_active=True,
     ).order_by("created_at")
 
-    # Build message outputs with version count
+    # Batch calculate version counts to avoid N+1 queries
+    # Get all parent_ids we need to count
+    root_ids = set()
+    for m in messages:
+        root_id = m.parent_id if m.parent_id else m.id
+        root_ids.add(root_id)
+
+    # Batch query version counts using GROUP BY
+    version_counts: dict[str, int] = {}
+    if root_ids:
+        # Count children for each parent_id
+        child_counts = await Message.filter(
+            parent_id__in=list(root_ids)
+        ).annotate(count=Count("id")).group_by("parent_id").values("parent_id", "count")
+        
+        for item in child_counts:
+            version_counts[str(item["parent_id"])] = item["count"] + 1  # +1 for root
+        
+        # For root messages without children, set count to 1
+        for root_id in root_ids:
+            if str(root_id) not in version_counts:
+                version_counts[str(root_id)] = 1
+
+    # Build message outputs with pre-fetched version counts
     messages_out = []
     for m in messages:
         msg_data = MessageOut.model_validate(m).model_dump()
-        # Calculate version count for this message
         root_id = m.parent_id if m.parent_id else m.id
-        version_count = (
-            await Message.filter(parent_id=root_id).count() + 1
-        )  # +1 for the root
-        msg_data["version_count"] = version_count
+        msg_data["version_count"] = version_counts.get(str(root_id), 1)
         messages_out.append(msg_data)
 
     # First convert to ConversationOut, then build ConversationWithMessages
@@ -764,11 +810,11 @@ async def delete_conversation(
             status_code=404,
         )
 
-    # Update agent stats
-    agent = await Agent.get(id=conversation.agent_id)
-    agent.conversation_count = max(0, agent.conversation_count - 1)
-    agent.message_count = max(0, agent.message_count - conversation.message_count)
-    await agent.save()
+    # Update agent stats atomically to prevent race conditions
+    await Agent.filter(id=conversation.agent_id).update(
+        conversation_count=F("conversation_count") - 1,
+        message_count=F("message_count") - conversation.message_count,
+    )
 
     # Delete conversation (cascades to messages)
     await conversation.delete()
@@ -810,14 +856,17 @@ async def delete_message(
             status_code=404,
         )
 
-    # Update stats
-    conversation.message_count = max(0, conversation.message_count - 1)
+    # Update stats atomically to prevent race conditions
+    tokens_to_remove = 0
     if message.token_usage:
-        tokens = message.token_usage.get("prompt", 0) + message.token_usage.get(
+        tokens_to_remove = message.token_usage.get("prompt", 0) + message.token_usage.get(
             "completion", 0
         )
-        conversation.token_usage = max(0, conversation.token_usage - tokens)
-    await conversation.save()
+
+    await Conversation.filter(id=conversation.id).update(
+        message_count=F("message_count") - 1,
+        token_usage=F("token_usage") - tokens_to_remove,
+    )
 
     # Delete message
     await message.delete()
