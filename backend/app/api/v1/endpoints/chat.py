@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from tortoise.expressions import F
 
 from app.api import deps
+from app.core.config import settings
 from app.models.user import User
 from app.models.model import TeamModel
 from app.models.user import TeamMember
@@ -40,6 +41,8 @@ from app.schemas.agent import (
     SwitchVersionRequest,
     RegenerateRequest,
     SSEEventType,
+    AgentPublicOut,
+    CreatorInfo,
 )
 from app.schemas.response import (
     Response,
@@ -91,17 +94,9 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
             status_code=404,
         )
 
-    # Draft agents can only be used by creator
-    if agent.status == AgentStatus.DRAFT:
-        if agent.created_by.id != user.id and not user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.AGENT_NOT_PUBLISHED,
-                msg_key="agent_not_published",
-                status_code=403,
-            )
-
-    # Check visibility
+    # Check visibility first
     if agent.visibility == AgentVisibility.PRIVATE:
+        # Private agents can only be used by creator
         if agent.created_by.id != user.id and not user.is_superuser:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
@@ -120,6 +115,84 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
                     msg_key="agent_access_denied",
                     status_code=403,
                 )
+
+    # Draft agents: team members can debug/preview, but public users cannot
+    if agent.status == AgentStatus.DRAFT:
+        # For public visibility draft agents, only creator and superuser can use
+        if agent.visibility == AgentVisibility.PUBLIC:
+            if agent.created_by.id != user.id and not user.is_superuser:
+                raise BusinessError(
+                    code=ResponseCode.AGENT_NOT_PUBLISHED,
+                    msg_key="agent_not_published",
+                    status_code=403,
+                )
+        # For private/team visibility, access already checked above
+
+    return agent
+
+
+async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
+    """
+    Get agent for public chat page.
+    - Must be logged in to access any agent
+    - Public visibility: any logged-in user can access
+    - Team visibility: only team members can access
+    - Private visibility: only creator can access
+    """
+    # Must be logged in
+    if not user:
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="not_authenticated",
+            status_code=401,
+        )
+    
+    agent = (
+        await Agent.filter(id=agent_id).prefetch_related("team", "created_by").first()
+    )
+
+    if not agent:
+        raise BusinessError(
+            code=ResponseCode.AGENT_NOT_FOUND,
+            msg_key="agent_not_found",
+            status_code=404,
+        )
+
+    # Check visibility
+    if agent.visibility == AgentVisibility.PRIVATE:
+        # Private agents can only be accessed by creator
+        if agent.created_by.id != user.id and not user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
+    elif agent.visibility == AgentVisibility.TEAM:
+        # Team agents can only be accessed by team members
+        if not user.is_superuser:
+            is_member = await TeamMember.filter(
+                team_id=agent.team_id, user_id=user.id
+            ).exists()
+            if not is_member:
+                raise BusinessError(
+                    code=ResponseCode.AGENT_ACCESS_DENIED,
+                    msg_key="agent_access_denied",
+                    status_code=403,
+                )
+    # Public visibility: any logged-in user can access
+    
+    # Must be published
+    if agent.status != AgentStatus.PUBLISHED:
+        # Only allow draft access for creator/team members
+        if agent.visibility == AgentVisibility.PUBLIC:
+            if agent.created_by.id != user.id and not user.is_superuser:
+                raise BusinessError(
+                    code=ResponseCode.AGENT_NOT_PUBLISHED,
+                    msg_key="agent_not_published",
+                    status_code=403,
+                )
+    
+    return agent
 
     return agent
 
@@ -158,9 +231,21 @@ async def get_or_create_conversation(
 
 
 async def build_messages(
-    agent: Agent, conversation: Conversation, user_message: str
+    agent: Agent,
+    conversation: Conversation,
+    user_message: str,
+    file_content: str | None = None,
+    file_urls: list[dict] | None = None,
 ) -> list[LLMMessage]:
-    """Build message list for LLM call."""
+    """Build message list for LLM call.
+    
+    Args:
+        agent: The agent
+        conversation: The conversation
+        user_message: User's message text
+        file_content: Legacy file content to inject into {{fileContent}} variable
+        file_urls: List of file URLs for tool-based file processing
+    """
     messages: list[LLMMessage] = []
 
     # System prompt
@@ -169,6 +254,16 @@ async def build_messages(
         system_prompt = agent.system_prompt
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+        
+        # Inject {{query}} variable - user's current input
+        system_prompt = system_prompt.replace("{{query}}", user_message)
+        
+        # Inject file content into {{fileContent}} variable (legacy)
+        if file_content:
+            system_prompt = system_prompt.replace("{{fileContent}}", file_content)
+        else:
+            # Remove the placeholder if no file content
+            system_prompt = system_prompt.replace("{{fileContent}}", "")
 
         messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
@@ -192,8 +287,17 @@ async def build_messages(
                 )
             )
 
-    # Add current user message
-    messages.append(LLMMessage(role=LLMMessageRole.USER, content=user_message))
+    # Build current user message with file info
+    final_user_message = user_message
+    if file_urls:
+        # Add file info to the message so LLM knows to use markitdown tool
+        file_info_lines = ["[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"]
+        for f in file_urls:
+            file_info_lines.append(f"- {f['filename']} ({f['url']})")
+        file_info = "\n".join(file_info_lines)
+        final_user_message = f"{file_info}\n\n{user_message}"
+
+    messages.append(LLMMessage(role=LLMMessageRole.USER, content=final_user_message))
 
     return messages
 
@@ -236,7 +340,7 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
     from app.models.tool import Tool
     from app.models.agent import RAGMode
 
-    tools_config = agent.tools_config or []
+    tools_config = list(agent.tools_config or [])  # Make a copy to avoid modifying original
     openai_tools: list[dict] = []
 
     # Add knowledge_search tool only for agentic RAG mode
@@ -664,6 +768,48 @@ User question: {user_message}
 Remember: Only use [[cite:N]] citations when you actually use information from the references above."""
 
 
+# ============ Public Endpoints (Optional Auth) ============
+
+
+@router.get("/{agent_id}/public", response_model=Response[AgentPublicOut])
+async def get_public_agent_info(
+    agent_id: UUID,
+    current_user: User | None = Depends(deps.get_current_user_optional),
+) -> Any:
+    """
+    Get agent info for chat page.
+    - With authentication: returns agent if user has access (team member, etc.)
+    - Without authentication: only returns published public agents
+    """
+    agent = await get_public_agent(agent_id, current_user)
+
+    # Build public response with minimal info
+    creator_info = None
+    if agent.created_by:
+        creator_info = CreatorInfo(
+            id=agent.created_by.id,
+            username=agent.created_by.username,
+            avatar_url=agent.created_by.avatar_url,
+        )
+
+    return success(
+        data=AgentPublicOut(
+            id=agent.id,
+            name=agent.name,
+            description=agent.description,
+            icon=agent.icon,
+            avatar_url=agent.avatar_url,
+            opening_message=agent.opening_message,
+            suggested_questions=agent.suggested_questions or [],
+            variables=agent.variables or [],
+            enable_vision=agent.enable_vision,
+            enable_file_upload=agent.enable_file_upload,
+            file_upload_config=agent.file_upload_config,
+            created_by=creator_info,
+        )
+    )
+
+
 # ============ Chat Endpoints ============
 
 
@@ -712,11 +858,13 @@ async def chat(
         rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
-    # Save user message
+    # Save user message with images and file_urls
     await Message.create(
         conversation=conversation,
         role=MessageRole.USER,
         content=chat_in.message,
+        images=[img.model_dump() for img in chat_in.images] if chat_in.images else None,
+        file_urls=[f.model_dump() for f in chat_in.file_urls] if chat_in.file_urls else None,
         rag_context=rag_contexts if rag_contexts else None,
     )
 
@@ -891,11 +1039,13 @@ async def chat_stream(
                         yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
                     final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
-            # Save user message
+            # Save user message with images and file_urls
             user_msg = await Message.create(
                 conversation=conversation,
                 role=MessageRole.USER,
                 content=chat_in.message,
+                images=[img.model_dump() for img in chat_in.images] if chat_in.images else None,
+                file_urls=[f.model_dump() for f in chat_in.file_urls] if chat_in.file_urls else None,
                 rag_context=rag_contexts if rag_contexts else None,
             )
 
@@ -913,10 +1063,127 @@ async def chat_stream(
             # Build messages for LLM using proper types
             messages_for_llm: list[LLMTypeMessage] = []
 
+            # Build file content string for injection into {{fileContent}}
+            file_content_str = ""
+            if agent.enable_file_upload:
+                from app.services.file_parser import (
+                    file_parser_service,
+                    ParsedFile,
+                    FileParseConfig,
+                )
+                
+                parsed_files: list[ParsedFile] = []
+                
+                # Get file upload config
+                file_config = agent.file_upload_config or {}
+                parser_config = file_config.get("parser")
+                parse_config = FileParseConfig(
+                    max_content_length=file_config.get("max_content_length", 100000),
+                    truncate_strategy=file_config.get("truncate_strategy", "end"),
+                )
+                
+                # Handle file_urls: download and parse files
+                if chat_in.file_urls and parser_config:
+                    import httpx
+                    from urllib.parse import urlparse, unquote
+                    from pathlib import Path as PathLib
+                    
+                    # Check parser type
+                    parser_type = parser_config.get("type", "builtin")
+                    parser_name = parser_config.get("name", "markitdown")
+                    parser_tool_id = parser_config.get("tool_id")
+                    
+                    if parser_type == "builtin" and parser_name == "markitdown":
+                        # Use built-in file_parser_service
+                        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                            for f in chat_in.file_urls:
+                                try:
+                                    url = f.url
+                                    # Handle internal URLs - prepend API_BASE_URL
+                                    if url.startswith("/"):
+                                        base_url = settings.API_BASE_URL.rstrip("/")
+                                        url = f"{base_url}{url}"
+                                    
+                                    response = await client.get(url)
+                                    response.raise_for_status()
+                                    file_content = response.content
+                                    
+                                    # Parse file
+                                    parsed = await file_parser_service.parse_file(
+                                        file_content,
+                                        f.filename,
+                                        parse_config,
+                                    )
+                                    parsed_files.append(parsed)
+                                except Exception as e:
+                                    logger.warning(f"Failed to parse file {f.filename}: {e}")
+                                    # Add error placeholder
+                                    parsed_files.append(ParsedFile(
+                                        filename=f.filename,
+                                        content=f"[文件解析失败: {str(e)}]",
+                                        mime_type=f.mime_type,
+                                        size=f.size,
+                                    ))
+                    
+                    elif parser_type == "custom" and parser_tool_id:
+                        # Use custom tool for parsing
+                        from app.models.tool import Tool
+                        custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
+                        if custom_tool:
+                            try:
+                                # Call custom tool with files_url parameter
+                                urls = [f.url for f in chat_in.file_urls]
+                                result = await execute_tool_call(
+                                    f"custom_{custom_tool.name}",
+                                    {"files_url": urls},
+                                    agent,
+                                )
+                                # Custom tool returns parsed content as string
+                                if result:
+                                    parsed_files.append(ParsedFile(
+                                        filename="自定义解析结果",
+                                        content=result,
+                                        mime_type="text/plain",
+                                        size=len(result),
+                                    ))
+                            except Exception as e:
+                                logger.warning(f"Custom parser failed: {e}")
+                                parsed_files.append(ParsedFile(
+                                    filename="解析错误",
+                                    content=f"[自定义解析器失败: {str(e)}]",
+                                    mime_type="text/plain",
+                                    size=0,
+                                ))
+                
+                # Handle legacy files field (deprecated, frontend sends parsed content)
+                elif chat_in.files:
+                    for f in chat_in.files:
+                        parsed_files.append(ParsedFile(
+                            filename=f.filename,
+                            content=f.content,
+                            mime_type=f.mime_type,
+                            size=f.size,
+                            truncated=f.truncated,
+                            original_length=f.original_length,
+                        ))
+                
+                if parsed_files:
+                    file_content_str = file_parser_service.format_files_for_prompt(parsed_files)
+
             if agent.system_prompt:
                 system_prompt = agent.system_prompt
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                
+                # Inject {{query}} variable - user's current input
+                system_prompt = system_prompt.replace("{{query}}", chat_in.message)
+                
+                # Inject file content into {{fileContent}} variable
+                if file_content_str:
+                    system_prompt = system_prompt.replace("{{fileContent}}", file_content_str)
+                else:
+                    system_prompt = system_prompt.replace("{{fileContent}}", "")
+                
                 messages_for_llm.append(
                     LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                 )
@@ -1257,6 +1524,7 @@ async def chat_stream(
 
             # Update assistant message (final response, no tool_calls)
             assistant_msg.content = full_content
+            assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
             assistant_msg.model_used = model_id
             assistant_msg.duration_ms = duration_ms
             # Estimate token usage
@@ -1636,6 +1904,8 @@ async def regenerate_message(
                 system_prompt = agent.system_prompt
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                # Inject {{query}} variable - user's current input
+                system_prompt = system_prompt.replace("{{query}}", user_message.content)
                 messages_for_llm.append(
                     LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                 )

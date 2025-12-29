@@ -275,10 +275,10 @@ export default function CodeToolPage() {
 
       if (isEditing && toolId) {
         await toolsApi.update(toolId, data)
-        toast.success(t('success.updated'))
+        toast.success(t('successMessages.updated'))
       } else {
         await toolsApi.create(currentTeam.id, data as ToolCreateInput)
-        toast.success(t('success.created'))
+        toast.success(t('successMessages.created'))
         router.push('/app/tools')
       }
     } catch (error: unknown) {

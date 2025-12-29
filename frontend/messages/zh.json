@@ -335,6 +335,7 @@
   },
   "settings": {
     "title": "设置",
+    "cancel": "取消",
     "profile": "个人资料",
     "account": "账户安全",
     "appearance": "外观",
@@ -886,7 +887,7 @@
         "nameRequired": "请输入工具名称",
         "duplicateParamName": "参数名称不能重复"
       },
-      "success": {
+      "successMessages": {
         "created": "工具创建成功",
         "updated": "工具更新成功"
       },
@@ -992,6 +993,7 @@
     "visibilityPrivate": "私有",
     "visibilityTeam": "团队",
     "visibilityPublic": "公开",
+    "visibilityPublic": "公开",
     "saveAndPublish": "保存并发布",
     "saveDraft": "保存草稿",
     "preview": "预览",
@@ -1015,13 +1017,15 @@
         "monitor": "监控"
       },
       "toolbar": {
+        "chat": "对话",
         "settings": "Agent 设置",
         "saving": "保存中...",
         "save": "保存",
         "published": "已发布",
         "publish": "发布",
         "confirmPublish": "确认发布",
-        "confirmUnpublish": "取消发布"
+        "confirmUnpublish": "取消发布",
+        "openPublicChat": "公开页面"
       },
       "prompt": {
         "title": "提示词",
@@ -1134,6 +1138,24 @@
         "tooltip": "启用视觉能力，允许 Agent 理解和分析图片",
         "description": "启用后，Agent 可以接收和理解图片输入。需要选择支持视觉的模型（如 GPT-4V、Claude 3）。"
       },
+      "fileUpload": {
+        "title": "文件上传",
+        "tooltip": "允许用户上传文档供 Agent 分析",
+        "description": "启用后，用户可以上传文档（PDF、Word、Excel、PPT 等）。文件内容将被解析并注入到提示词中。",
+        "parser": "文件解析器",
+        "selectParser": "选择文件解析器",
+        "parserHint": "选择用于解析上传文件的工具。您也可以创建自定义的文件解析工具。",
+        "maxContentLength": "最大内容长度",
+        "maxContentLengthHint": "每个文件解析后的最大字符数（1,000-500,000）",
+        "characters": "字符",
+        "truncateStrategy": "截断策略",
+        "selectStrategy": "选择截断策略",
+        "truncateEnd": "保留开头（截断结尾）",
+        "truncateStart": "保留结尾（截断开头）",
+        "truncateMiddle": "保留首尾（截断中间）",
+        "variableHint": "在提示词中使用以下变量来注入文件内容：",
+        "supportedFormats": "支持的格式：PDF、Word、Excel、PowerPoint、TXT、MD、CSV、JSON、HTML"
+      },
       "preview": {
         "title": "调试与预览",
         "empty": "开始对话来测试您的 Agent",
@@ -1197,6 +1219,7 @@
       "ragContextCount": "{count} 个来源",
       "segment": "片段 {index}",
       "relevance": "相关度 {score}%",
+      "reasoning": "思考过程",
       "delete": "删除",
       "deleteConfirmTitle": "删除会话",
       "deleteConfirmDescription": "确定要删除这个会话吗？此操作无法撤销，所有消息记录将被永久删除。",
@@ -1346,6 +1369,7 @@
     "messages": "消息",
     "configure": "配置",
     "chat": "对话",
+    "openPublicChat": "打开公开页面",
     "publish": "发布",
     "unpublish": "取消发布",
     "duplicate": "复制",
@@ -1414,7 +1438,8 @@
       "send": "发送",
       "stop": "停止",
       "attachFile": "附加文件",
-      "maxFilesReached": "最多只能上传 {max} 个文件"
+      "maxFilesReached": "最多只能上传 {max} 个文件",
+      "dropFiles": "拖放文件到此处"
     },
     "message": {
       "copy": "复制",
@@ -1904,5 +1929,30 @@
     "noAgentsAvailable": "没有已发布的应用可用。",
     "agents": "应用",
     "allAgents": "所有应用"
+  },
+  "publicChat": {
+    "error": "错误",
+    "loadError": "加载应用失败",
+    "agentNotFound": "应用不存在或不可用",
+    "backToHome": "返回首页",
+    "login": "登录",
+    "loginRequired": "请登录后继续",
+    "loginHint": "登录后即可与此应用对话",
+    "loginToChat": "登录后开始对话...",
+    "startConversation": "开始对话",
+    "typePlaceholder": "输入任何问题...",
+    "cancelled": "(已取消)",
+    "chatError": "发生错误，请重试。",
+    "ragContext": "参考来源",
+    "poweredBy": "由 {name} 提供",
+    "newChat": "新对话",
+    "welcomeMessage": "有什么可以帮到你？",
+    "you": "你",
+    "noConversations": "暂无对话记录",
+    "untitledChat": "未命名",
+    "today": "今天",
+    "yesterday": "昨天",
+    "daysAgo": "{days} 天前",
+    "delete": "删除"
   }
 }

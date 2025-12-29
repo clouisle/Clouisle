@@ -6,6 +6,8 @@ import {
   parseSSEStream,
   type ChatRequest,
   type ChatImageContent,
+  type ChatFileContent,
+  type ChatFileUrl,
   type SSEEventType,
   type SSEMessageStart,
   type SSEContentDelta,
@@ -53,7 +55,7 @@ export interface UseChatOptions {
 }
 
 // Re-export for convenience
-export type { ChatImageContent }
+export type { ChatImageContent, ChatFileContent, ChatFileUrl }
 
 export interface UseChatReturn {
   /** Current messages */
@@ -68,8 +70,8 @@ export interface UseChatReturn {
   isLoading: boolean
   /** Whether currently streaming */
   isStreaming: boolean
-  /** Send a message */
-  sendMessage: (message: string, images?: ChatImageContent[]) => Promise<void>
+  /** Send a message with optional images (vision) and/or file URLs (file upload) */
+  sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Regenerate (retry) a message by ID */
   regenerate: (messageId: string) => Promise<void>
   /** Switch to a different version of a message */
@@ -80,6 +82,8 @@ export interface UseChatReturn {
   reset: () => void
   /** Set messages (for loading history) */
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  /** Set conversation ID (for loading history) */
+  setConversationId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 /**
@@ -130,7 +134,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
    * Send a message to the agent
    */
   const sendMessage = useCallback(
-    async (message: string, images?: ChatImageContent[]) => {
+    async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
       if (!message.trim() || isLoading) return
 
       // Clear previous error
@@ -143,6 +147,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (images && images.length > 0) {
         for (const img of images) {
           userParts.push({ type: 'image', url: img.url } as MessagePart)
+        }
+      }
+      
+      // Add file info for user message display (file content injected via {{fileContent}})
+      if (fileUrls && fileUrls.length > 0) {
+        for (const f of fileUrls) {
+          userParts.push({ type: 'file', filename: f.filename, size: f.size } as MessagePart)
         }
       }
 
@@ -177,6 +188,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const chatRequest: ChatRequest = {
           message: message.trim(),
           images: images,
+          file_urls: fileUrls,
           conversation_id: conversationId,
           variables,
         }
@@ -1186,6 +1198,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     stop,
     reset,
     setMessages,
+    setConversationId,
   }
 }
 

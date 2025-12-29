@@ -305,4 +305,11 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "icon": "🌐",
         "requires_config": False,
     },
+    "markitdown": {
+        "display_name": "MarkItDown 文件解析",
+        "category": ToolCategory.FILE,
+        "icon": "📄",
+        "requires_config": False,
+        "is_file_parser": True,  # 标记为文件解析器，可用于文件上传功能
+    },
 }

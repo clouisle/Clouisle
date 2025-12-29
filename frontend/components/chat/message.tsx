@@ -199,7 +199,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             data={{
               type: 'file',
               url: filePart.url || '',
-              filename: filePart.name,
+              filename: filePart.filename,
               mediaType: filePart.mimeType || 'application/octet-stream',
             }}
           />

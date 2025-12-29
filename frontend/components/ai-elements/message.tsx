@@ -332,65 +332,80 @@ export function MessageAttachment({
   const mediaType =
     data.mediaType?.startsWith("image/") && data.url ? "image" : "file";
   const isImage = mediaType === "image";
-  const attachmentLabel = filename || (isImage ? "Image" : "Attachment");
 
+  // For images, show thumbnail; for files, show compact tag style
+  if (isImage) {
+    return (
+      <div
+        className={cn(
+          "group relative size-24 overflow-hidden rounded-lg",
+          className
+        )}
+        {...props}
+      >
+        <img
+          alt={filename || "attachment"}
+          className="size-full object-cover"
+          height={100}
+          src={data.url}
+          width={100}
+        />
+        {onRemove && (
+          <Button
+            aria-label="Remove attachment"
+            className="absolute top-2 right-2 size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity hover:bg-background group-hover:opacity-100 [&>svg]:size-3"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            variant="ghost"
+          >
+            <XIcon />
+            <span className="sr-only">Remove</span>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // Compact file tag style for documents
   return (
-    <div
-      className={cn(
-        "group relative size-24 overflow-hidden rounded-lg",
-        className
-      )}
-      {...props}
-    >
-      {isImage ? (
-        <>
-          <img
-            alt={filename || "attachment"}
-            className="size-full object-cover"
-            height={100}
-            src={data.url}
-            width={100}
-          />
-          {onRemove && (
-            <Button
-              aria-label="Remove attachment"
-              className="absolute top-2 right-2 size-6 rounded-full bg-background/80 p-0 opacity-0 backdrop-blur-sm transition-opacity hover:bg-background group-hover:opacity-100 [&>svg]:size-3"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove();
-              }}
-              variant="ghost"
-            >
-              <XIcon />
-              <span className="sr-only">Remove</span>
-            </Button>
-          )}
-        </>
-      ) : (
-        <>
-          <Tooltip>
-            <TooltipTrigger render={<div className="flex size-full shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground" />}><PaperclipIcon className="size-4" /></TooltipTrigger>
-            <TooltipContent>
-              <p>{attachmentLabel}</p>
-            </TooltipContent>
-          </Tooltip>
-          {onRemove && (
-            <Button
-              aria-label="Remove attachment"
-              className="size-6 shrink-0 rounded-full p-0 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 [&>svg]:size-3"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove();
-              }}
-              variant="ghost"
-            >
-              <XIcon />
-              <span className="sr-only">Remove</span>
-            </Button>
-          )}
-        </>
-      )}
-    </div>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <a
+            href={data.url}
+            download={filename}
+            className={cn(
+              "group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/50 text-xs hover:bg-muted transition-colors cursor-pointer",
+              className
+            )}
+            {...props}
+          >
+            <PaperclipIcon className="size-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate max-w-32">{filename || "Attachment"}</span>
+            {onRemove && (
+              <Button
+                aria-label="Remove attachment"
+                className="size-5 shrink-0 rounded p-0 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 [&>svg]:size-3"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                variant="ghost"
+              >
+                <XIcon />
+                <span className="sr-only">Remove</span>
+              </Button>
+            )}
+          </a>
+        }
+      />
+      <TooltipContent>
+        <p>{filename || "Attachment"}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

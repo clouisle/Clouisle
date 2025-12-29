@@ -295,10 +295,10 @@ function CodeToolPageContent() {
 
       if (isEditing && toolId) {
         await toolsApi.update(toolId, data)
-        toast.success(t('success.updated'))
+        toast.success(t('successMessages.updated'))
       } else {
         await toolsApi.create(currentTeamId, data as ToolCreateInput)
-        toast.success(t('success.created'))
+        toast.success(t('successMessages.created'))
         router.push('/tools')
       }
     } catch (error: unknown) {

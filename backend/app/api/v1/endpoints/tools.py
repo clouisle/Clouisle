@@ -241,6 +241,80 @@ async def list_builtin_tools(
     )
 
 
+@router.get("/file-parsers", response_model=Response[list[ToolOut]])
+async def list_file_parsers(
+    team_id: UUID,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    获取可用于文件上传功能的解析器列表
+    
+    包括：
+    - 内置的文件解析器（如 markitdown）
+    - 自定义的文件解析工具（category=file）
+    """
+    await check_team_access(team_id, current_user)
+    
+    parsers: list[ToolOut] = []
+    
+    # 1. 获取内置的文件解析器
+    for tool_info in tool_registry.get_all_tools():
+        metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
+        if metadata.get("is_file_parser"):
+            parameters = [
+                ToolParameterSchema(
+                    name=p.name,
+                    type=p.type,
+                    description=p.description,
+                    required=p.required,
+                    enum=p.enum,
+                    default=p.default,
+                )
+                for p in tool_info.parameters
+            ]
+            parsers.append(
+                ToolOut(
+                    name=tool_info.name,
+                    display_name=metadata.get("display_name", tool_info.name),
+                    description=tool_info.description,
+                    type=ToolType.BUILTIN,
+                    category=ToolCategory(metadata.get("category", ToolCategory.FILE)),
+                    icon=metadata.get("icon"),
+                    parameters=parameters,
+                    is_enabled=True,
+                )
+            )
+    
+    # 2. 获取自定义的文件解析工具（category=file 的自定义工具）
+    custom_tools = await Tool.filter(
+        team_id=team_id,
+        is_enabled=True,
+        category=ToolCategory.FILE,
+    ).all()
+    
+    for tool in custom_tools:
+        parameters = [
+            ToolParameterSchema(**p)
+            for p in (tool.http_config.get("parameters") or [])
+        ] if tool.http_config else []
+        
+        parsers.append(
+            ToolOut(
+                id=str(tool.id),
+                name=tool.name,
+                display_name=tool.display_name,
+                description=tool.description or "",
+                type=ToolType.CUSTOM,
+                category=tool.category,
+                icon=tool.icon,
+                parameters=parameters,
+                is_enabled=tool.is_enabled,
+            )
+        )
+    
+    return success(data=parsers, msg_key="success")
+
+
 @router.post("/mcp/list-tools", response_model=Response[McpToolsListResponse])
 async def get_mcp_tools(
     request: McpToolsListRequest,

@@ -205,12 +205,13 @@ export function AgentSettingsDrawer({
                 <Select value={visibility} onValueChange={(v) => v && onVisibilityChange(v as AgentVisibility)}>
                   <SelectTrigger id="visibility">
                     <SelectValue>
-                      {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                      {visibility === 'private' ? t('visibilityPrivate') : visibility === 'team' ? t('visibilityTeam') : t('visibilityPublic')}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent side="bottom" alignItemWithTrigger={false}>
                     <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
                     <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+                    <SelectItem value="public">{t('visibilityPublic')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

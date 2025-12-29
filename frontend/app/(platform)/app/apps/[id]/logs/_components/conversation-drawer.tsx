@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations, useLocale } from 'next-intl'
-import { Clock, Zap, Loader2, WrenchIcon, CheckCircle2, ChevronDown } from 'lucide-react'
+import { Clock, Zap, Loader2, WrenchIcon, CheckCircle2, ChevronDown, ChevronRight, FileText, Paperclip, ImageIcon, Brain } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -171,6 +171,10 @@ function MessageItem({ message, locale }: MessageItemProps) {
   if (isAssistant && message.tool_calls && message.tool_calls.length > 0) {
     return (
       <div className="w-full space-y-3">
+        {/* Reasoning content (Chain of Thought) */}
+        {message.reasoning_content && (
+          <ReasoningSection content={message.reasoning_content} duration={message.duration_ms} />
+        )}
         {/* Tool calls */}
         {message.tool_calls.map((toolCall, index) => (
           <ToolCallMessage key={index} toolCall={toolCall} />
@@ -210,14 +214,28 @@ function MessageItem({ message, locale }: MessageItemProps) {
 
       {/* Message Content */}
       {isUser ? (
-        <div className="rounded-lg px-4 py-2.5 max-w-[85%] bg-primary text-primary-foreground">
-          <p className="text-sm whitespace-pre-wrap wrap-break-word">{message.content}</p>
+        <div className="space-y-2 max-w-[85%]">
+          {/* User message bubble */}
+          <div className="rounded-lg px-4 py-2.5 bg-primary text-primary-foreground">
+            <p className="text-sm whitespace-pre-wrap wrap-break-word">{message.content}</p>
+          </div>
+          {/* User attachments: images and files */}
+          {(message.images && message.images.length > 0) || (message.file_urls && message.file_urls.length > 0) ? (
+            <UserAttachments images={message.images} fileUrls={message.file_urls} />
+          ) : null}
         </div>
       ) : (
-        <div className="w-full">
-          <Streamdown className="text-sm prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            {message.content}
-          </Streamdown>
+        <div className="w-full space-y-3">
+          {/* Reasoning content (Chain of Thought) */}
+          {message.reasoning_content && (
+            <ReasoningSection content={message.reasoning_content} duration={message.duration_ms} />
+          )}
+          {/* Main text content */}
+          {message.content && (
+            <Streamdown className="text-sm prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              {message.content}
+            </Streamdown>
+          )}
         </div>
       )}
 
@@ -231,6 +249,92 @@ function MessageItem({ message, locale }: MessageItemProps) {
         <RagContextSection ragContext={message.rag_context} />
       )}
     </div>
+  )
+}
+
+// User attachments: images and files
+function UserAttachments({ 
+  images, 
+  fileUrls 
+}: { 
+  images?: Array<{ type: string; url: string }> | null
+  fileUrls?: Array<{ filename: string; url: string; size: number; mime_type: string }> | null
+}) {
+  const hasImages = images && images.length > 0
+  const hasFiles = fileUrls && fileUrls.length > 0
+  
+  if (!hasImages && !hasFiles) return null
+
+  return (
+    <div className="flex flex-wrap gap-2 justify-end">
+      {/* Images */}
+      {hasImages && images!.map((img, index) => (
+        <a 
+          key={`img-${index}`}
+          href={img.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block"
+        >
+          <img 
+            src={img.url} 
+            alt={`attachment-${index}`}
+            className="max-w-[120px] max-h-[120px] rounded-lg border object-cover hover:opacity-90 transition-opacity"
+          />
+        </a>
+      ))}
+      
+      {/* Files */}
+      {hasFiles && fileUrls!.map((file, index) => (
+        <a
+          key={`file-${index}`}
+          href={file.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          download={file.filename}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/50 hover:bg-muted transition-colors max-w-[200px]"
+        >
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-xs font-medium truncate">{file.filename}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatFileSize(file.size)}
+            </p>
+          </div>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+// Format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Reasoning/Chain of Thought section
+function ReasoningSection({ content, duration }: { content: string; duration?: number | null }) {
+  const t = useTranslations('agents.logs')
+  const [isOpen, setIsOpen] = React.useState(false)
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+      <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+        <Brain className="h-4 w-4" />
+        <span>{t('reasoning')}</span>
+        {duration && (
+          <span className="text-xs">({(duration / 1000).toFixed(1)}s)</span>
+        )}
+        <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 p-3 rounded-lg bg-muted/50 border-l-2 border-muted-foreground/30">
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{content}</p>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
   Settings,
@@ -49,6 +50,14 @@ export function AgentToolbar({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Chat Button - Navigate to public chat page */}
+        <Link href={`/chat/${agent.id}`} target="_blank">
+          <Button variant="outline" size="sm" className="cursor-pointer">
+            <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+            {t('toolbar.chat')}
+          </Button>
+        </Link>
+
         {/* Settings Button */}
         <Button variant="outline" size="sm" onClick={onSettingsClick} className="cursor-pointer">
           <Settings className="mr-1.5 h-3.5 w-3.5" />

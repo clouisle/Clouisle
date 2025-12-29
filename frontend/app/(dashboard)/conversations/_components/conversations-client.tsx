@@ -250,13 +250,14 @@ export function ConversationsClient() {
     if (!deleteId) return
     try {
       await conversationsApi.delete(deleteId)
-      setConversations((prev) => prev.filter((c) => c.id !== deleteId))
-      setTotalConversations((prev) => prev - 1)
+      // Close drawer if deleted conversation was open
       if (selectedConversation?.id === deleteId) {
         setSelectedConversation(null)
         setDrawerOpen(false)
       }
       toast.success(t('deleteSuccess'))
+      // Refresh list to get accurate data
+      await fetchConversations(currentPage)
       fetchStats()
     } catch {
       toast.error(t('deleteError'))
@@ -269,10 +270,10 @@ export function ConversationsClient() {
   const handleBulkDelete = async () => {
     try {
       await conversationsApi.batchDelete(Array.from(selectedIds))
-      setConversations((prev) => prev.filter((c) => !selectedIds.has(c.id)))
-      setTotalConversations((prev) => prev - selectedIds.size)
       toast.success(t('batchDeleteSuccess', { count: selectedIds.size }))
       setSelectedIds(new Set())
+      // Refresh list to get accurate data
+      await fetchConversations(currentPage)
       fetchStats()
     } catch {
       toast.error(t('deleteError'))

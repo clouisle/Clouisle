@@ -68,6 +68,22 @@ export interface AgentKnowledgeBaseConfig {
   score_threshold: number
 }
 
+/** File parser configuration - which tool to use for parsing files */
+export interface FileParserConfig {
+  type: 'builtin' | 'custom'
+  name?: string       // for builtin, e.g., 'markitdown'
+  tool_id?: string    // for custom tools
+}
+
+export interface FileUploadConfig {
+  parser?: FileParserConfig | null  // null means no parser selected
+  max_file_size: number  // bytes
+  max_files: number
+  max_content_length: number  // characters
+  truncate_strategy: 'end' | 'start' | 'middle'
+  allowed_extensions: string[]
+}
+
 // ============ Agent Types ============
 
 export type AgentStatus = 'draft' | 'published'
@@ -98,6 +114,8 @@ export interface Agent {
   suggested_questions: string[]
   knowledge_bases: AgentKnowledgeBaseOut[]
   enable_vision: boolean
+  enable_file_upload: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode: RAGMode
   status: AgentStatus
   visibility: AgentVisibility
@@ -140,6 +158,8 @@ export interface AgentCreateInput {
   opening_message?: string | null
   suggested_questions?: string[]
   enable_vision?: boolean
+  enable_file_upload?: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -158,6 +178,8 @@ export interface AgentUpdateInput {
   opening_message?: string | null
   suggested_questions?: string[]
   enable_vision?: boolean
+  enable_file_upload?: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -210,9 +232,16 @@ export interface Message {
   conversation_id: string
   role: MessageRole
   content: string
+  // Attachments (for user messages)
+  images?: Array<{ type: string; url: string }> | null
+  file_urls?: Array<{ filename: string; url: string; size: number; mime_type: string }> | null
+  // Tool calls
   tool_calls?: Record<string, unknown>[] | null
   tool_call_id?: string | null
   tool_name?: string | null
+  // Reasoning (Chain of Thought)
+  reasoning_content?: string | null
+  // Metadata
   model_used?: string | null
   token_usage?: { prompt: number; completion: number } | null
   duration_ms?: number | null
@@ -245,6 +274,23 @@ export interface ChatImageContent {
   url: string
 }
 
+export interface ChatFileContent {
+  filename: string
+  content: string
+  mime_type: string
+  size: number
+  truncated: boolean
+  original_length?: number | null
+}
+
+/** File URL for backend file parsing and injection into {{fileContent}} */
+export interface ChatFileUrl {
+  filename: string
+  url: string
+  size: number
+  mime_type: string
+}
+
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
@@ -253,6 +299,10 @@ export interface HistoryMessage {
 export interface ChatRequest {
   message: string
   images?: ChatImageContent[]
+  /** @deprecated Use file_urls instead */
+  files?: ChatFileContent[]
+  /** File URLs for backend to parse and inject into {{fileContent}} */
+  file_urls?: ChatFileUrl[]
   conversation_id?: string | null
   variables?: Record<string, unknown>
   /** Override conversation history for version switching / regeneration */
@@ -762,6 +812,141 @@ export const conversationsApi = {
     return api.delete<{ deleted_count: number; ids: string[] }>(
       `/conversations?${queryParams.toString()}`
     )
+  },
+}
+
+// ============ Public Agent Types ============
+
+export interface PublicAgent {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  opening_message?: string | null
+  suggested_questions: string[]
+  variables: VariableDefinition[]
+  enable_vision: boolean
+  enable_file_upload: boolean
+  file_upload_config?: FileUploadConfig | null
+  created_by?: CreatorInfo | null
+}
+
+// ============ Public Agent API (No Auth Required) ============
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+
+export const publicAgentsApi = {
+  /**
+   * 获取 Agent 信息（可选认证）
+   * - 已登录：返回用户有权限访问的 Agent
+   * - 未登录：仅返回公开发布的 Agent
+   */
+  getPublicAgent: async (id: string): Promise<PublicAgent> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    
+    const response = await fetch(`${API_BASE_URL}/agents/${id}/public`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 获取用户与该 Agent 的对话列表
+   */
+  getConversations: async (agentId: string, params: { page?: number; pageSize?: number } = {}): Promise<PageData<ConversationListItem>> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const { page = 1, pageSize = 50 } = params
+    
+    const response = await fetch(`${API_BASE_URL}/agents/${agentId}/conversations?page=${page}&page_size=${pageSize}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 获取对话详情（含消息）
+   */
+  getConversation: async (conversationId: string): Promise<ConversationWithMessages> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 删除对话
+   */
+  deleteConversation: async (conversationId: string): Promise<void> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+  },
+
+  /**
+   * 公开聊天流（需要登录）
+   */
+  chatStream: (agentId: string, data: ChatRequest): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+
+    const stream = fetch(`${API_BASE_URL}/agents/${agentId}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
   },
 }
 

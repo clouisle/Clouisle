@@ -4,7 +4,7 @@ export { usersApi, type PageData, type UserCreateData, type UserUpdateData, type
 export { rolesApi, permissionsApi, type Role, type Permission, type RoleCreateInput, type RoleUpdateInput, type PermissionCreateInput, type PermissionUpdateInput } from './roles'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
 export { siteSettingsApi, type SiteSetting, type SiteSettings, type PublicSiteSettings, type GeneralSettings, type SecuritySettings, type EmailSettings } from './site-settings'
-export { uploadApi, type UploadResult } from './upload'
+export { uploadApi, type UploadResult, type ParsedFileResult, type FileParseOptions } from './upload'
 export { 
   modelsApi, 
   teamModelsApi,
@@ -48,6 +48,7 @@ export {
   agentsApi,
   agentStatsApi,
   conversationsApi,
+  publicAgentsApi,
   parseSSEStream,
   type Agent,
   type AgentListItem,
@@ -58,6 +59,7 @@ export {
   type AgentVisibility,
   type AgentKnowledgeBaseConfig,
   type AgentKnowledgeBaseOut,
+  type FileUploadConfig,
   type ToolConfig,
   type VariableDefinition,
   type VariableType,
@@ -70,6 +72,8 @@ export {
   type MessageRole,
   type ChatRequest,
   type ChatImageContent,
+  type ChatFileContent,
+  type ChatFileUrl,
   type ChatResponse,
   type SSEEvent,
   type SSEEventType,
@@ -88,6 +92,7 @@ export {
   type AgentTrends,
   type AgentToolUsage,
   type RecentConversationItem,
+  type PublicAgent,
 } from './agents'
 
 export {

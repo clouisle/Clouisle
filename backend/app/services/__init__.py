@@ -8,6 +8,12 @@ from .document_processor import (
     document_processor,
     text_chunker,
 )
+from .file_parser import (
+    FileParserService,
+    FileParseConfig,
+    ParsedFile,
+    file_parser_service,
+)
 from .usage_tracker import (
     QuotaExceededError,
     UsageTracker,
@@ -20,6 +26,10 @@ __all__ = [
     "TextChunker",
     "document_processor",
     "text_chunker",
+    "FileParserService",
+    "FileParseConfig",
+    "ParsedFile",
+    "file_parser_service",
     "QuotaExceededError",
     "UsageTracker",
     "usage_tracker",

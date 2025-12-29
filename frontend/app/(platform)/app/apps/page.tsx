@@ -17,6 +17,7 @@ import {
   FileEdit,
   MessageSquare,
   Loader2,
+  ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -274,6 +275,14 @@ export default function AppsPage() {
                           {t('chat')}
                         </DropdownMenuItem>
                       </Link>
+                      {agent.status === 'published' && agent.visibility === 'public' && (
+                        <Link href={`/chat/${agent.id}`} target="_blank">
+                          <DropdownMenuItem>
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            {t('openPublicChat')}
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={(e) => {
                         e.preventDefault()

@@ -180,6 +180,13 @@ export const toolsApi = {
   },
 
   /**
+   * 获取可用的文件解析器列表
+   */
+  listFileParsers: async (teamId: string): Promise<Tool[]> => {
+    return api.get<Tool[]>('/tools/file-parsers', { params: { team_id: teamId } })
+  },
+
+  /**
    * 根据名称获取工具
    */
   getByName: async (name: string, teamId?: string): Promise<Tool> => {

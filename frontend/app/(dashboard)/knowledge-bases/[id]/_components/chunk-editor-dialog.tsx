@@ -193,9 +193,10 @@ export function ChunkEditorDialog({
     setIsSaving(true)
     try {
       await knowledgeBasesApi.deleteChunk(knowledgeBaseId, document.id, deleteChunkId)
-      setChunks(prev => prev.filter(c => c.id !== deleteChunkId))
       toast.success(t('chunkDeleted'))
       setDeleteChunkId(null)
+      // Refresh chunks list to get accurate data
+      await loadChunks()
       onDocumentUpdated?.()
     } catch {
       // 错误已由 API 客户端处理

@@ -92,6 +92,14 @@ class Agent(models.Model):
         default=False, description="Enable vision/image understanding"
     )
 
+    # File upload configuration
+    enable_file_upload = fields.BooleanField(
+        default=False, description="Enable file upload and parsing"
+    )
+    file_upload_config: dict = fields.JSONField(
+        default=dict, description="File upload configuration"
+    )  # type: ignore[assignment]
+
     # RAG configuration
     rag_mode = fields.CharEnumField(
         RAGMode,
@@ -282,6 +290,14 @@ class Message(models.Model):
         default=1, description="Version number within the group"
     )
 
+    # Attachments (for user messages with images/files)
+    images: list | None = fields.JSONField(
+        null=True, description="Image URLs (data: or https://)"
+    )  # type: ignore[assignment]
+    file_urls: list | None = fields.JSONField(
+        null=True, description="File URLs for uploaded files"
+    )  # type: ignore[assignment]
+
     # Tool call related (for assistant tool calls and tool responses)
     tool_calls: list | None = fields.JSONField(
         null=True, description="Tool calls made by assistant"
@@ -291,6 +307,11 @@ class Message(models.Model):
     )
     tool_name = fields.CharField(
         max_length=100, null=True, description="Tool name (for tool role messages)"
+    )
+
+    # Reasoning content (for assistant messages with chain-of-thought)
+    reasoning_content = fields.TextField(
+        null=True, description="Reasoning/thinking content from LLM"
     )
 
     # Metadata

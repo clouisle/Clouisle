@@ -4,7 +4,7 @@ export * from './types';
 // Components
 export { Chat } from './chat';
 export { ChatContainer } from './chat-container';
-export { ChatInput, type ChatInputFile } from './chat-input';
+export { ChatInput, type ChatInputFile, type FileUploadConfig } from './chat-input';
 export { Message } from './message';
 export { VariableForm, useVariableForm } from './variable-form';
 

@@ -7,6 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Clouisle"
     API_V1_STR: str = "/api/v1"
+    
+    # Server URL (used for internal file access)
+    API_BASE_URL: str = "http://localhost:8000"
 
     # Timezone
     TIMEZONE: str = "Asia/Shanghai"

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,7 @@ import { Loader2, RefreshCw } from 'lucide-react'
 export function LoginForm() {
   const t = useTranslations('auth')
   const router = useRouter()
+  const searchParams = useSearchParams()
   
   const [username, setUsername] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -86,8 +87,9 @@ export function LoginForm() {
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
       toast.success(t('loginSuccess'))
-      // 跳转到 dashboard
-      router.push('/dashboard')
+      // 跳转到重定向页面或 dashboard
+      const redirect = searchParams.get('redirect')
+      router.push(redirect || '/dashboard')
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isValidationError()) {

@@ -87,7 +87,7 @@ export function FileContent({ file, className }: FileContentProps) {
               <div className="relative w-12 h-12 rounded overflow-hidden bg-muted cursor-pointer group">
                 <img
                   src={file.url}
-                  alt={file.name}
+                  alt={file.filename}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -98,7 +98,7 @@ export function FileContent({ file, className }: FileContentProps) {
             <CollapsibleContent className="mt-2">
               <img
                 src={file.url}
-                alt={file.name}
+                alt={file.filename}
                 className="max-w-full max-h-80 rounded-lg border"
               />
             </CollapsibleContent>
@@ -111,7 +111,7 @@ export function FileContent({ file, className }: FileContentProps) {
 
         {/* File Info */}
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">{file.name}</div>
+          <div className="text-sm font-medium truncate">{file.filename}</div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {file.size && <span>{formatFileSize(file.size)}</span>}
             {file.mimeType && (
@@ -127,7 +127,7 @@ export function FileContent({ file, className }: FileContentProps) {
         {file.url && (
           <a
             href={file.url}
-            download={file.name}
+            download={file.filename}
             className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             <Download className="h-4 w-4" />
@@ -186,7 +186,7 @@ function ImageThumbnail({ file }: ImageThumbnailProps) {
         <div className="relative w-20 h-20 rounded-lg overflow-hidden border cursor-pointer group">
           <img
             src={file.url}
-            alt={file.name}
+            alt={file.filename}
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -198,11 +198,11 @@ function ImageThumbnail({ file }: ImageThumbnailProps) {
         <div className="relative max-w-4xl max-h-full">
           <img
             src={file.url}
-            alt={file.name}
+            alt={file.filename}
             className="max-w-full max-h-[80vh] object-contain rounded-lg"
             onClick={() => setIsExpanded(false)}
           />
-          <div className="mt-2 text-center text-white text-sm">{file.name}</div>
+          <div className="mt-2 text-center text-white text-sm">{file.filename}</div>
         </div>
       </CollapsibleContent>
     </Collapsible>

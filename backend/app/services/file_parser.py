@@ -1,0 +1,248 @@
+"""
+File parsing service using MarkItDown.
+
+Provides file parsing functionality with configurable truncation.
+"""
+
+import logging
+import mimetypes
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+
+class FileParseConfig(BaseModel):
+    """Configuration for file parsing"""
+
+    max_content_length: int = Field(
+        default=100000,
+        description="Maximum content length in characters",
+    )
+    truncate_strategy: str = Field(
+        default="end",
+        description="Truncation strategy: 'end', 'start', 'middle'",
+    )
+
+
+class ParsedFile(BaseModel):
+    """Result of file parsing"""
+
+    filename: str
+    content: str
+    mime_type: str
+    size: int
+    truncated: bool = False
+    original_length: int | None = None
+    title: str | None = None
+
+
+class FileParserService:
+    """
+    File parsing service using MarkItDown.
+
+    Supports: PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, TXT, MD, CSV, JSON, HTML
+    """
+
+    # Supported file extensions
+    SUPPORTED_EXTENSIONS = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc": "application/msword",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".ppt": "application/vnd.ms-powerpoint",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel",
+        ".txt": "text/plain",
+        ".md": "text/markdown",
+        ".csv": "text/csv",
+        ".json": "application/json",
+        ".html": "text/html",
+        ".htm": "text/html",
+    }
+
+    def __init__(self):
+        self._md = None
+
+    def _get_markitdown(self):
+        """Lazy load MarkItDown instance"""
+        if self._md is None:
+            try:
+                from markitdown import MarkItDown
+
+                self._md = MarkItDown()
+            except ImportError:
+                raise ValueError(
+                    "MarkItDown not installed. Install with: pip install 'markitdown[pdf,xlsx,xls]'"
+                )
+        return self._md
+
+    def is_supported(self, filename: str) -> bool:
+        """Check if file type is supported"""
+        ext = Path(filename).suffix.lower()
+        return ext in self.SUPPORTED_EXTENSIONS
+
+    def get_mime_type(self, filename: str) -> str:
+        """Get MIME type for file"""
+        ext = Path(filename).suffix.lower()
+        return self.SUPPORTED_EXTENSIONS.get(
+            ext, mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        )
+
+    def truncate_content(
+        self,
+        content: str,
+        max_length: int,
+        strategy: str = "end",
+    ) -> tuple[str, bool, int]:
+        """
+        Truncate content according to strategy.
+
+        Args:
+            content: Original content
+            max_length: Maximum length
+            strategy: 'end' (keep start), 'start' (keep end), 'middle' (keep both)
+
+        Returns:
+            Tuple of (truncated_content, was_truncated, original_length)
+        """
+        original_length = len(content)
+
+        if original_length <= max_length:
+            return content, False, original_length
+
+        if strategy == "start":
+            # Keep the end
+            truncated = "...[内容已截断]...\n\n" + content[-max_length:]
+        elif strategy == "middle":
+            # Keep both start and end
+            half = max_length // 2
+            truncated = (
+                content[:half]
+                + "\n\n...[中间内容已截断，共 "
+                + str(original_length - max_length)
+                + " 字符]...\n\n"
+                + content[-half:]
+            )
+        else:  # "end" - default, keep start
+            truncated = content[:max_length] + "\n\n...[内容已截断]..."
+
+        return truncated, True, original_length
+
+    async def parse_file(
+        self,
+        file_content: bytes,
+        filename: str,
+        config: FileParseConfig | None = None,
+    ) -> ParsedFile:
+        """
+        Parse file content using MarkItDown.
+
+        Args:
+            file_content: Raw file content
+            filename: Original filename
+            config: Parsing configuration
+
+        Returns:
+            ParsedFile with parsed content
+        """
+        config = config or FileParseConfig()
+
+        # Validate file type
+        if not self.is_supported(filename):
+            ext = Path(filename).suffix.lower()
+            raise ValueError(
+                f"Unsupported file type: {ext}. "
+                f"Supported: {', '.join(self.SUPPORTED_EXTENSIONS.keys())}"
+            )
+
+        mime_type = self.get_mime_type(filename)
+        file_size = len(file_content)
+
+        # Parse using MarkItDown
+        ext = Path(filename).suffix.lower()
+
+        # For plain text files, read directly
+        if ext in {".txt", ".md", ".csv", ".json"}:
+            try:
+                text = file_content.decode("utf-8")
+            except UnicodeDecodeError:
+                text = file_content.decode("utf-8", errors="ignore")
+            title = None
+        else:
+            # Use MarkItDown for other formats
+            md = self._get_markitdown()
+
+            # Write to temp file for MarkItDown
+            with tempfile.NamedTemporaryFile(
+                suffix=ext, delete=False
+            ) as tmp:
+                tmp.write(file_content)
+                tmp_path = tmp.name
+
+            try:
+                result = md.convert(tmp_path)
+                text = result.text_content
+                title = result.title
+            finally:
+                # Clean up temp file
+                Path(tmp_path).unlink(missing_ok=True)
+
+        # Apply truncation
+        truncated_text, was_truncated, original_length = self.truncate_content(
+            text,
+            config.max_content_length,
+            config.truncate_strategy,
+        )
+
+        return ParsedFile(
+            filename=filename,
+            content=truncated_text,
+            mime_type=mime_type,
+            size=file_size,
+            truncated=was_truncated,
+            original_length=original_length if was_truncated else None,
+            title=title,
+        )
+
+    def format_files_for_prompt(
+        self,
+        files: list[ParsedFile],
+        separator: str = "\n\n---\n\n",
+    ) -> str:
+        """
+        Format multiple parsed files for injection into prompt.
+
+        Args:
+            files: List of parsed files
+            separator: Separator between files
+
+        Returns:
+            Formatted string for prompt injection
+        """
+        if not files:
+            return ""
+
+        if len(files) == 1:
+            file = files[0]
+            header = f"## 文件: {file.filename}"
+            if file.truncated:
+                header += f" (已截断，原始长度: {file.original_length} 字符)"
+            return f"{header}\n\n{file.content}"
+
+        # Multiple files
+        parts = []
+        for i, file in enumerate(files, 1):
+            header = f"## 文件 {i}: {file.filename}"
+            if file.truncated:
+                header += f" (已截断，原始长度: {file.original_length} 字符)"
+            parts.append(f"{header}\n\n{file.content}")
+
+        return separator.join(parts)
+
+
+# Global service instance
+file_parser_service = FileParserService()

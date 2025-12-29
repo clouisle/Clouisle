@@ -100,12 +100,12 @@ export interface SourceDocumentPart {
 }
 
 /**
- * File/Image part
+ * File/Document part - for uploaded documents
  */
 export interface FilePart {
   type: 'file'
+  filename: string
   url?: string
-  name: string
   mimeType?: string
   size?: number
 }

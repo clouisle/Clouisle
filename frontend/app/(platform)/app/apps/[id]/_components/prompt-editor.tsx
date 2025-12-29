@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Variable, Plus, AlertCircle } from 'lucide-react'
+import { Variable, Plus, AlertCircle, FileText, MessageSquare } from 'lucide-react'
 import { type VariableDefinition, type VariableType } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,15 @@ interface PromptEditorProps {
   onAddVariable: (name: string, type: VariableType) => void
   placeholder?: string
   className?: string
+  enableFileUpload?: boolean
+}
+
+// System variables that are auto-injected based on features
+interface SystemVariable {
+  name: string
+  label: string
+  description: string
+  icon: React.ElementType
 }
 
 // 解析提示词中的所有变量引用
@@ -106,6 +115,7 @@ export function PromptEditor({
   onAddVariable,
   placeholder,
   className,
+  enableFileUpload,
 }: PromptEditorProps) {
   'use no memo'  // Disable React Compiler optimization for this component
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -118,17 +128,50 @@ export function PromptEditor({
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const variableStartPosRef = React.useRef(-1)
 
+  // System variables based on enabled features
+  const systemVariables = React.useMemo<SystemVariable[]>(() => {
+    const vars: SystemVariable[] = [
+      // query is always available - represents user input
+      {
+        name: 'query',
+        label: '用户输入',
+        description: '用户当前的提问内容',
+        icon: MessageSquare,
+      },
+    ]
+    if (enableFileUpload) {
+      vars.push({
+        name: 'fileContent',
+        label: '文件内容',
+        description: '上传文件的解析内容',
+        icon: FileText,
+      })
+    }
+    return vars
+  }, [enableFileUpload])
+
   // 获取未定义的变量
   const referencedVars = parseVariableReferences(value)
   // Stabilize definedVarNames with useMemo to prevent React Compiler issues
   const definedVarNames = React.useMemo(() => variables.map(v => v.name), [variables])
-  const undefinedVars = referencedVars.filter(name => !definedVarNames.includes(name))
+  const systemVarNames = React.useMemo(() => systemVariables.map(v => v.name), [systemVariables])
+  // 未定义变量排除系统变量
+  const undefinedVars = referencedVars.filter(name => !definedVarNames.includes(name) && !systemVarNames.includes(name))
 
-  // 过滤变量建议
+  // 过滤变量建议 (用户定义的变量)
   const filteredVariables = React.useMemo(() => 
     variables.filter(v => v.name.toLowerCase().includes(searchQuery.toLowerCase())),
     [variables, searchQuery]
   )
+
+  // 过滤系统变量建议
+  const filteredSystemVariables = React.useMemo(() => 
+    systemVariables.filter(v => v.name.toLowerCase().includes(searchQuery.toLowerCase())),
+    [systemVariables, searchQuery]
+  )
+
+  // 总建议数
+  const totalSuggestions = filteredVariables.length + filteredSystemVariables.length
 
   // 同步滚动
   const handleScroll = React.useCallback(() => {
@@ -214,22 +257,27 @@ export function PromptEditor({
       case 'ArrowDown':
         e.preventDefault()
         setSelectedIndex(prev => 
-          filteredVariables.length > 0 ? (prev + 1) % filteredVariables.length : 0
+          totalSuggestions > 0 ? (prev + 1) % totalSuggestions : 0
         )
         break
       case 'ArrowUp':
         e.preventDefault()
         setSelectedIndex(prev => 
-          filteredVariables.length > 0 
-            ? (prev - 1 + filteredVariables.length) % filteredVariables.length 
+          totalSuggestions > 0 
+            ? (prev - 1 + totalSuggestions) % totalSuggestions 
             : 0
         )
         break
       case 'Enter':
       case 'Tab':
-        if (filteredVariables.length > 0) {
+        if (totalSuggestions > 0) {
           e.preventDefault()
-          insertVariable(filteredVariables[selectedIndex].name)
+          // Determine which variable to insert based on index
+          if (selectedIndex < filteredSystemVariables.length) {
+            insertVariable(filteredSystemVariables[selectedIndex].name)
+          } else {
+            insertVariable(filteredVariables[selectedIndex - filteredSystemVariables.length].name)
+          }
         }
         break
       case 'Escape':
@@ -237,7 +285,7 @@ export function PromptEditor({
         setShowSuggestions(false)
         break
     }
-  }, [showSuggestions, filteredVariables, selectedIndex, insertVariable])
+  }, [showSuggestions, totalSuggestions, filteredVariables, filteredSystemVariables, selectedIndex, insertVariable])
 
   // 处理失焦
   const handleBlur = React.useCallback((e: React.FocusEvent) => {
@@ -254,10 +302,11 @@ export function PromptEditor({
 
   // 渲染高亮文本
   const highlightedContent = React.useMemo(() => {
-    const rendered = renderHighlightedText(value, definedVarNames)
+    const allDefinedNames = [...definedVarNames, ...systemVarNames]
+    const rendered = renderHighlightedText(value, allDefinedNames)
     // 添加一个额外的空格确保高度一致
     return [...rendered, <span key="trailing">{'\n '}</span>]
-  }, [value, definedVarNames])
+  }, [value, definedVarNames, systemVarNames])
 
   return (
     <div ref={containerRef} className="relative">
@@ -295,34 +344,77 @@ export function PromptEditor({
       {showSuggestions && (
         <div
           ref={popoverRef}
-          className="absolute z-50 w-56 rounded-lg border bg-popover shadow-lg"
+          className="absolute z-50 w-64 rounded-lg border bg-popover shadow-lg"
           style={{ top: suggestionPosition.top, left: suggestionPosition.left }}
           onMouseDown={(e) => e.preventDefault()}
         >
           <div className="p-1 max-h-48 overflow-y-auto">
-            {filteredVariables.length > 0 ? (
-              filteredVariables.map((variable, index) => (
-                <button
-                  key={variable.name}
-                  type="button"
-                  className={cn(
-                    'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
-                    selectedIndex === index ? 'bg-accent' : 'hover:bg-muted'
-                  )}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    insertVariable(variable.name)
-                  }}
-                >
-                  <Variable className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                  <span className="font-mono text-xs">{variable.name}</span>
-                  {variable.label && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      {variable.label}
-                    </span>
-                  )}
-                </button>
-              ))
+            {totalSuggestions > 0 ? (
+              <>
+                {/* System Variables */}
+                {filteredSystemVariables.length > 0 && (
+                  <>
+                    <div className="px-2 py-1 text-xs text-muted-foreground font-medium">
+                      系统变量
+                    </div>
+                    {filteredSystemVariables.map((variable, index) => {
+                      const Icon = variable.icon
+                      return (
+                        <button
+                          key={variable.name}
+                          type="button"
+                          className={cn(
+                            'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
+                            selectedIndex === index ? 'bg-accent' : 'hover:bg-muted'
+                          )}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            insertVariable(variable.name)
+                          }}
+                        >
+                          <Icon className="h-3.5 w-3.5 text-cyan-500 shrink-0" />
+                          <span className="font-mono text-xs">{variable.name}</span>
+                          <span className="text-xs text-muted-foreground truncate">
+                            {variable.label}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </>
+                )}
+                {/* User Variables */}
+                {filteredVariables.length > 0 && (
+                  <>
+                    {filteredSystemVariables.length > 0 && (
+                      <div className="px-2 py-1 text-xs text-muted-foreground font-medium mt-1">
+                        用户变量
+                      </div>
+                    )}
+                    {filteredVariables.map((variable, index) => (
+                      <button
+                        key={variable.name}
+                        type="button"
+                        className={cn(
+                          'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
+                          selectedIndex === index + filteredSystemVariables.length ? 'bg-accent' : 'hover:bg-muted'
+                        )}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          insertVariable(variable.name)
+                        }}
+                      >
+                        <Variable className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <span className="font-mono text-xs">{variable.name}</span>
+                        {variable.label && (
+                          <span className="text-xs text-muted-foreground truncate">
+                            {variable.label}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </>
             ) : (
               <div className="px-2 py-3 text-center">
                 <p className="text-xs text-muted-foreground mb-2">

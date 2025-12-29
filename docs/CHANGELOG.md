@@ -11,6 +11,54 @@
 
 ### 新增 (Added)
 
+#### 聊天历史管理优化 (#24)
+
+##### 删除操作刷新机制
+
+修复了多个页面在删除操作后使用本地状态过滤而非从服务器刷新数据的问题，确保删除后列表数据与服务器一致：
+
+- **公开聊天页面** (`/frontend/app/(chat)/chat/[id]/page.tsx`)：
+  - 修复新建对话后侧边栏历史不更新的问题
+  - 将 `refreshConversations` 提取到 `useCallback` 中
+  - 在 `onConversationChange` 回调中正确调用刷新函数
+
+- **后台对话管理** (`/frontend/app/(dashboard)/conversations/_components/conversations-client.tsx`)：
+  - 单条删除后调用 `fetchConversations(currentPage)` 刷新
+  - 批量删除后同样调用服务器刷新
+
+- **后台知识库文档分块** (`/frontend/app/(dashboard)/knowledge-bases/[id]/documents/[docId]/_components/document-detail-client.tsx`)：
+  - 分块删除后调用 `loadChunks()` 从服务器获取最新数据
+
+- **后台分块编辑器** (`/frontend/app/(dashboard)/knowledge-bases/[id]/_components/chunk-editor-dialog.tsx`)：
+  - 分块删除后调用 `loadChunks()` 刷新
+
+- **中台文档分块** (`/frontend/app/(platform)/app/kb/[id]/documents/[docId]/_components/document-detail-client.tsx`)：
+  - 分块删除后调用 `loadChunks()` 刷新
+
+- **中台应用日志** (`/frontend/app/(platform)/app/apps/[id]/logs/page.tsx`)：
+  - 对话删除后调用 `fetchConversations(currentPage)` 刷新
+
+### 修复 (Fixed)
+
+#### Textarea 组件换行问题
+
+- 修复 Agent 设置中「建议问题」输入框无法换行的问题
+- **原因**：`Textarea` 组件使用了 `field-sizing-content` CSS 属性，该属性会覆盖 `rows` 属性的行为
+- **修复** (`/frontend/components/ui/textarea.tsx`)：
+  - 当传入 `rows` 属性时，不使用 `field-sizing-content`，让 textarea 按照指定行数显示
+  - 未传入 `rows` 时，保持自动调整大小的行为
+
+#### 建议问题按钮交互优化
+
+- 为 Agent 预览面板和公开聊天页面的建议问题气泡添加 `cursor-pointer` 样式
+- **修复文件**：
+  - `/frontend/app/(platform)/app/apps/[id]/_components/agent-preview-panel.tsx`
+  - `/frontend/app/(chat)/chat/[id]/page.tsx`
+
+---
+
+### 新增 (Added)
+
 #### API 密钥管理 - 完整实现 (#23)
 
 ##### 后端 (Backend)

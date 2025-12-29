@@ -11,10 +11,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from app.api import deps
 from app.models.user import User
 from app.schemas.response import Response, ResponseCode, BusinessError, success
+from app.services.file_parser import (
+    file_parser_service,
+    FileParseConfig,
+    ParsedFile,
+)
 
 router = APIRouter()
 
@@ -254,3 +260,239 @@ async def delete_file(
     os.remove(file_path)
 
     return success(msg_key="file_deleted")
+
+
+# ============ File Parsing Endpoints ============
+
+
+class FileParseRequest(BaseModel):
+    """Request for file parsing configuration"""
+
+    max_content_length: int = Field(
+        default=100000,
+        ge=1000,
+        le=500000,
+        description="Maximum content length in characters",
+    )
+    truncate_strategy: str = Field(
+        default="end",
+        description="Truncation strategy: 'end', 'start', 'middle'",
+    )
+
+
+class FileParseResponse(BaseModel):
+    """Response for parsed file"""
+
+    filename: str
+    content: str
+    mime_type: str
+    size: int
+    truncated: bool
+    original_length: int | None = None
+    title: str | None = None
+
+
+# Allowed file types for parsing
+ALLOWED_PARSE_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "application/json",
+    "text/html",
+}
+
+# Max file size for parsing (10MB)
+MAX_PARSE_FILE_SIZE = 10 * 1024 * 1024
+
+
+@router.post("/parse", response_model=Response[FileParseResponse])
+async def parse_file(
+    file: UploadFile = File(...),
+    max_content_length: int = Query(
+        default=100000,
+        ge=1000,
+        le=500000,
+        description="Maximum content length in characters",
+    ),
+    truncate_strategy: str = Query(
+        default="end",
+        description="Truncation strategy: 'end', 'start', 'middle'",
+    ),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Parse a file and extract text content using MarkItDown.
+
+    Supported formats:
+    - Documents: PDF, DOCX, DOC, PPTX, PPT
+    - Spreadsheets: XLSX, XLS
+    - Text: TXT, MD, CSV, JSON, HTML
+
+    Returns parsed content in markdown format with optional truncation.
+    """
+    # Validate file is present
+    if not file.filename:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_required",
+        )
+
+    # Check if file type is supported
+    if not file_parser_service.is_supported(file.filename):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="unsupported_file_type",
+            data={
+                "filename": file.filename,
+                "supported": list(file_parser_service.SUPPORTED_EXTENSIONS.keys()),
+            },
+        )
+
+    # Read file content
+    content = await file.read()
+
+    # Validate file size
+    if len(content) > MAX_PARSE_FILE_SIZE:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_too_large",
+            data={"max_size": MAX_PARSE_FILE_SIZE, "actual_size": len(content)},
+        )
+
+    # Validate truncate strategy
+    if truncate_strategy not in ("end", "start", "middle"):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_truncate_strategy",
+            data={"allowed": ["end", "start", "middle"]},
+        )
+
+    # Parse file
+    try:
+        config = FileParseConfig(
+            max_content_length=max_content_length,
+            truncate_strategy=truncate_strategy,
+        )
+        parsed = await file_parser_service.parse_file(
+            file_content=content,
+            filename=file.filename,
+            config=config,
+        )
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_parse_error",
+            data={"error": str(e)},
+        )
+    except Exception as e:
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="file_parse_error",
+            data={"error": str(e)},
+        )
+
+    return success(
+        data=FileParseResponse(
+            filename=parsed.filename,
+            content=parsed.content,
+            mime_type=parsed.mime_type,
+            size=parsed.size,
+            truncated=parsed.truncated,
+            original_length=parsed.original_length,
+            title=parsed.title,
+        ),
+        msg_key="file_parsed",
+    )
+
+
+@router.post("/parse/batch", response_model=Response[list[FileParseResponse]])
+async def parse_files_batch(
+    files: list[UploadFile] = File(...),
+    max_content_length: int = Query(
+        default=100000,
+        ge=1000,
+        le=500000,
+        description="Maximum content length per file",
+    ),
+    truncate_strategy: str = Query(
+        default="end",
+        description="Truncation strategy: 'end', 'start', 'middle'",
+    ),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Parse multiple files in batch.
+
+    Maximum 5 files per request.
+    """
+    if len(files) > 5:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="too_many_files",
+            data={"max_files": 5, "actual": len(files)},
+        )
+
+    config = FileParseConfig(
+        max_content_length=max_content_length,
+        truncate_strategy=truncate_strategy,
+    )
+
+    results: list[FileParseResponse] = []
+    errors: list[dict] = []
+
+    for file in files:
+        if not file.filename:
+            continue
+
+        if not file_parser_service.is_supported(file.filename):
+            errors.append(
+                {"filename": file.filename, "error": "Unsupported file type"}
+            )
+            continue
+
+        content = await file.read()
+
+        if len(content) > MAX_PARSE_FILE_SIZE:
+            errors.append(
+                {"filename": file.filename, "error": "File too large"}
+            )
+            continue
+
+        try:
+            parsed = await file_parser_service.parse_file(
+                file_content=content,
+                filename=file.filename,
+                config=config,
+            )
+            results.append(
+                FileParseResponse(
+                    filename=parsed.filename,
+                    content=parsed.content,
+                    mime_type=parsed.mime_type,
+                    size=parsed.size,
+                    truncated=parsed.truncated,
+                    original_length=parsed.original_length,
+                    title=parsed.title,
+                )
+            )
+        except Exception as e:
+            errors.append({"filename": file.filename, "error": str(e)})
+
+    if errors and not results:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="all_files_failed",
+            data={"errors": errors},
+        )
+
+    return success(
+        data=results,
+        msg_key="files_parsed",
+    )

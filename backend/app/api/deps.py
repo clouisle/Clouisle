@@ -210,6 +210,38 @@ async def get_current_active_superuser(
     return current_user
 
 
+async def get_current_user_optional(
+    token: Optional[str] = Depends(reusable_oauth2),
+    authorization: Optional[str] = Header(None),
+) -> Optional[User]:
+    """
+    可选的用户认证。如果提供了有效的 token，返回用户；否则返回 None。
+    不会抛出认证错误。
+    """
+    # 尝试从 Authorization header 获取 token
+    auth_token = token
+    if not auth_token and authorization:
+        if authorization.startswith("Bearer "):
+            auth_token = authorization[7:]
+    
+    if not auth_token:
+        return None
+    
+    # 检查是否是 API Key
+    if auth_token.startswith("clou_"):
+        try:
+            user, _ = await _authenticate_api_key(auth_token)
+            return user
+        except BusinessError:
+            return None
+    
+    # 尝试 JWT 认证
+    try:
+        return await _authenticate_jwt(auth_token)
+    except BusinessError:
+        return None
+
+
 class PermissionChecker:
     def __init__(self, required_permission: str):
         self.required_permission = required_permission
