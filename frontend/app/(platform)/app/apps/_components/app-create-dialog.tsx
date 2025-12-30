@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { agentsApi } from '@/lib/api/agents'
+import { workflowsApi } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
 
 interface AppCreateDialogProps {
@@ -80,8 +81,16 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
         // Navigate to app config page
         router.push(`/app/apps/${agent.id}`)
       } else {
-        // TODO: Create workflow
-        toast.info(t('workflowComingSoon'))
+        // Create workflow
+        const workflow = await workflowsApi.createWorkflow({
+          team_id: currentTeam.id,
+          name: name.trim(),
+          description: description.trim() || undefined,
+        })
+        toast.success(t('appCreated'))
+        onSuccess?.()
+        // Navigate to workflow editor page
+        router.push(`/app/apps/workflow/${workflow.id}`)
       }
     } catch {
       toast.error(t('createFailed'))
@@ -102,7 +111,6 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
       icon: GitBranch,
       title: t('types.workflow.title'),
       description: t('types.workflow.description'),
-      disabled: true,
     },
   ]
 

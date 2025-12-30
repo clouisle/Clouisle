@@ -460,22 +460,60 @@ POST /api/v1/agents/{id}/chat/stream (SSE)
 
 ### 3.2 节点类型
 
-| 类型 | 代码 | 输入 | 输出 | 说明 |
-|------|------|------|------|------|
-| 开始 | `start` | - | 用户输入变量 | 工作流入口，定义输入参数 |
-| 结束 | `end` | 任意 | - | 工作流出口，定义输出结果 |
-| LLM | `llm` | Prompt + 变量 | 文本 | 调用语言模型生成 |
-| Agent | `agent` | 消息 | 回复 | 调用已创建的 Agent |
-| 知识库检索 | `kb_retrieval` | Query | 文档片段 | RAG 检索 |
-| 条件分支 | `condition` | 表达式 | 布尔 | if/else 逻辑分支 |
-| 循环 | `loop` | 数组 | 元素 | 遍历数组执行子流程 |
-| 代码 | `code` | 变量 | 执行结果 | Python 代码执行 |
-| HTTP 请求 | `http` | URL + 参数 | 响应 | 调用外部 API |
-| 工具调用 | `tool` | 参数 | 结果 | 内置工具或 MCP |
-| 人工审核 | `human_review` | 待审内容 | 审核结果 | 暂停等待人工确认 |
-| 变量赋值 | `variable` | 表达式 | 变量 | 设置或转换变量 |
-| 并行 | `parallel` | - | - | 并行执行多分支 |
-| 延时 | `delay` | 秒数 | - | 等待指定时间 |
+| 类型 | 代码 | 图标 | 输入 | 输出 | 说明 |
+|------|------|------|------|------|------|
+| 开始 | `start` | 🚀 | - | 用户输入变量 | 工作流入口，定义输入参数 |
+| 结束 | `end` | ✅ | 任意 | - | 工作流出口，定义输出结果 |
+| LLM | `llm` | 🧠 | Prompt + 变量 | 文本 | 调用语言模型生成 |
+| Agent | `agent` | 🤖 | 消息 | 回复 | 调用已创建的 Agent |
+| 子工作流 | `sub_workflow` | 📦 | 输入映射 | 输出映射 | 调用另一个工作流 |
+| 知识库检索 | `kb_retrieval` | 📚 | Query | 文档片段 | RAG 检索 |
+| 条件分支 | `condition` | 🔀 | 表达式 | 布尔 | if/else 逻辑分支 |
+| 循环 | `loop` | 🔄 | 数组 | 元素 | 遍历数组执行子流程 |
+| 代码 | `code` | 💻 | 变量 | 执行结果 | Python/JavaScript 执行 |
+| HTTP 请求 | `http` | 🌐 | URL + 参数 | 响应 | 调用外部 API |
+| 工具调用 | `tool` | 🔧 | 参数 | 结果 | 内置工具或 MCP |
+| 人工审核 | `human_review` | 👤 | 待审内容 | 审核结果 | 暂停等待人工确认 |
+| 变量赋值 | `variable` | 📝 | 表达式 | 变量 | 设置或转换变量 |
+| 并行 | `parallel` | ⚡ | - | - | 并行执行多分支 |
+| 延时 | `delay` | ⏱️ | 秒数 | - | 等待指定时间 |
+
+#### 3.2.1 子工作流节点
+
+子工作流节点允许工作流调用另一个工作流，实现流程复用和模块化：
+
+```python
+class SubWorkflowNodeConfig(BaseModel):
+    """子工作流节点配置"""
+    workflow_id: UUID                              # 被调用的工作流 ID
+    input_mapping: dict[str, str]                  # 输入参数映射 { 子流程变量名: 父流程表达式 }
+    output_mapping: dict[str, str]                 # 输出参数映射 { 父流程变量名: 子流程输出 }
+    timeout_seconds: int = 300                     # 超时时间
+    fail_on_error: bool = True                     # 子流程失败是否中断父流程
+```
+
+**循环依赖检测**：
+
+```python
+MAX_WORKFLOW_DEPTH = 5  # 最大嵌套深度
+
+def detect_circular_dependency(workflow_id: str, visited: set[str] = None) -> bool:
+    """检测工作流是否存在循环调用"""
+    if visited is None:
+        visited = set()
+    
+    if workflow_id in visited:
+        return True  # 发现循环
+    
+    visited.add(workflow_id)
+    sub_workflow_ids = get_sub_workflow_ids(workflow_id)
+    
+    for sub_id in sub_workflow_ids:
+        if detect_circular_dependency(sub_id, visited.copy()):
+            return True
+    
+    return False
+```
 
 ### 3.3 数据模型
 
@@ -590,6 +628,13 @@ class RunStatus(str, Enum):
     CANCELLED = "cancelled"   # 已取消
     TIMEOUT = "timeout"       # 超时
 
+class NodeStatus(str, Enum):
+    PENDING = "pending"       # 等待执行
+    RUNNING = "running"       # 执行中
+    SUCCESS = "success"       # 成功
+    FAILED = "failed"         # 失败
+    SKIPPED = "skipped"       # 跳过
+
 class WorkflowRun(Model):
     """工作流执行记录"""
     id = fields.UUIDField(pk=True)
@@ -603,6 +648,9 @@ class WorkflowRun(Model):
         null=True,  # Webhook/Cron 触发时为空
     )
     
+    # 执行模式
+    is_debug = fields.BooleanField(default=False)  # 是否调试模式
+    
     # 执行状态
     status = fields.CharEnumField(RunStatus, default=RunStatus.PENDING)
     
@@ -610,36 +658,95 @@ class WorkflowRun(Model):
     inputs = fields.JSONField(default=dict)
     outputs = fields.JSONField(null=True)
     
-    # 节点执行结果
-    # {
-    #   "node_id": {
-    #     "status": "success",
-    #     "started_at": "...",
-    #     "finished_at": "...",
-    #     "inputs": {...},
-    #     "outputs": {...},
-    #     "error": null
-    #   }
-    # }
-    node_results = fields.JSONField(default=dict)
+    # 执行上下文快照
+    context_snapshot = fields.JSONField(default=dict)
     
-    # 时间
+    # 子工作流关联
+    parent_run_id = fields.UUIDField(null=True)    # 父执行 ID
+    root_run_id = fields.UUIDField(null=True)      # 根执行 ID
+    depth = fields.IntField(default=0)             # 执行深度
+    
+    # ⏱️ 时间记录
+    created_at = fields.DatetimeField(auto_now_add=True)
     started_at = fields.DatetimeField(null=True)
     finished_at = fields.DatetimeField(null=True)
+    
+    # 统计汇总
+    total_nodes = fields.IntField(default=0)
+    executed_nodes = fields.IntField(default=0)
+    failed_nodes = fields.IntField(default=0)
+    skipped_nodes = fields.IntField(default=0)
+    total_duration_ms = fields.IntField(null=True)
+    total_token_usage = fields.JSONField(default=dict)  # {"prompt": 0, "completion": 0}
     
     # 错误信息
     error_message = fields.TextField(null=True)
     error_node_id = fields.CharField(max_length=100, null=True)
-    
-    # 统计
-    token_usage = fields.IntField(default=0)
-    duration_ms = fields.IntField(null=True)
-    
-    created_at = fields.DatetimeField(auto_now_add=True)
+    error_traceback = fields.TextField(null=True)
 
     class Meta:
         table = "workflow_runs"
         ordering = ["-created_at"]
+
+
+class NodeExecution(Model):
+    """节点执行记录 - 每个节点每次执行一条记录"""
+    id = fields.UUIDField(pk=True)
+    
+    # 关联
+    run = fields.ForeignKeyField("models.WorkflowRun", related_name="node_executions")
+    
+    # 节点标识
+    node_id = fields.CharField(max_length=100)      # ReactFlow 节点 ID
+    node_type = fields.CharField(max_length=50)     # start/end/llm/condition/...
+    node_name = fields.CharField(max_length=200)    # 节点显示名称
+    
+    # 执行顺序
+    execution_order = fields.IntField()
+    
+    # 状态
+    status = fields.CharEnumField(NodeStatus, default=NodeStatus.PENDING)
+    
+    # ⏱️ 时间记录（精确到毫秒）
+    queued_at = fields.DatetimeField(null=True)     # 进入队列时间
+    started_at = fields.DatetimeField(null=True)    # 开始执行时间
+    finished_at = fields.DatetimeField(null=True)   # 完成时间
+    
+    # 耗时（冗余存储，方便查询）
+    queue_duration_ms = fields.IntField(null=True)
+    execution_duration_ms = fields.IntField(null=True)
+    
+    # 📥 输入数据
+    inputs = fields.JSONField(null=True)
+    inputs_storage_key = fields.CharField(max_length=200, null=True)  # 大数据外部存储 key
+    
+    # 📤 输出数据
+    outputs = fields.JSONField(null=True)
+    outputs_storage_key = fields.CharField(max_length=200, null=True)  # 大数据外部存储 key
+    
+    # 节点配置快照
+    config_snapshot = fields.JSONField(null=True)
+    
+    # 🧠 LLM 相关
+    model_used = fields.CharField(max_length=100, null=True)
+    prompt_tokens = fields.IntField(null=True)
+    completion_tokens = fields.IntField(null=True)
+    total_tokens = fields.IntField(null=True)
+    
+    # 🔗 子工作流
+    sub_run_id = fields.UUIDField(null=True)
+    
+    # ❌ 错误信息
+    error_message = fields.TextField(null=True)
+    error_type = fields.CharField(max_length=100, null=True)
+    error_traceback = fields.TextField(null=True)
+    
+    # 重试
+    retry_count = fields.IntField(default=0)
+    
+    class Meta:
+        table = "workflow_node_executions"
+        ordering = ["execution_order"]
 ```
 
 ### 3.4 API 设计
@@ -854,6 +961,249 @@ class WorkflowExecutor:
             await self._execute_node(next_node, context)
 ```
 
+### 3.7 执行日志系统
+
+#### 3.7.1 统一日志架构
+
+不论调试模式还是生产模式，都使用相同的日志记录逻辑：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    统一执行引擎                                  │
+│                                                                 │
+│   调试模式（SSE）  ──┬──▶  ExecutionLogger  ──▶  持久化存储      │
+│   生产模式（异步）  ──┘     (批量写入)           (相同数据)       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.7.2 事件发射器接口
+
+```python
+from abc import ABC, abstractmethod
+
+class EventEmitter(ABC):
+    """事件发射器抽象接口"""
+    
+    @abstractmethod
+    async def emit(self, event: str, data: dict) -> None:
+        pass
+
+
+class SSEEmitter(EventEmitter):
+    """SSE 事件发射器 - 调试模式实时推送"""
+    
+    async def emit(self, event: str, data: dict) -> None:
+        await self.response.send(f"event: {event}\ndata: {json.dumps(data)}\n\n")
+
+
+class NoOpEmitter(EventEmitter):
+    """空操作发射器 - 生产模式"""
+    
+    async def emit(self, event: str, data: dict) -> None:
+        pass  # 日志已记录在数据库
+
+
+class RedisEmitter(EventEmitter):
+    """Redis Pub/Sub 发射器 - 用于 WebSocket 推送"""
+    
+    async def emit(self, event: str, data: dict) -> None:
+        await self.redis.publish(self.channel, json.dumps({"event": event, "data": data}))
+```
+
+#### 3.7.3 执行日志记录器
+
+```python
+class ExecutionLogger:
+    """执行日志记录器 - 批量写入优化"""
+    
+    def __init__(self, run: WorkflowRun, flush_interval: float = 1.0):
+        self.run = run
+        self.pending_nodes: dict[str, NodeExecution] = {}
+        self.flush_interval = flush_interval
+        self._lock = asyncio.Lock()
+    
+    async def log_node_start(self, node_id: str, node_type: str, node_name: str, order: int):
+        """记录节点开始（仅内存）"""
+        async with self._lock:
+            self.pending_nodes[node_id] = NodeExecution(
+                id=uuid4(),
+                run_id=self.run.id,
+                node_id=node_id,
+                node_type=node_type,
+                node_name=node_name,
+                execution_order=order,
+                status=NodeStatus.RUNNING,
+                queued_at=datetime.utcnow(),
+                started_at=datetime.utcnow(),
+            )
+    
+    async def log_node_end(self, node_id: str, status: NodeStatus, outputs: dict = None, error: str = None):
+        """记录节点结束（仅内存）"""
+        async with self._lock:
+            node_exec = self.pending_nodes.get(node_id)
+            if node_exec:
+                node_exec.status = status
+                node_exec.finished_at = datetime.utcnow()
+                node_exec.execution_duration_ms = self._calc_duration(
+                    node_exec.started_at, node_exec.finished_at
+                )
+                node_exec.outputs = outputs
+                node_exec.error_message = error
+    
+    async def flush(self):
+        """批量写入数据库"""
+        async with self._lock:
+            if not self.pending_nodes:
+                return
+            nodes_to_save = list(self.pending_nodes.values())
+            self.pending_nodes.clear()
+        
+        await NodeExecution.bulk_create(
+            nodes_to_save,
+            update_fields=["status", "finished_at", "execution_duration_ms", "outputs", "error_message"],
+            on_conflict=["id"],
+        )
+```
+
+### 3.8 性能与并发优化
+
+#### 3.8.1 数据库写入优化
+
+**问题**：每个节点执行过程中多次写入数据库，10 个节点可能产生 40+ 次写入。
+
+**解决方案**：批量写入 + 延迟持久化
+
+```python
+# 优化前：每个节点 4 次写入
+await NodeExecution.create(...)     # 写入 1
+node_exec.status = RUNNING
+await node_exec.save()              # 写入 2
+node_exec.status = SUCCESS
+await node_exec.save()              # 写入 3
+run.executed_nodes += 1
+await run.save()                    # 写入 4
+
+# 优化后：批量写入，10 个节点只需 3-5 次写入
+logger.log_node_start(...)          # 内存
+logger.log_node_end(...)            # 内存
+await logger.flush()                # 批量写入
+```
+
+#### 3.8.2 并发统计 - Redis 原子计数器
+
+**问题**：多个并行节点同时更新统计字段会导致数据丢失。
+
+**解决方案**：使用 Redis 原子操作
+
+```python
+class RunStatsTracker:
+    """使用 Redis 跟踪运行时统计"""
+    
+    def __init__(self, redis: Redis, run_id: UUID):
+        self.redis = redis
+        self.key_prefix = f"workflow_run:{run_id}"
+    
+    async def increment_executed(self):
+        return await self.redis.incr(f"{self.key_prefix}:executed")
+    
+    async def increment_failed(self):
+        return await self.redis.incr(f"{self.key_prefix}:failed")
+    
+    async def add_tokens(self, prompt: int, completion: int):
+        pipe = self.redis.pipeline()
+        pipe.incrby(f"{self.key_prefix}:prompt_tokens", prompt)
+        pipe.incrby(f"{self.key_prefix}:completion_tokens", completion)
+        await pipe.execute()
+    
+    async def sync_to_db(self, run: WorkflowRun):
+        """执行结束后同步到数据库"""
+        stats = await self.get_stats()
+        run.executed_nodes = stats["executed_nodes"]
+        run.failed_nodes = stats["failed_nodes"]
+        run.total_token_usage = {
+            "prompt": stats["prompt_tokens"],
+            "completion": stats["completion_tokens"],
+        }
+        await run.save()
+```
+
+#### 3.8.3 大数据分离存储
+
+**问题**：节点输入输出可能很大，每次 save 都要序列化。
+
+**解决方案**：大数据存储到 Redis/S3，数据库只存引用
+
+```python
+class DataStorage:
+    """大数据存储"""
+    
+    THRESHOLD = 10 * 1024  # 10KB 以上存储到外部
+    
+    async def store(self, run_id: UUID, node_id: str, data_type: str, data: dict) -> str | None:
+        serialized = json.dumps(data, default=str)
+        if len(serialized) < self.THRESHOLD:
+            return None  # 小数据不需要外部存储
+        
+        key = f"workflow_data:{run_id}:{node_id}:{data_type}"
+        await self.redis.setex(key, 86400 * 7, serialized)  # 7 天过期
+        return key
+```
+
+#### 3.8.4 并发执行限制
+
+```python
+class ConcurrencyLimiter:
+    """并发限制器"""
+    
+    async def limit_workflow_runs(self, team_id: UUID, max_concurrent: int = 5):
+        """限制每个团队的并发工作流数"""
+        key = f"workflow_concurrent:{team_id}"
+        current = await self.redis.incr(key)
+        if current > max_concurrent:
+            await self.redis.decr(key)
+            raise BusinessError(code=ResponseCode.RATE_LIMITED, msg_key="workflow_concurrent_limit_exceeded")
+    
+    async def limit_node_execution(self, node_type: str, max_concurrent: int = 10):
+        """限制特定类型节点的并发数（如 LLM 调用）"""
+        # 使用 Redis 分布式信号量实现
+```
+
+#### 3.8.5 配置参数
+
+```python
+class WorkflowConfig:
+    # 日志刷新间隔
+    LOG_FLUSH_INTERVAL: float = 1.0  # 秒
+    
+    # 并发限制
+    MAX_CONCURRENT_RUNS_PER_TEAM: int = 5
+    MAX_CONCURRENT_LLM_CALLS: int = 10
+    MAX_CONCURRENT_HTTP_CALLS: int = 20
+    MAX_PARALLEL_NODES: int = 5
+    
+    # 大数据阈值
+    LARGE_DATA_THRESHOLD: int = 10 * 1024  # 10KB
+    DATA_RETENTION_DAYS: int = 7
+    
+    # 执行超时
+    NODE_TIMEOUT: int = 300  # 5分钟
+    WORKFLOW_TIMEOUT: int = 1800  # 30分钟
+    
+    # 子工作流
+    MAX_WORKFLOW_DEPTH: int = 5
+```
+
+#### 3.8.6 性能对比
+
+| 指标 | 优化前 | 优化后 |
+|------|--------|--------|
+| 数据库写入次数（10节点） | 40+ 次 | 3-5 次 |
+| 并发冲突 | 有风险 | Redis 原子操作，无冲突 |
+| 大数据存储 | 全部存 DB | 分离存储，DB 只存引用 |
+| 并发执行 | 无限制 | 团队级 + 节点类型级限制 |
+```
+
 ---
 
 ## 4. 后端文件结构
@@ -861,14 +1211,12 @@ class WorkflowExecutor:
 ```
 backend/app/
 ├── models/
-│   ├── agent.py                  # Agent, AgentKnowledgeBase
-│   ├── conversation.py           # Conversation, Message
-│   └── workflow.py               # Workflow, WorkflowRun
+│   ├── agent.py                  # Agent, AgentKnowledgeBase, Conversation, Message
+│   └── workflow.py               # Workflow, WorkflowRun, NodeExecution
 │
 ├── schemas/
 │   ├── agent.py                  # Agent 相关 Schema
-│   ├── conversation.py           # 对话相关 Schema
-│   └── workflow.py               # 工作流相关 Schema
+│   └── workflow.py               # Workflow, WorkflowRun, NodeExecution Schema
 │
 ├── api/v1/
 │   ├── agents.py                 # Agent CRUD + 对话 API
@@ -881,20 +1229,33 @@ backend/app/
 │   ├── agent_executor.py         # Agent 执行服务
 │   └── workflow/
 │       ├── __init__.py
-│       ├── executor.py           # 工作流执行器
-│       ├── context.py            # 执行上下文
-│       ├── graph.py              # 图解析
+│       ├── executor.py           # WorkflowExecutor（核心执行器）
+│       ├── context.py            # ExecutionContext（执行上下文）
+│       ├── graph.py              # WorkflowGraph（图解析、拓扑排序）
+│       ├── logger.py             # ExecutionLogger（批量日志记录）
+│       ├── stats.py              # RunStatsTracker（Redis 统计）
+│       ├── storage.py            # DataStorage（大数据存储）
+│       ├── limiter.py            # ConcurrencyLimiter（并发限制）
+│       ├── events.py             # EventEmitter 接口
 │       └── nodes/                # 节点执行器
 │           ├── __init__.py
-│           ├── base.py
-│           ├── llm.py
-│           ├── code.py
-│           ├── http.py
-│           ├── condition.py
-│           └── loop.py
+│           ├── base.py           # BaseNodeExecutor
+│           ├── start.py          # 开始节点
+│           ├── end.py            # 结束节点
+│           ├── llm.py            # LLM 节点
+│           ├── agent.py          # Agent 节点
+│           ├── sub_workflow.py   # 子工作流节点
+│           ├── kb_retrieval.py   # 知识库检索节点
+│           ├── condition.py      # 条件分支节点
+│           ├── loop.py           # 循环节点
+│           ├── code.py           # 代码执行节点
+│           ├── http.py           # HTTP 请求节点
+│           ├── tool.py           # 工具调用节点
+│           ├── variable.py       # 变量赋值节点
+│           └── delay.py          # 延时节点
 │
 └── tasks/
-    └── workflow.py               # 异步执行任务
+    └── workflow.py               # Celery 异步任务（预留）
 ```
 
 ---
@@ -1106,3 +1467,4 @@ async def build_agent_out(agent: Agent) -> dict:
 |------|------|----------|
 | 2025-12-25 | 1.0 | 初始版本，定义 Agent 和 Workflow 设计规范 |
 | 2025-01-19 | 1.1 | 更新前端路由结构，Agent 与 Workflow 统一到 `/app/apps` 下；新增三栏布局组件说明；添加实现说明章节 |
+| 2025-12-30 | 1.2 | 新增子工作流节点设计；完善执行记录模型（NodeExecution 独立表）；新增执行日志系统设计；新增性能与并发优化章节（批量写入、Redis 原子计数、大数据分离存储、并发限制） |

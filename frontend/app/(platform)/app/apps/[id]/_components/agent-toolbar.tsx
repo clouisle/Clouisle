@@ -9,6 +9,8 @@ import {
   MessageSquare,
   Save,
   Loader2,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react'
 import type { Agent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -19,6 +21,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface AgentToolbarProps {
   agent: Agent
@@ -26,6 +33,8 @@ interface AgentToolbarProps {
   onSave: () => void
   isSaving: boolean
   onSettingsClick: () => void
+  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
 }
 
 export function AgentToolbar({
@@ -34,12 +43,37 @@ export function AgentToolbar({
   onSave,
   isSaving,
   onSettingsClick,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: AgentToolbarProps) {
   const t = useTranslations('agents.orchestration')
 
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="flex items-center gap-2">
+        {/* Toggle Sidebar Button */}
+        <Tooltip>
+          <TooltipTrigger
+            render={(props) => (
+              <Button
+                {...props}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                onClick={onToggleSidebar}
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeft className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+          />
+          <TooltipContent side="bottom">
+            {sidebarCollapsed ? t('toolbar.showSidebar') : t('toolbar.hideSidebar')}
+          </TooltipContent>
+        </Tooltip>
         <h2 className="font-semibold text-sm">{t('title')}</h2>
         {agent.model && (
           <Badge variant="secondary" className="text-xs font-normal gap-1">

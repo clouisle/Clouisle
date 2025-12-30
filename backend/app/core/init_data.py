@@ -16,6 +16,131 @@ SUPER_ADMIN_ROLE = "Super Admin"
 EMBEDDING_DIMENSIONS = [768, 1024, 1536, 3072]
 
 
+async def init_workflow_tables():
+    """
+    Initialize workflow-related tables if they don't exist.
+    This handles the migration for the new workflow feature.
+    """
+    logger.info("Initializing workflow tables...")
+    
+    conn = Tortoise.get_connection("default")
+    
+    # Check if workflows table exists
+    _, rows = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'workflows'
+    """)
+    
+    if rows:
+        logger.info("Workflow tables already exist, skipping creation")
+        return
+    
+    logger.info("Creating workflow tables...")
+    
+    # Create workflows table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS workflows (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            icon VARCHAR(50),
+            definition JSONB NOT NULL DEFAULT '{"nodes": [], "edges": [], "viewport": {"x": 0, "y": 0, "zoom": 1}}',
+            variables JSONB NOT NULL DEFAULT '[]',
+            status VARCHAR(20) NOT NULL DEFAULT 'draft',
+            version INT NOT NULL DEFAULT 1,
+            trigger_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+            trigger_config JSONB NOT NULL DEFAULT '{}',
+            webhook_token VARCHAR(64),
+            run_count INT NOT NULL DEFAULT 0,
+            success_count INT NOT NULL DEFAULT 0,
+            fail_count INT NOT NULL DEFAULT 0,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    logger.info("Created workflows table")
+    
+    # Create workflow_runs table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS workflow_runs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            trigger_type VARCHAR(20) NOT NULL DEFAULT 'manual',
+            triggered_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            is_debug BOOLEAN NOT NULL DEFAULT FALSE,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            inputs JSONB NOT NULL DEFAULT '{}',
+            outputs JSONB,
+            parent_run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            root_run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            depth INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            total_nodes INT NOT NULL DEFAULT 0,
+            executed_nodes INT NOT NULL DEFAULT 0,
+            failed_nodes INT NOT NULL DEFAULT 0,
+            skipped_nodes INT NOT NULL DEFAULT 0,
+            total_duration_ms INT,
+            total_token_usage JSONB NOT NULL DEFAULT '{}',
+            error_message TEXT,
+            error_node_id VARCHAR(100)
+        )
+    """)
+    logger.info("Created workflow_runs table")
+    
+    # Create node_executions table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS node_executions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            run_id UUID NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            node_id VARCHAR(100) NOT NULL,
+            node_type VARCHAR(50) NOT NULL,
+            node_name VARCHAR(100) NOT NULL,
+            execution_order INT NOT NULL DEFAULT 0,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            queued_at TIMESTAMPTZ,
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            queue_duration_ms INT,
+            execution_duration_ms INT,
+            inputs JSONB,
+            inputs_storage_key VARCHAR(255),
+            outputs JSONB,
+            outputs_storage_key VARCHAR(255),
+            config_snapshot JSONB,
+            model_used VARCHAR(100),
+            prompt_tokens INT,
+            completion_tokens INT,
+            total_tokens INT,
+            sub_run_id UUID REFERENCES workflow_runs(id) ON DELETE SET NULL,
+            error_message TEXT,
+            error_type VARCHAR(100),
+            retry_count INT NOT NULL DEFAULT 0
+        )
+    """)
+    logger.info("Created node_executions table")
+    
+    # Create indexes for better query performance
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_workflows_team_id ON workflows(team_id);
+        CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+        CREATE INDEX IF NOT EXISTS idx_workflows_created_by ON workflows(created_by_id);
+        CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON workflow_runs(workflow_id);
+        CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+        CREATE INDEX IF NOT EXISTS idx_workflow_runs_parent_run_id ON workflow_runs(parent_run_id);
+        CREATE INDEX IF NOT EXISTS idx_workflow_runs_root_run_id ON workflow_runs(root_run_id);
+        CREATE INDEX IF NOT EXISTS idx_node_executions_run_id ON node_executions(run_id);
+        CREATE INDEX IF NOT EXISTS idx_node_executions_node_id ON node_executions(node_id);
+        CREATE INDEX IF NOT EXISTS idx_node_executions_status ON node_executions(status);
+    """)
+    logger.info("Created workflow indexes")
+    
+    logger.info("Workflow tables initialization complete")
+
+
 async def init_pgvector():
     """
     Initialize pgvector extension and create embedding columns for different dimensions.
@@ -239,5 +364,8 @@ async def init_db():
 
     # 4. Initialize pgvector for vector storage
     await init_pgvector()
+
+    # 5. Initialize workflow tables
+    await init_workflow_tables()
 
     logger.info("Database initialization complete.")

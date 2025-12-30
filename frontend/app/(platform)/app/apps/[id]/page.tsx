@@ -26,6 +26,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
   const [showSettings, setShowSettings] = React.useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   // Form state
   const [name, setName] = React.useState('')
@@ -220,7 +221,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   return (
     <div className="h-full flex overflow-hidden">
       {/* Left Sidebar - Agent Info & Navigation */}
-      <AgentSidebar agent={agent} />
+      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -231,6 +232,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           onSave={handleSave}
           isSaving={isSaving}
           onSettingsClick={() => setShowSettings(true)}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
         {/* Content */}

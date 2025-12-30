@@ -47,10 +47,30 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { agentsApi, type AgentListItem } from '@/lib/api/agents'
+import { workflowsApi, type WorkflowListItem } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
 import { AppCreateDialog } from './_components/app-create-dialog'
 
 type AppType = 'all' | 'agent' | 'workflow'
+
+// Unified app item type for display
+interface AppItem {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  status: 'draft' | 'published'
+  type: 'agent' | 'workflow'
+  // Agent-specific
+  conversation_count?: number
+  message_count?: number
+  // Workflow-specific
+  run_count?: number
+  success_count?: number
+  fail_count?: number
+  created_at: string
+  updated_at: string
+}
 
 export default function AppsPage() {
   const t = useTranslations('apps')
@@ -59,19 +79,64 @@ export default function AppsPage() {
   
   const [activeTab, setActiveTab] = React.useState<AppType>('all')
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [agents, setAgents] = React.useState<AgentListItem[]>([])
+  const [apps, setApps] = React.useState<AppItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
-  const [deletingAgent, setDeletingAgent] = React.useState<AgentListItem | null>(null)
+  const [deletingApp, setDeletingApp] = React.useState<AppItem | null>(null)
 
-  // Fetch agents
-  const fetchAgents = React.useCallback(async () => {
+  // Fetch all apps (agents + workflows)
+  const fetchApps = React.useCallback(async () => {
     if (!currentTeam) return
     setIsLoading(true)
     try {
-      const data = await agentsApi.getAgents({ search: searchQuery || undefined })
-      setAgents(data.items)
+      // Fetch agents and workflows in parallel
+      const [agentsData, workflowsData] = await Promise.all([
+        agentsApi.getAgents({ 
+          search: searchQuery || undefined,
+          teamId: currentTeam.id,
+        }),
+        workflowsApi.getWorkflows({ 
+          keyword: searchQuery || undefined,
+          teamId: currentTeam.id,
+        }),
+      ])
+      
+      // Transform agents to unified format
+      const agentItems: AppItem[] = agentsData.items.map((agent: AgentListItem) => ({
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        icon: agent.icon,
+        status: agent.status,
+        type: 'agent' as const,
+        conversation_count: agent.conversation_count,
+        message_count: agent.message_count,
+        created_at: agent.created_at,
+        updated_at: agent.updated_at,
+      }))
+      
+      // Transform workflows to unified format
+      const workflowItems: AppItem[] = workflowsData.items.map((workflow: WorkflowListItem) => ({
+        id: workflow.id,
+        name: workflow.name,
+        description: workflow.description,
+        icon: workflow.icon,
+        status: workflow.status,
+        type: 'workflow' as const,
+        run_count: workflow.run_count,
+        success_count: workflow.success_count,
+        fail_count: workflow.fail_count,
+        created_at: workflow.created_at,
+        updated_at: workflow.updated_at,
+      }))
+      
+      // Combine and sort by updated_at
+      const allApps = [...agentItems, ...workflowItems].sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      )
+      
+      setApps(allApps)
     } catch {
       toast.error(t('loadFailed'))
     } finally {
@@ -80,53 +145,66 @@ export default function AppsPage() {
   }, [currentTeam, searchQuery, t])
 
   React.useEffect(() => {
-    fetchAgents()
-  }, [fetchAgents])
+    fetchApps()
+  }, [fetchApps])
 
   // Filter apps by type
   const filteredApps = React.useMemo(() => {
-    if (activeTab === 'all') return agents
-    if (activeTab === 'agent') return agents // Agents
-    // When we add workflows, filter them here
-    return []
-  }, [agents, activeTab])
+    if (activeTab === 'all') return apps
+    return apps.filter(app => app.type === activeTab)
+  }, [apps, activeTab])
 
   // Handle delete
   const handleDelete = async () => {
-    if (!deletingAgent) return
+    if (!deletingApp) return
     try {
-      await agentsApi.deleteAgent(deletingAgent.id)
+      if (deletingApp.type === 'agent') {
+        await agentsApi.deleteAgent(deletingApp.id)
+      } else {
+        await workflowsApi.deleteWorkflow(deletingApp.id)
+      }
       toast.success(t('appDeleted'))
       setDeleteDialogOpen(false)
-      setDeletingAgent(null)
-      fetchAgents()
+      setDeletingApp(null)
+      fetchApps()
     } catch {
       toast.error(t('deleteFailed'))
     }
   }
 
   // Handle duplicate
-  const handleDuplicate = async (agent: AgentListItem) => {
+  const handleDuplicate = async (app: AppItem) => {
     try {
-      await agentsApi.duplicateAgent(agent.id)
+      if (app.type === 'agent') {
+        await agentsApi.duplicateAgent(app.id)
+      } else {
+        await workflowsApi.duplicateWorkflow(app.id)
+      }
       toast.success(t('appDuplicated'))
-      fetchAgents()
+      fetchApps()
     } catch {
       toast.error(t('duplicateFailed'))
     }
   }
 
   // Handle publish/unpublish
-  const handleTogglePublish = async (agent: AgentListItem) => {
+  const handleTogglePublish = async (app: AppItem) => {
     try {
-      if (agent.status === 'published') {
-        await agentsApi.unpublishAgent(agent.id)
-        toast.success(t('appUnpublished'))
+      if (app.type === 'agent') {
+        if (app.status === 'published') {
+          await agentsApi.unpublishAgent(app.id)
+        } else {
+          await agentsApi.publishAgent(app.id)
+        }
       } else {
-        await agentsApi.publishAgent(agent.id)
-        toast.success(t('appPublished'))
+        if (app.status === 'published') {
+          await workflowsApi.unpublishWorkflow(app.id)
+        } else {
+          await workflowsApi.publishWorkflow(app.id)
+        }
       }
-      fetchAgents()
+      toast.success(app.status === 'published' ? t('appUnpublished') : t('appPublished'))
+      fetchApps()
     } catch {
       toast.error(t('publishFailed'))
     }
@@ -136,6 +214,12 @@ export default function AppsPage() {
   const getAppIcon = (type: 'agent' | 'workflow') => {
     if (type === 'agent') return Sparkles
     return GitBranch
+  }
+
+  // Get app link
+  const getAppLink = (app: AppItem) => {
+    if (app.type === 'agent') return `/app/apps/${app.id}`
+    return `/app/apps/workflow/${app.id}`
   }
 
   return (
@@ -195,27 +279,27 @@ export default function AppsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filteredApps.map((agent) => {
-            const AppIcon = getAppIcon('agent')
+          {filteredApps.map((app) => {
+            const AppIcon = getAppIcon(app.type)
             // Check if icon is a URL or emoji
-            const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
+            const isIconUrl = app.icon && (app.icon.startsWith('http') || app.icon.startsWith('/'))
             return (
-              <Card key={agent.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
-                <Link href={`/app/apps/${agent.id}`} className="flex flex-col justify-between px-2.5 py-3 h-full">
+              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
+                <Link href={getAppLink(app)} className="flex flex-col justify-between px-2.5 py-3 h-full">
                   {/* Header */}
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary relative overflow-hidden">
-                      {agent.icon ? (
+                      {app.icon ? (
                         isIconUrl ? (
                           <Image
-                            src={agent.icon}
-                            alt={agent.name}
+                            src={app.icon}
+                            alt={app.name}
                             fill
                             unoptimized
                             className="object-cover"
                           />
                         ) : (
-                          <span className="text-base">{agent.icon}</span>
+                          <span className="text-base">{app.icon}</span>
                         )
                       ) : (
                         <AppIcon className="h-4 w-4" />
@@ -223,18 +307,27 @@ export default function AppsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-medium truncate">
-                        {agent.name}
+                        {app.name}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <Badge
-                          variant={agent.status === 'published' ? 'default' : 'secondary'}
+                          variant={app.status === 'published' ? 'default' : 'secondary'}
                           className="text-[10px] px-1.5 py-0"
                         >
-                          {agent.status === 'published' ? t('published') : t('draft')}
+                          {app.status === 'published' ? t('published') : t('draft')}
                         </Badge>
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          <Sparkles className="mr-0.5 h-2.5 w-2.5" />
-                          Agent
+                          {app.type === 'agent' ? (
+                            <>
+                              <Sparkles className="mr-0.5 h-2.5 w-2.5" />
+                              Agent
+                            </>
+                          ) : (
+                            <>
+                              <GitBranch className="mr-0.5 h-2.5 w-2.5" />
+                              Workflow
+                            </>
+                          )}
                         </Badge>
                       </div>
                     </div>
@@ -242,13 +335,25 @@ export default function AppsPage() {
 
                   {/* Description */}
                   <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                    {agent.description || t('noDescription')}
+                    {app.description || t('noDescription')}
                   </p>
 
                   {/* Stats */}
                   <div className="flex items-center gap-3 text-xs text-muted-foreground border-t pt-1.5">
-                    <span>{agent.conversation_count} {t('conversations')}</span>
-                    <span>{agent.message_count} {t('messages')}</span>
+                    {app.type === 'agent' ? (
+                      <>
+                        <span>{app.conversation_count || 0} {t('conversations')}</span>
+                        <span>{app.message_count || 0} {t('messages')}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{app.run_count || 0} 次运行</span>
+                        <span className="text-green-600">{app.success_count || 0} 成功</span>
+                        {(app.fail_count || 0) > 0 && (
+                          <span className="text-red-600">{app.fail_count} 失败</span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </Link>
 
@@ -263,29 +368,31 @@ export default function AppsPage() {
                       )}
                     />
                     <DropdownMenuContent align="end">
-                      <Link href={`/app/apps/${agent.id}`}>
+                      <Link href={getAppLink(app)}>
                         <DropdownMenuItem>
                           <FileEdit className="mr-2 h-4 w-4" />
                           {t('configure')}
                         </DropdownMenuItem>
                       </Link>
-                      <Link href={`/chat/${agent.id}`} target="_blank">
-                        <DropdownMenuItem>
-                          <MessageSquare className="mr-2 h-4 w-4" />
-                          {t('chat')}
-                        </DropdownMenuItem>
-                      </Link>
+                      {app.type === 'agent' && (
+                        <Link href={`/chat/${app.id}`} target="_blank">
+                          <DropdownMenuItem>
+                            <MessageSquare className="mr-2 h-4 w-4" />
+                            {t('chat')}
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={(e) => {
                         e.preventDefault()
-                        handleTogglePublish(agent)
+                        handleTogglePublish(app)
                       }}>
                         <Send className="mr-2 h-4 w-4" />
-                        {agent.status === 'published' ? t('unpublish') : t('publish')}
+                        {app.status === 'published' ? t('unpublish') : t('publish')}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={(e) => {
                         e.preventDefault()
-                        handleDuplicate(agent)
+                        handleDuplicate(app)
                       }}>
                         <Copy className="mr-2 h-4 w-4" />
                         {t('duplicate')}
@@ -295,7 +402,7 @@ export default function AppsPage() {
                         className="text-destructive"
                         onClick={(e) => {
                           e.preventDefault()
-                          setDeletingAgent(agent)
+                          setDeletingApp(app)
                           setDeleteDialogOpen(true)
                         }}
                       >
@@ -317,7 +424,7 @@ export default function AppsPage() {
         onOpenChange={setCreateDialogOpen}
         onSuccess={() => {
           setCreateDialogOpen(false)
-          fetchAgents()
+          fetchApps()
         }}
       />
 
@@ -327,7 +434,7 @@ export default function AppsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('confirmDelete')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('deleteConfirmMessage', { name: deletingAgent?.name || '' })}
+              {t('deleteConfirmMessage', { name: deletingApp?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

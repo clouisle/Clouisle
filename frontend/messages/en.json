@@ -1040,7 +1040,9 @@
         "publish": "Publish",
         "confirmPublish": "Confirm Publish",
         "confirmUnpublish": "Unpublish",
-        "openPublicChat": "Public Page"
+        "openPublicChat": "Public Page",
+        "showSidebar": "Show Sidebar",
+        "hideSidebar": "Hide Sidebar"
       },
       "prompt": {
         "title": "Prompt",
@@ -2012,6 +2014,49 @@
       "descriptionRequired": "Please enter a description",
       "generateFailed": "Generation failed, please try again",
       "copyFailed": "Failed to copy"
+    }
+  },
+  "workflow": {
+    "title": "Workflow Editor",
+    "nodes": "Nodes",
+    "dragToAdd": "Drag nodes to canvas",
+    "loadFailed": "Failed to load workflow",
+    "saved": "Workflow saved",
+    "saveFailed": "Failed to save workflow",
+    "noDescription": "No description",
+    "run": "Run",
+    "showSidebar": "Show sidebar",
+    "hideSidebar": "Hide sidebar",
+    "canvasHint": "Drag nodes from left panel, connect them to build workflow",
+    "startNodes": {
+      "selectTitle": "Select Start Node",
+      "selectDescription": "A workflow needs a start node to define the entry point",
+      "back": "Back to Apps",
+      "userInput": {
+        "title": "User Input",
+        "description": "Start workflow by receiving user input through chat interface"
+      },
+      "trigger": {
+        "title": "Trigger",
+        "description": "Start workflow via API call, scheduled task, or webhook"
+      }
+    },
+    "nodeTypes": {
+      "start": "Start",
+      "end": "End",
+      "userInput": "User Input",
+      "trigger": "Trigger",
+      "llm": "LLM",
+      "agent": "Agent",
+      "subWorkflow": "Sub-workflow",
+      "knowledgeBase": "Knowledge Base",
+      "condition": "Condition",
+      "loop": "Loop",
+      "code": "Code",
+      "http": "HTTP Request",
+      "tool": "Tool",
+      "variable": "Variable",
+      "delay": "Delay"
     }
   }
 }

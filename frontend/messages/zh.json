@@ -1040,7 +1040,9 @@
         "publish": "发布",
         "confirmPublish": "确认发布",
         "confirmUnpublish": "取消发布",
-        "openPublicChat": "公开页面"
+        "openPublicChat": "公开页面",
+        "showSidebar": "显示侧边栏",
+        "hideSidebar": "隐藏侧边栏"
       },
       "prompt": {
         "title": "提示词",
@@ -2010,6 +2012,49 @@
       "descriptionRequired": "请输入需求描述",
       "generateFailed": "生成失败，请重试",
       "copyFailed": "复制失败"
+    }
+  },
+  "workflow": {
+    "title": "工作流编辑器",
+    "nodes": "节点",
+    "dragToAdd": "拖拽节点到画布",
+    "loadFailed": "加载工作流失败",
+    "saved": "工作流已保存",
+    "saveFailed": "保存工作流失败",
+    "noDescription": "无描述",
+    "run": "运行",
+    "showSidebar": "显示侧边栏",
+    "hideSidebar": "隐藏侧边栏",
+    "canvasHint": "从左侧面板拖拽节点，连接它们以构建工作流",
+    "startNodes": {
+      "selectTitle": "选择开始节点",
+      "selectDescription": "工作流需要一个开始节点来定义起点",
+      "back": "返回应用列表",
+      "userInput": {
+        "title": "用户输入",
+        "description": "通过对话界面接收用户输入来开始工作流"
+      },
+      "trigger": {
+        "title": "触发器",
+        "description": "通过 API 调用、定时任务或 Webhook 触发工作流"
+      }
+    },
+    "nodeTypes": {
+      "start": "开始",
+      "end": "结束",
+      "userInput": "用户输入",
+      "trigger": "触发器",
+      "llm": "大模型",
+      "agent": "智能体",
+      "subWorkflow": "子工作流",
+      "knowledgeBase": "知识库",
+      "condition": "条件分支",
+      "loop": "循环",
+      "code": "代码",
+      "http": "HTTP 请求",
+      "tool": "工具",
+      "variable": "变量赋值",
+      "delay": "延时"
     }
   }
 }

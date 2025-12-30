@@ -18,6 +18,15 @@ from .agent import (
     Message,
     MessageRole,
 )
+from .workflow import (
+    Workflow,
+    WorkflowRun,
+    NodeExecution,
+    WorkflowStatus,
+    TriggerType,
+    RunStatus,
+    NodeStatus,
+)
 from .tool import (
     Tool,
     ToolType,
@@ -53,6 +62,13 @@ __all__ = [
     "Conversation",
     "Message",
     "MessageRole",
+    "Workflow",
+    "WorkflowRun",
+    "NodeExecution",
+    "WorkflowStatus",
+    "TriggerType",
+    "RunStatus",
+    "NodeStatus",
     "Tool",
     "ToolType",
     "CustomToolType",
