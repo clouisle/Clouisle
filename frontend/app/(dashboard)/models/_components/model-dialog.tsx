@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, Zap } from 'lucide-react'
+import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, Zap, Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -30,8 +30,26 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 import { modelsApi, type Model, type ModelCreateInput, type ProviderInfo, type ModelTypeInfo } from '@/lib/api/models'
+
+// 供应商分组
+const PROVIDER_GROUPS = {
+  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai'],
+  domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
+  other: ['ollama', 'custom'],
+}
 
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
@@ -288,7 +306,7 @@ export function ModelDialog({
     if (!category) return providers
     
     const providersByCategory: Record<string, string[]> = {
-      text: ['openai', 'anthropic', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
+      text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       image: ['openai', 'azure_openai', 'custom'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -296,6 +314,19 @@ export function ModelDialog({
     const allowedProviders = providersByCategory[category] || []
     return providers.filter(p => allowedProviders.includes(p.code))
   }, [modelType, providers])
+
+  // 分组过滤后的供应商
+  const groupedProviders = React.useMemo(() => {
+    const codes = new Set(filteredProviders.map(p => p.code))
+    return {
+      international: PROVIDER_GROUPS.international.filter(p => codes.has(p)),
+      domestic: PROVIDER_GROUPS.domestic.filter(p => codes.has(p)),
+      other: PROVIDER_GROUPS.other.filter(p => codes.has(p)),
+    }
+  }, [filteredProviders])
+
+  // 供应商选择 Popover 状态
+  const [providerPopoverOpen, setProviderPopoverOpen] = React.useState(false)
   
   // 提交表单
   const handleSubmit = async (e: React.FormEvent) => {
@@ -440,18 +471,131 @@ export function ModelDialog({
           
           <div className="space-y-2">
             <Label>{t('provider')} *</Label>
-            <Select value={provider} onValueChange={(v) => v && handleProviderChange(v)} disabled={isEditing || !modelType}>
-              <SelectTrigger>
-                <SelectValue>{provider ? t(`providers.${provider}`) : t('selectProvider')}</SelectValue>
-              </SelectTrigger>
-              <SelectContent side="bottom" alignItemWithTrigger={false}>
-                {filteredProviders.map((p) => (
-                  <SelectItem key={p.code} value={p.code}>
-                    {t(`providers.${p.code}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={providerPopoverOpen} onOpenChange={setProviderPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={providerPopoverOpen}
+                  className={cn(
+                    "w-full justify-between font-normal",
+                    !provider && "text-muted-foreground"
+                  )}
+                  disabled={isEditing || !modelType}
+                >
+                  {provider ? t(`providers.${provider}`) : t('selectProvider')}
+                  <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[340px] p-0" align="start">
+                <div className="p-3 space-y-3 max-h-[320px] overflow-y-auto">
+                  {/* 国际供应商 */}
+                  {groupedProviders.international.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.international')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.international.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleProviderChange(code)
+                                  setProviderPopoverOpen(false)
+                                }}
+                                className={cn(
+                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                  provider === code
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-transparent bg-muted/50 hover:bg-muted"
+                                )}
+                              >
+                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                <span className="truncate">{t(`providers.${code}`)}</span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 国内供应商 */}
+                  {groupedProviders.domestic.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.domestic')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.domestic.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleProviderChange(code)
+                                  setProviderPopoverOpen(false)
+                                }}
+                                className={cn(
+                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                  provider === code
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-transparent bg-muted/50 hover:bg-muted"
+                                )}
+                              >
+                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                <span className="truncate">{t(`providers.${code}`)}</span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 其他 */}
+                  {groupedProviders.other.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.other')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.other.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleProviderChange(code)
+                                  setProviderPopoverOpen(false)
+                                }}
+                                className={cn(
+                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                  provider === code
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-transparent bg-muted/50 hover:bg-muted"
+                                )}
+                              >
+                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                <span className="truncate">{t(`providers.${code}`)}</span>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             {errors.provider && <p className="text-sm text-destructive">{errors.provider}</p>}
             {!modelType && <p className="text-xs text-muted-foreground">{t('selectModelTypeFirst')}</p>}
           </div>

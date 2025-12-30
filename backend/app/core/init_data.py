@@ -26,8 +26,12 @@ async def init_pgvector():
     - 1536: OpenAI text-embedding-ada-002, text-embedding-3-small
     - 3072: OpenAI text-embedding-3-large
     
-    Each dimension has its own column and HNSW index for optimal performance.
+    Each dimension has its own column. HNSW index is created for dimensions <= 2000
+    (pgvector HNSW limit). Higher dimensions will use sequential scan.
     """
+    # pgvector HNSW index maximum dimension limit
+    HNSW_MAX_DIMENSION = 2000
+    
     logger.info("Initializing pgvector extension...")
     
     conn = Tortoise.get_connection("default")
@@ -61,17 +65,20 @@ async def init_pgvector():
             except Exception as e:
                 logger.warning(f"Could not add {col_name} column: {e}")
         
-        # Create HNSW index for this dimension
-        index_name = f"document_chunks_{col_name}_hnsw_idx"
-        try:
-            await conn.execute_query(f"""
-                CREATE INDEX IF NOT EXISTS {index_name}
-                ON document_chunks 
-                USING hnsw ({col_name} vector_cosine_ops)
-            """)
-            logger.info(f"Created HNSW index {index_name}")
-        except Exception as e:
-            logger.warning(f"Could not create index {index_name}: {e}")
+        # Create HNSW index for this dimension (only if <= 2000)
+        if dim <= HNSW_MAX_DIMENSION:
+            index_name = f"document_chunks_{col_name}_hnsw_idx"
+            try:
+                await conn.execute_query(f"""
+                    CREATE INDEX IF NOT EXISTS {index_name}
+                    ON document_chunks 
+                    USING hnsw ({col_name} vector_cosine_ops)
+                """)
+                logger.info(f"Created HNSW index {index_name}")
+            except Exception as e:
+                logger.warning(f"Could not create index {index_name}: {e}")
+        else:
+            logger.info(f"Skipping HNSW index for {col_name} (dimension {dim} > {HNSW_MAX_DIMENSION})")
 
 
 async def init_db():

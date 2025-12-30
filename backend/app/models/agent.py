@@ -183,7 +183,7 @@ class AgentKnowledgeBase(models.Model):
         default=5, description="Number of chunks to retrieve"
     )
     score_threshold = fields.FloatField(
-        default=0.5, description="Minimum similarity score"
+        default=0.3, description="Minimum similarity score (0-1, lower = more results)"
     )
 
     created_at = fields.DatetimeField(auto_now_add=True)

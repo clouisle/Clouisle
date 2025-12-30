@@ -332,11 +332,16 @@ export function AgentSettingsDrawer({
                 <Textarea
                   id="suggestedQuestions"
                   value={suggestedQuestions.join('\n')}
-                  onChange={(e) =>
-                    onSuggestedQuestionsChange(
-                      e.target.value.split('\n').filter((q) => q.trim())
-                    )
-                  }
+                  onChange={(e) => {
+                    // 保留所有行（包括空行），让用户可以换行输入
+                    const lines = e.target.value.split('\n')
+                    onSuggestedQuestionsChange(lines)
+                  }}
+                  onBlur={(e) => {
+                    // 失焦时过滤空行
+                    const lines = e.target.value.split('\n').filter((q) => q.trim())
+                    onSuggestedQuestionsChange(lines)
+                  }}
                   placeholder={ts('suggestedQuestionsPlaceholder')}
                   rows={3}
                   className="resize-none"

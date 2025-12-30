@@ -9,7 +9,7 @@ export default function ChatLayout({
 }) {
   return (
     <SiteSettingsProvider skipTitleUpdate skipFaviconUpdate>
-      <div className="min-h-screen bg-background">
+      <div className="fixed inset-0 bg-background">
         {children}
       </div>
     </SiteSettingsProvider>

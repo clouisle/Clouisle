@@ -627,6 +627,7 @@
       "openai": "OpenAI",
       "anthropic": "Anthropic",
       "google": "Google",
+      "xai": "xAI (Grok)",
       "azure_openai": "Azure OpenAI",
       "deepseek": "DeepSeek",
       "moonshot": "Moonshot",
@@ -643,6 +644,11 @@
       "midjourney": "Midjourney",
       "volcengine": "Volcengine",
       "custom": "Custom"
+    },
+    "providerGroups": {
+      "international": "International",
+      "domestic": "China",
+      "other": "Other"
     },
     "name": "Model Name",
     "type": "Model Type",
@@ -679,6 +685,15 @@
     "admin": "Admin Panel",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",
+    "about": "About",
+    "aboutDescription": "All-in-one AI application development platform",
+    "aboutVersion": "Version",
+    "aboutBuildDate": "Build Date",
+    "aboutFramework": "Framework",
+    "aboutDocs": "Docs",
+    "aboutRights": "All rights reserved",
+    "aboutLatest": "is the latest version.",
+    "aboutChangelog": "Changelog",
     "teams": "Teams",
     "manageTeams": "Manage Teams",
     "noTeams": "No teams",
@@ -1956,5 +1971,47 @@
     "yesterday": "Yesterday",
     "daysAgo": "{days} days ago",
     "delete": "Delete"
+  },
+  "promptGenerator": {
+    "title": "AI Prompt Generator",
+    "description": "Describe what you want your Agent to do, and AI will generate a professional system prompt for you.",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "e.g., I need a customer service assistant that can answer product-related questions in a friendly and professional manner...",
+    "contextPreview": "Current Context",
+    "contextTools": "{count} tools",
+    "contextKnowledgeBases": "{count} knowledge bases",
+    "contextVariables": "{count} variables",
+    "advancedOptions": "Advanced Options",
+    "style": {
+      "toneLabel": "Tone",
+      "tone": {
+        "professional": "Professional",
+        "friendly": "Friendly",
+        "concise": "Concise",
+        "detailed": "Detailed"
+      },
+      "focusLabel": "Focus",
+      "focus": {
+        "taskOriented": "Task-oriented",
+        "conversational": "Conversational",
+        "balanced": "Balanced"
+      },
+      "includeCot": "Chain-of-Thought",
+      "includeCotDesc": "Guide Agent to show reasoning process",
+      "includeConstraints": "Constraints",
+      "includeConstraintsDesc": "Include safety boundaries and behavior limits"
+    },
+    "resultLabel": "Generated Result",
+    "generate": "Generate Prompt",
+    "generating": "Generating...",
+    "regenerate": "Regenerate",
+    "apply": "Apply",
+    "copy": "Copy",
+    "copied": "Copied",
+    "errors": {
+      "descriptionRequired": "Please enter a description",
+      "generateFailed": "Generation failed, please try again",
+      "copyFailed": "Failed to copy"
+    }
   }
 }

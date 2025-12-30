@@ -19,7 +19,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
-import { createContext, memo, useContext, useEffect, useState, useMemo } from "react";
+import { createContext, memo, useContext, useEffect, useState, useMemo, Children, isValidElement } from "react";
 import { Streamdown } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -302,12 +302,32 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
+  ({ className, components, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={{
+        // Use div instead of p when paragraph contains block elements (like images)
+        // This prevents React hydration error: <div> cannot be a descendant of <p>
+        p: ({ children, node, ...pProps }: { children?: React.ReactNode; node?: { children?: Array<{ tagName?: string; type?: string }> }; [key: string]: unknown }) => {
+          // Check AST node for img elements
+          const hasImgInNode = node?.children?.some(
+            (child) => child.tagName === 'img'
+          )
+          const hasBlockElements = Children.toArray(children).some(
+            (child) => 
+              isValidElement(child) && 
+              (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+          )
+          if (hasImgInNode || hasBlockElements) {
+            return <div className="my-4" {...pProps}>{children}</div>
+          }
+          return <p {...pProps}>{children}</p>
+        },
+        ...components,
+      }}
       {...props}
     />
   ),

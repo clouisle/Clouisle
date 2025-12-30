@@ -200,20 +200,70 @@ title = result.title            # 标题 (如有)
 
 ### 5.3 文本分块
 
+#### 5.3.1 分块参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `chunk_size` | 500 | 目标分块大小 (tokens) |
+| `chunk_overlap` | 50 | 分块重叠 (tokens) |
+| `separator` | 自动 | 自定义分隔符 (可选) |
+
+> **Token 估算**：约 4 个字符 ≈ 1 token
+
+#### 5.3.2 分块策略
+
+使用递归分割策略，按优先级尝试不同分隔符：
+
 ```python
-# 语义感知分块
+DEFAULT_SEPARATORS = [
+    "\n\n",   # 段落
+    "\n",     # 行
+    "。",     # 中文句号
+    "！",     # 中文感叹号
+    "？",     # 中文问号
+    ". ",     # 英文句号
+    "! ",     # 英文感叹号
+    "? ",     # 英文问号
+    "；",     # 中文分号
+    "; ",     # 英文分号
+    "，",     # 中文逗号
+    ", ",     # 英文逗号
+    " ",      # 空格
+    "",       # 字符级
+]
+```
+
+#### 5.3.3 分块算法
+
+```
+1. 计算目标字符数: target_chars = chunk_size × 4
+2. 按分隔符列表顺序尝试分割文本
+3. 对每个分割片段:
+   - 如果 <= target_chars: 累积到当前块
+   - 如果 > target_chars: 递归使用更细粒度分隔符分割
+4. 应用重叠: 下一块开头包含上一块末尾的 overlap 字符
+5. 无法继续分割时: 硬切分到目标长度
+```
+
+#### 5.3.4 使用示例
+
+```python
+from app.services.document_processor import TextChunker
+
 chunker = TextChunker(
-    chunk_size=500,      # tokens
-    chunk_overlap=50,    # overlap tokens
+    chunk_size=100,      # 100 tokens (~400 字符)
+    chunk_overlap=10,    # 10 tokens (~40 字符) 重叠
 )
 
 chunks = chunker.chunk_text(text)
 # [
-#     {"content": "...", "chunk_index": 0, "token_count": 480},
-#     {"content": "...", "chunk_index": 1, "token_count": 495},
+#     {"content": "...", "chunk_index": 0, "token_count": 95, "char_count": 380},
+#     {"content": "...", "chunk_index": 1, "token_count": 98, "char_count": 392},
 #     ...
 # ]
 ```
+
+> **注意**：分块大小是目标值，实际大小会在分隔符边界处变化，以保持语义完整性。
 
 ### 5.4 向量生成与存储
 
@@ -241,37 +291,125 @@ for chunk, embedding in zip(chunks, embeddings):
 
 ## 6. 搜索功能
 
-### 6.1 语义搜索
+### 6.1 搜索模式
 
-```python
-async def search(
-    kb_id: UUID,
-    query: str,
-    top_k: int = 10,
-    threshold: float = 0.7,
-) -> list[SearchResult]:
-    # 1. 生成查询向量
-    query_embedding = await model_manager.embed([query])
-    
-    # 2. 向量检索 (pgvector)
-    results = await DocumentChunk.filter(
-        document__knowledge_base_id=kb_id
-    ).annotate(
-        similarity=CosineDistance("embedding", query_embedding[0])
-    ).filter(
-        similarity__gte=threshold
-    ).order_by(
-        "-similarity"
-    ).limit(top_k)
-    
-    return results
+系统支持三种搜索模式：
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| `vector` | 纯向量语义搜索 | 语义理解，同义词匹配 |
+| `fulltext` | 全文关键词搜索 (jieba 分词) | 精确关键词匹配 |
+| `hybrid` | 混合搜索 (RRF 融合) | 综合效果最佳，默认推荐 |
+
+### 6.2 相似度计算
+
+#### 6.2.1 向量相似度
+
+使用 pgvector 的余弦距离 (`<=>`) 进行相似度计算：
+
+```sql
+-- pgvector 余弦距离范围: [0, 2]
+-- 余弦距离 = 1 - 余弦相似度
+-- 所以: 余弦相似度 = 1 - 余弦距离
+
+SELECT 
+    GREATEST(0, 1 - (embedding <=> query_vector)) as similarity
+FROM document_chunks
+ORDER BY embedding <=> query_vector
+LIMIT 10;
 ```
 
-### 6.2 混合搜索 (规划中)
+**距离与相似度对照**：
 
-- 向量搜索 + 关键词搜索
-- BM25 + Cosine Similarity
-- Reciprocal Rank Fusion (RRF)
+| 余弦距离 | 余弦相似度 | 含义 |
+|----------|------------|------|
+| 0 | 1.0 | 完全相同 |
+| 0.5 | 0.5 | 中等相关 |
+| 1.0 | 0.0 | 正交/无关 |
+| 2.0 | -1.0 | 完全相反 |
+
+> **注意**：使用 `GREATEST(0, 1 - distance)` 将相似度限制在 `[0, 1]` 范围内。
+
+#### 6.2.2 相似度阈值
+
+| 参数 | 默认值 | 范围 | 说明 |
+|------|--------|------|------|
+| `score_threshold` | 0.3 | 0.0 - 1.0 | 最低相似度，低于此值的结果被过滤 |
+
+**阈值建议**：
+- `0.0` - 返回所有结果（不过滤）
+- `0.2 - 0.3` - 宽松匹配，召回率高
+- `0.4 - 0.5` - 中等匹配，平衡召回与精准
+- `0.6+` - 严格匹配，精准率高但可能漏掉相关结果
+
+### 6.3 混合搜索 (RRF)
+
+使用 Reciprocal Rank Fusion (倒数排名融合) 算法合并向量搜索和全文搜索结果：
+
+```python
+def merge_results_rrf(vector_results, fulltext_results, k=60):
+    """
+    RRF 公式: score(d) = Σ 1/(k + rank(d))
+    k=60 是论文推荐值，用于平滑排名差异
+    """
+    scores = {}
+    
+    for rank, result in enumerate(vector_results):
+        chunk_id = result["chunk_id"]
+        scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
+    
+    for rank, result in enumerate(fulltext_results):
+        chunk_id = result["chunk_id"]
+        scores[chunk_id] = scores.get(chunk_id, 0) + 1.0 / (k + rank + 1)
+    
+    # 归一化到 [0, 1]
+    max_rrf = 2.0 / (k + 1)  # 最大可能分数 (两个列表都排第一)
+    normalized_scores = {k: min(1.0, v / max_rrf) for k, v in scores.items()}
+    
+    return sorted(normalized_scores.items(), key=lambda x: x[1], reverse=True)
+```
+
+### 6.4 全文搜索
+
+使用 jieba 进行中文分词，支持中英文混合查询：
+
+```python
+import jieba
+
+def extract_search_terms(query: str) -> list[str]:
+    """提取搜索关键词"""
+    words = jieba.lcut(query)
+    
+    # 过滤规则:
+    # - 保留长度 >= 2 的词
+    # - 单字仅保留中文字符
+    # - 移除纯标点符号
+    terms = [w for w in words if len(w) >= 2 or is_chinese(w)]
+    
+    return list(dict.fromkeys(terms))  # 去重保序
+```
+
+### 6.5 语义搜索示例
+
+```python
+from app.services.vector_store import VectorStore
+
+vector_store = VectorStore(
+    embedding_model_id="xxx-xxx",
+    team_id="xxx-xxx",
+)
+
+results = await vector_store.search(
+    kb_id=kb.id,
+    query="2025年度总结和规划",
+    search_mode="hybrid",      # 推荐使用混合搜索
+    top_k=5,                   # 返回前5条
+    score_threshold=0.3,       # 相似度阈值
+)
+
+for r in results:
+    print(f"[{r['score']:.2f}] {r['document_name']}: {r['content'][:100]}...")
+```
 
 ---
 

@@ -269,20 +269,12 @@ export default function AppsPage() {
                           {t('configure')}
                         </DropdownMenuItem>
                       </Link>
-                      <Link href={`/app/apps/${agent.id}/chat`}>
+                      <Link href={`/chat/${agent.id}`} target="_blank">
                         <DropdownMenuItem>
                           <MessageSquare className="mr-2 h-4 w-4" />
                           {t('chat')}
                         </DropdownMenuItem>
                       </Link>
-                      {agent.status === 'published' && agent.visibility === 'public' && (
-                        <Link href={`/chat/${agent.id}`} target="_blank">
-                          <DropdownMenuItem>
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            {t('openPublicChat')}
-                          </DropdownMenuItem>
-                        </Link>
-                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={(e) => {
                         e.preventDefault()

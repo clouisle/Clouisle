@@ -79,6 +79,34 @@ def create_chat_model(model_config: Model | ModelConfig) -> BaseChatModel:
             default_request_timeout=timeout,
         )
 
+    elif provider == ModelProvider.GOOGLE:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        if not api_key:
+            raise ValueError("Google requires api_key")
+
+        return ChatGoogleGenerativeAI(
+            model=model_id,
+            google_api_key=api_key,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output,
+            timeout=timeout,
+        )
+
+    elif provider == ModelProvider.XAI:
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=model_id,
+            api_key=api_key,
+            base_url=base_url or "https://api.x.ai/v1",
+            temperature=temperature,
+            top_p=top_p,
+            max_completion_tokens=max_output,
+            timeout=timeout,
+        )
+
     elif provider == ModelProvider.AZURE_OPENAI:
         from langchain_openai import AzureChatOpenAI
 

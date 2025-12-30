@@ -123,3 +123,18 @@ export {
   type APIKeyQueryParams,
 } from './api-keys'
 
+export {
+  promptsApi,
+  parsePromptSSEStream,
+  type PromptGenerateContext,
+  type PromptStyle,
+  type PromptGenerateRequest,
+  type PromptOptimizeRequest,
+  type PromptSSEEventType,
+  type PromptSSEEvent,
+  type PromptSSEStart,
+  type PromptSSEContentDelta,
+  type PromptSSEComplete,
+  type PromptSSEError,
+} from './prompts'
+

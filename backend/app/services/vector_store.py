@@ -31,6 +31,9 @@ jieba.setLogLevel(logging.WARNING)
 # Cache for existing embedding columns to avoid repeated DB queries
 _existing_columns: set[int] = set()
 
+# pgvector HNSW index maximum dimension limit
+HNSW_MAX_DIMENSION = 2000
+
 
 def _get_model_manager():
     """Get model manager lazily to avoid circular import."""
@@ -81,17 +84,20 @@ async def ensure_embedding_column(dimension: int) -> str:
         # Column might have been created by another process
         logger.warning(f"Could not create column {col_name}: {e}")
     
-    # Create HNSW index for this dimension
-    index_name = f"document_chunks_{col_name}_hnsw_idx"
-    try:
-        await conn.execute_query(f"""
-            CREATE INDEX IF NOT EXISTS {index_name}
-            ON document_chunks 
-            USING hnsw ({col_name} vector_cosine_ops)
-        """)
-        logger.info(f"Created HNSW index: {index_name}")
-    except Exception as e:
-        logger.warning(f"Could not create index {index_name}: {e}")
+    # Create HNSW index for this dimension (only if <= 2000)
+    if dimension <= HNSW_MAX_DIMENSION:
+        index_name = f"document_chunks_{col_name}_hnsw_idx"
+        try:
+            await conn.execute_query(f"""
+                CREATE INDEX IF NOT EXISTS {index_name}
+                ON document_chunks 
+                USING hnsw ({col_name} vector_cosine_ops)
+            """)
+            logger.info(f"Created HNSW index: {index_name}")
+        except Exception as e:
+            logger.warning(f"Could not create index {index_name}: {e}")
+    else:
+        logger.info(f"Skipping HNSW index for {col_name} (dimension {dimension} > {HNSW_MAX_DIMENSION})")
     
     _existing_columns.add(dimension)
     return col_name
@@ -449,6 +455,11 @@ class VectorStore:
         
         results: list[dict[str, Any]] = []
 
+        logger.debug(
+            f"Search KB {kb_id}: mode={search_mode}, query='{query[:50]}...', "
+            f"top_k={top_k}, threshold={score_threshold}"
+        )
+
         if search_mode == "vector":
             results = await self._vector_search(kb_id, query, top_k * 2, filter_doc_ids, embedding_dimension)
         elif search_mode == "fulltext":
@@ -466,10 +477,24 @@ class VectorStore:
 
             # Merge results using RRF (Reciprocal Rank Fusion)
             results = self._merge_results_rrf(vector_results, fulltext_results)
+            logger.debug(
+                f"Hybrid search: vector={len(vector_results)}, fulltext={len(fulltext_results)}, "
+                f"merged={len(results)}"
+            )
+
+        # Log scores before filtering
+        if results:
+            scores = [r.get("score", 0) for r in results]
+            logger.debug(
+                f"Search scores before filter: min={min(scores):.4f}, max={max(scores):.4f}, "
+                f"threshold={score_threshold}"
+            )
 
         # Filter by score threshold
+        pre_filter_count = len(results)
         if score_threshold > 0:
             results = [r for r in results if r.get("score", 0) >= score_threshold]
+            logger.debug(f"Score filter: {pre_filter_count} -> {len(results)} results")
 
         # Return top_k
         return results[:top_k]
@@ -535,11 +560,11 @@ class VectorStore:
             filter_clause = ""
 
         # Use cosine distance (<=>) for similarity search
-        # pgvector cosine distance range is [0, 2], where:
-        #   0 = identical vectors
-        #   1 = orthogonal vectors  
-        #   2 = opposite vectors
-        # Convert to similarity score [0, 1]: similarity = 1 - (distance / 2)
+        # pgvector cosine distance = 1 - cosine_similarity
+        # So: cosine_similarity = 1 - cosine_distance
+        # cosine_distance range is [0, 2], cosine_similarity range is [-1, 1]
+        # We normalize to [0, 1] for practical use: (1 - distance + 1) / 2 = 1 - distance/2
+        # But for better scoring, we use: max(0, 1 - distance) to get [0, 1] range
         query_sql = f"""
             SELECT 
                 dc.id as chunk_id,
@@ -548,7 +573,7 @@ class VectorStore:
                 dc.chunk_index,
                 dc.metadata,
                 d.name as document_name,
-                1 - (dc.{col_name} <=> $1::vector) / 2 as similarity
+                GREATEST(0, 1 - (dc.{col_name} <=> $1::vector)) as similarity
             FROM document_chunks dc
             JOIN documents d ON dc.document_id = d.id
             WHERE d.knowledge_base_id = $2
@@ -931,23 +956,22 @@ class VectorStore:
 
         Returns:
             True if added
+            
+        Raises:
+            Exception: If embedding generation or storage fails
         """
-        try:
-            # Generate embedding
-            embedding = await self.embed_query(chunk.content)
+        # Generate embedding
+        embedding = await self.embed_query(chunk.content)
 
-            # Store embedding reference
-            chunk.embedding_id = f"kb_{kb_id}_chunk_{chunk.id}"
-            await chunk.save()
+        # Store embedding reference
+        chunk.embedding_id = f"kb_{kb_id}_chunk_{chunk.id}"
+        await chunk.save()
 
-            # Store actual embedding vector in pgvector
-            await self._store_embedding(chunk.id, embedding)
+        # Store actual embedding vector in pgvector
+        await self._store_embedding(chunk.id, embedding)
 
-            logger.info(f"Added vector for chunk {chunk.id}")
-            return True
-        except Exception as e:
-            logger.error(f"Error adding chunk vector: {e}")
-            return False
+        logger.info(f"Added vector for chunk {chunk.id}")
+        return True
 
     async def delete_kb_vectors(self, kb_id: UUID) -> int:
         """

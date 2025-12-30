@@ -495,14 +495,64 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
             # Generate embeddings and store vectors for each chunk
             embedded_count = 0
+            failed_count = 0
+            last_error = None
             for chunk in chunks:
                 try:
                     await vector_store.add_chunk_vector(kb.id, chunk)
                     embedded_count += 1
                 except Exception as e:
-                    logger.warning(f"Failed to embed chunk {chunk.id}: {e}")
+                    failed_count += 1
+                    last_error = str(e)
+                    logger.error(f"Failed to embed chunk {chunk.id}: {e}")
 
-            # Update document status to COMPLETED
+            # Check if embedding was successful
+            if embedded_count == 0 and len(chunks) > 0:
+                # All chunks failed - mark as error
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = f"All {len(chunks)} chunks failed to embed: {last_error}"[:500]
+                await document.save()
+
+                logger.error(
+                    f"Document {document_id} embedding failed: "
+                    f"0/{len(chunks)} chunks embedded"
+                )
+
+                return {
+                    "status": "error",
+                    "document_id": document_id,
+                    "message": f"All chunks failed to embed: {last_error}",
+                    "embedded_count": 0,
+                    "total_chunks": len(chunks),
+                }
+
+            # Check if there were any failures
+            if failed_count > 0:
+                # Partial failure - mark as error with details
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}"[:500]
+                await document.save()
+
+                # Still update KB statistics for successful chunks
+                kb.total_chunks += embedded_count
+                kb.total_tokens += int(document.token_count * embedded_count / len(chunks))
+                await kb.save()
+
+                logger.error(
+                    f"Document {document_id} embedding partially failed: "
+                    f"{embedded_count}/{len(chunks)} chunks embedded, {failed_count} failed"
+                )
+
+                return {
+                    "status": "error",
+                    "document_id": document_id,
+                    "message": f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}",
+                    "embedded_count": embedded_count,
+                    "failed_count": failed_count,
+                    "total_chunks": len(chunks),
+                }
+
+            # All chunks embedded successfully
             document.status = DocumentStatus.COMPLETED.value
             document.processed_at = datetime.now(timezone.utc)
             document.error_message = None

@@ -9,7 +9,81 @@
 
 ## [Unreleased]
 
+### 修复 (Fixed)
+
+#### 知识库检索效果优化
+
+- **相似度计算修正**：修正余弦相似度计算公式
+  - 之前：`1 - (distance / 2)` - 导致分数偏高
+  - 之后：`GREATEST(0, 1 - distance)` - 正确转换余弦距离为相似度
+  - 参考：pgvector 余弦距离范围 `[0, 2]`，距离 0 = 完全相同，1 = 正交，2 = 相反
+
+- **默认阈值调整**：将 `score_threshold` 默认值从 `0.5` 降低到 `0.3`
+  - 后端 `AgentKnowledgeBase` 模型
+  - 前端 `knowledge-base-selector.tsx` 和 `agent-orchestration-form.tsx`
+
+#### 文本分块算法修复
+
+- **分块大小限制生效**：修复 `chunk_size` 设置不生效的问题
+  - 当分割片段超过目标大小时，现在会递归使用更细粒度的分隔符继续分割
+  - 无法继续分割时，按字符数硬切分到目标长度
+  - 修改文件：`backend/app/services/document_processor.py` 的 `_merge_splits` 方法
+
+#### Streamdown 图片渲染水合错误
+
+- **问题**：Markdown 中的图片会被 Streamdown 渲染为 `<div>` 包装器，当图片出现在段落内时导致 `<div>` 嵌套在 `<p>` 内，违反 HTML 规范引发 React hydration 错误
+- **修复**：为 Streamdown 组件提供自定义 `p` 组件，检测 AST 节点和 React 子元素是否包含图片，若包含则用 `<div>` 替代 `<p>`
+- **修改文件**：
+  - `frontend/components/chat/message.tsx` - `TextWithCitations`
+  - `frontend/components/chat/message-parts/text-content.tsx` - `TextContent`
+  - `frontend/components/ai-elements/message.tsx` - `MessageResponse`
+  - `frontend/components/ai-elements/reasoning.tsx` - `ReasoningContent`
+
+#### 公开聊天页面布局修复
+
+- **问题**：模型输出内容过长时会撑大整个页面高度，而不是在消息区域内滚动
+- **修复**：
+  - `frontend/app/(chat)/layout.tsx`：使用 `fixed inset-0` 定位替代 `h-screen`，完全脱离文档流
+  - `frontend/app/(chat)/chat/[id]/page.tsx`：
+    - 外层容器使用 `h-full` 继承父容器高度
+    - 添加必要的 `min-h-0` 和 `overflow-hidden` 约束
+    - Sidebar 添加 `shrink-0` 防止收缩
+
+### 文档更新 (Documentation)
+
+#### 知识库规范文档完善
+
+更新 `docs/design/KNOWLEDGE_BASE_SPEC.md`：
+
+- **搜索功能** (第 6 章)：完全重写
+  - 三种搜索模式详细说明 (vector/fulltext/hybrid)
+  - 相似度计算公式和距离-相似度对照表
+  - 阈值建议 (0.0-0.6+ 不同场景)
+  - RRF 混合搜索算法实现详解
+  - jieba 全文搜索实现
+
+- **文本分块** (5.3 节)：扩展
+  - 分块参数表
+  - 递归分割策略和分隔符优先级列表
+  - 分块算法流程描述
+  - 使用示例
+
+---
+
 ### 新增 (Added)
+
+#### 平台 Header 关于对话框
+
+- 新增「关于」对话框，可从平台 Header 用户菜单访问
+- 显示应用 Logo、版本号、版权信息
+- 提供 GitHub、文档、更新日志快捷链接
+- 设计风格参考 Dify
+
+#### 常量文件统一管理
+
+- 新增 `frontend/lib/constants.ts` 统一管理应用常量
+- 包含：`APP_VERSION`、`APP_NAME`、`GITHUB_URL`、`DOCS_URL`、`CHANGELOG_URL`、`API_BASE_URL`
+- 重构多个文件引用统一的 `API_BASE_URL`
 
 #### 聊天历史管理优化 (#24)
 
@@ -55,11 +129,35 @@
   - `/frontend/app/(platform)/app/apps/[id]/_components/agent-preview-panel.tsx`
   - `/frontend/app/(chat)/chat/[id]/page.tsx`
 
+#### 嵌套按钮水合错误
+
+- 修复用户设置 API 密钥页面的 React hydration 错误
+- **原因**：`DropdownMenuTrigger` 内嵌套了 `Button` 组件，导致 HTML 按钮嵌套
+- **修复** (`/frontend/app/(dashboard)/settings/api-keys/page.tsx`)：
+  - 移除嵌套的 `Button`，将按钮样式直接应用到 `DropdownMenuTrigger`
+
 ---
 
 ### 新增 (Added)
 
 #### API 密钥管理 - 完整实现 (#23)
+
+##### Agent 绑定功能
+
+- **API Key 与 Agent 多对多关联**：
+  - 一个 API Key 可以绑定多个 Agent
+  - 绑定后该 API Key 只能访问已绑定的 Agent
+  - 不绑定任何 Agent 时可访问所有公开 Agent
+
+- **后端实现**：
+  - `api_key_agents` 关联表（多对多）
+  - 创建/更新 API Key 时支持设置 `agent_ids`
+  - Chat 端点增加 API Key 认证支持（`X-API-Key` header）
+  - API Key 认证时校验 Agent 访问权限
+
+- **前端实现**：
+  - API Key 创建/编辑对话框新增 Agent 绑定选择器
+  - API Key 列表显示已绑定的 Agent 数量
 
 ##### 后端 (Backend)
 
@@ -136,6 +234,63 @@
 
 - 管理后台侧边栏添加「API 密钥」入口
 - 用户设置页面添加「API 密钥」入口
+
+---
+
+### 新增 (Added)
+
+#### Agent API 访问页面
+
+实现了 Agent 的 API 访问文档页面，方便开发者集成 Agent 能力：
+
+- **页面路由**: `/app/apps/[id]/api`
+- **功能特性**：
+  - 显示 API 端点 URL 和认证方式
+  - 请求/响应格式说明
+  - 代码示例（cURL、Python、JavaScript）
+  - Agent 变量定义展示（如有）
+  - 未发布 Agent 警告提示
+  - 多轮对话文档说明
+
+- **UI 组件**：
+  - Alert 组件新增 `warning` 变体
+
+- **国际化**：
+  - 新增 `apiAccess` 命名空间翻译（中英文）
+
+---
+
+### 新增 (Added)
+
+#### 后台工具管理页面 (#27)
+
+实现了后台管理端的工具管理功能：
+
+- **页面路由**: `/tools`
+- **工具类型支持**：
+  - **HTTP API 工具**：配置 URL、方法、Headers、Body 模板
+  - **MCP 服务器工具**：配置 stdio/sse 传输方式、命令、环境变量
+  - **代码工具**：在线编辑器支持 JavaScript/Python
+
+- **功能特性**：
+  - 工具列表表格，支持搜索和类型筛选
+  - 批量选择与批量删除
+  - 创建工具对话框（按类型）
+  - 编辑工具对话框
+  - 删除确认对话框
+  - 代码工具单独页面 `/tools/code`
+
+- **UI 组件**：
+  - `http-tool-dialog.tsx` - HTTP 工具创建/编辑
+  - `mcp-tool-dialog.tsx` - MCP 工具创建/编辑
+  - `tools-client.tsx` - 工具列表主组件
+  - `delete-tool-dialog.tsx` - 删除确认
+
+- **导航更新**：
+  - 管理后台侧边栏添加「工具」入口
+
+- **国际化**：
+  - 扩展 `tools` 命名空间翻译（中英文）
 
 ---
 

@@ -627,7 +627,31 @@ function TextWithCitations({
       ref={containerRef}
       className="w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
     >
-      <Streamdown>{processedText}</Streamdown>
+      <Streamdown
+        components={{
+          // Use div instead of p when paragraph contains block elements (like images)
+          // This prevents React hydration error: <div> cannot be a descendant of <p>
+          p: ({ children, node, ...props }) => {
+            // Check AST node for img elements (more reliable than checking React children)
+            const hasImgInNode = node?.children?.some(
+              (child: { tagName?: string; type?: string }) => 
+                child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
+            )
+            // Also check React children for any wrapper components
+            const hasBlockElements = React.Children.toArray(children).some(
+              (child) => 
+                React.isValidElement(child) && 
+                (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+            )
+            if (hasImgInNode || hasBlockElements) {
+              return <div className="my-4" {...props}>{children}</div>
+            }
+            return <p {...props}>{children}</p>
+          },
+        }}
+      >
+        {processedText}
+      </Streamdown>
       {/* Render citation badges via portals */}
       {portalTargets.map(({ element, index }) =>
         ReactDOM.createPortal(

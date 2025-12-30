@@ -1,7 +1,6 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { toast } from 'sonner'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+import { API_BASE_URL } from '@/lib/constants'
 
 /** 获取当前语言 */
 function getLocale(): string {
@@ -215,6 +214,30 @@ export const api = {
       },
     })
     return response.data.data
+  },
+
+  /** Get base URL for SSE requests */
+  getBaseUrl: (): string => {
+    return API_BASE_URL
+  },
+
+  /** Get auth headers for SSE requests */
+  getAuthHeaders: (): Record<string, string> => {
+    const headers: Record<string, string> = {}
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const locale = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('NEXT_LOCALE='))
+        ?.split('=')[1]
+      if (locale) {
+        headers['X-Language'] = locale
+      }
+    }
+    return headers
   },
 }
 

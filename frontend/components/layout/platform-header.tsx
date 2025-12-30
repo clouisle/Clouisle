@@ -17,6 +17,9 @@ import {
   User,
   Palette,
   AppWindow,
+  Info,
+  Github,
+  ExternalLink,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -30,10 +33,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { SettingsDrawer } from '@/components/settings-drawer'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { useSettings } from '@/hooks/use-settings'
 import { cn } from '@/lib/utils'
+import { APP_VERSION, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 
 const navItems = [
   {
@@ -71,6 +82,7 @@ export function PlatformHeader() {
   const router = useRouter()
   const [user, setUser] = React.useState<UserType | null>(null)
   const [settingsOpen, setSettingsOpen] = React.useState(false)
+  const [aboutOpen, setAboutOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
 
@@ -208,7 +220,7 @@ export function PlatformHeader() {
                 <div className="flex flex-col space-y-1 leading-none">
                   {user?.username && <p className="font-medium">{user.username}</p>}
                   {user?.email && (
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">
+                    <p className="w-auto truncate text-sm text-muted-foreground">
                       {user.email}
                     </p>
                   )}
@@ -229,6 +241,11 @@ export function PlatformHeader() {
                 </DropdownMenuItem>
               </Link>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setAboutOpen(true)}>
+                <Info className="mr-2 h-4 w-4" />
+                {t('about')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
                 {t('logout')}
@@ -240,6 +257,82 @@ export function PlatformHeader() {
 
       {/* Settings Drawer */}
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} showSidebarStyle={false} showPlatformHeader={true} />
+
+      {/* About Dialog */}
+      <Dialog open={aboutOpen} onOpenChange={setAboutOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{t('about')}</DialogTitle>
+            <DialogDescription>{t('aboutDescription')}</DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex flex-col items-center py-6">
+            {/* Logo 和名称 */}
+            <div className="flex aspect-square size-10 items-center justify-center rounded-sm bg-primary text-primary-foreground overflow-hidden mb-4">
+              {siteSettings.site_icon ? (
+                <Image
+                  src={siteSettings.site_icon}
+                  alt={siteSettings.site_name}
+                  width={64}
+                  height={64}
+                  className="size-full object-cover"
+                  unoptimized
+                />
+              ) : (
+                <Grid3x3 className="size-8" />
+              )}
+            </div>
+            
+            <h2 className="text-2xl font-bold mb-1">
+              {siteSettings.site_name || APP_NAME}
+            </h2>
+            
+            <p className="text-sm text-muted-foreground mb-4">
+              Version {APP_VERSION}
+            </p>
+            
+            {/* 版权和链接 */}
+            <p className="text-sm text-muted-foreground mb-2">
+              © {new Date().getFullYear()} {APP_NAME}. {t('aboutRights')}
+            </p>
+            
+            <div className="flex items-center gap-1 text-sm">
+              <a 
+                href={GITHUB_URL}
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                GitHub
+              </a>
+              <span className="text-muted-foreground">,</span>
+              <a 
+                href={DOCS_URL}
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                {t('aboutDocs')}
+              </a>
+            </div>
+          </div>
+          
+          {/* 底部 */}
+          <div className="flex items-center justify-between border-t pt-4">
+            <p className="text-sm text-muted-foreground">
+              {APP_NAME} {APP_VERSION} {t('aboutLatest')}
+            </p>
+            <a 
+              href={CHANGELOG_URL}
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 px-3"
+            >
+              {t('aboutChangelog')}
+            </a>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }

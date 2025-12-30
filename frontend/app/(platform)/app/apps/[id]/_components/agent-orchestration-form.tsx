@@ -22,6 +22,7 @@ import {
   type AgentKnowledgeBaseConfig,
   type RAGMode,
   type FileUploadConfig,
+  type PromptGenerateContext,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -44,6 +45,7 @@ import { VariableEditor, AddVariableButton, createNewVariable } from './variable
 import { KnowledgeBaseSelector, AddKnowledgeBaseButton } from './knowledge-base-selector'
 import { ToolSelector, AddToolButton, useTools } from './tool-selector'
 import { PromptEditor } from './prompt-editor'
+import { PromptGenerateDialog } from '@/components/ai-elements/prompt-generate-dialog'
 
 interface ConfigCardProps {
   icon: React.ElementType
@@ -165,6 +167,9 @@ export function AgentOrchestrationForm({
   const [visionCollapsed, setVisionCollapsed] = React.useState(true)
   const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
 
+  // Prompt generate dialog state
+  const [showPromptGenerator, setShowPromptGenerator] = React.useState(false)
+
   // Data loading
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [fileParsers, setFileParsers] = React.useState<import('@/lib/api').Tool[]>([])
@@ -208,8 +213,49 @@ export function AgentOrchestrationForm({
   // Character count for prompt
   const promptLength = systemPrompt.length
 
+  // Build context for prompt generator
+  const promptGenerateContext: PromptGenerateContext = React.useMemo(() => ({
+    agent_name: agent.name,
+    agent_description: agent.description,
+    tools: toolsConfig.map((tc) => {
+      const tool = availableTools.find(
+        (t) =>
+          (tc.type === 'builtin' && t.name === tc.name) ||
+          (tc.type === 'custom' && t.id === tc.tool_id) ||
+          (tc.type === 'mcp' && t.id === tc.server_id)
+      )
+      return {
+        name: tc.name || tool?.name,
+        display_name: tool?.display_name || tc.name,
+      }
+    }).filter((t) => t.name),
+    knowledge_bases: knowledgeBases
+      .filter((kb) =>
+        knowledgeBaseConfigs.some((c) => c.knowledge_base_id === kb.id)
+      )
+      .map((kb) => ({
+        name: kb.name,
+        description: kb.description,
+      })),
+    variables: variables.map((v) => ({
+      name: v.name,
+      label: v.label,
+    })),
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables])
+
   return (
     <div className="space-y-3">
+      {/* Prompt Generate Dialog */}
+      <PromptGenerateDialog
+        open={showPromptGenerator}
+        onOpenChange={setShowPromptGenerator}
+        context={promptGenerateContext}
+        onApply={(generatedPrompt) => {
+          setSystemPrompt(generatedPrompt)
+        }}
+        language="zh"
+      />
+
       {/* Prompt Section - Always expanded, highlighted */}
       <div className="rounded-xl bg-linear-to-br from-primary/5 to-primary/10 border border-primary/20 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3">
@@ -225,7 +271,12 @@ export function AgentOrchestrationForm({
               </TooltipContent>
             </Tooltip>
           </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+            onClick={() => setShowPromptGenerator(true)}
+          >
             <Sparkles className="h-3 w-3" />
             {t('prompt.aiGenerate')}
           </Button>
@@ -334,7 +385,7 @@ export function AgentOrchestrationForm({
                 const newConfig: AgentKnowledgeBaseConfig = {
                   knowledge_base_id: kb.id,
                   retrieval_top_k: 3,
-                  score_threshold: 0.5,
+                  score_threshold: 0.3,
                 }
                 setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
                 setKbCollapsed(false)

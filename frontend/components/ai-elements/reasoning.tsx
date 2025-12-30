@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState, useRef } from "react";
+import { createContext, memo, useContext, useEffect, useState, useRef, Children, isValidElement } from "react";
 import { Streamdown } from "streamdown";
 import { Shimmer } from "./shimmer";
 
@@ -170,7 +170,29 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown {...props}>{children}</Streamdown>
+      <Streamdown
+        components={{
+          // Use div instead of p when paragraph contains block elements (like images)
+          // This prevents React hydration error: <div> cannot be a descendant of <p>
+          p: ({ children: pChildren, node, ...pProps }: { children?: React.ReactNode; node?: { children?: Array<{ tagName?: string }> }; [key: string]: unknown }) => {
+            const hasImgInNode = node?.children?.some(
+              (child) => child.tagName === 'img'
+            )
+            const hasBlockElements = Children.toArray(pChildren).some(
+              (child) => 
+                isValidElement(child) && 
+                (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+            )
+            if (hasImgInNode || hasBlockElements) {
+              return <div className="my-4" {...pProps}>{pChildren}</div>
+            }
+            return <p {...pProps}>{pChildren}</p>
+          },
+        }}
+        {...props}
+      >
+        {children}
+      </Streamdown>
     </CollapsibleContent>
   )
 );

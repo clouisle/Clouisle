@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     tools,
     conversations,
     api_keys,
+    prompt_generator,
 )
 
 api_router = APIRouter()
@@ -44,3 +45,6 @@ api_router.include_router(
     conversations.router, prefix="/conversations", tags=["conversations"]
 )
 api_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
+api_router.include_router(
+    prompt_generator.router, prefix="/prompts", tags=["prompt-generator"]
+)

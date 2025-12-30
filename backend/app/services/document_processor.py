@@ -594,7 +594,9 @@ class TextChunker:
                 splits = list(text)
 
             if len(splits) > 1:
-                return self._merge_splits(splits, separator, target_size, overlap)
+                return self._merge_splits(
+                    splits, separator, target_size, overlap, separators
+                )
 
         # Fallback: hard split
         chunks = []
@@ -652,8 +654,12 @@ class TextChunker:
         separator: str,
         target_size: int,
         overlap: int,
+        available_separators: list[str] | None = None,
     ) -> list[str]:
         """Merge splits into chunks respecting size limits."""
+        if available_separators is None:
+            available_separators = self.separators
+
         chunks = []
         current_chunk: list[str] = []
         current_size = 0
@@ -683,8 +689,45 @@ class TextChunker:
                     current_chunk = []
                     current_size = 0
 
-            current_chunk.append(split)
-            current_size += split_size
+            # If this split itself is too large, recursively split it
+            if split_size > target_size:
+                # First, save any existing chunk
+                if current_chunk:
+                    chunk_text = separator.join(current_chunk)
+                    chunks.append(chunk_text)
+                    current_chunk = []
+                    current_size = 0
+
+                # Recursively split this large split using remaining separators
+                # Find the next separator in the list
+                sep_index = -1
+                for i, s in enumerate(available_separators):
+                    if s == separator:
+                        sep_index = i
+                        break
+
+                if sep_index >= 0 and sep_index < len(available_separators) - 1:
+                    # Try splitting with a more granular separator
+                    remaining_seps = available_separators[sep_index + 1 :]
+                    sub_chunks = self._split_recursive_with_separators(
+                        split, target_size, overlap, remaining_seps
+                    )
+                    chunks.extend(sub_chunks)
+                else:
+                    # Fallback: hard split by character count
+                    start = 0
+                    while start < len(split):
+                        end = min(start + target_size, len(split))
+                        chunks.append(split[start:end])
+                        if overlap > 0:
+                            start = end - overlap
+                            if start >= len(split) - overlap:
+                                break
+                        else:
+                            start = end
+            else:
+                current_chunk.append(split)
+                current_size += split_size
 
         # Don't forget the last chunk
         if current_chunk:

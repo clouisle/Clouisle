@@ -109,17 +109,21 @@ async def migrate():
         """)
         logger.info(f"Copied embeddings to {new_col_name}")
         
-        # Create HNSW index
-        index_name = f"document_chunks_{new_col_name}_hnsw_idx"
-        try:
-            await conn.execute_query(f"""
-                CREATE INDEX IF NOT EXISTS {index_name}
-                ON document_chunks 
-                USING hnsw ({new_col_name} vector_cosine_ops)
-            """)
-            logger.info(f"Created HNSW index: {index_name}")
-        except Exception as e:
-            logger.warning(f"Could not create index: {e}")
+        # Create HNSW index (only if dimension <= 2000, pgvector limit)
+        HNSW_MAX_DIMENSION = 2000
+        if detected_dimension <= HNSW_MAX_DIMENSION:
+            index_name = f"document_chunks_{new_col_name}_hnsw_idx"
+            try:
+                await conn.execute_query(f"""
+                    CREATE INDEX IF NOT EXISTS {index_name}
+                    ON document_chunks 
+                    USING hnsw ({new_col_name} vector_cosine_ops)
+                """)
+                logger.info(f"Created HNSW index: {index_name}")
+            except Exception as e:
+                logger.warning(f"Could not create index: {e}")
+        else:
+            logger.info(f"Skipping HNSW index for {new_col_name} (dimension {detected_dimension} > {HNSW_MAX_DIMENSION})")
         
         # 4. Update knowledge_bases with the detected dimension
         logger.info("Step 4: Setting embedding_dimension for existing knowledge bases...")

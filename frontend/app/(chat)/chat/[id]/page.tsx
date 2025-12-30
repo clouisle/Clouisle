@@ -391,11 +391,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const hasMessages = messages.length > 0
   
   return (
-    <div className="h-screen flex bg-background">
+    <div className="h-full flex overflow-hidden bg-background">
       {/* Sidebar */}
       <div 
         className={cn(
-          "flex flex-col bg-muted/50 transition-all duration-300 ease-in-out border-r",
+          "flex flex-col bg-muted/50 transition-all duration-300 ease-in-out border-r shrink-0 overflow-hidden",
           sidebarOpen ? "w-64" : "w-0"
         )}
       >
@@ -438,7 +438,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
             </div>
 
             {/* Conversation List */}
-            <div className="flex-1 overflow-y-auto py-2">
+            <div className="flex-1 min-h-0 overflow-y-auto py-2">
               {loadingConversations ? (
                 <div className="flex justify-center py-4">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -498,7 +498,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
         <header className="flex items-center justify-between px-3 h-14 shrink-0 border-b">
           <div className="flex items-center gap-2">
@@ -529,12 +529,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
         </header>
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Messages using ChatContainer */}
           <ChatContainer
             messages={messages}
             isStreaming={isStreaming}
-            className="flex-1 min-h-0"
+            className="flex-1 min-h-0 overflow-y-auto"
             onRegenerate={regenerate}
             onSwitchVersion={switchVersion}
             emptyState={

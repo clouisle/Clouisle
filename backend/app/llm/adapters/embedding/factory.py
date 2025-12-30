@@ -60,6 +60,17 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             api_version=azure_config.get("api_version", "2024-02-01"),
         )
 
+    elif provider == ModelProvider.GOOGLE:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
+        if not api_key:
+            raise ValueError("Google requires api_key")
+
+        return GoogleGenerativeAIEmbeddings(
+            model=model_id,
+            google_api_key=api_key,
+        )
+
     elif provider in [
         ModelProvider.DEEPSEEK,
         ModelProvider.MOONSHOT,
@@ -67,6 +78,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
         ModelProvider.QWEN,
         ModelProvider.BAICHUAN,
         ModelProvider.MINIMAX,
+        ModelProvider.XAI,
         ModelProvider.OLLAMA,
         ModelProvider.CUSTOM,
     ]:
@@ -80,6 +92,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
             ModelProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
             ModelProvider.BAICHUAN: "https://api.baichuan-ai.com/v1",
             ModelProvider.MINIMAX: "https://api.minimax.chat/v1",
+            ModelProvider.XAI: "https://api.x.ai/v1",
             ModelProvider.OLLAMA: "http://localhost:11434/v1",
         }
         # 获取 provider 的 base_url

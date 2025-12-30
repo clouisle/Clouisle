@@ -169,6 +169,24 @@ async def get_available_models(
     return success(data=models)
 
 
+@router.get("/default/{model_type}", response_model=Response[ModelBrief | None])
+async def get_default_model(
+    model_type: str,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get the default model for a specific type.
+    Returns None if no default is set.
+    """
+    model = await Model.filter(
+        model_type=model_type,
+        is_default=True,
+        is_enabled=True,
+    ).first()
+
+    return success(data=model)
+
+
 @router.post("/", response_model=Response[ModelResponse])
 async def create_model(
     *,
