@@ -121,7 +121,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
       <div
         className={cn(
           'relative flex flex-col rounded-xl border bg-card shadow-sm transition-all',
-          'min-w-[240px]',
+          'min-w-52 max-w-64',
           selected 
             ? 'border-primary' 
             : 'border-border hover:border-primary/50'

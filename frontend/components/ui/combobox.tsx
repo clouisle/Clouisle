@@ -22,13 +22,10 @@ function ComboboxValue({ ...props }: ComboboxPrimitive.Value.Props) {
 function ComboboxTrigger({
   className,
   children,
-  id,
   ...props
 }: ComboboxPrimitive.Trigger.Props) {
-  const reactId = React.useId()
   return (
     <ComboboxPrimitive.Trigger
-      id={id ?? reactId}
       data-slot="combobox-trigger"
       className={cn("[&_svg:not([class*='size-'])]:size-4 cursor-pointer", className)}
       {...props}

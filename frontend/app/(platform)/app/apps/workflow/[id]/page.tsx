@@ -43,6 +43,15 @@ import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
 import { ToolNode } from './_components/nodes/tool-node'
 import { IterationNode, IterationStartNode, IterationExitNode } from './_components/nodes/iteration-node'
 import { LoopNode, LoopStartNode, LoopExitNode } from './_components/nodes/loop-node'
+// 转换节点
+import { CodeNode } from './_components/nodes/code-node'
+import { TemplateNode } from './_components/nodes/template-node'
+import { FileToUrlNode } from './_components/nodes/file-to-url-node'
+import { VariableAggregatorNode } from './_components/nodes/variable-aggregator-node'
+import { VariableAssignmentNode } from './_components/nodes/variable-assignment-node'
+import { ParameterExtractorNode } from './_components/nodes/parameter-extractor-node'
+import { QuestionClassifierNode } from './_components/nodes/question-classifier-node'
+import { AnswerNode } from './_components/nodes/answer-node'
 
 // Components
 import { StartNodeSelector, StartNodeType } from './_components/start-node-selector'
@@ -76,6 +85,15 @@ const nodeTypes = {
   loop: LoopNode,
   loop_start: LoopStartNode,
   loop_exit: LoopExitNode,
+  // 转换节点
+  code: CodeNode,
+  template: TemplateNode,
+  file_to_url: FileToUrlNode,
+  variable_aggregator: VariableAggregatorNode,
+  variable_assignment: VariableAssignmentNode,
+  parameter_extractor: ParameterExtractorNode,
+  question_classifier: QuestionClassifierNode,
+  answer: AnswerNode,
   // 兼容旧版本节点类型
   start: UserInputNode,
 }
@@ -343,7 +361,6 @@ function WorkflowEditorContent() {
             parentNode.measured?.height || parentNode.height || 280
           ),
         }),
-        // 容器节点设置默认尺寸
         ...(isContainerNode && {
           style: { width: 500, height: 280 },
           width: 500,
@@ -351,7 +368,7 @@ function WorkflowEditorContent() {
         }),
         data: {
           type: type,
-          label: getNodeLabel(type),
+          label: getUniqueNodeLabel(type, nodes),
           config: {},
           // 标记父容器ID
           ...(isInsideContainer && sourceParentId && {
@@ -463,6 +480,30 @@ function WorkflowEditorContent() {
       // Check if dragged node is inside any parent node
       for (const parent of potentialParents) {
         if (isInsideNode(draggedNode.position, parent)) {
+          // 检查是否与内部开始节点有连接
+          const isIteration = parent.type === 'iteration'
+          const isLoop = parent.type === 'loop'
+          const startNodeType = isIteration ? 'iteration_start' : isLoop ? 'loop_start' : null
+          
+          if (startNodeType) {
+            // 找到父容器内的开始节点
+            const startNode = nodes.find(
+              n => n.type === startNodeType && n.parentId === parent.id
+            )
+            
+            if (startNode) {
+              // 检查是否有从开始节点到被拖拽节点的连接
+              const hasConnectionFromStart = edges.some(
+                edge => edge.source === startNode.id && edge.target === draggedNode.id
+              )
+              
+              // 如果没有与开始节点的连接，不允许加入子图
+              if (!hasConnectionFromStart) {
+                return
+              }
+            }
+          }
+          
           // Calculate relative position within parent
           const relativePosition = {
             x: draggedNode.position.x - parent.position.x,
@@ -489,7 +530,7 @@ function WorkflowEditorContent() {
         }
       }
     },
-    [nodes, setNodes, isInsideNode]
+    [nodes, edges, setNodes, isInsideNode]
   )
 
   // Add new node
@@ -509,7 +550,7 @@ function WorkflowEditorContent() {
       }),
       data: {
         type: type,
-        label: getNodeLabel(type),
+        label: getUniqueNodeLabel(type, nodes),
         config: {},
       },
     }
@@ -696,6 +737,7 @@ function WorkflowEditorContent() {
           <NodeConfigDrawer
             node={selectedNode}
             allNodes={nodes}
+            allEdges={edges}
             open={configDrawerOpen}
             onClose={() => {
               setConfigDrawerOpen(false)
@@ -738,7 +780,36 @@ function getNodeLabel(type: string): string {
     condition: '条件分支',
     sub_workflow: '子工作流',
     tool: '工具',
-    code: '代码',
+    code: '代码执行',
+    template: '模板转换',
+    variable_aggregator: '变量聚合器',
+    variable_assignment: '变量赋值',
+    parameter_extractor: '参数提取器',
+    iteration: '迭代',
+    loop: '循环',
   }
   return labels[type] || type
+}
+
+// Helper function to get unique node label (auto-increment if duplicate)
+function getUniqueNodeLabel(type: string, existingNodes: WorkflowNode[]): string {
+  const baseLabel = getNodeLabel(type)
+  
+  // 获取所有同类型节点的名称
+  const existingLabels = existingNodes
+    .filter(n => n.type === type || n.data?.type === type)
+    .map(n => n.data?.label || '')
+  
+  // 如果没有重复，直接返回基本名称
+  if (!existingLabels.includes(baseLabel)) {
+    return baseLabel
+  }
+  
+  // 找到可用的编号
+  let counter = 1
+  while (existingLabels.includes(`${baseLabel} ${counter}`)) {
+    counter++
+  }
+  
+  return `${baseLabel} ${counter}`
 }

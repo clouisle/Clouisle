@@ -123,9 +123,13 @@ export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-cyan-500 text-white">
             <Infinity className="h-2.5 w-2.5" />
           </div>
-          <span className="text-xs font-medium">循环</span>
+          <span className="text-xs font-medium">{data.label || '循环'}</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* 最大循环次数标记 */}
+          <span className="text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded mr-1">
+            最多 {config.maxIterations} 次
+          </span>
           <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             <Play className="h-3 w-3" />
           </button>
@@ -137,13 +141,8 @@ export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
       
       {/* 内部子图区域 */}
       <div
-        className="absolute left-3 right-3 bottom-3 top-10 rounded-xl border border-dashed border-border/50 bg-muted/30"
+        className="absolute left-3 right-3 bottom-3 top-10 rounded-xl border border-dashed border-border/50 bg-muted/50"
       />
-      
-      {/* 最大循环次数标记 */}
-      <div className="absolute top-2 right-12 text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">
-        最多 {config.maxIterations} 次
-      </div>
     </div>
   )
 }

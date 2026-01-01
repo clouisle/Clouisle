@@ -48,6 +48,7 @@ export interface ModelBrief {
   provider: string
   model_id: string
   model_type: string
+  capabilities?: Record<string, unknown> | null
 }
 
 export interface ModelCreateInput {

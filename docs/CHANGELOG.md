@@ -9,6 +9,69 @@
 
 ## [Unreleased]
 
+### 重构 (Refactored)
+
+#### Workflow 节点配置抽屉组件化重构
+
+将 `node-config-drawer.tsx` 文件（2685 行）进行模块化拆分，提升代码可维护性和复用性。
+
+##### 重构前
+
+- 单文件 2685 行，包含所有节点类型的配置逻辑
+
+##### 重构后
+
+主文件精简为 529 行（减少 80%），拆分为以下模块结构：
+
+```
+frontend/app/(platform)/app/apps/workflow/[id]/_components/
+├── node-config-drawer.tsx      # 主文件 (529 行)
+└── node-config/                # 组件目录 (2618 行)
+    ├── index.ts                # 统一导出
+    ├── types.ts                # 类型定义 (Parameter, AvailableVariable 等)
+    ├── constants.ts            # 常量配置 (nodeTypeInfo, systemParameters 等)
+    ├── utils.ts                # 工具函数 (getTypeName, isValidVariableName 等)
+    ├── variable-selector.tsx   # 变量选择器组件
+    ├── configs/                # 节点配置组件
+    │   ├── index.ts
+    │   ├── start-node-config.tsx      # 开始节点 (121 行)
+    │   ├── llm-node-config.tsx        # LLM 节点 (36 行)
+    │   ├── condition-node-config.tsx  # 条件节点 (426 行)
+    │   ├── iteration-node-config.tsx  # 迭代节点 (289 行)
+    │   ├── loop-node-config.tsx       # 循环节点 (656 行)
+    │   └── code-node-config.tsx       # 代码节点 (250 行)
+    └── dialogs/                # 对话框组件
+        ├── index.ts
+        ├── parameter-edit-dialog.tsx  # 参数编辑对话框 (338 行)
+        └── code-input-dialog.tsx      # 代码输入对话框 (226 行)
+```
+
+##### 模块说明
+
+| 模块 | 行数 | 用途 |
+|------|------|------|
+| `types.ts` | 33 | 类型定义：Parameter, ParameterType, SystemParameter, AvailableVariable |
+| `constants.ts` | 58 | 常量：节点类型信息、系统参数、默认参数、参数类型配置 |
+| `utils.ts` | 26 | 工具函数：变量名验证、类型名称获取 |
+| `variable-selector.tsx` | — | 可复用的变量选择器 Popover 组件 |
+| `start-node-config.tsx` | 121 | 开始节点：系统参数展示 + 用户输入参数管理 |
+| `llm-node-config.tsx` | 36 | LLM 节点：模型选择、提示词配置 |
+| `condition-node-config.tsx` | 426 | 条件节点：分支管理、条件规则配置 |
+| `iteration-node-config.tsx` | 289 | 迭代节点：迭代器变量、输出配置、并行执行 |
+| `loop-node-config.tsx` | 656 | 循环节点：最大迭代、循环变量、退出条件 |
+| `code-node-config.tsx` | 250 | 代码节点：输入变量、代码编辑器、输出配置 |
+| `parameter-edit-dialog.tsx` | 338 | 参数编辑对话框：支持各类型参数的添加/编辑 |
+| `code-input-dialog.tsx` | 226 | 代码输入对话框：添加代码输入变量 |
+
+##### 关键改进
+
+1. **单一职责**：每个配置组件只负责一种节点类型
+2. **类型安全**：统一的类型定义，避免重复声明
+3. **可复用性**：对话框组件可被多个配置组件复用
+4. **可维护性**：修改某一节点类型配置不影响其他节点
+
+---
+
 ### 修复 (Fixed)
 
 #### 知识库检索效果优化

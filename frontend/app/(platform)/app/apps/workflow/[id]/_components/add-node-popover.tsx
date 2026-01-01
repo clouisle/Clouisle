@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut } from 'lucide-react'
+import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AddNodePopoverProps {
@@ -26,8 +26,20 @@ const nodeCategories = [
     label: '逻辑',
     nodes: [
       { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
+      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
       { type: 'iteration', icon: RefreshCw, color: 'bg-cyan-500', title: '迭代', description: '遍历数组数据' },
       { type: 'loop', icon: Infinity, color: 'bg-cyan-500', title: '循环', description: '重复执行直到满足条件' },
+    ],
+  },
+  {
+    label: '转换',
+    nodes: [
+      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
+      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
+      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
+      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
+      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
+      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
     ],
   },
   {
@@ -35,7 +47,7 @@ const nodeCategories = [
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-      { type: 'code', icon: Code, color: 'bg-gray-500', title: '代码', description: '执行自定义代码' },
+      { type: 'answer', icon: MessageSquareText, color: 'bg-emerald-500', title: '输出', description: '定义工作流输出' },
     ],
   },
 ]
@@ -52,7 +64,19 @@ const iterationNodeCategories = [
     label: '逻辑',
     nodes: [
       { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
+      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
       { type: 'iteration_exit', icon: LogOut, color: 'bg-orange-500', title: '退出迭代', description: '提前退出迭代' },
+    ],
+  },
+  {
+    label: '转换',
+    nodes: [
+      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
+      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
+      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
+      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
+      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
+      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
     ],
   },
   {
@@ -60,7 +84,6 @@ const iterationNodeCategories = [
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-      { type: 'code', icon: Code, color: 'bg-gray-500', title: '代码', description: '执行自定义代码' },
     ],
   },
 ]
@@ -77,7 +100,19 @@ const loopNodeCategories = [
     label: '逻辑',
     nodes: [
       { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
+      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
       { type: 'loop_exit', icon: LogOut, color: 'bg-orange-500', title: '退出循环', description: '提前退出循环' },
+    ],
+  },
+  {
+    label: '转换',
+    nodes: [
+      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
+      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
+      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
+      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
+      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
+      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
     ],
   },
   {
@@ -85,7 +120,6 @@ const loopNodeCategories = [
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-      { type: 'code', icon: Code, color: 'bg-gray-500', title: '代码', description: '执行自定义代码' },
     ],
   },
 ]

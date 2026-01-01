@@ -2,11 +2,11 @@
 
 import * as React from 'react'
 import { Handle, Position, useReactFlow } from '@xyflow/react'
-import { Home, MoreHorizontal, Play, Type, AlignLeft, ListChecks, Hash, CheckSquare } from 'lucide-react'
+import { Home, MoreHorizontal, Play, Type, AlignLeft, ListChecks, Hash, CheckSquare, File, Image, Files, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // 参数类型定义
-type ParameterType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox'
+type ParameterType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox' | 'array' | 'object' | 'file' | 'image' | 'files' | 'images'
 
 interface Parameter {
   id: string
@@ -24,6 +24,12 @@ const parameterTypeIcons: Record<ParameterType, React.ElementType> = {
   select: ListChecks,
   number: Hash,
   checkbox: CheckSquare,
+  array: Type,
+  object: Type,
+  file: File,
+  image: Image,
+  files: Files,
+  images: Images,
 }
 
 interface UserInputNodeData {

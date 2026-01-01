@@ -122,7 +122,7 @@ export function IterationNode({ id, selected, data, width, height }: IterationNo
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-cyan-500 text-white">
             <RefreshCw className="h-2.5 w-2.5" />
           </div>
-          <span className="text-xs font-medium">迭代</span>
+          <span className="text-xs font-medium">{data.label || '迭代'}</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
@@ -136,7 +136,7 @@ export function IterationNode({ id, selected, data, width, height }: IterationNo
       
       {/* 内部子图区域 */}
       <div
-        className="absolute left-3 right-3 bottom-3 top-10 rounded-xl border border-dashed border-border/50 bg-muted/30"
+        className="absolute left-3 right-3 bottom-3 top-10 rounded-xl border border-dashed border-border/50 bg-muted/50"
       />
       
       {/* 并行标记 */}

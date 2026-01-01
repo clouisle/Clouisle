@@ -36,6 +36,16 @@ export interface HttpConfig {
   body_template?: string
   timeout?: number
   response_path?: string
+  // 新增：支持文件上传
+  content_type?: 'application/json' | 'multipart/form-data' | 'application/x-www-form-urlencoded'
+  form_fields?: FormField[]  // multipart 时的表单字段
+}
+
+// 表单字段（用于 multipart/form-data）
+export interface FormField {
+  name: string       // 字段名
+  type: 'text' | 'file'  // 字段类型
+  value?: string     // 文本值或变量引用 {{varName}}
 }
 
 export interface CodeConfig {
