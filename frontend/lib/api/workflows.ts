@@ -4,7 +4,7 @@ import { PageData } from './agents'
 // ============ Workflow Types ============
 
 export type WorkflowStatus = 'draft' | 'published'
-export type TriggerType = 'manual' | 'webhook' | 'schedule' | 'chat'
+export type TriggerType = 'manual' | 'webhook' | 'cron'
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
 
@@ -109,6 +109,30 @@ export interface NodeExecution {
   retry_count: number
 }
 
+// ============ Workflow Version Types ============
+
+export interface WorkflowVersion {
+  id: string
+  workflow_id: string
+  version: number
+  definition: WorkflowDefinition
+  variables: VariableDefinition[]
+  trigger_type: TriggerType
+  trigger_config: Record<string, unknown> | null
+  description?: string | null
+  created_by_id?: string | null
+  created_at: string
+}
+
+export interface WorkflowVersionListItem {
+  id: string
+  workflow_id: string
+  version: number
+  description?: string | null
+  created_by_id?: string | null
+  created_at: string
+}
+
 // ============ Workflow Definition Types ============
 
 export interface WorkflowDefinition {
@@ -180,6 +204,35 @@ export interface WorkflowRunQueryParams {
   pageSize?: number
   status?: RunStatus
   isDebug?: boolean
+}
+
+export interface WorkflowRunInput {
+  inputs: Record<string, unknown>
+}
+
+export interface WorkflowRunStartResponse {
+  run_id: string
+  stream_url: string
+}
+
+// ============ SSE Event Types ============
+
+export type WorkflowEventType =
+  | 'workflow_start'
+  | 'workflow_complete'
+  | 'workflow_error'
+  | 'node_start'
+  | 'node_complete'
+  | 'node_error'
+  | 'node_skip'
+  | 'token'
+  | 'output'
+
+export interface WorkflowEvent {
+  type: WorkflowEventType
+  data: Record<string, unknown>
+  sequence: number
+  timestamp: string
 }
 
 // ============ Workflows API ============
@@ -295,5 +348,194 @@ export const workflowsApi = {
    */
   deleteWorkflowRun: async (runId: string): Promise<void> => {
     return api.delete<void>(`/workflows/runs/${runId}`)
+  },
+
+  // ============ Workflow Execution API ============
+
+  /**
+   * 运行工作流
+   */
+  runWorkflow: async (
+    workflowId: string,
+    data: WorkflowRunInput = { inputs: {} }
+  ): Promise<WorkflowRunStartResponse> => {
+    return api.post<WorkflowRunStartResponse>(`/workflows/${workflowId}/run`, data)
+  },
+
+  /**
+   * 调试工作流（使用当前草稿而非发布版本）
+   */
+  debugWorkflow: async (
+    workflowId: string,
+    data: WorkflowRunInput = { inputs: {} }
+  ): Promise<WorkflowRunStartResponse> => {
+    return api.post<WorkflowRunStartResponse>(`/workflows/${workflowId}/debug`, data)
+  },
+
+  /**
+   * 取消工作流运行
+   */
+  cancelWorkflowRun: async (runId: string): Promise<{ cancelled: boolean }> => {
+    return api.post<{ cancelled: boolean }>(`/workflows/runs/${runId}/cancel`)
+  },
+
+  /**
+   * 创建工作流执行事件的 SSE 连接
+   * 
+   * @param runId 运行 ID
+   * @param fromSequence 从指定序列号开始（用于断线重连）
+   * @param onEvent 事件回调
+   * @param onError 错误回调
+   * @returns 关闭连接的函数
+   */
+  streamWorkflowRun: (
+    runId: string,
+    options: {
+      fromSequence?: number
+      onEvent?: (event: WorkflowEvent) => void
+      onError?: (error: Error) => void
+      onComplete?: () => void
+    } = {}
+  ): (() => void) => {
+    const { fromSequence = 0, onEvent, onError, onComplete } = options
+    
+    // 构建 SSE URL
+    const baseUrl = api.getBaseUrl()
+    const url = `${baseUrl}/workflows/runs/${runId}/stream?from_sequence=${fromSequence}`
+    
+    // 获取认证 headers
+    const authHeaders = api.getAuthHeaders()
+    
+    // 创建 AbortController 用于取消请求
+    const controller = new AbortController()
+    
+    const connect = async () => {
+      try {
+        const response = await fetch(url, {
+          headers: {
+            ...authHeaders,
+            'Accept': 'text/event-stream',
+          },
+          signal: controller.signal,
+        })
+        
+        if (!response.ok) {
+          throw new Error(`SSE connection failed: ${response.status}`)
+        }
+        
+        const reader = response.body?.getReader()
+        if (!reader) {
+          throw new Error('No response body')
+        }
+        
+        const decoder = new TextDecoder()
+        let buffer = ''
+        
+        while (true) {
+          const { done, value } = await reader.read()
+          
+          if (done) {
+            onComplete?.()
+            break
+          }
+          
+          buffer += decoder.decode(value, { stream: true })
+          
+          // 解析 SSE 事件
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          
+          let eventType = ''
+          let eventData = ''
+          
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim()
+            } else if (line.startsWith('data:')) {
+              eventData = line.slice(5).trim()
+            } else if (line === '' && eventData) {
+              // 空行表示事件结束
+              try {
+                const parsedData = JSON.parse(eventData)
+                // 后端 SSE 格式: { event, data, node_id, timestamp, sequence }
+                // 将 node_id 合并到 data 中供前端使用
+                const eventDataWithNodeId = {
+                  ...parsedData.data,
+                  node_id: parsedData.node_id,
+                }
+                const event: WorkflowEvent = {
+                  type: (eventType || parsedData.event || 'message') as WorkflowEventType,
+                  data: eventDataWithNodeId,
+                  sequence: parsedData.sequence || 0,
+                  timestamp: parsedData.timestamp || new Date().toISOString(),
+                }
+                onEvent?.(event)
+              } catch {
+                // 忽略解析错误
+              }
+              eventType = ''
+              eventData = ''
+            }
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError') {
+          onError?.(error)
+        }
+      }
+    }
+    
+    connect()
+    
+    // 返回关闭函数
+    return () => {
+      controller.abort()
+    }
+  },
+
+  // ============ Workflow Versions API ============
+
+  /**
+   * 获取工作流版本列表
+   */
+  getWorkflowVersions: async (
+    workflowId: string,
+    params: { page?: number; pageSize?: number } = {}
+  ): Promise<PageData<WorkflowVersionListItem>> => {
+    const { page = 1, pageSize = 20 } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    return api.get<PageData<WorkflowVersionListItem>>(
+      `/workflows/${workflowId}/versions?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取工作流指定版本详情
+   */
+  getWorkflowVersion: async (workflowId: string, version: number): Promise<WorkflowVersion> => {
+    return api.get<WorkflowVersion>(`/workflows/${workflowId}/versions/${version}`)
+  },
+
+  /**
+   * 手动创建版本快照
+   */
+  createWorkflowVersion: async (
+    workflowId: string,
+    data: { description?: string } = {}
+  ): Promise<WorkflowVersion> => {
+    return api.post<WorkflowVersion>(`/workflows/${workflowId}/versions`, data)
+  },
+
+  /**
+   * 恢复到指定版本
+   */
+  restoreWorkflowVersion: async (
+    workflowId: string,
+    version: number,
+    data: { description?: string } = {}
+  ): Promise<Workflow> => {
+    return api.post<Workflow>(`/workflows/${workflowId}/versions/${version}/restore`, data)
   },
 }

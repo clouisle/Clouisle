@@ -27,19 +27,109 @@
 
 | 属性 | 规范 |
 |------|------|
-| 卡片圆角 | `rounded-2xl` (16px) / `rounded-xl` (12px) |
-| 边框 | 1-2px，默认 `border-border`，选中 `border-primary` |
+| 卡片圆角 | `rounded-xl` (12px) |
+| 边框 | 1px，默认 `border-border`，选中 `border-primary` |
 | 阴影 | `shadow-sm` |
-| 图标容器 | `rounded-xl` (12px) / `rounded-lg` (8px) |
-| 图标大小 | 16px (h-4 w-4) / 14px (h-3.5 w-3.5) |
-| 节点最小宽度 | 180px |
-| 节点最大宽度 | 240-260px |
+| 图标容器 | `rounded-lg` (8px)，尺寸 `h-7 w-7` |
+| 图标大小 | 14px (`h-3.5 w-3.5`) |
+| 节点最小宽度 | 180px (`min-w-[180px]`) |
+| 节点最大宽度 | 240px (`max-w-[240px]`) |
+| 内边距 | `px-2.5 py-2` |
+| 元素间距 | `gap-2` |
+
+### 节点卡片样式代码
+
+```tsx
+// 节点卡片容器
+<div
+  className={cn(
+    'relative flex items-center gap-2 px-2.5 py-2 rounded-xl border bg-card shadow-sm transition-all',
+    'min-w-[180px] max-w-[240px]',
+    selected 
+      ? 'border-primary' 
+      : 'border-border hover:border-primary/50'
+  )}
+>
+  {/* 内容 */}
+</div>
+```
 
 ### Handle（连接点）样式
 
-- **普通节点**：圆形，6-8px，带边框
-- **容器节点**：小圆点，8px，无边框
-- **添加按钮样式**：无连线时显示 `+` 图标，悬停时出现
+**普通节点 Handle**：
+- 尺寸：8px × 8px (`w-2 h-2`)
+- 形状：圆形 (`rounded-full`)
+- 颜色：主色 (`bg-primary`)
+- 边框：无 (`border-0`)
+- 悬停效果：放大 (`group-hover:scale-150`)
+
+```tsx
+// 输入 Handle（左侧）
+<Handle
+  type="target"
+  position={Position.Left}
+  className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
+/>
+
+// 输出 Handle（右侧）
+<Handle
+  type="source"
+  position={Position.Right}
+  className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
+/>
+```
+
+**容器节点 Handle**：
+- 尺寸：8px × 8px
+- 形状：圆形
+- 无边框
+
+### 节点顶部标签
+
+```tsx
+// 节点标签行
+<div className="flex items-center justify-between mb-2 px-1 h-5">
+  <span className="text-xs text-muted-foreground">节点类型名称</span>
+  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
+    <button className="p-1 rounded hover:bg-background" title="调试运行">
+      <Play className="h-3 w-3 text-muted-foreground" />
+    </button>
+    <button className="p-1 rounded hover:bg-background">
+      <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
+    </button>
+  </div>
+</div>
+```
+
+### 图标容器样式
+
+```tsx
+// 图标容器
+<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-{color}-500 text-white">
+  <IconComponent className="h-3.5 w-3.5" />
+</div>
+```
+
+### 节点内容区域
+
+```tsx
+// 单行标签
+<span className="flex-1 text-sm font-medium truncate">
+  {data.label || '节点名称'}
+</span>
+
+// 带副标题的内容
+<div className="flex-1 min-w-0">
+  <span className="block text-sm font-medium truncate">
+    {data.label || '节点名称'}
+  </span>
+  {hasConfig ? (
+    <span className="text-xs text-muted-foreground truncate block">{configName}</span>
+  ) : (
+    <span className="text-xs text-amber-500">未配置</span>
+  )}
+</div>
+```
 
 ### 颜色系统
 

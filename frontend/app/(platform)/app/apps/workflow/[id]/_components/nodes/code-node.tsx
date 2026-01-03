@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Code, MoreHorizontal } from 'lucide-react'
+import { Code, MoreHorizontal, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // 代码语言类型
@@ -77,7 +77,7 @@ export const defaultCodeConfig: CodeConfig = {
     result = inputs.get("input", "")
     
     return {
-        "output": result
+        "result": result
     }`,
   inputs: [],
   outputs: [{ id: 'default', name: 'result', type: 'string' }],
@@ -95,19 +95,19 @@ export const pythonTemplate = `def main(inputs: dict) -> dict:
     result = inputs.get("input", "")
     
     return {
-        "output": result
+        "result": result
     }`
 
 // JavaScript 示例代码
-export const javascriptTemplate = `function main(inputs) {
+export const javascriptTemplate = `function main(params) {
     // 在这里编写你的代码
-    // inputs 包含所有输入变量
+    // params 包含所有输入变量
     // 返回一个对象作为输出
     
-    const result = inputs.input || "";
+    const result = params.input || "";
     
     return {
-        output: result
+        result: result
     };
 }`
 
@@ -134,6 +134,9 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">代码执行</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
+          <button className="p-1 rounded hover:bg-background" title="调试运行">
+            <Play className="h-3 w-3 text-muted-foreground" />
+          </button>
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
           </button>
@@ -154,7 +157,7 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
           style={{ top: hasErrorBranch ? 22 : '50%' }}
         />
 
@@ -184,7 +187,7 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
           type="source"
           position={Position.Right}
           id="output"
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
           style={{ top: hasErrorBranch ? 22 : '50%' }}
         />
 
@@ -194,7 +197,7 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
             type="source"
             position={Position.Right}
             id="error"
-            className="!w-2 !h-2 !rounded-full !bg-orange-500 !border-0"
+            className="!w-2 !h-2 !rounded-full !bg-orange-500 !border-0 transition-transform group-hover:scale-150"
             style={{ top: 56 }}
           />
         )}

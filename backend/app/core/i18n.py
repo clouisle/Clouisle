@@ -698,6 +698,31 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "You don't have access to this agent",
         "zh": "您无权访问此智能体",
     },
+    "agent_name_exists": {
+        "en": "Agent with this name already exists",
+        "zh": "该智能体名称已存在",
+    },
+    # Workflow messages
+    "workflow_created": {
+        "en": "Workflow created successfully",
+        "zh": "工作流创建成功",
+    },
+    "workflow_updated": {
+        "en": "Workflow updated successfully",
+        "zh": "工作流更新成功",
+    },
+    "workflow_deleted": {
+        "en": "Workflow deleted successfully",
+        "zh": "工作流删除成功",
+    },
+    "workflow_not_found": {
+        "en": "Workflow not found",
+        "zh": "工作流未找到",
+    },
+    "workflow_name_exists": {
+        "en": "Workflow with this name already exists",
+        "zh": "该工作流名称已存在",
+    },
     # Conversation messages
     "conversation_created": {
         "en": "Conversation created successfully",

@@ -18,7 +18,7 @@ export interface ConditionBranch {
 export interface ConditionRule {
   id: string
   variable: string        // 变量名，如 {{query}}
-  variableSource?: string // 变量来源节点，如 "用户输入"
+  variableSource?: string // 变量来源节点，如 "开始"
   operator: ConditionOperator
   value: string           // 比较值
 }
@@ -131,7 +131,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
 
@@ -181,7 +181,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
                         {/* 来源节点 */}
                         <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                           <Home className="h-2.5 w-2.5" />
-                          <span className="max-w-[50px] truncate">{firstCondition.variableSource || '用户输入'}</span>
+                          <span className="max-w-[50px] truncate">{firstCondition.variableSource || '开始'}</span>
                         </div>
                         <span className="text-muted-foreground/50">/</span>
                         {/* 变量名 */}
@@ -259,7 +259,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
               position={Position.Right}
               id={branch.id}
               className={cn(
-                '!w-2 !h-2 !rounded-full !border-0',
+                '!w-2 !h-2 !rounded-full !border-0 transition-transform group-hover:scale-150',
                 isElse ? '!bg-muted-foreground' : '!bg-blue-500'
               )}
               style={{ top }}

@@ -13,6 +13,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
+import { extractVariableDisplayName } from '../types'
 import { CodeEditor } from '../components/code-editor'
 import { 
   CodeConfig, 
@@ -164,7 +165,7 @@ export function CodeNodeConfig({
                       </>
                     )}
                     <span className="text-primary/80 font-mono">{'{x}'}</span>
-                    <span className="truncate">{input.value.replace(/\{\{|\}\}/g, '')}</span>
+                    <span className="truncate">{extractVariableDisplayName(input.value)}</span>
                     <span className="ml-auto text-muted-foreground/60">String</span>
                   </div>
                 </div>

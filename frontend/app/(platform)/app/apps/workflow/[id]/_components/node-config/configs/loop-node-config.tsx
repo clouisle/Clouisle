@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import { loopVariableTypeConfig } from '../constants'
+import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
 import { 
   LoopConfig, 
@@ -370,7 +371,7 @@ export function LoopNodeConfig({
                             <span className="text-primary/80 font-mono">{'{x}'}</span>
                             <span>
                               {rule.variableSource && <span className="text-muted-foreground">{rule.variableSource} / </span>}
-                              {rule.variable.replace(/\{\{|\}\}/g, '')}
+                              {extractVariableDisplayName(rule.variable)}
                             </span>
                           </span>
                         ) : (
@@ -413,8 +414,9 @@ export function LoopNodeConfig({
                                       key={variable.id}
                                       className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                                       onClick={() => {
+                                        // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                                         updateExitConditionRule(rule.id, {
-                                          variable: `{{${variable.name}}}`,
+                                          variable: `{{${variable.id}}}`,
                                           variableSource: variable.isSystem ? 'SYSTEM' : variable.groupLabel
                                         })
                                         onOpenVariablePopoverChange(null)

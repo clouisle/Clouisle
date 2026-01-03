@@ -51,3 +51,16 @@ export interface AvailableVariable {
   isIterable: boolean
   isFile?: boolean  // 文件类型标记
 }
+/**
+ * 从变量引用中提取显示名称
+ * 
+ * @param variableRef 变量引用，如 "{{nodeId.paramName}}" 或 "nodeId.paramName"
+ * @returns 显示名称，如 "paramName"
+ */
+export function extractVariableDisplayName(variableRef: string): string {
+  if (!variableRef) return ''
+  // 移除 {{ 和 }}
+  const cleaned = variableRef.replace(/\{\{|\}\}/g, '')
+  // 取最后一部分作为显示名
+  return cleaned.split('.').pop() || cleaned
+}

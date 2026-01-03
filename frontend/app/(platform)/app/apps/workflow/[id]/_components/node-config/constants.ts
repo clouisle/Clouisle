@@ -1,7 +1,7 @@
 import { 
   Home, Zap, Bot, GitBranch, Workflow, Wrench, Code, 
   Type, AlignLeft, ListChecks, Hash, CheckSquare, RefreshCw, Infinity,
-  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText
+  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles
 } from 'lucide-react'
 import type { ParameterType, SystemParameter, Parameter } from './types'
 
@@ -31,7 +31,7 @@ export const parameterTypeConfig: Record<ParameterType, { label: string; icon: R
 
 // 节点类型信息
 export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: string; title: string }> = {
-  user_input: { icon: Home, color: 'bg-primary', title: '用户输入' },
+  user_input: { icon: Home, color: 'bg-primary', title: '开始' },
   trigger: { icon: Zap, color: 'bg-amber-500', title: '触发器' },
   llm: { icon: Bot, color: 'bg-blue-500', title: 'LLM' },
   condition: { icon: GitBranch, color: 'bg-cyan-500', title: '条件分支' },
@@ -40,6 +40,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   question_classifier: { icon: Tags, color: 'bg-violet-500', title: '问题分类' },
   answer: { icon: MessageSquareText, color: 'bg-emerald-500', title: '输出' },
   sub_workflow: { icon: Workflow, color: 'bg-purple-500', title: '子工作流' },
+  agent: { icon: Sparkles, color: 'bg-indigo-500', title: '智能体' },
   tool: { icon: Wrench, color: 'bg-emerald-500', title: '工具' },
   code: { icon: Code, color: 'bg-blue-500', title: '代码执行' },
   template: { icon: FileText, color: 'bg-blue-500', title: '模板转换' },
@@ -47,6 +48,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   variable_aggregator: { icon: Combine, color: 'bg-blue-500', title: '变量聚合器' },
   variable_assignment: { icon: Variable, color: 'bg-blue-500', title: '变量赋值' },
   parameter_extractor: { icon: Braces, color: 'bg-blue-500', title: '参数提取器' },
+  comment: { icon: StickyNote, color: 'bg-amber-400', title: '注释' },
 }
 
 // 系统参数

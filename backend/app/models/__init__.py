@@ -21,6 +21,7 @@ from .agent import (
 from .workflow import (
     Workflow,
     WorkflowRun,
+    WorkflowVersion,
     NodeExecution,
     WorkflowStatus,
     TriggerType,
@@ -64,6 +65,7 @@ __all__ = [
     "MessageRole",
     "Workflow",
     "WorkflowRun",
+    "WorkflowVersion",
     "NodeExecution",
     "WorkflowStatus",
     "TriggerType",

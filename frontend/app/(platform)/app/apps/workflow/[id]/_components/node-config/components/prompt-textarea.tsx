@@ -273,19 +273,27 @@ export function PromptTextarea({
   }, [variables, searchQuery])
 
   // 初始化和外部值变化时更新编辑器
+  const [isInitialized, setIsInitialized] = React.useState(false)
+  
   React.useEffect(() => {
     const editor = editorRef.current
-    if (!editor || isInternalUpdateRef.current) {
+    if (!editor) return
+    
+    if (isInternalUpdateRef.current) {
       isInternalUpdateRef.current = false
       return
     }
     
-    if (value !== lastValueRef.current) {
+    // 首次初始化或值变化时更新
+    if (!isInitialized || value !== lastValueRef.current) {
       lastValueRef.current = value
       const html = textToHtml(value || '', variableMap)
       editor.innerHTML = html || ''
+      if (!isInitialized) {
+        setIsInitialized(true)
+      }
     }
-  }, [value, variableMap])
+  }, [value, variableMap, isInitialized])
 
   // 处理输入变化
   const handleInput = React.useCallback(() => {

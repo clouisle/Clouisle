@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { teamModelsApi, type TeamModel } from '@/lib/api'
 import { isValidVariableName } from '../utils'
+import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
 import { 
   QuestionClassifierConfig, 
@@ -162,7 +163,7 @@ export function QuestionClassifierNodeConfig({
               <span className="text-primary/80 font-mono text-xs">{'{x}'}</span>
               <span className="text-xs truncate">
                 {safeConfig.sourceNodeLabel && <span className="text-muted-foreground">{safeConfig.sourceNodeLabel} / </span>}
-                {safeConfig.sourceVariable.replace(/\{\{|\}\}/g, '')}
+                {extractVariableDisplayName(safeConfig.sourceVariable)}
               </span>
             </>
           ) : (
@@ -205,9 +206,10 @@ export function QuestionClassifierNodeConfig({
                         key={variable.id}
                         className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                         onClick={() => {
+                          // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           onConfigChange({
                             ...safeConfig,
-                            sourceVariable: `{{${variable.name}}}`,
+                            sourceVariable: `{{${variable.id}}}`,
                             sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)

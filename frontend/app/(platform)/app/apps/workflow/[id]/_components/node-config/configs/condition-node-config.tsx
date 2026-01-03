@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { AvailableVariable } from '../types'
+import { extractVariableDisplayName } from '../types'
 import { 
   ConditionBranch, 
   ConditionRule, 
@@ -95,7 +96,7 @@ export function ConditionNodeConfig({
     const newRule: ConditionRule = {
       id: `rule_${Date.now()}`,
       variable: '',
-      variableSource: '用户输入',
+      variableSource: '开始',
       operator: 'equals',
       value: '',
     }
@@ -130,10 +131,11 @@ export function ConditionNodeConfig({
   }
 
   // 选择变量
-  const selectVariable = (branchId: string, ruleId: string, variableName: string, isSystem: boolean) => {
+  // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
+  const selectVariable = (branchId: string, ruleId: string, variableId: string, variableName: string, isSystem: boolean) => {
     updateConditionRule(branchId, ruleId, { 
-      variable: `{{${variableName}}}`,
-      variableSource: isSystem ? 'SYSTEM' : '用户输入'
+      variable: `{{${variableId}}}`,
+      variableSource: isSystem ? 'SYSTEM' : '开始'
     })
     onOpenVariablePopoverChange(null)
     onVariableSearchChange('')
@@ -282,7 +284,7 @@ export function ConditionNodeConfig({
                               <span className="text-muted-foreground text-[10px]">{rule.variableSource}</span>
                               <span>/</span>
                               <span className="text-primary/80 font-mono">{'{x}'}</span>
-                              <span>{rule.variable.replace(/\{\{|\}\}/g, '')}</span>
+                              <span>{extractVariableDisplayName(rule.variable)}</span>
                             </span>
                           ) : (
                             <span className="text-muted-foreground">选择变量...</span>
@@ -325,7 +327,7 @@ export function ConditionNodeConfig({
                                       <button
                                         key={variable.id}
                                         className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
-                                        onClick={() => selectVariable(branch.id, rule.id, variable.name, variable.isSystem)}
+                                        onClick={() => selectVariable(branch.id, rule.id, variable.id, variable.name, variable.isSystem)}
                                       >
                                         <span className="flex items-center gap-1.5">
                                           <span className={cn(

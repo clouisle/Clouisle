@@ -97,7 +97,7 @@ export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="w-2! h-2! rounded-full! bg-primary! border-0!"
+        className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
         style={{ top: '50%' }}
       />
 
@@ -106,7 +106,7 @@ export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
         type="source"
         position={Position.Right}
         id="done"
-        className="w-2! h-2! rounded-full! bg-primary! border-0!"
+        className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
         style={{ top: '50%' }}
       />
       
@@ -192,7 +192,7 @@ export function LoopStartNode({ id, selected, data }: LoopStartNodeProps) {
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2! h-2! rounded-full! bg-cyan-500! border-0!"
+          className="w-2! h-2! rounded-full! bg-cyan-500! border-0! transition-transform group-hover:scale-150"
         />
       </div>
       
@@ -237,7 +237,7 @@ export function LoopExitNode({ id, selected, data }: LoopExitNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2! h-2! rounded-full! bg-orange-500! border-0!"
+          className="w-2! h-2! rounded-full! bg-orange-500! border-0! transition-transform group-hover:scale-150"
         />
       </div>
       

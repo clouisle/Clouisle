@@ -93,7 +93,7 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
         router.push(`/app/apps/workflow/${workflow.id}`)
       }
     } catch {
-      toast.error(t('createFailed'))
+      // API client 已自动显示后端错误消息，这里不需要再显示
     } finally {
       setIsSubmitting(false)
     }

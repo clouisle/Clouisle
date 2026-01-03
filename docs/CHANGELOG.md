@@ -9,6 +9,83 @@
 
 ## [Unreleased]
 
+### 新增 (Added)
+
+#### 工作流变量引用校验系统
+
+在工作流校验清单中添加变量引用有效性检查功能，确保节点配置中引用的变量实际存在且可访问。
+
+##### 核心功能
+
+- **上游变量计算**：通过 BFS 遍历边关系，计算每个节点可访问的上游变量集合
+- **系统变量支持**：内置支持 `sys.user_id`、`sys.app_id`、`sys.workflow_id`、`sys.run_id`、`sys.timestamp` 等系统变量
+- **对话变量支持**：自动跳过 `conversation.*` 格式的对话变量检查
+- **变量格式清理**：自动处理 `{{nodeId.varName}}` 格式，正确提取变量名用于校验和显示
+
+##### 支持的节点类型
+
+| 节点类型 | 校验字段 |
+|---------|---------|
+| `question_classifier` | `sourceVariable` |
+| `answer` | `outputs[].sourceVariable` |
+| `condition` | `branches[].conditions[].variable` |
+| `code` | `inputs[].value` |
+| `template` | `variables[].variable` |
+| `tool` | `inputs[].value` |
+| `parameter_extractor` | `sourceVariable` |
+| `variable_aggregator` | `variables[].sourceVariable` |
+| `variable_assignment` | `assignments[].sourceVariable` |
+| `iteration` | `iterateVariable` |
+| `loop` | `conditionVariable` |
+| `sub_workflow` | `inputMappings[].sourceVariable` |
+| `file_to_url` | `inputs[].sourceVariable` |
+| `agent` | `inputVariable` |
+
+##### 文件变更
+
+- `workflow-validator.ts`：
+  - 新增 `systemVariables` 常量
+  - 新增 `getUpstreamNodeIds()` - BFS 获取上游节点
+  - 新增 `getNodeOutputVariables()` - 获取节点输出变量
+  - 新增 `getAvailableVariables()` - 计算节点可用变量集合
+  - 新增 `isVariableAvailable()` - 检查变量引用有效性
+  - 新增 `cleanVariableRef()` - 清理 `{{}}` 包裹
+  - 新增 `extractVariableName()` - 提取变量显示名称
+  - 更新所有节点类型的校验逻辑
+
+---
+
+#### 循环/迭代节点内部变量访问
+
+在循环（loop）和迭代（iteration）节点的子图内部，支持访问父容器提供的内部变量。
+
+##### 功能说明
+
+**迭代节点 (iteration)**：
+- `{iterationNodeId}.item` - 当前迭代项 (Any 类型)
+- `{iterationNodeId}.index` - 当前索引 (Number 类型)
+
+**循环节点 (loop)**：
+- `{loopNodeId}.index` - 当前循环索引 (Number 类型)
+- `{loopNodeId}.{loopVarName}` - 自定义循环变量
+
+##### 实现方式
+
+- 在 `getAvailableVariables()` 函数中检测 `node.parentId` 或 `data.parentIterationId`/`data.parentLoopId`
+- 根据父节点类型（`iteration` 或 `loop`）添加相应的内部变量
+- 递归获取父节点的上游变量，使子节点也能访问
+
+##### 文件变更
+
+- `node-config-drawer.tsx`：
+  - 修改 `getAvailableVariables()` 支持检测父容器节点
+  - 添加迭代/循环节点内部变量到可用变量列表
+  - 递归添加父节点上游变量
+- `workflow-validator.ts`：
+  - 同步更新校验逻辑，支持父容器变量检查
+
+---
+
 ### 重构 (Refactored)
 
 #### Workflow 节点配置抽屉组件化重构

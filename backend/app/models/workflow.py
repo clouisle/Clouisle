@@ -302,3 +302,68 @@ class NodeExecution(models.Model):
 
     def __str__(self):
         return f"Node {self.node_id} ({self.status})"
+
+
+class WorkflowVersion(models.Model):
+    """
+    Workflow version history.
+
+    Stores a snapshot of the workflow definition at each version,
+    allowing users to view and restore previous versions.
+    """
+
+    id = fields.UUIDField(pk=True)
+
+    # Parent workflow
+    workflow: fields.ForeignKeyRelation["Workflow"] = fields.ForeignKeyField(
+        "models.Workflow",
+        related_name="versions",
+        on_delete=fields.CASCADE,
+        description="Parent workflow",
+    )
+    workflow_id: UUID  # type: ignore[assignment]
+
+    # Version number
+    version = fields.IntField(description="Version number")
+
+    # Snapshot of definition at this version
+    definition: dict = fields.JSONField(
+        default=dict, description="Workflow definition snapshot"
+    )  # type: ignore[assignment]
+
+    # Snapshot of variables at this version
+    variables: list = fields.JSONField(
+        default=list, description="Variables snapshot"
+    )  # type: ignore[assignment]
+
+    # Trigger configuration snapshot
+    trigger_type = fields.CharEnumField(
+        TriggerType, default=TriggerType.MANUAL, description="Trigger type snapshot"
+    )
+    trigger_config: dict | None = fields.JSONField(
+        null=True, description="Trigger config snapshot"
+    )  # type: ignore[assignment]
+
+    # Version metadata
+    description = fields.TextField(null=True, description="Version description/notes")
+
+    # Created by
+    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+        "models.User",
+        related_name="workflow_versions",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="User who created this version",
+    )
+    created_by_id: UUID | None  # type: ignore[assignment]
+
+    # Timestamps
+    created_at = fields.DatetimeField(auto_now_add=True, description="Creation time")
+
+    class Meta:
+        table = "workflow_versions"
+        ordering = ["-version"]
+        unique_together = (("workflow", "version"),)
+
+    def __str__(self):
+        return f"Workflow {self.workflow_id} v{self.version}"

@@ -95,7 +95,7 @@ export function UserInputNode({ id, selected, data }: UserInputNodeProps) {
           <Handle
             type="source"
             position={Position.Right}
-            className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+            className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
           />
         </div>
 

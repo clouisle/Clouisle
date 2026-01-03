@@ -128,3 +128,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ReactFlow Edge Styles */
+.react-flow__edge-path {
+  transition: stroke 0.15s ease;
+}
+
+.react-flow__edge:hover .react-flow__edge-path,
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3b82f6 !important;
+}

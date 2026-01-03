@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import { FileToUrlInputDialog } from '../dialogs'
 import type { AvailableVariable } from '../types'
+import { extractVariableDisplayName } from '../types'
 import { 
   FileToUrlConfig, 
   FileToUrlInput,
@@ -153,7 +154,7 @@ export function FileToUrlNodeConfig({
                     </span>
                     {input.sourceVariable && (
                       <span className="text-xs text-muted-foreground truncate">
-                        ← {input.sourceVariable.replace(/\{\{|\}\}/g, '')}
+                        ← {extractVariableDisplayName(input.sourceVariable)}
                       </span>
                     )}
                   </div>

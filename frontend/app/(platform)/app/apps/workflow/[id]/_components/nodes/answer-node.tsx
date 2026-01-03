@@ -9,8 +9,9 @@ import { cn } from '@/lib/utils'
 export interface OutputVariable {
   id: string
   name: string           // 输出变量名（外部可见）
-  sourceVariable: string // 源变量引用（如 {{node.var}}）
+  sourceVariable: string // 源变量引用（如 {{node.var}}），传到后端用
   sourceNodeLabel?: string // 源节点标签（用于显示）
+  sourceVariableName?: string // 源变量名称（用于显示，如 query）
   type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'file' | 'any'
   description?: string   // 变量描述
 }
@@ -100,7 +101,15 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
+          style={{ top: 24 }}
+        />
+
+        {/* Output Handle - 允许连接后续节点实现分段输出 */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
 

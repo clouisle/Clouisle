@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
 import { toolsApi, type Tool, type ToolType, type ToolCategory, type McpToolInfo } from '@/lib/api'
 import { isValidVariableName } from '../utils'
+import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
 
 // 工具节点配置
@@ -367,7 +368,7 @@ export function ToolNodeConfig({
               <span className="text-primary/80 font-mono text-[10px]">{'{x}'}</span>
               <span className="text-[11px] truncate">
                 {mapping.variableRefNodeLabel && <span className="text-muted-foreground">{mapping.variableRefNodeLabel} / </span>}
-                {mapping.variableRef.replace(/\{\{|\}\}/g, '')}
+                {extractVariableDisplayName(mapping.variableRef)}
               </span>
             </>
           ) : (
@@ -410,9 +411,10 @@ export function ToolNodeConfig({
                         key={variable.id}
                         className="w-full flex items-center justify-between px-2 py-1 text-xs hover:bg-muted rounded-md"
                         onClick={() => {
+                          // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateMapping(mapping.name, {
                             source: 'variable',
-                            variableRef: `{{${variable.name}}}`,
+                            variableRef: `{{${variable.id}}}`,
                             variableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
                             constantValue: undefined,
                           })

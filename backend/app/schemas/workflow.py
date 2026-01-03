@@ -352,3 +352,55 @@ class WorkflowDefinition(BaseModel):
     nodes: list[dict] = Field(default_factory=list)
     edges: list[dict] = Field(default_factory=list)
     viewport: dict = Field(default_factory=lambda: {"x": 0, "y": 0, "zoom": 1})
+
+
+# ============================================================================
+# WorkflowVersion Schemas
+# ============================================================================
+
+
+class WorkflowVersionOut(BaseModel):
+    """Schema for workflow version response"""
+
+    id: UUID
+    workflow_id: UUID
+    version: int
+    definition: dict
+    variables: list[dict]
+    trigger_type: TriggerType
+    trigger_config: dict | None
+    description: str | None
+    created_by_id: UUID | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowVersionListItem(BaseModel):
+    """Schema for workflow version list item (simplified)"""
+
+    id: UUID
+    workflow_id: UUID
+    version: int
+    description: str | None
+    created_by_id: UUID | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowVersionCreate(BaseModel):
+    """Schema for creating a version snapshot (internal use)"""
+
+    description: str | None = None
+
+
+class WorkflowVersionRestore(BaseModel):
+    """Schema for restoring to a version"""
+
+    description: str | None = Field(
+        default=None,
+        description="Optional description for the new version created after restore",
+    )

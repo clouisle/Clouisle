@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Braces, MoreHorizontal, Bot, Code, FileJson, Type, Hash, ToggleLeft, List } from 'lucide-react'
+import { Braces, MoreHorizontal, Play, Bot, Code, FileJson, Type, Hash, ToggleLeft, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // 提取方式
@@ -124,25 +124,25 @@ export const extractionMethodConfig: Record<ExtractionMethod, {
     icon: Bot,
     supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
     defaultType: 'string',
-    sourceVariableTypes: ['String'],  // LLM 处理文本
+    sourceVariableTypes: ['String', 'Object', 'Array'],  // LLM 可处理文本和对象
   },
   regex: {
     label: '正则表达式',
     shortLabel: '正则',
     description: '使用正则表达式匹配提取特定模式的内容',
     icon: Code,
-    supportedTypes: ['string', 'number'],
+    supportedTypes: ['string', 'number', 'array'],
     defaultType: 'string',
-    sourceVariableTypes: ['String'],  // 正则处理文本
+    sourceVariableTypes: ['String'],  // 正则只处理文本
   },
   json_path: {
     label: 'JSON Path',
     shortLabel: 'JSON',
-    description: '从 JSON 字符串中按路径提取数据',
+    description: '从 JSON 对象或字符串中按路径提取数据',
     icon: FileJson,
     supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
     defaultType: 'object',
-    sourceVariableTypes: ['String'],  // JSON Path 从 JSON 字符串提取
+    sourceVariableTypes: ['String', 'Object', 'Array'],  // JSON Path 可处理字符串、对象、数组
   },
 }
 
@@ -185,6 +185,9 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">参数提取器</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
+          <button className="p-1 rounded hover:bg-background" title="调试运行">
+            <Play className="h-3 w-3 text-muted-foreground" />
+          </button>
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
           </button>
@@ -205,7 +208,7 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
 
@@ -276,7 +279,7 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
       </div>

@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
 from app.api import deps
@@ -16,6 +17,7 @@ from app.models.user import User, Team, TeamMember
 from app.models.workflow import (
     Workflow,
     WorkflowRun,
+    WorkflowVersion,
     NodeExecution,
     WorkflowStatus,
     TriggerType,
@@ -26,9 +28,14 @@ from app.schemas.workflow import (
     WorkflowUpdate,
     WorkflowOut,
     WorkflowListItem,
+    WorkflowRunRequest,
     WorkflowRunOut,
     WorkflowRunListItem,
     NodeExecutionOut,
+    WorkflowVersionOut,
+    WorkflowVersionListItem,
+    WorkflowVersionCreate,
+    WorkflowVersionRestore,
 )
 from app.schemas.response import (
     Response,
@@ -167,20 +174,37 @@ async def create_workflow(
     # Check team access
     team = await check_team_access(workflow_in.team_id, current_user)
 
-    # Create workflow with default definition (start + end nodes)
+    # Check for duplicate name within the same team
+    existing = await Workflow.filter(
+        team_id=workflow_in.team_id,
+        name=workflow_in.name,
+    ).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="workflow_name_exists",
+        )
+
+    # Create workflow with default start node (user_input)
     default_definition = {
         "nodes": [
             {
-                "id": "start",
-                "type": "start",
+                "id": "user_input-1",
+                "type": "user_input",
                 "position": {"x": 250, "y": 100},
-                "data": {"type": "start", "label": "开始", "config": {}},
-            },
-            {
-                "id": "end",
-                "type": "end",
-                "position": {"x": 250, "y": 400},
-                "data": {"type": "end", "label": "结束", "config": {}},
+                "data": {
+                    "type": "user_input",
+                    "label": "开始",
+                    "config": {},
+                    "parameters": [
+                        {
+                            "id": "query",
+                            "name": "query",
+                            "type": "text",
+                            "required": True,
+                        }
+                    ],
+                },
             },
         ],
         "edges": [],
@@ -225,6 +249,18 @@ async def update_workflow(
 ) -> Any:
     """Update a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+
+    # Check for duplicate name within the same team (exclude self)
+    if workflow_in.name is not None and workflow_in.name != workflow.name:
+        existing = await Workflow.filter(
+            team_id=workflow.team_id,
+            name=workflow_in.name,
+        ).exclude(id=workflow_id).first()
+        if existing:
+            raise BusinessError(
+                code=ResponseCode.DUPLICATE_NAME,
+                msg_key="workflow_name_exists",
+            )
 
     # Update fields
     if workflow_in.name is not None:
@@ -273,8 +309,26 @@ async def publish_workflow(
     workflow_id: UUID,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    """Publish a workflow."""
+    """Publish a workflow and save a version snapshot."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+
+    # Check if this version already has a snapshot
+    existing_version = await WorkflowVersion.filter(
+        workflow_id=workflow_id, version=workflow.version
+    ).first()
+
+    # Save version snapshot on publish (if not already saved)
+    if not existing_version:
+        await WorkflowVersion.create(
+            workflow_id=workflow_id,
+            version=workflow.version,
+            definition=workflow.definition,
+            variables=workflow.variables,
+            trigger_type=workflow.trigger_type,
+            trigger_config=workflow.trigger_config,
+            description="Published version",
+            created_by=current_user,
+        )
 
     workflow.status = WorkflowStatus.PUBLISHED
     await workflow.save()
@@ -350,6 +404,198 @@ async def regenerate_webhook_token(
         data={"webhook_token": workflow.webhook_token},
         msg_key="webhook_token_regenerated",
     )
+
+
+# ============ Workflow Execution ============
+
+
+@router.post("/{workflow_id}/run", response_model=Response[dict])
+async def run_workflow(
+    workflow_id: UUID,
+    run_request: WorkflowRunRequest,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Run a workflow with the given inputs.
+
+    Returns the run ID. Use GET /runs/{run_id}/stream for streaming output.
+    """
+    from app.tasks.workflow import run_workflow_task
+
+    workflow = await check_workflow_access(workflow_id, current_user)
+
+    # Check if workflow is published
+    if workflow.status != WorkflowStatus.PUBLISHED:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="workflow_not_published",
+            status_code=403,
+        )
+
+    try:
+        # Create run record first
+        run = await WorkflowRun.create(
+            workflow_id=workflow_id,
+            trigger_type=workflow.trigger_type,
+            triggered_by_id=current_user.id,
+            is_debug=False,
+            status=RunStatus.PENDING,
+            inputs=run_request.inputs,
+        )
+
+        # Submit to Celery for background execution
+        run_workflow_task.delay(
+            run_id=str(run.id),
+            workflow_id=str(workflow_id),
+            inputs=run_request.inputs,
+            user_id=str(current_user.id),
+            team_id=str(workflow.team_id) if workflow.team_id else None,
+        )
+
+        return success(
+            data={
+                "run_id": str(run.id),
+                "stream_url": f"/api/v1/workflows/runs/{run.id}/stream",
+            },
+            msg_key="workflow_run_started",
+        )
+
+    except Exception as e:
+        logger.exception(f"Workflow execution error: {e}")
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="workflow_execution_error",
+        )
+
+
+@router.post("/{workflow_id}/debug", response_model=Response[dict])
+async def debug_workflow(
+    workflow_id: UUID,
+    run_request: WorkflowRunRequest,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Run a workflow in debug mode (uses current draft, not published version).
+
+    Returns the run ID. Use GET /runs/{run_id}/stream for streaming output.
+    """
+    from app.tasks.workflow import run_workflow_task
+
+    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+
+    try:
+        # Create run record first
+        run = await WorkflowRun.create(
+            workflow_id=workflow_id,
+            trigger_type=workflow.trigger_type,
+            triggered_by_id=current_user.id,
+            is_debug=True,
+            status=RunStatus.PENDING,
+            inputs=run_request.inputs,
+        )
+
+        # Submit to Celery for background execution
+        run_workflow_task.delay(
+            run_id=str(run.id),
+            workflow_id=str(workflow_id),
+            inputs=run_request.inputs,
+            user_id=str(current_user.id),
+            team_id=str(workflow.team_id) if workflow.team_id else None,
+            is_debug=True,
+        )
+
+        return success(
+            data={
+                "run_id": str(run.id),
+                "stream_url": f"/api/v1/workflows/runs/{run.id}/stream",
+            },
+            msg_key="workflow_debug_started",
+        )
+
+    except Exception as e:
+        logger.exception(f"Workflow debug error: {e}")
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="workflow_execution_error",
+        )
+
+
+@router.get("/runs/{run_id}/stream")
+async def stream_workflow_run(
+    run_id: UUID,
+    from_sequence: int = 0,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> StreamingResponse:
+    """
+    Stream workflow execution events via SSE (Server-Sent Events).
+
+    Query params:
+    - from_sequence: Resume from this sequence number (for reconnection)
+
+    Event types:
+    - workflow_start: Workflow execution started
+    - workflow_complete: Workflow completed successfully
+    - workflow_error: Workflow failed
+    - node_start: Node execution started
+    - node_complete: Node completed
+    - node_error: Node failed
+    - node_skip: Node skipped (branch not taken)
+    - token: LLM token stream
+    - output: Final output
+    """
+    from app.services.workflow.stream import stream_to_sse
+
+    # Verify access to the run
+    run = await WorkflowRun.filter(id=run_id).prefetch_related("workflow").first()
+    if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_run_not_found",
+            status_code=404,
+        )
+
+    await check_workflow_access(run.workflow.id, current_user)
+
+    async def event_generator():
+        async for event in stream_to_sse(str(run_id), from_sequence):
+            yield event
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/runs/{run_id}/cancel", response_model=Response[dict])
+async def cancel_workflow_run(
+    run_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Cancel a running workflow."""
+    from app.services.workflow import WorkflowOrchestrator
+
+    run = await WorkflowRun.filter(id=run_id).prefetch_related("workflow").first()
+    if not run:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_run_not_found",
+            status_code=404,
+        )
+
+    await check_workflow_access(run.workflow.id, current_user, require_write=True)
+
+    orchestrator = WorkflowOrchestrator()
+    cancelled = await orchestrator.cancel(str(run_id))
+
+    if cancelled:
+        return success(data={"cancelled": True}, msg_key="workflow_run_cancelled")
+    else:
+        return success(data={"cancelled": False}, msg_key="workflow_run_not_cancellable")
 
 
 # ============ Workflow Runs ============
@@ -458,3 +704,148 @@ async def delete_workflow_run(
     await run.delete()
 
     return success(data={"id": str(run_id)}, msg_key="workflow_run_deleted")
+
+
+# ============ Workflow Versions ============
+
+
+@router.get("/{workflow_id}/versions", response_model=Response[PageData[WorkflowVersionListItem]])
+async def list_workflow_versions(
+    workflow_id: UUID,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """List version history for a workflow."""
+    await check_workflow_access(workflow_id, current_user)
+
+    query = WorkflowVersion.filter(workflow_id=workflow_id)
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    versions = await query.offset(skip).limit(page_size).order_by("-version")
+
+    version_list = [WorkflowVersionListItem.model_validate(v) for v in versions]
+
+    return success(
+        data={
+            "items": [v.model_dump() for v in version_list],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.get("/{workflow_id}/versions/{version}", response_model=Response[WorkflowVersionOut])
+async def get_workflow_version(
+    workflow_id: UUID,
+    version: int,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Get a specific version of a workflow."""
+    await check_workflow_access(workflow_id, current_user)
+
+    workflow_version = await WorkflowVersion.filter(
+        workflow_id=workflow_id, version=version
+    ).first()
+
+    if not workflow_version:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
+
+    return success(data=WorkflowVersionOut.model_validate(workflow_version).model_dump())
+
+
+@router.post("/{workflow_id}/versions", response_model=Response[WorkflowVersionOut])
+async def create_workflow_version(
+    workflow_id: UUID,
+    version_in: WorkflowVersionCreate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Manually create a version snapshot of the current workflow state."""
+    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+
+    # Create version snapshot
+    workflow_version = await WorkflowVersion.create(
+        workflow_id=workflow_id,
+        version=workflow.version,
+        definition=workflow.definition,
+        variables=workflow.variables,
+        trigger_type=workflow.trigger_type,
+        trigger_config=workflow.trigger_config,
+        description=version_in.description,
+        created_by=current_user,
+    )
+
+    return success(
+        data=WorkflowVersionOut.model_validate(workflow_version).model_dump(),
+        msg_key="workflow_version_created",
+    )
+
+
+@router.post("/{workflow_id}/versions/{version}/restore", response_model=Response[WorkflowOut])
+async def restore_workflow_version(
+    workflow_id: UUID,
+    version: int,
+    restore_in: WorkflowVersionRestore,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Restore a workflow to a specific version."""
+    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+
+    # Get the version to restore
+    workflow_version = await WorkflowVersion.filter(
+        workflow_id=workflow_id, version=version
+    ).first()
+
+    if not workflow_version:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
+
+    # Save current state as a new version before restoring
+    await WorkflowVersion.create(
+        workflow_id=workflow_id,
+        version=workflow.version,
+        definition=workflow.definition,
+        variables=workflow.variables,
+        trigger_type=workflow.trigger_type,
+        trigger_config=workflow.trigger_config,
+        description=f"Auto-saved before restoring to v{version}",
+        created_by=current_user,
+    )
+
+    # Restore the workflow to the specified version
+    workflow.definition = workflow_version.definition
+    workflow.variables = workflow_version.variables
+    workflow.trigger_type = workflow_version.trigger_type
+    workflow.trigger_config = workflow_version.trigger_config
+    workflow.version += 1  # Increment version
+
+    await workflow.save()
+
+    # Create a version record for the restored state
+    await WorkflowVersion.create(
+        workflow_id=workflow_id,
+        version=workflow.version,
+        definition=workflow.definition,
+        variables=workflow.variables,
+        trigger_type=workflow.trigger_type,
+        trigger_config=workflow.trigger_config,
+        description=restore_in.description or f"Restored from v{version}",
+        created_by=current_user,
+    )
+
+    # Reload with relations
+    workflow = await Workflow.get(id=workflow_id).prefetch_related("team", "created_by")
+
+    return success(
+        data=WorkflowOut.model_validate(workflow).model_dump(),
+        msg_key="workflow_version_restored",
+    )

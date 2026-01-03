@@ -347,10 +347,10 @@ export default function AppsPage() {
                       </>
                     ) : (
                       <>
-                        <span>{app.run_count || 0} 次运行</span>
-                        <span className="text-green-600">{app.success_count || 0} 成功</span>
+                        <span>{app.run_count || 0} {t('runs')}</span>
+                        <span className="text-green-600">{app.success_count || 0} {t('success')}</span>
                         {(app.fail_count || 0) > 0 && (
-                          <span className="text-red-600">{app.fail_count} 失败</span>
+                          <span className="text-red-600">{app.fail_count} {t('failed')}</span>
                         )}
                       </>
                     )}
@@ -439,10 +439,7 @@ export default function AppsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction variant="destructive" onClick={handleDelete}>
               {tCommon('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -7,7 +7,7 @@ function getLocale(): string {
   if (typeof window === 'undefined') return 'en'
   const locale = document.cookie
     .split('; ')
-    .find(row => row.startsWith('NEXT_LOCALE='))
+    .find(row => row.startsWith('locale='))
     ?.split('=')[1]
   return locale || 'en'
 }
@@ -106,7 +106,7 @@ axiosInstance.interceptors.request.use(
       // 添加语言头
       const locale = document.cookie
         .split('; ')
-        .find(row => row.startsWith('NEXT_LOCALE='))
+        .find(row => row.startsWith('locale='))
         ?.split('=')[1]
       if (locale) {
         config.headers['X-Language'] = locale
@@ -231,7 +231,7 @@ export const api = {
       }
       const locale = document.cookie
         .split('; ')
-        .find(row => row.startsWith('NEXT_LOCALE='))
+        .find(row => row.startsWith('locale='))
         ?.split('=')[1]
       if (locale) {
         headers['X-Language'] = locale

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { FileText, MoreHorizontal } from 'lucide-react'
+import { FileText, MoreHorizontal, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // 模板输入变量
@@ -49,6 +49,9 @@ export function TemplateNode({ id, selected, data }: TemplateNodeProps) {
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">模板转换</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
+          <button className="p-1 rounded hover:bg-background" title="调试运行">
+            <Play className="h-3 w-3 text-muted-foreground" />
+          </button>
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
           </button>
@@ -69,7 +72,7 @@ export function TemplateNode({ id, selected, data }: TemplateNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
         />
 
         {/* Icon */}
@@ -86,7 +89,7 @@ export function TemplateNode({ id, selected, data }: TemplateNodeProps) {
         <Handle
           type="source"
           position={Position.Right}
-          className="!w-2 !h-2 !rounded-full !bg-primary !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-primary !border-0 transition-transform group-hover:scale-150"
         />
       </div>
     </div>

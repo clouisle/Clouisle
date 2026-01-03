@@ -22,5 +22,11 @@ export {
   ToolNodeConfig,
   type ToolNodeConfigType,
   defaultToolNodeConfig,
+  SubWorkflowNodeConfig,
+  type SubWorkflowNodeConfigType,
+  defaultSubWorkflowNodeConfig,
+  AgentNodeConfig,
+  type AgentNodeConfigType,
+  defaultAgentNodeConfig,
 } from './configs'
 export { ParameterEditDialog, CodeInputDialog } from './dialogs'

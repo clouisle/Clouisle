@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
 import { 
   VariableAssignmentConfig, 
@@ -212,7 +213,7 @@ export function VariableAssignmentNodeConfig({
               <span className="text-primary/80 font-mono text-xs">{'{x}'}</span>
               <span className="text-xs truncate">
                 {assignment.variableRefNodeLabel && <span className="text-muted-foreground">{assignment.variableRefNodeLabel} / </span>}
-                {assignment.variableRef.replace(/\{\{|\}\}/g, '')}
+                {extractVariableDisplayName(assignment.variableRef)}
               </span>
             </>
           ) : (
@@ -255,8 +256,9 @@ export function VariableAssignmentNodeConfig({
                         key={variable.id}
                         className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                         onClick={() => {
+                          // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateAssignment(assignment.id, {
-                            variableRef: `{{${variable.name}}}`,
+                            variableRef: `{{${variable.id}}}`,
                             variableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)

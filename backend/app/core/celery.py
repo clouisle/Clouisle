@@ -19,6 +19,7 @@ celery_app = Celery(
     include=[
         "app.tasks.knowledge_base",
         "app.tasks.usage",
+        "app.tasks.workflow",
     ],
 )
 
@@ -46,6 +47,7 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "default"},
     "app.tasks.usage.*": {"queue": "default"},
+    "app.tasks.workflow.*": {"queue": "workflow"},
 }
 
 # Beat schedule for periodic tasks

@@ -10,6 +10,7 @@ import { isValidVariableName } from '../utils'
 import { CodeEditor } from '../components/code-editor'
 import { TemplateInputDialog } from '../dialogs/template-input-dialog'
 import type { AvailableVariable } from '../types'
+import { extractVariableDisplayName } from '../types'
 import { 
   TemplateConfig, 
   TemplateInput,
@@ -124,7 +125,7 @@ export function TemplateNodeConfig({
                     </span>
                     {input.value && (
                       <span className="text-xs text-muted-foreground truncate">
-                        = {input.valueSource && `${input.valueSource} / `}{input.value.replace(/\{\{|\}\}/g, '')}
+                        = {input.valueSource && `${input.valueSource} / `}{extractVariableDisplayName(input.value)}
                       </span>
                     )}
                   </div>

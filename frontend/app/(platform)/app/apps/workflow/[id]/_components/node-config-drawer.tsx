@@ -2,13 +2,14 @@
 
 import * as React from 'react'
 import { Node, Edge } from '@xyflow/react'
-import { X } from 'lucide-react'
+import { X, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { ConditionBranch } from './nodes/condition-node'
 import { IterationConfig, defaultIterationConfig } from './nodes/iteration-node'
@@ -22,6 +23,7 @@ import { ParameterExtractorConfig, defaultParameterExtractorConfig } from './nod
 import { QuestionClassifierConfig, defaultQuestionClassifierConfig } from './nodes/question-classifier-node'
 import { AnswerNodeConfig as AnswerNodeConfigData, defaultAnswerNodeConfig } from './nodes/answer-node'
 import { ToolNodeConfig as ToolNodeConfigData, defaultToolNodeConfig } from './nodes/tool-node'
+import { COMMENT_COLORS, type CommentColor } from './nodes/comment-node'
 import {
   Parameter,
   AvailableVariable,
@@ -48,6 +50,12 @@ import {
   ToolNodeConfig,
   ParameterEditDialog,
   CodeInputDialog,
+  SubWorkflowNodeConfig,
+  type SubWorkflowNodeConfigType,
+  defaultSubWorkflowNodeConfig,
+  AgentNodeConfig,
+  type AgentNodeConfigType,
+  defaultAgentNodeConfig,
 } from './node-config'
 
 interface NodeConfigDrawerProps {
@@ -107,6 +115,17 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   
   // 工具节点配置状态
   const [toolConfig, setToolConfig] = React.useState<ToolNodeConfigData>(defaultToolNodeConfig)
+  
+  // 子工作流节点配置状态
+  const [subWorkflowConfig, setSubWorkflowConfig] = React.useState<SubWorkflowNodeConfigType>(defaultSubWorkflowNodeConfig)
+  
+  // Agent 节点配置状态
+  const [agentConfig, setAgentConfig] = React.useState<AgentNodeConfigType>(defaultAgentNodeConfig)
+  
+  // 注释节点配置状态
+  const [commentColor, setCommentColor] = React.useState<CommentColor>('amber')
+  const [commentContent, setCommentContent] = React.useState('')
+
   
   // 代码输入变量编辑模态框状态
   const [editingCodeInput, setEditingCodeInput] = React.useState<CodeInput | null>(null)
@@ -205,6 +224,23 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         const existingConfig = (node.data as { toolConfig?: ToolNodeConfigData })?.toolConfig
         setToolConfig(existingConfig || defaultToolNodeConfig)
       }
+      
+      if (nodeType === 'sub_workflow') {
+        const existingConfig = (node.data as { subWorkflowConfig?: SubWorkflowNodeConfigType })?.subWorkflowConfig
+        setSubWorkflowConfig(existingConfig || defaultSubWorkflowNodeConfig)
+      }
+      
+      if (nodeType === 'agent') {
+        const existingConfig = (node.data as { agentConfig?: AgentNodeConfigType })?.agentConfig
+        setAgentConfig(existingConfig || defaultAgentNodeConfig)
+      }
+      
+      if (nodeType === 'comment') {
+        const existingColor = (node.data as { color?: CommentColor })?.color
+        const existingContent = (node.data as { content?: string })?.content
+        setCommentColor(existingColor || 'amber')
+        setCommentContent(existingContent || '')
+      }
     }
   }, [node])
 
@@ -233,12 +269,18 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         if (nodeType === 'question_classifier') updateData.questionClassifierConfig = questionClassifierConfig
         if (nodeType === 'answer') updateData.answerConfig = answerConfig
         if (nodeType === 'tool') updateData.toolConfig = toolConfig
+        if (nodeType === 'sub_workflow') updateData.subWorkflowConfig = subWorkflowConfig
+        if (nodeType === 'agent') updateData.agentConfig = agentConfig
+        if (nodeType === 'comment') {
+          updateData.color = commentColor
+          updateData.content = commentContent
+        }
         
         onUpdate(node.id, updateData)
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, node, onUpdate])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, commentColor, commentContent, node, onUpdate])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -278,6 +320,110 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   const getAvailableVariables = React.useCallback((filterType?: 'iterable' | 'all'): AvailableVariable[] => {
     const variables: AvailableVariable[] = []
     const upstreamNodeIds = getUpstreamNodeIds()
+    
+    // 查找当前节点的父容器（循环/迭代节点）
+    // 优先使用 parentId，如果没有则尝试通过 data.parentIterationId 或 data.parentLoopId 查找
+    let parentNodeId = node?.parentId
+    if (!parentNodeId && node?.data) {
+      const nodeData = node.data as { parentIterationId?: string; parentLoopId?: string }
+      parentNodeId = nodeData.parentIterationId || nodeData.parentLoopId
+    }
+    
+    // 如果当前节点在循环/迭代容器内部，添加父节点的内部变量
+    if (parentNodeId) {
+      const parentNode = allNodes.find(n => n.id === parentNodeId)
+      if (parentNode) {
+        const parentType = parentNode.type || (parentNode.data as { type?: string })?.type
+        const parentLabel = (parentNode.data as { label?: string })?.label || parentType || '循环'
+        
+        if (parentType === 'iteration') {
+          // 迭代节点提供 item 和 index 变量给子节点
+          const iterConfig = (parentNode.data as { iterationConfig?: IterationConfig })?.iterationConfig || defaultIterationConfig
+          const itemVar = iterConfig.itemVariable || 'item'
+          const indexVar = iterConfig.indexVariable || 'index'
+          
+          // 根据迭代源推断 item 类型
+          variables.push({
+            id: `${parentNode.id}.${itemVar}`,
+            name: itemVar,
+            type: 'Any',
+            group: parentNode.id,
+            groupLabel: `${parentLabel} (迭代变量)`,
+            isSystem: false,
+            isArray: false,
+            isIterable: true,
+          })
+          
+          if (filterType !== 'iterable') {
+            variables.push({
+              id: `${parentNode.id}.${indexVar}`,
+              name: indexVar,
+              type: 'Number',
+              group: parentNode.id,
+              groupLabel: `${parentLabel} (迭代变量)`,
+              isSystem: false,
+              isArray: false,
+              isIterable: false,
+            })
+          }
+        } else if (parentType === 'loop') {
+          // 循环节点提供 index 和循环变量给子节点
+          const lpConfig = (parentNode.data as { loopConfig?: LoopConfig })?.loopConfig || defaultLoopConfig
+          const indexVar = lpConfig.indexVariable || 'index'
+          const loopVars = lpConfig.loopVariables || []
+          
+          if (filterType !== 'iterable') {
+            variables.push({
+              id: `${parentNode.id}.${indexVar}`,
+              name: indexVar,
+              type: 'Number',
+              group: parentNode.id,
+              groupLabel: `${parentLabel} (循环变量)`,
+              isSystem: false,
+              isArray: false,
+              isIterable: false,
+            })
+          }
+          
+          loopVars.forEach(loopVar => {
+            const isLoopVarArray = loopVar.type === 'array'
+            const isLoopVarObject = loopVar.type === 'object'
+            const isLoopVarIterable = isLoopVarArray || isLoopVarObject
+            
+            if (filterType === 'iterable' && !isLoopVarIterable) return
+            
+            variables.push({
+              id: `${parentNode.id}.${loopVar.name}`,
+              name: loopVar.name,
+              type: getLoopVarTypeName(loopVar.type),
+              group: parentNode.id,
+              groupLabel: `${parentLabel} (循环变量)`,
+              isSystem: false,
+              isArray: isLoopVarArray,
+              isIterable: isLoopVarIterable,
+            })
+          })
+        }
+        
+        // 添加父节点的上游节点到可用集合（父节点能引用的，子节点也能引用）
+        allEdges.forEach(edge => {
+          if (edge.target === parentNode.id) {
+            // 递归地找父节点的所有上游
+            const findUpstream = (nodeId: string, visited: Set<string>) => {
+              if (visited.has(nodeId)) return
+              visited.add(nodeId)
+              upstreamNodeIds.add(nodeId)
+              allEdges.forEach(e => {
+                if (e.target === nodeId) {
+                  findUpstream(e.source, visited)
+                }
+              })
+            }
+            findUpstream(edge.source, new Set())
+          }
+        })
+      }
+    }
     
     allNodes.forEach(n => {
       // 只包含上游节点的变量（排除当前节点和下游节点）
@@ -582,6 +728,44 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           isIterable: true, // Any 类型视为可迭代，以便能在任何场景使用
         })
       }
+      
+      // 子工作流节点输出变量
+      if (nodeType === 'sub_workflow') {
+        const swConfig = (n.data as { subWorkflowConfig?: SubWorkflowNodeConfigType })?.subWorkflowConfig || defaultSubWorkflowNodeConfig
+        const outputVar = swConfig.outputVariable || 'result'
+        
+        // Object 类型，因为子工作流输出是对象
+        variables.push({
+          id: `${n.id}.${outputVar}`,
+          name: outputVar,
+          type: 'Object',
+          group: n.id,
+          groupLabel: nodeLabel,
+          isSystem: false,
+          isArray: false,
+          isIterable: true,
+        })
+      }
+      
+      // Agent 节点输出变量
+      if (nodeType === 'agent') {
+        const aConfig = (n.data as { agentConfig?: AgentNodeConfigType })?.agentConfig || defaultAgentNodeConfig
+        const outputVar = aConfig.outputVariable || 'response'
+        
+        // String 类型，因为 Agent 输出是回复字符串
+        if (filterType !== 'iterable') {
+          variables.push({
+            id: `${n.id}.${outputVar}`,
+            name: outputVar,
+            type: 'String',
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray: false,
+            isIterable: false,
+          })
+        }
+      }
     })
     
     if (filterType !== 'iterable') {
@@ -600,7 +784,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
     }
     
     return variables
-  }, [allNodes, getUpstreamNodeIds])
+  }, [allNodes, allEdges, node, getUpstreamNodeIds])
 
   // 获取对话变量（可写入的目标变量，来自开始节点的参数）
   const getConversationVariables = React.useCallback((): AvailableVariable[] => {
@@ -828,13 +1012,28 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       
       case 'sub_workflow':
         return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>选择工作流</Label>
-              <p className="text-xs text-muted-foreground">选择要调用的子工作流</p>
-              <Button variant="outline" size="sm" className="w-full">选择工作流</Button>
-            </div>
-          </div>
+          <SubWorkflowNodeConfig
+            config={subWorkflowConfig}
+            variables={getAvailableVariables()}
+            variableSearch={variableSearch}
+            openVariablePopover={openVariablePopover}
+            onConfigChange={setSubWorkflowConfig}
+            onVariableSearchChange={setVariableSearch}
+            onOpenVariablePopoverChange={setOpenVariablePopover}
+          />
+        )
+      
+      case 'agent':
+        return (
+          <AgentNodeConfig
+            config={agentConfig}
+            variables={getAvailableVariables()}
+            variableSearch={variableSearch}
+            openVariablePopover={openVariablePopover}
+            onConfigChange={setAgentConfig}
+            onVariableSearchChange={setVariableSearch}
+            onOpenVariablePopoverChange={setOpenVariablePopover}
+          />
         )
       
       case 'tool':
@@ -863,6 +1062,53 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           />
         )
       
+      case 'comment':
+        return (
+          <div className="space-y-4">
+            {/* 内容编辑 */}
+            <div className="space-y-2">
+              <Label>注释内容</Label>
+              <Textarea
+                placeholder="输入注释内容（支持 Markdown）..."
+                value={commentContent}
+                onChange={(e) => setCommentContent(e.target.value)}
+                className="min-h-[120px] text-sm resize-none font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                支持 Markdown 语法：**粗体**、*斜体*、`代码`、列表等
+              </p>
+            </div>
+
+            {/* 便签颜色 */}
+            <div className="space-y-2">
+              <Label>便签颜色</Label>
+              <div className="grid grid-cols-6 gap-1.5">
+                {(Object.keys(COMMENT_COLORS) as CommentColor[]).map((colorKey) => {
+                  const colorConfig = COMMENT_COLORS[colorKey]
+                  return (
+                    <button
+                      key={colorKey}
+                      type="button"
+                      onClick={() => setCommentColor(colorKey)}
+                      className={cn(
+                        'w-7 h-7 rounded-md border-2 transition-all flex items-center justify-center',
+                        colorConfig.bg,
+                        commentColor === colorKey
+                          ? colorConfig.borderSelected
+                          : 'border-transparent hover:scale-110'
+                      )}
+                    >
+                      {commentColor === colorKey && (
+                        <Check className="h-3.5 w-3.5 text-foreground/70" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      
       default:
         return null
     }
@@ -871,7 +1117,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   return (
     <div
       className={cn(
-        'absolute top-2 right-2 bottom-2 w-[360px] bg-card border border-border rounded-xl shadow-xl z-40',
+        'absolute top-14 right-2 bottom-2 w-[360px] bg-card border border-border rounded-xl shadow-xl z-40',
         'transform transition-all duration-200 ease-out',
         open ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0 pointer-events-none'
       )}
@@ -892,45 +1138,53 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       {/* Content */}
       <ScrollArea className="h-[calc(100%-72px)]">
         <div className="p-4 pt-0 space-y-4">
-          <div className="space-y-2">
-            {!isStartNode && (
-              <div className="space-y-2">
-                <Label htmlFor="node-label">节点名称</Label>
-                <Input
-                  id="node-label"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="输入节点名称"
-                  className={cn(isNodeLabelDuplicate(label) && '!border-destructive !ring-destructive/20')}
-                />
-                {isNodeLabelDuplicate(label) && (
-                  <p className="text-[10px] text-destructive">节点名称与其他节点重复</p>
-                )}
-              </div>
-            )}
-            <Textarea
-              id="node-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="添加描述..."
-              className="min-h-[32px] h-8 text-xs resize-none border-transparent bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border focus:bg-muted/30 focus:px-2 focus:rounded-md transition-all"
-            />
-          </div>
+          {/* 注释节点不需要显示节点名称和描述 */}
+          {nodeType !== 'comment' && (
+            <div className="space-y-2">
+              {!isStartNode && (
+                <div className="space-y-2">
+                  <Label htmlFor="node-label">节点名称</Label>
+                  <Input
+                    id="node-label"
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    placeholder="输入节点名称"
+                    className={cn(isNodeLabelDuplicate(label) && '!border-destructive !ring-destructive/20')}
+                  />
+                  {isNodeLabelDuplicate(label) && (
+                    <p className="text-[10px] text-destructive">节点名称与其他节点重复</p>
+                  )}
+                </div>
+              )}
+              <Textarea
+                id="node-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="添加描述..."
+                className="min-h-[32px] h-8 text-xs resize-none border-transparent bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border focus:bg-muted/30 focus:px-2 focus:rounded-md transition-all"
+              />
+            </div>
+          )}
 
-          <Tabs defaultValue="settings" className="w-full">
-            <TabsList className="w-full grid grid-cols-2">
-              <TabsTrigger value="settings" className="text-xs">设置</TabsTrigger>
-              <TabsTrigger value="last-run" className="text-xs">上次执行</TabsTrigger>
-            </TabsList>
-            <TabsContent value="settings" className="mt-3">
-              {renderConfigFields()}
-            </TabsContent>
-            <TabsContent value="last-run" className="mt-3">
-              <div className="text-center py-6 text-muted-foreground text-xs">
-                暂无执行记录
-              </div>
-            </TabsContent>
-          </Tabs>
+          {/* 注释节点直接显示配置，不需要 Tabs */}
+          {nodeType === 'comment' ? (
+            renderConfigFields()
+          ) : (
+            <Tabs defaultValue="settings" className="w-full">
+              <TabsList className="w-full grid grid-cols-2">
+                <TabsTrigger value="settings" className="text-xs">设置</TabsTrigger>
+                <TabsTrigger value="last-run" className="text-xs">上次执行</TabsTrigger>
+              </TabsList>
+              <TabsContent value="settings" className="mt-3">
+                {renderConfigFields()}
+              </TabsContent>
+              <TabsContent value="last-run" className="mt-3">
+                <div className="text-center py-6 text-muted-foreground text-xs">
+                  暂无执行记录
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
         </div>
       </ScrollArea>
 

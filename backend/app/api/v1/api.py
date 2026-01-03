@@ -20,6 +20,8 @@ from app.api.v1.endpoints import (
     prompt_generator,
     workflows,
 )
+from app.api.v1 import workflow_metrics
+from app.api.v1 import workflow_versions
 
 api_router = APIRouter()
 api_router.include_router(login.router, tags=["login"])
@@ -51,4 +53,13 @@ api_router.include_router(
 )
 api_router.include_router(
     workflows.router, prefix="/workflows", tags=["workflows"]
+)
+api_router.include_router(
+    workflow_metrics.router, tags=["workflow-metrics"]
+)
+api_router.include_router(
+    workflow_versions.router, tags=["workflow-versions"]
+)
+api_router.include_router(
+    workflow_versions.template_router, tags=["workflow-templates"]
 )

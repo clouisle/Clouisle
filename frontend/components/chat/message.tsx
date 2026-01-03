@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
+import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Tooltip,
   TooltipContent,
@@ -88,6 +89,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const [copied, setCopied] = React.useState(false)
     const isUser = message.role === 'user'
     const isAssistant = message.role === 'assistant'
+    
+    // Image lightbox state
+    const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
 
     // Group sources together (only document sources for citations)
     const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
@@ -209,7 +213,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isImagePart(part)) {
         const imagePart = part as ImagePart
         return (
-          <div key={index} className="max-w-xs rounded-lg overflow-hidden">
+          <div 
+            key={index} 
+            className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => openLightbox(imagePart.url, imagePart.alt)}
+          >
             <img
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}
@@ -439,6 +447,14 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
           </AIMessage>
         </div>
+        
+        {/* Image Lightbox */}
+        <ImageLightbox
+          src={imageSrc}
+          alt={imageAlt}
+          isOpen={lightboxOpen}
+          onClose={closeLightbox}
+        />
       </div>
     )
   }

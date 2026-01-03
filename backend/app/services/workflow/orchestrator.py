@@ -1,0 +1,940 @@
+"""
+Workflow orchestrator.
+
+Main entry point for workflow execution. Coordinates execution plan,
+node executors, and stream events.
+"""
+
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+import asyncio
+import logging
+import time
+
+from tortoise.transactions import in_transaction
+
+from app.models.workflow import Workflow, WorkflowRun, RunStatus
+from app.core.redis import get_redis
+
+from .context import ExecutionContext
+from .errors import (
+    WorkflowNotFoundError,
+    WorkflowNotPublishedError,
+    WorkflowValidationError,
+    NodeExecutionError,
+    ExecutionTimeoutError,
+    ExecutionCancelledError,
+)
+from .executor import NodeExecutorRegistry, ExecutionResult
+from .plan import ExecutionPlan
+from .stream import StreamManager, StreamEventType
+from .retry import RetryableExecutor, get_retry_policy
+from .cache import WorkflowCache, get_workflow_cache
+from .metrics import MetricsCollector, get_metrics_collector, Timer
+from .profiler import ExecutionProfiler
+
+logger = logging.getLogger(__name__)
+
+# Default node labels by type (for nodes without label in data)
+NODE_TYPE_LABELS = {
+    "user_input": "开始",
+    "trigger": "触发器",
+    "llm": "LLM",
+    "answer": "回复",
+    "condition": "条件分支",
+    "question_classifier": "问题分类",
+    "code": "代码执行",
+    "http_request": "HTTP 请求",
+    "tool": "工具",
+    "sub_workflow": "子工作流",
+    "variable_assignment": "变量赋值",
+    "variable_aggregator": "变量聚合",
+    "parameter_extractor": "参数提取",
+    "iteration": "迭代",
+    "agent": "Agent",
+    "end": "结束",
+}
+
+
+class WorkflowOrchestrator:
+    """
+    Orchestrates workflow execution.
+
+    Handles:
+    - Workflow loading and validation
+    - Execution plan generation
+    - Node execution coordination
+    - Stream event publishing
+    - Error handling and cleanup
+
+    Example:
+        orchestrator = WorkflowOrchestrator()
+        run_id = await orchestrator.run(
+            workflow_id=uuid,
+            inputs={"query": "Hello"},
+            user_id=user_uuid,
+        )
+    """
+
+    def __init__(
+        self,
+        timeout: int = 300,  # 5 minutes default
+        max_nodes: int = 100,
+        enable_retry: bool = True,
+        enable_cache: bool = True,
+        enable_metrics: bool = True,
+        enable_profiling: bool = False,
+    ):
+        """
+        Initialize orchestrator.
+
+        Args:
+            timeout: Maximum execution time in seconds
+            max_nodes: Maximum number of nodes to execute
+            enable_retry: Whether to enable retry for failed nodes
+            enable_cache: Whether to enable caching
+            enable_metrics: Whether to enable metrics collection
+            enable_profiling: Whether to enable detailed profiling
+        """
+        self.timeout = timeout
+        self.max_nodes = max_nodes
+        self.enable_retry = enable_retry
+        self.enable_cache = enable_cache
+        self.enable_metrics = enable_metrics
+        self.enable_profiling = enable_profiling
+
+        # Get global instances
+        self._cache = get_workflow_cache() if enable_cache else None
+        self._metrics = get_metrics_collector() if enable_metrics else None
+
+    async def run(
+        self,
+        workflow_id: UUID,
+        inputs: dict[str, Any],
+        user_id: UUID,
+        team_id: UUID | None = None,
+        stream: bool = True,
+    ) -> str:
+        """
+        Run a workflow.
+
+        Args:
+            workflow_id: Workflow UUID
+            inputs: Input variables
+            user_id: User UUID triggering the run
+            team_id: Optional team UUID
+            stream: Whether to enable streaming
+
+        Returns:
+            Run ID (UUID string)
+
+        Raises:
+            WorkflowNotFoundError: If workflow doesn't exist
+            WorkflowNotPublishedError: If workflow has no published version
+        """
+        start_time = time.time()
+
+        # Load workflow (with cache)
+        workflow = await self._load_workflow(workflow_id)
+
+        # Get workflow definition (with cache)
+        workflow_def = await self._get_workflow_definition(workflow)
+
+        # Create run record
+        run = await self._create_run(
+            workflow=workflow,
+            inputs=inputs,
+            user_id=user_id,
+            team_id=team_id,
+        )
+
+        # Record metrics - workflow start
+        if self._metrics:
+            await self._metrics.record_workflow_start(str(run.id), str(workflow_id))
+
+        # Create profiler if enabled
+        profiler = None
+        if self.enable_profiling:
+            profiler = ExecutionProfiler(
+                run_id=str(run.id),
+                workflow_id=str(workflow_id),
+                workflow_name=workflow.name,
+            )
+            profiler.start()
+
+        # Create execution context
+        redis_client = await get_redis()
+        context = await ExecutionContext.create(
+            run_id=str(run.id),
+            redis_client=redis_client,
+            workflow_id=str(workflow_id),
+        )
+        await context.set_inputs(inputs)
+
+        # Create stream manager
+        stream_manager = StreamManager(str(run.id)) if stream else None
+
+        node_count = 0
+
+        try:
+            # Build execution plan (with cache)
+            plan = await self._get_execution_plan(workflow_id, workflow_def)
+
+            # Validate plan
+            errors = plan.validate()
+            if errors:
+                raise WorkflowValidationError(
+                    message=f"Workflow validation failed: {', '.join(errors)}",
+                )
+
+            # Publish workflow start event
+            if stream_manager:
+                await stream_manager.publish_workflow_start(
+                    workflow_id=str(workflow_id),
+                    workflow_name=workflow.name,
+                    inputs=inputs,
+                )
+
+            # Execute workflow
+            outputs, node_count = await self._execute(
+                plan=plan,
+                context=context,
+                run=run,
+                stream_manager=stream_manager,
+                start_time=start_time,
+                profiler=profiler,
+            )
+
+            # Update run record
+            duration_ms = int((time.time() - start_time) * 1000)
+            await self._complete_run(run, outputs, duration_ms)
+
+            # Record metrics - workflow complete
+            if self._metrics:
+                await self._metrics.record_workflow_complete(
+                    run_id=str(run.id),
+                    workflow_id=str(workflow_id),
+                    duration_ms=duration_ms,
+                    status="success",
+                    node_count=node_count,
+                )
+
+            # Finish profiling
+            if profiler:
+                profile = profiler.finish()
+                # Store profile in context for later retrieval
+                await context.set_variable("_profile", profiler.to_dict())
+
+            # Publish workflow complete event
+            if stream_manager:
+                await stream_manager.publish_workflow_complete(
+                    outputs=outputs,
+                    duration_ms=duration_ms,
+                )
+
+            return str(run.id)
+
+        except Exception as e:
+            # Handle errors
+            duration_ms = int((time.time() - start_time) * 1000)
+            error_msg = str(e)
+
+            await self._fail_run(run, error_msg, duration_ms)
+
+            # Record metrics - workflow failed
+            if self._metrics:
+                await self._metrics.record_workflow_complete(
+                    run_id=str(run.id),
+                    workflow_id=str(workflow_id),
+                    duration_ms=duration_ms,
+                    status="failed",
+                    node_count=node_count,
+                    error=error_msg,
+                )
+
+            # Finish profiling even on error
+            if profiler:
+                profiler.finish()
+
+            if stream_manager:
+                node_id = getattr(e, "node_id", None)
+                await stream_manager.publish_workflow_error(
+                    error=error_msg,
+                    node_id=node_id,
+                )
+
+            raise
+
+    async def run_with_run_id(
+        self,
+        run_id: UUID,
+        workflow_id: UUID,
+        inputs: dict[str, Any],
+        user_id: UUID,
+        team_id: UUID | None = None,
+        stream: bool = True,
+        is_debug: bool = False,
+    ) -> str:
+        """
+        Run a workflow with an existing run record.
+
+        This is used for background execution where the run record
+        is created before starting the actual execution.
+
+        Args:
+            run_id: Existing run UUID
+            workflow_id: Workflow UUID
+            inputs: Input variables
+            user_id: User UUID triggering the run
+            team_id: Optional team UUID
+            stream: Whether to enable streaming
+            is_debug: Whether this is a debug run (not used currently)
+
+        Returns:
+            Run ID (UUID string)
+        """
+        start_time = time.time()
+
+        # Load workflow
+        workflow = await self._load_workflow(workflow_id)
+
+        # Get workflow definition
+        workflow_def = await self._get_workflow_definition(workflow)
+
+        # Load existing run record
+        run = await WorkflowRun.filter(id=run_id).first()
+        if not run:
+            raise WorkflowNotFoundError(f"Run {run_id} not found")
+
+        # Update run status to running
+        run.status = RunStatus.RUNNING
+        run.started_at = datetime.utcnow()
+        await run.save()
+
+        # Record metrics - workflow start
+        if self._metrics:
+            await self._metrics.record_workflow_start(str(run.id), str(workflow_id))
+
+        # Create profiler if enabled
+        profiler = None
+        if self.enable_profiling:
+            profiler = ExecutionProfiler(
+                run_id=str(run.id),
+                workflow_id=str(workflow_id),
+                workflow_name=workflow.name,
+            )
+            profiler.start()
+
+        # Create execution context
+        redis_client = await get_redis()
+        context = await ExecutionContext.create(
+            run_id=str(run.id),
+            redis_client=redis_client,
+            workflow_id=str(workflow_id),
+        )
+        await context.set_inputs(inputs)
+
+        # Create stream manager
+        stream_manager = StreamManager(str(run.id)) if stream else None
+
+        node_count = 0
+
+        try:
+            # Build execution plan
+            plan = await self._get_execution_plan(workflow_id, workflow_def)
+
+            # Validate plan
+            errors = plan.validate()
+            if errors:
+                raise WorkflowValidationError(
+                    message=f"Workflow validation failed: {', '.join(errors)}",
+                )
+
+            # Publish workflow start event
+            if stream_manager:
+                await stream_manager.publish_workflow_start(
+                    workflow_id=str(workflow_id),
+                    workflow_name=workflow.name,
+                    inputs=inputs,
+                )
+
+            # Execute workflow
+            outputs, node_count = await self._execute(
+                plan=plan,
+                context=context,
+                run=run,
+                stream_manager=stream_manager,
+                start_time=start_time,
+                profiler=profiler,
+            )
+
+            # Update run record
+            duration_ms = int((time.time() - start_time) * 1000)
+            await self._complete_run(run, outputs, duration_ms)
+
+            # Record metrics
+            if self._metrics:
+                await self._metrics.record_workflow_complete(
+                    run_id=str(run.id),
+                    workflow_id=str(workflow_id),
+                    duration_ms=duration_ms,
+                    status="success",
+                    node_count=node_count,
+                )
+
+            # Finish profiling
+            if profiler:
+                profiler.finish()
+                await context.set_variable("_profile", profiler.to_dict())
+
+            # Publish workflow complete event
+            if stream_manager:
+                await stream_manager.publish_workflow_complete(
+                    outputs=outputs,
+                    duration_ms=duration_ms,
+                )
+
+            return str(run.id)
+
+        except Exception as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            error_msg = str(e)
+
+            await self._fail_run(run, error_msg, duration_ms)
+
+            if self._metrics:
+                await self._metrics.record_workflow_complete(
+                    run_id=str(run.id),
+                    workflow_id=str(workflow_id),
+                    duration_ms=duration_ms,
+                    status="failed",
+                    node_count=node_count,
+                    error=error_msg,
+                )
+
+            if profiler:
+                profiler.finish()
+
+            if stream_manager:
+                node_id = getattr(e, "node_id", None)
+                await stream_manager.publish_workflow_error(
+                    error=error_msg,
+                    node_id=node_id,
+                )
+
+            raise
+
+    async def _load_workflow(self, workflow_id: UUID) -> Workflow:
+        """Load workflow from database."""
+        workflow = await Workflow.filter(id=workflow_id).first()
+        if not workflow:
+            raise WorkflowNotFoundError(str(workflow_id))
+        return workflow
+
+    async def _get_workflow_definition(self, workflow: Workflow) -> dict:
+        """Get workflow definition (with caching)."""
+        if not workflow.definition:
+            raise WorkflowNotPublishedError(workflow.name)
+
+        # Try cache first
+        if self._cache:
+            cached = await self._cache.get_workflow(
+                str(workflow.id),
+                version=str(workflow.updated_at.timestamp()) if workflow.updated_at else None,
+            )
+            if cached:
+                return cached
+
+            # Cache the definition
+            await self._cache.set_workflow(
+                str(workflow.id),
+                workflow.definition,
+                version=str(workflow.updated_at.timestamp()) if workflow.updated_at else None,
+            )
+
+        return workflow.definition
+
+    async def _get_execution_plan(
+        self,
+        workflow_id: UUID,
+        workflow_def: dict,
+    ) -> ExecutionPlan:
+        """Get execution plan (with caching)."""
+        # Build plan from workflow definition
+        # Note: We always rebuild the plan from workflow_def since the cached
+        # version (to_dict) only contains summary info, not full node data.
+        # The caching benefit comes from caching workflow_def itself.
+        plan = ExecutionPlan.from_workflow(workflow_def)
+
+        return plan
+
+    async def _create_run(
+        self,
+        workflow: Workflow,
+        inputs: dict,
+        user_id: UUID,
+        team_id: UUID | None,
+    ) -> WorkflowRun:
+        """Create a new workflow run record."""
+        run = await WorkflowRun.create(
+            workflow_id=workflow.id,
+            triggered_by_id=user_id,
+            trigger_type=workflow.trigger_type,
+            inputs=inputs,
+            status="running",
+        )
+        logger.info(f"Created workflow run {run.id}")
+        return run
+
+    async def _complete_run(
+        self,
+        run: WorkflowRun,
+        outputs: dict,
+        duration_ms: int,
+    ) -> None:
+        """Mark run as completed."""
+        run.status = "success"
+        run.outputs = outputs
+        run.total_duration_ms = duration_ms
+        run.finished_at = datetime.utcnow()
+        await run.save()
+        logger.info(f"Completed workflow run {run.id}")
+
+    async def _fail_run(
+        self,
+        run: WorkflowRun,
+        error: str,
+        duration_ms: int,
+    ) -> None:
+        """Mark run as failed."""
+        run.status = "failed"
+        run.error_message = error
+        run.total_duration_ms = duration_ms
+        run.finished_at = datetime.utcnow()
+        await run.save()
+        logger.error(f"Failed workflow run {run.id}: {error}")
+
+    async def _execute(
+        self,
+        plan: ExecutionPlan,
+        context: ExecutionContext,
+        run: WorkflowRun,
+        stream_manager: StreamManager | None,
+        start_time: float,
+        profiler: ExecutionProfiler | None = None,
+    ) -> tuple[dict[str, Any], int]:
+        """
+        Execute the workflow according to the plan.
+
+        Args:
+            plan: Execution plan
+            context: Execution context
+            run: Workflow run record
+            stream_manager: Stream manager for events
+            start_time: Execution start time
+            profiler: Optional execution profiler
+
+        Returns:
+            Tuple of (final outputs dictionary, node count)
+        """
+        executed_nodes = set()
+        skipped_nodes = set()
+        node_count = 0
+        final_outputs = {}
+
+        # Track iteration state for loop/iteration nodes
+        iteration_nodes: dict[str, dict] = {}
+
+        # Execute stages sequentially
+        for stage in plan.stages:
+            # Check timeout
+            if time.time() - start_time > self.timeout:
+                raise ExecutionTimeoutError(self.timeout)
+
+            # Check if cancelled
+            status = await context.get_status()
+            if status == "cancelled":
+                raise ExecutionCancelledError()
+
+            # Filter nodes that should be executed in this stage
+            nodes_to_execute = []
+            for node_id in stage.node_ids:
+                # Skip if already executed or skipped
+                if node_id in executed_nodes or node_id in skipped_nodes:
+                    continue
+
+                # Check if node should be skipped due to branch
+                node = plan.get_node(node_id)
+                if node:
+                    # Check if any upstream node was skipped
+                    if node.upstream & skipped_nodes:
+                        # This node's branch was not taken
+                        skipped_nodes.add(node_id)
+                        if stream_manager:
+                            node_label = (
+                                node.node_data.get("data", {}).get("label")
+                                or NODE_TYPE_LABELS.get(node.node_type)
+                                or node_id
+                            )
+                            await stream_manager.publish_node_skip(
+                                node_id=node_id,
+                                reason="upstream_skipped",
+                                node_type=node.node_type,
+                                node_label=node_label,
+                            )
+                        continue
+
+                nodes_to_execute.append(node_id)
+
+            # Execute nodes in this stage
+            for node_id in nodes_to_execute:
+                node_count += 1
+                if node_count > self.max_nodes:
+                    raise NodeExecutionError(
+                        node_id=node_id,
+                        message=f"Exceeded maximum node count: {self.max_nodes}",
+                    )
+
+                # Execute single node
+                result = await self._execute_node(
+                    node_id=node_id,
+                    plan=plan,
+                    context=context,
+                    run=run,
+                    stream_manager=stream_manager,
+                )
+
+                # Check for iteration/loop nodes
+                node = plan.get_node(node_id)
+                if node and node.node_type in ("iteration", "loop"):
+                    iteration_complete = result.outputs.get("_iteration_complete") or \
+                                        result.outputs.get("_loop_complete", False)
+
+                    if not iteration_complete:
+                        # Need to loop - execute downstream nodes then come back
+                        downstream_nodes = plan.get_downstream_nodes(node_id)
+                        if downstream_nodes:
+                            # Execute iteration body
+                            await self._execute_iteration_body(
+                                iteration_node_id=node_id,
+                                downstream_nodes=downstream_nodes,
+                                plan=plan,
+                                context=context,
+                                run=run,
+                                stream_manager=stream_manager,
+                                start_time=start_time,
+                                executed_nodes=executed_nodes,
+                                skipped_nodes=skipped_nodes,
+                            )
+
+                            # Re-execute iteration node to check condition/get next item
+                            # Clear from executed so it can run again
+                            executed_nodes.discard(node_id)
+                            continue
+
+                executed_nodes.add(node_id)
+
+                # Handle branching
+                if result.next_handles:
+                    # Condition node - mark non-taken branches for skipping
+                    if node:
+                        all_handles = set(node.handle_map.keys())
+                        taken_handles = set(result.next_handles)
+                        skipped_handles = all_handles - taken_handles
+                        
+                        logger.info(f"Branching node {node_id}: all_handles={all_handles}, taken={taken_handles}, skipped={skipped_handles}")
+                        logger.info(f"Handle map: {node.handle_map}")
+
+                        for handle in skipped_handles:
+                            # Mark all downstream nodes of skipped branches
+                            downstream = node.handle_map.get(handle, [])
+                            logger.info(f"Skipping handle {handle}, downstream nodes: {downstream}")
+                            for downstream_id in downstream:
+                                skipped_nodes.add(downstream_id)
+                                # Also add all nodes reachable from this
+                                all_downstream = plan.get_all_downstream(downstream_id)
+                                skipped_nodes.update(all_downstream)
+                                logger.info(f"Skipping node {downstream_id} and all downstream: {all_downstream}")
+                                if stream_manager:
+                                    downstream_node = plan.get_node(downstream_id)
+                                    if downstream_node:
+                                        downstream_label = (
+                                            downstream_node.node_data.get("data", {}).get("label")
+                                            or NODE_TYPE_LABELS.get(downstream_node.node_type)
+                                            or downstream_id
+                                        )
+                                    else:
+                                        downstream_label = downstream_id
+                                    await stream_manager.publish_node_skip(
+                                        node_id=downstream_id,
+                                        reason="branch_not_taken",
+                                        node_type=downstream_node.node_type if downstream_node else None,
+                                        node_label=downstream_label,
+                                    )
+
+                # Collect final outputs from answer nodes
+                if node and node.node_type == "answer":
+                    final_outputs.update(result.outputs)
+
+        return final_outputs, node_count
+
+    async def _execute_iteration_body(
+        self,
+        iteration_node_id: str,
+        downstream_nodes: list[str],
+        plan: ExecutionPlan,
+        context: ExecutionContext,
+        run: WorkflowRun,
+        stream_manager: StreamManager | None,
+        start_time: float,
+        executed_nodes: set,
+        skipped_nodes: set,
+    ) -> None:
+        """
+        Execute the body of an iteration/loop.
+
+        This recursively executes downstream nodes until we reach
+        nodes that connect back to the iteration node or end nodes.
+        """
+        # Get all nodes in the iteration body
+        body_nodes = set()
+        queue = list(downstream_nodes)
+
+        while queue:
+            node_id = queue.pop(0)
+            if node_id in body_nodes:
+                continue
+            if node_id == iteration_node_id:
+                continue  # Don't include the iteration node itself
+
+            body_nodes.add(node_id)
+            node = plan.get_node(node_id)
+            if node:
+                for downstream_id in node.downstream:
+                    if downstream_id not in body_nodes and downstream_id != iteration_node_id:
+                        queue.append(downstream_id)
+
+        # Execute body nodes in order
+        execution_order = plan.get_execution_order()
+        ordered_body_nodes = [n for n in execution_order if n in body_nodes]
+
+        for node_id in ordered_body_nodes:
+            # Check timeout
+            if time.time() - start_time > self.timeout:
+                raise ExecutionTimeoutError(self.timeout)
+
+            # Check if cancelled
+            status = await context.get_status()
+            if status == "cancelled":
+                raise ExecutionCancelledError()
+
+            # Skip if upstream is skipped
+            node = plan.get_node(node_id)
+            if node and node.upstream & skipped_nodes:
+                continue
+
+            # Execute node
+            result = await self._execute_node(
+                node_id=node_id,
+                plan=plan,
+                context=context,
+                run=run,
+                stream_manager=stream_manager,
+            )
+
+            # Handle branching within iteration body
+            if result.next_handles and node:
+                all_handles = set(node.handle_map.keys())
+                taken_handles = set(result.next_handles)
+                skipped_handles = all_handles - taken_handles
+
+                for handle in skipped_handles:
+                    downstream = node.handle_map.get(handle, [])
+                    for downstream_id in downstream:
+                        if downstream_id in body_nodes:
+                            skipped_nodes.add(downstream_id)
+
+    async def _execute_node(
+        self,
+        node_id: str,
+        plan: ExecutionPlan,
+        context: ExecutionContext,
+        run: WorkflowRun,
+        stream_manager: StreamManager | None,
+    ) -> ExecutionResult:
+        """
+        Execute a single node.
+
+        Args:
+            node_id: Node ID to execute
+            plan: Execution plan
+            context: Execution context
+            run: Workflow run record
+            stream_manager: Stream manager for events
+
+        Returns:
+            Execution result
+        """
+        node_info = plan.get_node(node_id)
+        if not node_info:
+            raise NodeExecutionError(
+                node_id=node_id,
+                message="Node not found in execution plan",
+            )
+
+        node_type = node_info.node_type
+        node_data = node_info.node_data
+        # Get label from node_data.data.label (React Flow node structure)
+        # Fall back to default label by type, then node_id
+        node_inner_data = node_data.get("data", {})
+        node_label = (
+            node_inner_data.get("label") 
+            or NODE_TYPE_LABELS.get(node_type) 
+            or node_id
+        )
+        
+        logger.debug(f"Execute node {node_id}: type={node_type}, label={node_label}, data_keys={list(node_inner_data.keys())}")
+
+        # Check if this is a streaming answer node
+        is_streaming_answer = False
+        if node_type == "answer":
+            answer_config = node_data.get("data", {}).get("answerConfig", {})
+            streaming_config = answer_config.get("streaming", {})
+            is_streaming_answer = streaming_config.get("enabled", False)
+
+        # Publish node start
+        if stream_manager:
+            await stream_manager.publish_node_start(
+                node_id=node_id,
+                node_type=node_type,
+                node_label=node_label,
+                is_streaming=is_streaming_answer,
+            )
+
+        start_time = time.time()
+
+        try:
+            # Get executor
+            executor = NodeExecutorRegistry.get(node_type)
+
+            # Wrap with retry if enabled
+            if self.enable_retry:
+                policy = get_retry_policy(node_type)
+                retryable = RetryableExecutor(executor, policy)
+                result = await retryable.execute(
+                    node=node_data,
+                    context=context,
+                    run=run,
+                )
+            else:
+                # Execute directly without retry
+                result = await executor.execute(
+                    node=node_data,
+                    context=context,
+                    run=run,
+                )
+
+            if not result.success:
+                raise NodeExecutionError(
+                    node_id=node_id,
+                    node_type=node_type,
+                    message=result.error or "Unknown error",
+                )
+
+            # Store outputs in context
+            await context.set_node_outputs(node_id, result.outputs)
+
+            # Publish node complete (filter out lazy results for serialization)
+            duration_ms = int((time.time() - start_time) * 1000)
+            if stream_manager:
+                from .lazy_stream import LazyStreamResult
+                # Filter outputs for serialization - lazy results are placeholders
+                serializable_outputs = {
+                    k: (v if not isinstance(v, LazyStreamResult) else "__LAZY_STREAM__")
+                    for k, v in result.outputs.items()
+                }
+                await stream_manager.publish_node_complete(
+                    node_id=node_id,
+                    outputs=serializable_outputs,
+                    duration_ms=duration_ms,
+                    node_type=node_type,
+                    is_streaming=is_streaming_answer,
+                )
+
+            return result
+
+        except NodeExecutionError:
+            raise
+        except Exception as e:
+            error_msg = f"Node execution error: {str(e)}"
+            if stream_manager:
+                await stream_manager.publish_node_error(
+                    node_id=node_id,
+                    error=error_msg,
+                )
+            raise NodeExecutionError(
+                node_id=node_id,
+                node_type=node_type,
+                message=error_msg,
+            ) from e
+
+    async def cancel(self, run_id: str) -> bool:
+        """
+        Cancel a running workflow.
+
+        Args:
+            run_id: Run ID to cancel
+
+        Returns:
+            True if cancelled, False if not found or already completed
+        """
+        run = await WorkflowRun.filter(id=run_id).first()
+        if not run:
+            return False
+
+        if run.status != "running":
+            return False
+
+        run.status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        await run.save()
+
+        # Set cancelled status in context
+        context = await ExecutionContext.load(run_id)
+        await context.set_status("cancelled")
+
+        # Publish cancel event
+        stream_manager = StreamManager(run_id)
+        await stream_manager.publish_workflow_error(
+            error="Workflow cancelled by user"
+        )
+
+        logger.info(f"Cancelled workflow run {run_id}")
+        return True
+
+    async def get_run_status(self, run_id: str) -> dict | None:
+        """
+        Get the status of a workflow run.
+
+        Args:
+            run_id: Run ID
+
+        Returns:
+            Status dictionary or None if not found
+        """
+        run = await WorkflowRun.filter(id=run_id).first()
+        if not run:
+            return None
+
+        return {
+            "id": str(run.id),
+            "workflow_id": str(run.workflow_id),
+            "status": run.status,
+            "inputs": run.inputs,
+            "outputs": run.outputs,
+            "error": run.error_message,
+            "duration_ms": run.total_duration_ms,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        }

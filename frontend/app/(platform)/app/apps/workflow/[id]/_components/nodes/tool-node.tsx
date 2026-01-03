@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position, useReactFlow } from '@xyflow/react'
-import { Wrench, Plus, MoreHorizontal, AlertCircle } from 'lucide-react'
+import { Wrench, Plus, MoreHorizontal, AlertCircle, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ToolCategory, ToolType } from '@/lib/api'
 
@@ -120,6 +120,9 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">工具</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
+          <button className="p-1 rounded hover:bg-background" title="调试运行">
+            <Play className="h-3 w-3 text-muted-foreground" />
+          </button>
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
           </button>
@@ -140,7 +143,7 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
 
@@ -232,7 +235,7 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
       </div>

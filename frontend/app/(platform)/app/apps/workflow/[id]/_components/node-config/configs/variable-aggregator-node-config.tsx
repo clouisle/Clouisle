@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
+import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
 import { 
   VariableAggregatorConfig, 
@@ -131,7 +132,7 @@ export function VariableAggregatorNodeConfig({
               <span className="text-primary/80 font-mono text-xs">{'{x}'}</span>
               <span className="text-xs truncate">
                 {varMapping.sourceNodeLabel && <span className="text-muted-foreground">{varMapping.sourceNodeLabel} / </span>}
-                {varMapping.sourceVariable.replace(/\{\{|\}\}/g, '')}
+                {extractVariableDisplayName(varMapping.sourceVariable)}
               </span>
             </>
           ) : (
@@ -174,8 +175,9 @@ export function VariableAggregatorNodeConfig({
                         key={variable.id}
                         className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                         onClick={() => {
+                          // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateVariable(varMapping.id, {
-                            sourceVariable: `{{${variable.name}}}`,
+                            sourceVariable: `{{${variable.id}}}`,
                             sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
                             // 如果是 object 模式且没有设置 targetKey，自动从变量名推断
                             targetKey: safeConfig.mode === 'object' && !varMapping.targetKey 

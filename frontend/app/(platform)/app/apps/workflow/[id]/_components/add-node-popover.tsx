@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText } from 'lucide-react'
+import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AddNodePopoverProps {
@@ -46,6 +46,7 @@ const nodeCategories = [
     label: '扩展',
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
+      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
       { type: 'answer', icon: MessageSquareText, color: 'bg-emerald-500', title: '输出', description: '定义工作流输出' },
     ],
@@ -83,6 +84,7 @@ const iterationNodeCategories = [
     label: '扩展',
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
+      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
     ],
   },
@@ -119,6 +121,7 @@ const loopNodeCategories = [
     label: '扩展',
     nodes: [
       { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
+      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
       { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
     ],
   },
@@ -126,6 +129,7 @@ const loopNodeCategories = [
 
 export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsideIteration, isInsideLoop, onSelect, onClose }: AddNodePopoverProps) {
   const popoverRef = React.useRef<HTMLDivElement>(null)
+  const [adjustedPosition, setAdjustedPosition] = React.useState(position)
   
   // 根据是否在容器内选择节点分类
   const categories = isInsideIteration 
@@ -133,6 +137,46 @@ export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsid
     : isInsideLoop 
       ? loopNodeCategories 
       : nodeCategories
+
+  // 调整位置确保不超出屏幕
+  React.useEffect(() => {
+    if (!popoverRef.current) return
+    
+    const popover = popoverRef.current
+    const rect = popover.getBoundingClientRect()
+    const padding = 16 // 距离屏幕边缘的最小间距
+    
+    let newX = position.x
+    let newY = position.y
+    
+    // 检查右边界
+    if (position.x + rect.width + padding > window.innerWidth) {
+      // 如果右边超出，放到左边
+      newX = position.x - rect.width - 16
+    }
+    
+    // 检查左边界
+    if (newX < padding) {
+      newX = padding
+    }
+    
+    // 检查底部边界（考虑 transform: translate(0, -50%)）
+    const halfHeight = rect.height / 2
+    if (position.y + halfHeight + padding > window.innerHeight) {
+      newY = window.innerHeight - halfHeight - padding
+    }
+    
+    // 检查顶部边界
+    if (position.y - halfHeight < padding) {
+      newY = halfHeight + padding
+    }
+    
+    if (newX !== position.x || newY !== position.y) {
+      setAdjustedPosition({ x: newX, y: newY })
+    } else {
+      setAdjustedPosition(position)
+    }
+  }, [position])
 
   // Close when clicking outside
   React.useEffect(() => {
@@ -167,30 +211,25 @@ export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsid
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-[220px] rounded-xl border border-border bg-card shadow-xl animate-in fade-in-0 zoom-in-95"
+      className="fixed z-50 w-44 rounded-lg border border-border bg-card shadow-xl animate-in fade-in-0 zoom-in-95"
       style={{
-        left: position.x,
-        top: position.y,
-        transform: 'translate(8px, -50%)',
+        left: adjustedPosition.x,
+        top: adjustedPosition.y,
+        transform: adjustedPosition.x !== position.x ? 'translate(-100%, -50%)' : 'translate(8px, -50%)',
       }}
     >
-      <div className="p-3 border-b border-border flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">添加节点</h3>
-          <p className="text-xs text-muted-foreground">选择要添加的节点类型</p>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md hover:bg-muted transition-colors"
-        >
-          <X className="h-4 w-4 text-muted-foreground" />
-        </button>
-      </div>
-      <div className="p-2 space-y-3 max-h-[400px] overflow-y-auto">
+      {/* 关闭按钮 */}
+      <button
+        onClick={onClose}
+        className="absolute -top-2 -right-2 p-1 rounded-full bg-card border border-border hover:bg-muted transition-colors shadow-sm cursor-pointer"
+      >
+        <X className="h-3 w-3 text-muted-foreground" />
+      </button>
+      <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto">
         {categories.map((category) => (
           <div key={category.label}>
-            <p className="text-xs text-muted-foreground px-2 pb-1">{category.label}</p>
-            <div className="space-y-1">
+            <p className="text-[10px] text-muted-foreground px-2 py-1">{category.label}</p>
+            <div className="space-y-0.5">
               {category.nodes.map((node) => {
                 const Icon = node.icon
                 return (
@@ -198,17 +237,14 @@ export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsid
                     key={node.type}
                     onClick={() => onSelect(node.type, sourceNodeId, sourceHandleId)}
                     className={cn(
-                      'w-full flex items-center gap-3 p-2 rounded-lg',
+                      'w-full flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer',
                       'hover:bg-accent transition-colors text-left'
                     )}
                   >
-                    <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg text-white shrink-0', node.color)}>
-                      <Icon className="h-4 w-4" />
+                    <div className={cn('flex h-6 w-6 items-center justify-center rounded-md text-white shrink-0', node.color)}>
+                      <Icon className="h-3.5 w-3.5" />
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{node.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">{node.description}</p>
-                    </div>
+                    <span className="text-sm truncate">{node.title}</span>
                   </button>
                 )
               })}

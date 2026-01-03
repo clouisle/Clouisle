@@ -31,7 +31,7 @@ export function StartNode({ selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bg-green-500 !border-2 !border-white !w-3 !h-3"
+        className="!bg-green-500 !border-2 !border-white !w-3 !h-3 transition-transform hover:scale-150"
       />
     </div>
   )

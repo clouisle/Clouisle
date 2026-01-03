@@ -7,7 +7,6 @@ import { toast } from 'sonner'
 import {
   ReactFlow,
   Background,
-  Controls,
   MiniMap,
   Panel,
   useNodesState,
@@ -15,7 +14,9 @@ import {
   addEdge,
   Connection,
   BackgroundVariant,
+  SelectionMode,
   useReactFlow,
+  useViewport,
   ReactFlowProvider,
   OnConnectStart,
   OnConnectEnd,
@@ -29,10 +30,44 @@ import {
   Play,
   Settings,
   Loader2,
+  Minus,
+  Plus,
+  PlusCircle,
+  MousePointer2,
+  Hand,
+  Sparkles,
+  Maximize,
+  StickyNote,
+  ClipboardCheck,
+  Globe,
+  GlobeLock,
+  LayoutGrid,
+  ExternalLink,
+  FileText,
+  Activity,
+  GitBranch,
 } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { workflowsApi, Workflow } from '@/lib/api/workflows'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { workflowsApi, Workflow, VariableDefinition } from '@/lib/api/workflows'
+import { authApi, User } from '@/lib/api/auth'
 
 // Custom Node Types
 import { UserInputNode } from './_components/nodes/user-input-node'
@@ -40,6 +75,7 @@ import { TriggerNode } from './_components/nodes/trigger-node'
 import { LLMNode } from './_components/nodes/llm-node'
 import { ConditionNode } from './_components/nodes/condition-node'
 import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
+import { AgentNode } from './_components/nodes/agent-node'
 import { ToolNode } from './_components/nodes/tool-node'
 import { IterationNode, IterationStartNode, IterationExitNode } from './_components/nodes/iteration-node'
 import { LoopNode, LoopStartNode, LoopExitNode } from './_components/nodes/loop-node'
@@ -52,12 +88,19 @@ import { VariableAssignmentNode } from './_components/nodes/variable-assignment-
 import { ParameterExtractorNode } from './_components/nodes/parameter-extractor-node'
 import { QuestionClassifierNode } from './_components/nodes/question-classifier-node'
 import { AnswerNode } from './_components/nodes/answer-node'
+import { CommentNode, type CommentColor } from './_components/nodes/comment-node'
+
+// Workflow Run Drawer
+import { WorkflowRunDrawer } from './_components/workflow-run-drawer'
 
 // Components
 import { StartNodeSelector, StartNodeType } from './_components/start-node-selector'
 import { NodeConfigDrawer } from './_components/node-config-drawer'
+import { WorkflowSettingsDrawer } from './_components/workflow-settings-drawer'
 import { NodePanel } from './_components/node-panel'
 import { AddNodePopover } from './_components/add-node-popover'
+import { ValidationChecklist } from './_components/validation-checklist'
+import { validateWorkflow, ValidationIssue } from './_components/workflow-validator'
 
 // Define custom node data type
 type WorkflowNodeData = {
@@ -67,6 +110,10 @@ type WorkflowNodeData = {
   config: Record<string, unknown>
   parentIterationId?: string
   parentLoopId?: string
+  // 注释节点字段
+  content?: string
+  author?: string
+  color?: CommentColor
 }
 
 type WorkflowNode = Node<WorkflowNodeData>
@@ -78,6 +125,7 @@ const nodeTypes = {
   llm: LLMNode,
   condition: ConditionNode,
   sub_workflow: SubWorkflowNode,
+  agent: AgentNode,
   tool: ToolNode,
   iteration: IterationNode,
   iteration_start: IterationStartNode,
@@ -94,6 +142,7 @@ const nodeTypes = {
   parameter_extractor: ParameterExtractorNode,
   question_classifier: QuestionClassifierNode,
   answer: AnswerNode,
+  comment: CommentNode,
   // 兼容旧版本节点类型
   start: UserInputNode,
 }
@@ -117,12 +166,57 @@ const getSubGraphExtent = (parentWidth: number, parentHeight: number): [[number,
 // Add node popover state type
 type AddNodePopoverState = {
   show: boolean
-  position: { x: number; y: number }
+  position: { x: number; y: number } // 屏幕坐标（用于弹窗定位）
+  canvasPosition?: { x: number; y: number } // 画布坐标（用于节点定位）
   sourceNodeId: string
   sourceHandleId?: string
   isInsideIteration?: boolean
   isInsideLoop?: boolean
 } | null
+
+// 自定义缩放控件组件（包含 MiniMap）
+function ZoomControl() {
+  const { zoomIn, zoomOut } = useReactFlow()
+  const { zoom } = useViewport()
+  const zoomPercent = Math.round(zoom * 100)
+
+  return (
+    <Panel position="bottom-right" className="mb-4! mr-3!">
+      <div className="flex flex-col items-center gap-2">
+        {/* MiniMap */}
+        <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
+          <MiniMap
+            nodeStrokeWidth={2}
+            zoomable
+            pannable
+            style={{ position: 'relative', width: 100, height: 50 }}
+            className="bg-card!"
+          />
+        </div>
+        {/* Zoom Controls */}
+        <div className="flex items-center gap-1 bg-card border border-border rounded-lg px-1 py-0.5 shadow-sm">
+          <button
+            onClick={() => zoomOut()}
+            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
+            title="缩小"
+          >
+            <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+          <span className="text-xs text-muted-foreground min-w-9 text-center tabular-nums">
+            {zoomPercent}%
+          </span>
+          <button
+            onClick={() => zoomIn()}
+            className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
+            title="放大"
+          >
+            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </div>
+      </div>
+    </Panel>
+  )
+}
 
 function WorkflowEditorContent() {
   const params = useParams()
@@ -134,15 +228,25 @@ function WorkflowEditorContent() {
 
   // State
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
+  const [currentUser, setCurrentUser] = React.useState<User | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
+  const [isPublishing, setIsPublishing] = React.useState(false)
   const [hasChanges, setHasChanges] = React.useState(false)
+  const [lastSavedAt, setLastSavedAt] = React.useState<Date | null>(null)
   
   // UI State
   const [showStartSelector, setShowStartSelector] = React.useState(false)
   const [selectedNode, setSelectedNode] = React.useState<WorkflowNode | null>(null)
   const [configDrawerOpen, setConfigDrawerOpen] = React.useState(false)
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = React.useState(false)
+  const [testRunDrawerOpen, setTestRunDrawerOpen] = React.useState(false)
   const [addNodePopover, setAddNodePopover] = React.useState<AddNodePopoverState>(null)
+  const [editorMode, setEditorMode] = React.useState<'pointer' | 'hand'>('hand')
+  const [isFullscreen, setIsFullscreen] = React.useState(false)
+  const [showExitConfirm, setShowExitConfirm] = React.useState(false)
+  const [showValidationChecklist, setShowValidationChecklist] = React.useState(false)
+  const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
@@ -164,13 +268,64 @@ function WorkflowEditorContent() {
 
   // ReactFlow state
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<WorkflowNode>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowEdge>([])
+  const [edges, setEdges, onEdgesChangeBase] = useEdgesState<WorkflowEdge>([])
 
-  // 自定义节点变化处理 - 当父节点大小变化时更新子节点的extent
+  // 检查节点是否是开始节点
+  const isStartNode = React.useCallback((nodeId: string) => {
+    const node = nodes.find((n) => n.id === nodeId)
+    const nodeType = node?.type || (node?.data as { type?: string })?.type
+    return nodeType === 'user_input' || nodeType === 'trigger' || nodeType === 'start'
+  }, [nodes])
+
+  // 自定义边变化处理 - 保护开始节点的连线不被删除
+  const onEdgesChange = React.useCallback(
+    (changes: Parameters<typeof onEdgesChangeBase>[0]) => {
+      // 过滤掉与开始节点相连的边的删除操作
+      const filteredChanges = changes.filter((change) => {
+        if (change.type === 'remove') {
+          const edge = edges.find((e) => e.id === change.id)
+          if (edge && isStartNode(edge.source)) {
+            // 不阻止边删除，因为这可能是用户删除目标节点导致的
+            // 只有当用户直接尝试删除开始节点时才阻止
+          }
+        }
+        return true
+      })
+      
+      onEdgesChangeBase(filteredChanges)
+    },
+    [edges, isStartNode, onEdgesChangeBase]
+  )
+
+  // 自定义节点变化处理 - 当父节点大小变化时更新子节点的extent，并保护开始节点不被删除
   const onNodesChange = React.useCallback(
     (changes: Parameters<typeof onNodesChangeBase>[0]) => {
+      // 检查是否有尝试删除开始节点的操作
+      const hasStartNodeRemoval = changes.some((change) => {
+        if (change.type === 'remove') {
+          return isStartNode(change.id)
+        }
+        return false
+      })
+      
+      // 如果尝试删除开始节点，显示提示
+      if (hasStartNodeRemoval) {
+        toast.error('开始节点不能被删除')
+      }
+      
+      // 过滤掉开始节点的删除操作
+      const filteredChanges = changes.filter((change) => {
+        if (change.type === 'remove') {
+          // 不允许删除开始类型的节点
+          if (isStartNode(change.id)) {
+            return false
+          }
+        }
+        return true
+      })
+      
       // 检查是否有迭代节点的大小变化
-      const dimensionChanges = changes.filter(
+      const dimensionChanges = filteredChanges.filter(
         (change) => change.type === 'dimensions' && change.resizing
       )
       
@@ -206,23 +361,27 @@ function WorkflowEditorContent() {
         }
       }
       
-      onNodesChangeBase(changes)
+      onNodesChangeBase(filteredChanges)
     },
-    [nodes, setNodes, onNodesChangeBase]
+    [nodes, setNodes, onNodesChangeBase, isStartNode]
   )
 
-  // Load workflow
+  // Load workflow and current user
   React.useEffect(() => {
-    const loadWorkflow = async () => {
+    const loadData = async () => {
       try {
         setIsLoading(true)
-        const data = await workflowsApi.getWorkflow(workflowId)
-        setWorkflow(data)
+        const [workflowData, userData] = await Promise.all([
+          workflowsApi.getWorkflow(workflowId),
+          authApi.getCurrentUser(),
+        ])
+        setWorkflow(workflowData)
+        setCurrentUser(userData)
 
         // Initialize ReactFlow nodes and edges from workflow definition
-        if (data.definition && data.definition.nodes && data.definition.nodes.length > 0) {
-          setNodes(data.definition.nodes as unknown as WorkflowNode[])
-          setEdges(data.definition.edges as unknown as WorkflowEdge[])
+        if (workflowData.definition && workflowData.definition.nodes && workflowData.definition.nodes.length > 0) {
+          setNodes(workflowData.definition.nodes as unknown as WorkflowNode[])
+          setEdges(workflowData.definition.edges as unknown as WorkflowEdge[])
         } else {
           // New workflow - show start node selector
           setShowStartSelector(true)
@@ -236,19 +395,19 @@ function WorkflowEditorContent() {
     }
 
     if (workflowId) {
-      loadWorkflow()
+      loadData()
     }
   }, [workflowId, router, t, setNodes, setEdges])
 
   // Handle start node type selection
   const handleStartNodeSelect = React.useCallback((type: StartNodeType) => {
     const startNode: WorkflowNode = {
-      id: 'start-1',
+      id: `${type}-1`,
       type: type,
       position: { x: 250, y: 100 },
       data: {
         type: type,
-        label: type === 'user_input' ? '用户输入' : '触发器',
+        label: type === 'user_input' ? '开始' : '触发器',
         config: {},
       },
     }
@@ -267,8 +426,9 @@ function WorkflowEditorContent() {
   )
 
   // Handle node click - open config drawer
-  const onNodeClick = React.useCallback((_: React.MouseEvent, node: WorkflowNode) => {
+  const onNodeClick = React.useCallback((event: React.MouseEvent, node: WorkflowNode) => {
     setSelectedNode(node)
+    setSettingsDrawerOpen(false)
     setConfigDrawerOpen(true)
   }, [])
 
@@ -306,9 +466,16 @@ function WorkflowEditorContent() {
           }
         }
         
+        // 将屏幕坐标转换为画布坐标
+        const canvasPosition = reactFlowInstance.screenToFlowPosition({
+          x: clientX,
+          y: clientY,
+        })
+        
         setAddNodePopover({
           show: true,
           position: { x: clientX, y: clientY },
+          canvasPosition, // 保存画布坐标用于节点定位
           sourceNodeId: startInfo.nodeId,
           sourceHandleId: startInfo.handleId,
           isInsideIteration,
@@ -318,15 +485,14 @@ function WorkflowEditorContent() {
       
       connectStartRef.current = null
     },
-    [nodes]
+    [nodes, reactFlowInstance]
   )
 
   // Handle adding node from popover
   const handleAddNodeFromPopover = React.useCallback(
     (type: string, sourceNodeId: string, sourceHandleId?: string) => {
-      // Get source node to calculate new position
-      const sourceNode = nodes.find((n) => n.id === sourceNodeId)
-      if (!sourceNode) return
+      // Get source node to calculate new position (may be undefined if adding from toolbar)
+      const sourceNode = sourceNodeId ? nodes.find((n) => n.id === sourceNodeId) : null
 
       const newNodeId = `${type}-${Date.now()}`
       const isIterationNode = type === 'iteration'
@@ -334,13 +500,94 @@ function WorkflowEditorContent() {
       const isContainerNode = isIterationNode || isLoopNode
       
       // 检查源节点是否在容器内（有 parentId）
-      const sourceParentId = sourceNode.parentId
+      const sourceParentId = sourceNode?.parentId
       const isInsideContainer = !!sourceParentId
       
-      // 如果源节点在容器内，新节点也应该在同一个容器内
-      let newNodePosition = {
-        x: sourceNode.position.x + 200,
-        y: sourceNode.position.y,
+      // 节点尺寸估算（用于计算重叠）
+      const estimatedNodeWidth = isContainerNode ? 500 : 200
+      const estimatedNodeHeight = isContainerNode ? 280 : 100
+      
+      // 计算新节点位置
+      let newNodePosition: { x: number; y: number }
+      
+      if (sourceNodeId && addNodePopover?.canvasPosition) {
+        // 有源节点（从连线拖出来的）：使用鼠标释放位置
+        newNodePosition = {
+          x: addNodePopover.canvasPosition.x - estimatedNodeWidth / 2,
+          y: addNodePopover.canvasPosition.y - estimatedNodeHeight / 2,
+        }
+      } else {
+        // 从工具栏添加：找一个不重叠的位置
+        const viewport = reactFlowInstance.getViewport()
+        
+        // 获取视口边界（画布坐标）
+        const viewportBounds = {
+          left: -viewport.x / viewport.zoom,
+          top: -viewport.y / viewport.zoom,
+          right: (window.innerWidth - viewport.x) / viewport.zoom,
+          bottom: (window.innerHeight - viewport.y) / viewport.zoom,
+        }
+        
+        // 检查位置是否与现有节点重叠
+        const isOverlapping = (x: number, y: number, width: number, height: number) => {
+          return nodes.some((node) => {
+            if (node.type === 'comment') return false // 忽略注释节点
+            const nodeWidth = node.measured?.width || node.width || 200
+            const nodeHeight = node.measured?.height || node.height || 100
+            return !(
+              x + width < node.position.x ||
+              x > node.position.x + nodeWidth ||
+              y + height < node.position.y ||
+              y > node.position.y + nodeHeight
+            )
+          })
+        }
+        
+        // 从视口中心开始，螺旋式寻找不重叠的位置
+        const centerX = (viewportBounds.left + viewportBounds.right) / 2 - estimatedNodeWidth / 2
+        const centerY = (viewportBounds.top + viewportBounds.bottom) / 2 - estimatedNodeHeight / 2
+        
+        newNodePosition = { x: centerX, y: centerY }
+        
+        // 如果中心位置重叠，尝试找其他位置
+        if (isOverlapping(centerX, centerY, estimatedNodeWidth, estimatedNodeHeight)) {
+          const step = 50
+          const maxAttempts = 100
+          let found = false
+          
+          // 螺旋式搜索
+          for (let ring = 1; ring <= maxAttempts && !found; ring++) {
+            const offsets = [
+              { x: ring * step, y: 0 },
+              { x: ring * step, y: ring * step },
+              { x: 0, y: ring * step },
+              { x: -ring * step, y: ring * step },
+              { x: -ring * step, y: 0 },
+              { x: -ring * step, y: -ring * step },
+              { x: 0, y: -ring * step },
+              { x: ring * step, y: -ring * step },
+            ]
+            
+            for (const offset of offsets) {
+              const testX = centerX + offset.x
+              const testY = centerY + offset.y
+              
+              // 确保在视口内
+              if (
+                testX >= viewportBounds.left &&
+                testX + estimatedNodeWidth <= viewportBounds.right &&
+                testY >= viewportBounds.top &&
+                testY + estimatedNodeHeight <= viewportBounds.bottom
+              ) {
+                if (!isOverlapping(testX, testY, estimatedNodeWidth, estimatedNodeHeight)) {
+                  newNodePosition = { x: testX, y: testY }
+                  found = true
+                  break
+                }
+              }
+            }
+          }
+        }
       }
       
       // 获取父容器信息
@@ -375,14 +622,6 @@ function WorkflowEditorContent() {
             parentIterationId: sourceParentId,
           }),
         },
-      }
-
-      // Add edge
-      const newEdge: WorkflowEdge = {
-        id: `${sourceNodeId}-${newNodeId}`,
-        source: sourceNodeId,
-        sourceHandle: sourceHandleId,
-        target: newNodeId,
       }
 
       // 如果是迭代节点，同时创建内嵌的迭代开始子节点
@@ -435,11 +674,21 @@ function WorkflowEditorContent() {
         setNodes((nds) => [...nds, newNode])
       }
 
-      setEdges((eds) => [...eds, newEdge])
+      // 只有在有源节点时才创建连线
+      if (sourceNodeId) {
+        const newEdge: WorkflowEdge = {
+          id: `${sourceNodeId}-${newNodeId}`,
+          source: sourceNodeId,
+          sourceHandle: sourceHandleId,
+          target: newNodeId,
+        }
+        setEdges((eds) => [...eds, newEdge])
+      }
+      
       setHasChanges(true)
       setAddNodePopover(null)
     },
-    [nodes, setNodes, setEdges]
+    [nodes, setNodes, setEdges, addNodePopover, reactFlowInstance]
   )
 
   // Handle node update from config drawer
@@ -588,27 +837,112 @@ function WorkflowEditorContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges])
 
+  // Auto validate when nodes or edges change
+  React.useEffect(() => {
+    if (!isLoading && nodes.length > 0) {
+      const issues = validateWorkflow(nodes, edges)
+      setValidationIssues(issues)
+    }
+  }, [nodes, edges, isLoading])
+
+  // 从开始节点提取输入变量定义
+  const extractVariablesFromNodes = React.useCallback(() => {
+    // 找到开始节点（user_input 或 trigger）
+    const startNode = nodes.find(n => 
+      n.type === 'user_input' || n.type === 'trigger' || n.type === 'start'
+    )
+    
+    if (!startNode) return []
+    
+    // 获取参数列表
+    const nodeData = startNode.data as { parameters?: Array<{
+      name: string
+      type: string
+      required: boolean
+      defaultValue?: string
+      description?: string
+    }> }
+    
+    const parameters = nodeData.parameters || []
+    
+    // 转换为 VariableDefinition 格式
+    return parameters.map(p => ({
+      name: p.name,
+      type: p.type,
+      required: p.required,
+      default: p.defaultValue || undefined,
+      description: p.description || null,
+    }))
+  }, [nodes])
+
   // Save workflow
   const handleSave = React.useCallback(async () => {
     if (!workflow) return
 
     try {
       setIsSaving(true)
+      
+      // 提取开始节点的输入变量
+      const variables = extractVariablesFromNodes()
+      
       await workflowsApi.updateWorkflow(workflowId, {
         definition: {
           nodes: nodes as never[],
           edges: edges as never[],
           viewport: { x: 0, y: 0, zoom: 1 },
         },
+        variables,
       })
       setHasChanges(false)
+      setLastSavedAt(new Date())
       toast.success(t('saved'))
     } catch {
       toast.error(t('saveFailed'))
     } finally {
       setIsSaving(false)
     }
-  }, [workflow, workflowId, nodes, edges, t])
+  }, [workflow, workflowId, nodes, edges, t, extractVariablesFromNodes])
+
+  // Publish/Unpublish workflow
+  const handlePublish = React.useCallback(async () => {
+    if (!workflow) return
+
+    try {
+      setIsPublishing(true)
+      
+      // 提取开始节点的输入变量
+      const variables = extractVariablesFromNodes()
+      
+      // 如果有未保存的更改，先保存
+      if (hasChanges) {
+        await workflowsApi.updateWorkflow(workflowId, {
+          definition: {
+            nodes: nodes as never[],
+            edges: edges as never[],
+            viewport: { x: 0, y: 0, zoom: 1 },
+          },
+          variables,
+        })
+        setHasChanges(false)
+        setLastSavedAt(new Date())
+      }
+      
+      // 发布或取消发布
+      if (workflow.status === 'published') {
+        const updated = await workflowsApi.unpublishWorkflow(workflowId)
+        setWorkflow(updated)
+        toast.success(t('unpublished'))
+      } else {
+        const updated = await workflowsApi.publishWorkflow(workflowId)
+        setWorkflow(updated)
+        toast.success(t('published'))
+      }
+    } catch {
+      toast.error(t('publishFailed'))
+    } finally {
+      setIsPublishing(false)
+    }
+  }, [workflow, workflowId, nodes, edges, hasChanges, t, extractVariablesFromNodes])
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -621,6 +955,19 @@ function WorkflowEditorContent() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
+
+  // 监听 ESC 退出页面全屏
+  React.useEffect(() => {
+    const handleEscKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFullscreen(false)
+      }
+    }
+    if (isFullscreen) {
+      window.addEventListener('keydown', handleEscKey)
+      return () => window.removeEventListener('keydown', handleEscKey)
+    }
+  }, [isFullscreen])
 
   if (isLoading) {
     return (
@@ -649,53 +996,289 @@ function WorkflowEditorContent() {
   }
 
   return (
-    <div className="flex h-full bg-background">
+    <div className={`flex h-full bg-background ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col relative">
-        {/* Toolbar */}
-        <div className="h-14 border-b bg-card flex items-center justify-between px-4">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.push('/app/apps')}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div>
-              <h1 className="font-semibold">{workflow?.name}</h1>
-              <p className="text-xs text-muted-foreground">
-                {workflow?.description || t('noDescription')}
-              </p>
-            </div>
-          </div>
+        {/* Floating Toolbar - 全屏时隐藏 */}
+        {!isFullscreen && (
+          <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between pointer-events-none">
+            {/* Left - Back Button & Workflow Menu */}
+            <div className="flex items-center gap-2 pointer-events-auto">
+              <Button
+                variant="outline"
+                size="icon"
+                className="bg-card shadow-sm"
+                onClick={() => {
+                  if (hasChanges) {
+                    setShowExitConfirm(true)
+                  } else {
+                    router.push('/app/apps')
+                  }
+                }}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
 
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled>
-              <Play className="h-4 w-4 mr-1" />
-              {t('run')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSave}
-              disabled={isSaving || !hasChanges}
-            >
-              {isSaving ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-1" />
+              {/* Workflow Dropdown Menu */}
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input hover:bg-accent hover:text-accent-foreground h-9 bg-card shadow-sm gap-2 px-2">
+                  {workflow?.icon && (workflow.icon.startsWith('http') || workflow.icon.startsWith('/')) ? (
+                    <Image
+                      src={workflow.icon}
+                      alt={workflow.name || ''}
+                      width={20}
+                      height={20}
+                      className="rounded object-cover"
+                      unoptimized
+                    />
+                  ) : (
+                    <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10">
+                      <GitBranch className="h-3 w-3 text-primary" />
+                    </div>
+                  )}
+                  <span className="text-sm font-medium max-w-32 truncate">{workflow?.name || t('untitled')}</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuItem className="gap-2 bg-primary/10 text-primary">
+                    <LayoutGrid className="h-4 w-4" />
+                    <span>{t('orchestrate')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onClick={() => window.open(`/app/apps/${workflowId}/api`, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    <span>{t('accessApi')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onClick={() => router.push(`/app/apps/${workflowId}/logs`)}
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>{t('logs')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2"
+                    onClick={() => router.push(`/app/apps/${workflowId}/monitor`)}
+                  >
+                    <Activity className="h-4 w-4" />
+                    <span>{t('monitor')}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Right - Action Buttons */}
+            <div className="flex items-center gap-2 pointer-events-auto h-8">
+              {/* Test Run Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-card shadow-sm h-8"
+                onClick={() => {
+                  setConfigDrawerOpen(false)
+                  setSettingsDrawerOpen(false)
+                  setSelectedNode(null)
+                  setTestRunDrawerOpen(true)
+                }}
+              >
+                <Play className="h-4 w-4 mr-1" />
+                {t('run')}
+              </Button>
+              {/* Validation Checklist Button */}
+              <Button
+                variant="outline"
+                size="icon"
+                className="bg-card shadow-sm relative h-8 w-8"
+                onClick={() => {
+                  // 执行校验
+                  const issues = validateWorkflow(nodes, edges)
+                  setValidationIssues(issues)
+                  setShowValidationChecklist(!showValidationChecklist)
+                }}
+              >
+                <ClipboardCheck className="h-4 w-4" />
+                {validationIssues.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">
+                    {validationIssues.length > 9 ? '9+' : validationIssues.length}
+                  </span>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-card shadow-sm h-8"
+                onClick={handleSave}
+                disabled={isSaving || !hasChanges}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-1" />
               )}
               {tCommon('save')}
             </Button>
-            <Button variant="outline" size="icon">
+            <Button
+              variant={workflow?.status === 'published' ? 'default' : 'outline'}
+              size="sm"
+              className={workflow?.status === 'published' ? 'h-8' : 'bg-card shadow-sm h-8'}
+              onClick={handlePublish}
+              disabled={isPublishing}
+            >
+              {isPublishing ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : workflow?.status === 'published' ? (
+                <Globe className="h-4 w-4 mr-1" />
+              ) : (
+                <GlobeLock className="h-4 w-4 mr-1" />
+              )}
+              {workflow?.status === 'published' ? t('published') : t('publish')}
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="bg-card shadow-sm h-8 w-8"
+              onClick={() => {
+                setConfigDrawerOpen(false)
+                setSelectedNode(null)
+                setSettingsDrawerOpen(true)
+              }}
+            >
               <Settings className="h-4 w-4" />
             </Button>
           </div>
         </div>
+        )}
+
+        {/* Left Floating Toolbar */}
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-auto">
+          <div className="flex flex-col items-center gap-0.5 bg-card border border-border rounded-lg p-1 shadow-sm">
+            <button
+              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              title="添加节点"
+              onClick={(e) => {
+                // 获取按钮位置，在按钮右侧显示弹窗
+                const rect = e.currentTarget.getBoundingClientRect()
+                setAddNodePopover({
+                  show: true,
+                  position: { x: rect.right + 8, y: rect.top },
+                  sourceNodeId: '',
+                })
+              }}
+            >
+              <PlusCircle className="h-4 w-4 text-muted-foreground" />
+            </button>
+            <button
+              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              title="添加注释"
+              onClick={() => {
+                // 在视口中心位置添加注释节点
+                const viewport = reactFlowInstance.getViewport()
+                const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom
+                const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom
+                
+                const newNodeId = `comment-${Date.now()}`
+                const newNode: WorkflowNode = {
+                  id: newNodeId,
+                  type: 'comment',
+                  position: { x: centerX - 120, y: centerY - 80 },
+                  style: { width: 240, height: 160 },
+                  zIndex: -1, // 置于最底层
+                  data: {
+                    type: 'comment',
+                    label: '注释',
+                    content: '',
+                    author: currentUser?.username || '',
+                    config: {},
+                  },
+                }
+                setNodes((nds) => [...nds, newNode])
+                setHasChanges(true)
+              }}
+            >
+              <StickyNote className="h-4 w-4 text-muted-foreground" />
+            </button>
+            <div className="w-full h-px bg-border my-0.5" />
+            <button
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
+              }`}
+              title="指针模式"
+              onClick={() => setEditorMode('pointer')}
+            >
+              <MousePointer2 className={`h-4 w-4 ${
+                editorMode === 'pointer' ? 'text-primary' : 'text-muted-foreground'
+              }`} />
+            </button>
+            <button
+              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
+              }`}
+              title="编辑模式"
+              onClick={() => setEditorMode('hand')}
+            >
+              <Hand className={`h-4 w-4 ${
+                editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
+              }`} />
+            </button>
+            <div className="w-full h-px bg-border my-0.5" />
+            <button
+              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              title="整理美化"
+              onClick={() => {
+                // 自动整理节点布局
+                if (nodes.length === 0) return
+                
+                // 简单的水平排列布局
+                const sortedNodes = [...nodes].sort((a, b) => {
+                  // 根据节点位置排序，从左到右
+                  return a.position.x - b.position.x
+                })
+                
+                const startX = 100
+                const startY = 100
+                const gapX = 280
+                const gapY = 150
+                
+                // 按照连接关系分层
+                const updatedNodes = sortedNodes.map((node, index) => {
+                  // 跳过子节点（它们相对于父节点定位）
+                  if (node.parentId) return node
+                  
+                  return {
+                    ...node,
+                    position: {
+                      x: startX + (index * gapX),
+                      y: startY + (index % 2 === 0 ? 0 : gapY / 2),
+                    },
+                  }
+                })
+                
+                setNodes(updatedNodes)
+                setHasChanges(true)
+                
+                // 自动适应视图
+                setTimeout(() => {
+                  reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
+                }, 100)
+                
+                toast.success('节点已整理')
+              }}
+            >
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+            </button>
+            <button
+              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+              title={isFullscreen ? "退出全屏" : "全屏"}
+              onClick={() => setIsFullscreen(!isFullscreen)}
+            >
+              <Maximize className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </div>
+        </div>
 
         {/* ReactFlow Canvas */}
-        <div className="flex-1 relative">
+        <div className={`flex-1 relative ${editorMode === 'hand' ? '[&_.react-flow__pane]:cursor-default!' : ''}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -711,25 +1294,35 @@ function WorkflowEditorContent() {
             snapToGrid
             snapGrid={[15, 15]}
             defaultEdgeOptions={{
-              type: 'smoothstep',
-              animated: true,
-              style: { stroke: '#3b82f6', strokeWidth: 2 },
+              type: 'default',
+              animated: false,
+              style: { stroke: '#93c5fd', strokeWidth: 2 },
             }}
             connectionLineStyle={{ stroke: '#3b82f6', strokeWidth: 2 }}
             proOptions={{ hideAttribution: true }}
+            minZoom={0.15}
+            maxZoom={2}
+            elevateNodesOnSelect={false}
+            panOnScroll={editorMode === 'hand'}
+            panOnDrag={editorMode === 'hand'}
+            selectionOnDrag={editorMode === 'pointer'}
+            selectionMode={editorMode === 'pointer' ? SelectionMode.Partial : SelectionMode.Full}
+            zoomOnScroll={false}
+            zoomOnPinch
+            zoomActivationKeyCode="Meta"
+            panActivationKeyCode={null}
+            deleteKeyCode={['Backspace', 'Delete']}
           >
             <Background variant={BackgroundVariant.Dots} gap={15} size={1} />
-            <Controls />
-            <MiniMap
-              nodeStrokeWidth={3}
-              zoomable
-              pannable
-              className="bg-card!"
-            />
+            <ZoomControl />
+            {/* Bottom Center - Last Saved Time */}
             <Panel position="bottom-center" className="mb-4!">
-              <div className="text-xs text-muted-foreground bg-card/80 px-2 py-1 rounded">
-                {t('canvasHint')}
-              </div>
+              <span className="text-xs text-muted-foreground">
+                {lastSavedAt 
+                  ? `上次保存 ${lastSavedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                  : '尚未保存'
+                }
+              </span>
             </Panel>
           </ReactFlow>
 
@@ -744,6 +1337,22 @@ function WorkflowEditorContent() {
               setSelectedNode(null)
             }}
             onUpdate={handleNodeUpdate}
+          />
+
+          {/* Workflow Settings Panel - floating inside canvas */}
+          <WorkflowSettingsDrawer
+            workflow={workflow}
+            open={settingsDrawerOpen}
+            onClose={() => setSettingsDrawerOpen(false)}
+            onUpdate={(updated) => setWorkflow(updated)}
+          />
+
+          {/* Test Run Panel - floating inside canvas */}
+          <WorkflowRunDrawer
+            workflow={workflow}
+            variables={workflow?.variables as VariableDefinition[] || []}
+            open={testRunDrawerOpen}
+            onClose={() => setTestRunDrawerOpen(false)}
           />
         </div>
       </div>
@@ -760,6 +1369,53 @@ function WorkflowEditorContent() {
           onClose={() => setAddNodePopover(null)}
         />
       )}
+
+      {/* Validation Checklist Popover */}
+      {showValidationChecklist && (
+        <div className="absolute top-16 right-3 z-20">
+          <ValidationChecklist
+            issues={validationIssues}
+            onClose={() => setShowValidationChecklist(false)}
+            onSelectNode={(nodeId) => {
+              // 选中并聚焦到指定节点
+              const targetNode = nodes.find(n => n.id === nodeId)
+              if (targetNode) {
+                setSelectedNode(targetNode)
+                setConfigDrawerOpen(true)
+                setShowValidationChecklist(false)
+                
+                // 移动视图到节点位置
+                reactFlowInstance.setCenter(
+                  targetNode.position.x + 100,
+                  targetNode.position.y + 50,
+                  { zoom: 1, duration: 300 }
+                )
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Exit Confirmation Dialog */}
+      <AlertDialog open={showExitConfirm} onOpenChange={setShowExitConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认离开？</AlertDialogTitle>
+            <AlertDialogDescription>
+              你有未保存的更改，离开后将丢失这些更改。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => router.push('/app/apps')}
+            >
+              不保存离开
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -779,6 +1435,7 @@ function getNodeLabel(type: string): string {
     llm: 'LLM',
     condition: '条件分支',
     sub_workflow: '子工作流',
+    agent: '智能体',
     tool: '工具',
     code: '代码执行',
     template: '模板转换',
@@ -787,6 +1444,8 @@ function getNodeLabel(type: string): string {
     parameter_extractor: '参数提取器',
     iteration: '迭代',
     loop: '循环',
+    question_classifier: '问题分类',
+    answer: '输出',
   }
   return labels[type] || type
 }

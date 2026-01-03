@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import type { AvailableVariable } from '../types'
+import { extractVariableDisplayName } from '../types'
 import { IterationConfig, IteratorType, defaultIterationConfig } from '../../nodes/iteration-node'
 
 interface IterationNodeConfigProps {
@@ -105,7 +106,7 @@ export function IterationNodeConfig({
                 <span className="text-primary/80 font-mono text-xs">{'{x}'}</span>
                 <span className="text-xs">
                   {config.iteratorSource && <span className="text-muted-foreground">{config.iteratorSource} / </span>}
-                  {config.iteratorVariable.replace(/\{\{|\}\}/g, '')}
+                  {extractVariableDisplayName(config.iteratorVariable)}
                 </span>
               </span>
             ) : (
@@ -150,9 +151,10 @@ export function IterationNodeConfig({
                           key={variable.id}
                           className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                           onClick={() => {
+                            // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                             onConfigChange({
                               ...config,
-                              iteratorVariable: `{{${variable.name}}}`,
+                              iteratorVariable: `{{${variable.id}}}`,
                               iteratorSource: variable.groupLabel,
                               iteratorType: variable.isArray ? 'array' : 'object'
                             })

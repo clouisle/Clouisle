@@ -126,7 +126,7 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
 
@@ -204,7 +204,7 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2! h-2! rounded-full! bg-primary! border-0!"
+          className="w-2! h-2! rounded-full! bg-primary! border-0! transition-transform group-hover:scale-150"
           style={{ top: 24 }}
         />
       </div>

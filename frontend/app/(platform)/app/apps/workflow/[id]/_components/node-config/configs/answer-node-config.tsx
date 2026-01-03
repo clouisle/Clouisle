@@ -147,22 +147,25 @@ export function AnswerNodeConfig({
   // 选择源变量
   const handleSelectSourceVariable = (outputId: string, variable: AvailableVariable) => {
     const outputType = varTypeToOutputType[variable.type] || 'any'
-    // 使用变量原始名称作为默认输出名
-    const varName = variable.name.replace(/\{\{|\}\}/g, '')
     
+    // variable.id 格式为 nodeId.paramName（如 user_input-123.query）
+    // variable.name 是参数名（如 query）
     handleUpdateOutput(outputId, {
-      sourceVariable: `{{${variable.name}}}`,
-      sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+      sourceVariable: `{{${variable.id}}}`, // 传到后端用
+      sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel, // 显示用
+      sourceVariableName: variable.name, // 显示用（只显示参数名）
       type: outputType,
-      name: varName, // 默认使用源变量名
+      name: variable.name, // 默认使用源变量名
     })
     onOpenVariablePopoverChange(null)
     onVariableSearchChange('')
   }
 
   // 渲染变量选择器
-  const renderVariableSelector = (outputId: string, currentValue: string, currentLabel?: string) => {
+  const renderVariableSelector = (outputId: string, currentValue: string, currentLabel?: string, currentVarName?: string) => {
     const popoverId = `output-var-${outputId}`
+    // 显示名称：优先用 sourceVariableName，否则从 sourceVariable 提取最后一部分
+    const displayVarName = currentVarName || currentValue.replace(/\{\{|\}\}/g, '').split('.').pop() || ''
     
     return (
       <Popover 
@@ -182,7 +185,7 @@ export function AnswerNodeConfig({
               <span className="text-primary/80 font-mono text-[10px]">{'{x}'}</span>
               <span className="truncate">
                 {currentLabel && <span className="text-muted-foreground">{currentLabel} / </span>}
-                {currentValue.replace(/\{\{|\}\}/g, '')}
+                {displayVarName}
               </span>
             </>
           ) : (
@@ -366,7 +369,7 @@ export function AnswerNodeConfig({
                 {/* 源变量 */}
                 <div className="space-y-1">
                   <Label className="text-[10px] text-muted-foreground">源变量</Label>
-                  {renderVariableSelector(output.id, output.sourceVariable, output.sourceNodeLabel)}
+                  {renderVariableSelector(output.id, output.sourceVariable, output.sourceNodeLabel, output.sourceVariableName)}
                 </div>
                 
                 {/* 输出名称 */}

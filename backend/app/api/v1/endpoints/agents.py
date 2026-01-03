@@ -363,6 +363,17 @@ async def create_agent(
     # Check team access
     team = await check_team_access(agent_in.team_id, current_user)
 
+    # Check for duplicate name within the same team
+    existing = await Agent.filter(
+        team_id=agent_in.team_id,
+        name=agent_in.name,
+    ).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="agent_name_exists",
+        )
+
     # Validate model_id if provided
     if agent_in.model_id:
         team_model = await TeamModel.filter(
@@ -444,6 +455,18 @@ async def update_agent(
 ) -> Any:
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    # Check for duplicate name within the same team (exclude self)
+    if agent_in.name is not None and agent_in.name != agent.name:
+        existing = await Agent.filter(
+            team_id=agent.team_id,
+            name=agent_in.name,
+        ).exclude(id=agent_id).first()
+        if existing:
+            raise BusinessError(
+                code=ResponseCode.DUPLICATE_NAME,
+                msg_key="agent_name_exists",
+            )
 
     # Update basic fields
     if agent_in.name is not None:
