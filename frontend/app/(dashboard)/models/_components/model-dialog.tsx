@@ -472,24 +472,27 @@ export function ModelDialog({
           <div className="space-y-2">
             <Label>{t('provider')} *</Label>
             <Popover open={providerPopoverOpen} onOpenChange={setProviderPopoverOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={providerPopoverOpen}
-                  className={cn(
-                    "w-full justify-between font-normal",
-                    !provider && "text-muted-foreground"
-                  )}
-                  disabled={isEditing || !modelType}
-                >
-                  {provider ? t(`providers.${provider}`) : t('selectProvider')}
-                  <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </Button>
-              </PopoverTrigger>
+              <PopoverTrigger
+                render={(props) => (
+                  <Button
+                    {...props}
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={providerPopoverOpen}
+                    className={cn(
+                      "w-full justify-between font-normal",
+                      !provider && "text-muted-foreground"
+                    )}
+                    disabled={isEditing || !modelType}
+                  >
+                    {provider ? t(`providers.${provider}`) : t('selectProvider')}
+                    <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </Button>
+                )}
+              />
               <PopoverContent className="w-[340px] p-0" align="start">
                 <div className="p-3 space-y-3 max-h-[320px] overflow-y-auto">
                   {/* 国际供应商 */}
@@ -499,24 +502,27 @@ export function ModelDialog({
                       <div className="grid grid-cols-3 gap-1.5">
                         {groupedProviders.international.map((code) => (
                           <Tooltip key={code}>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleProviderChange(code)
-                                  setProviderPopoverOpen(false)
-                                }}
-                                className={cn(
-                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
-                                  provider === code
-                                    ? "border-primary bg-primary/10 text-primary"
-                                    : "border-transparent bg-muted/50 hover:bg-muted"
-                                )}
-                              >
-                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                <span className="truncate">{t(`providers.${code}`)}</span>
-                              </button>
-                            </TooltipTrigger>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
                             <TooltipContent side="bottom">
                               {t(`providers.${code}`)}
                             </TooltipContent>
@@ -533,24 +539,27 @@ export function ModelDialog({
                       <div className="grid grid-cols-3 gap-1.5">
                         {groupedProviders.domestic.map((code) => (
                           <Tooltip key={code}>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleProviderChange(code)
-                                  setProviderPopoverOpen(false)
-                                }}
-                                className={cn(
-                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
-                                  provider === code
-                                    ? "border-primary bg-primary/10 text-primary"
-                                    : "border-transparent bg-muted/50 hover:bg-muted"
-                                )}
-                              >
-                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                <span className="truncate">{t(`providers.${code}`)}</span>
-                              </button>
-                            </TooltipTrigger>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
                             <TooltipContent side="bottom">
                               {t(`providers.${code}`)}
                             </TooltipContent>
@@ -567,24 +576,27 @@ export function ModelDialog({
                       <div className="grid grid-cols-3 gap-1.5">
                         {groupedProviders.other.map((code) => (
                           <Tooltip key={code}>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleProviderChange(code)
-                                  setProviderPopoverOpen(false)
-                                }}
-                                className={cn(
-                                  "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
-                                  provider === code
-                                    ? "border-primary bg-primary/10 text-primary"
-                                    : "border-transparent bg-muted/50 hover:bg-muted"
-                                )}
-                              >
-                                {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                <span className="truncate">{t(`providers.${code}`)}</span>
-                              </button>
-                            </TooltipTrigger>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
                             <TooltipContent side="bottom">
                               {t(`providers.${code}`)}
                             </TooltipContent>

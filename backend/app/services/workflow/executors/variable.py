@@ -65,7 +65,7 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
         # Try variableAssignmentConfig first (frontend structure), then fall back to config
         config = node_data.get("variableAssignmentConfig") or node_data.get("config", {})
         
-        logger.info(f"Variable assignment config: {config}")
+        logger.info(f"Variable assignment node: {node.get('id')}, config: {config}")
         
         assignments = config.get("assignments", [])
 
@@ -74,41 +74,108 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
         for assignment in assignments:
             target_var = assignment.get("targetVariable", "")
             operation = assignment.get("operation", "overwrite")
-            
-            # Extract variable name (remove conversation. prefix if present)
+
+            if not target_var:
+                continue
+
+            # Parse target variable - could be:
+            # - "conversation.xxx" -> conversation variable
+            # - "nodeId.varName" -> node output variable (e.g., iteration results)
+            # - "xxx" -> simple variable name
+            target_node_id = None
             name = target_var
+
             if name.startswith("conversation."):
                 name = name[len("conversation."):]
-            
-            if not name:
-                continue
+            elif "." in name and not name.startswith("sys."):
+                # Format: nodeId.varName (e.g., "iteration-123.results")
+                parts = name.rsplit(".", 1)
+                if len(parts) == 2:
+                    target_node_id = parts[0]
+                    name = parts[1]
 
             if operation == "overwrite":
                 var_ref = assignment.get("variableRef", "")
                 value = await context.resolve_variable_ref(var_ref)
+                logger.info(f"Variable assignment overwrite: var_ref={var_ref}, value={value}")
             elif operation == "set":
                 value = assignment.get("constantValue", "")
             elif operation == "clear":
                 value = None
+            elif operation == "append":
+                # Append based on target type
+                var_ref = assignment.get("variableRef", "")
+                append_value = await context.resolve_variable_ref(var_ref)
+                logger.info(f"Variable assignment append: var_ref={var_ref}, append_value={append_value}")
+
+                # Get current value of target variable
+                current_value = None
+                if target_node_id:
+                    # For iteration results, get from _iteration_state first (most up-to-date)
+                    if name == "results":
+                        iteration_state = await context.get_variable(f"{target_node_id}._iteration_state")
+                        if iteration_state:
+                            current_value = iteration_state.get("results")
+                    # Fallback to node outputs
+                    if current_value is None:
+                        node_outputs = await context.get_node_outputs(target_node_id)
+                        if node_outputs:
+                            current_value = node_outputs.get(name)
+                else:
+                    current_value = await context.get_variable(name) or await context.get_variable(f"conversation.{name}")
+
+                if isinstance(current_value, list):
+                    # Append to array
+                    value = current_value + [append_value] if not isinstance(append_value, list) else current_value + append_value
+                elif isinstance(current_value, dict) and isinstance(append_value, dict):
+                    # Merge into object
+                    value = {**current_value, **append_value}
+                elif isinstance(current_value, str):
+                    # String concatenation
+                    value = current_value + str(append_value)
+                elif isinstance(current_value, (int, float)) and isinstance(append_value, (int, float)):
+                    # Numeric addition
+                    value = current_value + append_value
+                elif current_value is None:
+                    # Initialize as array with single element
+                    value = [append_value] if not isinstance(append_value, list) else append_value
+                else:
+                    # Convert to array and append
+                    value = [current_value, append_value]
             else:
                 value = None
 
             outputs[name] = value
-            
-            # Store in global variables for conversation.xxx access
-            await context.set_variable(name, value)
-            await context.set_variable(f"conversation.{name}", value)
-            
-            # IMPORTANT: Also update ALL node outputs that have this variable name
-            # This ensures that downstream references like {{开始.query}} get the new value
-            all_outputs = await context.get_all_node_outputs()
-            for node_id, node_outputs in all_outputs.items():
-                if node_outputs and name in node_outputs:
-                    node_outputs[name] = value
-                    await context.set_node_outputs(node_id, node_outputs)
-                    logger.info(f"Updated {node_id}.{name} = {value}")
-            
-            logger.info(f"Assigned variable {name} = {value}")
+
+            # Update the target location
+            if target_node_id:
+                # Update specific node's outputs
+                node_outputs = await context.get_node_outputs(target_node_id) or {}
+                node_outputs[name] = value
+                await context.set_node_outputs(target_node_id, node_outputs)
+                logger.info(f"Updated {target_node_id}.{name} = {value}")
+
+                # Also update iteration state if this is results
+                if name == "results":
+                    iteration_state = await context.get_variable(f"{target_node_id}._iteration_state")
+                    if iteration_state:
+                        iteration_state["results"] = value
+                        await context.set_variable(f"{target_node_id}._iteration_state", iteration_state)
+            else:
+                # Store in global variables for conversation.xxx access
+                await context.set_variable(name, value)
+                await context.set_variable(f"conversation.{name}", value)
+
+                # IMPORTANT: Also update ALL node outputs that have this variable name
+                # This ensures that downstream references like {{开始.query}} get the new value
+                all_outputs = await context.get_all_node_outputs()
+                for node_id, node_outputs in all_outputs.items():
+                    if node_outputs and name in node_outputs:
+                        node_outputs[name] = value
+                        await context.set_node_outputs(node_id, node_outputs)
+                        logger.info(f"Updated {node_id}.{name} = {value}")
+
+            logger.info(f"Assigned variable {target_var} = {value}")
 
         logger.info(f"Variable assignment outputs: {outputs}")
         return ExecutionResult(outputs=outputs)

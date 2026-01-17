@@ -2,19 +2,20 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Variable, MoreHorizontal, Home, ArrowRight, Ban, Edit3 } from 'lucide-react'
+import { Variable, MoreHorizontal, Home, ArrowRight, Ban, Edit3, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // 赋值操作类型
-export type AssignmentOperation = 'overwrite' | 'clear' | 'set'
+export type AssignmentOperation = 'overwrite' | 'clear' | 'set' | 'append'
 
 // 单个赋值项
 export interface AssignmentItem {
   id: string
   targetVariable: string           // 目标对话变量名
   targetVariableLabel?: string     // 目标变量显示名
+  targetVariableNodeLabel?: string // 目标变量所属节点标签
   operation: AssignmentOperation   // 赋值操作
-  // 值来源（overwrite 用 variableRef，set 用 constantValue）
+  // 值来源（overwrite/append 用 variableRef，set 用 constantValue）
   variableRef?: string             // 变量引用 {{node.var}}
   variableRefNodeLabel?: string    // 来源节点标签
   constantValue?: string           // 常量值
@@ -54,6 +55,12 @@ export const assignmentOperationConfig: Record<AssignmentOperation, {
     shortLabel: '=',
     description: '将目标变量设置为指定的常量值',
     icon: Edit3,
+  },
+  append: {
+    label: '追加',
+    shortLabel: '+',
+    description: '向数组追加元素，或向对象追加键值对',
+    icon: Plus,
   },
 }
 
@@ -168,7 +175,7 @@ export function VariableAssignmentNode({ id, selected, data }: VariableAssignmen
                   </span>
                   
                   {/* 值 */}
-                  {assignment.operation === 'overwrite' && assignment.variableRef && (
+                  {(assignment.operation === 'overwrite' || assignment.operation === 'append') && assignment.variableRef && (
                     <div className="flex items-center gap-0.5 text-[10px]">
                       <Home className="h-2.5 w-2.5 text-muted-foreground" />
                       <span className="text-muted-foreground max-w-10 truncate">

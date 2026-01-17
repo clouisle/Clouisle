@@ -296,6 +296,8 @@ export function WorkflowRunDrawer({
         setRunStatus('failed')
         setErrorMessage(data.error as string || '未知错误')
         setIsRunning(false)
+        // 失败时切换到详情标签页查看错误信息
+        setActiveTab('detail')
         break
 
       case 'node_start': {
@@ -719,8 +721,8 @@ export function WorkflowRunDrawer({
 
         {/* 输入标签 */}
         <TabsContent value="input" className="flex-1 m-0 mt-3 overflow-hidden">
-          <ScrollArea className="h-full p-4">
-            <div className="space-y-4">
+          <ScrollArea className="h-full">
+            <div className="space-y-4 p-4">
               {variables.length > 0 ? (
                 variables.map((variable) => (
                   <div key={variable.name} className="space-y-2">

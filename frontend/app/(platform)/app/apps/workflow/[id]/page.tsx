@@ -498,10 +498,13 @@ function WorkflowEditorContent() {
       const isIterationNode = type === 'iteration'
       const isLoopNode = type === 'loop'
       const isContainerNode = isIterationNode || isLoopNode
-      
+
       // 检查源节点是否在容器内（有 parentId）
+      // 优先使用 addNodePopover 中的信息，因为它在 onConnectEnd 时已经正确计算了
+      const isInsideIteration = addNodePopover?.isInsideIteration || false
+      const isInsideLoop = addNodePopover?.isInsideLoop || false
       const sourceParentId = sourceNode?.parentId
-      const isInsideContainer = !!sourceParentId
+      const isInsideContainer = isInsideIteration || isInsideLoop || !!sourceParentId
       
       // 节点尺寸估算（用于计算重叠）
       const estimatedNodeWidth = isContainerNode ? 500 : 200
@@ -592,17 +595,28 @@ function WorkflowEditorContent() {
       
       // 获取父容器信息
       let parentNode: WorkflowNode | undefined
-      if (isInsideContainer && sourceParentId) {
-        parentNode = nodes.find((n) => n.id === sourceParentId)
+      let actualParentId = sourceParentId
+
+      // 如果 sourceParentId 为空但 isInsideContainer 为 true，需要从 sourceNode 的 data 中获取
+      if (!actualParentId && isInsideContainer && sourceNode) {
+        const sourceData = sourceNode.data as { parentIterationId?: string; parentLoopId?: string }
+        actualParentId = sourceData.parentIterationId || sourceData.parentLoopId
       }
+
+      if (isInsideContainer && actualParentId) {
+        parentNode = nodes.find((n) => n.id === actualParentId)
+      }
+
+      // 确定是迭代还是循环容器
+      const parentType = parentNode?.type || (parentNode?.data as { type?: string })?.type
 
       const newNode: WorkflowNode = {
         id: newNodeId,
         type: type,
         position: newNodePosition,
         // 如果在容器内，设置 parentId 和 extent
-        ...(isInsideContainer && sourceParentId && parentNode && {
-          parentId: sourceParentId,
+        ...(isInsideContainer && actualParentId && parentNode && {
+          parentId: actualParentId,
           extent: getSubGraphExtent(
             parentNode.measured?.width || parentNode.width || 500,
             parentNode.measured?.height || parentNode.height || 280
@@ -617,9 +631,10 @@ function WorkflowEditorContent() {
           type: type,
           label: getUniqueNodeLabel(type, nodes),
           config: {},
-          // 标记父容器ID
-          ...(isInsideContainer && sourceParentId && {
-            parentIterationId: sourceParentId,
+          // 标记父容器ID（根据容器类型设置不同的属性）
+          ...(isInsideContainer && actualParentId && {
+            ...(parentType === 'iteration' || isInsideIteration ? { parentIterationId: actualParentId } : {}),
+            ...(parentType === 'loop' || isInsideLoop ? { parentLoopId: actualParentId } : {}),
           }),
         },
       }
@@ -694,7 +709,32 @@ function WorkflowEditorContent() {
   // Handle node update from config drawer
   const handleNodeUpdate = React.useCallback((nodeId: string, data: Record<string, unknown>) => {
     setNodes((nds) =>
-      nds.map((n) => (n.id === nodeId ? { ...n, data: data as WorkflowNodeData } : n))
+      nds.map((n) => {
+        if (n.id === nodeId) {
+          return { ...n, data: data as WorkflowNodeData }
+        }
+        // 如果是迭代/循环节点的子节点，同步更新 iterationConfig/loopConfig
+        const nodeData = n.data as { parentIterationId?: string; parentLoopId?: string }
+        if (nodeData.parentIterationId === nodeId && (data as { iterationConfig?: unknown }).iterationConfig) {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              iterationConfig: (data as { iterationConfig: unknown }).iterationConfig,
+            } as WorkflowNodeData,
+          }
+        }
+        if (nodeData.parentLoopId === nodeId && (data as { loopConfig?: unknown }).loopConfig) {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              loopConfig: (data as { loopConfig: unknown }).loopConfig,
+            } as WorkflowNodeData,
+          }
+        }
+        return n
+      })
     )
     setHasChanges(true)
   }, [setNodes])

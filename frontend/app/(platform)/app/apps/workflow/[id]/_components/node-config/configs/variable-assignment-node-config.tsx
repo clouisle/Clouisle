@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Trash2, Search, ChevronDown, ArrowRight, Ban, Edit3 } from 'lucide-react'
+import { Plus, Trash2, Search, ChevronDown, ArrowRight, Ban, Edit3, ListPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -129,6 +129,7 @@ export function VariableAssignmentNodeConfig({
             <>
               <span className="text-teal-500/80 font-mono text-xs">{'{x}'}</span>
               <span className="text-xs truncate">
+                {assignment.targetVariableNodeLabel && <span className="text-muted-foreground">{assignment.targetVariableNodeLabel} / </span>}
                 {assignment.targetVariableLabel || assignment.targetVariable}
               </span>
             </>
@@ -169,8 +170,9 @@ export function VariableAssignmentNodeConfig({
                     className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
                     onClick={() => {
                       handleUpdateAssignment(assignment.id, {
-                        targetVariable: variable.name,
+                        targetVariable: variable.id,
                         targetVariableLabel: variable.name,
+                        targetVariableNodeLabel: variable.groupLabel,
                       })
                       onOpenVariablePopoverChange(null)
                       onVariableSearchChange('')
@@ -351,7 +353,7 @@ export function VariableAssignmentNodeConfig({
                           updates.variableRef = undefined
                           updates.variableRefNodeLabel = undefined
                           updates.constantValue = undefined
-                        } else if (v === 'overwrite') {
+                        } else if (v === 'overwrite' || v === 'append') {
                           updates.constantValue = undefined
                         } else if (v === 'set') {
                           updates.variableRef = undefined
@@ -386,9 +388,11 @@ export function VariableAssignmentNodeConfig({
                   </div>
                   
                   {/* 值配置 - 根据操作类型显示不同内容 */}
-                  {assignment.operation === 'overwrite' && (
+                  {(assignment.operation === 'overwrite' || assignment.operation === 'append') && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">源变量</Label>
+                      <Label className="text-xs text-muted-foreground">
+                        {assignment.operation === 'append' ? '追加值' : '源变量'}
+                      </Label>
                       {renderSourceVariableSelector(assignment)}
                     </div>
                   )}
@@ -425,6 +429,7 @@ export function VariableAssignmentNodeConfig({
         <p>• <strong>覆盖</strong>：用另一个变量的值替换目标变量</p>
         <p>• <strong>清空</strong>：将目标变量重置为空值</p>
         <p>• <strong>设置</strong>：将目标变量设为指定的常量</p>
+        <p>• <strong>追加</strong>：数组追加元素、对象合并键值、字符串拼接、数字累加</p>
       </div>
     </div>
   )

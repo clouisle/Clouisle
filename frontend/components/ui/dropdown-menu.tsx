@@ -19,6 +19,7 @@ function DropdownMenuTrigger({ className, ...props }: MenuPrimitive.Trigger.Prop
     <MenuPrimitive.Trigger
       data-slot="dropdown-menu-trigger"
       className={cn("cursor-pointer", className)}
+      suppressHydrationWarning
       {...props}
     />
   )

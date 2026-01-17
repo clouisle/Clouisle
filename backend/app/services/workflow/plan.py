@@ -332,7 +332,8 @@ class ExecutionPlan:
 
         # Check for isolated nodes (no connections)
         for node_id, node in self.nodes.items():
-            if node.node_type not in {"user_input", "trigger"}:
+            # Skip start nodes and internal subgraph nodes
+            if node.node_type not in {"user_input", "trigger", "iteration_start", "loop_start"}:
                 if not node.upstream:
                     errors.append(f"Node {node_id} has no upstream connections")
 

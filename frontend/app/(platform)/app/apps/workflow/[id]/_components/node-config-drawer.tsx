@@ -320,12 +320,15 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   const getAvailableVariables = React.useCallback((filterType?: 'iterable' | 'all'): AvailableVariable[] => {
     const variables: AvailableVariable[] = []
     const upstreamNodeIds = getUpstreamNodeIds()
-    
+
+    // 从 allNodes 中获取当前节点的最新信息（包含 parentId）
+    const currentNode = node ? allNodes.find(n => n.id === node.id) : null
+
     // 查找当前节点的父容器（循环/迭代节点）
     // 优先使用 parentId，如果没有则尝试通过 data.parentIterationId 或 data.parentLoopId 查找
-    let parentNodeId = node?.parentId
-    if (!parentNodeId && node?.data) {
-      const nodeData = node.data as { parentIterationId?: string; parentLoopId?: string }
+    let parentNodeId = currentNode?.parentId
+    if (!parentNodeId && currentNode?.data) {
+      const nodeData = currentNode.data as { parentIterationId?: string; parentLoopId?: string }
       parentNodeId = nodeData.parentIterationId || nodeData.parentLoopId
     }
     
@@ -335,37 +338,80 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       if (parentNode) {
         const parentType = parentNode.type || (parentNode.data as { type?: string })?.type
         const parentLabel = (parentNode.data as { label?: string })?.label || parentType || '循环'
-        
+
         if (parentType === 'iteration') {
-          // 迭代节点提供 item 和 index 变量给子节点
+          // 迭代节点提供变量给子节点
           const iterConfig = (parentNode.data as { iterationConfig?: IterationConfig })?.iterationConfig || defaultIterationConfig
-          const itemVar = iterConfig.itemVariable || 'item'
-          const indexVar = iterConfig.indexVariable || 'index'
-          
-          // 根据迭代源推断 item 类型
-          variables.push({
-            id: `${parentNode.id}.${itemVar}`,
-            name: itemVar,
-            type: 'Any',
-            group: parentNode.id,
-            groupLabel: `${parentLabel} (迭代变量)`,
-            isSystem: false,
-            isArray: false,
-            isIterable: true,
-          })
-          
-          if (filterType !== 'iterable') {
+          const iteratorType = iterConfig.iteratorType || 'array'
+          const outputVar = iterConfig.outputVariable || 'results'
+
+          if (iteratorType === 'object') {
+            // 对象迭代：提供 key 和 value 变量
+            const keyVar = iterConfig.keyVariable || 'key'
+            const valueVar = iterConfig.valueVariable || 'value'
+
             variables.push({
-              id: `${parentNode.id}.${indexVar}`,
-              name: indexVar,
-              type: 'Number',
+              id: `${parentNode.id}.${keyVar}`,
+              name: keyVar,
+              type: 'String',
               group: parentNode.id,
               groupLabel: `${parentLabel} (迭代变量)`,
               isSystem: false,
               isArray: false,
               isIterable: false,
             })
+
+            variables.push({
+              id: `${parentNode.id}.${valueVar}`,
+              name: valueVar,
+              type: 'Any',
+              group: parentNode.id,
+              groupLabel: `${parentLabel} (迭代变量)`,
+              isSystem: false,
+              isArray: false,
+              isIterable: true,
+            })
+          } else {
+            // 数组迭代：提供 item 和 index 变量
+            const itemVar = iterConfig.itemVariable || 'item'
+            const indexVar = iterConfig.indexVariable || 'index'
+
+            variables.push({
+              id: `${parentNode.id}.${itemVar}`,
+              name: itemVar,
+              type: 'Any',
+              group: parentNode.id,
+              groupLabel: `${parentLabel} (迭代变量)`,
+              isSystem: false,
+              isArray: false,
+              isIterable: true,
+            })
+
+            if (filterType !== 'iterable') {
+              variables.push({
+                id: `${parentNode.id}.${indexVar}`,
+                name: indexVar,
+                type: 'Number',
+                group: parentNode.id,
+                groupLabel: `${parentLabel} (迭代变量)`,
+                isSystem: false,
+                isArray: false,
+                isIterable: false,
+              })
+            }
           }
+
+          // 添加 results 变量（累积的结果数组）
+          variables.push({
+            id: `${parentNode.id}.${outputVar}`,
+            name: outputVar,
+            type: 'Array',
+            group: parentNode.id,
+            groupLabel: `${parentLabel} (迭代变量)`,
+            isSystem: false,
+            isArray: true,
+            isIterable: true,
+          })
         } else if (parentType === 'loop') {
           // 循环节点提供 index 和循环变量给子节点
           const lpConfig = (parentNode.data as { loopConfig?: LoopConfig })?.loopConfig || defaultLoopConfig
@@ -422,6 +468,34 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             findUpstream(edge.source, new Set())
           }
         })
+
+        // 递归查找子图内的所有上游节点
+        const findSubgraphUpstream = (nodeId: string, visited: Set<string>) => {
+          if (visited.has(nodeId)) return
+          visited.add(nodeId)
+
+          allEdges.forEach(edge => {
+            if (edge.target === nodeId) {
+              const sourceNode = allNodes.find(n => n.id === edge.source)
+              if (!sourceNode) return
+
+              // 检查源节点是否在同一个子图内
+              const sourceParentId = sourceNode.parentId ||
+                (sourceNode.data as { parentIterationId?: string; parentLoopId?: string })?.parentIterationId ||
+                (sourceNode.data as { parentIterationId?: string; parentLoopId?: string })?.parentLoopId
+
+              if (sourceParentId === parentNodeId) {
+                upstreamNodeIds.add(edge.source)
+                findSubgraphUpstream(edge.source, visited)
+              }
+            }
+          })
+        }
+
+        // 从当前节点开始，查找子图内的所有上游节点
+        if (node) {
+          findSubgraphUpstream(node.id, new Set())
+        }
       }
     }
     
@@ -786,18 +860,21 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
     return variables
   }, [allNodes, allEdges, node, getUpstreamNodeIds])
 
-  // 获取对话变量（可写入的目标变量，来自开始节点的参数）
+  // 获取对话变量（可写入的目标变量，来自开始节点的参数和子图内部变量）
   const getConversationVariables = React.useCallback((): AvailableVariable[] => {
     const variables: AvailableVariable[] = []
-    
+
     // 从开始节点获取参数作为对话变量
     allNodes.forEach(n => {
       const nodeType = n.type || (n.data as { type?: string })?.type
-      
+
       if (nodeType === 'user_input' || nodeType === 'trigger' || nodeType === 'start') {
         const nodeData = n.data as { parameters?: Parameter[]; label?: string }
-        const params = nodeData.parameters || []
-        
+        // 如果开始节点没有配置参数，使用默认参数
+        const params = (nodeData.parameters && nodeData.parameters.length > 0)
+          ? nodeData.parameters
+          : defaultStartParameters
+
         params.forEach(p => {
           variables.push({
             id: `conversation.${p.name}`,
@@ -812,9 +889,37 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         })
       }
     })
-    
+
+    // 如果当前节点在子图内（迭代/循环），添加 results 变量作为可写目标
+    if (node) {
+      const currentNode = allNodes.find(n => n.id === node.id)
+      let parentNodeId = currentNode?.parentId
+      if (!parentNodeId && currentNode?.data) {
+        const nodeData = currentNode.data as { parentIterationId?: string; parentLoopId?: string }
+        parentNodeId = nodeData.parentIterationId || nodeData.parentLoopId
+      }
+
+      if (parentNodeId) {
+        const parentNode = allNodes.find(n => n.id === parentNodeId)
+        const parentType = parentNode?.type || (parentNode?.data as { type?: string })?.type
+
+        if (parentType === 'iteration' || parentType === 'loop') {
+          variables.push({
+            id: `${parentNodeId}.results`,
+            name: 'results',
+            type: 'Array',
+            group: 'subgraph',
+            groupLabel: parentType === 'iteration' ? '迭代变量' : '循环变量',
+            isSystem: false,
+            isArray: true,
+            isIterable: true,
+          })
+        }
+      }
+    }
+
     return variables
-  }, [allNodes])
+  }, [allNodes, node])
 
   // 检查输出变量名是否与系统变量冲突
   const isSystemVariableConflict = React.useCallback((varName: string) => {

@@ -64,3 +64,6 @@ coverage.xml
 # Uploads
 uploads/
 
+# ai
+CLAUDE.md
+.claude

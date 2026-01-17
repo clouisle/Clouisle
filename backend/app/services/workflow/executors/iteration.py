@@ -20,6 +20,82 @@ logger = logging.getLogger(__name__)
 MAX_ITERATIONS = 1000
 
 
+@NodeExecutorRegistry.register("iteration_start")
+class IterationStartNodeExecutor(NodeExecutor):
+    """
+    Iteration start node executor.
+
+    This is an internal node inside iteration containers.
+    It passes through the iteration variables (item, index, results) from the parent.
+    """
+
+    async def execute(
+        self,
+        node: dict,
+        context: "ExecutionContext",
+        run: "WorkflowRun",
+    ) -> ExecutionResult:
+        """Execute iteration start node - pass through parent's variables."""
+        node_data = node.get("data", {})
+        # Try multiple ways to get parent ID
+        parent_id = (
+            node_data.get("parentIterationId") or
+            node.get("parentId") or
+            node_data.get("parentId")
+        )
+
+        logger.info(f"IterationStart: node_id={node.get('id')}, parent_id={parent_id}")
+
+        if parent_id:
+            # Get parent iteration node's outputs
+            parent_outputs = await context.get_node_outputs(parent_id)
+            logger.info(f"IterationStart: parent_outputs={parent_outputs}")
+            if parent_outputs:
+                # Filter out internal fields
+                outputs = {k: v for k, v in parent_outputs.items() if not k.startswith("_")}
+                return ExecutionResult(outputs=outputs)
+
+        return ExecutionResult(outputs={})
+
+
+@NodeExecutorRegistry.register("loop_start")
+class LoopStartNodeExecutor(NodeExecutor):
+    """
+    Loop start node executor.
+
+    This is an internal node inside loop containers.
+    It passes through the loop variables from the parent.
+    """
+
+    async def execute(
+        self,
+        node: dict,
+        context: "ExecutionContext",
+        run: "WorkflowRun",
+    ) -> ExecutionResult:
+        """Execute loop start node - pass through parent's variables."""
+        node_data = node.get("data", {})
+        # Try multiple ways to get parent ID
+        parent_id = (
+            node_data.get("parentLoopId") or
+            node.get("parentId") or
+            node_data.get("parentId")
+        )
+
+        logger.info(f"LoopStart: node_id={node.get('id')}, parent_id={parent_id}")
+
+        if parent_id:
+            # Get parent loop node's outputs
+            parent_outputs = await context.get_node_outputs(parent_id)
+            logger.info(f"LoopStart: parent_outputs={parent_outputs}")
+            if parent_outputs:
+                # Filter out internal fields
+                outputs = {k: v for k, v in parent_outputs.items() if not k.startswith("_")}
+                return ExecutionResult(outputs=outputs)
+
+        return ExecutionResult(outputs={})
+
+
 @NodeExecutorRegistry.register("iteration")
 class IterationNodeExecutor(NodeExecutor):
     """
@@ -58,16 +134,46 @@ class IterationNodeExecutor(NodeExecutor):
         """Execute iteration node."""
         node_id = node.get("id")
         node_data = node.get("data", {})
-        config = node_data.get("config", {})
+        # Frontend stores config in iterationConfig, fallback to config for backwards compatibility
+        config = node_data.get("iterationConfig") or node_data.get("config", {})
 
-        input_var = config.get("inputVariable", "")
+        # Frontend uses iteratorVariable, backend also supports inputVariable for backwards compatibility
+        input_var = config.get("iteratorVariable") or config.get("inputVariable", "")
+        iterator_type = config.get("iteratorType", "array")  # 'array' or 'object'
+        # Array iteration variables
         item_var = config.get("itemVariable", "item")
         index_var = config.get("indexVariable", "index")
+        # Object iteration variables
+        key_var = config.get("keyVariable", "key")
+        value_var = config.get("valueVariable", "value")
         max_iterations = min(config.get("maxIterations", 100), MAX_ITERATIONS)
 
-        # Get the array to iterate
+        # Get the data to iterate
         items = await context.resolve_variable_ref(input_var)
 
+        logger.info(f"Iteration node {node_id}: input_var={input_var}, iterator_type={iterator_type}, raw items={items}, type={type(items)}")
+
+        # Handle object iteration
+        if iterator_type == "object":
+            return await self._execute_object_iteration(
+                node_id, items, key_var, value_var, max_iterations, context
+            )
+
+        # Array iteration (default)
+        return await self._execute_array_iteration(
+            node_id, items, item_var, index_var, max_iterations, context
+        )
+
+    async def _execute_array_iteration(
+        self,
+        node_id: str,
+        items: Any,
+        item_var: str,
+        index_var: str,
+        max_iterations: int,
+        context: "ExecutionContext",
+    ) -> ExecutionResult:
+        """Execute array iteration."""
         if items is None:
             return ExecutionResult(
                 outputs={
@@ -78,6 +184,17 @@ class IterationNodeExecutor(NodeExecutor):
                     "_iteration_complete": True,
                 }
             )
+
+        # Try to parse JSON string
+        if isinstance(items, str):
+            import json
+            try:
+                parsed = json.loads(items)
+                if isinstance(parsed, (list, tuple)):
+                    items = parsed
+                    logger.info(f"Parsed JSON string to array: {items}")
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         if not isinstance(items, (list, tuple)):
             items = [items]
@@ -93,7 +210,6 @@ class IterationNodeExecutor(NodeExecutor):
         iteration_state = await context.get_variable(f"{node_id}._iteration_state")
 
         if iteration_state is None:
-            # First iteration
             current_index = 0
             results = []
         else:
@@ -112,8 +228,9 @@ class IterationNodeExecutor(NodeExecutor):
                 }
             )
 
-        # Get current item
         current_item = items[current_index]
+
+        logger.info(f"Iteration node {node_id}: index={current_index}, item={current_item}, total={len(items)}")
 
         # Store iteration state
         await context.set_variable(
@@ -147,16 +264,127 @@ class IterationNodeExecutor(NodeExecutor):
             }
         )
 
+    async def _execute_object_iteration(
+        self,
+        node_id: str,
+        items: Any,
+        key_var: str,
+        value_var: str,
+        max_iterations: int,
+        context: "ExecutionContext",
+    ) -> ExecutionResult:
+        """Execute object iteration (key-value pairs)."""
+        if items is None or not isinstance(items, dict):
+            # Try to parse JSON string
+            if isinstance(items, str):
+                import json
+                try:
+                    parsed = json.loads(items)
+                    if isinstance(parsed, dict):
+                        items = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if not isinstance(items, dict):
+                return ExecutionResult(
+                    outputs={
+                        key_var: None,
+                        value_var: None,
+                        "total": 0,
+                        "results": [],
+                        "_iteration_complete": True,
+                    }
+                )
+
+        # Convert dict to list of (key, value) pairs
+        pairs = list(items.items())
+
+        # Limit iterations
+        if len(pairs) > max_iterations:
+            logger.warning(
+                f"Iteration limited to {max_iterations} items (original: {len(pairs)})"
+            )
+            pairs = pairs[:max_iterations]
+
+        # Get current iteration state
+        iteration_state = await context.get_variable(f"{node_id}._iteration_state")
+
+        if iteration_state is None:
+            current_index = 0
+            results = []
+        else:
+            current_index = iteration_state.get("index", 0) + 1
+            results = iteration_state.get("results", [])
+
+        # Check if iteration is complete
+        if current_index >= len(pairs):
+            return ExecutionResult(
+                outputs={
+                    key_var: None,
+                    value_var: None,
+                    "total": len(pairs),
+                    "results": results,
+                    "_iteration_complete": True,
+                }
+            )
+
+        current_key, current_value = pairs[current_index]
+
+        logger.info(f"Iteration node {node_id}: index={current_index}, key={current_key}, value={current_value}, total={len(pairs)}")
+
+        # Store iteration state
+        await context.set_variable(
+            f"{node_id}._iteration_state",
+            {
+                "index": current_index,
+                "total": len(pairs),
+                "results": results,
+                "pairs": pairs,
+            },
+        )
+
+        # Publish iteration event
+        stream_manager = StreamManager(context.run_id)
+        await stream_manager.publish_iteration(
+            node_id=node_id,
+            iteration=current_index + 1,
+            total=len(pairs),
+            is_start=True,
+            item=current_key,
+        )
+
+        return ExecutionResult(
+            outputs={
+                key_var: current_key,
+                value_var: current_value,
+                "total": len(pairs),
+                "results": results,
+                "_iteration_complete": False,
+                "_iteration_index": current_index,
+            }
+        )
+
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
-        item_var = config.get("itemVariable", "item")
-        index_var = config.get("indexVariable", "index")
-        return [
-            {"name": item_var, "type": "any"},
-            {"name": index_var, "type": "number"},
-            {"name": "total", "type": "number"},
-            {"name": "results", "type": "array"},
-        ]
+        iterator_type = config.get("iteratorType", "array")
+        if iterator_type == "object":
+            key_var = config.get("keyVariable", "key")
+            value_var = config.get("valueVariable", "value")
+            return [
+                {"name": key_var, "type": "string"},
+                {"name": value_var, "type": "any"},
+                {"name": "total", "type": "number"},
+                {"name": "results", "type": "array"},
+            ]
+        else:
+            item_var = config.get("itemVariable", "item")
+            index_var = config.get("indexVariable", "index")
+            return [
+                {"name": item_var, "type": "any"},
+                {"name": index_var, "type": "number"},
+                {"name": "total", "type": "number"},
+                {"name": "results", "type": "array"},
+            ]
 
 
 @NodeExecutorRegistry.register("loop")

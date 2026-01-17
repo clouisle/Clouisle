@@ -589,6 +589,10 @@ class WorkflowOrchestrator:
 
             # Execute nodes in this stage
             for node_id in nodes_to_execute:
+                # Skip if already executed (may have been executed as part of iteration body)
+                if node_id in executed_nodes:
+                    continue
+
                 node_count += 1
                 if node_count > self.max_nodes:
                     raise NodeExecutionError(
@@ -611,14 +615,16 @@ class WorkflowOrchestrator:
                     iteration_complete = result.outputs.get("_iteration_complete") or \
                                         result.outputs.get("_loop_complete", False)
 
-                    if not iteration_complete:
-                        # Need to loop - execute downstream nodes then come back
-                        downstream_nodes = plan.get_downstream_nodes(node_id)
-                        if downstream_nodes:
-                            # Execute iteration body
+                    # Get child nodes inside the iteration container (by parentId)
+                    child_nodes = self._get_child_nodes(plan, node_id)
+
+                    # Loop until iteration is complete
+                    while not iteration_complete:
+                        if child_nodes:
+                            # Execute iteration body (child nodes)
                             await self._execute_iteration_body(
                                 iteration_node_id=node_id,
-                                downstream_nodes=downstream_nodes,
+                                downstream_nodes=child_nodes,
                                 plan=plan,
                                 context=context,
                                 run=run,
@@ -628,10 +634,24 @@ class WorkflowOrchestrator:
                                 skipped_nodes=skipped_nodes,
                             )
 
-                            # Re-execute iteration node to check condition/get next item
-                            # Clear from executed so it can run again
-                            executed_nodes.discard(node_id)
-                            continue
+                        # Re-execute iteration node to get next item
+                        result = await self._execute_node(
+                            node_id=node_id,
+                            plan=plan,
+                            context=context,
+                            run=run,
+                            stream_manager=stream_manager,
+                        )
+                        iteration_complete = result.outputs.get("_iteration_complete") or \
+                                            result.outputs.get("_loop_complete", False)
+
+                        # Break before executing body if iteration is complete
+                        if iteration_complete:
+                            break
+
+                    # Mark child nodes as executed to prevent re-execution in stage loop
+                    for child_id in child_nodes:
+                        executed_nodes.add(child_id)
 
                 executed_nodes.add(node_id)
 
@@ -694,30 +714,12 @@ class WorkflowOrchestrator:
         """
         Execute the body of an iteration/loop.
 
-        This recursively executes downstream nodes until we reach
-        nodes that connect back to the iteration node or end nodes.
+        Executes all child nodes inside the iteration container.
         """
-        # Get all nodes in the iteration body
-        body_nodes = set()
-        queue = list(downstream_nodes)
+        # Use the child nodes directly (already sorted by execution order)
+        ordered_body_nodes = downstream_nodes
 
-        while queue:
-            node_id = queue.pop(0)
-            if node_id in body_nodes:
-                continue
-            if node_id == iteration_node_id:
-                continue  # Don't include the iteration node itself
-
-            body_nodes.add(node_id)
-            node = plan.get_node(node_id)
-            if node:
-                for downstream_id in node.downstream:
-                    if downstream_id not in body_nodes and downstream_id != iteration_node_id:
-                        queue.append(downstream_id)
-
-        # Execute body nodes in order
-        execution_order = plan.get_execution_order()
-        ordered_body_nodes = [n for n in execution_order if n in body_nodes]
+        logger.info(f"Executing iteration body: {ordered_body_nodes}")
 
         for node_id in ordered_body_nodes:
             # Check timeout
@@ -729,11 +731,6 @@ class WorkflowOrchestrator:
             if status == "cancelled":
                 raise ExecutionCancelledError()
 
-            # Skip if upstream is skipped
-            node = plan.get_node(node_id)
-            if node and node.upstream & skipped_nodes:
-                continue
-
             # Execute node
             result = await self._execute_node(
                 node_id=node_id,
@@ -743,17 +740,7 @@ class WorkflowOrchestrator:
                 stream_manager=stream_manager,
             )
 
-            # Handle branching within iteration body
-            if result.next_handles and node:
-                all_handles = set(node.handle_map.keys())
-                taken_handles = set(result.next_handles)
-                skipped_handles = all_handles - taken_handles
-
-                for handle in skipped_handles:
-                    downstream = node.handle_map.get(handle, [])
-                    for downstream_id in downstream:
-                        if downstream_id in body_nodes:
-                            skipped_nodes.add(downstream_id)
+            logger.info(f"Iteration body node {node_id} result: {result.outputs}")
 
     async def _execute_node(
         self,
@@ -938,3 +925,25 @@ class WorkflowOrchestrator:
             "created_at": run.created_at.isoformat() if run.created_at else None,
             "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         }
+
+    def _get_child_nodes(self, plan: ExecutionPlan, parent_id: str) -> list[str]:
+        """
+        Get child nodes inside a container (iteration/loop) by parentId.
+
+        Args:
+            plan: Execution plan
+            parent_id: Parent container node ID
+
+        Returns:
+            List of child node IDs in execution order
+        """
+        child_nodes = []
+        for node_id, node_info in plan.nodes.items():
+            node_data = node_info.node_data
+            # Check parentId in node data
+            if node_data.get("parentId") == parent_id:
+                child_nodes.append(node_id)
+
+        # Sort by execution order
+        execution_order = plan.get_execution_order()
+        return [n for n in execution_order if n in child_nodes]

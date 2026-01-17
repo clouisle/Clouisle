@@ -282,10 +282,24 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
     
     case 'iteration': {
       const config = node.data.iterationConfig
+      const iteratorType = config?.iteratorType || 'array'
       const outputVar = config?.outputVariable || 'results'
-      const itemVar = config?.itemVariable || 'item'
+
+      if (iteratorType === 'object') {
+        // 对象迭代：输出 key 和 value
+        const keyVar = config?.keyVariable || 'key'
+        const valueVar = config?.valueVariable || 'value'
+        variables.push(`${node.id}.${keyVar}`)
+        variables.push(`${node.id}.${valueVar}`)
+      } else {
+        // 数组迭代：输出 item 和 index
+        const itemVar = config?.itemVariable || 'item'
+        const indexVar = config?.indexVariable || 'index'
+        variables.push(`${node.id}.${itemVar}`)
+        variables.push(`${node.id}.${indexVar}`)
+      }
+
       variables.push(`${node.id}.${outputVar}`)
-      variables.push(`${node.id}.${itemVar}`)
       break
     }
     
@@ -353,12 +367,27 @@ function getAvailableVariables(nodeId: string, nodes: WorkflowNode[], edges: Edg
       const parentType = parentNode.type || parentNode.data.type
       
       if (parentType === 'iteration') {
-        // 迭代节点提供 item 和 index 变量
+        // 迭代节点提供变量
         const config = parentNode.data.iterationConfig
-        const itemVar = config?.itemVariable || 'item'
-        const indexVar = config?.indexVariable || 'index'
-        availableVars.add(`${parentNode.id}.${itemVar}`)
-        availableVars.add(`${parentNode.id}.${indexVar}`)
+        const iteratorType = config?.iteratorType || 'array'
+        const outputVar = config?.outputVariable || 'results'
+
+        if (iteratorType === 'object') {
+          // 对象迭代：提供 key 和 value 变量
+          const keyVar = config?.keyVariable || 'key'
+          const valueVar = config?.valueVariable || 'value'
+          availableVars.add(`${parentNode.id}.${keyVar}`)
+          availableVars.add(`${parentNode.id}.${valueVar}`)
+        } else {
+          // 数组迭代：提供 item 和 index 变量
+          const itemVar = config?.itemVariable || 'item'
+          const indexVar = config?.indexVariable || 'index'
+          availableVars.add(`${parentNode.id}.${itemVar}`)
+          availableVars.add(`${parentNode.id}.${indexVar}`)
+        }
+
+        // 添加 results 变量
+        availableVars.add(`${parentNode.id}.${outputVar}`)
       } else if (parentType === 'loop') {
         // 循环节点提供 index 和循环变量
         const config = parentNode.data.loopConfig
@@ -699,51 +728,92 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 变量赋值 ==========
       case 'variable_assignment': {
         const config = node.data.variableAssignmentConfig
-        
+
         if (!config?.assignments || config.assignments.length === 0) {
           issues.push(createIssue(node, 'error', '至少需要配置一个赋值', 'assignments'))
         } else {
-          const incomplete = config.assignments.filter(
-            a => !a.targetVariable || (!a.sourceVariable && !a.value)
-          )
+          // 检查赋值配置是否完整
+          const incomplete = config.assignments.filter(a => {
+            if (!a.targetVariable) return true
+            // clear 操作不需要源
+            if (a.operation === 'clear') return false
+            // set 操作需要 constantValue
+            if (a.operation === 'set') return !a.constantValue
+            // overwrite/append 操作需要 variableRef
+            return !a.variableRef
+          })
           if (incomplete.length > 0) {
             issues.push(createIssue(node, 'error', `${incomplete.length} 个赋值配置不完整`, 'assignments'))
           }
-          
+
           // 检查源变量是否存在
           for (const assignment of config.assignments) {
-            if (assignment.sourceVariable && !isVariableAvailable(assignment.sourceVariable, availableVars)) {
-              issues.push(createIssue(node, 'error', `赋值引用的 "${extractVariableName(assignment.sourceVariable)}" 不存在`, 'assignments'))
+            if (assignment.variableRef && !isVariableAvailable(assignment.variableRef, availableVars)) {
+              issues.push(createIssue(node, 'error', `赋值引用的 "${extractVariableName(assignment.variableRef)}" 不存在`, 'assignments'))
             }
           }
         }
         break
       }
 
-      // ========== 迭代节点 ==========
-      case 'iteration': {
-        const config = node.data.iterationConfig
-        
-        if (!config?.iterateVariable) {
-          issues.push(createIssue(node, 'error', '迭代变量 不能为空', 'iterateVariable'))
-        } else if (!isVariableAvailable(config.iterateVariable, availableVars)) {
-          issues.push(createIssue(node, 'error', `迭代变量 "${extractVariableName(config.iterateVariable)}" 不存在或不可用`, 'iterateVariable'))
-        }
-        break
+    case 'iteration': {
+      const config = node.data.iterationConfig
+      const iteratorType = config?.iteratorType || 'array'
+
+      // 检查迭代源变量
+      const iteratorVar = config?.iteratorVariable || config?.iterateVariable
+      if (!iteratorVar) {
+        issues.push(createIssue(node, 'error', '迭代源变量不能为空', 'iteratorVariable'))
+      } else if (!isVariableAvailable(iteratorVar, availableVars)) {
+        issues.push(createIssue(node, 'error', `迭代源变量 "${extractVariableName(iteratorVar)}" 不存在或不可用`, 'iteratorVariable'))
       }
+
+      // 检查是否有子节点（iteration_start）
+      const hasStartNode = workflowNodes.some(n =>
+        (n.type === 'iteration_start' || n.data.type === 'iteration_start') &&
+        n.parentId === node.id
+      )
+      if (!hasStartNode) {
+        issues.push(createIssue(node, 'error', '迭代容器缺少开始节点', 'structure'))
+      }
+
+      // 检查容器内是否有其他节点
+      const childNodes = workflowNodes.filter(n => n.parentId === node.id && n.type !== 'iteration_start')
+      if (childNodes.length === 0) {
+        issues.push(createIssue(node, 'warning', '迭代容器内没有处理节点', 'structure'))
+      }
+
+      break
+    }
 
       // ========== 循环节点 ==========
       case 'loop': {
         const config = node.data.loopConfig
-        
+
         if (!config?.conditionVariable && !config?.maxIterations) {
           issues.push(createIssue(node, 'warning', '建议设置循环条件或最大迭代次数', 'condition'))
         }
-        
+
         // 检查条件变量是否存在
         if (config?.conditionVariable && !isVariableAvailable(config.conditionVariable, availableVars)) {
           issues.push(createIssue(node, 'error', `条件变量 "${extractVariableName(config.conditionVariable)}" 不存在或不可用`, 'conditionVariable'))
         }
+
+        // 检查是否有子节点（loop_start）
+        const hasStartNode = workflowNodes.some(n =>
+          (n.type === 'loop_start' || n.data.type === 'loop_start') &&
+          n.parentId === node.id
+        )
+        if (!hasStartNode) {
+          issues.push(createIssue(node, 'error', '循环容器缺少开始节点', 'structure'))
+        }
+
+        // 检查容器内是否有其他节点
+        const childNodes = workflowNodes.filter(n => n.parentId === node.id && n.type !== 'loop_start')
+        if (childNodes.length === 0) {
+          issues.push(createIssue(node, 'warning', '循环容器内没有处理节点', 'structure'))
+        }
+
         break
       }
 
@@ -821,23 +891,32 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
   }
 
   // ========== 检查连接问题 ==========
-  
+
   // 检查孤立节点（无连接的节点）
   const connectedNodeIds = new Set<string>()
   for (const edge of edges) {
     connectedNodeIds.add(edge.source)
     connectedNodeIds.add(edge.target)
   }
-  
+
   // 排除开始节点、特殊节点和注释节点
   const excludeTypes = ['start', 'user_input', 'trigger', 'iteration_start', 'loop_start', 'comment']
   for (const node of workflowNodes) {
     const nodeType = node.type || node.data.type
-    if (!excludeTypes.includes(nodeType) && !node.parentId) {
-      // 检查是否有输入连接
-      const hasInput = edges.some(e => e.target === node.id)
-      if (!hasInput && nodes.length > 1) {
-        issues.push(createIssue(node, 'warning', '节点没有输入连接', 'connection'))
+    if (!excludeTypes.includes(nodeType)) {
+      // 如果节点在容器内（有 parentId），检查是否与容器内的其他节点连接
+      if (node.parentId) {
+        const hasInput = edges.some(e => e.target === node.id)
+        if (!hasInput) {
+          // 容器内的节点必须有输入连接（通常来自 iteration_start 或 loop_start）
+          issues.push(createIssue(node, 'warning', '容器内节点没有输入连接', 'connection'))
+        }
+      } else {
+        // 顶层节点检查是否有输入连接
+        const hasInput = edges.some(e => e.target === node.id)
+        if (!hasInput && nodes.length > 1) {
+          issues.push(createIssue(node, 'warning', '节点没有输入连接', 'connection'))
+        }
       }
     }
   }
