@@ -8,7 +8,7 @@ import secrets
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Header
 from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
@@ -105,6 +105,202 @@ async def check_workflow_access(
     await check_team_access(workflow.team.id, user, require_admin=require_write)
 
     return workflow
+
+
+# ============ Global Workflow Runs (must be before /{workflow_id} routes) ============
+
+
+@router.get("/runs", response_model=Response[PageData[dict]])
+async def list_all_workflow_runs(
+    team_id: UUID | None = Query(None),
+    workflow_id: UUID | None = Query(None),
+    status: RunStatus | None = Query(None),
+    trigger_type: TriggerType | None = Query(None),
+    user_id: UUID | None = Query(None),
+    is_debug: bool | None = Query(None),
+    search: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    List all workflow runs across workflows (admin endpoint).
+
+    Supports filtering by:
+    - team_id: Filter by team
+    - workflow_id: Filter by specific workflow
+    - status: Filter by run status
+    - trigger_type: Filter by trigger type
+    - user_id: Filter by triggered user
+    - is_debug: Filter debug runs
+    - search: Search workflow names
+    """
+    # Get workflows user has access to
+    workflow_query = Workflow.all()
+
+    if team_id:
+        await check_team_access(team_id, current_user)
+        workflow_query = workflow_query.filter(team_id=team_id)
+    elif not current_user.is_superuser:
+        # Get teams user belongs to
+        memberships = await TeamMember.filter(user=current_user).values_list(
+            "team_id", flat=True
+        )
+        workflow_query = workflow_query.filter(team_id__in=memberships)
+
+    # Apply search filter on workflows
+    if search:
+        workflow_query = workflow_query.filter(name__icontains=search)
+
+    accessible_workflows = await workflow_query.all()
+    workflow_ids = [w.id for w in accessible_workflows]
+
+    if not workflow_ids:
+        return success(
+            data={"items": [], "total": 0, "page": page, "page_size": page_size}
+        )
+
+    # Build query for runs
+    query = WorkflowRun.filter(workflow_id__in=workflow_ids)
+
+    # Apply filters
+    if workflow_id:
+        query = query.filter(workflow_id=workflow_id)
+    if status:
+        query = query.filter(status=status)
+    if trigger_type:
+        query = query.filter(trigger_type=trigger_type)
+    if user_id:
+        query = query.filter(triggered_by_id=user_id)
+    if is_debug is not None:
+        query = query.filter(is_debug=is_debug)
+
+    # Get total and paginate
+    total = await query.count()
+    skip = (page - 1) * page_size
+    runs = (
+        await query.select_related("workflow", "triggered_by")
+        .order_by("-created_at")
+        .offset(skip)
+        .limit(page_size)
+    )
+
+    # Build response with workflow info
+    items = []
+    for run in runs:
+        item = WorkflowRunListItem.model_validate(run).model_dump()
+        item["workflow_name"] = run.workflow.name
+        item["workflow_icon"] = run.workflow.icon
+        item["triggered_by_name"] = (
+            run.triggered_by.username if run.triggered_by else None
+        )
+        items.append(item)
+
+    return success(
+        data={"items": items, "total": total, "page": page, "page_size": page_size},
+        msg_key="workflow_runs_fetched",
+    )
+
+
+@router.get("/runs/stats", response_model=Response[dict])
+async def get_workflow_run_stats(
+    team_id: UUID | None = Query(None),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get workflow run statistics.
+
+    Returns:
+    - total_runs: Total number of runs
+    - runs_by_status: Count by status
+    - runs_by_workflow: Top 10 workflows by run count
+    - avg_duration_ms: Average execution duration
+    """
+    # Get workflows user has access to
+    workflow_query = Workflow.all()
+
+    if team_id:
+        await check_team_access(team_id, current_user)
+        workflow_query = workflow_query.filter(team_id=team_id)
+    elif not current_user.is_superuser:
+        # Get teams user belongs to
+        memberships = await TeamMember.filter(user=current_user).values_list(
+            "team_id", flat=True
+        )
+        workflow_query = workflow_query.filter(team_id__in=memberships)
+
+    accessible_workflows = await workflow_query.all()
+    workflow_ids = [w.id for w in accessible_workflows]
+
+    if not workflow_ids:
+        return success(
+            data={
+                "total_runs": 0,
+                "runs_by_status": {},
+                "runs_by_workflow": [],
+                "avg_duration_ms": 0,
+            },
+            msg_key="workflow_run_stats_fetched",
+        )
+
+    # Get all runs for accessible workflows
+    runs = await WorkflowRun.filter(workflow_id__in=workflow_ids).all()
+
+    # Calculate statistics
+    total_runs = len(runs)
+
+    # Runs by status
+    runs_by_status = {}
+    for run in runs:
+        status_key = run.status.value
+        runs_by_status[status_key] = runs_by_status.get(status_key, 0) + 1
+
+    # Runs by workflow (top 10)
+    workflow_counts = {}
+    for run in runs:
+        workflow_counts[run.workflow_id] = workflow_counts.get(run.workflow_id, 0) + 1
+
+    # Sort and get top 10
+    top_workflows = sorted(
+        workflow_counts.items(), key=lambda x: x[1], reverse=True
+    )[:10]
+
+    # Build workflow info
+    workflow_map = {w.id: w for w in accessible_workflows}
+    runs_by_workflow = []
+    for workflow_id, count in top_workflows:
+        workflow = workflow_map.get(workflow_id)
+        if workflow:
+            runs_by_workflow.append({
+                "workflow_id": str(workflow_id),
+                "workflow_name": workflow.name,
+                "workflow_icon": workflow.icon,
+                "count": count,
+            })
+
+    # Calculate average duration (only for completed runs)
+    completed_runs = [
+        r for r in runs
+        if r.status == RunStatus.SUCCESS and r.started_at and r.finished_at
+    ]
+    if completed_runs:
+        total_duration_ms = sum(
+            int((r.finished_at - r.started_at).total_seconds() * 1000)
+            for r in completed_runs
+        )
+        avg_duration_ms = total_duration_ms // len(completed_runs)
+    else:
+        avg_duration_ms = 0
+
+    return success(
+        data={
+            "total_runs": total_runs,
+            "runs_by_status": runs_by_status,
+            "runs_by_workflow": runs_by_workflow,
+            "avg_duration_ms": avg_duration_ms,
+        },
+        msg_key="workflow_run_stats_fetched",
+    )
 
 
 # ============ Workflow CRUD ============
@@ -406,6 +602,137 @@ async def regenerate_webhook_token(
     )
 
 
+# ============ Webhook API (Public) ============
+
+
+@router.post("/webhook/{webhook_token}", response_model=Response[dict])
+async def trigger_workflow_webhook(
+    webhook_token: str,
+    inputs: dict[str, Any],
+    authorization: str | None = Header(None),
+) -> Any:
+    """
+    Webhook endpoint to trigger workflow execution.
+
+    Requires API key authentication via Authorization header.
+    Format: Authorization: Bearer clou_xxxxx
+
+    Args:
+        webhook_token: The workflow's webhook token
+        inputs: Input parameters for the workflow
+        authorization: API key in Authorization header
+
+    Returns:
+        run_id and stream_url for tracking execution
+    """
+    from app.tasks.workflow import run_workflow_task
+    from app.api.deps import _authenticate_api_key
+
+    # Verify API key is provided
+    if not authorization:
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="api_key_required",
+            status_code=401,
+        )
+
+    # Extract API key from Authorization header
+    api_key_str = None
+    if authorization.startswith("Bearer "):
+        api_key_str = authorization[7:]
+    else:
+        api_key_str = authorization
+
+    # Verify it's an API key (starts with clou_)
+    if not api_key_str or not api_key_str.startswith("clou_"):
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="invalid_api_key_format",
+            status_code=401,
+        )
+
+    # Authenticate API key and get user
+    try:
+        user, api_key = await _authenticate_api_key(api_key_str)
+    except BusinessError:
+        raise
+    except Exception as e:
+        logger.exception(f"API key authentication error: {e}")
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="api_key_authentication_failed",
+            status_code=401,
+        )
+
+    # Find workflow by webhook token using constant-time comparison
+    workflow = await Workflow.filter(webhook_token__isnull=False).prefetch_related("team").all()
+
+    matched_workflow = None
+    for wf in workflow:
+        if wf.webhook_token and secrets.compare_digest(wf.webhook_token, webhook_token):
+            matched_workflow = wf
+            break
+
+    if not matched_workflow:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="invalid_webhook_token",
+            status_code=403,
+        )
+
+    # Verify workflow is published
+    if matched_workflow.status != WorkflowStatus.PUBLISHED:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="workflow_not_published",
+            status_code=403,
+        )
+
+    # Verify webhook trigger is enabled
+    if matched_workflow.trigger_type != TriggerType.WEBHOOK:
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="webhook_trigger_disabled",
+            status_code=403,
+        )
+
+    try:
+        # Create run record with authenticated user
+        run = await WorkflowRun.create(
+            workflow_id=matched_workflow.id,
+            trigger_type=TriggerType.WEBHOOK,
+            triggered_by_id=user.id,  # Record the API key owner as caller
+            is_debug=False,
+            status=RunStatus.PENDING,
+            inputs=inputs,
+        )
+
+        # Submit to Celery for background execution
+        run_workflow_task.delay(
+            run_id=str(run.id),
+            workflow_id=str(matched_workflow.id),
+            inputs=inputs,
+            user_id=str(user.id),  # Pass user ID for execution context
+            team_id=str(matched_workflow.team_id) if matched_workflow.team_id else None,
+        )
+
+        return success(
+            data={
+                "run_id": str(run.id),
+                "status": "pending",
+                "stream_url": f"/api/v1/workflows/runs/{run.id}/stream",
+            },
+            msg_key="workflow_triggered",
+        )
+
+    except Exception as e:
+        logger.exception(f"Webhook execution error: {e}")
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="workflow_execution_error",
+        )
+
+
 # ============ Workflow Execution ============
 
 
@@ -524,7 +851,7 @@ async def debug_workflow(
 async def stream_workflow_run(
     run_id: UUID,
     from_sequence: int = 0,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User | None = Depends(deps.get_current_user_optional),
 ) -> StreamingResponse:
     """
     Stream workflow execution events via SSE (Server-Sent Events).
@@ -554,7 +881,17 @@ async def stream_workflow_run(
             status_code=404,
         )
 
-    await check_workflow_access(run.workflow.id, current_user)
+    # Check access: allow if webhook trigger (no user) or user has access to workflow
+    if run.triggered_by_id is not None:
+        # User-triggered run, check access
+        if not current_user:
+            raise BusinessError(
+                code=ResponseCode.UNAUTHORIZED,
+                msg_key="unauthorized",
+                status_code=401,
+            )
+        await check_workflow_access(run.workflow.id, current_user)
+    # Webhook-triggered runs (triggered_by_id is None) are publicly accessible
 
     async def event_generator():
         async for event in stream_to_sse(str(run_id), from_sequence):

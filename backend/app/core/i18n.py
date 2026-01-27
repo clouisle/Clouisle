@@ -723,6 +723,86 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Workflow with this name already exists",
         "zh": "该工作流名称已存在",
     },
+    "workflow_published": {
+        "en": "Workflow published successfully",
+        "zh": "工作流发布成功",
+    },
+    "workflow_unpublished": {
+        "en": "Workflow unpublished successfully",
+        "zh": "工作流已取消发布",
+    },
+    "workflow_duplicated": {
+        "en": "Workflow duplicated successfully",
+        "zh": "工作流复制成功",
+    },
+    "workflow_not_published": {
+        "en": "Workflow is not published",
+        "zh": "工作流未发布",
+    },
+    "workflow_triggered": {
+        "en": "Workflow triggered successfully",
+        "zh": "工作流触发成功",
+    },
+    "workflow_run_started": {
+        "en": "Workflow run started",
+        "zh": "工作流运行已开始",
+    },
+    "workflow_debug_started": {
+        "en": "Workflow debug started",
+        "zh": "工作流调试已开始",
+    },
+    "workflow_execution_error": {
+        "en": "Workflow execution error",
+        "zh": "工作流执行错误",
+    },
+    "workflow_run_not_found": {
+        "en": "Workflow run not found",
+        "zh": "工作流运行记录未找到",
+    },
+    "workflow_run_cancelled": {
+        "en": "Workflow run cancelled",
+        "zh": "工作流运行已取消",
+    },
+    "workflow_run_not_cancellable": {
+        "en": "Workflow run cannot be cancelled",
+        "zh": "工作流运行无法取消",
+    },
+    "workflow_run_deleted": {
+        "en": "Workflow run deleted successfully",
+        "zh": "工作流运行记录删除成功",
+    },
+    "workflow_version_not_found": {
+        "en": "Workflow version not found",
+        "zh": "工作流版本未找到",
+    },
+    "workflow_version_created": {
+        "en": "Workflow version created successfully",
+        "zh": "工作流版本创建成功",
+    },
+    "workflow_version_restored": {
+        "en": "Workflow version restored successfully",
+        "zh": "工作流版本恢复成功",
+    },
+    "webhook_token_regenerated": {
+        "en": "Webhook token regenerated successfully",
+        "zh": "Webhook 令牌重新生成成功",
+    },
+    "invalid_webhook_token": {
+        "en": "Invalid webhook token",
+        "zh": "无效的 Webhook 令牌",
+    },
+    "webhook_trigger_disabled": {
+        "en": "Webhook trigger is not enabled for this workflow",
+        "zh": "此工作流未启用 Webhook 触发",
+    },
+    "workflow_runs_fetched": {
+        "en": "Workflow runs fetched successfully",
+        "zh": "工作流运行记录获取成功",
+    },
+    "workflow_run_stats_fetched": {
+        "en": "Workflow run statistics fetched successfully",
+        "zh": "工作流运行统计获取成功",
+    },
     # Conversation messages
     "conversation_created": {
         "en": "Conversation created successfully",
@@ -824,6 +904,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "invalid_api_key": {
         "en": "Invalid API key",
         "zh": "无效的 API 密钥",
+    },
+    "api_key_required": {
+        "en": "API key is required for webhook calls",
+        "zh": "Webhook 调用需要 API 密钥",
+    },
+    "invalid_api_key_format": {
+        "en": "Invalid API key format. Must start with 'clou_'",
+        "zh": "无效的 API 密钥格式。必须以 'clou_' 开头",
+    },
+    "api_key_authentication_failed": {
+        "en": "API key authentication failed",
+        "zh": "API 密钥认证失败",
     },
     "api_key_expired": {
         "en": "API key has expired",

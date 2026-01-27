@@ -83,6 +83,36 @@ export interface WorkflowRunListItem {
   error_message?: string | null
 }
 
+export interface WorkflowRunListItemWithWorkflow extends WorkflowRunListItem {
+  workflow_name: string
+  workflow_icon?: string | null
+  triggered_by_name?: string | null
+}
+
+export interface WorkflowRunStats {
+  total_runs: number
+  runs_by_status: Record<string, number>
+  runs_by_workflow: Array<{
+    workflow_id: string
+    workflow_name: string
+    workflow_icon?: string | null
+    count: number
+  }>
+  avg_duration_ms: number
+}
+
+export interface AllWorkflowRunsQueryParams {
+  page?: number
+  pageSize?: number
+  teamId?: string
+  workflowId?: string
+  status?: RunStatus
+  triggerType?: TriggerType
+  userId?: string
+  isDebug?: boolean
+  search?: string
+}
+
 export interface NodeExecution {
   id: string
   run_id: string
@@ -310,6 +340,47 @@ export const workflowsApi = {
   },
 
   // ============ Workflow Runs API ============
+
+  /**
+   * 获取所有工作流运行列表（跨工作流，管理员端点）
+   */
+  getAllWorkflowRuns: async (
+    params: AllWorkflowRunsQueryParams = {}
+  ): Promise<PageData<WorkflowRunListItemWithWorkflow>> => {
+    const {
+      page = 1,
+      pageSize = 20,
+      teamId,
+      workflowId,
+      status,
+      triggerType,
+      userId,
+      isDebug,
+      search,
+    } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (teamId) queryParams.append('team_id', teamId)
+    if (workflowId) queryParams.append('workflow_id', workflowId)
+    if (status) queryParams.append('status', status)
+    if (triggerType) queryParams.append('trigger_type', triggerType)
+    if (userId) queryParams.append('user_id', userId)
+    if (isDebug !== undefined) queryParams.append('is_debug', String(isDebug))
+    if (search) queryParams.append('search', search)
+    return api.get<PageData<WorkflowRunListItemWithWorkflow>>(
+      `/workflows/runs?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取工作流运行统计信息
+   */
+  getWorkflowRunStats: async (teamId?: string): Promise<WorkflowRunStats> => {
+    const queryParams = new URLSearchParams()
+    if (teamId) queryParams.append('team_id', teamId)
+    return api.get<WorkflowRunStats>(`/workflows/runs/stats?${queryParams.toString()}`)
+  },
 
   /**
    * 获取工作流运行列表

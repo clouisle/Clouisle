@@ -14,7 +14,7 @@ import time
 
 from tortoise.transactions import in_transaction
 
-from app.models.workflow import Workflow, WorkflowRun, RunStatus
+from app.models.workflow import Workflow, WorkflowRun, RunStatus, NodeExecution, NodeStatus
 from app.core.redis import get_redis
 
 from .context import ExecutionContext
@@ -494,6 +494,13 @@ class WorkflowOrchestrator:
         duration_ms: int,
     ) -> None:
         """Mark run as completed."""
+        # Update node execution statistics
+        node_executions = await NodeExecution.filter(run_id=run.id).all()
+        run.total_nodes = len(node_executions)
+        run.executed_nodes = len([n for n in node_executions if n.status == NodeStatus.SUCCESS])
+        run.failed_nodes = len([n for n in node_executions if n.status == NodeStatus.FAILED])
+        run.skipped_nodes = len([n for n in node_executions if n.status == NodeStatus.SKIPPED])
+
         run.status = "success"
         run.outputs = outputs
         run.total_duration_ms = duration_ms
@@ -508,6 +515,13 @@ class WorkflowOrchestrator:
         duration_ms: int,
     ) -> None:
         """Mark run as failed."""
+        # Update node execution statistics
+        node_executions = await NodeExecution.filter(run_id=run.id).all()
+        run.total_nodes = len(node_executions)
+        run.executed_nodes = len([n for n in node_executions if n.status == NodeStatus.SUCCESS])
+        run.failed_nodes = len([n for n in node_executions if n.status == NodeStatus.FAILED])
+        run.skipped_nodes = len([n for n in node_executions if n.status == NodeStatus.SKIPPED])
+
         run.status = "failed"
         run.error_message = error
         run.total_duration_ms = duration_ms
@@ -799,6 +813,19 @@ class WorkflowOrchestrator:
                 is_streaming=is_streaming_answer,
             )
 
+        # Create NodeExecution record
+        execution_order = len(await NodeExecution.filter(run_id=run.id).all())
+        node_execution = await NodeExecution.create(
+            run_id=run.id,
+            node_id=node_id,
+            node_type=node_type,
+            node_name=node_label,
+            execution_order=execution_order,
+            status=NodeStatus.RUNNING,
+            started_at=datetime.utcnow(),
+            config_snapshot=node_inner_data.get("config"),
+        )
+
         start_time = time.time()
 
         try:
@@ -834,6 +861,14 @@ class WorkflowOrchestrator:
 
             # Publish node complete (filter out lazy results for serialization)
             duration_ms = int((time.time() - start_time) * 1000)
+
+            # Update NodeExecution record - success
+            node_execution.status = NodeStatus.SUCCESS
+            node_execution.finished_at = datetime.utcnow()
+            node_execution.execution_duration_ms = duration_ms
+            node_execution.outputs = result.outputs
+            await node_execution.save()
+
             if stream_manager:
                 from .lazy_stream import LazyStreamResult
                 # Filter outputs for serialization - lazy results are placeholders
@@ -851,9 +886,26 @@ class WorkflowOrchestrator:
 
             return result
 
-        except NodeExecutionError:
+        except NodeExecutionError as e:
+            # Update NodeExecution record - failed
+            duration_ms = int((time.time() - start_time) * 1000)
+            node_execution.status = NodeStatus.FAILED
+            node_execution.finished_at = datetime.utcnow()
+            node_execution.execution_duration_ms = duration_ms
+            node_execution.error_message = str(e)
+            node_execution.error_type = type(e).__name__
+            await node_execution.save()
             raise
         except Exception as e:
+            # Update NodeExecution record - failed
+            duration_ms = int((time.time() - start_time) * 1000)
+            node_execution.status = NodeStatus.FAILED
+            node_execution.finished_at = datetime.utcnow()
+            node_execution.execution_duration_ms = duration_ms
+            node_execution.error_message = str(e)
+            node_execution.error_type = type(e).__name__
+            await node_execution.save()
+
             error_msg = f"Node execution error: {str(e)}"
             if stream_manager:
                 await stream_manager.publish_node_error(

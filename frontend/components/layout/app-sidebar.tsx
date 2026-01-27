@@ -23,6 +23,7 @@ import {
   AppWindow,
   MessageSquare,
   Wrench,
+  Activity,
 } from 'lucide-react'
 import { authApi, type User } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -119,9 +120,9 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       icon: Database,
     },
     {
-      title: t('conversations'),
-      url: '/conversations',
-      icon: MessageSquare,
+      title: t('activities'),
+      url: '/activities',
+      icon: Activity,
     },
   ]
 
