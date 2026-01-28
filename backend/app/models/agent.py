@@ -87,6 +87,12 @@ class Agent(models.Model):
         default=list, description="Tools configuration"
     )  # type: ignore[assignment]
 
+    # Tools credentials (JSON object)
+    # {"TAVILY_API_KEY": "tvly-xxx", "OPENWEATHER_API_KEY": "xxx"}
+    tools_credentials: dict = fields.JSONField(
+        default=dict, description="Tools credentials (API keys, tokens, etc.)"
+    )  # type: ignore[assignment]
+
     # Vision configuration
     enable_vision = fields.BooleanField(
         default=False, description="Enable vision/image understanding"

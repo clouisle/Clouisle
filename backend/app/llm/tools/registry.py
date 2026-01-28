@@ -213,13 +213,14 @@ class ToolRegistry:
         tools = self.get_tools_by_names(names) if names else self.get_all_tools()
         return [tool.to_langchain_schema() for tool in tools]
 
-    async def execute(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def execute(self, name: str, arguments: dict[str, Any], credentials: dict[str, str] | None = None) -> Any:
         """
         执行工具
 
         Args:
             name: 工具名称
             arguments: 参数字典
+            credentials: 凭证信息（可选）
 
         Returns:
             工具执行结果
@@ -233,7 +234,13 @@ class ToolRegistry:
         if not tool.handler:
             raise ValueError(f"Tool has no handler: {name}")
 
-        return await tool.handler(**arguments)
+        # 如果工具函数支持 credentials 参数，则传递
+        import inspect
+        sig = inspect.signature(tool.handler)
+        if 'credentials' in sig.parameters:
+            return await tool.handler(**arguments, credentials=credentials)
+        else:
+            return await tool.handler(**arguments)
 
     def clear(self) -> None:
         """清空所有注册的工具"""

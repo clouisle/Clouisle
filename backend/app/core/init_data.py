@@ -206,11 +206,72 @@ async def init_pgvector():
             logger.info(f"Skipping HNSW index for {col_name} (dimension {dim} > {HNSW_MAX_DIMENSION})")
 
 
+async def init_agent_tools_credentials():
+    """
+    Initialize tools_credentials field for existing agents.
+    This handles the migration for the new tools_credentials feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent tools_credentials field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agents table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Agents table does not exist yet, skipping tools_credentials migration")
+        return
+
+    # Check if tools_credentials column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'tools_credentials'
+    """)
+
+    if not rows:
+        logger.info("Adding tools_credentials column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN tools_credentials JSONB NOT NULL DEFAULT '{}'::jsonb
+            """)
+            logger.info("Added tools_credentials column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add tools_credentials column: {e}")
+            raise
+    else:
+        logger.info("tools_credentials column already exists")
+
+    # Update existing agents with NULL tools_credentials (shouldn't happen with DEFAULT, but just in case)
+    try:
+        result = await conn.execute_query("""
+            UPDATE agents
+            SET tools_credentials = '{}'::jsonb
+            WHERE tools_credentials IS NULL
+        """)
+        logger.info("Updated existing agents with default tools_credentials")
+    except Exception as e:
+        logger.warning(f"Could not update existing agents: {e}")
+
+    logger.info("Agent tools_credentials migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
     The first registered user will be promoted to Super Admin automatically.
     """
+    # IMPORTANT: Run agent tools_credentials migration FIRST, before other initializations
+    # This ensures the column exists before Tortoise validates the schema
+    try:
+        await init_agent_tools_credentials()
+    except Exception as e:
+        logger.warning(f"Agent tools_credentials migration failed (may be first run): {e}")
+
     # 1. Initialize Permissions
     permissions_data = [
         # User permissions
@@ -367,5 +428,8 @@ async def init_db():
 
     # 5. Initialize workflow tables
     await init_workflow_tables()
+
+    # 6. Initialize agent tools_credentials field
+    await init_agent_tools_credentials()
 
     logger.info("Database initialization complete.")

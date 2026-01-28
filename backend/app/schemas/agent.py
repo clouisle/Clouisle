@@ -205,6 +205,9 @@ class AgentCreate(AgentBase):
         default=5, ge=1, le=20, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] = Field(default_factory=list)
+    tools_credentials: dict[str, str] = Field(
+        default_factory=dict, description="Tools credentials (API keys, tokens, etc.)"
+    )
     enable_vision: bool = Field(
         default=False, description="Enable vision/image understanding"
     )
@@ -237,6 +240,7 @@ class AgentUpdate(BaseModel):
         None, ge=1, le=20, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] | None = None
+    tools_credentials: dict[str, str] | None = None
     enable_vision: bool | None = None
     enable_file_upload: bool | None = None
     file_upload_config: FileUploadConfig | None = None
@@ -271,6 +275,7 @@ class AgentOut(AgentBase):
     system_prompt: str | None = None
     max_iterations: int = 5
     tools_config: list[dict[str, Any]] = []
+    tools_credentials: dict[str, str] = {}
     enable_vision: bool = False
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None

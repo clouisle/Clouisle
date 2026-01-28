@@ -605,7 +605,9 @@ async def execute_tool_call(
                 )
         else:
             # Builtin tool
-            result = await tool_registry.execute(tool_name, arguments)
+            # Get credentials from agent if available
+            credentials = agent.tools_credentials if agent else {}
+            result = await tool_registry.execute(tool_name, arguments, credentials=credentials)
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)
             return str(result)

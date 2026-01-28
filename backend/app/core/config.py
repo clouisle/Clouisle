@@ -36,6 +36,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",  # Next.js dev server
     ]
 
+    # External API Keys
+    TAVILY_API_KEY: str | None = None  # Tavily search API key
+
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):

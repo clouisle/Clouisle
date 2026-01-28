@@ -20,6 +20,7 @@ async def web_search(
     query: str,
     num_results: int = 5,
     search_engine: str = "tavily",
+    credentials: dict[str, str] | None = None,
 ) -> dict:
     """
     搜索网页
@@ -28,12 +29,13 @@ async def web_search(
         query: 搜索关键词
         num_results: 返回结果数量，默认 5
         search_engine: 搜索引擎，目前支持 "tavily"
+        credentials: 凭证信息（包含 TAVILY_API_KEY）
 
     Returns:
         搜索结果列表
     """
     if search_engine == "tavily":
-        return await _tavily_search(query, num_results)
+        return await _tavily_search(query, num_results, credentials)
     else:
         return {
             "query": query,
@@ -42,14 +44,20 @@ async def web_search(
         }
 
 
-async def _tavily_search(query: str, num_results: int) -> dict:
+async def _tavily_search(query: str, num_results: int, credentials: dict[str, str] | None = None) -> dict:
     """
     使用 Tavily API 搜索
 
     Tavily 是一个专为 AI 优化的搜索 API
     https://tavily.com/
     """
-    api_key = getattr(settings, "TAVILY_API_KEY", None)
+    # 优先从 credentials 获取 API key，其次从全局配置获取
+    api_key = None
+    if credentials:
+        api_key = credentials.get("TAVILY_API_KEY")
+
+    if not api_key:
+        api_key = getattr(settings, "TAVILY_API_KEY", None)
 
     if not api_key:
         return {
