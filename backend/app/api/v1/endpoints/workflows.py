@@ -5,6 +5,7 @@ Provides CRUD operations for workflows and workflow runs.
 
 import logging
 import secrets
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.timezone import now_utc
 from app.models.user import User, Team, TeamMember
 from app.models.workflow import (
     Workflow,
@@ -436,6 +438,145 @@ async def get_workflow(
     return success(data=WorkflowOut.model_validate(workflow).model_dump())
 
 
+@router.get("/{workflow_id}/stats", response_model=Response[dict])
+async def get_workflow_stats(
+    workflow_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get statistics for a specific workflow.
+
+    Returns:
+    - total_runs: Total number of runs
+    - success_count: Number of successful runs
+    - failed_count: Number of failed runs
+    - timeout_count: Number of timeout runs
+    - avg_duration_ms: Average execution duration
+    - last_run_at: Last run timestamp
+    """
+    await check_workflow_access(workflow_id, current_user)
+
+    # Get all runs for this workflow
+    runs = await WorkflowRun.filter(workflow_id=workflow_id).all()
+
+    total_runs = len(runs)
+
+    if total_runs == 0:
+        return success(
+            data={
+                "total_runs": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "timeout_count": 0,
+                "avg_duration_ms": 0,
+                "last_run_at": None,
+            }
+        )
+
+    # Calculate statistics
+    success_count = sum(1 for r in runs if r.status == RunStatus.SUCCESS)
+    failed_count = sum(1 for r in runs if r.status == RunStatus.FAILED)
+    timeout_count = sum(1 for r in runs if r.status == RunStatus.TIMEOUT)
+
+    # Calculate average duration (only for completed runs)
+    completed_runs = [r for r in runs if r.total_duration_ms is not None]
+    avg_duration_ms = (
+        sum(r.total_duration_ms for r in completed_runs) / len(completed_runs)
+        if completed_runs
+        else 0
+    )
+
+    # Get last run timestamp
+    last_run = max(runs, key=lambda r: r.created_at)
+    last_run_at = last_run.created_at.isoformat() if last_run else None
+
+    return success(
+        data={
+            "total_runs": total_runs,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "timeout_count": timeout_count,
+            "avg_duration_ms": round(avg_duration_ms, 2),
+            "last_run_at": last_run_at,
+        }
+    )
+
+
+@router.get("/{workflow_id}/stats/trends", response_model=Response[dict])
+async def get_workflow_trends(
+    workflow_id: UUID,
+    period: str = Query("7d", description="Time period: 7d, 30d"),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get workflow execution trends over time.
+
+    Returns daily statistics for:
+    - runs: Number of runs per day
+    - success: Number of successful runs per day
+    - failed: Number of failed runs per day
+    - avgDuration: Average execution duration per day
+    """
+    await check_workflow_access(workflow_id, current_user)
+
+    now = now_utc()
+
+    # Determine time range
+    if period == "30d":
+        start_time = now - timedelta(days=30)
+        num_points = 30
+    else:  # Default to 7d
+        start_time = now - timedelta(days=7)
+        num_points = 7
+
+    # Get all runs in the period
+    runs = await WorkflowRun.filter(
+        workflow_id=workflow_id,
+        created_at__gte=start_time
+    ).all()
+
+    # Build time series data grouped by day
+    data_points = []
+    for i in range(num_points):
+        point_date = (now - timedelta(days=num_points - i - 1)).date()
+        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now.tzinfo)
+        point_end = point_start + timedelta(days=1)
+
+        # Filter runs for this day
+        runs_in_day = [r for r in runs if point_start <= r.created_at < point_end]
+
+        # Count by status
+        total_runs = len(runs_in_day)
+        success_count = sum(1 for r in runs_in_day if r.status == RunStatus.SUCCESS)
+        failed_count = sum(1 for r in runs_in_day if r.status == RunStatus.FAILED)
+
+        # Calculate average duration for completed runs
+        completed_runs = [r for r in runs_in_day if r.total_duration_ms is not None]
+        avg_duration = (
+            sum(r.total_duration_ms for r in completed_runs) / len(completed_runs)
+            if completed_runs
+            else 0
+        )
+
+        # Format label
+        label = point_date.strftime("%m/%d")
+
+        data_points.append({
+            "date": label,
+            "runs": total_runs,
+            "success": success_count,
+            "failed": failed_count,
+            "avgDuration": round(avg_duration, 2),
+        })
+
+    return success(
+        data={
+            "period": period,
+            "data": data_points,
+        }
+    )
+
+
 @router.put("/{workflow_id}", response_model=Response[WorkflowOut])
 async def update_workflow(
     *,
@@ -695,6 +836,20 @@ async def trigger_workflow_webhook(
             msg_key="webhook_trigger_disabled",
             status_code=403,
         )
+
+    # Verify API key has permission to access this workflow
+    if api_key:
+        # Get workflows this API key can access
+        allowed_workflows = await api_key.workflows.all()
+        allowed_workflow_ids = [wf.id for wf in allowed_workflows]
+
+        # If API key has specific workflow restrictions, check permission
+        if allowed_workflow_ids and matched_workflow.id not in allowed_workflow_ids:
+            raise BusinessError(
+                code=ResponseCode.FORBIDDEN,
+                msg_key="api_key_no_workflow_access",
+                status_code=403,
+            )
 
     try:
         # Create run record with authenticated user

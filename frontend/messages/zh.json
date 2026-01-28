@@ -113,11 +113,48 @@
     "passwordResetSuccessMessage": "您的密码已成功重置，现在可以使用新密码登录。"
   },
   "dashboard": {
-    "title": "仪表盘",
-    "overview": "概览",
-    "analytics": "分析",
-    "reports": "报告",
-    "notifications": "通知"
+    "home": {
+      "title": "仪表盘",
+      "description": "全站数据统计与指标",
+      "userGrowth": "用户增长",
+      "userGrowthDesc": "新增用户和活跃用户趋势",
+      "activityTrend": "活动趋势",
+      "activityTrendDesc": "对话和 Token 使用情况",
+      "resources": "资源概览",
+      "resourcesDesc": "系统资源统计",
+      "systemStats": "系统统计",
+      "systemStatsDesc": "关键性能指标",
+      "stats": {
+        "totalUsers": "总用户数",
+        "totalTeams": "总团队数",
+        "totalAgents": "总 Agent 数",
+        "totalWorkflows": "总工作流数",
+        "totalKnowledgeBases": "知识库数量",
+        "totalConversations": "总对话数",
+        "totalMessages": "总消息数",
+        "totalTokens": "总 Token 消耗",
+        "dau": "日活用户",
+        "dauDesc": "今日活跃用户",
+        "wau": "周活用户",
+        "wauDesc": "本周活跃用户",
+        "mau": "月活用户",
+        "mauDesc": "本月活跃用户",
+        "newUsers": "新增用户",
+        "activeUsers": "活跃用户",
+        "conversations": "对话数",
+        "tokens": "Token 消耗",
+        "teams": "团队",
+        "teamsDesc": "总团队数",
+        "agents": "Agent",
+        "agentsDesc": "总 Agent 数",
+        "workflows": "工作流",
+        "workflowsDesc": "总工作流数",
+        "knowledgeBases": "知识库",
+        "knowledgeBasesDesc": "总知识库数",
+        "avgMessagesPerConv": "平均消息数/对话",
+        "avgTokensPerMessage": "平均 Token/消息"
+      }
+    }
   },
   "teams": {
     "title": "团队管理",
@@ -187,7 +224,6 @@
     "addModelHint": "点击上方按钮授权模型",
     "authorizeModel": "授权",
     "authorizeModels": "授权 {count} 个模型",
-    "selectAll": "全选",
     "selectedCount": "已选 {count} 个",
     "modelAuthorized": "模型授权成功",
     "modelsAuthorized": "成功授权 {count} 个模型",
@@ -252,8 +288,7 @@
     "role": "角色",
     "username": "用户名",
     "rowsPerPage": "每页行数",
-    "pageInfo": "第 {page} 页，共 {total} 页"
-    ,
+    "pageInfo": "第 {page} 页，共 {total} 页",
     "pendingApprovalNotice": "有 {count} 个用户等待审核",
     "viewPending": "查看待审核",
     "pending": "待审核",
@@ -682,7 +717,10 @@
       "tools": "工具",
       "models": "模型"
     },
-    "profile": "个人资料",
+    "profile": {
+      "title": "个人资料",
+      "teamsDescription": "您已加入 {count} 个团队"
+    },
     "admin": "后台管理",
     "logout": "退出登录",
     "logoutSuccess": "已成功退出登录",
@@ -698,26 +736,69 @@
     "teams": "团队",
     "manageTeams": "管理团队",
     "noTeams": "暂无团队",
-    "profile": {
-      "title": "个人资料",
-      "teamsDescription": "您已加入 {count} 个团队"
-    },
     "home": {
       "title": "控制台",
       "welcome": "欢迎回来，{name}",
       "welcomeDefault": "欢迎使用 Clouisle",
       "description": "您可以在这里管理 AI 应用、知识库、工具和模型",
+      "viewAll": "查看全部",
+      "createNew": "创建新应用",
       "stats": {
+        "agents": "智能体",
+        "workflows": "工作流",
         "knowledgeBases": "知识库",
         "models": "可用模型",
         "tools": "工具",
-        "apps": "应用"
+        "apps": "应用",
+        "totalConversations": "总对话数",
+        "totalMessages": "总消息数",
+        "totalTokens": "Token 消耗",
+        "successRate": "成功率",
+        "conversations": "对话",
+        "tokens": "Tokens"
       },
+      "quickActions": "快速操作",
+      "actions": {
+        "createAgent": {
+          "title": "创建智能体",
+          "description": "构建具有自定义能力的 AI 智能体"
+        },
+        "createWorkflow": {
+          "title": "创建工作流",
+          "description": "设计包含多个步骤的自动化工作流"
+        },
+        "createKB": {
+          "title": "创建知识库",
+          "description": "上传文档构建知识库"
+        },
+        "manageModels": {
+          "title": "管理模型",
+          "description": "为您的团队配置 AI 模型"
+        },
+        "manageTools": {
+          "title": "管理工具",
+          "description": "配置和管理可用的工具"
+        }
+      },
+      "recentItems": "最近项目",
+      "noRecentItems": "暂无最近项目",
+      "createFirst": "创建您的第一个应用",
       "quickStart": "快速开始",
       "quickStartDescription": "选择一个功能开始使用",
+      "activityOverview": "活动概览",
+      "activityDescription": "跟踪您团队的资源使用情况",
+      "resourceDistribution": "资源分布",
+      "resourceDistributionDesc": "您团队的资源概览",
+      "resourceComposition": "资源组成",
+      "resourceCompositionDesc": "资源类型的详细分布",
+      "usageTrend": "使用趋势",
+      "usageTrendDesc": "近 7 天对话和 Token 使用趋势",
+      "resourceOverview": "资源概览",
+      "resourceOverviewDesc": "当前资源分配情况",
       "features": {
+        "title": "功能",
         "workspace": {
-          "title": "应用工作台",
+          "title": "工作台",
           "description": "创建和管理您的 AI 应用"
         },
         "kb": {
@@ -725,11 +806,11 @@
           "description": "上传文档并创建知识库"
         },
         "tools": {
-          "title": "工具中心",
+          "title": "工具",
           "description": "配置和管理可用的工具"
         },
         "models": {
-          "title": "模型管理",
+          "title": "模型",
           "description": "查看和管理可用的 AI 模型"
         }
       }
@@ -1023,7 +1104,6 @@
     "visibility": "可见性",
     "visibilityPrivate": "私有",
     "visibilityTeam": "团队",
-    "visibilityPublic": "公开",
     "visibilityPublic": "公开",
     "saveAndPublish": "保存并发布",
     "saveDraft": "保存草稿",
@@ -1499,11 +1579,13 @@
     "editKbDescription": "修改知识库设置",
     "name": "名称",
     "namePlaceholder": "请输入知识库名称",
-    "nameRequired": "名称不能为空",    "team": "团队",
+    "nameRequired": "名称不能为空",
+    "team": "团队",
     "selectTeam": "选择团队",
     "teamHint": "该知识库所属的团队",
     "teamRequired": "请选择团队",
-    "noTeams": "暂无可用的团队",    "descriptionLabel": "描述",
+    "noTeams": "暂无可用的团队",
+    "descriptionLabel": "描述",
     "descriptionPlaceholder": "请输入描述（可选）",
     "embeddingModel": "嵌入模型",
     "selectEmbeddingModel": "选择嵌入模型",
@@ -1531,7 +1613,7 @@
     "createdAt": "创建时间",
     "createdBy": "创建人",
     "filterKbs": "搜索知识库...",
-    "searchPlaceholder": "搜索知识库...",
+    "searchPlaceholder": "输入搜索内容...",
     "noSearchResults": "未找到匹配的知识库",
     "noKbs": "暂无知识库",
     "createKbHint": "点击上方按钮创建您的第一个知识库",
@@ -1666,7 +1748,6 @@
     "retryPreview": "重试预览",
     "batchProcessHint": "设置将应用于所有待处理文档，建议先预览查看分块效果",
     "addChunkAfter": "在后面添加分块",
-    "chunkContentPlaceholder": "输入分块内容...",
     "cancel": "取消",
     "save": "保存",
     "searchTest": "命中测试",
@@ -1686,7 +1767,6 @@
     "topKHint": "返回的最大结果数量",
     "threshold": "相似度阈值",
     "thresholdHint": "结果的最低相似度分数",
-    "searchPlaceholder": "输入搜索内容...",
     "search": "搜索"
   },
   "tools": {
@@ -1970,6 +2050,9 @@
     "allowedAgents": "允许访问的应用",
     "allowedAgentsHint": "选择此 API 密钥可以访问的应用。留空则允许访问所有应用。",
     "noAgentsAvailable": "没有已发布的应用可用。",
+    "allowedWorkflows": "允许访问的工作流",
+    "allowedWorkflowsHint": "选择此 API 密钥可以访问的工作流。留空则允许访问所有工作流。",
+    "noWorkflowsAvailable": "没有已发布的工作流可用。",
     "agents": "应用",
     "allAgents": "所有应用"
   },
@@ -2047,7 +2130,7 @@
     "orchestrate": "编排",
     "accessApi": "访问 API",
     "logs": "日志",
-    "monitor": "监测",
+    "monitor": "监控",
     "dragToAdd": "拖拽节点到画布",
     "loadFailed": "加载工作流失败",
     "saved": "工作流已保存",
@@ -2169,7 +2252,6 @@
     "failed": "失败",
     "idle": "待执行",
     "noEventsYet": "暂无执行事件，点击发送请求开始测试",
-    "logs": "日志",
     "status": "状态",
     "allStatus": "全部状态",
     "pending": "待执行",
@@ -2184,10 +2266,36 @@
     "createdAt": "创建时间",
     "showingRuns": "显示 {from}-{to} 条，共 {total} 条",
     "prev": "上一页",
-    "next": "下一页"
+    "next": "下一页",
+    "monitor_page": {
+      "title": "工作流监控",
+      "last7Days": "最近 7 天",
+      "last30Days": "最近 30 天",
+      "stats": {
+        "totalRuns": "总运行次数",
+        "successRate": "成功率",
+        "avgDuration": "平均耗时",
+        "failedRuns": "失败次数",
+        "runs": "运行次数",
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "running": "运行中"
+      },
+      "runTrends": "运行趋势",
+      "runTrendsDesc": "每日运行次数变化",
+      "successVsFailed": "成功 vs 失败",
+      "successVsFailedDesc": "成功和失败运行对比",
+      "performanceTrend": "性能趋势",
+      "performanceTrendDesc": "平均执行时长变化",
+      "statusDistribution": "状态分布",
+      "recentActivity": "最近活动",
+      "recentActivityDesc": "最新的工作流执行记录",
+      "noRecentActivity": "暂无最近活动"
+    }
   },
   "activities": {
-    "title": "活动日志",
+    "title": "标题",
     "description": "查看所有对话和工作流运行记录",
     "conversations": "对话",
     "workflowRuns": "工作流运行",
@@ -2251,7 +2359,6 @@
     "searchPlaceholder": "搜索对话...",
     "agent": "智能体",
     "user": "用户",
-    "title": "标题",
     "messageCount": "消息数",
     "updatedAt": "更新时间",
     "untitled": "无标题",

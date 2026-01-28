@@ -746,6 +746,16 @@ export interface ConversationStats {
   }>
 }
 
+export interface ConversationTrends {
+  period: string
+  data: Array<{
+    date: string
+    conversations: number
+    messages: number
+    tokens: number
+  }>
+}
+
 export interface AdminConversationQueryParams {
   team_id?: string
   agent_id?: string
@@ -787,6 +797,16 @@ export const conversationsApi = {
     if (teamId) queryParams.append('team_id', teamId)
     const query = queryParams.toString()
     return api.get<ConversationStats>(`/conversations/stats${query ? `?${query}` : ''}`)
+  },
+
+  /**
+   * 获取对话趋势数据
+   */
+  getTrends: async (teamId?: string, period: '7d' | '30d' = '7d'): Promise<ConversationTrends> => {
+    const queryParams = new URLSearchParams()
+    if (teamId) queryParams.append('team_id', teamId)
+    queryParams.append('period', period)
+    return api.get<ConversationTrends>(`/conversations/stats/trends?${queryParams.toString()}`)
   },
 
   /**

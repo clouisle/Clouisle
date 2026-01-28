@@ -12,6 +12,12 @@ export interface APIKeyAgent {
   icon?: string | null
 }
 
+export interface APIKeyWorkflow {
+  id: string
+  name: string
+  icon?: string | null
+}
+
 export interface APIKey {
   id: string
   name: string
@@ -24,6 +30,7 @@ export interface APIKey {
   expires_at: string | null
   last_used_at: string | null
   agents: APIKeyAgent[]
+  workflows: APIKeyWorkflow[]
   created_at: string
   updated_at: string
 }
@@ -45,6 +52,7 @@ export interface APIKeyCreateInput {
   rate_limit?: number
   expires_at?: string | null
   agent_ids?: string[]
+  workflow_ids?: string[]
 }
 
 export interface APIKeyUpdateInput {
@@ -54,6 +62,7 @@ export interface APIKeyUpdateInput {
   expires_at?: string | null
   is_active?: boolean
   agent_ids?: string[]
+  workflow_ids?: string[]
 }
 
 export interface APIKeyQueryParams {

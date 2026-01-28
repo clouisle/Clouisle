@@ -24,6 +24,16 @@ class APIKeyAgentInfo(BaseModel):
         from_attributes = True
 
 
+class APIKeyWorkflowInfo(BaseModel):
+    """API Key 关联的 Workflow 简要信息"""
+    id: UUID
+    name: str
+    icon: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class APIKeyBase(BaseModel):
     """API Key 基础字段"""
     name: str = Field(..., min_length=1, max_length=100, description="API Key name")
@@ -35,6 +45,7 @@ class APIKeyBase(BaseModel):
 class APIKeyCreate(APIKeyBase):
     """创建 API Key 请求"""
     agent_ids: List[UUID] = Field(default=[], description="List of Agent IDs this key can access")
+    workflow_ids: List[UUID] = Field(default=[], description="List of Workflow IDs this key can access")
 
 
 class APIKeyUpdate(BaseModel):
@@ -45,6 +56,7 @@ class APIKeyUpdate(BaseModel):
     expires_at: Optional[datetime] = None
     is_active: Optional[bool] = None
     agent_ids: Optional[List[UUID]] = Field(None, description="List of Agent IDs this key can access")
+    workflow_ids: Optional[List[UUID]] = Field(None, description="List of Workflow IDs this key can access")
 
 
 class APIKeyResponse(BaseModel):
@@ -60,6 +72,7 @@ class APIKeyResponse(BaseModel):
     expires_at: Optional[datetime]
     last_used_at: Optional[datetime]
     agents: List[APIKeyAgentInfo] = Field(default=[], description="Agents this key can access")
+    workflows: List[APIKeyWorkflowInfo] = Field(default=[], description="Workflows this key can access")
     created_at: datetime
     updated_at: datetime
 

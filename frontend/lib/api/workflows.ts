@@ -291,6 +291,36 @@ export const workflowsApi = {
   },
 
   /**
+   * 获取工作流统计数据
+   */
+  getWorkflowStats: async (id: string, period?: string): Promise<{
+    total_runs: number
+    success_count: number
+    failed_count: number
+    timeout_count: number
+    avg_duration_ms: number
+    last_run_at: string | null
+  }> => {
+    return api.get(`/workflows/${id}/stats`)
+  },
+
+  /**
+   * 获取工作流趋势数据
+   */
+  getWorkflowTrends: async (id: string, period: '7d' | '30d' = '7d'): Promise<{
+    period: string
+    data: Array<{
+      date: string
+      runs: number
+      success: number
+      failed: number
+      avgDuration: number
+    }>
+  }> => {
+    return api.get(`/workflows/${id}/stats/trends?period=${period}`)
+  },
+
+  /**
    * 创建工作流
    */
   createWorkflow: async (data: WorkflowCreateInput): Promise<Workflow> => {

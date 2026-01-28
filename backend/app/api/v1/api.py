@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     api_keys,
     prompt_generator,
     workflows,
+    dashboard,
 )
 from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
@@ -62,4 +63,7 @@ api_router.include_router(
 )
 api_router.include_router(
     workflow_versions.template_router, tags=["workflow-templates"]
+)
+api_router.include_router(
+    dashboard.router, prefix="/dashboard", tags=["dashboard"]
 )

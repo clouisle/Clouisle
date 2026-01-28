@@ -30,7 +30,7 @@ export default function PlatformLayout({
     <TeamProvider>
       <div className="h-screen flex flex-col overflow-hidden">
         <PlatformHeader />
-        <main className="flex-1 relative overflow-hidden">
+        <main className="flex-1 relative overflow-y-auto">
           {children}
         </main>
       </div>

@@ -18,13 +18,21 @@ class APIKey(models.Model):
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(  # type: ignore
         "models.User", related_name="api_keys", on_delete=fields.CASCADE
     )
-    
+
     # 关联可访问的 Agent（多对多）
     agents: fields.ManyToManyRelation["Agent"] = fields.ManyToManyField(  # type: ignore
         "models.Agent",
         related_name="api_keys",
         through="api_key_agents",
         description="Agents this API key can access"
+    )
+
+    # 关联可访问的 Workflow（多对多）
+    workflows: fields.ManyToManyRelation["Workflow"] = fields.ManyToManyField(  # type: ignore
+        "models.Workflow",
+        related_name="api_keys",
+        through="api_key_workflows",
+        description="Workflows this API key can access"
     )
     
     # 权限和限制

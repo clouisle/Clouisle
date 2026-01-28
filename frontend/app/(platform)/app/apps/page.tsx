@@ -237,7 +237,7 @@ export default function AppsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-6" suppressHydrationWarning>
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AppType)}>
           <TabsList>
             <TabsTrigger value="all">{t('tabs.all')}</TabsTrigger>

@@ -113,11 +113,48 @@
     "passwordResetSuccessMessage": "Your password has been reset successfully. You can now log in with your new password."
   },
   "dashboard": {
-    "title": "Dashboard",
-    "overview": "Overview",
-    "analytics": "Analytics",
-    "reports": "Reports",
-    "notifications": "Notifications"
+    "home": {
+      "title": "Dashboard",
+      "description": "System-wide statistics and metrics",
+      "userGrowth": "User Growth",
+      "userGrowthDesc": "New and active users over time",
+      "activityTrend": "Activity Trend",
+      "activityTrendDesc": "Conversations and token usage",
+      "resources": "Resources",
+      "resourcesDesc": "System resources overview",
+      "systemStats": "System Statistics",
+      "systemStatsDesc": "Key performance metrics",
+      "stats": {
+        "totalUsers": "Total Users",
+        "totalTeams": "Total Teams",
+        "totalAgents": "Total Agents",
+        "totalWorkflows": "Total Workflows",
+        "totalKnowledgeBases": "Knowledge Bases",
+        "totalConversations": "Total Conversations",
+        "totalMessages": "Total Messages",
+        "totalTokens": "Total Tokens",
+        "dau": "Daily Active Users",
+        "dauDesc": "Users active today",
+        "wau": "Weekly Active Users",
+        "wauDesc": "Users active this week",
+        "mau": "Monthly Active Users",
+        "mauDesc": "Users active this month",
+        "newUsers": "New Users",
+        "activeUsers": "Active Users",
+        "conversations": "Conversations",
+        "tokens": "Tokens",
+        "teams": "Teams",
+        "teamsDesc": "Total teams",
+        "agents": "Agents",
+        "agentsDesc": "Total agents",
+        "workflows": "Workflows",
+        "workflowsDesc": "Total workflows",
+        "knowledgeBases": "Knowledge Bases",
+        "knowledgeBasesDesc": "Total knowledge bases",
+        "avgMessagesPerConv": "Avg Messages/Conv",
+        "avgTokensPerMessage": "Avg Tokens/Message"
+      }
+    }
   },
   "teams": {
     "title": "Team Management",
@@ -161,7 +198,7 @@
     "transfer": "Transfer",
     "ownershipTransferred": "Ownership transferred successfully",
     "filterTeams": "Search teams...",
-    "selectAll": "Select all",
+    "selectAll": "Select All",
     "noTeams": "No teams found",
     "createTeamHint": "Click the button above to create your first team",
     "teamsSelected": "teams selected",
@@ -187,7 +224,6 @@
     "addModelHint": "Click the button above to authorize models",
     "authorizeModel": "Authorize",
     "authorizeModels": "Authorize {count} models",
-    "selectAll": "Select All",
     "selectedCount": "{count} selected",
     "modelAuthorized": "Model authorized successfully",
     "modelsAuthorized": "Successfully authorized {count} models",
@@ -252,8 +288,7 @@
     "role": "Role",
     "username": "Username",
     "rowsPerPage": "Rows per page",
-    "pageInfo": "Page {page} of {total}"
-    ,
+    "pageInfo": "Page {page} of {total}",
     "pendingApprovalNotice": "{count} user(s) are pending approval",
     "viewPending": "View pending",
     "pending": "Pending",
@@ -682,7 +717,10 @@
       "tools": "Tools",
       "models": "Models"
     },
-    "profile": "Profile",
+    "profile": {
+      "title": "Profile",
+      "teamsDescription": "You have joined {count} teams"
+    },
     "admin": "Admin Panel",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",
@@ -698,38 +736,81 @@
     "teams": "Teams",
     "manageTeams": "Manage Teams",
     "noTeams": "No teams",
-    "profile": {
-      "title": "Profile",
-      "teamsDescription": "You have joined {count} teams"
-    },
     "home": {
       "title": "Dashboard",
       "welcome": "Welcome back, {name}",
       "welcomeDefault": "Welcome to Clouisle",
       "description": "Manage your AI applications, knowledge bases, tools, and models",
+      "viewAll": "View All",
+      "createNew": "Create New",
       "stats": {
+        "agents": "Agents",
+        "workflows": "Workflows",
         "knowledgeBases": "Knowledge Bases",
         "models": "Available Models",
         "tools": "Tools",
-        "apps": "Applications"
+        "apps": "Applications",
+        "totalConversations": "Total Conversations",
+        "totalMessages": "Total Messages",
+        "totalTokens": "Token Usage",
+        "successRate": "Success Rate",
+        "conversations": "Conversations",
+        "tokens": "Tokens"
       },
+      "quickActions": "Quick Actions",
+      "actions": {
+        "createAgent": {
+          "title": "Create Agent",
+          "description": "Build a new AI agent with custom capabilities"
+        },
+        "createWorkflow": {
+          "title": "Create Workflow",
+          "description": "Design automated workflows with multiple steps"
+        },
+        "createKB": {
+          "title": "Create Knowledge Base",
+          "description": "Upload documents to build a knowledge base"
+        },
+        "manageModels": {
+          "title": "Manage Models",
+          "description": "Configure AI models for your team"
+        },
+        "manageTools": {
+          "title": "Manage Tools",
+          "description": "Configure and manage available tools"
+        }
+      },
+      "recentItems": "Recent Items",
+      "noRecentItems": "No recent items yet",
+      "createFirst": "Create Your First App",
       "quickStart": "Quick Start",
       "quickStartDescription": "Choose a feature to get started",
+      "activityOverview": "Activity Overview",
+      "activityDescription": "Track your team's resource usage",
+      "resourceDistribution": "Resource Distribution",
+      "resourceDistributionDesc": "Overview of your team's resources",
+      "resourceComposition": "Resource Composition",
+      "resourceCompositionDesc": "Breakdown of resource types",
+      "usageTrend": "Usage Trend",
+      "usageTrendDesc": "7-day conversation and token usage trend",
+      "resourceOverview": "Resource Overview",
+      "resourceOverviewDesc": "Current resource allocation",
       "features": {
+        "title": "Features",
         "workspace": {
-          "title": "Application Workspace",
+          "title": "Workspace",
           "description": "Create and manage your AI applications"
         },
         "kb": {
-          "title": "Knowledge Bases",
+          "title": "Knowledge",
           "description": "Upload documents and create knowledge bases"
         },
         "tools": {
-          "title": "Tool Center",
+          "title": "Tools",
           "description": "Configure and manage available tools"
         },
         "models": {
-          "title": "Model Management",
+          "title": "Models",
           "description": "View and manage available AI models"
         }
       }
@@ -1023,7 +1104,6 @@
     "visibility": "Visibility",
     "visibilityPrivate": "Private",
     "visibilityTeam": "Team",
-    "visibilityPublic": "Public",
     "visibilityPublic": "Public",
     "saveAndPublish": "Save & Publish",
     "saveDraft": "Save Draft",
@@ -1533,7 +1613,7 @@
     "createdAt": "Created At",
     "createdBy": "Created by",
     "filterKbs": "Search knowledge bases...",
-    "searchPlaceholder": "Search knowledge bases...",
+    "searchPlaceholder": "Enter your search query...",
     "noSearchResults": "No matching knowledge bases found",
     "noKbs": "No knowledge bases found",
     "createKbHint": "Click the button above to create your first knowledge base",
@@ -1668,7 +1748,6 @@
     "retryPreview": "Retry Preview",
     "batchProcessHint": "Settings will apply to all pending documents. Preview first to see chunk results.",
     "addChunkAfter": "Add chunk after",
-    "chunkContentPlaceholder": "Enter chunk content...",
     "cancel": "Cancel",
     "save": "Save",
     "searchTest": "Search Test",
@@ -1688,7 +1767,6 @@
     "topKHint": "Maximum number of results to return",
     "threshold": "Similarity Threshold",
     "thresholdHint": "Minimum similarity score for results",
-    "searchPlaceholder": "Enter your search query...",
     "search": "Search"
   },
   "tools": {
@@ -1972,6 +2050,9 @@
     "allowedAgents": "Allowed Applications",
     "allowedAgentsHint": "Select which applications this API key can access. Leave empty to allow all applications.",
     "noAgentsAvailable": "No published applications available.",
+    "allowedWorkflows": "Allowed Workflows",
+    "allowedWorkflowsHint": "Select which workflows this API key can access. Leave empty to allow all workflows.",
+    "noWorkflowsAvailable": "No published workflows available.",
     "agents": "Applications",
     "allAgents": "All Applications"
   },
@@ -2171,7 +2252,6 @@
     "failed": "Failed",
     "idle": "Idle",
     "noEventsYet": "No events yet. Click send request to start testing",
-    "logs": "Logs",
     "status": "Status",
     "allStatus": "All Status",
     "pending": "Pending",
@@ -2186,10 +2266,36 @@
     "createdAt": "Created At",
     "showingRuns": "Showing {from}-{to} of {total}",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "monitor_page": {
+      "title": "Workflow Monitor",
+      "last7Days": "Last 7 Days",
+      "last30Days": "Last 30 Days",
+      "stats": {
+        "totalRuns": "Total Runs",
+        "successRate": "Success Rate",
+        "avgDuration": "Avg Duration",
+        "failedRuns": "Failed Runs",
+        "runs": "Runs",
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timeout",
+        "running": "Running"
+      },
+      "runTrends": "Run Trends",
+      "runTrendsDesc": "Daily run count over time",
+      "successVsFailed": "Success vs Failed",
+      "successVsFailedDesc": "Comparison of successful and failed runs",
+      "performanceTrend": "Performance Trend",
+      "performanceTrendDesc": "Average execution duration over time",
+      "statusDistribution": "Status Distribution",
+      "recentActivity": "Recent Activity",
+      "recentActivityDesc": "Latest workflow executions",
+      "noRecentActivity": "No recent activity"
+    }
   },
   "activities": {
-    "title": "Activity Log",
+    "title": "Title",
     "description": "View all conversations and workflow runs",
     "conversations": "Conversations",
     "workflowRuns": "Workflow Runs",
@@ -2253,7 +2359,6 @@
     "searchPlaceholder": "Search conversations...",
     "agent": "Agent",
     "user": "User",
-    "title": "Title",
     "messageCount": "Messages",
     "updatedAt": "Updated At",
     "untitled": "Untitled",

@@ -924,7 +924,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "api_key_no_agent_access": {
         "en": "This API key does not have access to the requested Agent",
         "zh": "此 API 密钥无权访问请求的 Agent",
-    },}
+    },
+    "api_key_no_workflow_access": {
+        "en": "This API key does not have access to the requested Workflow",
+        "zh": "此 API 密钥无权访问请求的工作流",
+    },
+}
 
 
 def get_language() -> str:

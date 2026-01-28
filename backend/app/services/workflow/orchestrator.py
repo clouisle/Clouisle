@@ -508,6 +508,13 @@ class WorkflowOrchestrator:
         await run.save()
         logger.info(f"Completed workflow run {run.id}")
 
+        # Update workflow statistics
+        workflow = await Workflow.filter(id=run.workflow_id).first()
+        if workflow:
+            workflow.run_count += 1
+            workflow.success_count += 1
+            await workflow.save()
+
     async def _fail_run(
         self,
         run: WorkflowRun,
@@ -528,6 +535,13 @@ class WorkflowOrchestrator:
         run.finished_at = datetime.utcnow()
         await run.save()
         logger.error(f"Failed workflow run {run.id}: {error}")
+
+        # Update workflow statistics
+        workflow = await Workflow.filter(id=run.workflow_id).first()
+        if workflow:
+            workflow.run_count += 1
+            workflow.fail_count += 1
+            await workflow.save()
 
     async def _execute(
         self,
