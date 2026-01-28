@@ -577,7 +577,40 @@ async def test_tool(
     builtin_tool = tool_registry.get_tool(request.name)
     if builtin_tool:
         try:
-            result = await tool_registry.execute(request.name, request.arguments)
+            # 对于内置工具，从 ToolConfig 表中获取 credentials
+            from app.models.tool_config import ToolConfig
+
+            credentials = {}
+
+            # 优先从团队配置获取，其次从全局配置获取
+            if team_id:
+                tool_config = await ToolConfig.filter(
+                    tool_name=request.name,
+                    team_id=team_id
+                ).first()
+                if tool_config:
+                    credentials = tool_config.credentials or {}
+
+            # 如果团队配置不存在，尝试获取全局配置
+            if not credentials:
+                global_config = await ToolConfig.filter(
+                    tool_name=request.name,
+                    team_id=None
+                ).first()
+                if global_config:
+                    credentials = global_config.credentials or {}
+
+            # 如果还是没有配置，尝试从环境变量获取（兜底）
+            if not credentials:
+                from app.core.config import settings
+                if hasattr(settings, 'TAVILY_API_KEY') and settings.TAVILY_API_KEY:
+                    credentials['TAVILY_API_KEY'] = settings.TAVILY_API_KEY
+
+            result = await tool_registry.execute(
+                request.name,
+                request.arguments,
+                credentials=credentials
+            )
             duration_ms = int((time.time() - start_time) * 1000)
 
             return success(
@@ -859,4 +892,208 @@ async def duplicate_tool(
     return success(
         data=db_tool_to_detail(new_tool, current_user.username),
         msg_key="tool_duplicated",
+    )
+
+
+# ============ Tool Configuration Management ============
+
+
+@router.get("/config", response_model=Response[list[dict]])
+async def list_tool_configs(
+    team_id: UUID | None = None,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    获取工具配置列表
+    
+    如果提供 team_id，返回该团队的配置；否则返回全局配置（仅超级管理员）
+    """
+    from app.models.tool_config import ToolConfig
+    
+    if team_id:
+        await check_team_access(team_id, current_user)
+        configs = await ToolConfig.filter(team_id=team_id).all()
+    else:
+        # 全局配置仅超级管理员可访问
+        if not current_user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="permission_denied",
+                status_code=403,
+            )
+        configs = await ToolConfig.filter(team_id=None).all()
+    
+    from app.schemas.tool_config import ToolConfigOut
+    return success(
+        data=[ToolConfigOut.model_validate(c).model_dump() for c in configs],
+        msg_key="success",
+    )
+
+
+@router.get("/config/{tool_name}", response_model=Response[dict])
+async def get_tool_config(
+    tool_name: str,
+    team_id: UUID | None = None,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    获取指定工具的配置
+    """
+    from app.models.tool_config import ToolConfig
+    
+    if team_id:
+        await check_team_access(team_id, current_user)
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
+    else:
+        if not current_user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="permission_denied",
+                status_code=403,
+            )
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+    
+    if not config:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_config_not_found",
+            status_code=404,
+        )
+    
+    from app.schemas.tool_config import ToolConfigOut
+    return success(
+        data=ToolConfigOut.model_validate(config).model_dump(),
+        msg_key="success",
+    )
+
+
+@router.post("/config", response_model=Response[dict])
+async def create_tool_config(
+    data: dict,
+    team_id: UUID | None = None,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    创建工具配置
+    """
+    from app.models.tool_config import ToolConfig
+    from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
+    
+    config_data = ToolConfigCreate(**data)
+    
+    if team_id:
+        await check_team_access(team_id, current_user)
+    else:
+        if not current_user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="permission_denied",
+                status_code=403,
+            )
+    
+    # 检查是否已存在
+    existing = await ToolConfig.filter(
+        tool_name=config_data.tool_name,
+        team_id=team_id
+    ).first()
+    
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="tool_config_already_exists",
+            status_code=400,
+        )
+    
+    # 创建配置
+    config = await ToolConfig.create(
+        tool_name=config_data.tool_name,
+        team_id=team_id,
+        credentials=config_data.credentials,
+    )
+    
+    return success(
+        data=ToolConfigOut.model_validate(config).model_dump(),
+        msg_key="tool_config_created",
+    )
+
+
+@router.put("/config/{tool_name}", response_model=Response[dict])
+async def update_tool_config(
+    tool_name: str,
+    data: dict,
+    team_id: UUID | None = None,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    更新工具配置
+    """
+    from app.models.tool_config import ToolConfig
+    from app.schemas.tool_config import ToolConfigUpdate, ToolConfigOut
+    
+    config_data = ToolConfigUpdate(**data)
+    
+    if team_id:
+        await check_team_access(team_id, current_user)
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
+    else:
+        if not current_user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="permission_denied",
+                status_code=403,
+            )
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+    
+    if not config:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_config_not_found",
+            status_code=404,
+        )
+    
+    # 更新配置
+    config.credentials = config_data.credentials
+    await config.save()
+    
+    return success(
+        data=ToolConfigOut.model_validate(config).model_dump(),
+        msg_key="tool_config_updated",
+    )
+
+
+@router.delete("/config/{tool_name}", response_model=Response[None])
+async def delete_tool_config(
+    tool_name: str,
+    team_id: UUID | None = None,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    删除工具配置
+    """
+    from app.models.tool_config import ToolConfig
+    
+    if team_id:
+        await check_team_access(team_id, current_user)
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
+    else:
+        if not current_user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="permission_denied",
+                status_code=403,
+            )
+        config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+    
+    if not config:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_config_not_found",
+            status_code=404,
+        )
+    
+    await config.delete()
+    
+    return success(
+        data=None,
+        msg_key="tool_config_deleted",
     )

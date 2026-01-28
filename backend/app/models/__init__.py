@@ -34,6 +34,7 @@ from .tool import (
     CustomToolType,
     ToolCategory,
 )
+from .tool_config import ToolConfig
 from .api_key import APIKey
 
 __all__ = [
@@ -75,5 +76,6 @@ __all__ = [
     "ToolType",
     "CustomToolType",
     "ToolCategory",
+    "ToolConfig",
     "APIKey",
 ]

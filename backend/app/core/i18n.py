@@ -868,7 +868,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_execute_error": {
         "en": "Tool execution failed: {error}",
         "zh": "工具执行失败：{error}",
-    },    # API Key messages
+    },
+    # Tool Configuration messages
+    "tool_config_created": {
+        "en": "Tool configuration created successfully",
+        "zh": "工具配置创建成功",
+    },
+    "tool_config_updated": {
+        "en": "Tool configuration updated successfully",
+        "zh": "工具配置更新成功",
+    },
+    "tool_config_deleted": {
+        "en": "Tool configuration deleted successfully",
+        "zh": "工具配置删除成功",
+    },
+    "tool_config_not_found": {
+        "en": "Tool configuration not found",
+        "zh": "工具配置不存在",
+    },
+    "tool_config_already_exists": {
+        "en": "Tool configuration already exists",
+        "zh": "工具配置已存在",
+    },
+    # API Key messages
     "api_key_created": {
         "en": "API key created successfully",
         "zh": "API 密钥创建成功",
