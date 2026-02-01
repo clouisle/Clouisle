@@ -79,7 +79,7 @@ export const authApi = {
     if (data.captcha_answer) {
       formData.append('captcha_answer', data.captcha_answer)
     }
-    return api.postForm<Token>('/login/access-token', formData)
+    return api.postForm<Token>('/login/access-token', formData, { skipAuthRedirect: true })
   },
 
   /**

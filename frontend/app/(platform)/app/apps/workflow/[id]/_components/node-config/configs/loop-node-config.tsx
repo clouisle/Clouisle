@@ -31,6 +31,7 @@ import {
 } from '../../nodes/condition-node'
 
 interface LoopNodeConfigProps {
+  nodeId: string
   config: LoopConfig
   variables: AvailableVariable[]
   variableSearch: string
@@ -41,6 +42,7 @@ interface LoopNodeConfigProps {
 }
 
 export function LoopNodeConfig({
+  nodeId,
   config,
   variables,
   variableSearch,
@@ -188,12 +190,74 @@ export function LoopNodeConfig({
     })
   }
 
-  // 过滤变量
-  const filterVariables = (search: string) => {
-    if (!search) return variables
-    return variables.filter(v => 
+  // 过滤变量（用于退出条件）
+  const filterExitConditionVariables = (search: string) => {
+    const allVars = getExitConditionVariables()
+    if (!search) return allVars
+    return allVars.filter(v =>
       v.name.toLowerCase().includes(search.toLowerCase())
     )
+  }
+
+  // 过滤变量（通用）
+  const filterVariables = (search: string) => {
+    if (!search) return variables
+    return variables.filter(v =>
+      v.name.toLowerCase().includes(search.toLowerCase())
+    )
+  }
+
+  // 获取 Loop 节点自己的变量（用于退出条件）
+  const getLoopInternalVariables = (): AvailableVariable[] => {
+    const internalVars: AvailableVariable[] = []
+
+    // 添加 index 变量
+    const indexVar = config.indexVariable || 'index'
+    internalVars.push({
+      id: `${nodeId}.${indexVar}`,
+      name: indexVar,
+      type: 'number',
+      group: nodeId,
+      groupLabel: '当前循环',
+      isSystem: false,
+      isArray: false,
+      isIterable: false,
+    })
+
+    // 添加 results 变量
+    const outputVar = config.outputVariable || 'results'
+    internalVars.push({
+      id: `${nodeId}.${outputVar}`,
+      name: outputVar,
+      type: 'array',
+      group: nodeId,
+      groupLabel: '当前循环',
+      isSystem: false,
+      isArray: true,
+      isIterable: true,
+    })
+
+    // 添加循环变量
+    const loopVars = config.loopVariables || []
+    loopVars.forEach(v => {
+      internalVars.push({
+        id: `${nodeId}.${v.name}`,
+        name: v.name,
+        type: v.type,
+        group: nodeId,
+        groupLabel: '当前循环',
+        isSystem: false,
+        isArray: false,
+        isIterable: false,
+      })
+    })
+
+    return internalVars
+  }
+
+  // 合并上游变量和 Loop 内部变量（用于退出条件）
+  const getExitConditionVariables = (): AvailableVariable[] => {
+    return [...getLoopInternalVariables(), ...variables]
   }
 
   // 分组变量
@@ -393,7 +457,7 @@ export function LoopNodeConfig({
                         <ScrollArea className="h-48">
                           <div className="p-1">
                             {(() => {
-                              const filtered = filterVariables(variableSearch)
+                              const filtered = filterExitConditionVariables(variableSearch)
                               const groupEntries = groupVariables(filtered)
                               
                               if (groupEntries.length === 0) {

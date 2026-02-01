@@ -38,6 +38,7 @@ from .tool import (
 )
 from .tool_config import ToolConfig
 from .api_key import APIKey
+from .audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -82,4 +83,5 @@ __all__ = [
     "ToolSharePermission",
     "ToolConfig",
     "APIKey",
+    "AuditLog",
 ]

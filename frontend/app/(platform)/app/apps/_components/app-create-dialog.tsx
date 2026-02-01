@@ -141,14 +141,12 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
                         'flex flex-col items-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-all',
                         appType === item.type
                           ? 'border-primary bg-primary/5'
-                          : 'border-muted hover:border-muted-foreground/50',
-                        item.disabled && 'opacity-50 cursor-not-allowed'
+                          : 'border-muted hover:border-muted-foreground/50'
                       )}
                     >
                       <RadioGroupItem
                         value={item.type}
                         className="sr-only"
-                        disabled={item.disabled}
                       />
                       <div
                         className={cn(
@@ -166,11 +164,6 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
                           {item.description}
                         </div>
                       </div>
-                      {item.disabled && (
-                        <span className="text-xs text-muted-foreground">
-                          {t('comingSoon')}
-                        </span>
-                      )}
                     </label>
                   )
                 })}

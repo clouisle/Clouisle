@@ -50,12 +50,23 @@ class MessageRole:
 class CreatorInfo(BaseModel):
     """Creator user info"""
 
-    id: UUID
+    id: UUID | None = None  # Allow None for deleted users
     username: str
     avatar_url: str | None = None
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_user(cls, user):
+        """Create CreatorInfo from user, handling deleted users"""
+        if user is None:
+            return cls(id=None, username="Deleted User", avatar_url=None)
+        return cls(
+            id=user.id,
+            username=user.username,
+            avatar_url=user.avatar_url
+        )
 
 
 class TeamInfo(BaseModel):
@@ -202,7 +213,7 @@ class AgentCreate(AgentBase):
     model_id: UUID | None = Field(None, description="TeamModel ID")
     system_prompt: str | None = None
     max_iterations: int = Field(
-        default=5, ge=1, le=20, description="Max tool call iterations"
+        default=5, ge=1, le=200, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] = Field(default_factory=list)
     tools_credentials: dict[str, str] = Field(
@@ -237,7 +248,7 @@ class AgentUpdate(BaseModel):
     model_id: UUID | None = None
     system_prompt: str | None = None
     max_iterations: int | None = Field(
-        None, ge=1, le=20, description="Max tool call iterations"
+        None, ge=1, le=200, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] | None = None
     tools_credentials: dict[str, str] | None = None

@@ -1085,21 +1085,21 @@ function WorkflowEditorContent() {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => window.open(`/app/apps/${workflowId}/api`, '_blank')}
+                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/api`)}
                   >
                     <ExternalLink className="h-4 w-4" />
                     <span>{t('accessApi')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/${workflowId}/logs`)}
+                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/logs`)}
                   >
                     <FileText className="h-4 w-4" />
                     <span>{t('logs')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/${workflowId}/monitor`)}
+                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
                   >
                     <Activity className="h-4 w-4" />
                     <span>{t('monitor')}</span>

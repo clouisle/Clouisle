@@ -781,7 +781,7 @@ export function HttpToolDialog({
                       />
                       <Select
                         value={param.type}
-                        onValueChange={(v) => updateParameter(index, { type: v })}
+                        onValueChange={(v) => v && updateParameter(index, { type: v })}
                       >
                         <SelectTrigger className="w-28">
                           <SelectValue />

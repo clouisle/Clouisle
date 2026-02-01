@@ -163,13 +163,12 @@ export function ToolShareDialog({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>{t('selectTeam')}</Label>
-                    <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+                    <Select
+                      value={selectedTeamId || undefined}
+                      onValueChange={(v) => v && setSelectedTeamId(v)}
+                    >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder={t('selectTeamPlaceholder')}>
-                          {selectedTeamId
-                            ? availableTeamsToShare.find(team => team.id === selectedTeamId)?.name
-                            : t('selectTeamPlaceholder')}
-                        </SelectValue>
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false}>
                         {availableTeamsToShare.map((team) => (

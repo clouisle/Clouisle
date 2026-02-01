@@ -20,7 +20,7 @@ from tortoise.expressions import F
 
 from app.api import deps
 from app.core.config import settings
-from app.models.user import User
+from app.models.user import User, Team
 from app.models.model import TeamModel
 from app.models.user import TeamMember
 from app.models.agent import (
@@ -51,6 +51,7 @@ from app.schemas.response import (
     success,
 )
 from app.llm.tools import tool_registry
+from app.core.timezone import now_utc
 
 if TYPE_CHECKING:
     from app.models.tool import Tool
@@ -227,7 +228,38 @@ async def get_or_create_conversation(
         conversation_count=F("conversation_count") + 1
     )
 
+    # Update team stats
+    await Team.filter(id=agent.team.id).update(
+        total_conversations=F("total_conversations") + 1
+    )
+
     return conversation
+
+
+async def update_message_stats(agent: Agent, token_usage: dict | None = None):
+    """
+    Update cumulative statistics for agent and team when a message is created.
+
+    Args:
+        agent: The agent
+        token_usage: Token usage dict with 'prompt' and 'completion' keys
+    """
+    # Calculate total tokens
+    total_tokens = 0
+    if token_usage:
+        total_tokens = (token_usage.get("prompt", 0) or 0) + (token_usage.get("completion", 0) or 0)
+
+    # Update agent stats atomically
+    await Agent.filter(id=agent.id).update(
+        message_count=F("message_count") + 1,
+        total_tokens=F("total_tokens") + total_tokens
+    )
+
+    # Update team stats atomically
+    await Team.filter(id=agent.team.id).update(
+        total_messages=F("total_messages") + 1,
+        total_tokens=F("total_tokens") + total_tokens
+    )
 
 
 async def build_messages(
@@ -605,8 +637,28 @@ async def execute_tool_call(
                 )
         else:
             # Builtin tool
-            # Get credentials from agent if available
-            credentials = agent.tools_credentials if agent else {}
+            # Get credentials from ToolConfig table
+            credentials = {}
+            if agent and agent.team_id:
+                from app.models.tool_config import ToolConfig
+
+                # Try team-specific config first
+                tool_config = await ToolConfig.filter(
+                    tool_name=tool_name,
+                    team_id=agent.team_id
+                ).first()
+                if tool_config:
+                    credentials = tool_config.credentials or {}
+
+                # If no team config, try global config
+                if not credentials:
+                    global_config = await ToolConfig.filter(
+                        tool_name=tool_name,
+                        team_id=None
+                    ).first()
+                    if global_config:
+                        credentials = global_config.credentials or {}
+
             result = await tool_registry.execute(tool_name, arguments, credentials=credentials)
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)
@@ -739,10 +791,56 @@ async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
     return rag_contexts
 
 
+def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
+    """Aggregate RAG contexts by document to align citations with document-level sources."""
+    if not rag_contexts:
+        return []
+
+    aggregated: list[dict] = []
+    index_map: dict[tuple[str | None, str | None], int] = {}
+
+    for ctx in rag_contexts:
+        kb_id = ctx.get("kb_id")
+        doc_id = ctx.get("document_id") or ctx.get("document_name")
+        key = (kb_id, doc_id)
+
+        if key in index_map:
+            idx = index_map[key]
+            if ctx.get("content"):
+                aggregated[idx]["content_parts"].append(ctx.get("content"))
+            if ctx.get("score") is not None:
+                aggregated[idx]["score"] = max(
+                    aggregated[idx].get("score") or 0, ctx.get("score")
+                )
+            continue
+
+        index_map[key] = len(aggregated)
+        aggregated.append(
+            {
+                "kb_id": kb_id,
+                "kb_name": ctx.get("kb_name"),
+                "document_id": ctx.get("document_id"),
+                "document_name": ctx.get("document_name"),
+                "score": ctx.get("score"),
+                "content_parts": [ctx.get("content")] if ctx.get("content") else [],
+            }
+        )
+
+    for item in aggregated:
+        item["content"] = "\n\n".join(
+            [p for p in item.get("content_parts", []) if p]
+        )
+        item.pop("content_parts", None)
+
+    return aggregated
+
+
 def build_rag_prompt(rag_contexts: list[dict], user_message: str) -> str:
     """Build user message with RAG context and citation instructions."""
     if not rag_contexts:
         return user_message
+
+    rag_contexts = aggregate_rag_contexts(rag_contexts)
 
     # Build numbered references
     references = []
@@ -756,7 +854,9 @@ def build_rag_prompt(rag_contexts: list[dict], user_message: str) -> str:
     return f"""The following reference materials may help you answer the user's question.
 Use them ONLY if they are relevant to the question.
 
-If you use information from a reference, cite it using [[cite:N]] format where N is the reference number.
+Citation format requirement:
+- Use ONLY [[cite:N]] where N is the reference number.
+- Do NOT use (ref:N), [ref:N], "ref:N", or any other citation format.
 Only cite sources you actually use. Do not cite if the information comes from your general knowledge.
 
 Reference Materials:
@@ -858,6 +958,7 @@ async def chat(
     if agent.rag_mode == RAGMode.AUTO:
         # Traditional RAG: automatically retrieve on every message
         rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
+        rag_contexts = aggregate_rag_contexts(rag_contexts)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
     # Save user message with images and file_urls
@@ -869,6 +970,9 @@ async def chat(
         file_urls=[f.model_dump() for f in chat_in.file_urls] if chat_in.file_urls else None,
         rag_context=rag_contexts if rag_contexts else None,
     )
+
+    # Update message stats (user message, no tokens)
+    await update_message_stats(agent, token_usage=None)
 
     # Build messages for LLM
     messages = await build_messages(agent, conversation, final_message)
@@ -905,6 +1009,12 @@ async def chat(
             if response.tool_calls
             else None,
         )
+
+        # Update message stats with token usage
+        await update_message_stats(agent, token_usage={
+            "prompt": response.usage.prompt_tokens if response.usage else 0,
+            "completion": response.usage.completion_tokens if response.usage else 0,
+        })
 
         # Update conversation stats atomically
         title_update = {}
@@ -1038,6 +1148,7 @@ async def chat_stream(
                     yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                     rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
                     if rag_contexts:
+                        rag_contexts = aggregate_rag_contexts(rag_contexts)
                         yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
                     final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
@@ -1243,7 +1354,9 @@ async def chat_stream(
                     elif hist_msg.role == "assistant":
                         messages_for_llm.append(
                             LLMTypeMessage(
-                                role=LLMTypeRole.ASSISTANT, content=hist_msg.content
+                                role=LLMTypeRole.ASSISTANT,
+                                content=hist_msg.content,
+                                reasoning_content=getattr(hist_msg, "reasoning_content", None),
                             )
                         )
 
@@ -1312,6 +1425,7 @@ async def chat_stream(
                             LLMTypeMessage(
                                 role=LLMTypeRole.ASSISTANT,
                                 content=msg.content,
+                                reasoning_content=msg.reasoning_content,
                                 tool_calls=llm_tool_calls if llm_tool_calls else None,
                             )
                         )
@@ -1500,6 +1614,7 @@ async def chat_stream(
                         LLMTypeMessage(
                             role=LLMTypeRole.ASSISTANT,
                             content=iteration_content,
+                            reasoning_content=iteration_reasoning or None,
                             tool_calls=assistant_tool_calls,
                         )
                     )
@@ -1529,6 +1644,8 @@ async def chat_stream(
             assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
             assistant_msg.model_used = model_id
             assistant_msg.duration_ms = duration_ms
+            # Ensure assistant message appears after tool calls/results in history
+            assistant_msg.created_at = now_utc()
             # Estimate token usage
             input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
             output_tokens = len(full_content) // 4
@@ -1552,7 +1669,16 @@ async def chat_stream(
             )
 
             # Update agent stats atomically
-            await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
+            await Agent.filter(id=agent.id).update(
+                message_count=F("message_count") + 2,
+                total_tokens=F("total_tokens") + (input_tokens + output_tokens)
+            )
+
+            # Update team stats atomically
+            await Team.filter(id=agent.team.id).update(
+                total_messages=F("total_messages") + 2,
+                total_tokens=F("total_tokens") + (input_tokens + output_tokens)
+            )
 
             # Send message_end event with version info
             yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"
@@ -1754,13 +1880,31 @@ async def switch_message_version(
     # Get the root message to use its created_at for deactivating subsequent messages
     root_message = await Message.filter(id=root_id).first()
     if root_message:
+        # Get all tool_call_ids from the target version
+        target_tool_call_ids = set()
+        if target_version.tool_calls:
+            for tc in target_version.tool_calls:
+                if isinstance(tc, dict) and 'id' in tc:
+                    target_tool_call_ids.add(tc['id'])
+
         # Deactivate all messages after the root message in the conversation
-        # (they need to be regenerated based on the new active version)
-        await Message.filter(
+        # EXCEPT the target version itself and tool messages that belong to it
+        messages_to_deactivate = await Message.filter(
             conversation_id=message.conversation_id,
             created_at__gt=root_message.created_at,
             is_active=True,
-        ).update(is_active=False)
+        ).all()
+
+        for msg in messages_to_deactivate:
+            # Keep the target version itself
+            if msg.id == target_version.id:
+                continue
+            # Keep tool messages that belong to the target version
+            if msg.role == MessageRole.TOOL and msg.tool_call_id in target_tool_call_ids:
+                continue
+            # Deactivate all other messages
+            msg.is_active = False
+            await msg.save()
 
     return success(
         data=await build_message_out_with_versions(
@@ -1896,6 +2040,7 @@ async def regenerate_message(
                         agent, user_message.content
                     )
                     if rag_contexts:
+                        rag_contexts = aggregate_rag_contexts(rag_contexts)
                         yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
                     final_message = build_rag_prompt(rag_contexts, user_message.content)
 
@@ -1951,6 +2096,7 @@ async def regenerate_message(
                         LLMTypeMessage(
                             role=LLMTypeRole.ASSISTANT,
                             content=msg.content,
+                            reasoning_content=msg.reasoning_content,
                             tool_calls=llm_tool_calls if llm_tool_calls else None,
                         )
                     )
@@ -2036,6 +2182,7 @@ async def regenerate_message(
                             LLMTypeMessage(
                                 role=LLMTypeRole.ASSISTANT,
                                 content="",
+                                reasoning_content="",
                                 tool_calls=[
                                     LLMToolCall(
                                         id=tc.id,
@@ -2065,6 +2212,8 @@ async def regenerate_message(
             new_message.content = full_content
             new_message.model_used = model_id
             new_message.duration_ms = duration_ms
+            # Ensure regenerated message appears after tool calls/results in history
+            new_message.created_at = now_utc()
             input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
             output_tokens = len(full_content) // 4
             new_message.token_usage = {
@@ -2072,6 +2221,17 @@ async def regenerate_message(
                 "completion": output_tokens,
             }
             await new_message.save()
+
+            # Update agent and team stats for regenerated message
+            total_tokens = input_tokens + output_tokens
+            await Agent.filter(id=agent.id).update(
+                message_count=F("message_count") + 1,
+                total_tokens=F("total_tokens") + total_tokens
+            )
+            await Team.filter(id=agent.team.id).update(
+                total_messages=F("total_messages") + 1,
+                total_tokens=F("total_tokens") + total_tokens
+            )
 
             yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
 

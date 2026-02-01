@@ -521,6 +521,24 @@ export function ToolsClient() {
     )
   }
 
+  // 获取内置工具的显示名称（支持多语言）
+  const getToolDisplayName = (tool: Tool & { _type: ToolType }) => {
+    if (tool._type === 'builtin') {
+      try {
+        // 尝试获取翻译，如果不存在则返回原始名称
+        const translationKey = `builtinTools.${tool.name}` as any
+        const translated = t(translationKey)
+        // next-intl 在找不到翻译时会返回键本身
+        if (translated && !translated.startsWith('builtinTools.')) {
+          return translated
+        }
+      } catch {
+        // 翻译不存在或出错，使用原始名称
+      }
+    }
+    return tool.display_name
+  }
+
   // 获取启用状态 Badge
   const getEnabledBadge = (enabled: boolean) => {
     if (enabled) {
@@ -723,7 +741,7 @@ export function ToolsClient() {
                             <span className="text-lg">{tool.icon}</span>
                           )
                         )}
-                        <span className="font-medium">{tool.display_name}</span>
+                        <span className="font-medium">{getToolDisplayName(tool)}</span>
                       </div>
                     </TableCell>
                     <TableCell>{getTypeBadge(tool._type)}</TableCell>

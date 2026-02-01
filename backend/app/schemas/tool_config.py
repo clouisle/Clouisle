@@ -2,6 +2,7 @@
 Tool Configuration schemas
 """
 
+from datetime import datetime
 from pydantic import BaseModel, Field
 from uuid import UUID
 
@@ -26,8 +27,8 @@ class ToolConfigOut(BaseModel):
     tool_name: str
     team_id: UUID | None
     credentials: dict[str, str]
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

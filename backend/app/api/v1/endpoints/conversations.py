@@ -14,7 +14,7 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
-from app.core.timezone import now_utc
+from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team, TeamMember
 from app.models.agent import Agent, Conversation, Message
 from app.schemas.agent import (
@@ -231,15 +231,17 @@ async def get_conversation_trends(
     Get conversation and message trends for dashboard charts.
     Returns daily statistics for teams the user has access to.
     """
-    now = now_utc()
+    now_local = now()
 
     # Determine time range
     if period == "30d":
-        start_time = now - timedelta(days=30)
+        start_time = now_local - timedelta(days=30)
         num_points = 30
     else:  # Default to 7d
-        start_time = now - timedelta(days=7)
+        start_time = now_local - timedelta(days=7)
         num_points = 7
+
+    start_time_utc = to_utc(start_time)
 
     # Get agent IDs user has access to
     agent_ids = await get_user_team_agent_ids(current_user, team_id)
@@ -248,7 +250,7 @@ async def get_conversation_trends(
         # User has no access to any agents, return empty data
         data_points = []
         for i in range(num_points):
-            point_date = (now - timedelta(days=num_points - i - 1)).date()
+            point_date = (now_local - timedelta(days=num_points - i - 1)).date()
             label = point_date.strftime("%m/%d")
             data_points.append({
                 "date": label,
@@ -263,14 +265,14 @@ async def get_conversation_trends(
 
     # Get all conversations in the period for accessible agents
     conv_query = Conversation.filter(
-        created_at__gte=start_time,
+        created_at__gte=start_time_utc,
         agent_id__in=agent_ids
     )
     conversations = await conv_query.values("id", "created_at")
 
     # Get all messages in the period for accessible agents
     msg_query = Message.filter(
-        created_at__gte=start_time,
+        created_at__gte=start_time_utc,
         conversation__agent_id__in=agent_ids
     )
     messages = await msg_query.values("created_at", "token_usage", "role")
@@ -278,17 +280,22 @@ async def get_conversation_trends(
     # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
-        point_date = (now - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now.tzinfo)
+        point_date = (now_local - timedelta(days=num_points - i - 1)).date()
+        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now_local.tzinfo)
         point_end = point_start + timedelta(days=1)
 
         # Count conversations created in this day
-        conv_count = sum(1 for c in conversations
-                        if point_start <= c["created_at"] < point_end)
+        conv_count = sum(
+            1
+            for c in conversations
+            if point_start <= to_local(c["created_at"]) < point_end
+        )
 
         # Count messages and tokens in this day
-        msgs_in_period = [m for m in messages
-                         if point_start <= m["created_at"] < point_end]
+        msgs_in_period = [
+            m for m in messages
+            if point_start <= to_local(m["created_at"]) < point_end
+        ]
         msg_count = len(msgs_in_period)
 
         # Calculate total tokens

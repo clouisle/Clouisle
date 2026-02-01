@@ -20,46 +20,8 @@ reusable_oauth2 = OAuth2PasswordBearer(
 
 
 async def get_current_user(token: str = Depends(reusable_oauth2)) -> User:
-    # 检查 token 是否在黑名单中
-    if await is_token_blacklisted(token):
-        raise BusinessError(
-            code=ResponseCode.INVALID_TOKEN,
-            msg_key="token_revoked",
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
-
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        token_data = TokenPayload(**payload)
-    except (jwt.PyJWTError, ValidationError):
-        raise BusinessError(
-            code=ResponseCode.INVALID_CREDENTIALS,
-            msg_key="could_not_validate_credentials",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-
-    if token_data.sub is None:
-        raise BusinessError(
-            code=ResponseCode.USER_NOT_FOUND,
-            msg_key="user_not_found",
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    user = (
-        await User.filter(id=token_data.sub)
-        .prefetch_related("roles__permissions")
-        .first()
-    )
-    if not user:
-        raise BusinessError(
-            code=ResponseCode.USER_NOT_FOUND,
-            msg_key="user_not_found",
-            status_code=status.HTTP_404_NOT_FOUND,
-        )
-
-    return user
+    """获取当前用户（使用 JWT Token）"""
+    return await _authenticate_jwt(token)
 
 
 async def get_current_user_or_api_key(
@@ -183,6 +145,22 @@ async def _authenticate_jwt(token: str) -> User:
             msg_key="user_not_found",
             status_code=status.HTTP_404_NOT_FOUND,
         )
+
+    # 检查单一会话模式
+    from app.models.site_setting import SiteSetting
+    from app.core.redis import get_user_session
+
+    single_session = await SiteSetting.get_value("single_session", False)
+    if single_session:
+        # 获取用户当前有效的会话 token
+        current_session_token = await get_user_session(str(user.id))
+        # 如果当前 token 不是最新的会话 token，则拒绝访问
+        if current_session_token and current_session_token != token:
+            raise BusinessError(
+                code=ResponseCode.INVALID_TOKEN,
+                msg_key="session_expired_new_login",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
 
     return user
 

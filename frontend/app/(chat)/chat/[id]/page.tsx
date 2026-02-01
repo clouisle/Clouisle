@@ -1,15 +1,15 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { 
-  Loader2, 
-  Bot, 
-  LogIn, 
-  ArrowLeft, 
+import {
+  Loader2,
+  Bot,
+  LogIn,
+  ArrowLeft,
   AlertCircle,
   Plus,
   RotateCcw,
@@ -19,6 +19,7 @@ import {
   Trash2,
   MoreHorizontal,
   Sparkles,
+  Pencil,
 } from 'lucide-react'
 import { 
   publicAgentsApi,
@@ -29,7 +30,26 @@ import {
   type ChatFileUrl,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +65,7 @@ import {
 } from '@/components/chat'
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
+import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
 
 interface PublicChatPageProps {
   params: Promise<{ id: string }>
@@ -52,6 +73,7 @@ interface PublicChatPageProps {
 
 export default function PublicChatPage({ params }: PublicChatPageProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const t = useTranslations('publicChat')
   
   const [agent, setAgent] = React.useState<PublicAgent | null>(null)
@@ -68,7 +90,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const [loadingMore, setLoadingMore] = React.useState(false)
   const [loadingConversation, setLoadingConversation] = React.useState(false)
   const loadMoreRef = React.useRef<HTMLDivElement>(null)
-  
+
+  // Rename dialog state
+  const [renamingConversation, setRenamingConversation] = React.useState<ConversationListItem | null>(null)
+  const [renameDialogOpen, setRenameDialogOpen] = React.useState(false)
+  const [newTitle, setNewTitle] = React.useState('')
+
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
   
@@ -125,20 +152,20 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   React.useEffect(() => {
     const fetchData = async () => {
       if (!resolvedParams || isLoggedIn === null) return
-      
+
       if (!isLoggedIn) {
         setIsLoading(false)
         return
       }
-      
+
       try {
         setIsLoading(true)
         setError(null)
-        
+
         // Fetch agent info
         const agentData = await publicAgentsApi.getPublicAgent(resolvedParams.id)
         setAgent(agentData)
-        
+
         // Fetch conversations (first page)
         setLoadingConversations(true)
         try {
@@ -157,9 +184,41 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
         setIsLoading(false)
       }
     }
-    
+
     fetchData()
   }, [resolvedParams, isLoggedIn, t])
+
+  // Load conversation from URL parameter
+  React.useEffect(() => {
+    const loadConversationFromUrl = async () => {
+      if (!resolvedParams || !agent || loadingConversations) return
+
+      const conversationParam = searchParams.get('conversation')
+      if (!conversationParam) return
+
+      // Don't reload if already loaded
+      if (conversationParam === conversationId) return
+
+      try {
+        setLoadingConversation(true)
+        const data = await publicAgentsApi.getConversation(conversationParam)
+        const chatMessages = convertBackendMessages(data.messages as BackendMessage[])
+        setMessages(chatMessages)
+        setConversationId(conversationParam)
+      } catch (err) {
+        console.error('Failed to load conversation from URL:', err)
+        // If conversation not found, clear the URL parameter
+        if (resolvedParams) {
+          const newUrl = `/chat/${resolvedParams.id}`
+          window.history.replaceState({}, '', newUrl)
+        }
+      } finally {
+        setLoadingConversation(false)
+      }
+    }
+
+    loadConversationFromUrl()
+  }, [resolvedParams, agent, loadingConversations, searchParams])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -202,21 +261,39 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     setInput('')
     setFiles([])
     setIsUploading(false)
+
+    // Clear conversation URL parameter
+    if (resolvedParams) {
+      const newUrl = `/chat/${resolvedParams.id}`
+      window.history.pushState({}, '', newUrl)
+    }
   }
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
     if (conv.id === conversationId || loadingConversation) return
-    
+
     try {
       setLoadingConversation(true)
       const data = await publicAgentsApi.getConversation(conv.id)
-      
+
+      console.log('[handleSelectConversation] Loaded conversation:', data)
+      console.log('[handleSelectConversation] Messages count:', data.messages?.length)
+
       // Convert messages to ChatMessage format using unified converter
       // This handles text, images, files, reasoning, tool calls, and RAG context
       const chatMessages = convertBackendMessages(data.messages as BackendMessage[])
-      
+
+      console.log('[handleSelectConversation] Converted messages count:', chatMessages.length)
+      console.log('[handleSelectConversation] Converted messages:', chatMessages)
+
       setMessages(chatMessages)
       setConversationId(conv.id)
+
+      // Update URL with conversation ID without page refresh
+      if (resolvedParams) {
+        const newUrl = `/chat/${resolvedParams.id}?conversation=${conv.id}`
+        window.history.pushState({}, '', newUrl)
+      }
     } catch (err) {
       console.error('Failed to load conversation:', err)
     } finally {
@@ -226,17 +303,43 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
   const handleDeleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    
+
     try {
       await publicAgentsApi.deleteConversation(convId)
       setConversations(prev => prev.filter(c => c.id !== convId))
-      
-      // If deleting current conversation, start new chat
+
+      // If deleting current conversation, start new chat and clear URL
       if (convId === conversationId) {
         handleNewChat()
       }
     } catch (err) {
       console.error('Failed to delete conversation:', err)
+    }
+  }
+
+  const handleRenameClick = (conv: ConversationListItem, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setRenamingConversation(conv)
+    setNewTitle(conv.title || '')
+    setRenameDialogOpen(true)
+  }
+
+  const handleRenameSubmit = async () => {
+    if (!renamingConversation || !newTitle.trim()) return
+
+    try {
+      await publicAgentsApi.updateConversation(renamingConversation.id, { title: newTitle.trim() })
+
+      // Update local state
+      setConversations(prev =>
+        prev.map(c => c.id === renamingConversation.id ? { ...c, title: newTitle.trim() } : c)
+      )
+
+      setRenameDialogOpen(false)
+      setRenamingConversation(null)
+      setNewTitle('')
+    } catch (err) {
+      console.error('Failed to rename conversation:', err)
     }
   }
 
@@ -466,16 +569,22 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                       </p>
                       <DropdownMenu>
                         <DropdownMenuTrigger onClick={(e) => e.stopPropagation()}>
-                          <div
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md hover:bg-accent cursor-pointer"
+                          <span
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-md hover:bg-accent transition-colors"
                           >
                             <MoreHorizontal className="h-4 w-4" />
-                          </div>
+                          </span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
+                            onClick={(e) => handleRenameClick(conv, e as unknown as React.MouseEvent)}
+                          >
+                            <Pencil className="h-4 w-4 mr-2" />
+                            {t('rename')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant="destructive"
                             onClick={(e) => handleDeleteConversation(conv.id, e as unknown as React.MouseEvent)}
-                            className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             {t('delete')}
@@ -530,14 +639,64 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Messages using ChatContainer */}
-          <ChatContainer
-            messages={messages}
-            isStreaming={isStreaming}
-            className="flex-1 min-h-0 overflow-y-auto"
-            onRegenerate={regenerate}
-            onSwitchVersion={switchVersion}
-            emptyState={
+          {/* Loading Skeleton */}
+          {loadingConversation ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+              {/* Skeleton for user message */}
+              <div className="flex justify-end">
+                <div className="max-w-[80%] space-y-2">
+                  <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+                  <div className="bg-muted rounded-2xl p-4 space-y-2">
+                    <div className="h-4 w-full bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-3/4 bg-muted-foreground/20 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Skeleton for assistant message */}
+              <div className="flex justify-start">
+                <div className="max-w-[80%] space-y-2">
+                  <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+                  <div className="bg-muted rounded-2xl p-4 space-y-2">
+                    <div className="h-4 w-full bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-5/6 bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-4/5 bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-2/3 bg-muted-foreground/20 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Skeleton for user message */}
+              <div className="flex justify-end">
+                <div className="max-w-[80%] space-y-2">
+                  <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+                  <div className="bg-muted rounded-2xl p-4 space-y-2">
+                    <div className="h-4 w-full bg-muted-foreground/20 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Skeleton for assistant message */}
+              <div className="flex justify-start">
+                <div className="max-w-[80%] space-y-2">
+                  <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+                  <div className="bg-muted rounded-2xl p-4 space-y-2">
+                    <div className="h-4 w-full bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-11/12 bg-muted-foreground/20 rounded animate-pulse" />
+                    <div className="h-4 w-3/4 bg-muted-foreground/20 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Messages using ChatContainer */
+            <ChatContainer
+              messages={messages}
+              isStreaming={isStreaming}
+              className="flex-1 min-h-0 overflow-y-auto"
+              onRegenerate={regenerate}
+              onSwitchVersion={switchVersion}
+              emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Agent Icon */}
                 <div className="mb-8">
@@ -592,6 +751,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               </div>
             }
           />
+          )}
 
           {/* Input Area */}
           <div className="relative pb-4 shrink-0">
@@ -619,6 +779,43 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('renameConversation')}</DialogTitle>
+            <DialogDescription>
+              {t('renameConversationDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">{t('conversationTitle')}</Label>
+              <Input
+                id="title"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder={t('conversationTitlePlaceholder')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    handleRenameSubmit()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleRenameSubmit} disabled={!newTitle.trim()}>
+              {t('save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

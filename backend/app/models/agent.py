@@ -78,7 +78,7 @@ class Agent(models.Model):
     # Prompt configuration
     system_prompt = fields.TextField(null=True, description="System prompt")
     max_iterations = fields.IntField(
-        default=5, description="Max tool call iterations (1-20)"
+        default=5, description="Max tool call iterations (1-200)"
     )
 
     # Tools configuration (JSON array)
@@ -135,15 +135,17 @@ class Agent(models.Model):
         AgentVisibility, default=AgentVisibility.PRIVATE, description="Visibility"
     )
 
-    # Statistics
-    conversation_count = fields.IntField(default=0, description="Total conversations")
-    message_count = fields.IntField(default=0, description="Total messages")
+    # Statistics (累计统计，不会因删除而减少)
+    conversation_count = fields.IntField(default=0, description="Total conversations created")
+    message_count = fields.IntField(default=0, description="Total messages created")
+    total_tokens = fields.BigIntField(default=0, description="Total tokens consumed (累计)")
 
     # Audit
-    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="created_agents",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
         description="Creator",
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -221,12 +223,14 @@ class Conversation(models.Model):
 
     id = fields.UUIDField(pk=True)
 
-    agent: fields.ForeignKeyRelation[Agent] = fields.ForeignKeyField(
+    agent: fields.ForeignKeyRelation[Agent] | None = fields.ForeignKeyField(
         "models.Agent",
         related_name="conversations",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Agent (null if agent deleted)",
     )
-    agent_id: UUID  # type: ignore[assignment]
+    agent_id: UUID | None  # type: ignore[assignment]
 
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User",

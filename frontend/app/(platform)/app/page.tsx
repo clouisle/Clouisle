@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
   Bot,
-  Database,
   Wrench,
   Grid3x3,
   ArrowRight,
@@ -26,18 +25,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import { NoTeamState } from './_components/no-team-state'
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart'
 import {
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
   AreaChart,
   Area,
+  Cell,
 } from 'recharts'
 
 interface StatsData {
@@ -59,7 +62,16 @@ interface RecentItem {
   updatedAt: string
 }
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
+// 格式化大数字
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M'
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
 
 function StatCard({
   title,
@@ -150,74 +162,39 @@ function RecentItemCard({ item }: { item: RecentItem }) {
   )
 }
 
-// 格式化大数字
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
+// Chart 配置
+const usageTrendChartConfig = {
+  conversations: {
+    label: '对话数',
+    color: 'var(--chart-1)',
+  },
+  tokens: {
+    label: 'Token',
+    color: 'var(--chart-2)',
+  },
+} satisfies ChartConfig
 
-// 自定义 Tooltip 组件
-function CustomTooltip({ active, payload, label }: any) {
-  if (active && payload && payload.length) {
-    // 如果只有一个数据项且 dataKey 是 "value"，说明是资源概览图表
-    const isResourceChart = payload.length === 1 && payload[0].dataKey === 'value'
-
-    if (isResourceChart) {
-      // 资源概览图表：直接显示名称和数量
-      return (
-        <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[140px]">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: payload[0].payload.fill }}
-              />
-              <span className="text-sm font-medium text-foreground">
-                {payload[0].payload.name}
-              </span>
-            </div>
-            <span className="text-lg font-bold text-foreground">
-              {payload[0].value}
-            </span>
-          </div>
-        </div>
-      )
-    }
-
-    // 趋势图表：显示日期和多个数据项
-    return (
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
-        <p className="text-sm font-semibold text-foreground mb-2 pb-2 border-b border-border">
-          {label}
-        </p>
-        <div className="space-y-1.5">
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: entry.color }}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {entry.name}
-                </span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">
-                {typeof entry.value === 'number' ? formatNumber(entry.value) : entry.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-  return null
-}
+const resourceChartConfig = {
+  value: {
+    label: '数量',
+  },
+  agents: {
+    label: 'Agents',
+    color: 'var(--chart-1)',
+  },
+  workflows: {
+    label: 'Workflows',
+    color: 'var(--chart-2)',
+  },
+  knowledgeBases: {
+    label: 'Knowledge Bases',
+    color: 'var(--chart-3)',
+  },
+  models: {
+    label: 'Models',
+    color: 'var(--chart-4)',
+  },
+} satisfies ChartConfig
 
 export default function PlatformHomePage() {
   const t = useTranslations('platform.home')
@@ -260,6 +237,9 @@ export default function PlatformHomePage() {
       const totalConversations = agentsResponse.items.reduce((sum, agent) => sum + (agent.conversation_count || 0), 0)
       const totalMessages = agentsResponse.items.reduce((sum, agent) => sum + (agent.message_count || 0), 0)
 
+      // 计算总的 token 消耗（从趋势数据中累加）
+      const totalTokens = trendsResponse.data.reduce((sum, item) => sum + (item.tokens || 0), 0)
+
       // 计算工作流成功率
       const totalRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.run_count || 0), 0)
       const successRuns = workflowsResponse.items.reduce((sum, wf) => sum + (wf.success_count || 0), 0)
@@ -272,7 +252,7 @@ export default function PlatformHomePage() {
         workflows: workflowsResponse.total,
         totalConversations,
         totalMessages,
-        totalTokens: 0,
+        totalTokens,
         successRate,
       })
 
@@ -322,11 +302,10 @@ export default function PlatformHomePage() {
     )
   }
 
-  // Agent 和 Workflow 活动对比
-  const activityComparisonData = [
-    { name: t('stats.agents'), conversations: stats.totalConversations, messages: stats.totalMessages },
-    { name: t('stats.workflows'), runs: stats.workflows * 10, success: Math.round(stats.workflows * 10 * stats.successRate / 100) },
-  ]
+  // 没有团队时显示提示页面
+  if (!currentTeam) {
+    return <NoTeamState />
+  }
 
   return (
     <div className="py-6 px-8 space-y-6">
@@ -396,56 +375,45 @@ export default function PlatformHomePage() {
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={usageTrendData}>
-                    <defs>
-                      <linearGradient id="colorConversations" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={COLORS[0]} stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={COLORS[1]} stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor={COLORS[1]} stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <ChartContainer config={usageTrendChartConfig}>
+                  <AreaChart
+                    accessibilityLayer
+                    data={usageTrendData}
+                    margin={{
+                      left: 12,
+                      right: 12,
+                    }}
+                  >
+                    <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="date"
-                      className="text-xs"
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
                     />
-                    <YAxis
-                      yAxisId="left"
-                      className="text-xs"
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    <YAxis hide domain={[0, 'auto']} />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="line" />}
                     />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      className="text-xs"
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
                     <Area
-                      yAxisId="left"
-                      type="monotone"
                       dataKey="conversations"
-                      stroke={COLORS[0]}
-                      fillOpacity={1}
-                      fill="url(#colorConversations)"
-                      name={t('stats.conversations')}
+                      type="monotone"
+                      baseValue={0}
+                      fill="var(--color-conversations)"
+                      fillOpacity={0.4}
+                      stroke="var(--color-conversations)"
                     />
                     <Area
-                      yAxisId="right"
-                      type="monotone"
                       dataKey="tokens"
-                      stroke={COLORS[1]}
-                      fillOpacity={1}
-                      fill="url(#colorTokens)"
-                      name={t('stats.tokens')}
+                      type="monotone"
+                      baseValue={0}
+                      fill="var(--color-tokens)"
+                      fillOpacity={0.4}
+                      stroke="var(--color-tokens)"
                     />
                   </AreaChart>
-                </ResponsiveContainer>
+                </ChartContainer>
               )}
             </CardContent>
           </Card>
@@ -461,33 +429,43 @@ export default function PlatformHomePage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="h-62.5 flex items-center justify-center">
+                <div className="h-[250px] flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={250}>
+                <ChartContainer config={resourceChartConfig} className="h-[250px] w-full aspect-auto">
                   <BarChart
+                    accessibilityLayer
                     data={[
-                      { name: t('stats.agents'), value: stats.agents, fill: COLORS[0] },
-                      { name: t('stats.workflows'), value: stats.workflows, fill: COLORS[1] },
-                      { name: t('stats.knowledgeBases'), value: stats.knowledgeBases, fill: COLORS[2] },
-                      { name: t('stats.models'), value: stats.models, fill: COLORS[3] },
+                      { category: t('stats.agents'), value: stats.agents },
+                      { category: t('stats.workflows'), value: stats.workflows },
+                      { category: t('stats.knowledgeBases'), value: stats.knowledgeBases },
+                      { category: t('stats.models'), value: stats.models },
                     ]}
+                    margin={{
+                      left: 12,
+                      right: 12,
+                    }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <CartesianGrid vertical={false} />
                     <XAxis
-                      dataKey="name"
-                      className="text-xs"
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      dataKey="category"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
                     />
-                    <YAxis
-                      className="text-xs"
-                      tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent />}
                     />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="value" radius={8}>
+                      <Cell fill="var(--chart-1)" />
+                      <Cell fill="var(--chart-2)" />
+                      <Cell fill="var(--chart-3)" />
+                      <Cell fill="var(--chart-4)" />
+                    </Bar>
                   </BarChart>
-                </ResponsiveContainer>
+                </ChartContainer>
               )}
             </CardContent>
           </Card>

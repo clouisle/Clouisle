@@ -46,8 +46,14 @@ ALLOWED_IMAGE_TYPES = {
 ALLOWED_DOCUMENT_TYPES = {
     "application/pdf",
     "text/plain",
+    "text/markdown",
+    "text/html",
+    "text/csv",
+    "application/json",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 # 文件类型到扩展名映射
@@ -60,6 +66,13 @@ MIME_TO_EXT = {
     "image/x-icon": ".ico",
     "application/pdf": ".pdf",
     "text/plain": ".txt",
+    "text/markdown": ".md",
+    "text/html": ".html",
+    "text/csv": ".csv",
+    "application/json": ".json",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
 }
 
 
@@ -160,6 +173,11 @@ async def upload_file(
     """
     content_type = file.content_type
     allowed_types = ALLOWED_IMAGE_TYPES | ALLOWED_DOCUMENT_TYPES
+
+    if content_type not in allowed_types:
+        filename = file.filename or ""
+        if filename and file_parser_service.is_supported(filename):
+            content_type = file_parser_service.get_mime_type(filename)
 
     if content_type not in allowed_types:
         raise BusinessError(

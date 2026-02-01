@@ -14,6 +14,7 @@ import type {
   ToolResultPart,
   SourceDocumentPart,
 } from '@/components/chat'
+import { isSourcePart, isTextPart } from '@/components/chat'
 
 /**
  * Backend Message format (from API response)
@@ -177,6 +178,45 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
 
   // Track RAG context from user messages to attach to the following assistant message
   let pendingRagContext: BackendMessage['rag_context'] = null
+  // Track assistant tool-call messages to merge into the next assistant reply
+  let pendingToolParts: MessagePart[] = []
+
+  const aggregateRagContext = (
+    contexts: BackendMessage['rag_context']
+  ): BackendMessage['rag_context'] => {
+    if (!contexts || contexts.length === 0) return contexts
+
+    const map = new Map<string, { ctx: any; contents: string[]; score?: number }>()
+    const order: string[] = []
+
+    for (const ctx of contexts) {
+      const key = `${ctx.kb_id || ''}:${ctx.document_id || ctx.document_name || ''}`
+      if (!map.has(key)) {
+        map.set(key, {
+          ctx: { ...ctx },
+          contents: [],
+          score: typeof ctx.score === 'number' ? ctx.score : undefined,
+        })
+        order.push(key)
+      }
+      const entry = map.get(key)!
+      if (typeof ctx.content === 'string' && ctx.content.trim()) {
+        entry.contents.push(ctx.content)
+      }
+      if (typeof ctx.score === 'number') {
+        entry.score = entry.score == null ? ctx.score : Math.max(entry.score, ctx.score)
+      }
+    }
+
+    return order.map((key) => {
+      const entry = map.get(key)!
+      return {
+        ...entry.ctx,
+        score: entry.score,
+        content: entry.contents.join('\n\n'),
+      }
+    })
+  }
 
   for (const message of messages) {
     if (message.role === 'tool' || message.role === 'system') {
@@ -185,11 +225,16 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
 
     // Capture RAG context from user messages
     if (message.role === 'user' && message.rag_context && Array.isArray(message.rag_context)) {
-      pendingRagContext = message.rag_context
+      pendingRagContext = aggregateRagContext(message.rag_context)
     }
 
     const chatMessage = convertBackendMessage(message)
     if (!chatMessage) continue
+
+    const isToolCallAssistant =
+      message.role === 'assistant' &&
+      Array.isArray(message.tool_calls) &&
+      message.tool_calls.length > 0
 
     // If assistant message, add pending RAG context from previous user message
     if (message.role === 'assistant') {
@@ -221,7 +266,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
       }
 
       // Add RAG context as source documents (from pending user message)
-      if (pendingRagContext && pendingRagContext.length > 0) {
+      if (!isToolCallAssistant && pendingRagContext && pendingRagContext.length > 0) {
         for (const ctx of pendingRagContext) {
           chatMessage.parts.push({
             type: 'source-document',
@@ -241,7 +286,36 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
       }
     }
 
+    // Defer tool-call assistant messages so they can be merged
+    // into the following assistant response (matching call position).
+    if (isToolCallAssistant) {
+      pendingToolParts = pendingToolParts.concat(chatMessage.parts)
+      continue
+    }
+
+    if (pendingToolParts.length > 0 && message.role === 'assistant') {
+      const sources = chatMessage.parts.filter(isSourcePart)
+      const nonSourceParts = chatMessage.parts.filter((p) => !isSourcePart(p))
+      const insertIndex = nonSourceParts.findIndex(isTextPart)
+      if (insertIndex === -1) {
+        nonSourceParts.push(...(pendingToolParts as any))
+      } else {
+        nonSourceParts.splice(insertIndex, 0, ...(pendingToolParts as any))
+      }
+      chatMessage.parts = [...nonSourceParts, ...sources]
+      pendingToolParts = []
+    }
+
     result.push(chatMessage)
+  }
+
+  if (pendingToolParts.length > 0) {
+    result.push({
+      id: `assistant-tool-${Date.now()}`,
+      role: 'assistant',
+      parts: pendingToolParts,
+      createdAt: new Date(),
+    })
   }
 
   return result

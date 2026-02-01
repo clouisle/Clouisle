@@ -217,7 +217,7 @@ function DocumentSourceItem({ document, onClick }: DocumentSourceItemProps) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 py-1 text-sm text-primary hover:text-primary/80 transition-colors text-left w-full"
+      className="flex items-center gap-2 py-1 text-sm text-primary hover:text-primary/80 transition-colors text-left w-full cursor-pointer"
     >
       <FileText className="h-4 w-4 shrink-0" />
       <span className="truncate">{document.documentName}</span>

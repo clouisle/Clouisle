@@ -178,7 +178,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
             {isIconUrl ? (
               <div className="relative h-6 w-6 rounded overflow-hidden shrink-0">
                 <Image
-                  src={tool.icon}
+                  src={tool.icon || ''}
                   alt={tool.display_name}
                   fill
                   className="object-cover"

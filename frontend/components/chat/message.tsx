@@ -525,15 +525,22 @@ function TextWithCitations({
   }>>([])
   const hasSources = sources.length > 0
 
-  // Citation marker format: [[cite:N]]
+  // Citation marker formats: [[cite:N]] and common variants like (ref:N), [ref:N], [[ref:N]]
+  const normalizeCitations = (input: string) =>
+    input
+      .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
+      .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
+      .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
+
   const createCiteRegex = () => /\[\[cite:(\d+)\]\]/g
 
   // Process text: strip citations if no sources
   const processedText = React.useMemo(() => {
+    const normalized = normalizeCitations(text)
     if (!hasSources) {
-      return text.replace(createCiteRegex(), '')
+      return normalized.replace(createCiteRegex(), '')
     }
-    return text
+    return normalized
   }, [text, hasSources])
 
   // Function to find and replace citation markers in DOM

@@ -18,6 +18,10 @@ export default function SiteSettingsSecurityPage() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [settings, setSettings] = React.useState<SecuritySettings>({
+    allow_registration: true,
+    require_approval: false,
+    email_verification: true,
+    allow_account_deletion: true,
     min_password_length: 8,
     require_uppercase: true,
     require_number: true,
@@ -33,7 +37,22 @@ export default function SiteSettingsSecurityPage() {
     try {
       setLoading(true)
       const data = await siteSettingsApi.getSecurity()
-      setSettings(data)
+      // 确保所有布尔值字段都有明确的值
+      setSettings({
+        allow_registration: data.allow_registration ?? true,
+        require_approval: data.require_approval ?? false,
+        email_verification: data.email_verification ?? true,
+        allow_account_deletion: data.allow_account_deletion ?? true,
+        min_password_length: data.min_password_length ?? 8,
+        require_uppercase: data.require_uppercase ?? true,
+        require_number: data.require_number ?? true,
+        require_special_char: data.require_special_char ?? false,
+        session_timeout_days: data.session_timeout_days ?? 30,
+        single_session: data.single_session ?? false,
+        max_login_attempts: data.max_login_attempts ?? 5,
+        lockout_duration_minutes: data.lockout_duration_minutes ?? 15,
+        enable_captcha: data.enable_captcha ?? false,
+      })
     } catch (error) {
       console.error('Failed to load settings:', error)
       toast.error(t('loadError'))
@@ -84,6 +103,55 @@ export default function SiteSettingsSecurityPage() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('registration')}</CardTitle>
+          <CardDescription>{t('registrationDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('allowRegistration')}</Label>
+              <p className="text-sm text-muted-foreground">{t('allowRegistrationDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.allow_registration}
+              onCheckedChange={(checked) => updateSetting('allow_registration', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('requireApproval')}</Label>
+              <p className="text-sm text-muted-foreground">{t('requireApprovalDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.require_approval}
+              onCheckedChange={(checked) => updateSetting('require_approval', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('emailVerification')}</Label>
+              <p className="text-sm text-muted-foreground">{t('emailVerificationDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.email_verification}
+              onCheckedChange={(checked) => updateSetting('email_verification', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('allowAccountDeletion')}</Label>
+              <p className="text-sm text-muted-foreground">{t('allowAccountDeletionDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.allow_account_deletion}
+              onCheckedChange={(checked) => updateSetting('allow_account_deletion', checked)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>{t('passwordPolicy')}</CardTitle>

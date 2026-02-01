@@ -168,6 +168,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Token has been revoked",
         "zh": "令牌已被撤销",
     },
+    "session_expired_new_login": {
+        "en": "Your session has expired due to a new login from another device",
+        "zh": "由于在其他设备登录，您的会话已过期",
+    },
     "invalid_credentials": {
         "en": "Invalid credentials",
         "zh": "凭证无效",
@@ -975,6 +979,171 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "api_key_no_workflow_access": {
         "en": "This API key does not have access to the requested Workflow",
         "zh": "此 API 密钥无权访问请求的工作流",
+    },
+    # Audit Log
+    "audit_log_not_found": {
+        "en": "Audit log not found",
+        "zh": "审计日志未找到",
+    },
+    "audit_log_login_success": {
+        "en": "Login successful",
+        "zh": "登录成功",
+    },
+    "audit_log_login_failed": {
+        "en": "Login failed",
+        "zh": "登录失败",
+    },
+    "audit_log_logout": {
+        "en": "Logout",
+        "zh": "登出",
+    },
+    "audit_log_register": {
+        "en": "User registration",
+        "zh": "用户注册",
+    },
+    "audit_log_create_user": {
+        "en": "Create user",
+        "zh": "创建用户",
+    },
+    "audit_log_update_user": {
+        "en": "Update user",
+        "zh": "更新用户",
+    },
+    "audit_log_delete_user": {
+        "en": "Delete user",
+        "zh": "删除用户",
+    },
+    "audit_log_activate_user": {
+        "en": "Activate user",
+        "zh": "激活用户",
+    },
+    "audit_log_deactivate_user": {
+        "en": "Deactivate user",
+        "zh": "停用用户",
+    },
+    "audit_log_change_password": {
+        "en": "Change password",
+        "zh": "修改密码",
+    },
+    "audit_log_reset_password": {
+        "en": "Reset password",
+        "zh": "重置密码",
+    },
+    "audit_log_create_role": {
+        "en": "Create role",
+        "zh": "创建角色",
+    },
+    "audit_log_update_role": {
+        "en": "Update role",
+        "zh": "更新角色",
+    },
+    "audit_log_delete_role": {
+        "en": "Delete role",
+        "zh": "删除角色",
+    },
+    "audit_log_create_permission": {
+        "en": "Create permission",
+        "zh": "创建权限",
+    },
+    "audit_log_update_permission": {
+        "en": "Update permission",
+        "zh": "更新权限",
+    },
+    "audit_log_delete_permission": {
+        "en": "Delete permission",
+        "zh": "删除权限",
+    },
+    "audit_log_update_settings": {
+        "en": "Update site settings",
+        "zh": "更新站点设置",
+    },
+    "audit_log_create_api_key": {
+        "en": "Create API key",
+        "zh": "创建 API 密钥",
+    },
+    "audit_log_delete_api_key": {
+        "en": "Delete API key",
+        "zh": "删除 API 密钥",
+    },
+    "audit_log_create_model": {
+        "en": "Create model configuration",
+        "zh": "创建模型配置",
+    },
+    "audit_log_update_model": {
+        "en": "Update model configuration",
+        "zh": "更新模型配置",
+    },
+    "audit_log_delete_model": {
+        "en": "Delete model configuration",
+        "zh": "删除模型配置",
+    },
+    "audit_log_create_team": {
+        "en": "Create team",
+        "zh": "创建团队",
+    },
+    "audit_log_update_team": {
+        "en": "Update team",
+        "zh": "更新团队",
+    },
+    "audit_log_delete_team": {
+        "en": "Delete team",
+        "zh": "删除团队",
+    },
+    "audit_log_create_agent": {
+        "en": "Create agent",
+        "zh": "创建 Agent",
+    },
+    "audit_log_update_agent": {
+        "en": "Update agent",
+        "zh": "更新 Agent",
+    },
+    "audit_log_delete_agent": {
+        "en": "Delete agent",
+        "zh": "删除 Agent",
+    },
+    "audit_log_publish_agent": {
+        "en": "Publish agent",
+        "zh": "发布 Agent",
+    },
+    "audit_log_unpublish_agent": {
+        "en": "Unpublish agent",
+        "zh": "取消发布 Agent",
+    },
+    "audit_log_create_kb": {
+        "en": "Create knowledge base",
+        "zh": "创建知识库",
+    },
+    "audit_log_update_kb": {
+        "en": "Update knowledge base",
+        "zh": "更新知识库",
+    },
+    "audit_log_delete_kb": {
+        "en": "Delete knowledge base",
+        "zh": "删除知识库",
+    },
+    "audit_log_create_tool": {
+        "en": "Create tool",
+        "zh": "创建工具",
+    },
+    "audit_log_update_tool": {
+        "en": "Update tool",
+        "zh": "更新工具",
+    },
+    "audit_log_delete_tool": {
+        "en": "Delete tool",
+        "zh": "删除工具",
+    },
+    "audit_log_create_workflow": {
+        "en": "Create workflow",
+        "zh": "创建工作流",
+    },
+    "audit_log_update_workflow": {
+        "en": "Update workflow",
+        "zh": "更新工作流",
+    },
+    "audit_log_delete_workflow": {
+        "en": "Delete workflow",
+        "zh": "删除工作流",
     },
 }
 

@@ -264,8 +264,9 @@ export function PromptEditor({
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const variableStartPosRef = React.useRef(-1)
   const isComposingRef = React.useRef(false)
-  const lastValueRef = React.useRef(value)
+  const lastValueRef = React.useRef('')  // 初始化为空字符串，而不是 value
   const isInternalUpdateRef = React.useRef(false)
+  const isMountedRef = React.useRef(false)
 
   // System variables based on enabled features
   const systemVariables = React.useMemo<SystemVariable[]>(() => {
@@ -299,10 +300,10 @@ export function PromptEditor({
       icon: v.icon 
     }))
     // 用户变量
-    variables.forEach(v => map.set(v.name, { 
-      name: v.name, 
-      label: v.label, 
-      isSystem: false 
+    variables.forEach(v => map.set(v.name, {
+      name: v.name,
+      label: v.label ?? undefined,
+      isSystem: false
     }))
     return map
   }, [variables, systemVariables])
@@ -328,16 +329,48 @@ export function PromptEditor({
 
   // 初始化和外部值变化时更新编辑器
   React.useEffect(() => {
+    console.log('[PromptEditor] useEffect triggered:', {
+      hasEditor: !!editorRef.current,
+      isInternalUpdate: isInternalUpdateRef.current,
+      isMounted: isMountedRef.current,
+      value: value,
+      valueLength: value?.length || 0,
+      lastValue: lastValueRef.current,
+      lastValueLength: lastValueRef.current?.length || 0,
+      areEqual: value === lastValueRef.current,
+    })
+
     const editor = editorRef.current
-    if (!editor || isInternalUpdateRef.current) {
+    if (!editor) {
+      console.log('[PromptEditor] No editor ref, returning')
+      return
+    }
+
+    // 如果是内部更新触发的，跳过
+    if (isInternalUpdateRef.current) {
+      console.log('[PromptEditor] Internal update, skipping')
       isInternalUpdateRef.current = false
       return
     }
-    
-    if (value !== lastValueRef.current) {
+
+    // 首次挂载或值变化时，更新编辑器内容
+    if (!isMountedRef.current || value !== lastValueRef.current) {
+      console.log('[PromptEditor] Updating editor content')
+      isMountedRef.current = true
       lastValueRef.current = value
       const html = textToHtml(value || '', variableMap)
+      console.log('[PromptEditor] Generated HTML:', {
+        htmlLength: html.length,
+        htmlPreview: html.substring(0, 200),
+      })
       editor.innerHTML = html || ''
+      console.log('[PromptEditor] Editor innerHTML set:', {
+        editorInnerHTML: editor.innerHTML.substring(0, 200),
+        editorTextContent: editor.textContent?.substring(0, 200),
+        editorChildNodes: editor.childNodes.length,
+      })
+    } else {
+      console.log('[PromptEditor] Value unchanged, skipping update')
     }
   }, [value, variableMap])
 

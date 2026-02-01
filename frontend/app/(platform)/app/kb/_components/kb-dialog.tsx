@@ -224,8 +224,8 @@ export function KnowledgeBaseDialog({
             <div className="space-y-2">
               <Label htmlFor="embeddingModel">{t('embeddingModel')}</Label>
               <Select 
-                value={embeddingModelId ?? undefined} 
-                onValueChange={setEmbeddingModelId}
+                value={embeddingModelId ?? ''} 
+                onValueChange={(value) => setEmbeddingModelId(value || null)}
                 disabled={isLoadingModels || isEditing}
               >
                 <SelectTrigger id="embeddingModel" className="w-full">

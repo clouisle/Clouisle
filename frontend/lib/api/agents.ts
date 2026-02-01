@@ -738,6 +738,7 @@ export interface AdminConversationWithMessages extends ConversationWithMessages 
 export interface ConversationStats {
   total_conversations: number
   total_messages: number
+  active_users: number
   conversations_by_agent: Array<{
     agent_id: string
     agent_name: string
@@ -931,7 +932,7 @@ export const publicAgentsApi = {
    */
   deleteConversation: async (conversationId: string): Promise<void> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-    
+
     const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
       method: 'DELETE',
       headers: {
@@ -939,11 +940,38 @@ export const publicAgentsApi = {
         ...(token && { Authorization: `Bearer ${token}` }),
       },
     })
-    
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
       throw new Error(error.msg || `HTTP ${response.status}`)
     }
+  },
+
+  /**
+   * 更新对话
+   */
+  updateConversation: async (
+    conversationId: string,
+    data: ConversationUpdateInput
+  ): Promise<Conversation> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
   },
 
   /**

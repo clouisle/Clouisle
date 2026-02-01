@@ -151,32 +151,32 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": True,
         "desc": "Site icon URL",
     },
-    # Registration
+    # Registration & Security
     "allow_registration": {
         "value": True,
         "type": "bool",
-        "category": "general",
+        "category": "security",
         "public": True,
         "desc": "Allow user registration",
     },
     "require_approval": {
         "value": True,
         "type": "bool",
-        "category": "general",
+        "category": "security",
         "public": True,
         "desc": "Require admin approval for new users",
     },
     "email_verification": {
         "value": True,
         "type": "bool",
-        "category": "general",
+        "category": "security",
         "public": True,
         "desc": "Require email verification",
     },
     "allow_account_deletion": {
         "value": True,
         "type": "bool",
-        "category": "general",
+        "category": "security",
         "public": True,
         "desc": "Allow users to delete their own account",
     },
@@ -300,6 +300,64 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "category": "email",
         "public": False,
         "desc": "Email sender address",
+    },
+    # Audit Log
+    "audit_log_retention_days": {
+        "value": 365,
+        "type": "int",
+        "category": "audit",
+        "public": False,
+        "desc": "Audit log retention days (30-3650)",
+    },
+    "audit_log_archive_enabled": {
+        "value": True,
+        "type": "bool",
+        "category": "audit",
+        "public": False,
+        "desc": "Enable automatic archiving of old audit logs",
+    },
+    "audit_log_archive_path": {
+        "value": "/var/log/clouisle/audit_archives",
+        "type": "string",
+        "category": "audit",
+        "public": False,
+        "desc": "Archive file storage path",
+    },
+    # Audit Alert
+    "audit_alert_enabled": {
+        "value": True,
+        "type": "bool",
+        "category": "audit",
+        "public": False,
+        "desc": "Enable audit log alerts",
+    },
+    "audit_alert_webhook": {
+        "value": "",
+        "type": "string",
+        "category": "audit",
+        "public": False,
+        "desc": "Webhook URL for audit alerts",
+    },
+    "audit_alert_failed_login_threshold": {
+        "value": 5,
+        "type": "int",
+        "category": "audit",
+        "public": False,
+        "desc": "Failed login attempts threshold for alert",
+    },
+    "audit_alert_failed_login_window": {
+        "value": 5,
+        "type": "int",
+        "category": "audit",
+        "public": False,
+        "desc": "Time window in minutes for failed login detection",
+    },
+    "audit_alert_bulk_deletion_threshold": {
+        "value": 10,
+        "type": "int",
+        "category": "audit",
+        "public": False,
+        "desc": "Bulk deletion threshold for alert",
     },
 }
 

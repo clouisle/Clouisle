@@ -202,7 +202,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   }).length
 
   return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 max-h-full overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0">
         <h3 className="font-medium">{t('title')}</h3>
@@ -226,37 +226,39 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       )}
 
       {/* Messages */}
-      <ChatContainer
-        messages={messages}
-        isStreaming={isStreaming}
-        className="flex-1 min-h-0"
-        onRegenerate={regenerate}
-        onSwitchVersion={switchVersion}
-        emptyState={
-          <div className="text-center text-muted-foreground py-8 px-4">
-            <div className="flex justify-center mb-4">
-              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-primary" />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ChatContainer
+          messages={messages}
+          isStreaming={isStreaming}
+          className="h-full"
+          onRegenerate={regenerate}
+          onSwitchVersion={switchVersion}
+          emptyState={
+            <div className="text-center text-muted-foreground py-8 px-4">
+              <div className="flex justify-center mb-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
               </div>
+              <p className="text-sm">{t('empty')}</p>
+              {/* Suggested questions */}
+              {agent.suggested_questions && agent.suggested_questions.length > 0 && (
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {agent.suggested_questions.slice(0, 3).map((question, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSubmit(question)}
+                      className="px-3 py-1.5 text-xs rounded-full border bg-background hover:bg-muted transition-colors cursor-pointer"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-sm">{t('empty')}</p>
-            {/* Suggested questions */}
-            {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {agent.suggested_questions.slice(0, 3).map((question, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSubmit(question)}
-                    className="px-3 py-1.5 text-xs rounded-full border bg-background hover:bg-muted transition-colors cursor-pointer"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        }
-      />
+          }
+        />
+      </div>
 
       {/* Input Area with Variables */}
       <div className="relative pb-4 shrink-0">

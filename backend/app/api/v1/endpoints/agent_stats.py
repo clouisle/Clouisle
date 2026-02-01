@@ -13,7 +13,7 @@ from app.api import deps
 from app.models.agent import Agent, Conversation, Message, MessageRole
 from app.models.user import User
 from app.schemas.response import Response, success, ResponseCode, BusinessError
-from app.core.timezone import now_utc
+from app.core.timezone import now, to_local, to_utc
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ async def get_agent_stats(
         )
     
     # Calculate time range
-    now = now_utc()
+    now_local = now()
     if period == "24h":
         start_time = now - timedelta(hours=24)
     elif period == "7d":
@@ -150,27 +150,29 @@ async def get_agent_trends(
     
     # Determine granularity and range based on period
     if period == "24h":
-        start_time = now - timedelta(hours=24)
+        start_time = now_local - timedelta(hours=24)
         granularity = "hour"
         num_points = 24
     elif period == "7d":
-        start_time = now - timedelta(days=7)
+        start_time = now_local - timedelta(days=7)
         granularity = "day"
         num_points = 7
     else:  # 30d
-        start_time = now - timedelta(days=30)
+        start_time = now_local - timedelta(days=30)
         granularity = "day"
         num_points = 30
+
+    start_time_utc = to_utc(start_time)
     
     # Get all conversations and messages in the period
     conversations = await Conversation.filter(
         agent_id=agent_id,
-        created_at__gte=start_time
+        created_at__gte=start_time_utc
     ).values("id", "created_at")
     
     messages = await Message.filter(
         conversation__agent_id=agent_id,
-        created_at__gte=start_time,
+        created_at__gte=start_time_utc,
         role=MessageRole.ASSISTANT
     ).values("created_at", "token_usage", "duration_ms")
     
@@ -179,14 +181,19 @@ async def get_agent_trends(
         # Group by hour
         data_points = []
         for i in range(num_points):
-            point_start = now - timedelta(hours=num_points - i)
-            point_end = now - timedelta(hours=num_points - i - 1)
+            point_start = now_local - timedelta(hours=num_points - i)
+            point_end = now_local - timedelta(hours=num_points - i - 1)
             
-            conv_count = sum(1 for c in conversations 
-                          if point_start <= c["created_at"] < point_end)
+            conv_count = sum(
+                1
+                for c in conversations
+                if point_start <= to_local(c["created_at"]) < point_end
+            )
             
-            msgs_in_period = [m for m in messages 
-                            if point_start <= m["created_at"] < point_end]
+            msgs_in_period = [
+                m for m in messages
+                if point_start <= to_local(m["created_at"]) < point_end
+            ]
             msg_count = len(msgs_in_period)
             
             tokens = sum(
@@ -210,15 +217,20 @@ async def get_agent_trends(
         # Group by day
         data_points = []
         for i in range(num_points):
-            point_date = (now - timedelta(days=num_points - i - 1)).date()
-            point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now.tzinfo)
+            point_date = (now_local - timedelta(days=num_points - i - 1)).date()
+            point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now_local.tzinfo)
             point_end = point_start + timedelta(days=1)
             
-            conv_count = sum(1 for c in conversations 
-                          if point_start <= c["created_at"] < point_end)
+            conv_count = sum(
+                1
+                for c in conversations
+                if point_start <= to_local(c["created_at"]) < point_end
+            )
             
-            msgs_in_period = [m for m in messages 
-                            if point_start <= m["created_at"] < point_end]
+            msgs_in_period = [
+                m for m in messages
+                if point_start <= to_local(m["created_at"]) < point_end
+            ]
             msg_count = len(msgs_in_period)
             
             tokens = sum(

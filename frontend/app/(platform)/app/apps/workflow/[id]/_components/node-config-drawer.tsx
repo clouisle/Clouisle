@@ -1014,6 +1014,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       case 'loop':
         return (
           <LoopNodeConfig
+            nodeId={node?.id || ''}
             config={loopConfig}
             variables={getAvailableVariables()}
             variableSearch={variableSearch}

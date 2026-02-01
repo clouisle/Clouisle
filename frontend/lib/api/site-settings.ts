@@ -32,13 +32,13 @@ export interface GeneralSettings {
   site_description: string
   site_url: string
   site_icon: string
+}
+
+export interface SecuritySettings {
   allow_registration: boolean
   require_approval: boolean
   email_verification: boolean
   allow_account_deletion: boolean
-}
-
-export interface SecuritySettings {
   min_password_length: number
   require_uppercase: boolean
   require_number: boolean
@@ -123,10 +123,6 @@ export const siteSettingsApi = {
       site_description: settings.site_description ?? '',
       site_url: settings.site_url ?? '',
       site_icon: settings.site_icon ?? '',
-      allow_registration: settings.allow_registration ?? true,
-      require_approval: settings.require_approval ?? false,
-      email_verification: settings.email_verification ?? true,
-      allow_account_deletion: settings.allow_account_deletion ?? true,
     }
   },
 
@@ -144,6 +140,10 @@ export const siteSettingsApi = {
   async getSecurity(): Promise<SecuritySettings> {
     const settings = await this.getAll('security')
     return {
+      allow_registration: settings.allow_registration ?? true,
+      require_approval: settings.require_approval ?? false,
+      email_verification: settings.email_verification ?? true,
+      allow_account_deletion: settings.allow_account_deletion ?? true,
       min_password_length: settings.min_password_length ?? 8,
       require_uppercase: settings.require_uppercase ?? true,
       require_number: settings.require_number ?? true,

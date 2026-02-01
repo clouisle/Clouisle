@@ -298,12 +298,12 @@ export function AgentSettingsDrawer({
                   value={maxIterations}
                   onChange={(e) => {
                     const val = Number(e.target.value)
-                    if (val >= 1 && val <= 20) {
+                    if (val >= 1 && val <= 200) {
                       onMaxIterationsChange(val)
                     }
                   }}
                   min={1}
-                  max={20}
+                  max={200}
                 />
                 <p className="text-xs text-muted-foreground">
                   {ts('maxIterationsHint')}

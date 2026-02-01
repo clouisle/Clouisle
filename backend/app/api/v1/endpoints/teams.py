@@ -1,7 +1,7 @@
 from typing import Any, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
 from app.models.user import Team, TeamMember, User
@@ -23,6 +23,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 
@@ -66,6 +67,7 @@ async def list_teams(
 @router.post("/", response_model=Response[TeamSchema])
 async def create_team(
     *,
+    request: Request,
     team_in: TeamCreate,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -96,6 +98,19 @@ async def create_team(
 
     # Reload with owner
     team = await Team.get(id=team.id).prefetch_related("owner")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="create_team",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="create",
+        status="success",
+        request=request,
+    )
+
     return success(data=team, msg_key="team_created")
 
 
@@ -184,6 +199,7 @@ async def get_team(
 @router.put("/{team_id}", response_model=Response[TeamSchema])
 async def update_team(
     *,
+    request: Request,
     team_id: UUID,
     team_in: TeamUpdate,
     current_user: User = Depends(deps.get_current_active_user),
@@ -213,6 +229,7 @@ async def update_team(
             )
 
     # Update fields
+    updated_fields = []
     if team_in.name is not None:
         # Check name uniqueness
         existing = await Team.filter(name=team_in.name).exclude(id=team_id).first()
@@ -222,21 +239,39 @@ async def update_team(
                 msg_key="team_name_exists",
             )
         team.name = team_in.name
+        updated_fields.append("name")
 
     if team_in.description is not None:
         team.description = team_in.description
+        updated_fields.append("description")
 
     if team_in.avatar_url is not None:
         team.avatar_url = team_in.avatar_url
+        updated_fields.append("avatar_url")
 
     await team.save()
 
     team = await Team.get(id=team_id).prefetch_related("owner")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_team",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"fields_updated": updated_fields},
+    )
+
     return success(data=team, msg_key="team_updated")
 
 
 @router.delete("/{team_id}", response_model=Response[TeamSchema])
 async def delete_team(
+    request: Request,
     team_id: UUID,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -267,6 +302,18 @@ async def delete_team(
                 status_code=403,
             )
 
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_team",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="delete",
+        status="success",
+        request=request,
+    )
+
     await team.delete()
     return success(data=team, msg_key="team_deleted")
 
@@ -277,6 +324,7 @@ async def delete_team(
 @router.post("/{team_id}/members", response_model=Response[TeamMemberInfo])
 async def add_team_member(
     *,
+    request: Request,
     team_id: UUID,
     member_in: TeamMemberAdd,
     current_user: User = Depends(deps.get_current_active_user),
@@ -334,6 +382,23 @@ async def add_team_member(
         team=team,
         user=user_to_add,
         role=member_in.role,
+    )
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="add_team_member",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "added_user_id": str(user_to_add.id),
+            "added_username": user_to_add.username,
+            "role": member_in.role,
+        },
     )
 
     return success(
@@ -431,6 +496,7 @@ async def update_team_member(
 
 @router.delete("/{team_id}/members/{user_id}", response_model=Response[dict])
 async def remove_team_member(
+    request: Request,
     team_id: UUID,
     user_id: UUID,
     current_user: User = Depends(deps.get_current_active_user),
@@ -486,6 +552,23 @@ async def remove_team_member(
                 msg_key="team_admin_required",
                 status_code=403,
             )
+
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="remove_team_member",
+        resource_type="team",
+        resource_id=team.id,
+        resource_name=team.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "removed_user_id": str(target_user.id),
+            "removed_username": target_user.username,
+            "is_self_removal": is_self,
+        },
+    )
 
     await membership.delete()
     return success(data={"user_id": str(user_id)}, msg_key="team_member_removed")

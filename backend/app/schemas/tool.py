@@ -167,6 +167,7 @@ class ToolDetailOut(ToolOut):
     team_id: UUID | None = Field(default=None, description="所属团队")
     created_at: str | None = Field(default=None, description="创建时间")
     updated_at: str | None = Field(default=None, description="更新时间")
+    created_by_id: UUID | None = Field(default=None, description="创建者 ID (可能已删除)")
     created_by_name: str | None = Field(default=None, description="创建者名称")
 
 
@@ -304,7 +305,7 @@ class ToolShareOut(BaseModel):
     shared_with_team_id: UUID = Field(..., description="共享给的团队 ID")
     shared_with_team_name: str = Field(..., description="共享给的团队名称")
     permission: ToolSharePermission = Field(..., description="权限级别")
-    shared_by_id: UUID = Field(..., description="共享者 ID")
+    shared_by_id: UUID | None = Field(None, description="共享者 ID (可能已删除)")
     shared_by_name: str = Field(..., description="共享者名称")
     shared_at: datetime = Field(..., description="共享时间")
 

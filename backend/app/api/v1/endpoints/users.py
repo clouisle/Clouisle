@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, Query, BackgroundTasks, Request
 from pydantic import BaseModel, EmailStr
 from tortoise.expressions import Q
 
@@ -24,6 +24,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 
@@ -98,6 +99,7 @@ async def get_user_stats(
 @router.post("/", response_model=Response[UserSchema])
 async def create_user(
     *,
+    request: Request,
     user_in: UserCreate,
     current_user: User = Depends(deps.PermissionChecker("user:create")),
 ) -> Any:
@@ -127,6 +129,19 @@ async def create_user(
         hashed_password=hashed_password,
     )
     user = await User.get(id=user.id).prefetch_related("roles__permissions")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="create_user",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="create",
+        status="success",
+        request=request,
+    )
+
     return success(data=user, msg_key="user_created")
 
 
@@ -250,6 +265,7 @@ class UpdateProfileRequest(BaseModel):
 @router.put("/me", response_model=Response[UserSchema])
 async def update_user_me(
     *,
+    request: Request,
     data: UpdateProfileRequest,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -284,6 +300,20 @@ async def update_user_me(
     updated_user = await User.get(id=current_user.id).prefetch_related(
         "roles__permissions"
     )
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_user",
+        resource_type="user",
+        resource_id=current_user.id,
+        resource_name=current_user.username,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"fields_updated": list(update_data.keys())},
+    )
+
     return success(data=updated_user, msg_key="profile_updated")
 
 
@@ -297,6 +327,7 @@ class ChangePasswordRequest(BaseModel):
 @router.post("/me/change-password", response_model=Response[None])
 async def change_password(
     *,
+    request: Request,
     data: ChangePasswordRequest,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -323,6 +354,18 @@ async def change_password(
     current_user.hashed_password = security.get_password_hash(data.new_password)
     await current_user.save()
 
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="change_password",
+        resource_type="user",
+        resource_id=current_user.id,
+        resource_name=current_user.username,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     return success(msg_key="password_changed")
 
 
@@ -335,6 +378,7 @@ class DeleteAccountRequest(BaseModel):
 @router.delete("/me", response_model=Response[None])
 async def delete_account(
     *,
+    request: Request,
     data: DeleteAccountRequest,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -363,6 +407,19 @@ async def delete_account(
             msg_key="current_password_incorrect",
         )
 
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_user",
+        resource_type="user",
+        resource_id=current_user.id,
+        resource_name=current_user.username,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"self_deletion": True},
+    )
+
     # Delete user
     await current_user.delete()
 
@@ -389,6 +446,7 @@ async def read_user_by_id(
 
 @router.post("/{user_id}/activate", response_model=Response[UserSchema])
 async def activate_user(
+    request: Request,
     user_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("user:update")),
 ) -> Any:
@@ -413,11 +471,25 @@ async def activate_user(
     await user.save()
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="activate_user",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     return success(data=updated_user, msg_key="user_activated")
 
 
 @router.post("/{user_id}/deactivate", response_model=Response[UserSchema])
 async def deactivate_user(
+    request: Request,
     user_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("user:update")),
 ) -> Any:
@@ -448,12 +520,26 @@ async def deactivate_user(
     await user.save()
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="deactivate_user",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     return success(data=updated_user, msg_key="user_deactivated")
 
 
 @router.put("/{user_id}", response_model=Response[UserSchema])
 async def update_user(
     *,
+    request: Request,
     user_id: UUID,
     user_in: UserUpdate,
     current_user: User = Depends(deps.PermissionChecker("user:update")),
@@ -490,11 +576,26 @@ async def update_user(
 
     # Refresh to get updated relations
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_user",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"fields_updated": list(user_in.model_dump(exclude_unset=True).keys())},
+    )
+
     return success(data=updated_user, msg_key="user_updated")
 
 
 @router.delete("/{user_id}", response_model=Response[UserSchema])
 async def delete_user(
+    request: Request,
     user_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("user:delete")),
 ) -> Any:
@@ -514,6 +615,18 @@ async def delete_user(
             code=ResponseCode.CANNOT_DELETE_SUPERUSER,
             msg_key="cannot_delete_superuser",
         )
+
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_user",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="delete",
+        status="success",
+        request=request,
+    )
 
     await user.delete()
     return success(data=user, msg_key="user_deleted")

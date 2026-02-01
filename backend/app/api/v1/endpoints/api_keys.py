@@ -2,7 +2,7 @@ from typing import Any, Optional
 from uuid import UUID
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import Q
 
 from app.api import deps
@@ -25,6 +25,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 
@@ -174,6 +175,7 @@ async def get_api_key_stats(
 @router.post("/", response_model=Response[APIKeyCreateResponse])
 async def create_api_key(
     *,
+    request: Request,
     data: APIKeyCreate,
     current_user: User = Depends(deps.PermissionChecker("apikey:create")),
 ) -> Any:
@@ -232,6 +234,24 @@ async def create_api_key(
     if workflows:
         await api_key.workflows.add(*workflows)
 
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="create_api_key",
+        resource_type="api_key",
+        resource_id=api_key.id,
+        resource_name=api_key.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "key_prefix": key_prefix,
+            "scopes": data.scopes,
+            "agent_count": len(agents),
+            "workflow_count": len(workflows),
+        },
+    )
+
     # 构建响应
     response_data = await build_api_key_response(api_key)
     response_data["key"] = full_key  # Only returned once
@@ -271,6 +291,7 @@ async def get_api_key(
 @router.put("/{api_key_id}", response_model=Response[APIKeyResponse])
 async def update_api_key(
     *,
+    request: Request,
     api_key_id: UUID,
     data: APIKeyUpdate,
     current_user: User = Depends(deps.PermissionChecker("apikey:update")),
@@ -279,7 +300,7 @@ async def update_api_key(
     Update an API key.
     """
     api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
-    
+
     if not api_key:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -339,15 +360,30 @@ async def update_api_key(
     if update_data:
         await api_key.update_from_dict(update_data)
         await api_key.save()
-    
+
     # 重新加载（包括关系）
     api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_api_key",
+        resource_type="api_key",
+        resource_id=api_key.id,
+        resource_name=api_key.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"fields_updated": list(data.model_dump(exclude_unset=True).keys())},
+    )
+
     response_data = await build_api_key_response(api_key)
     return success(data=response_data, msg_key="api_key_updated")
 
 
 @router.delete("/{api_key_id}", response_model=Response[APIKeyResponse])
 async def delete_api_key(
+    request: Request,
     api_key_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("apikey:delete")),
 ) -> Any:
@@ -355,7 +391,7 @@ async def delete_api_key(
     Delete an API key.
     """
     api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
-    
+
     if not api_key:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -373,7 +409,20 @@ async def delete_api_key(
 
     # Store for response
     response_data = await build_api_key_response(api_key)
-    
+
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_api_key",
+        resource_type="api_key",
+        resource_id=api_key.id,
+        resource_name=api_key.name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"key_prefix": api_key.key_prefix},
+    )
+
     # Delete
     await api_key.delete()
 
@@ -382,6 +431,7 @@ async def delete_api_key(
 
 @router.post("/{api_key_id}/activate", response_model=Response[APIKeyResponse])
 async def activate_api_key(
+    request: Request,
     api_key_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("apikey:update")),
 ) -> Any:
@@ -389,7 +439,7 @@ async def activate_api_key(
     Activate an API key.
     """
     api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
-    
+
     if not api_key:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -414,12 +464,25 @@ async def activate_api_key(
     api_key.is_active = True
     await api_key.save()
 
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="activate_api_key",
+        resource_type="api_key",
+        resource_id=api_key.id,
+        resource_name=api_key.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     response_data = await build_api_key_response(api_key)
     return success(data=response_data, msg_key="api_key_activated")
 
 
 @router.post("/{api_key_id}/deactivate", response_model=Response[APIKeyResponse])
 async def deactivate_api_key(
+    request: Request,
     api_key_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("apikey:update")),
 ) -> Any:
@@ -427,7 +490,7 @@ async def deactivate_api_key(
     Deactivate an API key.
     """
     api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
-    
+
     if not api_key:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -451,6 +514,18 @@ async def deactivate_api_key(
 
     api_key.is_active = False
     await api_key.save()
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="deactivate_api_key",
+        resource_type="api_key",
+        resource_id=api_key.id,
+        resource_name=api_key.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
 
     response_data = await build_api_key_response(api_key)
     return success(data=response_data, msg_key="api_key_deactivated")

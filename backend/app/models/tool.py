@@ -140,10 +140,11 @@ class Tool(models.Model):
     )
 
     # Audit
-    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="created_tools",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
         description="Creator",
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -193,13 +194,14 @@ class ToolShare(models.Model):
     )
 
     # Audit
-    shared_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    shared_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="tool_shares_created",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
         description="User who shared the tool",
     )
-    shared_by_id: UUID  # type: ignore[assignment]
+    shared_by_id: UUID | None  # type: ignore[assignment]
 
     shared_at = fields.DatetimeField(auto_now_add=True, description="When the tool was shared")
 

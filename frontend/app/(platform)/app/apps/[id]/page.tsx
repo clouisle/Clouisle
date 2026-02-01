@@ -237,9 +237,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         />
 
         {/* Content */}
-        <div className="flex-1 flex overflow-hidden p-6 gap-6 min-h-0">
+        <div className="flex-1 flex h-full overflow-hidden p-6 gap-6 min-h-0">
           {/* Orchestration Form */}
-          <ScrollArea className="flex-1 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
+          <ScrollArea className="flex-1 min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
             <div className="max-w-3xl">
               <AgentOrchestrationForm
                 agent={agent}
@@ -249,7 +249,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           </ScrollArea>
 
           {/* Preview Panel */}
-          <div className="w-95 min-w-95 shrink-0 h-full overflow-hidden border rounded-lg">
+          <div className="w-95 min-w-95 shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
             <AgentPreviewPanel agent={agent} />
           </div>
         </div>

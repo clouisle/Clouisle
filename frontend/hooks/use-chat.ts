@@ -684,9 +684,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     async (messageId: string, versionIndex: number) => {
       if (isLoading) return
 
-      // Find the message
-      const message = messages.find((m) => m.id === messageId)
-      if (!message) {
+      // Find the message index
+      const messageIndex = messages.findIndex((m) => m.id === messageId)
+      if (messageIndex === -1) {
         console.error('switchVersion: message not found', messageId)
         return
       }
@@ -696,7 +696,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         console.log('switchVersion: fetching versions for message', messageId)
         const versions = await agentsApi.getMessageVersions(agentId, messageId)
         console.log('switchVersion: got versions', versions)
-        
+
         if (versionIndex < 0 || versionIndex >= versions.length) {
           console.error('switchVersion: invalid versionIndex', versionIndex, 'versions.length', versions.length)
           return
@@ -704,35 +704,35 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         const targetVersion = versions[versionIndex]
         console.log('switchVersion: switching to version', targetVersion)
-        
+
         // Call backend to switch version (this updates is_active in database)
+        // Backend will also deactivate messages that came after this message
         const result = await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
         console.log('switchVersion: switch result', result)
 
-        // Update local state: replace message with new version content
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== messageId) return msg
-            // Create text part from version content
-            const textPart: TextPart = {
-              type: 'text',
-              text: targetVersion.content,
-              state: 'done',
-            }
-            return {
-              ...msg,
-              id: targetVersion.id,  // Update to new version ID
-              parts: [textPart],
-              versionNumber: targetVersion.version_number,
-              versionCount: versions.length,
-            }
-          })
-        )
+        // Reload the entire conversation to get the correct message history
+        // This ensures tool messages and subsequent messages are correctly loaded
+        if (conversationId) {
+          console.log('switchVersion: reloading conversation', conversationId)
+          const conversationData = await agentsApi.getConversation(conversationId)
+          console.log('switchVersion: conversation data', conversationData)
+          console.log('switchVersion: messages count', conversationData.messages?.length)
+
+          const { convertBackendMessages } = await import('@/lib/utils/message-converter')
+          const convertedMessages = convertBackendMessages(conversationData.messages as any[])
+          console.log('switchVersion: converted messages count', convertedMessages.length)
+          console.log('switchVersion: converted messages', convertedMessages)
+
+          // Update all messages
+          setMessages(convertedMessages)
+        } else {
+          console.warn('switchVersion: no conversationId, cannot reload conversation')
+        }
       } catch (err) {
         console.error('Failed to switch version:', err)
       }
     },
-    [agentId, messages, isLoading]
+    [agentId, messages, isLoading, conversationId]
   )
 
   /**

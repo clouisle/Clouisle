@@ -4,12 +4,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { LoginForm } from './_components'
+import { LoginRedirect } from './_components/login-redirect'
 
 export default async function LoginPage() {
   const t = await getTranslations('auth')
 
   return (
     <Card>
+      <LoginRedirect />
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t('loginTitle')}</CardTitle>
         <CardDescription>{t('loginDescription')}</CardDescription>

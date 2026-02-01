@@ -10,7 +10,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 export const APP_VERSION = '0.1.0'
 
 // 构建日期
-export const BUILD_DATE = '2024-12'
+export const BUILD_DATE = '2026-01-28'
 
 // 应用名称
 export const APP_NAME = 'Clouisle'

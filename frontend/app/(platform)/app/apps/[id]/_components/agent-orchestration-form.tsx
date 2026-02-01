@@ -160,6 +160,33 @@ export function AgentOrchestrationForm({
   )
   const [ragMode, setRagMode] = React.useState<RAGMode>(agent.rag_mode || 'agentic')
 
+  // Sync state with agent prop when it changes
+  React.useEffect(() => {
+    setSystemPrompt(agent.system_prompt || '')
+    setVariables(agent.variables || [])
+    setKnowledgeBaseConfigs(
+      agent.knowledge_bases.map(akb => ({
+        knowledge_base_id: akb.knowledge_base.id,
+        retrieval_top_k: akb.retrieval_top_k,
+        score_threshold: akb.score_threshold,
+      }))
+    )
+    setToolsConfig(agent.tools_config || [])
+    setEnableVision(agent.enable_vision || false)
+    setEnableFileUpload(agent.enable_file_upload || false)
+    setFileUploadConfig(
+      agent.file_upload_config || {
+        parser: { type: 'builtin', name: 'markitdown' },
+        max_file_size: 10 * 1024 * 1024,
+        max_files: 5,
+        max_content_length: 100000,
+        truncate_strategy: 'end',
+        allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
+      }
+    )
+    setRagMode(agent.rag_mode || 'agentic')
+  }, [agent])
+
   // Collapsed states
   const [variablesCollapsed, setVariablesCollapsed] = React.useState(true)
   const [kbCollapsed, setKbCollapsed] = React.useState(true)
@@ -226,7 +253,7 @@ export function AgentOrchestrationForm({
       )
       return {
         name: tc.name || tool?.name,
-        display_name: tool?.display_name || tc.name,
+        display_name: tool?.display_name ?? tc.name ?? undefined,
       }
     }).filter((t) => t.name),
     knowledge_bases: knowledgeBases
@@ -235,11 +262,11 @@ export function AgentOrchestrationForm({
       )
       .map((kb) => ({
         name: kb.name,
-        description: kb.description,
+        description: kb.description ?? undefined,
       })),
     variables: variables.map((v) => ({
       name: v.name,
-      label: v.label,
+      label: v.label ?? undefined,
     })),
   }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables])
 

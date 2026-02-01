@@ -451,16 +451,18 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
               </Alert>
             )}
 
-            <ScrollArea className="h-[300px] w-full rounded-lg border bg-muted/50 p-4" ref={scrollRef}>
-              {events.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  {t('noEventsYet')}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {events.map((event, index) => renderEvent(event, index))}
-                </div>
-              )}
+            <ScrollArea className="h-[300px] w-full rounded-lg border bg-muted/50 p-4">
+              <div ref={scrollRef}>
+                {events.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    {t('noEventsYet')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {events.map((event, index) => renderEvent(event, index))}
+                  </div>
+                )}
+              </div>
             </ScrollArea>
           </CardContent>
         </Card>

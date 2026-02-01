@@ -4,6 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   AppWindow,
@@ -76,7 +77,9 @@ export default function AppsPage() {
   const t = useTranslations('apps')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
-  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
   const [activeTab, setActiveTab] = React.useState<AppType>('all')
   const [searchQuery, setSearchQuery] = React.useState('')
   const [apps, setApps] = React.useState<AppItem[]>([])
@@ -84,6 +87,14 @@ export default function AppsPage() {
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingApp, setDeletingApp] = React.useState<AppItem | null>(null)
+
+  // Initialize activeTab from URL parameter after mount
+  React.useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'agent' || tabParam === 'workflow') {
+      setActiveTab(tabParam)
+    }
+  }, [searchParams])
 
   // Fetch all apps (agents + workflows)
   const fetchApps = React.useCallback(async () => {
@@ -222,6 +233,13 @@ export default function AppsPage() {
     return `/app/apps/workflow/${app.id}`
   }
 
+  // Handle tab change and update URL
+  const handleTabChange = (value: string) => {
+    const newTab = value as AppType
+    setActiveTab(newTab)
+    router.push(`?tab=${newTab}`, { scroll: false })
+  }
+
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
       {/* Header */}
@@ -238,7 +256,7 @@ export default function AppsPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-4 mb-6" suppressHydrationWarning>
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AppType)}>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList>
             <TabsTrigger value="all">{t('tabs.all')}</TabsTrigger>
             <TabsTrigger value="agent">

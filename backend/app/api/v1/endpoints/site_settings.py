@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import get_current_active_superuser
@@ -14,6 +14,7 @@ from app.schemas.site_setting import (
 )
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.core.email import send_email
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 
@@ -79,11 +80,18 @@ async def get_setting(
 
 @router.put("/{key}", response_model=Response[SiteSettingResponse])
 async def update_setting(
+    request: Request,
     key: str,
     data: SiteSettingUpdate,
     current_user: User = Depends(get_current_active_superuser),
 ):
     """Update a specific setting (admin only)"""
+    # 获取旧值用于审计日志
+    old_setting = await SiteSetting.filter(key=key).first()
+    old_value = None
+    if old_setting:
+        old_value = SiteSetting._convert_value(old_setting.value, old_setting.value_type)
+
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
         # Check if it's a known default setting
@@ -112,6 +120,23 @@ async def update_setting(
             is_public=setting.is_public,
         )
 
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_site_setting",
+        resource_type="site_setting",
+        resource_id=None,
+        resource_name=key,
+        operation="update",
+        status="success",
+        request=request,
+        changes={
+            "before": {"value": old_value},
+            "after": {"value": data.value},
+        },
+        metadata={"category": setting.category},
+    )
+
     return success(
         data=SiteSettingResponse(
             key=setting.key,
@@ -126,10 +151,12 @@ async def update_setting(
 
 @router.put("", response_model=Response[SiteSettingsResponse])
 async def bulk_update_settings(
+    request: Request,
     data: SiteSettingBulkUpdate,
     current_user: User = Depends(get_current_active_superuser),
 ):
     """Bulk update multiple settings (admin only)"""
+    updated_keys = []
     for key, value in data.settings.items():
         setting = await SiteSetting.filter(key=key).first()
         if setting:
@@ -141,6 +168,7 @@ async def bulk_update_settings(
                 description=setting.description,
                 is_public=setting.is_public,
             )
+            updated_keys.append(key)
         elif key in DEFAULT_SETTINGS:
             config = DEFAULT_SETTINGS[key]
             await SiteSetting.set_value(
@@ -151,6 +179,23 @@ async def bulk_update_settings(
                 description=config["desc"],
                 is_public=config["public"],
             )
+            updated_keys.append(key)
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="bulk_update_site_settings",
+        resource_type="site_setting",
+        resource_id=None,
+        resource_name="bulk_update",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "updated_keys": updated_keys,
+            "count": len(updated_keys),
+        },
+    )
 
     # Return all settings
     settings = await SiteSetting.get_all_by_category()
@@ -159,10 +204,12 @@ async def bulk_update_settings(
 
 @router.post("/reset", response_model=Response[SiteSettingsResponse])
 async def reset_settings(
+    request: Request,
     category: Optional[str] = None,
     current_user: User = Depends(get_current_active_superuser),
 ):
     """Reset settings to default values (admin only)"""
+    reset_keys = []
     for key, config in DEFAULT_SETTINGS.items():
         if category and config["category"] != category:
             continue
@@ -174,6 +221,24 @@ async def reset_settings(
             description=config["desc"],
             is_public=config["public"],
         )
+        reset_keys.append(key)
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="reset_site_settings",
+        resource_type="site_setting",
+        resource_id=None,
+        resource_name="reset",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "category": category,
+            "reset_keys": reset_keys,
+            "count": len(reset_keys),
+        },
+    )
 
     settings = await SiteSetting.get_all_by_category(category=category)
     return success(data=SiteSettingsResponse(settings=settings))

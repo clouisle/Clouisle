@@ -26,9 +26,13 @@ function processCitations(
   sources?: SourceDocumentPart[]
 ): { processedText: string; citations: Map<string, { index: number; source?: SourceDocumentPart }> } {
   const citations = new Map<string, { index: number; source?: SourceDocumentPart }>()
+  const normalized = text
+    .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
+    .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
+    .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
   const regex = /\[\[cite:(\d+)\]\]/g
   
-  const processedText = text.replace(regex, (match, num) => {
+  const processedText = normalized.replace(regex, (match, num) => {
     const index = parseInt(num, 10)
     const placeholder = `<cite-${index}>`
     citations.set(placeholder, { index, source: sources?.[index - 1] })

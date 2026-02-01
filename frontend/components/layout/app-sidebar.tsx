@@ -24,6 +24,7 @@ import {
   MessageSquare,
   Wrench,
   Activity,
+  FileText,
 } from 'lucide-react'
 import { authApi, type User } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -156,6 +157,11 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('tools'),
       url: '/tools',
       icon: Wrench,
+    },
+    {
+      title: t('auditLogs'),
+      url: '/audit-logs',
+      icon: FileText,
     },
   ]
 
