@@ -276,7 +276,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
                     tooltip={user?.username || 'User'}
                   >
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage src={user?.avatar_url || ''} alt={user?.username || 'User'} />
+                      <AvatarImage src={user?.avatar_url || undefined} alt={user?.username || 'User'} />
                       <AvatarFallback className="rounded-lg">
                         {user ? getInitials(user.username) : 'U'}
                       </AvatarFallback>

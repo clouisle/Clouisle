@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory } from '@/lib/api/tools'
 import { useTeam } from '@/contexts/team-context'
+import { ImageUpload } from '@/components/ui/image-upload'
 import Editor from '@monaco-editor/react'
 
 const CODE_LANGUAGES = [
@@ -464,15 +465,19 @@ export default function CodeToolPage() {
                 </div>
                 <div className="flex gap-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="icon" className="text-xs text-muted-foreground">
+                    <Label className="text-xs text-muted-foreground">
                       {t('form.icon')}
                     </Label>
-                    <Input
-                      id="icon"
-                      className="w-12 h-8 text-center text-lg"
-                      value={icon}
-                      onChange={(e) => setIcon(e.target.value)}
-                      maxLength={2}
+                    <ImageUpload
+                      value={icon.startsWith('http') ? icon : ''}
+                      onChange={setIcon}
+                      previewSize="sm"
+                      category="icons"
+                      placeholder={
+                        <span className="text-xl">
+                          {icon.startsWith('http') ? '📜' : icon}
+                        </span>
+                      }
                     />
                   </div>
                   <div className="flex-1 space-y-1.5">

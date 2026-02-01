@@ -30,9 +30,11 @@ from .workflow import (
 )
 from .tool import (
     Tool,
+    ToolShare,
     ToolType,
     CustomToolType,
     ToolCategory,
+    ToolSharePermission,
 )
 from .tool_config import ToolConfig
 from .api_key import APIKey
@@ -73,9 +75,11 @@ __all__ = [
     "RunStatus",
     "NodeStatus",
     "Tool",
+    "ToolShare",
     "ToolType",
     "CustomToolType",
     "ToolCategory",
+    "ToolSharePermission",
     "ToolConfig",
     "APIKey",
 ]

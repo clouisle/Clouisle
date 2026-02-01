@@ -857,6 +857,8 @@
       "toolCreated": "Tool created successfully",
       "toolUpdated": "Tool updated successfully",
       "toolDeleted": "Tool deleted successfully",
+      "configSaved": "Configuration saved successfully",
+      "configSaveFailed": "Failed to save configuration",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
       "filters": {
@@ -1011,6 +1013,34 @@
         "codeDesc": "Write JavaScript/Python code",
         "mcp": "MCP Server",
         "mcpDesc": "Connect to MCP protocol servers"
+      },
+      "share": {
+        "title": "Share Tool",
+        "description": "Share \"{toolName}\" with other teams",
+        "selectTeam": "Select Team",
+        "selectTeamPlaceholder": "Choose a team to share with",
+        "permission": "Permission Level",
+        "permissions": {
+          "readOnly": "Read Only",
+          "readOnlyDesc": "Can view and use the tool",
+          "readExecute": "Read & Execute",
+          "readExecuteDesc": "Can view, use, and see execution results"
+        },
+        "shareButton": "Share",
+        "sharedWith": "Shared With",
+        "noShares": "Not shared with any teams yet",
+        "sharedBy": "Shared by {name}",
+        "shareSuccess": "Tool shared successfully",
+        "shareFailed": "Failed to share tool",
+        "unshareSuccess": "Sharing revoked successfully",
+        "unshareFailed": "Failed to revoke sharing",
+        "loadFailed": "Failed to load shares",
+        "confirmUnshare": "Revoke Sharing",
+        "confirmUnshareDesc": "Are you sure you want to revoke sharing with \"{teamName}\"?",
+        "unshareButton": "Revoke",
+        "sharedBadge": "Shared",
+        "sharedFrom": "From {teamName}",
+        "sharedWithCount": "Shared with {count} teams"
       }
     },
     "models": {
@@ -2079,7 +2109,14 @@
     "today": "Today",
     "yesterday": "Yesterday",
     "daysAgo": "{days} days ago",
-    "delete": "Delete"
+    "delete": "Delete",
+    "rename": "Rename",
+    "renameConversation": "Rename Conversation",
+    "renameConversationDescription": "Enter a new title for this conversation",
+    "conversationTitle": "Title",
+    "conversationTitlePlaceholder": "Enter conversation title...",
+    "cancel": "Cancel",
+    "save": "Save"
   },
   "promptGenerator": {
     "title": "AI Prompt Generator",

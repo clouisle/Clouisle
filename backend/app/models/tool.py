@@ -42,6 +42,13 @@ class ToolCategory(str, Enum):
     OTHER = "other"
 
 
+class ToolSharePermission(str, Enum):
+    """Tool sharing permission level"""
+
+    READ_ONLY = "read_only"  # Can view and use the tool
+    READ_EXECUTE = "read_execute"  # Can view, use, and see execution results
+
+
 class Tool(models.Model):
     """
     Custom Tool or MCP Server configuration.
@@ -149,3 +156,57 @@ class Tool(models.Model):
 
     def __str__(self):
         return f"{self.display_name} ({self.name})"
+
+
+class ToolShare(models.Model):
+    """
+    Tool sharing relationship between teams.
+
+    Allows a tool owned by one team to be shared with other teams.
+    """
+
+    id = fields.UUIDField(pk=True)
+
+    # The tool being shared
+    tool: fields.ForeignKeyRelation["Tool"] = fields.ForeignKeyField(
+        "models.Tool",
+        related_name="shares",
+        on_delete=fields.CASCADE,
+        description="Tool being shared",
+    )
+    tool_id: UUID  # type: ignore[assignment]
+
+    # The team receiving access
+    shared_with_team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
+        "models.Team",
+        related_name="shared_tools",
+        on_delete=fields.CASCADE,
+        description="Team receiving access",
+    )
+    shared_with_team_id: UUID  # type: ignore[assignment]
+
+    # Permission level
+    permission = fields.CharEnumField(
+        ToolSharePermission,
+        default=ToolSharePermission.READ_ONLY,
+        description="Permission level",
+    )
+
+    # Audit
+    shared_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+        "models.User",
+        related_name="tool_shares_created",
+        on_delete=fields.CASCADE,
+        description="User who shared the tool",
+    )
+    shared_by_id: UUID  # type: ignore[assignment]
+
+    shared_at = fields.DatetimeField(auto_now_add=True, description="When the tool was shared")
+
+    class Meta:
+        table = "tool_shares"
+        unique_together = [("tool", "shared_with_team")]
+        ordering = ["-shared_at"]
+
+    def __str__(self):
+        return f"Tool share: {self.tool_id} -> Team {self.shared_with_team_id}"

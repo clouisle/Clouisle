@@ -48,12 +48,12 @@ export function TeamSwitcher() {
         render={(props) => (
           <Button {...props} variant="ghost" size="sm" className="gap-2 h-8 px-2 cursor-pointer">
             <Avatar className="h-6 w-6 rounded">
-              <AvatarImage src={currentTeam.avatar_url || ''} alt={currentTeam.name} />
+              <AvatarImage src={currentTeam.avatar_url || undefined} alt={currentTeam.name} />
               <AvatarFallback className="rounded text-xs">
                 {getInitials(currentTeam.name)}
               </AvatarFallback>
             </Avatar>
-            <span className="max-w-[120px] truncate font-medium hidden sm:inline">
+            <span className="max-w-30 truncate font-medium hidden sm:inline">
               {currentTeam.name}
             </span>
             <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
@@ -71,7 +71,7 @@ export function TeamSwitcher() {
             className="gap-2 cursor-pointer"
           >
             <Avatar className="h-5 w-5 rounded">
-              <AvatarImage src={team.avatar_url || ''} alt={team.name} />
+              <AvatarImage src={team.avatar_url || undefined} alt={team.name} />
               <AvatarFallback className="rounded text-[10px]">
                 {getInitials(team.name)}
               </AvatarFallback>

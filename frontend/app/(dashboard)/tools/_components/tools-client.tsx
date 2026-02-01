@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
@@ -23,6 +24,8 @@ import {
   Server,
   Globe,
   Plug,
+  Share2,
+  Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -82,6 +85,7 @@ import {
 import { HttpToolDialog } from './http-tool-dialog'
 import { McpToolDialog } from './mcp-tool-dialog'
 import { DeleteToolDialog } from './delete-tool-dialog'
+import { ToolShareDialog } from './tool-share-dialog'
 
 // 工具类型图标映射
 const toolTypeIcons: Record<ToolType, React.ReactNode> = {
@@ -135,6 +139,8 @@ export function ToolsClient() {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
   const [selectedTool, setSelectedTool] = React.useState<Tool | null>(null)
+  const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
+  const [sharingTool, setSharingTool] = React.useState<Tool | null>(null)
 
   // 加载团队列表
   React.useEffect(() => {
@@ -462,6 +468,18 @@ export function ToolsClient() {
     }
   }
 
+  // 共享工具
+  const handleShare = (tool: Tool) => {
+    if (!tool.id) return
+    setSharingTool(tool)
+    setShareDialogOpen(true)
+  }
+
+  // 共享成功回调
+  const handleShareSuccess = () => {
+    loadAllTools() // 重新加载工具列表以更新共享计数
+  }
+
   // Dialog 成功回调
   const handleDialogSuccess = () => {
     loadAllTools()
@@ -689,7 +707,22 @@ export function ToolsClient() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        {tool.icon && <span className="text-lg">{tool.icon}</span>}
+                        {tool.icon && (
+                          tool.icon.startsWith('http') ? (
+                            <div className="relative h-6 w-6 rounded overflow-hidden">
+                              <Image
+                                src={tool.icon}
+                                alt={tool.display_name}
+                                fill
+                                className="object-cover"
+                                loading="eager"
+                                unoptimized
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-lg">{tool.icon}</span>
+                          )
+                        )}
                         <span className="font-medium">{tool.display_name}</span>
                       </div>
                     </TableCell>
@@ -725,6 +758,11 @@ export function ToolsClient() {
                           <DropdownMenuItem onClick={() => handleDuplicate(tool)}>
                             <Copy className="mr-2 h-4 w-4" />
                             {t('duplicate')}
+                          </DropdownMenuItem>
+
+                          <DropdownMenuItem onClick={() => handleShare(tool)}>
+                            <Share2 className="mr-2 h-4 w-4" />
+                            {t('share.title')}
                           </DropdownMenuItem>
 
                           <DropdownMenuItem onClick={() => handleToggleStatus(tool)}>
@@ -847,6 +885,15 @@ export function ToolsClient() {
         open={mcpDialogOpen}
         onOpenChange={setMcpDialogOpen}
         onSave={handleSaveMcpTool}
+      />
+
+      {/* 工具共享对话框 */}
+      <ToolShareDialog
+        tool={sharingTool}
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        availableTeams={teams}
+        onSuccess={handleShareSuccess}
       />
 
       {/* 删除确认 Dialog */}

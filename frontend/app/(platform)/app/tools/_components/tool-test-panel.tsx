@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
@@ -166,12 +167,27 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
 
   if (!tool) return null
 
+  // 判断图标是否为 URL
+  const isIconUrl = tool.icon?.startsWith('http')
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <span className="text-xl">{tool.icon || '🔧'}</span>
+            {isIconUrl ? (
+              <div className="relative h-6 w-6 rounded overflow-hidden shrink-0">
+                <Image
+                  src={tool.icon}
+                  alt={tool.display_name}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <span className="text-xl">{tool.icon || '🔧'}</span>
+            )}
             {tool.display_name}
           </SheetTitle>
           <SheetDescription>{tool.description}</SheetDescription>

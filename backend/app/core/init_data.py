@@ -260,6 +260,52 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_tool_shares_table():
+    """
+    Initialize tool_shares table for cross-team tool sharing feature.
+    This handles the migration for the new tool sharing functionality.
+    """
+    logger.info("Initializing tool_shares table...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if tool_shares table exists
+    _, rows = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'tool_shares'
+    """)
+
+    if rows:
+        logger.info("tool_shares table already exists, skipping creation")
+        return
+
+    logger.info("Creating tool_shares table...")
+
+    # Create tool_shares table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS tool_shares (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tool_id UUID NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+            shared_with_team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            permission VARCHAR(20) NOT NULL DEFAULT 'read_only',
+            shared_by_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            shared_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(tool_id, shared_with_team_id)
+        )
+    """)
+    logger.info("Created tool_shares table")
+
+    # Create indexes for better query performance
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_tool_shares_tool_id ON tool_shares(tool_id);
+        CREATE INDEX IF NOT EXISTS idx_tool_shares_team_id ON tool_shares(shared_with_team_id);
+        CREATE INDEX IF NOT EXISTS idx_tool_shares_shared_by ON tool_shares(shared_by_id);
+    """)
+    logger.info("Created tool_shares indexes")
+
+    logger.info("tool_shares table initialization complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -431,5 +477,8 @@ async def init_db():
 
     # 6. Initialize agent tools_credentials field
     await init_agent_tools_credentials()
+
+    # 7. Initialize tool_shares table
+    await init_tool_shares_table()
 
     logger.info("Database initialization complete.")

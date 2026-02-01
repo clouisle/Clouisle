@@ -44,7 +44,7 @@ import { SettingsDrawer } from '@/components/settings-drawer'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { useSettings } from '@/hooks/use-settings'
 import { cn } from '@/lib/utils'
-import { APP_VERSION, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
+import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 
 const navItems = [
   {
@@ -207,7 +207,7 @@ export function PlatformHeader() {
               render={(props) => (
                 <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.avatar_url || ''} alt={user?.username || 'User'} />
+                    <AvatarImage src={user?.avatar_url || undefined} alt={user?.username || 'User'} />
                     <AvatarFallback>
                       {user ? getInitials(user.username) : 'U'}
                     </AvatarFallback>
@@ -294,6 +294,10 @@ export function PlatformHeader() {
             {/* 版权和链接 */}
             <p className="text-sm text-muted-foreground mb-2">
               © {new Date().getFullYear()} {APP_NAME}. {t('aboutRights')}
+            </p>
+
+            <p className="text-sm text-muted-foreground mb-4">
+              Build In {BUILD_DATE}
             </p>
             
             <div className="flex items-center gap-1 text-sm">

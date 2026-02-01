@@ -25,16 +25,19 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   toolsApi,
+  teamsApi,
   Tool,
   ToolDetail,
   ToolCreateInput,
   ToolUpdateInput,
+  type UserTeamInfo,
 } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { ToolList, ToolTestPanel } from './_components'
 import { ToolConfigDialog } from './_components/tool-config-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
+import { ToolShareDialog } from './_components/tool-share-dialog'
 
 export default function ToolsPage() {
   const t = useTranslations('platform')
@@ -63,6 +66,24 @@ export default function ToolsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingTool, setDeletingTool] = useState<Tool | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Share state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [sharingTool, setSharingTool] = useState<Tool | null>(null)
+  const [availableTeams, setAvailableTeams] = useState<UserTeamInfo[]>([])
+
+  // 加载用户的团队列表
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const teams = await teamsApi.getMyTeams()
+        setAvailableTeams(teams)
+      } catch (error) {
+        console.error('Failed to load teams:', error)
+      }
+    }
+    loadTeams()
+  }, [])
 
   // 加载工具列表
   const loadTools = useCallback(async () => {
@@ -206,9 +227,34 @@ export default function ToolsPage() {
 
   // 保存内置工具配置
   const handleSaveConfig = async (config: Record<string, string>) => {
-    // TODO: 保存配置到后端
-    console.log('Saving config:', config)
-    toast.success('Configuration saved')
+    if (!currentTeam?.id || !configuringTool) return
+
+    try {
+      // 先尝试获取现有配置
+      let configExists = false
+      try {
+        await toolsApi.getConfig(configuringTool.name, currentTeam.id)
+        configExists = true
+      } catch (error: any) {
+        // 404 表示配置不存在，需要创建
+        if (error?.response?.status !== 404) {
+          throw error
+        }
+      }
+
+      // 根据配置是否存在选择创建或更新
+      if (configExists) {
+        await toolsApi.updateConfig(configuringTool.name, config, currentTeam.id)
+      } else {
+        await toolsApi.createConfig(configuringTool.name, config, currentTeam.id)
+      }
+
+      toast.success(t('tools.configSaved'))
+      setConfigDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to save config:', error)
+      toast.error(t('tools.configSaveFailed'))
+    }
   }
 
   // 删除工具
@@ -237,6 +283,20 @@ export default function ToolsPage() {
     } finally {
       setDeleteLoading(false)
     }
+  }
+
+  // 共享工具
+  const handleShareTool = (tool: Tool) => {
+    if (!tool.id) {
+      toast.error('Cannot share built-in tools')
+      return
+    }
+    setSharingTool(tool)
+    setShareDialogOpen(true)
+  }
+
+  const handleShareSuccess = () => {
+    loadTools() // 重新加载工具列表以更新共享计数
   }
 
   return (
@@ -341,6 +401,7 @@ export default function ToolsPage() {
           onEdit={handleEditTool}
           onDelete={handleDeleteClick}
           onConfigure={handleConfigureTool}
+          onShare={handleShareTool}
         />
       )}
 
@@ -373,6 +434,16 @@ export default function ToolsPage() {
         open={mcpDialogOpen}
         onOpenChange={setMcpDialogOpen}
         onSave={handleSaveMcpTool}
+      />
+
+      {/* 工具共享对话框 */}
+      <ToolShareDialog
+        tool={sharingTool}
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        currentTeamId={currentTeam?.id || ''}
+        availableTeams={availableTeams}
+        onSuccess={handleShareSuccess}
       />
 
       {/* 删除确认对话框 */}

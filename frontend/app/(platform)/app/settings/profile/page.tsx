@@ -371,7 +371,7 @@ export default function ProfilePage() {
                         className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
                       >
                         <Avatar className="h-10 w-10">
-                          <AvatarImage src={team.avatar_url || ''} alt={team.name} />
+                          <AvatarImage src={team.avatar_url || undefined} alt={team.name} />
                           <AvatarFallback className="text-xs">
                             {getTeamInitials(team.name)}
                           </AvatarFallback>

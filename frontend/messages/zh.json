@@ -857,6 +857,8 @@
       "toolCreated": "工具创建成功",
       "toolUpdated": "工具更新成功",
       "toolDeleted": "工具删除成功",
+      "configSaved": "配置保存成功",
+      "configSaveFailed": "配置保存失败",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
       "filters": {
@@ -1011,6 +1013,34 @@
         "codeDesc": "使用 JavaScript/Python 编写",
         "mcp": "MCP 服务",
         "mcpDesc": "连接 MCP 协议服务器"
+      },
+      "share": {
+        "title": "共享工具",
+        "description": "将 \"{toolName}\" 共享给其他团队",
+        "selectTeam": "选择团队",
+        "selectTeamPlaceholder": "选择要共享的团队",
+        "permission": "权限级别",
+        "permissions": {
+          "readOnly": "只读",
+          "readOnlyDesc": "可以查看和使用工具",
+          "readExecute": "读取和执行",
+          "readExecuteDesc": "可以查看、使用并查看执行结果"
+        },
+        "shareButton": "共享",
+        "sharedWith": "已共享给",
+        "noShares": "尚未共享给任何团队",
+        "sharedBy": "由 {name} 共享",
+        "shareSuccess": "工具共享成功",
+        "shareFailed": "工具共享失败",
+        "unshareSuccess": "已取消共享",
+        "unshareFailed": "取消共享失败",
+        "loadFailed": "加载共享列表失败",
+        "confirmUnshare": "取消共享",
+        "confirmUnshareDesc": "确定要取消与 \"{teamName}\" 的共享吗？",
+        "unshareButton": "取消共享",
+        "sharedBadge": "已共享",
+        "sharedFrom": "来自 {teamName}",
+        "sharedWithCount": "已共享给 {count} 个团队"
       }
     },
     "models": {
@@ -2079,7 +2109,14 @@
     "today": "今天",
     "yesterday": "昨天",
     "daysAgo": "{days} 天前",
-    "delete": "删除"
+    "delete": "删除",
+    "rename": "重命名",
+    "renameConversation": "重命名对话",
+    "renameConversationDescription": "为此对话输入新标题",
+    "conversationTitle": "标题",
+    "conversationTitlePlaceholder": "输入对话标题...",
+    "cancel": "取消",
+    "save": "保存"
   },
   "promptGenerator": {
     "title": "AI 提示词生成",

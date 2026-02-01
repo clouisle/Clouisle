@@ -17,6 +17,8 @@ export type ToolCategory =
   | 'data'
   | 'other'
 
+export type ToolSharePermission = 'read_only' | 'read_execute'
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export interface ToolParameter {
@@ -85,6 +87,12 @@ export interface Tool {
   mcp_config?: McpConfig
   team_id?: string
   created_by_name?: string
+  // 工具共享相关字段
+  is_owned?: boolean
+  owner_team_id?: string
+  owner_team_name?: string
+  share_permission?: ToolSharePermission
+  shared_with_count?: number
 }
 
 export interface ToolDetail extends Tool {
@@ -170,6 +178,40 @@ export interface McpToolsListResponse {
   tools: McpToolInfo[]
   server_name?: string
   server_version?: string
+}
+
+export interface ToolConfig {
+  id: string
+  tool_name: string
+  team_id?: string
+  credentials: Record<string, string>
+  created_at: string
+  updated_at: string
+}
+
+// ============ Tool Sharing Types ============
+
+export interface ToolShareInput {
+  team_id: string
+  permission: ToolSharePermission
+}
+
+export interface ToolShare {
+  id: string
+  tool_id: string
+  tool_name: string
+  tool_display_name: string
+  shared_with_team_id: string
+  shared_with_team_name: string
+  permission: ToolSharePermission
+  shared_by_id: string
+  shared_by_name: string
+  shared_at: string
+}
+
+export interface ToolShareListResponse {
+  shares: ToolShare[]
+  total: number
 }
 
 // ============ API Functions ============
@@ -266,5 +308,85 @@ export const toolsApi = {
    */
   listMcpTools: async (mcpConfig: McpConfig): Promise<McpToolsListResponse> => {
     return api.post<McpToolsListResponse>('/tools/mcp/list-tools', { mcp_config: mcpConfig })
+  },
+
+  // ============ Tool Configuration Management ============
+
+  /**
+   * 获取工具配置列表
+   */
+  listConfigs: async (teamId?: string): Promise<ToolConfig[]> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.get<ToolConfig[]>('/tools/config', { params })
+  },
+
+  /**
+   * 获取指定工具的配置
+   */
+  getConfig: async (toolName: string, teamId?: string): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.get<ToolConfig>(`/tools/config/${toolName}`, { params })
+  },
+
+  /**
+   * 创建工具配置
+   */
+  createConfig: async (
+    toolName: string,
+    credentials: Record<string, string>,
+    teamId?: string
+  ): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.post<ToolConfig>('/tools/config', { tool_name: toolName, credentials }, { params })
+  },
+
+  /**
+   * 更新工具配置
+   */
+  updateConfig: async (
+    toolName: string,
+    credentials: Record<string, string>,
+    teamId?: string
+  ): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.put<ToolConfig>(`/tools/config/${toolName}`, { credentials }, { params })
+  },
+
+  /**
+   * 删除工具配置
+   */
+  deleteConfig: async (toolName: string, teamId?: string): Promise<void> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.delete(`/tools/config/${toolName}`, { params })
+  },
+
+  // ============ Tool Sharing Management ============
+
+  /**
+   * 共享工具给其他团队
+   */
+  shareTool: async (toolId: string, data: ToolShareInput): Promise<ToolShare> => {
+    return api.post<ToolShare>(`/tools/${toolId}/share`, data)
+  },
+
+  /**
+   * 获取工具的共享列表
+   */
+  listToolShares: async (toolId: string): Promise<ToolShareListResponse> => {
+    return api.get<ToolShareListResponse>(`/tools/${toolId}/shares`)
+  },
+
+  /**
+   * 取消工具共享
+   */
+  unshareTool: async (toolId: string, teamId: string): Promise<void> => {
+    return api.delete(`/tools/${toolId}/share/${teamId}`)
+  },
+
+  /**
+   * 获取共享给当前团队的工具
+   */
+  listSharedTools: async (teamId: string): Promise<ToolListResponse> => {
+    return api.get<ToolListResponse>('/tools/shared-with-me', { params: { team_id: teamId } })
   },
 }

@@ -890,6 +890,31 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Tool configuration already exists",
         "zh": "工具配置已存在",
     },
+    # Tool sharing messages
+    "tool_shared_successfully": {
+        "en": "Tool shared successfully",
+        "zh": "工具共享成功",
+    },
+    "tool_unshared_successfully": {
+        "en": "Tool sharing revoked successfully",
+        "zh": "工具共享已取消",
+    },
+    "tool_already_shared": {
+        "en": "Tool is already shared with this team",
+        "zh": "工具已经共享给该团队",
+    },
+    "tool_share_not_found": {
+        "en": "Tool share not found",
+        "zh": "工具共享记录不存在",
+    },
+    "cannot_share_to_own_team": {
+        "en": "Cannot share tool to your own team",
+        "zh": "不能将工具共享给自己的团队",
+    },
+    "insufficient_permission": {
+        "en": "Insufficient permission to access this tool",
+        "zh": "权限不足，无法访问此工具",
+    },
     # API Key messages
     "api_key_created": {
         "en": "API key created successfully",

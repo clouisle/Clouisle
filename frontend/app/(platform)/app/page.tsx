@@ -125,7 +125,7 @@ function RecentItemCard({ item }: { item: RecentItem }) {
       <div className="group flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
         <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
           {item.icon ? (
-            <img src={item.icon} alt={item.name} className="h-6 w-6 rounded object-cover" />
+            <img src={item.icon} alt={item.name} className="size-full rounded object-cover" />
           ) : (
             <Icon className="h-5 w-5 text-muted-foreground" />
           )}
@@ -249,7 +249,7 @@ export default function PlatformHomePage() {
 
       // 并行请求
       const [kbResponse, modelsResponse, agentsResponse, workflowsResponse, trendsResponse] = await Promise.all([
-        knowledgeBasesApi.getKnowledgeBases({ pageSize: 1 }),
+        knowledgeBasesApi.getKnowledgeBases({ pageSize: 1, teamId: currentTeam.id }),
         teamModelsApi.getTeamModels(currentTeam.id),
         agentsApi.getAgents({ pageSize: 8, teamId: currentTeam.id }),
         workflowsApi.getWorkflows({ pageSize: 8, teamId: currentTeam.id }),
@@ -461,7 +461,7 @@ export default function PlatformHomePage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="h-[250px] flex items-center justify-center">
+                <div className="h-62.5 flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : (

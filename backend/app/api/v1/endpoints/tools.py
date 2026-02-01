@@ -15,9 +15,11 @@ from app.api import deps
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
     Tool,
+    ToolShare,
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
     ToolCategory as DBToolCategory,
+    ToolSharePermission as DBToolSharePermission,
 )
 from app.llm.tools import tool_registry
 from app.llm.tools.sandbox import execute_code
@@ -33,6 +35,7 @@ from app.schemas.tool import (
     ToolType,
     CustomToolType,
     ToolCategory,
+    ToolSharePermission,
     ToolParameterSchema,
     ToolOut,
     ToolDetailOut,
@@ -49,6 +52,9 @@ from app.schemas.tool import (
     McpToolInfoOut,
     McpToolsListRequest,
     McpToolsListResponse,
+    ToolShareInput,
+    ToolShareOut,
+    ToolShareListOut,
     BUILTIN_TOOLS_METADATA,
 )
 
@@ -186,12 +192,14 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
 @router.get("", response_model=Response[ToolListOut])
 async def list_tools(
     team_id: UUID,
+    include_shared: bool = True,
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """
     获取所有可用工具
 
     返回内置工具、自定义工具和 MCP Server 工具列表。
+    如果 include_shared=True，还会包含共享给该团队的工具。
     """
     await check_team_access(team_id, current_user)
 
@@ -207,7 +215,14 @@ async def list_tools(
     custom_tools = []
     for t in custom_db_tools:
         creator_name = t.created_by.username if t.created_by else None
-        custom_tools.append(db_tool_to_out(t, creator_name))
+        tool_out = db_tool_to_out(t, creator_name)
+        # 添加共享信息
+        tool_out.is_owned = True
+        tool_out.owner_team_id = t.team_id
+        # 计算共享数量
+        share_count = await ToolShare.filter(tool_id=t.id).count()
+        tool_out.shared_with_count = share_count
+        custom_tools.append(tool_out)
 
     # 获取团队的 MCP 工具（预加载创建者信息）
     mcp_db_tools = await Tool.filter(
@@ -218,7 +233,37 @@ async def list_tools(
     mcp_tools = []
     for t in mcp_db_tools:
         creator_name = t.created_by.username if t.created_by else None
-        mcp_tools.append(db_tool_to_out(t, creator_name))
+        tool_out = db_tool_to_out(t, creator_name)
+        # 添加共享信息
+        tool_out.is_owned = True
+        tool_out.owner_team_id = t.team_id
+        # 计算共享数量
+        share_count = await ToolShare.filter(tool_id=t.id).count()
+        tool_out.shared_with_count = share_count
+        mcp_tools.append(tool_out)
+
+    # 如果需要包含共享工具
+    if include_shared:
+        # 获取共享给该团队的工具
+        shares = await ToolShare.filter(
+            shared_with_team_id=team_id
+        ).prefetch_related("tool", "tool__team", "tool__created_by")
+
+        for share in shares:
+            tool = share.tool
+            creator_name = tool.created_by.username if tool.created_by else None
+            tool_out = db_tool_to_out(tool, creator_name)
+
+            # 添加共享信息
+            tool_out.is_owned = False
+            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_name = tool.team.name
+            tool_out.share_permission = ToolSharePermission(share.permission)
+
+            if tool.type == DBToolType.CUSTOM:
+                custom_tools.append(tool_out)
+            else:
+                mcp_tools.append(tool_out)
 
     return success(
         data=ToolListOut(
@@ -1092,8 +1137,250 @@ async def delete_tool_config(
         )
     
     await config.delete()
-    
+
     return success(
         data=None,
         msg_key="tool_config_deleted",
+    )
+
+
+# ============ Tool Sharing APIs ============
+
+
+@router.post("/{tool_id}/share", response_model=Response[ToolShareOut])
+async def share_tool(
+    tool_id: UUID,
+    share_data: ToolShareInput,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    共享工具给其他团队
+
+    只有工具所有者团队的管理员可以共享工具
+    """
+    # 获取工具
+    tool = await Tool.filter(id=tool_id).prefetch_related("team", "created_by").first()
+    if not tool:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_not_found",
+            status_code=404,
+        )
+
+    # 检查用户是否是工具所有者团队的管理员
+    await check_team_access(tool.team_id, current_user, require_admin=True)
+
+    # 检查目标团队是否存在
+    target_team = await Team.filter(id=share_data.team_id).first()
+    if not target_team:
+        raise BusinessError(
+            code=ResponseCode.TEAM_NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    # 不能共享给自己的团队
+    if tool.team_id == share_data.team_id:
+        raise BusinessError(
+            code=ResponseCode.INVALID_INPUT,
+            msg_key="cannot_share_to_own_team",
+            status_code=400,
+        )
+
+    # 检查是否已经共享
+    existing_share = await ToolShare.filter(
+        tool_id=tool_id,
+        shared_with_team_id=share_data.team_id
+    ).first()
+
+    if existing_share:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="tool_already_shared",
+            status_code=400,
+        )
+
+    # 创建共享记录
+    share = await ToolShare.create(
+        tool_id=tool_id,
+        shared_with_team_id=share_data.team_id,
+        permission=share_data.permission,
+        shared_by_id=current_user.id,
+    )
+
+    # 预加载关联数据
+    await share.fetch_related("tool", "shared_with_team", "shared_by")
+
+    return success(
+        data=ToolShareOut(
+            id=share.id,
+            tool_id=share.tool_id,
+            tool_name=share.tool.name,
+            tool_display_name=share.tool.display_name,
+            shared_with_team_id=share.shared_with_team_id,
+            shared_with_team_name=share.shared_with_team.name,
+            permission=ToolSharePermission(share.permission),
+            shared_by_id=share.shared_by_id,
+            shared_by_name=share.shared_by.username,
+            shared_at=share.shared_at,
+        ).model_dump(),
+        msg_key="tool_shared_successfully",
+    )
+
+
+@router.get("/{tool_id}/shares", response_model=Response[ToolShareListOut])
+async def list_tool_shares(
+    tool_id: UUID,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    获取工具的共享列表
+
+    只有工具所有者团队的成员可以查看
+    """
+    # 获取工具
+    tool = await Tool.filter(id=tool_id).first()
+    if not tool:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_not_found",
+            status_code=404,
+        )
+
+    # 检查用户是否是工具所有者团队的成员
+    await check_team_access(tool.team_id, current_user)
+
+    # 获取共享列表
+    shares = await ToolShare.filter(tool_id=tool_id).prefetch_related(
+        "tool", "shared_with_team", "shared_by"
+    ).order_by("-shared_at")
+
+    share_list = [
+        ToolShareOut(
+            id=share.id,
+            tool_id=share.tool_id,
+            tool_name=share.tool.name,
+            tool_display_name=share.tool.display_name,
+            shared_with_team_id=share.shared_with_team_id,
+            shared_with_team_name=share.shared_with_team.name,
+            permission=ToolSharePermission(share.permission),
+            shared_by_id=share.shared_by_id,
+            shared_by_name=share.shared_by.username,
+            shared_at=share.shared_at,
+        )
+        for share in shares
+    ]
+
+    return success(
+        data=ToolShareListOut(
+            shares=share_list,
+            total=len(share_list),
+        ).model_dump()
+    )
+
+
+@router.delete("/{tool_id}/share/{team_id}", response_model=Response[None])
+async def unshare_tool(
+    tool_id: UUID,
+    team_id: UUID,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    取消工具共享
+
+    只有工具所有者团队的管理员可以取消共享
+    """
+    # 获取工具
+    tool = await Tool.filter(id=tool_id).first()
+    if not tool:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_not_found",
+            status_code=404,
+        )
+
+    # 检查用户是否是工具所有者团队的管理员
+    await check_team_access(tool.team_id, current_user, require_admin=True)
+
+    # 查找共享记录
+    share = await ToolShare.filter(
+        tool_id=tool_id,
+        shared_with_team_id=team_id
+    ).first()
+
+    if not share:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="tool_share_not_found",
+            status_code=404,
+        )
+
+    # 删除共享记录
+    await share.delete()
+
+    return success(
+        data=None,
+        msg_key="tool_unshared_successfully",
+    )
+
+
+@router.get("/shared-with-me", response_model=Response[ToolListOut])
+async def list_shared_tools(
+    team_id: UUID,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    获取共享给当前团队的工具列表
+    """
+    # 检查团队访问权限
+    await check_team_access(team_id, current_user)
+
+    # 获取共享给该团队的工具
+    shares = await ToolShare.filter(
+        shared_with_team_id=team_id
+    ).prefetch_related("tool", "tool__team", "tool__created_by")
+
+    custom_tools = []
+    mcp_tools = []
+
+    for share in shares:
+        tool = share.tool
+
+        # 构建工具输出
+        tool_out = ToolOut(
+            id=tool.id,
+            name=tool.name,
+            display_name=tool.display_name,
+            description=tool.description,
+            type=ToolType.CUSTOM if tool.type == DBToolType.CUSTOM else ToolType.MCP,
+            category=ToolCategory(tool.category),
+            icon=tool.icon,
+            parameters=[
+                ToolParameterSchema(**param) for param in tool.parameters
+            ],
+            is_enabled=tool.is_enabled,
+            custom_type=CustomToolType(tool.custom_type) if tool.custom_type else None,
+            http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
+            code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
+            mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
+            # 共享相关字段
+            is_owned=False,
+            owner_team_id=tool.team_id,
+            owner_team_name=tool.team.name,
+            share_permission=ToolSharePermission(share.permission),
+            team_id=tool.team_id,
+            created_by_name=tool.created_by.username if tool.created_by else None,
+        )
+
+        if tool.type == DBToolType.CUSTOM:
+            custom_tools.append(tool_out)
+        else:
+            mcp_tools.append(tool_out)
+
+    return success(
+        data=ToolListOut(
+            builtin=[],  # 共享工具列表不包含内置工具
+            custom=custom_tools,
+            mcp=mcp_tools,
+        ).model_dump()
     )

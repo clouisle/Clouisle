@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField } from '@/lib/api/tools'
+import { ImageUpload } from '@/components/ui/image-upload'
 import { cn } from '@/lib/utils'
 
 // 带变量补全的输入框组件
@@ -426,18 +427,23 @@ export function HttpToolDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-[auto_1fr_auto] gap-4">
+          {/* 图标上传 */}
+          <div className="flex items-start gap-4">
             <div className="space-y-2">
-              <Label htmlFor="icon">{t('form.icon')}</Label>
-              <Input
-                id="icon"
-                className="w-16 text-center text-xl"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                maxLength={2}
+              <Label>{t('form.icon')}</Label>
+              <ImageUpload
+                value={icon.startsWith('http') ? icon : ''}
+                onChange={setIcon}
+                previewSize="sm"
+                category="icons"
+                placeholder={
+                  <span className="text-2xl">
+                    {icon.startsWith('http') ? '🔗' : icon}
+                  </span>
+                }
               />
             </div>
-            <div className="space-y-2">
+            <div className="flex-1 space-y-2">
               <Label htmlFor="description">{t('form.description')}</Label>
               <Input
                 id="description"
