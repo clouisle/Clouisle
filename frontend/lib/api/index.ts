@@ -87,6 +87,7 @@ export {
   type AdminConversationListItem,
   type AdminConversationWithMessages,
   type ConversationStats,
+  type ConversationTrends,
   type AdminConversationQueryParams,
   type AgentStats,
   type AgentTrends,
@@ -111,6 +112,10 @@ export {
   type ToolExecuteRequest,
   type ToolExecuteResponse,
   type McpToolInfo,
+  type ToolShare,
+  type ToolShareInput,
+  type ToolSharePermission,
+  type ToolShareListResponse,
 } from './tools'
 
 export {
@@ -168,4 +173,14 @@ export {
   type NodeStatus,
   type WorkflowRunStats,
 } from './workflows'
+
+export {
+  dashboardApi,
+  type DashboardStats,
+  type DashboardTrends,
+  type TopAgent,
+  type TeamTokenUsage,
+  type WorkflowSummary,
+  type ModelDistribution,
+} from './dashboard'
 

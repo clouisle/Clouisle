@@ -1,0 +1,120 @@
+{
+  "dashboard": {
+    "tabs": {
+      "overview": "Overview",
+      "models": "Models & Usage",
+      "analytics": "Analytics"
+    },
+    "timeRange": {
+      "7d": "Last 7 Days",
+      "30d": "Last 30 Days",
+      "90d": "Last 90 Days",
+      "all": "All Time",
+      "custom": "Custom"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "export": "Export",
+      "autoRefresh": "Auto Refresh"
+    },
+    "charts": {
+      "topAgents": "Top Agents",
+      "topAgentsDesc": "Most used agents",
+      "teamTokenUsage": "Team Token Usage",
+      "teamTokenUsageDesc": "Token usage ranking by team",
+      "modelDistribution": "Model Distribution",
+      "modelDistributionDesc": "Usage distribution by model",
+      "conversationHeatmap": "Conversation Heatmap",
+      "conversationHeatmapDesc": "Conversation activity by time",
+      "workflowStats": "Workflow Statistics",
+      "workflowStatsDesc": "Workflow execution status",
+      "workflowSuccessRate": "Workflow Success Rate",
+      "costAnalysis": "Cost Analysis",
+      "quotaUsage": "Quota Usage",
+      "realtimeActivity": "Real-time Activity"
+    },
+    "metrics": {
+      "totalUsers": "Total Users",
+      "dau": "Daily Active Users",
+      "totalConversations": "Total Conversations",
+      "totalTokens": "Total Tokens",
+      "estimatedCost": "Estimated Cost",
+      "successRate": "Success Rate",
+      "avgResponseTime": "Avg Response Time",
+      "totalRuns": "Total Runs",
+      "avgDuration": "Avg Duration",
+      "conversationCount": "Conversations",
+      "messageCount": "Messages",
+      "tokenUsage": "Token Usage"
+    },
+    "models": {
+      "totalTokens": "Total Tokens",
+      "avgTokensPerMessage": "Avg Tokens/Message",
+      "mostUsedModel": "Most Used Model",
+      "totalMessages": "Total Messages",
+      "tokenTrend": "Token Usage Trend",
+      "tokenTrendDesc": "Daily token consumption over time",
+      "teamRanking": "Team Token Ranking",
+      "teamRankingDesc": "Top teams by token usage",
+      "modelDetails": "Model Details",
+      "topAgentsByTokens": "Top Agents by Tokens"
+    },
+    "analytics": {
+      "workflowRuns": "Workflow Runs",
+      "successRate": "Success Rate",
+      "avgDuration": "Avg Duration",
+      "topAgent": "Top Agent",
+      "workflowStatus": "Workflow Status",
+      "workflowStatusDesc": "Distribution of workflow execution status",
+      "workflowTriggers": "Trigger Types",
+      "workflowTriggersDesc": "Distribution of workflow trigger types",
+      "topWorkflows": "Top Workflows",
+      "topWorkflowsDesc": "Most frequently executed workflows",
+      "agentPerformance": "Agent Performance",
+      "agentPerformanceDesc": "Compare agents by different metrics",
+      "metricSelector": "Select Metric"
+    },
+    "home": {
+      "title": "Dashboard",
+      "description": "System-wide statistics and metrics",
+      "userGrowth": "User Growth",
+      "userGrowthDesc": "New and active users over time",
+      "activityTrend": "Activity Trend",
+      "activityTrendDesc": "Conversations and token usage",
+      "resources": "Resources",
+      "resourcesDesc": "System resources overview",
+      "systemStats": "System Statistics",
+      "systemStatsDesc": "Key performance metrics",
+      "stats": {
+        "totalUsers": "Total Users",
+        "totalTeams": "Total Teams",
+        "totalAgents": "Total Agents",
+        "totalWorkflows": "Total Workflows",
+        "totalKnowledgeBases": "Knowledge Bases",
+        "totalConversations": "Total Conversations",
+        "totalMessages": "Total Messages",
+        "totalTokens": "Total Tokens",
+        "dau": "Daily Active Users",
+        "dauDesc": "Users active today",
+        "wau": "Weekly Active Users",
+        "wauDesc": "Users active this week",
+        "mau": "Monthly Active Users",
+        "mauDesc": "Users active this month",
+        "newUsers": "New Users",
+        "activeUsers": "Active Users",
+        "conversations": "Conversations",
+        "tokens": "Tokens",
+        "teams": "Teams",
+        "teamsDesc": "Total teams",
+        "agents": "Agents",
+        "agentsDesc": "Total agents",
+        "workflows": "Workflows",
+        "workflowsDesc": "Total workflows",
+        "knowledgeBases": "Knowledge Bases",
+        "knowledgeBasesDesc": "Total knowledge bases",
+        "avgMessagesPerConv": "Avg Messages/Conv",
+        "avgTokensPerMessage": "Avg Tokens/Message"
+      }
+    }
+  }
+}

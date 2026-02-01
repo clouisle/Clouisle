@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "title": "权限管理",
+    "description": "管理系统权限定义",
+    "createPermission": "创建权限",
+    "editPermission": "编辑权限",
+    "createPermissionDescription": "创建新的系统权限",
+    "editPermissionDescription": "修改权限信息",
+    "filterPermissions": "搜索权限...",
+    "allScopes": "所有作用域",
+    "code": "权限代码",
+    "scope": "作用域",
+    "permissionDescription": "描述",
+    "systemPermission": "系统权限",
+    "noPermissions": "暂无权限",
+    "rowsPerPage": "每页行数",
+    "pageInfo": "第 {page} 页，共 {total} 页",
+    "permissionCreated": "权限创建成功",
+    "permissionUpdated": "权限更新成功",
+    "permissionDeleted": "权限删除成功",
+    "confirmDelete": "确认删除",
+    "deletePermissionConfirm": "确定要删除权限 \"{code}\" 吗？此操作不可撤销，可能会影响使用此权限的角色。",
+    "confirmBulkDelete": "确定要删除选中的 {count} 个权限吗？此操作不可撤销。",
+    "permissionsSelected": "个权限已选中",
+    "bulkDeleted": "成功删除 {count} 个权限",
+    "scopePlaceholder": "例如：user、team、system",
+    "codePlaceholder": "例如：user:read、team:create",
+    "descriptionPlaceholder": "输入权限描述",
+    "scopeHint": "权限所属的功能模块，如 user、team 等",
+    "codeHint": "权限的唯一标识符，格式通常为 scope:action"
+  }
+}

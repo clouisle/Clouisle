@@ -1,0 +1,25 @@
+{
+  "nav": {
+    "general": "General",
+    "admin": "Admin",
+    "other": "Other",
+    "dashboard": "Dashboard",
+    "teams": "Teams",
+    "knowledgeBases": "Knowledge Bases",
+    "conversations": "Conversations",
+    "activities": "Activity Log",
+    "users": "Users",
+    "roles": "Roles",
+    "permissions": "Permissions",
+    "apiKeys": "API Keys",
+    "models": "Models",
+    "tools": "Tools",
+    "workspace": "Workspace",
+    "settings": "Settings",
+    "siteSettings": "Site Settings",
+    "helpCenter": "Help Center",
+    "logout": "Log out",
+    "logoutSuccess": "Logged out successfully",
+    "auditLogs": "Audit Logs"
+  }
+}

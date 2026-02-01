@@ -1,0 +1,24 @@
+{
+  "errors": {
+    "notFound": "页面未找到",
+    "notFoundDescription": "您访问的页面不存在。",
+    "unauthorized": "未授权",
+    "unauthorizedDescription": "您没有权限访问此页面。",
+    "serverError": "服务器错误",
+    "serverErrorDescription": "出了点问题，请稍后重试。",
+    "goHome": "返回首页",
+    "goBack": "返回上页",
+    "backToDashboard": "返回后台管理首页",
+    "backToWorkspace": "返回工作台首页",
+    "unknown": "发生未知错误",
+    "networkError": "网络连接失败",
+    "quotaExceeded": "{type}配额已用尽",
+    "timeout": "请求超时",
+    "agentNotFound": "Agent 不存在",
+    "agentNotPublished": "Agent 尚未发布",
+    "modelNotConfigured": "未配置模型",
+    "modelVisionNotSupported": "当前模型不支持视觉功能，请更换支持视觉的模型",
+    "modelNotFound": "模型不存在或未配置，请检查模型设置",
+    "modelNotAuthorized": "当前团队未授权使用该模型"
+  }
+}

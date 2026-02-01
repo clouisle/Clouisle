@@ -1,0 +1,70 @@
+{
+  "chat": {
+    "task": {
+      "searchingKnowledge": "Searching knowledge base",
+      "foundSources": "Found {count} relevant documents",
+      "thinking": "Thinking",
+      "generating": "Generating response",
+      "executingTools": "Executing tools",
+      "toolsExecuted": "Executed {count} tools"
+    },
+    "reasoning": {
+      "thinking": "Thinking",
+      "thoughtFor": "Thought for {seconds}s",
+      "thought": "Thought process",
+      "processing": "Reasoning..."
+    },
+    "tool": {
+      "running": "Running...",
+      "error": "Error",
+      "completed": "Completed",
+      "pending": "Pending",
+      "input": "Input",
+      "output": "Output",
+      "mcp": "MCP Tool"
+    },
+    "source": {
+      "sources": "Sources",
+      "usedSources": "Used {count} sources",
+      "document": "Document",
+      "url": "Link",
+      "page": "Page {page}",
+      "segment": "Segment {index}",
+      "segmentCount": "{count} segments",
+      "relevance": "Relevance {score}%"
+    },
+    "file": {
+      "download": "Download",
+      "preview": "Preview",
+      "files": "Files",
+      "images": "Images"
+    },
+    "variables": {
+      "title": "Fill in Variables",
+      "description": "Please fill in the following information to start chatting",
+      "startChat": "Start Chat",
+      "selectPlaceholder": "Select...",
+      "fillRequired": "Please fill in required fields first"
+    },
+    "input": {
+      "placeholder": "Type a message...",
+      "send": "Send",
+      "stop": "Stop",
+      "attachFile": "Attach file",
+      "maxFilesReached": "Maximum {max} files allowed",
+      "dropFiles": "Drop files here"
+    },
+    "message": {
+      "copy": "Copy",
+      "copied": "Copied",
+      "retry": "Retry",
+      "user": "User",
+      "assistant": "Assistant",
+      "system": "System",
+      "helpful": "Helpful",
+      "notHelpful": "Not helpful",
+      "regenerate": "Regenerate",
+      "thinking": "Thinking..."
+    }
+  }
+}

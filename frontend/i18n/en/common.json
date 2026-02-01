@@ -1,0 +1,33 @@
+{
+  "common": {
+    "appName": "Clouisle",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "toggleSidebar": "Toggle Sidebar",
+    "appearanceSettings": "Appearance Settings",
+    "settings": "Settings",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "close": "Close",
+    "yes": "Yes",
+    "no": "No",
+    "or": "or",
+    "and": "and",
+    "reset": "Reset",
+    "clearFilters": "Clear filters",
+    "uploadSuccess": "Upload successful",
+    "invalidFileType": "Unsupported file type",
+    "fileTooLarge": "File too large, maximum 10MB",
+    "status": "Status",
+    "team": "Team",
+    "createdBy": "Created By",
+    "noResults": "No results found"
+  }
+}

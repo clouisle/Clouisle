@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     prompt_generator,
     workflows,
     dashboard,
+    audit_logs,
 )
 from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
@@ -66,4 +67,7 @@ api_router.include_router(
 )
 api_router.include_router(
     dashboard.router, prefix="/dashboard", tags=["dashboard"]
+)
+api_router.include_router(
+    audit_logs.router, prefix="/audit-logs", tags=["audit-logs"]
 )

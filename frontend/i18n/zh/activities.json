@@ -1,0 +1,84 @@
+{
+  "activities": {
+    "title": "活动日志",
+    "description": "查看所有对话和工作流运行记录",
+    "conversations": "对话",
+    "workflowRuns": "工作流运行",
+    "rowsPerPage": "每页显示",
+    "pageInfo": "第 {page} 页，共 {total} 页",
+    "stats": {
+      "totalConversations": "总对话数",
+      "totalWorkflowRuns": "总运行次数",
+      "todayActivities": "今日活动",
+      "activeUsers": "活跃用户"
+    },
+    "filters": {
+      "workflow": "工作流",
+      "status": "状态",
+      "triggerType": "触发类型",
+      "triggeredBy": "触发用户",
+      "debugRuns": "仅调试运行"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失败",
+      "running": "运行中",
+      "pending": "等待中",
+      "cancelled": "已取消",
+      "timeout": "超时"
+    },
+    "triggerType": {
+      "manual": "手动",
+      "webhook": "Webhook",
+      "cron": "定时"
+    },
+    "table": {
+      "runId": "运行 ID",
+      "workflow": "工作流",
+      "status": "状态",
+      "triggerType": "触发类型",
+      "triggeredBy": "触发用户",
+      "duration": "持续时间",
+      "createdAt": "创建时间",
+      "actions": "操作"
+    },
+    "runDetail": {
+      "title": "运行详情",
+      "basicInfo": "基本信息",
+      "executionStats": "执行统计",
+      "inputs": "输入",
+      "outputs": "输出",
+      "nodeExecutions": "节点执行",
+      "errorInfo": "错误信息",
+      "noError": "无错误",
+      "noOutputs": "暂无输出",
+      "executedNodes": "已执行节点",
+      "failedNodes": "失败节点",
+      "totalTokens": "总 Token 数",
+      "viewDetails": "查看详情",
+      "deleteRun": "删除运行",
+      "confirmDelete": "确定要删除此运行记录吗？",
+      "deleteSuccess": "运行记录删除成功",
+      "deleteSelected": "删除 {count} 条记录"
+    },
+    "searchPlaceholder": "搜索对话...",
+    "agent": "智能体",
+    "user": "用户",
+    "messageCount": "消息数",
+    "updatedAt": "更新时间",
+    "untitled": "无标题",
+    "noConversations": "暂无对话",
+    "loadError": "加载对话失败",
+    "deleteSuccess": "对话删除成功",
+    "deleteError": "删除对话失败",
+    "deleteSelected": "删除 {count} 个选中项",
+    "showing": "显示第 {from} 到 {to} 条，共 {total} 条",
+    "page": "第 {current} 页，共 {total} 页",
+    "deleteConfirmTitle": "删除对话",
+    "deleteConfirmDescription": "确定要删除 {count} 个对话吗？此操作无法撤销。",
+    "viewDetails": "查看详情",
+    "noData": "暂无活动记录",
+    "loadingStats": "加载统计中...",
+    "loadingData": "加载数据中..."
+  }
+}

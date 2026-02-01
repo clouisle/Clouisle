@@ -1,0 +1,70 @@
+{
+  "chat": {
+    "task": {
+      "searchingKnowledge": "检索知识库",
+      "foundSources": "找到 {count} 个相关文档",
+      "thinking": "思考中",
+      "generating": "生成回复",
+      "executingTools": "执行工具",
+      "toolsExecuted": "已执行 {count} 个工具"
+    },
+    "reasoning": {
+      "thinking": "思考中",
+      "thoughtFor": "思考了 {seconds} 秒",
+      "thought": "思考过程",
+      "processing": "推理中..."
+    },
+    "tool": {
+      "running": "执行中...",
+      "error": "执行失败",
+      "completed": "已完成",
+      "pending": "等待执行",
+      "input": "输入",
+      "output": "输出",
+      "mcp": "MCP 工具"
+    },
+    "source": {
+      "sources": "参考来源",
+      "usedSources": "已使用 {count} 个来源",
+      "document": "文档",
+      "url": "链接",
+      "page": "第 {page} 页",
+      "segment": "片段 {index}",
+      "segmentCount": "{count} 个片段",
+      "relevance": "相关度 {score}%"
+    },
+    "file": {
+      "download": "下载",
+      "preview": "预览",
+      "files": "文件",
+      "images": "图片"
+    },
+    "variables": {
+      "title": "填写变量",
+      "description": "请填写以下信息开始对话",
+      "startChat": "开始对话",
+      "selectPlaceholder": "请选择...",
+      "fillRequired": "请先填写必填项"
+    },
+    "input": {
+      "placeholder": "输入消息...",
+      "send": "发送",
+      "stop": "停止",
+      "attachFile": "附加文件",
+      "maxFilesReached": "最多只能上传 {max} 个文件",
+      "dropFiles": "拖放文件到此处"
+    },
+    "message": {
+      "copy": "复制",
+      "copied": "已复制",
+      "retry": "重试",
+      "user": "用户",
+      "assistant": "助手",
+      "system": "系统",
+      "helpful": "有帮助",
+      "notHelpful": "没帮助",
+      "regenerate": "重新生成",
+      "thinking": "思考中..."
+    }
+  }
+}

@@ -1,0 +1,371 @@
+{
+  "platform": {
+    "nav": {
+      "home": "Home",
+      "apps": "Apps",
+      "kb": "Knowledge Bases",
+      "tools": "Tools",
+      "models": "Models"
+    },
+    "profile": {
+      "title": "Profile",
+      "teamsDescription": "You have joined {count} teams"
+    },
+    "admin": "Admin Panel",
+    "logout": "Log out",
+    "logoutSuccess": "Logged out successfully",
+    "about": "About",
+    "aboutDescription": "All-in-one AI application development platform",
+    "aboutVersion": "Version",
+    "aboutBuildDate": "Build Date",
+    "aboutFramework": "Framework",
+    "aboutDocs": "Docs",
+    "aboutRights": "All rights reserved",
+    "aboutLatest": "is the latest version.",
+    "aboutChangelog": "Changelog",
+    "teams": "Teams",
+    "manageTeams": "Manage Teams",
+    "noTeams": "No teams",
+    "noTeam": {
+      "title": "You Haven't Joined Any Team Yet",
+      "description": "To start using the workspace, you need to join a team first. Please contact your team administrator to invite you.",
+      "status": "Waiting to Join Team",
+      "contactAdmin": "Contact Administrator",
+      "helpText": "If you have any questions, please contact",
+      "supportEmail": "support@example.com",
+      "steps": {
+        "step1": {
+          "title": "Contact Admin",
+          "description": "Reach out to your team administrator or organization lead to request workspace access"
+        },
+        "step2": {
+          "title": "Wait for Invitation",
+          "description": "The admin will add you to the appropriate team and you'll receive an email notification"
+        },
+        "step3": {
+          "title": "Get Started",
+          "description": "Once added to a team, refresh the page to access all features"
+        }
+      }
+    },
+    "home": {
+      "title": "Dashboard",
+      "welcome": "Welcome back, {name}",
+      "welcomeDefault": "Welcome to Clouisle",
+      "description": "Manage your AI applications, knowledge bases, tools, and models",
+      "viewAll": "View All",
+      "createNew": "Create New",
+      "stats": {
+        "agents": "Agents",
+        "workflows": "Workflows",
+        "knowledgeBases": "Knowledge Bases",
+        "models": "Available Models",
+        "tools": "Tools",
+        "apps": "Applications",
+        "totalConversations": "Total Conversations",
+        "totalMessages": "Total Messages",
+        "totalTokens": "Token Usage",
+        "successRate": "Success Rate",
+        "conversations": "Conversations",
+        "tokens": "Tokens"
+      },
+      "quickActions": "Quick Actions",
+      "actions": {
+        "createAgent": {
+          "title": "Create Agent",
+          "description": "Build a new AI agent with custom capabilities"
+        },
+        "createWorkflow": {
+          "title": "Create Workflow",
+          "description": "Design automated workflows with multiple steps"
+        },
+        "createKB": {
+          "title": "Create Knowledge Base",
+          "description": "Upload documents to build a knowledge base"
+        },
+        "manageModels": {
+          "title": "Manage Models",
+          "description": "Configure AI models for your team"
+        },
+        "manageTools": {
+          "title": "Manage Tools",
+          "description": "Configure and manage available tools"
+        }
+      },
+      "recentItems": "Recent Items",
+      "noRecentItems": "No recent items yet",
+      "createFirst": "Create Your First App",
+      "quickStart": "Quick Start",
+      "quickStartDescription": "Choose a feature to get started",
+      "activityOverview": "Activity Overview",
+      "activityDescription": "Track your team's resource usage",
+      "resourceDistribution": "Resource Distribution",
+      "resourceDistributionDesc": "Overview of your team's resources",
+      "resourceComposition": "Resource Composition",
+      "resourceCompositionDesc": "Breakdown of resource types",
+      "usageTrend": "Usage Trend",
+      "usageTrendDesc": "7-day conversation and token usage trend",
+      "resourceOverview": "Resource Overview",
+      "resourceOverviewDesc": "Current resource allocation",
+      "features": {
+        "title": "Features",
+        "workspace": {
+          "title": "Workspace",
+          "description": "Create and manage your AI applications"
+        },
+        "kb": {
+          "title": "Knowledge",
+          "description": "Upload documents and create knowledge bases"
+        },
+        "tools": {
+          "title": "Tools",
+          "description": "Configure and manage available tools"
+        },
+        "models": {
+          "title": "Models",
+          "description": "View and manage available AI models"
+        }
+      }
+    },
+    "workspace": {
+      "title": "Application Workspace",
+      "description": "Create and manage your AI applications",
+      "createApp": "Create App",
+      "noApps": "No apps yet",
+      "createAppHint": "Create your first AI application to get started",
+      "createFirstApp": "Create First App"
+    },
+    "kb": {
+      "title": "Knowledge Bases",
+      "description": "Manage your knowledge bases and documents",
+      "createKb": "Create Knowledge Base",
+      "noKbs": "No knowledge bases yet",
+      "createKbHint": "Create a knowledge base to store and retrieve information",
+      "createFirstKb": "Create First Knowledge Base"
+    },
+    "tools": {
+      "title": "Tool Center",
+      "description": "Manage and configure available tools",
+      "createTool": "Create Tool",
+      "noTools": "No tools yet",
+      "createToolHint": "Add tools to extend your AI application capabilities",
+      "createFirstTool": "Create First Tool",
+      "refresh": "Refresh",
+      "searchPlaceholder": "Search tools...",
+      "noSearchResults": "No tools found",
+      "requiresConfig": "Requires configuration",
+      "parameters": "Parameters",
+      "noParameters": "No parameters required",
+      "required": "Required",
+      "selectOption": "Select an option",
+      "selectTool": "Select a tool",
+      "runTest": "Run Test",
+      "testing": "Testing...",
+      "result": "Result",
+      "success": "Success",
+      "failed": "Failed",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Copy failed",
+      "toolCreated": "Tool created successfully",
+      "toolUpdated": "Tool updated successfully",
+      "toolDeleted": "Tool deleted successfully",
+      "configSaved": "Configuration saved successfully",
+      "configSaveFailed": "Failed to save configuration",
+      "confirmDelete": "Delete Tool",
+      "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+      "filters": {
+        "all": "All",
+        "builtin": "Built-in",
+        "custom": "Custom",
+        "mcp": "MCP"
+      },
+      "categories": {
+        "time": "Time",
+        "math": "Math",
+        "search": "Search",
+        "web": "Web",
+        "file": "File",
+        "code": "Code",
+        "api": "API",
+        "data": "Data",
+        "other": "Other"
+      },
+      "form": {
+        "createTitle": "Create Tool",
+        "editTitle": "Edit Tool",
+        "createDescription": "Create a new custom tool",
+        "editDescription": "Modify tool configuration",
+        "basicInfo": "Basic Information",
+        "name": "Name",
+        "nameHint": "Unique identifier, cannot be changed after creation",
+        "displayName": "Display Name",
+        "description": "Description",
+        "descriptionPlaceholder": "Describe what this tool does",
+        "icon": "Icon",
+        "category": "Category",
+        "enabled": "Enabled",
+        "httpConfig": "HTTP Configuration",
+        "httpMethod": "Method",
+        "url": "URL",
+        "urlHint": "Supports {{variable}} placeholders",
+        "timeout": "Timeout (s)",
+        "advancedSettings": "Advanced Settings",
+        "headers": "Headers",
+        "headersHint": "JSON format, supports {{variable}} placeholders",
+        "bodyTemplate": "Body Template",
+        "bodyTemplateHint": "JSON format, for POST/PUT/PATCH requests",
+        "responsePath": "Response Path",
+        "responsePathHint": "Extract specific field from JSON response, e.g. data.result",
+        "credentials": "Credentials",
+        "credentialsHint": "JSON format, stored securely",
+        "parameters": "Parameters",
+        "addParameter": "Add Parameter",
+        "noParameters": "No parameters defined",
+        "paramDescription": "Description",
+        "required": "Required"
+      },
+      "configDialog": {
+        "title": "Configure {name}",
+        "description": "Set up API keys and credentials for this tool"
+      },
+      "httpDialog": {
+        "createTitle": "Create HTTP Tool",
+        "editTitle": "Edit HTTP Tool",
+        "description": "Configure HTTP API calls",
+        "httpConfig": "HTTP Configuration",
+        "headers": "Headers",
+        "addHeader": "Add Header",
+        "queryParams": "Query Parameters",
+        "addParam": "Add Parameter",
+        "contentType": "Content Type",
+        "bodyTemplate": "Body Template",
+        "bodyTemplateHint": "Use '{{variable}}' as placeholders",
+        "formFields": "Form Fields",
+        "formFieldsHint": "Configure multipart/form-data form fields. File fields reference file-type parameters",
+        "fieldName": "Field Name",
+        "fieldTypeText": "Text",
+        "fieldTypeFile": "File",
+        "addField": "Add Field",
+        "timeout": "Timeout",
+        "parameters": "Input Parameters",
+        "addParameter": "Add Parameter",
+        "parametersHint": "Define parameters for tool invocation. Use '{{paramName}}' in URL, headers, query params or body template",
+        "noParameters": "No parameters defined. Click the button above to add",
+        "paramName": "Parameter name",
+        "paramDescription": "Description (optional)",
+        "required": "Required",
+        "variableCompletion": "Parameter suggestions"
+      },
+      "mcpDialog": {
+        "createTitle": "Add MCP Server",
+        "editTitle": "Edit MCP Server",
+        "description": "Configure Model Context Protocol server",
+        "mcpConfig": "MCP Configuration",
+        "mcpConfigHint": "Configure the MCP server connection method",
+        "stdioMode": "stdio",
+        "sseMode": "SSE",
+        "httpMode": "HTTP",
+        "command": "Command",
+        "arguments": "Arguments",
+        "addArg": "Add Argument",
+        "argsExample": "e.g., npx -y @anthropic/mcp-server",
+        "envVars": "Environment Variables",
+        "addEnvVar": "Add Variable",
+        "url": "Server URL",
+        "sseUrlHint": "MCP server SSE endpoint URL",
+        "httpUrlHint": "MCP server HTTP endpoint URL",
+        "headers": "Headers",
+        "addHeader": "Add Header",
+        "fetchTools": "Fetch Tools",
+        "availableTools": "Available Tools",
+        "noDescription": "No description",
+        "noToolsAvailable": "No tools available",
+        "noToolsFound": "No tools found on this server",
+        "toolsLoaded": "Loaded {count} tools",
+        "fetchToolsFailed": "Failed to fetch tools, please check the configuration",
+        "commandRequired": "Please enter a command",
+        "urlRequired": "Please enter server URL"
+      },
+      "codeEditor": {
+        "newTitle": "New Code Tool",
+        "subtitle": "Extend AI capabilities with code",
+        "run": "Run",
+        "settings": "Settings",
+        "output": "Output",
+        "basicInfo": "Basic Info",
+        "parameters": "Input Parameters",
+        "parametersHint": "Define input parameters for the tool. Agent will call the tool based on this information",
+        "paramName": "Parameter name",
+        "paramDescription": "Description",
+        "required": "Required",
+        "addParameter": "Add Parameter",
+        "generateTest": "Generate Test",
+        "testInput": "Test Input",
+        "inputParams": "Input Parameters (JSON)",
+        "inputHint": "Test parameters in JSON format",
+        "outputResult": "Output Result",
+        "noOutput": "Run code to see output",
+        "defaultDescription": "Custom code tool"
+      },
+      "error": {
+        "loadFailed": "Failed to load tool",
+        "saveFailed": "Failed to save",
+        "nameRequired": "Tool name is required",
+        "duplicateParamName": "Parameter names must be unique"
+      },
+      "successMessages": {
+        "created": "Tool created successfully",
+        "updated": "Tool updated successfully"
+      },
+      "createMenu": {
+        "title": "Create Tool",
+        "http": "HTTP API",
+        "httpDesc": "Call external REST APIs",
+        "code": "Code Tool",
+        "codeDesc": "Write JavaScript/Python code",
+        "mcp": "MCP Server",
+        "mcpDesc": "Connect to MCP protocol servers"
+      },
+      "share": {
+        "title": "Share Tool",
+        "description": "Share \"{toolName}\" with other teams",
+        "selectTeam": "Select Team",
+        "selectTeamPlaceholder": "Choose a team to share with",
+        "permission": "Permission Level",
+        "permissions": {
+          "readOnly": "Read Only",
+          "readOnlyDesc": "Can view and use the tool",
+          "readExecute": "Read & Execute",
+          "readExecuteDesc": "Can view, use, and see execution results"
+        },
+        "shareButton": "Share",
+        "sharedWith": "Shared With",
+        "noShares": "Not shared with any teams yet",
+        "sharedBy": "Shared by {name}",
+        "shareSuccess": "Tool shared successfully",
+        "shareFailed": "Failed to share tool",
+        "unshareSuccess": "Sharing revoked successfully",
+        "unshareFailed": "Failed to revoke sharing",
+        "loadFailed": "Failed to load shares",
+        "confirmUnshare": "Revoke Sharing",
+        "confirmUnshareDesc": "Are you sure you want to revoke sharing with \"{teamName}\"?",
+        "unshareButton": "Revoke",
+        "sharedBadge": "Shared",
+        "sharedFrom": "From {teamName}",
+        "sharedWithCount": "Shared with {count} teams"
+      }
+    },
+    "models": {
+      "title": "Model Management",
+      "description": "Configure and manage AI models",
+      "createModel": "Add Model",
+      "noModels": "No models yet",
+      "createModelHint": "Add AI models to power your applications",
+      "createFirstModel": "Add First Model"
+    },
+    "agents": {
+      "title": "AI Agents",
+      "description": "Create and manage intelligent AI assistants"
+    }
+  }
+}

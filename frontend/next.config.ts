@@ -31,6 +31,15 @@ const nextConfig: NextConfig = {
   },
   // 允许开发环境访问本地图片
   allowedDevOrigins: ['http://localhost:8000', 'http://127.0.0.1:8000'],
+  // API 代理转发
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:8000/api/:path*',
+      },
+    ];
+  },
 };
 
 export default withNextIntl(nextConfig);

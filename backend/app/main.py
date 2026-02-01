@@ -273,12 +273,17 @@ async def pre_tortoise_init():
         modules={"models": ["app.models"]},
     )
 
-    # Run agent tools_credentials migration
-    from app.core.init_data import init_agent_tools_credentials
+    # Run migrations BEFORE generating schemas
+    from app.core.init_data import init_agent_tools_credentials, fix_cascade_delete_policies
     try:
         await init_agent_tools_credentials()
     except Exception as e:
         logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await fix_cascade_delete_policies()
+    except Exception as e:
+        logger.warning(f"CASCADE delete policies migration failed: {e}")
 
     # Now generate schemas (this will validate against the updated database)
     await Tortoise.generate_schemas()

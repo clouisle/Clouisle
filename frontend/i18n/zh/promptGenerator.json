@@ -1,0 +1,44 @@
+{
+  "promptGenerator": {
+    "title": "AI 提示词生成",
+    "description": "描述你希望 Agent 做什么，AI 将为你生成专业的系统提示词。",
+    "descriptionLabel": "需求描述",
+    "descriptionPlaceholder": "例如：我需要一个客服助手，能够回答产品相关问题，语气友好专业...",
+    "contextPreview": "当前上下文",
+    "contextTools": "{count} 个工具",
+    "contextKnowledgeBases": "{count} 个知识库",
+    "contextVariables": "{count} 个变量",
+    "advancedOptions": "高级选项",
+    "style": {
+      "toneLabel": "语气风格",
+      "tone": {
+        "professional": "专业正式",
+        "friendly": "友好亲切",
+        "concise": "简洁高效",
+        "detailed": "详细周到"
+      },
+      "focusLabel": "侧重点",
+      "focus": {
+        "taskOriented": "任务导向",
+        "conversational": "对话体验",
+        "balanced": "均衡"
+      },
+      "includeCot": "思维链引导",
+      "includeCotDesc": "引导 Agent 展示推理过程",
+      "includeConstraints": "行为约束",
+      "includeConstraintsDesc": "包含安全边界和行为限制"
+    },
+    "resultLabel": "生成结果",
+    "generate": "生成提示词",
+    "generating": "生成中...",
+    "regenerate": "重新生成",
+    "apply": "应用",
+    "copy": "复制",
+    "copied": "已复制",
+    "errors": {
+      "descriptionRequired": "请输入需求描述",
+      "generateFailed": "生成失败，请重试",
+      "copyFailed": "复制失败"
+    }
+  }
+}
