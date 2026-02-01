@@ -9,7 +9,12 @@ from celery.signals import worker_process_init, worker_process_shutdown
 from app.core.config import settings
 
 # Redis URL for Celery broker and result backend
-REDIS_URL = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+if settings.REDIS_PASSWORD:
+    REDIS_URL = (
+        f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+    )
+else:
+    REDIS_URL = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
 
 # Create Celery app
 celery_app = Celery(
@@ -20,6 +25,7 @@ celery_app = Celery(
         "app.tasks.knowledge_base",
         "app.tasks.usage",
         "app.tasks.workflow",
+        "app.tasks.audit_log",
     ],
 )
 
@@ -61,6 +67,11 @@ celery_app.conf.beat_schedule = {
     "reset-monthly-usage": {
         "task": "tasks.reset_monthly_usage",
         "schedule": crontab(hour=0, minute=5, day_of_month=1),
+    },
+    # Archive old audit logs every day at 03:00
+    "archive-old-audit-logs": {
+        "task": "app.tasks.audit_log.archive_old_audit_logs",
+        "schedule": crontab(hour=3, minute=0),
     },
 }
 

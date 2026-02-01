@@ -39,6 +39,9 @@ class Message(BaseModel):
     content: str | list[ContentPart] | None = Field(
         default=None, description="消息内容"
     )
+    reasoning_content: str | None = Field(
+        default=None, description="思维链内容（仅用于部分模型/历史）"
+    )
     name: str | None = Field(default=None, description="发送者名称")
     tool_call_id: str | None = Field(
         default=None, description="工具调用 ID (role=tool 时)"

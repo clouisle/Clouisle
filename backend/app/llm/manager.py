@@ -494,10 +494,21 @@ class ModelManager:
                         processed_content.append(part)
                 content = processed_content if processed_content else ""
 
+            role_value = msg.role.value if hasattr(msg.role, "value") else msg.role
             msg_dict = {
-                "role": msg.role.value if hasattr(msg.role, "value") else msg.role,
+                "role": role_value,
                 "content": content if content else "",
             }
+
+            # DeepSeek thinking mode requires reasoning_content on assistant messages
+            # that include tool_calls or have historical reasoning.
+            if (
+                role_value == MessageRole.ASSISTANT.value
+                and str(model_config.provider).lower() == "deepseek"
+            ):
+                reasoning_content = getattr(msg, "reasoning_content", None)
+                if msg.tool_calls or reasoning_content is not None:
+                    msg_dict["reasoning_content"] = reasoning_content or ""
 
             # Handle tool_calls for assistant messages
             if hasattr(msg, "tool_calls") and msg.tool_calls:

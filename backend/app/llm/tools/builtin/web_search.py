@@ -51,18 +51,19 @@ async def _tavily_search(query: str, num_results: int, credentials: dict[str, st
     Tavily 是一个专为 AI 优化的搜索 API
     https://tavily.com/
     """
-    # 优先从 credentials 获取 API key，其次从全局配置获取
+    # 只从 credentials 获取 API key
     api_key = None
     if credentials:
         api_key = credentials.get("TAVILY_API_KEY")
+        logger.info(f"Tavily API key from credentials: {api_key[:15] if api_key else 'None'}...{api_key[-4:] if api_key and len(api_key) > 19 else ''}")
+    else:
+        logger.warning("No credentials provided to Tavily search")
 
     if not api_key:
-        api_key = getattr(settings, "TAVILY_API_KEY", None)
-
-    if not api_key:
+        logger.error("No Tavily API key found in credentials")
         return {
             "query": query,
-            "error": "Tavily API key not configured. Please set TAVILY_API_KEY in environment.",
+            "error": "Tavily API key not configured. Please configure it in tool settings.",
             "success": False,
             "results": [],
         }

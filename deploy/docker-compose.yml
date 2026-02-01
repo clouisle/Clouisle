@@ -1,6 +1,6 @@
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: postgres:16
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
@@ -14,9 +14,20 @@ services:
     image: redis:alpine
     ports:
       - "6379:6379"
+    command: ["redis-server", "--requirepass", "clouisle-redis-cbd3c07d"]
     volumes:
       - redis_data:/data
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+    volumes:
+      - qdrant_data:/qdrant/storage
 
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:

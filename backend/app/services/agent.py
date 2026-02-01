@@ -87,19 +87,30 @@ class AgentService:
             # Check for tool calls
             if response.tool_calls:
                 tool_calls.extend([tc.model_dump() for tc in response.tool_calls])
-                
-                # Execute tool calls and add results to messages
-                # For now, just record them - actual tool execution would happen here
+
+                # Add assistant message with tool calls
                 messages.append(Message(
                     role=MessageRole.ASSISTANT,
                     content=response.content or "",
                     tool_calls=response.tool_calls,
                 ))
-                
-                # TODO: Execute tools and add tool results
-                # For now, break out of the loop
-                logger.warning("Tool execution not yet implemented in AgentService")
-                break
+
+                # Execute tools and add tool results
+                for tool_call in response.tool_calls:
+                    tool_result = await self._execute_tool(
+                        agent=agent,
+                        tool_call=tool_call,
+                    )
+
+                    # Add tool result message
+                    messages.append(Message(
+                        role=MessageRole.TOOL,
+                        content=str(tool_result),
+                        tool_call_id=tool_call.id,
+                    ))
+
+                # Continue to next turn to get final response
+                continue
             else:
                 # No tool calls, we have the final response
                 response_text = response.content or ""
@@ -171,11 +182,31 @@ class AgentService:
             if final_usage:
                 yield {"usage": final_usage.model_dump()}
             
-            # If there were tool calls, we would execute them here
+            # If there were tool calls, execute them
             if accumulated_tool_calls:
-                # TODO: Execute tools and continue the loop
-                logger.warning("Tool execution not yet implemented in AgentService streaming")
-                break
+                # Add assistant message with tool calls
+                messages.append(Message(
+                    role=MessageRole.ASSISTANT,
+                    content=accumulated_content,
+                    tool_calls=accumulated_tool_calls,
+                ))
+
+                # Execute tools and add results
+                for tool_call in accumulated_tool_calls:
+                    tool_result = await self._execute_tool(
+                        agent=agent,
+                        tool_call=tool_call,
+                    )
+
+                    # Add tool result message
+                    messages.append(Message(
+                        role=MessageRole.TOOL,
+                        content=str(tool_result),
+                        tool_call_id=tool_call.id,
+                    ))
+
+                # Continue to next turn to get final response
+                continue
             else:
                 # No tool calls, we're done
                 break
@@ -319,6 +350,78 @@ class AgentService:
         }
         return builtin_tools.get(name)
 
+    async def _execute_tool(
+        self,
+        agent: Agent,
+        tool_call: ToolCall,
+    ) -> Any:
+        """Execute a tool call and return the result."""
+        from app.llm.tools import tool_registry
+        from app.models.tool_config import ToolConfig
+        import json
+
+        tool_name = tool_call.function.name
+
+        # Parse arguments
+        try:
+            if isinstance(tool_call.function.arguments, str):
+                arguments = json.loads(tool_call.function.arguments)
+            else:
+                arguments = tool_call.function.arguments or {}
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse tool arguments: {tool_call.function.arguments}")
+            return {"error": "Invalid tool arguments"}
+
+        # Get credentials for builtin tools
+        credentials = {}
+        team_id = agent.team_id
+
+        logger.info(f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}")
+        logger.info(f"[TOOL EXEC] Arguments: {arguments}")
+
+        # Try to get team-specific config first
+        if team_id:
+            logger.info(f"[TOOL EXEC] Looking for team config: tool_name={tool_name}, team_id={team_id}")
+            tool_config = await ToolConfig.filter(
+                tool_name=tool_name,
+                team_id=team_id
+            ).first()
+            if tool_config:
+                credentials = tool_config.credentials or {}
+                logger.info(f"[TOOL EXEC] Found team config for {tool_name}")
+                logger.info(f"[TOOL EXEC] Credentials keys: {list(credentials.keys())}")
+                logger.info(f"[TOOL EXEC] Has TAVILY_API_KEY: {'TAVILY_API_KEY' in credentials}")
+            else:
+                logger.warning(f"[TOOL EXEC] No team config found for {tool_name}")
+
+        # If no team config, try global config
+        if not credentials:
+            logger.info(f"[TOOL EXEC] Looking for global config: tool_name={tool_name}")
+            global_config = await ToolConfig.filter(
+                tool_name=tool_name,
+                team_id=None
+            ).first()
+            if global_config:
+                credentials = global_config.credentials or {}
+                logger.info(f"[TOOL EXEC] Found global config for {tool_name}, has credentials: {bool(credentials)}")
+            else:
+                logger.warning(f"[TOOL EXEC] No global config found for {tool_name}")
+
+        logger.info(f"[TOOL EXEC] Final credentials for {tool_name}: {list(credentials.keys())}")
+        logger.info(f"[TOOL EXEC] Calling tool_registry.execute with credentials: {bool(credentials)}")
+
+        # Execute the tool
+        try:
+            result = await tool_registry.execute(
+                name=tool_name,
+                arguments=arguments,
+                credentials=credentials
+            )
+            return result
+        except Exception as e:
+            logger.exception(f"Tool execution error: {e}")
+            return {"error": str(e), "success": False}
+
     async def _retrieve_rag_context(
         self,
         agent: Agent,
@@ -328,18 +431,18 @@ class AgentService:
         try:
             # Load agent's knowledge bases
             agent_kbs = await AgentKnowledgeBase.filter(agent_id=agent.id).prefetch_related("knowledge_base")
-            
+
             if not agent_kbs:
                 return None
-            
+
             from app.services.vector_store import vector_store
-            
+
             all_chunks = []
             for agent_kb in agent_kbs:
                 kb = agent_kb.knowledge_base
                 if not kb:
                     continue
-                
+
                 # Search in each knowledge base
                 results = await vector_store.search(
                     collection_name=str(kb.id),
@@ -347,27 +450,27 @@ class AgentService:
                     top_k=agent_kb.retrieval_top_k,
                     score_threshold=agent_kb.score_threshold,
                 )
-                
+
                 for result in results:
                     all_chunks.append({
                         "content": result.get("content", ""),
                         "score": result.get("score", 0),
                         "source": kb.name,
                     })
-            
+
             if not all_chunks:
                 return None
-            
+
             # Sort by score and take top results
             all_chunks.sort(key=lambda x: x["score"], reverse=True)
             top_chunks = all_chunks[:10]  # Top 10 across all KBs
-            
+
             context_parts = []
             for chunk in top_chunks:
                 context_parts.append(f"[{chunk['source']}] {chunk['content']}")
-            
+
             return "\n\n".join(context_parts)
-            
+
         except Exception as e:
             logger.warning(f"RAG retrieval failed: {e}")
             return None
