@@ -2,168 +2,220 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import {
-  Users,
-  Building2,
-  Bot,
-  Workflow,
-  Database,
-  MessageSquare,
-  Activity,
-  Coins,
-  TrendingUp,
-  UserPlus,
-  Loader2,
-} from 'lucide-react'
-import { dashboardApi, type DashboardStats } from '@/lib/api'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Loader2, RefreshCw } from 'lucide-react'
+import { dashboardApi, type DashboardStats, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Header } from '@/components/layout/header'
+import { TimeRangeSelector, type TimeRange } from '@/components/dashboard/time-range-selector'
+import { OverviewTab } from './_components/overview-tab'
+import { ModelsTab } from './_components/models-tab'
+import { AnalyticsTab } from './_components/analytics-tab'
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
-
-// 格式化大数字
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
-
-// 自定义 Tooltip 组件
-function CustomTooltip({ active, payload, label }: any) {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[200px]">
-        <p className="text-sm font-semibold text-foreground mb-2 pb-2 border-b border-border">
-          {label}
-        </p>
-        <div className="space-y-1.5">
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: entry.color }}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {entry.name}
-                </span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">
-                {typeof entry.value === 'number' ? formatNumber(entry.value) : entry.value}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-  return null
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  isLoading,
-  change,
-  changeLabel,
-  color = 'primary',
-}: {
-  title: string
-  value: number | string
-  icon: React.ElementType
-  isLoading: boolean
-  change?: number
-  changeLabel?: string
-  color?: string
-}) {
-  const colorClasses = {
-    primary: 'bg-primary/10 text-primary',
-    blue: 'bg-blue-500/10 text-blue-500',
-    purple: 'bg-purple-500/10 text-purple-500',
-    green: 'bg-green-500/10 text-green-500',
-    orange: 'bg-orange-500/10 text-orange-500',
-    cyan: 'bg-cyan-500/10 text-cyan-500',
-  }
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorClasses[color as keyof typeof colorClasses] || colorClasses.primary}`}>
-                <Icon className="h-5 w-5" />
-              </div>
-              {change !== undefined && (
-                <Badge variant={change >= 0 ? 'default' : 'secondary'} className="text-xs">
-                  <TrendingUp className={`h-3 w-3 mr-1 ${change < 0 ? 'rotate-180' : ''}`} />
-                  {Math.abs(change)}
-                  {changeLabel && <span className="ml-1">{changeLabel}</span>}
-                </Badge>
-              )}
-            </div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            {isLoading ? (
-              <div className="h-8 w-20 mt-1 bg-muted animate-pulse rounded" />
-            ) : (
-              <p className="text-2xl font-bold mt-1">
-                {typeof value === 'number' ? formatNumber(value) : value}
-              </p>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+type TabType = 'overview' | 'models' | 'analytics'
 
 export default function DashboardPage() {
-  const t = useTranslations('dashboard.home')
-  const [stats, setStats] = React.useState<DashboardStats | null>(null)
-  const [trendsData, setTrendsData] = React.useState<Array<any>>([])
-  const [isLoading, setIsLoading] = React.useState(true)
+  const t = useTranslations('dashboard')
+  const tHome = useTranslations('dashboard.home')
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
+  const [activeTab, setActiveTab] = React.useState<TabType>('overview')
+  const [timeRange, setTimeRange] = React.useState<TimeRange>('7d')
+
+  // Initialize activeTab from URL parameter after mount
   React.useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true)
-        const [statsResponse, trendsResponse] = await Promise.all([
-          dashboardApi.getStats(),
-          dashboardApi.getTrends('30d'),
-        ])
-        setStats(statsResponse)
-        setTrendsData(trendsResponse.data)
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
-      } finally {
-        setIsLoading(false)
-      }
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'models' || tabParam === 'analytics') {
+      setActiveTab(tabParam)
     }
+  }, [searchParams])
 
-    fetchData()
+  // Common data
+  const [stats, setStats] = React.useState<DashboardStats | null>(null)
+  const [isLoadingStats, setIsLoadingStats] = React.useState(true)
+
+  // Overview tab data
+  interface TrendData {
+    date: string
+    new_users: number
+    active_users: number
+    new_conversations: number
+    messages: number
+    tokens: number
+  }
+  const [trendsData, setTrendsData] = React.useState<TrendData[]>([])
+  const [isLoadingOverview, setIsLoadingOverview] = React.useState(false)
+  const [overviewDataFetched, setOverviewDataFetched] = React.useState(false)
+
+  // Models tab data
+  const [modelDistribution, setModelDistribution] = React.useState<ModelDistribution[]>([])
+  const [teamTokenUsage, setTeamTokenUsage] = React.useState<TeamTokenUsage[]>([])
+  const [topAgentsByTokens, setTopAgentsByTokens] = React.useState<TopAgent[]>([])
+  const [isLoadingModels, setIsLoadingModels] = React.useState(false)
+  const [modelsDataFetched, setModelsDataFetched] = React.useState(false)
+
+  // Analytics tab data
+  const [workflowSummary, setWorkflowSummary] = React.useState<WorkflowSummary | null>(null)
+  const [topAgentsByConversations, setTopAgentsByConversations] = React.useState<TopAgent[]>([])
+  const [analyticsMetric, setAnalyticsMetric] = React.useState<'conversation_count' | 'message_count' | 'total_tokens'>('conversation_count')
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = React.useState(false)
+  const [analyticsDataFetched, setAnalyticsDataFetched] = React.useState(false)
+
+  // Fetch common stats (always needed)
+  const fetchStats = React.useCallback(async () => {
+    try {
+      setIsLoadingStats(true)
+      const statsResponse = await dashboardApi.getStats()
+      setStats(statsResponse)
+    } catch (error) {
+      console.error('Failed to fetch dashboard stats:', error)
+    } finally {
+      setIsLoadingStats(false)
+    }
   }, [])
 
-  if (isLoading || !stats) {
+  // Fetch Overview tab data
+  const fetchOverviewData = React.useCallback(async () => {
+    if (overviewDataFetched) return
+
+    try {
+      setIsLoadingOverview(true)
+      const trendsResponse = await dashboardApi.getTrends(timeRange)
+      setTrendsData(trendsResponse.data)
+      setOverviewDataFetched(true)
+    } catch (error) {
+      console.error('Failed to fetch overview data:', error)
+    } finally {
+      setIsLoadingOverview(false)
+    }
+  }, [timeRange, overviewDataFetched])
+
+  // Fetch Models tab data
+  const fetchModelsData = React.useCallback(async () => {
+    if (modelsDataFetched) return
+
+    try {
+      setIsLoadingModels(true)
+      console.log('[Dashboard] Fetching models data with timeRange:', timeRange)
+
+      const [modelData, teamData, agentsData, trendsResponse] = await Promise.all([
+        dashboardApi.getModelDistribution({ time_range: timeRange }),
+        dashboardApi.getTeamTokenUsage({ limit: 10, time_range: timeRange }),
+        dashboardApi.getTopAgents({ limit: 10, metric: 'total_tokens', time_range: timeRange }),
+        dashboardApi.getTrends(timeRange),
+      ])
+
+      console.log('[Dashboard] Models data received:', {
+        modelData: modelData?.length || 0,
+        teamData: teamData?.length || 0,
+        agentsData: agentsData?.length || 0,
+        trendsData: trendsResponse?.data?.length || 0,
+      })
+      console.log('[Dashboard] Team token data:', teamData)
+      console.log('[Dashboard] Top agents data:', agentsData)
+
+      setModelDistribution(modelData)
+      setTeamTokenUsage(teamData)
+      setTopAgentsByTokens(agentsData)
+      setTrendsData(trendsResponse.data)
+      setModelsDataFetched(true)
+    } catch (error) {
+      console.error('[Dashboard] Failed to fetch models data:', error)
+      if (error instanceof Error) {
+        console.error('[Dashboard] Error details:', error.message, error.stack)
+      }
+    } finally {
+      setIsLoadingModels(false)
+    }
+  }, [timeRange, modelsDataFetched])
+
+  // Fetch Analytics tab data
+  const fetchAnalyticsData = React.useCallback(async () => {
+    if (analyticsDataFetched) return
+
+    try {
+      setIsLoadingAnalytics(true)
+      const [workflowData, agentsData] = await Promise.all([
+        dashboardApi.getWorkflowSummary({ time_range: timeRange }),
+        dashboardApi.getTopAgents({ limit: 10, metric: analyticsMetric, time_range: timeRange }),
+      ])
+      setWorkflowSummary(workflowData)
+      setTopAgentsByConversations(agentsData)
+      setAnalyticsDataFetched(true)
+    } catch (error) {
+      console.error('Failed to fetch analytics data:', error)
+    } finally {
+      setIsLoadingAnalytics(false)
+    }
+  }, [timeRange, analyticsMetric, analyticsDataFetched])
+
+  // Fetch analytics data when metric changes
+  const handleAnalyticsMetricChange = React.useCallback(async (metric: 'conversation_count' | 'message_count' | 'total_tokens') => {
+    setAnalyticsMetric(metric)
+    try {
+      setIsLoadingAnalytics(true)
+      const agentsData = await dashboardApi.getTopAgents({ limit: 10, metric, time_range: timeRange })
+      setTopAgentsByConversations(agentsData)
+    } catch (error) {
+      console.error('Failed to fetch agents data:', error)
+    } finally {
+      setIsLoadingAnalytics(false)
+    }
+  }, [timeRange])
+
+  // Initial fetch of stats
+  React.useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
+
+  // Fetch data when tab changes
+  React.useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchOverviewData()
+    } else if (activeTab === 'models') {
+      fetchModelsData()
+    } else if (activeTab === 'analytics') {
+      fetchAnalyticsData()
+    }
+  }, [activeTab, fetchOverviewData, fetchModelsData, fetchAnalyticsData])
+
+  // Reset data fetched flags when time range changes
+  React.useEffect(() => {
+    setOverviewDataFetched(false)
+    setModelsDataFetched(false)
+    setAnalyticsDataFetched(false)
+    fetchStats()
+  }, [timeRange, fetchStats])
+
+  const handleRefresh = () => {
+    setOverviewDataFetched(false)
+    setModelsDataFetched(false)
+    setAnalyticsDataFetched(false)
+    fetchStats()
+
+    if (activeTab === 'overview') {
+      fetchOverviewData()
+    } else if (activeTab === 'models') {
+      fetchModelsData()
+    } else if (activeTab === 'analytics') {
+      fetchAnalyticsData()
+    }
+  }
+
+  // Handle tab change and update URL
+  const handleTabChange = (value: string) => {
+    const newTab = value as TabType
+    setActiveTab(newTab)
+    router.push(`?tab=${newTab}`, { scroll: false })
+  }
+
+  if (isLoadingStats || !stats) {
     return (
-      <div className="h-full overflow-y-auto">
-        <div className="py-6 px-8 flex items-center justify-center min-h-[400px]">
+      <div className="flex h-full flex-col">
+        <Header />
+        <div className="flex flex-1 items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </div>
@@ -171,299 +223,73 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="py-6 px-8 space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
-          <p className="text-muted-foreground mt-1">{t('description')}</p>
-        </div>
-
-      {/* Overview Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title={t('stats.totalUsers')}
-          value={stats.overview.total_users}
-          icon={Users}
-          isLoading={false}
-          change={stats.growth.new_users_30d}
-          changeLabel="30d"
-          color="blue"
-        />
-        <StatCard
-          title={t('stats.dau')}
-          value={stats.active_users.dau}
-          icon={Activity}
-          isLoading={false}
-          color="green"
-        />
-        <StatCard
-          title={t('stats.totalConversations')}
-          value={stats.overview.total_conversations}
-          icon={MessageSquare}
-          isLoading={false}
-          change={stats.growth.new_conversations_30d}
-          changeLabel="30d"
-          color="purple"
-        />
-        <StatCard
-          title={t('stats.totalTokens')}
-          value={stats.overview.total_tokens}
-          icon={Coins}
-          isLoading={false}
-          color="orange"
-        />
-      </div>
-
-      {/* Active Users Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.dau')}</p>
-              <p className="text-3xl font-bold">{formatNumber(stats.active_users.dau)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{t('stats.dauDesc')}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.wau')}</p>
-              <p className="text-3xl font-bold">{formatNumber(stats.active_users.wau)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{t('stats.wauDesc')}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.mau')}</p>
-              <p className="text-3xl font-bold">{formatNumber(stats.active_users.mau)}</p>
-              <p className="text-xs text-muted-foreground mt-1">{t('stats.mauDesc')}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content - 2/3 width */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* User Growth Trend */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserPlus className="h-4 w-4" />
-                {t('userGrowth')}
-              </CardTitle>
-              <CardDescription>{t('userGrowthDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={trendsData}>
-                  <defs>
-                    <linearGradient id="colorNewUsers" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS[0]} stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorActiveUsers" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS[1]} stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor={COLORS[1]} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="date"
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Area
-                    type="monotone"
-                    dataKey="new_users"
-                    stroke={COLORS[0]}
-                    fillOpacity={1}
-                    fill="url(#colorNewUsers)"
-                    name={t('stats.newUsers')}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="active_users"
-                    stroke={COLORS[1]}
-                    fillOpacity={1}
-                    fill="url(#colorActiveUsers)"
-                    name={t('stats.activeUsers')}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Activity Trend */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                {t('activityTrend')}
-              </CardTitle>
-              <CardDescription>{t('activityTrendDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={trendsData}>
-                  <defs>
-                    <linearGradient id="colorConversations" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS[2]} stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor={COLORS[2]} stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS[4]} stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor={COLORS[4]} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="date"
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Area
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="new_conversations"
-                    stroke={COLORS[2]}
-                    fillOpacity={1}
-                    fill="url(#colorConversations)"
-                    name={t('stats.conversations')}
-                  />
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="tokens"
-                    stroke={COLORS[4]}
-                    fillOpacity={1}
-                    fill="url(#colorTokens)"
-                    name={t('stats.tokens')}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar - 1/3 width */}
+    <div className="flex h-full flex-col">
+      <Header />
+      <div className="flex-1 overflow-auto p-4">
         <div className="space-y-6">
-          {/* Resource Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('resources')}</CardTitle>
-              <CardDescription>{t('resourcesDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.teams')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.teamsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_teams}</p>
-              </div>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">{tHome('title')}</h1>
+              <p className="text-muted-foreground mt-1">{tHome('description')}</p>
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Bot className="h-5 w-5 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.agents')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.agentsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_agents}</p>
-              </div>
+          {/* Filters */}
+          <div className="flex items-center gap-4 mb-6">
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
+              <TabsList>
+                <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
+                <TabsTrigger value="models">{t('tabs.models')}</TabsTrigger>
+                <TabsTrigger value="analytics">{t('tabs.analytics')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                    <Workflow className="h-5 w-5 text-cyan-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.workflows')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.workflowsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_workflows}</p>
-              </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics}
+              >
+                <RefreshCw className={`h-4 w-4 ${(isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics) ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <Database className="h-5 w-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.knowledgeBases')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.knowledgeBasesDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_knowledge_bases}</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Tab Content */}
+          {activeTab === 'overview' && (
+            <OverviewTab
+              stats={stats}
+              trendsData={trendsData}
+              isLoading={isLoadingOverview}
+            />
+          )}
 
-          {/* System Stats */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('systemStats')}</CardTitle>
-              <CardDescription>{t('systemStatsDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">{t('stats.totalMessages')}</span>
-                <span className="text-lg font-semibold">{formatNumber(stats.overview.total_messages)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">{t('stats.avgMessagesPerConv')}</span>
-                <span className="text-lg font-semibold">
-                  {stats.overview.total_conversations > 0
-                    ? (stats.overview.total_messages / stats.overview.total_conversations).toFixed(1)
-                    : '0'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">{t('stats.avgTokensPerMessage')}</span>
-                <span className="text-lg font-semibold">
-                  {stats.overview.total_messages > 0
-                    ? formatNumber(Math.round(stats.overview.total_tokens / stats.overview.total_messages))
-                    : '0'}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+          {activeTab === 'models' && (
+            <ModelsTab
+              stats={stats}
+              modelData={modelDistribution}
+              teamTokenData={teamTokenUsage}
+              topAgentsData={topAgentsByTokens}
+              trendsData={trendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
+              isLoading={isLoadingModels}
+            />
+          )}
+
+          {activeTab === 'analytics' && (
+            <AnalyticsTab
+              stats={stats}
+              workflowData={workflowSummary}
+              topAgentsData={topAgentsByConversations}
+              isLoading={isLoadingAnalytics}
+              onMetricChange={handleAnalyticsMetricChange}
+              currentMetric={analyticsMetric}
+            />
+          )}
         </div>
       </div>
-    </div>
     </div>
   )
 }
