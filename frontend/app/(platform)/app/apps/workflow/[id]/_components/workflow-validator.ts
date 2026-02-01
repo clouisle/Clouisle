@@ -282,23 +282,12 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
     
     case 'iteration': {
       const config = node.data.iterationConfig
-      const iteratorType = config?.iteratorType || 'array'
+      const itemVar = config?.itemVariable || 'item'
+      const indexVar = config?.indexVariable || 'index'
       const outputVar = config?.outputVariable || 'results'
 
-      if (iteratorType === 'object') {
-        // 对象迭代：输出 key 和 value
-        const keyVar = config?.keyVariable || 'key'
-        const valueVar = config?.valueVariable || 'value'
-        variables.push(`${node.id}.${keyVar}`)
-        variables.push(`${node.id}.${valueVar}`)
-      } else {
-        // 数组迭代：输出 item 和 index
-        const itemVar = config?.itemVariable || 'item'
-        const indexVar = config?.indexVariable || 'index'
-        variables.push(`${node.id}.${itemVar}`)
-        variables.push(`${node.id}.${indexVar}`)
-      }
-
+      variables.push(`${node.id}.${itemVar}`)
+      variables.push(`${node.id}.${indexVar}`)
       variables.push(`${node.id}.${outputVar}`)
       break
     }
@@ -369,24 +358,12 @@ function getAvailableVariables(nodeId: string, nodes: WorkflowNode[], edges: Edg
       if (parentType === 'iteration') {
         // 迭代节点提供变量
         const config = parentNode.data.iterationConfig
-        const iteratorType = config?.iteratorType || 'array'
+        const itemVar = config?.itemVariable || 'item'
+        const indexVar = config?.indexVariable || 'index'
         const outputVar = config?.outputVariable || 'results'
 
-        if (iteratorType === 'object') {
-          // 对象迭代：提供 key 和 value 变量
-          const keyVar = config?.keyVariable || 'key'
-          const valueVar = config?.valueVariable || 'value'
-          availableVars.add(`${parentNode.id}.${keyVar}`)
-          availableVars.add(`${parentNode.id}.${valueVar}`)
-        } else {
-          // 数组迭代：提供 item 和 index 变量
-          const itemVar = config?.itemVariable || 'item'
-          const indexVar = config?.indexVariable || 'index'
-          availableVars.add(`${parentNode.id}.${itemVar}`)
-          availableVars.add(`${parentNode.id}.${indexVar}`)
-        }
-
-        // 添加 results 变量
+        availableVars.add(`${parentNode.id}.${itemVar}`)
+        availableVars.add(`${parentNode.id}.${indexVar}`)
         availableVars.add(`${parentNode.id}.${outputVar}`)
       } else if (parentType === 'loop') {
         // 循环节点提供 index 和循环变量
@@ -735,12 +712,8 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
           // 检查赋值配置是否完整
           const incomplete = config.assignments.filter(a => {
             if (!a.targetVariable) return true
-            // clear 操作不需要源
-            if (a.operation === 'clear') return false
-            // set 操作需要 constantValue
-            if (a.operation === 'set') return !a.constantValue
-            // overwrite/append 操作需要 variableRef
-            return !a.variableRef
+            // 需要源变量或值
+            return !a.sourceVariable && !a.value
           })
           if (incomplete.length > 0) {
             issues.push(createIssue(node, 'error', `${incomplete.length} 个赋值配置不完整`, 'assignments'))
@@ -748,8 +721,8 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
 
           // 检查源变量是否存在
           for (const assignment of config.assignments) {
-            if (assignment.variableRef && !isVariableAvailable(assignment.variableRef, availableVars)) {
-              issues.push(createIssue(node, 'error', `赋值引用的 "${extractVariableName(assignment.variableRef)}" 不存在`, 'assignments'))
+            if (assignment.sourceVariable && !isVariableAvailable(assignment.sourceVariable, availableVars)) {
+              issues.push(createIssue(node, 'error', `赋值引用的 "${extractVariableName(assignment.sourceVariable)}" 不存在`, 'assignments'))
             }
           }
         }
@@ -758,10 +731,9 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
 
     case 'iteration': {
       const config = node.data.iterationConfig
-      const iteratorType = config?.iteratorType || 'array'
 
       // 检查迭代源变量
-      const iteratorVar = config?.iteratorVariable || config?.iterateVariable
+      const iteratorVar = config?.iterateVariable
       if (!iteratorVar) {
         issues.push(createIssue(node, 'error', '迭代源变量不能为空', 'iteratorVariable'))
       } else if (!isVariableAvailable(iteratorVar, availableVars)) {

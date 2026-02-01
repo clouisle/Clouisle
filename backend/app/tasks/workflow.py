@@ -18,7 +18,7 @@ def run_workflow_task(
     run_id: str,
     workflow_id: str,
     inputs: dict,
-    user_id: str,
+    user_id: str | None,
     team_id: str | None = None,
     is_debug: bool = False,
 ) -> dict:
@@ -29,7 +29,7 @@ def run_workflow_task(
         run_id: UUID string of the workflow run
         workflow_id: UUID string of the workflow
         inputs: Input variables
-        user_id: UUID string of the user
+        user_id: Optional UUID string of the user (None for webhook triggers)
         team_id: Optional UUID string of the team
         is_debug: Whether this is a debug run (uses draft instead of published)
 
@@ -43,7 +43,7 @@ def run_workflow_task(
 
         run_uuid = UUID(run_id)
         workflow_uuid = UUID(workflow_id)
-        user_uuid = UUID(user_id)
+        user_uuid = UUID(user_id) if user_id else None
         team_uuid = UUID(team_id) if team_id else None
 
         try:

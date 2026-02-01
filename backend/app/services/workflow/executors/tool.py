@@ -80,6 +80,7 @@ class ToolNodeExecutor(NodeExecutor):
                 tool=tool,
                 arguments=inputs,
                 user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
+                team_id=run.workflow.team_id if run.workflow else None,
             )
 
             duration_ms = int((time.time() - start_time) * 1000)

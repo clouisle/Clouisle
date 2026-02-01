@@ -37,6 +37,8 @@ class IterationStartNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute iteration start node - pass through parent's variables."""
         node_data = node.get("data", {})
+        node_id = node.get("id")
+
         # Try multiple ways to get parent ID
         parent_id = (
             node_data.get("parentIterationId") or
@@ -44,16 +46,21 @@ class IterationStartNodeExecutor(NodeExecutor):
             node_data.get("parentId")
         )
 
-        logger.info(f"IterationStart: node_id={node.get('id')}, parent_id={parent_id}")
+        logger.info(f"IterationStart: node_id={node_id}, node={node}, parent_id={parent_id}")
 
         if parent_id:
             # Get parent iteration node's outputs
             parent_outputs = await context.get_node_outputs(parent_id)
-            logger.info(f"IterationStart: parent_outputs={parent_outputs}")
+            logger.info(f"IterationStart: parent_id={parent_id}, parent_outputs={parent_outputs}")
             if parent_outputs:
                 # Filter out internal fields
                 outputs = {k: v for k, v in parent_outputs.items() if not k.startswith("_")}
+                logger.info(f"IterationStart: filtered outputs={outputs}")
                 return ExecutionResult(outputs=outputs)
+            else:
+                logger.warning(f"IterationStart: parent_outputs is None for parent_id={parent_id}")
+        else:
+            logger.warning(f"IterationStart: parent_id is None, node_data={node_data}")
 
         return ExecutionResult(outputs={})
 
@@ -75,6 +82,8 @@ class LoopStartNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute loop start node - pass through parent's variables."""
         node_data = node.get("data", {})
+        node_id = node.get("id")
+
         # Try multiple ways to get parent ID
         parent_id = (
             node_data.get("parentLoopId") or
@@ -82,16 +91,21 @@ class LoopStartNodeExecutor(NodeExecutor):
             node_data.get("parentId")
         )
 
-        logger.info(f"LoopStart: node_id={node.get('id')}, parent_id={parent_id}")
+        logger.info(f"LoopStart: node_id={node_id}, node={node}, parent_id={parent_id}")
 
         if parent_id:
             # Get parent loop node's outputs
             parent_outputs = await context.get_node_outputs(parent_id)
-            logger.info(f"LoopStart: parent_outputs={parent_outputs}")
+            logger.info(f"LoopStart: parent_id={parent_id}, parent_outputs={parent_outputs}")
             if parent_outputs:
                 # Filter out internal fields
                 outputs = {k: v for k, v in parent_outputs.items() if not k.startswith("_")}
+                logger.info(f"LoopStart: filtered outputs={outputs}")
                 return ExecutionResult(outputs=outputs)
+            else:
+                logger.warning(f"LoopStart: parent_outputs is None for parent_id={parent_id}")
+        else:
+            logger.warning(f"LoopStart: parent_id is None, node_data={node_data}")
 
         return ExecutionResult(outputs={})
 
@@ -419,21 +433,37 @@ class LoopNodeExecutor(NodeExecutor):
         """Execute loop node."""
         node_id = node.get("id")
         node_data = node.get("data", {})
-        config = node_data.get("config", {})
+        # Frontend stores config in loopConfig, fallback to config for backwards compatibility
+        config = node_data.get("loopConfig") or node_data.get("config", {})
 
         condition_var = config.get("conditionVariable", "")
         condition_op = config.get("conditionOperator", "equals")
         condition_value = config.get("conditionValue", "true")
         max_iterations = min(config.get("maxIterations", 100), MAX_ITERATIONS)
-        counter_var = config.get("counterVariable", "loopCount")
+        counter_var = config.get("counterVariable") or config.get("indexVariable", "loopCount")
+        output_var = config.get("outputVariable", "results")
+        loop_variables = config.get("loopVariables", [])
+
+        logger.info(f"Loop node {node_id}: config={config}, condition_var={condition_var}, max_iterations={max_iterations}")
 
         # Get current loop state
         loop_state = await context.get_variable(f"{node_id}._loop_state")
 
         if loop_state is None:
             current_count = 0
+            results = []
+            logger.info(f"Loop node {node_id}: first iteration, count={current_count}")
         else:
             current_count = loop_state.get("count", 0) + 1
+            results = loop_state.get("results", [])
+            logger.info(f"Loop node {node_id}: continuing iteration, count={current_count}, results_count={len(results)}")
+
+        # Check if results variable was updated by child nodes (e.g., variable assignment)
+        # This allows child nodes to modify the results array
+        updated_results = await context.get_variable(f"{node_id}.{output_var}")
+        if updated_results is not None:
+            results = updated_results
+            logger.info(f"Loop node {node_id}: loaded updated results from context, count={len(results)}")
 
         # Check max iterations
         if current_count >= max_iterations:
@@ -441,38 +471,96 @@ class LoopNodeExecutor(NodeExecutor):
             return ExecutionResult(
                 outputs={
                     counter_var: current_count,
+                    output_var: results,
                     "_loop_complete": True,
                     "_loop_reason": "max_iterations",
                 }
             )
 
-        # Evaluate condition
-        condition_result = await self._evaluate_condition(
-            context, condition_var, condition_op, condition_value
-        )
+        # Evaluate condition (if condition variable is set)
+        # If no condition is set, default to True (loop until maxIterations)
 
-        if not condition_result:
-            return ExecutionResult(
-                outputs={
-                    counter_var: current_count,
-                    "_loop_complete": True,
-                    "_loop_reason": "condition_false",
-                }
+        # Check exit conditions (new format from frontend)
+        exit_conditions = config.get("exitConditions", [])
+        exit_logic_operator = config.get("exitLogicOperator", "and")
+
+        if exit_conditions:
+            # Evaluate all exit conditions
+            condition_results = []
+            for condition in exit_conditions:
+                var_ref = condition.get("variable", "")
+                operator = condition.get("operator", "equals")
+                compare_value = condition.get("value", "")
+
+                # Resolve variable reference (can access loop variables like {{loop-xxx.index}})
+                result = await self._evaluate_condition(context, var_ref, operator, compare_value)
+                condition_results.append(result)
+                logger.info(f"Loop node {node_id}: exit condition {var_ref} {operator} {compare_value} = {result}")
+
+            # Apply logic operator
+            if exit_logic_operator == "and":
+                should_exit = all(condition_results)
+            else:  # "or"
+                should_exit = any(condition_results)
+
+            if should_exit:
+                logger.info(f"Loop node {node_id}: exit conditions met, ending loop")
+                return ExecutionResult(
+                    outputs={
+                        counter_var: current_count,
+                        output_var: results,
+                        "_loop_complete": True,
+                        "_loop_reason": "exit_conditions_met",
+                    }
+                )
+        # Fallback to old single condition format for backwards compatibility
+        elif condition_var:
+            condition_result = await self._evaluate_condition(
+                context, condition_var, condition_op, condition_value
             )
+            logger.info(f"Loop node {node_id}: condition_result={condition_result}")
+
+            if not condition_result:
+                logger.info(f"Loop node {node_id}: condition false, ending loop")
+                return ExecutionResult(
+                    outputs={
+                        counter_var: current_count,
+                        output_var: results,
+                        "_loop_complete": True,
+                        "_loop_reason": "condition_false",
+                    }
+                )
+        else:
+            logger.info(f"Loop node {node_id}: no condition set, will loop until maxIterations")
 
         # Store loop state
         await context.set_variable(
             f"{node_id}._loop_state",
-            {"count": current_count},
+            {
+                "count": current_count,
+                "results": results,
+            },
         )
 
-        return ExecutionResult(
-            outputs={
-                counter_var: current_count,
-                "_loop_complete": False,
-                "_loop_iteration": current_count,
-            }
-        )
+        # Build outputs with loop variables
+        outputs = {
+            counter_var: current_count,
+            output_var: results,
+            "_loop_complete": False,
+            "_loop_iteration": current_count,
+        }
+
+        # Add loop variables (for custom variables defined in config)
+        for var in loop_variables:
+            var_name = var.get("name")
+            if var_name:
+                # Try to get existing value from context
+                existing_value = await context.get_variable(f"{node_id}.{var_name}")
+                if existing_value is not None:
+                    outputs[var_name] = existing_value
+
+        logger.info(f"Loop node {node_id}: continuing loop, outputs={outputs}")
+        return ExecutionResult(outputs=outputs)
 
     async def _evaluate_condition(
         self,

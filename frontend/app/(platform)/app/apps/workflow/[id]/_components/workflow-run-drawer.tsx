@@ -625,13 +625,13 @@ export function WorkflowRunDrawer({
       const matchedHandle = outputs.matched_handle || outputs.handle
       return (
         <div className="p-2 bg-background rounded space-y-1">
-          {matchedBranch && (
+          {!!matchedBranch && (
             <div className="text-sm">
               <span className="text-muted-foreground">匹配分支：</span>
               <span className="font-medium ml-1">{String(matchedBranch)}</span>
             </div>
           )}
-          {matchedHandle && (
+          {!!matchedHandle && (
             <div className="text-[10px] text-muted-foreground font-mono">
               Handle: {String(matchedHandle)}
             </div>
@@ -646,7 +646,7 @@ export function WorkflowRunDrawer({
       const body = outputs.body || outputs.response
       return (
         <div className="space-y-2">
-          {statusCode && (
+          {!!statusCode && (
             <div className="text-sm">
               <span className="text-muted-foreground">状态码：</span>
               <span className={cn(
@@ -657,7 +657,7 @@ export function WorkflowRunDrawer({
               </span>
             </div>
           )}
-          {body && (
+          {!!body && (
             <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
               {typeof body === 'string' ? body : JSON.stringify(body, null, 2)}
             </pre>

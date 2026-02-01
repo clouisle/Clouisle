@@ -155,12 +155,20 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                 await context.set_node_outputs(target_node_id, node_outputs)
                 logger.info(f"Updated {target_node_id}.{name} = {value}")
 
-                # Also update iteration state if this is results
+                # Also update iteration/loop state if this is results
                 if name == "results":
+                    # Update iteration state
                     iteration_state = await context.get_variable(f"{target_node_id}._iteration_state")
                     if iteration_state:
                         iteration_state["results"] = value
                         await context.set_variable(f"{target_node_id}._iteration_state", iteration_state)
+
+                    # Update loop state
+                    loop_state = await context.get_variable(f"{target_node_id}._loop_state")
+                    if loop_state:
+                        loop_state["results"] = value
+                        await context.set_variable(f"{target_node_id}._loop_state", loop_state)
+                        logger.info(f"Updated {target_node_id}._loop_state.results = {value}")
             else:
                 # Store in global variables for conversation.xxx access
                 await context.set_variable(name, value)

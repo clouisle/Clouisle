@@ -109,16 +109,18 @@ class Workflow(models.Model):
         max_length=100, null=True, unique=True, description="Webhook token"
     )
 
-    # Statistics
+    # Statistics (累计统计，不会因删除而减少)
     run_count = fields.IntField(default=0, description="Total run count")
     success_count = fields.IntField(default=0, description="Successful run count")
     fail_count = fields.IntField(default=0, description="Failed run count")
+    total_tokens = fields.BigIntField(default=0, description="Total tokens consumed (累计)")
 
     # Audit
-    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="created_workflows",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
         description="Creator",
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -146,13 +148,14 @@ class WorkflowRun(models.Model):
     id = fields.UUIDField(pk=True)
 
     # Workflow association
-    workflow: fields.ForeignKeyRelation[Workflow] = fields.ForeignKeyField(
+    workflow: fields.ForeignKeyRelation[Workflow] | None = fields.ForeignKeyField(
         "models.Workflow",
         related_name="runs",
-        on_delete=fields.CASCADE,
-        description="Workflow being executed",
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Workflow being executed (null if workflow deleted)",
     )
-    workflow_id: UUID  # type: ignore[assignment]
+    workflow_id: UUID | None  # type: ignore[assignment]
 
     # Trigger info
     trigger_type = fields.CharEnumField(

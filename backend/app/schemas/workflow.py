@@ -62,7 +62,7 @@ class WorkflowOut(BaseModel):
     run_count: int
     success_count: int
     fail_count: int
-    created_by_id: UUID
+    created_by_id: UUID | None  # Allow None for deleted users
     created_at: datetime
     updated_at: datetime
 
@@ -104,7 +104,7 @@ class WorkflowRunOut(BaseModel):
     """Schema for workflow run response"""
 
     id: UUID
-    workflow_id: UUID
+    workflow_id: UUID | None  # Allow None for deleted workflows
     trigger_type: TriggerType
     triggered_by_id: UUID | None
     is_debug: bool

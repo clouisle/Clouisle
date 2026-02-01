@@ -511,9 +511,23 @@ class WorkflowOrchestrator:
         # Update workflow statistics
         workflow = await Workflow.filter(id=run.workflow_id).first()
         if workflow:
-            workflow.run_count += 1
-            workflow.success_count += 1
-            await workflow.save()
+            # Calculate total tokens from run
+            total_tokens = 0
+            if run.total_token_usage:
+                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (run.total_token_usage.get("completion", 0) or 0)
+
+            # Update workflow stats atomically
+            from tortoise.expressions import F
+            await Workflow.filter(id=workflow.id).update(
+                run_count=F("run_count") + 1,
+                success_count=F("success_count") + 1,
+                total_tokens=F("total_tokens") + total_tokens
+            )
+
+            # Update team stats atomically
+            await workflow.team.update(
+                total_tokens=F("total_tokens") + total_tokens
+            )
 
     async def _fail_run(
         self,
@@ -539,9 +553,23 @@ class WorkflowOrchestrator:
         # Update workflow statistics
         workflow = await Workflow.filter(id=run.workflow_id).first()
         if workflow:
-            workflow.run_count += 1
-            workflow.fail_count += 1
-            await workflow.save()
+            # Calculate total tokens from run (even if failed, tokens were consumed)
+            total_tokens = 0
+            if run.total_token_usage:
+                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (run.total_token_usage.get("completion", 0) or 0)
+
+            # Update workflow stats atomically
+            from tortoise.expressions import F
+            await Workflow.filter(id=workflow.id).update(
+                run_count=F("run_count") + 1,
+                fail_count=F("fail_count") + 1,
+                total_tokens=F("total_tokens") + total_tokens
+            )
+
+            # Update team stats atomically
+            await workflow.team.update(
+                total_tokens=F("total_tokens") + total_tokens
+            )
 
     async def _execute(
         self,
@@ -876,11 +904,28 @@ class WorkflowOrchestrator:
             # Publish node complete (filter out lazy results for serialization)
             duration_ms = int((time.time() - start_time) * 1000)
 
+            # Filter outputs for database storage - remove non-serializable objects
+            from .lazy_stream import LazyStreamResult
+            serializable_outputs = {}
+            for k, v in result.outputs.items():
+                if isinstance(v, LazyStreamResult):
+                    serializable_outputs[k] = "__LAZY_STREAM__"
+                elif isinstance(v, ExecutionContext):
+                    serializable_outputs[k] = "__EXECUTION_CONTEXT__"
+                else:
+                    # Try to serialize, skip if fails
+                    try:
+                        import json
+                        json.dumps(v)
+                        serializable_outputs[k] = v
+                    except (TypeError, ValueError):
+                        serializable_outputs[k] = f"__NON_SERIALIZABLE_{type(v).__name__}__"
+
             # Update NodeExecution record - success
             node_execution.status = NodeStatus.SUCCESS
             node_execution.finished_at = datetime.utcnow()
             node_execution.execution_duration_ms = duration_ms
-            node_execution.outputs = result.outputs
+            node_execution.outputs = serializable_outputs
             await node_execution.save()
 
             if stream_manager:
