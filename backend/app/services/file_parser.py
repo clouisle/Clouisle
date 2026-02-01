@@ -42,9 +42,9 @@ class ParsedFile(BaseModel):
 
 class FileParserService:
     """
-    File parsing service using MarkItDown.
+    MarkItDown 文件解析服务。
 
-    Supports: PDF, DOCX, DOC, PPTX, PPT, XLSX, XLS, TXT, MD, CSV, JSON, HTML
+    支持：pdf、doc/docx、ppt/pptx、xls/xlsx、txt、md、csv、json、html。
     """
 
     # Supported file extensions

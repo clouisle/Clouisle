@@ -123,6 +123,9 @@ def process_document_task(self, document_id: str) -> dict:
             # - First document sets the KB's embedding dimension
             # - Subsequent documents must match the dimension
             created_chunks = await vector_store.store_chunks(document, chunks, kb_id=kb.id)
+            logger.info(
+                f"Document {document_id} embeddings stored, chunks={len(created_chunks)}"
+            )
 
             # Calculate totals
             total_tokens = sum(c.token_count for c in created_chunks)
@@ -134,11 +137,17 @@ def process_document_task(self, document_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             document.error_message = None
             await document.save()
+            logger.info(
+                f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
+            )
 
             # Update KB statistics
             kb.total_chunks += len(created_chunks)
             kb.total_tokens += total_tokens
             await kb.save()
+            logger.info(
+                f"KB {kb.id} stats updated: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
+            )
 
             logger.info(
                 f"Document {document_id} processed: "
@@ -469,6 +478,18 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
         kb = document.knowledge_base
 
+        async def _refresh_kb_stats() -> None:
+            docs = await Document.filter(
+                knowledge_base_id=kb.id,
+                status=DocumentStatus.COMPLETED.value,
+            ).all()
+            kb.total_chunks = sum(doc.chunk_count for doc in docs)
+            kb.total_tokens = sum(doc.token_count for doc in docs)
+            await kb.save()
+            logger.info(
+                f"KB {kb.id} stats refreshed: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
+            )
+
         try:
             # Get all chunks for this document
             chunks = await DocumentChunk.filter(document_id=doc_uuid).order_by(
@@ -477,6 +498,9 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
             if not chunks:
                 logger.warning(f"No chunks found for document {document_id}")
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = "No chunks to embed"
+                await document.save()
                 return {
                     "status": "success",
                     "message": "No chunks to embed",
@@ -533,10 +557,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 document.error_message = f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}"[:500]
                 await document.save()
 
-                # Still update KB statistics for successful chunks
-                kb.total_chunks += embedded_count
-                kb.total_tokens += int(document.token_count * embedded_count / len(chunks))
-                await kb.save()
+                await _refresh_kb_stats()
 
                 logger.error(
                     f"Document {document_id} embedding partially failed: "
@@ -557,11 +578,12 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             document.processed_at = datetime.now(timezone.utc)
             document.error_message = None
             await document.save()
+            logger.info(
+                f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
+            )
 
             # Update KB statistics
-            kb.total_chunks += len(chunks)
-            kb.total_tokens += document.token_count
-            await kb.save()
+            await _refresh_kb_stats()
 
             logger.info(
                 f"Document {document_id} embedding completed: "

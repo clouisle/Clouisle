@@ -52,7 +52,7 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor
-from app.services.vector_store import VectorStore
+from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1151,7 +1151,12 @@ async def update_document_chunk(
             embedding_model_id=embedding_model_id,
             team_id=team_id,
         )
-        await vector_store.update_chunk_vector(chunk)
+        await vector_store.update_chunk_vector(chunk, kb_id=kb.id)
+    except DimensionMismatchError as e:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg=str(e),
+        )
     except Exception as e:
         logger.error(
             f"Failed to update vector embedding for chunk {chunk_id}: {e}",
@@ -1409,14 +1414,25 @@ async def search_knowledge_base(
     )
 
     # Perform search
-    results = await vector_store.search(
-        kb_id=kb_id,
-        query=search_in.query,
-        search_mode=search_in.search_mode,
-        top_k=search_in.top_k,
-        score_threshold=search_in.score_threshold,
-        filter_doc_ids=search_in.filter_doc_ids,
-    )
+    try:
+        results = await vector_store.search(
+            kb_id=kb_id,
+            query=search_in.query,
+            search_mode=search_in.search_mode,
+            top_k=search_in.top_k,
+            score_threshold=search_in.score_threshold,
+            filter_doc_ids=search_in.filter_doc_ids,
+        )
+    except DimensionMismatchError as e:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg=str(e),
+        )
+    except Exception as e:
+        raise BusinessError(
+            code=ResponseCode.UNKNOWN_ERROR,
+            msg=f"Vector search failed: {e}",
+        )
 
     return success(
         data={

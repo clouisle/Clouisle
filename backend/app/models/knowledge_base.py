@@ -228,8 +228,8 @@ class DocumentChunk(models.Model):
         description="Chunk metadata (page number, section, etc.)",
     )
 
-    # Vector embedding stored separately in pgvector
-    # The actual vector is stored in a separate table or using pgvector extension
+    # Vector embedding stored in Qdrant
+    # The actual vector is stored externally and referenced by embedding_id
     embedding_id = fields.CharField(
         max_length=100, null=True, description="Reference to vector storage"
     )
