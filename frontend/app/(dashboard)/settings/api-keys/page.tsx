@@ -11,11 +11,12 @@ import {
   Check,
   AlertTriangle,
   MoreHorizontal,
+  Pencil,
 } from 'lucide-react'
+import { formatDateTime } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -41,29 +42,29 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { apiKeysApi, type APIKey } from '@/lib/api'
+import { APIKeyDialog } from '@/app/(dashboard)/api-keys/_components/api-key-dialog'
 
 export default function SettingsAPIKeysPage() {
   const t = useTranslations('settings')
   const apiKeysT = useTranslations('apiKeys')
   const commonT = useTranslations('common')
-  
+
   const [loading, setLoading] = React.useState(true)
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
-  
+
   // Dialog 状态
-  const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
+  const [keyDialogOpen, setKeyDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [showKeyDialogOpen, setShowKeyDialogOpen] = React.useState(false)
   const [selectedKey, setSelectedKey] = React.useState<APIKey | null>(null)
   const [newKeyValue, setNewKeyValue] = React.useState<string | null>(null)
-  
+
   // 表单状态
-  const [keyName, setKeyName] = React.useState('')
-  const [creating, setCreating] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
 
@@ -83,24 +84,21 @@ export default function SettingsAPIKeysPage() {
     }
   }
 
-  const handleCreate = async () => {
-    if (!keyName.trim()) {
-      toast.error(apiKeysT('nameRequired'))
-      return
-    }
-    
-    try {
-      setCreating(true)
-      const result = await apiKeysApi.createAPIKey({ name: keyName.trim() })
-      setNewKeyValue(result.key)
-      setCreateDialogOpen(false)
+  const handleCreate = () => {
+    setSelectedKey(null)
+    setKeyDialogOpen(true)
+  }
+
+  const handleEdit = (apiKey: APIKey) => {
+    setSelectedKey(apiKey)
+    setKeyDialogOpen(true)
+  }
+
+  const handleDialogSuccess = (key?: string) => {
+    loadAPIKeys()
+    if (key) {
+      setNewKeyValue(key)
       setShowKeyDialogOpen(true)
-      setKeyName('')
-      loadAPIKeys()
-    } catch {
-      // 错误已由 API 客户端处理
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -189,7 +187,7 @@ export default function SettingsAPIKeysPage() {
               <CardTitle>{t('yourApiKeys')}</CardTitle>
               <CardDescription>{t('yourApiKeysDescription')}</CardDescription>
             </div>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {apiKeysT('createKey')}
             </Button>
@@ -221,11 +219,14 @@ export default function SettingsAPIKeysPage() {
                           {apiKey.key_prefix}...
                         </code>
                         <span>
-                          {t('created')}: {new Date(apiKey.created_at).toLocaleDateString()}
+                          {apiKeysT('rateLimit')}: {apiKey.rate_limit > 0 ? `${apiKey.rate_limit}/min` : apiKeysT('unlimited')}
+                        </span>
+                        <span>
+                          {t('created')}: {formatDateTime(apiKey.created_at)}
                         </span>
                         {apiKey.last_used_at && (
                           <span>
-                            {t('lastUsed')}: {new Date(apiKey.last_used_at).toLocaleDateString()}
+                            {t('lastUsed')}: {formatDateTime(apiKey.last_used_at)}
                           </span>
                         )}
                       </div>
@@ -237,6 +238,11 @@ export default function SettingsAPIKeysPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEdit(apiKey)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        {commonT('edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => openDeleteDialog(apiKey)}
                         className="text-destructive focus:text-destructive"
@@ -253,39 +259,13 @@ export default function SettingsAPIKeysPage() {
         </CardContent>
       </Card>
 
-      {/* 创建 API Key Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{apiKeysT('createKey')}</DialogTitle>
-            <DialogDescription>
-              {apiKeysT('createKeyDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="keyName">{apiKeysT('name')}</Label>
-              <Input
-                id="keyName"
-                placeholder={apiKeysT('namePlaceholder')}
-                value={keyName}
-                onChange={(e) => setKeyName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              {commonT('cancel')}
-            </Button>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating ? commonT('creating') : commonT('create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 创建/编辑 API Key Dialog */}
+      <APIKeyDialog
+        open={keyDialogOpen}
+        onOpenChange={setKeyDialogOpen}
+        apiKey={selectedKey}
+        onSuccess={handleDialogSuccess}
+      />
 
       {/* 显示新创建的 Key */}
       <Dialog open={showKeyDialogOpen} onOpenChange={setShowKeyDialogOpen}>

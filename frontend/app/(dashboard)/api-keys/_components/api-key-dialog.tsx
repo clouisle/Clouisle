@@ -233,29 +233,29 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             <div className="grid gap-2">
               <Label>{t('allowedAgents')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedAgentsHint')}</p>
+              <div className="h-[150px] rounded-md border p-2">
               {isLoadingAgents ? (
-                <div className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               ) : agents.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">{t('noAgentsAvailable')}</p>
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-muted-foreground">{t('noAgentsAvailable')}</p>
+                </div>
               ) : (
-                <ScrollArea className="h-[150px] rounded-md border p-2">
+                <ScrollArea className="h-full">
                   <div className="space-y-2">
                     {agents.map((agent) => (
                       <div
                         key={agent.id}
-                        className="flex items-center space-x-3 rounded-md p-2 hover:bg-muted/50"
+                        className="flex items-center space-x-3 rounded-md p-2 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => handleAgentToggle(agent.id, !formData.agent_ids.includes(agent.id))}
                       >
                         <Checkbox
-                          id={`agent-${agent.id}`}
                           checked={formData.agent_ids.includes(agent.id)}
                           onCheckedChange={(checked) => handleAgentToggle(agent.id, !!checked)}
                         />
-                        <label
-                          htmlFor={`agent-${agent.id}`}
-                          className="flex flex-1 items-center gap-2 cursor-pointer text-sm"
-                        >
+                        <div className="flex flex-1 items-center gap-2 text-sm">
                           {agent.icon || agent.avatar_url ? (
                             <img
                               src={agent.icon || agent.avatar_url || ''}
@@ -266,41 +266,42 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
                             <Bot className="h-5 w-5 text-muted-foreground" />
                           )}
                           <span className="font-medium truncate">{agent.name}</span>
-                        </label>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </ScrollArea>
               )}
             </div>
+            </div>
 
             {/* Workflow 选择 */}
             <div className="grid gap-2">
               <Label>{t('allowedWorkflows')}</Label>
               <p className="text-xs text-muted-foreground">{t('allowedWorkflowsHint')}</p>
+              <div className="h-[150px] rounded-md border p-2">
               {isLoadingWorkflows ? (
-                <div className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               ) : workflows.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2">{t('noWorkflowsAvailable')}</p>
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-muted-foreground">{t('noWorkflowsAvailable')}</p>
+                </div>
               ) : (
-                <ScrollArea className="h-[150px] rounded-md border p-2">
+                <ScrollArea className="h-full">
                   <div className="space-y-2">
                     {workflows.map((workflow) => (
                       <div
                         key={workflow.id}
-                        className="flex items-center space-x-3 rounded-md p-2 hover:bg-muted/50"
+                        className="flex items-center space-x-3 rounded-md p-2 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => handleWorkflowToggle(workflow.id, !formData.workflow_ids.includes(workflow.id))}
                       >
                         <Checkbox
-                          id={`workflow-${workflow.id}`}
                           checked={formData.workflow_ids.includes(workflow.id)}
                           onCheckedChange={(checked) => handleWorkflowToggle(workflow.id, !!checked)}
                         />
-                        <label
-                          htmlFor={`workflow-${workflow.id}`}
-                          className="flex flex-1 items-center gap-2 cursor-pointer text-sm"
-                        >
+                        <div className="flex flex-1 items-center gap-2 text-sm">
                           {workflow.icon ? (
                             <img
                               src={workflow.icon}
@@ -311,12 +312,13 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
                             <Workflow className="h-5 w-5 text-muted-foreground" />
                           )}
                           <span className="font-medium truncate">{workflow.name}</span>
-                        </label>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </ScrollArea>
               )}
+            </div>
             </div>
           </div>
 
