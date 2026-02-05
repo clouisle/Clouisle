@@ -52,9 +52,11 @@ async def get_dashboard_stats(
     total_messages = await Message.all().count()
 
     # Token usage - use pre-aggregated values from Team model
-    token_result = await Team.filter(is_deleted=False).annotate(
-        tokens_sum=Sum("total_tokens")
-    ).values("tokens_sum")
+    token_result = (
+        await Team.filter(is_deleted=False)
+        .annotate(tokens_sum=Sum("total_tokens"))
+        .values("tokens_sum")
+    )
     total_tokens = token_result[0]["tokens_sum"] or 0 if token_result else 0
 
     # Active users (based on conversation activity)
@@ -341,9 +343,11 @@ async def get_models_distribution(
         messages_query = Message.filter(model_used__isnull=False)
 
     # Use database-level GROUP BY for model distribution
-    model_stats = await messages_query.annotate(
-        count=Count("id")
-    ).group_by("model_used").values("model_used", "count")
+    model_stats = (
+        await messages_query.annotate(count=Count("id"))
+        .group_by("model_used")
+        .values("model_used", "count")
+    )
 
     # Calculate total and build response
     total_count = sum(item["count"] for item in model_stats)
@@ -403,28 +407,35 @@ async def get_workflow_summary(
     success_rate = (success_count / total_runs * 100) if total_runs > 0 else 0
 
     # Average duration using database aggregation
-    avg_result = await runs_query.filter(
-        total_duration_ms__isnull=False
-    ).annotate(avg_dur=Avg("total_duration_ms")).values("avg_dur")
+    avg_result = (
+        await runs_query.filter(total_duration_ms__isnull=False)
+        .annotate(avg_dur=Avg("total_duration_ms"))
+        .values("avg_dur")
+    )
     avg_duration_ms = int(avg_result[0]["avg_dur"] or 0) if avg_result else 0
 
     # Trigger type distribution using GROUP BY
-    trigger_stats = await runs_query.annotate(
-        count=Count("id")
-    ).group_by("trigger_type").values("trigger_type", "count")
+    trigger_stats = (
+        await runs_query.annotate(count=Count("id"))
+        .group_by("trigger_type")
+        .values("trigger_type", "count")
+    )
 
     # Status distribution using GROUP BY
-    status_stats = await runs_query.annotate(
-        count=Count("id")
-    ).group_by("status").values("status", "count")
+    status_stats = (
+        await runs_query.annotate(count=Count("id"))
+        .group_by("status")
+        .values("status", "count")
+    )
 
     # Top workflows using GROUP BY
-    workflow_run_stats = await runs_query.filter(
-        workflow_id__isnull=False
-    ).annotate(
-        run_count=Count("id")
-    ).group_by("workflow_id").order_by("-run_count").limit(10).values(
-        "workflow_id", "run_count"
+    workflow_run_stats = (
+        await runs_query.filter(workflow_id__isnull=False)
+        .annotate(run_count=Count("id"))
+        .group_by("workflow_id")
+        .order_by("-run_count")
+        .limit(10)
+        .values("workflow_id", "run_count")
     )
 
     # Get workflow details and success counts for top workflows
