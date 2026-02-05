@@ -28,7 +28,7 @@ except Exception:  # pragma: no cover - optional dependency at runtime
 
 # Avoid circular import - import model_manager lazily
 if TYPE_CHECKING:
-    from app.llm import model_manager as _model_manager
+    pass
 
 logger = logging.getLogger(__name__)
 

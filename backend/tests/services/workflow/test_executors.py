@@ -4,9 +4,7 @@ Tests for node executors.
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from uuid import uuid4
 
-from app.services.workflow.executor import ExecutionResult
 from app.services.workflow.context import ExecutionContext
 
 

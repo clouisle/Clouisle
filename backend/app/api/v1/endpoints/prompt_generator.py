@@ -5,7 +5,6 @@ Provides streaming SSE response for generating agent system prompts.
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -15,10 +14,7 @@ from app.api import deps
 from app.models.user import User
 from app.models.model import Model
 from app.schemas.response import (
-    Response,
     ResponseCode,
-    BusinessError,
-    success,
 )
 
 router = APIRouter()

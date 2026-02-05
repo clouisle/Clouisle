@@ -7,7 +7,6 @@ and determining execution order.
 
 from dataclasses import dataclass, field
 from typing import Any
-from collections import defaultdict
 import logging
 
 from .errors import CyclicDependencyError, WorkflowValidationError

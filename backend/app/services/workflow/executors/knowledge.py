@@ -4,7 +4,7 @@ Knowledge base node executors.
 Handles knowledge base retrieval for RAG workflows.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult

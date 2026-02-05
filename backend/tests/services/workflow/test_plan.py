@@ -3,7 +3,6 @@ Tests for the ExecutionPlan class.
 """
 
 import pytest
-from uuid import uuid4
 
 from app.services.workflow.plan import ExecutionPlan, ExecutionNode, ExecutionStage
 
@@ -199,7 +198,7 @@ class TestExecutionPlanValidation:
         }
 
         plan = ExecutionPlan.from_workflow(workflow_def)
-        errors = plan.validate()
+        plan.validate()
 
         # Should have error or warning about disconnected node
         # Implementation-dependent

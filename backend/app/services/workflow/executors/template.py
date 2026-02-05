@@ -4,10 +4,10 @@ Template node executor.
 Handles text templating with Jinja2 template engine.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import logging
 
-from jinja2 import Environment, BaseLoader, UndefinedError, TemplateSyntaxError
+from jinja2 import BaseLoader, UndefinedError, TemplateSyntaxError
 from jinja2.sandbox import SandboxedEnvironment
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult

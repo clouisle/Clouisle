@@ -19,7 +19,6 @@ from app.models.tool import (
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
     ToolCategory as DBToolCategory,
-    ToolSharePermission as DBToolSharePermission,
 )
 from app.llm.tools import tool_registry
 from app.llm.tools.sandbox import execute_code

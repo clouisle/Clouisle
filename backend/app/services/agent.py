@@ -6,12 +6,14 @@ Provides chat functionality for agents with tools and knowledge bases.
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
-from uuid import UUID
+from typing import Any, TYPE_CHECKING
 
 from app.llm import model_manager
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
+
+if TYPE_CHECKING:
+    from app.llm.types.chat import ToolCall
 
 logger = logging.getLogger(__name__)
 

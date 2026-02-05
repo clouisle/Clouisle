@@ -4,7 +4,7 @@ Tool and agent node executors.
 Handles external tool calls and agent invocations.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import logging
 import json
 
@@ -53,7 +53,7 @@ class ToolNodeExecutor(NodeExecutor):
         from app.services.tool import ToolExecutor
         import time
 
-        node_id = node.get("id")
+        node.get("id")
         node_data = node.get("data", {})
         config = node_data.get("config", {})
 

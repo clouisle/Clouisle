@@ -8,11 +8,9 @@ node executors, and stream events.
 from datetime import datetime
 from typing import Any
 from uuid import UUID
-import asyncio
 import logging
 import time
 
-from tortoise.transactions import in_transaction
 
 from app.models.workflow import Workflow, WorkflowRun, RunStatus, NodeExecution, NodeStatus
 from app.models.notification import AutoNotificationType
@@ -31,10 +29,10 @@ from .errors import (
 )
 from .executor import NodeExecutorRegistry, ExecutionResult
 from .plan import ExecutionPlan
-from .stream import StreamManager, StreamEventType
+from .stream import StreamManager
 from .retry import RetryableExecutor, get_retry_policy
-from .cache import WorkflowCache, get_workflow_cache
-from .metrics import MetricsCollector, get_metrics_collector, Timer
+from .cache import get_workflow_cache
+from .metrics import get_metrics_collector
 from .profiler import ExecutionProfiler
 
 logger = logging.getLogger(__name__)
@@ -225,7 +223,7 @@ class WorkflowOrchestrator:
 
             # Finish profiling
             if profiler:
-                profile = profiler.finish()
+                profiler.finish()
                 # Store profile in context for later retrieval
                 await context.set_variable("_profile", profiler.to_dict())
 
@@ -650,7 +648,6 @@ class WorkflowOrchestrator:
         final_outputs = {}
 
         # Track iteration state for loop/iteration nodes
-        iteration_nodes: dict[str, dict] = {}
 
         # Execute stages sequentially
         for stage in plan.stages:

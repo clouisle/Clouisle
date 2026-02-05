@@ -7,12 +7,8 @@ node-level timing, bottleneck detection, and optimization suggestions.
 
 import time
 import logging
-from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime
-from collections import defaultdict
-import asyncio
-import json
 
 logger = logging.getLogger(__name__)
 

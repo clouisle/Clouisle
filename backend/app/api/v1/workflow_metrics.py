@@ -8,16 +8,14 @@ Provides endpoints for:
 - Dashboard summary
 """
 
-from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.services.workflow import (
-    WorkflowOrchestrator,
     get_metrics_collector,
     get_workflow_cache,
 )

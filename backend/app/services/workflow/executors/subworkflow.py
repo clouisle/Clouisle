@@ -4,7 +4,7 @@ Sub-workflow node executor.
 Handles nested workflow execution with depth tracking.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID
 import logging
 
@@ -55,7 +55,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         from app.models.workflow import Workflow, WorkflowRun as WorkflowRunModel
         from ..orchestrator import WorkflowOrchestrator
 
-        node_id = node.get("id")
+        node.get("id")
         node_data = node.get("data", {})
         # Try subWorkflowConfig first (frontend structure), then fall back to config
         config = node_data.get("subWorkflowConfig") or node_data.get("config", {})
@@ -253,7 +253,7 @@ class FileToURLNodeExecutor(NodeExecutor):
         input_var = config.get("inputVariable", "")
         input_type = config.get("inputType", "path")
         output_type = config.get("outputType", "url")
-        expires_in = config.get("expiresIn", 3600)
+        config.get("expiresIn", 3600)
 
         # Get input value
         input_value = await context.resolve_variable_ref(input_var)

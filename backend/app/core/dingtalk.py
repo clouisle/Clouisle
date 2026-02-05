@@ -111,7 +111,7 @@ async def send_dingtalk_webhook(
             result = response.json()
 
             if result.get("errcode") == 0:
-                logger.info(f"DingTalk webhook message sent successfully")
+                logger.info("DingTalk webhook message sent successfully")
                 return True
             else:
                 logger.error(f"Failed to send DingTalk webhook message: {result}")

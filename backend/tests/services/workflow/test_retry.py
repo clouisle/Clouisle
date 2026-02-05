@@ -4,8 +4,7 @@ Tests for the retry mechanism.
 
 import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime, timedelta
+from unittest.mock import MagicMock, AsyncMock
 
 from app.services.workflow.retry import (
     RetryPolicy,
@@ -15,7 +14,6 @@ from app.services.workflow.retry import (
     CircuitBreaker,
     CircuitState,
     get_retry_policy,
-    DEFAULT_POLICIES,
 )
 from app.services.workflow.executor import NodeExecutor, ExecutionResult
 

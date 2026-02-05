@@ -8,11 +8,10 @@ to improve performance and reduce database/computation overhead.
 import json
 import hashlib
 import logging
-from typing import Any, TypeVar, Generic, Callable
-from dataclasses import dataclass, field
+from typing import Any, TypeVar, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import wraps
-import asyncio
 
 from app.core.redis import get_redis
 

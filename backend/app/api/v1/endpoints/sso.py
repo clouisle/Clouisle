@@ -1,6 +1,6 @@
 import secrets
 from datetime import timedelta
-from typing import Any, List, Optional
+from typing import List, Optional
 from urllib.parse import quote
 from uuid import UUID
 

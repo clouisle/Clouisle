@@ -180,7 +180,7 @@ async def init_agent_tools_credentials():
 
     # Update existing agents with NULL tools_credentials (shouldn't happen with DEFAULT, but just in case)
     try:
-        result = await conn.execute_query("""
+        await conn.execute_query("""
             UPDATE agents
             SET tools_credentials = '{}'::jsonb
             WHERE tools_credentials IS NULL

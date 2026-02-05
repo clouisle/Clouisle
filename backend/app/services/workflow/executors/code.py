@@ -5,7 +5,7 @@ Executes Python/JavaScript code snippets within a sandboxed environment.
 Uses subprocess isolation for security.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult

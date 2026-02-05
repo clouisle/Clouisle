@@ -35,7 +35,7 @@ from .errors import (
 )
 
 # Import executors to register them
-from . import executors
+from . import executors  # noqa: F401
 
 __all__ = [
     # Orchestrator

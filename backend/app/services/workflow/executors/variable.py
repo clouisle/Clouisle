@@ -349,10 +349,6 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute parameter extractor node."""
-        from app.llm import model_manager
-        from app.models.model import Model, TeamModel
-        import json
-        import re
 
         node_data = node.get("data", {})
         # Try parameterExtractorConfig first (frontend structure), then fall back to config
@@ -385,9 +381,9 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Extract parameters using JSONPath expressions."""
         import json
-        
+
         try:
-            import jsonpath_ng
+            import jsonpath_ng  # noqa: F401
             from jsonpath_ng import parse as jsonpath_parse
         except ImportError:
             return ExecutionResult(error="jsonpath-ng package not installed. Run: pip install jsonpath-ng")

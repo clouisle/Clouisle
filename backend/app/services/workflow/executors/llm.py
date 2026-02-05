@@ -4,11 +4,10 @@ LLM node executor.
 Handles AI model inference calls.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
-from ..stream import StreamManager
 from ..lazy_stream import LazyStreamResult
 
 if TYPE_CHECKING:

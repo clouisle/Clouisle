@@ -4,8 +4,7 @@ Condition node executor.
 Handles conditional branching in workflows.
 """
 
-from typing import TYPE_CHECKING, Any
-import operator
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult

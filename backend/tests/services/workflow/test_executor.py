@@ -4,7 +4,6 @@ Tests for the NodeExecutor base class and registry.
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from uuid import uuid4
 
 from app.services.workflow.executor import (
     NodeExecutor,

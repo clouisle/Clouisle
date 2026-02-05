@@ -3,7 +3,6 @@
 """
 from functools import wraps
 from typing import Any, Callable, Optional
-from uuid import UUID
 
 from fastapi import Request
 
@@ -68,7 +67,6 @@ def audit_log(
                 return await func(*args, **kwargs)
 
             # 捕获变更前的状态（如果需要）
-            before_state = None
             if capture_changes and get_resource_id:
                 try:
                     resource_id = get_resource_id(kwargs, None)
@@ -81,7 +79,6 @@ def audit_log(
 
             # 执行函数
             result = None
-            error = None
             status = "success"
             error_message = None
 
@@ -89,7 +86,6 @@ def audit_log(
                 result = await func(*args, **kwargs)
                 return result
             except Exception as e:
-                error = e
                 status = "failed"
                 error_message = str(e)
                 raise

@@ -3,7 +3,7 @@ Agent statistics and monitoring API endpoints.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -12,7 +12,7 @@ from tortoise.functions import Avg
 from app.api import deps
 from app.models.agent import Agent, Conversation, Message, MessageRole
 from app.models.user import User
-from app.schemas.response import Response, success, ResponseCode, BusinessError
+from app.schemas.response import success, ResponseCode, BusinessError
 from app.core.timezone import now, to_local, to_utc
 
 router = APIRouter()
@@ -38,11 +38,11 @@ async def get_agent_stats(
     # Calculate time range
     now_local = now()
     if period == "24h":
-        start_time = now - timedelta(hours=24)
+        start_time = now_local - timedelta(hours=24)
     elif period == "7d":
-        start_time = now - timedelta(days=7)
+        start_time = now_local - timedelta(days=7)
     elif period == "30d":
-        start_time = now - timedelta(days=30)
+        start_time = now_local - timedelta(days=30)
     else:
         start_time = None
     
@@ -146,8 +146,8 @@ async def get_agent_trends(
             status_code=404,
         )
     
-    now = now_utc()
-    
+    now_local = now()
+
     # Determine granularity and range based on period
     if period == "24h":
         start_time = now_local - timedelta(hours=24)
@@ -275,13 +275,13 @@ async def get_agent_tool_usage(
             status_code=404,
         )
     
-    now = now_utc()
+    now_local = now()
     if period == "24h":
-        start_time = now - timedelta(hours=24)
+        start_time = now_local - timedelta(hours=24)
     elif period == "7d":
-        start_time = now - timedelta(days=7)
+        start_time = now_local - timedelta(days=7)
     elif period == "30d":
-        start_time = now - timedelta(days=30)
+        start_time = now_local - timedelta(days=30)
     else:
         start_time = None
     

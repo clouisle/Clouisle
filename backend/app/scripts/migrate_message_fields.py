@@ -25,7 +25,7 @@ async def migrate():
         f"@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
     )
     
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     conn = await asyncpg.connect(dsn)
     
     try:

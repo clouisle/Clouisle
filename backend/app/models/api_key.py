@@ -1,5 +1,11 @@
 import secrets
+from typing import TYPE_CHECKING
 from tortoise import fields, models
+
+if TYPE_CHECKING:
+    from .user import User
+    from .agent import Agent
+    from .workflow import Workflow
 
 
 class APIKey(models.Model):

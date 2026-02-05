@@ -7,13 +7,9 @@ including latency, throughput, error rates, and resource utilization.
 
 import time
 import logging
-from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from collections import defaultdict
 from enum import Enum
-import asyncio
-import json
 
 from app.core.redis import get_redis
 

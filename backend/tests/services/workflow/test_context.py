@@ -4,7 +4,7 @@ Tests for the ExecutionContext class.
 
 import pytest
 import json
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.services.workflow.context import ExecutionContext

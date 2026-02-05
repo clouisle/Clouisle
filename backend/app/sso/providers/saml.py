@@ -1,7 +1,6 @@
 from typing import Any, Dict
 
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
-from onelogin.saml2.utils import OneLogin_Saml2_Utils
 
 from app.sso.providers.base import BaseSSOProvider
 

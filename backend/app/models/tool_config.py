@@ -2,8 +2,12 @@
 Tool Configuration model for storing API keys and other credentials.
 """
 
+from typing import TYPE_CHECKING
 from tortoise import fields, models
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from .user import Team
 
 
 class ToolConfig(models.Model):

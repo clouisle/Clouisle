@@ -19,7 +19,6 @@ from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.file_parser import (
     file_parser_service,
     FileParseConfig,
-    ParsedFile,
 )
 
 router = APIRouter()
