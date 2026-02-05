@@ -16,7 +16,7 @@ export interface SSOProviderAdmin {
   display_name: string
   icon_url: string | null
   button_text: string | null
-  config: Record<string, any>
+  config: Record<string, unknown>
   attribute_mapping: Record<string, string>
   is_enabled: boolean
   allow_signup: boolean
@@ -32,7 +32,7 @@ export interface SSOProviderCreate {
   display_name: string
   icon_url?: string | null
   button_text?: string | null
-  config: Record<string, any>
+  config: Record<string, unknown>
   attribute_mapping?: Record<string, string>
   is_enabled?: boolean
   allow_signup?: boolean
@@ -46,7 +46,7 @@ export interface SSOProviderUpdate {
   display_name?: string
   icon_url?: string | null
   button_text?: string | null
-  config?: Record<string, any>
+  config?: Record<string, unknown>
   attribute_mapping?: Record<string, string>
   is_enabled?: boolean
   allow_signup?: boolean

@@ -209,7 +209,7 @@ export function WorkflowRunsTable() {
       console.log('Workflow runs loaded successfully:', data)
       setRuns(data.items)
       setTotal(data.total)
-    } catch (error: any) {
+    } catch (error: Record<string, unknown>) {
       console.error('Failed to load workflow runs:', error)
       console.error('Error details:', error.response?.data)
       toast.error('Failed to load workflow runs')

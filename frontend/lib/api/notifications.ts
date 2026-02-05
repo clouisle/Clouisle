@@ -27,7 +27,7 @@ export interface NotificationItem {
   title: string
   content: string
   level: NotificationLevel
-  data?: Record<string, any> | null
+  data?: Record<string, unknown> | null
   link_url?: string | null
   status: NotificationStatus
   expires_at?: string | null
@@ -70,7 +70,7 @@ export interface NotificationAdminCreateInput {
   title: string
   content: string
   level?: NotificationLevel
-  data?: Record<string, any> | null
+  data?: Record<string, unknown> | null
   link_url?: string | null
   expires_at?: string | null
   notify_channels?: NotificationChannel[]

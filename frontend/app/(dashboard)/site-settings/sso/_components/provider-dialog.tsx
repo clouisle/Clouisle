@@ -132,8 +132,8 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
 
     try {
       // Validate JSON
-      let config: any
-      let attribute_mapping: any
+      let config: Record<string, unknown>
+      let attribute_mapping: Record<string, unknown>
 
       try {
         config = JSON.parse(formData.config)
@@ -173,7 +173,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       onClose(true)
-    } catch (error: any) {
+    } catch (error: Record<string, unknown>) {
       toast.error(error.message || t('saveError') || 'Failed to save provider')
     } finally {
       setLoading(false)
