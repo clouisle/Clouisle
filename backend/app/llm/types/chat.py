@@ -96,6 +96,9 @@ class ChatResponse(BaseModel):
     id: str = Field(..., description="响应 ID")
     model: str = Field(..., description="模型名称")
     content: str | None = Field(default=None, description="响应内容")
+    reasoning_content: str | None = Field(
+        default=None, description="思维链内容（归一化字段）"
+    )
     tool_calls: list[ToolCall] | None = Field(default=None, description="工具调用列表")
     finish_reason: FinishReason = Field(..., description="完成原因")
     usage: Usage = Field(..., description="使用统计")
