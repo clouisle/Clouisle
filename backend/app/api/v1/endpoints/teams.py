@@ -409,7 +409,12 @@ async def add_team_member(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         user_id=user_to_add.id,
         title=t("notify_team_member_added_title"),
-        content=t("notify_team_member_added_content", team_name=team.name, operator=current_user.username, role=member_in.role),
+        content=t(
+            "notify_team_member_added_content",
+            team_name=team.name,
+            operator=current_user.username,
+            role=member_in.role,
+        ),
     )
 
     # 发送团队通知
@@ -417,7 +422,11 @@ async def add_team_member(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         team_id=team.id,
         title=t("notify_team_member_added_team_title"),
-        content=t("notify_team_member_added_team_content", username=user_to_add.username, role=member_in.role),
+        content=t(
+            "notify_team_member_added_team_content",
+            username=user_to_add.username,
+            role=member_in.role,
+        ),
     )
 
     return success(
@@ -505,7 +514,12 @@ async def update_team_member(
         notification_type=AutoNotificationType.TEAM_ROLE_CHANGED,
         user_id=target_user.id,
         title=t("notify_team_role_changed_title"),
-        content=t("notify_team_role_changed_content", team_name=team.name, old_role=old_role, new_role=member_in.role),
+        content=t(
+            "notify_team_role_changed_content",
+            team_name=team.name,
+            old_role=old_role,
+            new_role=member_in.role,
+        ),
     )
 
     return success(
@@ -611,7 +625,9 @@ async def remove_team_member(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         team_id=team.id,
         title=t("notify_team_member_removed_team_title"),
-        content=t("notify_team_member_removed_team_content", username=target_user.username),
+        content=t(
+            "notify_team_member_removed_team_content", username=target_user.username
+        ),
     )
 
     await membership.delete()
@@ -711,7 +727,11 @@ async def transfer_ownership(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=new_owner.id,
         title=t("notify_team_ownership_received_title"),
-        content=t("notify_team_ownership_received_content", team_name=team.name, old_owner=current_user.username),
+        content=t(
+            "notify_team_ownership_received_content",
+            team_name=team.name,
+            old_owner=current_user.username,
+        ),
     )
 
     # 发送自动通知给原所有者
@@ -719,7 +739,11 @@ async def transfer_ownership(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=current_user.id,
         title=t("notify_team_ownership_transferred_title"),
-        content=t("notify_team_ownership_transferred_content", team_name=team.name, new_owner=new_owner.username),
+        content=t(
+            "notify_team_ownership_transferred_content",
+            team_name=team.name,
+            new_owner=new_owner.username,
+        ),
     )
 
     return success(data=team, msg_key="ownership_transferred")

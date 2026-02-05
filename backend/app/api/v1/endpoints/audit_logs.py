@@ -238,25 +238,37 @@ async def export_audit_logs(
         writer = csv.writer(output)
 
         # 写入表头
-        writer.writerow([
-            "ID", "Time", "User", "Action", "Resource Type",
-            "Resource Name", "Operation", "Status", "IP Address", "Error Message"
-        ])
+        writer.writerow(
+            [
+                "ID",
+                "Time",
+                "User",
+                "Action",
+                "Resource Type",
+                "Resource Name",
+                "Operation",
+                "Status",
+                "IP Address",
+                "Error Message",
+            ]
+        )
 
         # 写入数据
         for log in logs:
-            writer.writerow([
-                str(log.id),
-                log.created_at.isoformat() if log.created_at else "",
-                log.username or "",
-                log.action,
-                log.resource_type,
-                log.resource_name or "",
-                log.operation,
-                log.status,
-                log.ip_address or "",
-                log.error_message or "",
-            ])
+            writer.writerow(
+                [
+                    str(log.id),
+                    log.created_at.isoformat() if log.created_at else "",
+                    log.username or "",
+                    log.action,
+                    log.resource_type,
+                    log.resource_name or "",
+                    log.operation,
+                    log.status,
+                    log.ip_address or "",
+                    log.error_message or "",
+                ]
+            )
 
         # 返回CSV文件
         output.seek(0)
@@ -265,7 +277,7 @@ async def export_audit_logs(
             media_type="text/csv",
             headers={
                 "Content-Disposition": f"attachment; filename=audit-logs-{now_utc().strftime('%Y%m%d-%H%M%S')}.csv"
-            }
+            },
         )
 
     else:  # JSON
@@ -278,7 +290,7 @@ async def export_audit_logs(
             media_type="application/json",
             headers={
                 "Content-Disposition": f"attachment; filename=audit-logs-{now_utc().strftime('%Y%m%d-%H%M%S')}.json"
-            }
+            },
         )
 
 

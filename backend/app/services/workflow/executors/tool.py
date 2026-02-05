@@ -385,8 +385,10 @@ class HTTPRequestNodeExecutor(NodeExecutor):
                 result[key] = await self._resolve_body(value, context)
             elif isinstance(value, list):
                 result[key] = [
-                    await self._resolve_body(item, context) if isinstance(item, dict)
-                    else await self._resolve_template(str(item), context) if isinstance(item, str)
+                    await self._resolve_body(item, context)
+                    if isinstance(item, dict)
+                    else await self._resolve_template(str(item), context)
+                    if isinstance(item, str)
                     else item
                     for item in value
                 ]

@@ -149,7 +149,10 @@ class AuditLogService:
 
         for key, value in data.items():
             # 检查是否是敏感字段
-            if any(sensitive in key.lower() for sensitive in AuditLogService.SENSITIVE_FIELDS):
+            if any(
+                sensitive in key.lower()
+                for sensitive in AuditLogService.SENSITIVE_FIELDS
+            ):
                 # 脱敏处理
                 if isinstance(value, str) and len(value) > 8:
                     # 只显示前8位

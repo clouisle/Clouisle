@@ -469,17 +469,13 @@ async def parse_files_batch(
             continue
 
         if not file_parser_service.is_supported(file.filename):
-            errors.append(
-                {"filename": file.filename, "error": "Unsupported file type"}
-            )
+            errors.append({"filename": file.filename, "error": "Unsupported file type"})
             continue
 
         content = await file.read()
 
         if len(content) > MAX_PARSE_FILE_SIZE:
-            errors.append(
-                {"filename": file.filename, "error": "File too large"}
-            )
+            errors.append({"filename": file.filename, "error": "File too large"})
             continue
 
         try:

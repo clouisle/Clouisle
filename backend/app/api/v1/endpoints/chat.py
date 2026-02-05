@@ -152,7 +152,7 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
             msg_key="not_authenticated",
             status_code=401,
         )
-    
+
     agent = (
         await Agent.filter(id=agent_id).prefetch_related("team", "created_by").first()
     )
@@ -186,7 +186,7 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
                     status_code=403,
                 )
     # Public visibility: any logged-in user can access
-    
+
     # Must be published
     if agent.status != AgentStatus.PUBLISHED:
         # Only allow draft access for creator/team members
@@ -197,7 +197,7 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
                     msg_key="agent_not_published",
                     status_code=403,
                 )
-    
+
     return agent
 
     return agent
@@ -252,18 +252,20 @@ async def update_message_stats(agent: Agent, token_usage: dict | None = None):
     # Calculate total tokens
     total_tokens = 0
     if token_usage:
-        total_tokens = (token_usage.get("prompt", 0) or 0) + (token_usage.get("completion", 0) or 0)
+        total_tokens = (token_usage.get("prompt", 0) or 0) + (
+            token_usage.get("completion", 0) or 0
+        )
 
     # Update agent stats atomically
     await Agent.filter(id=agent.id).update(
         message_count=F("message_count") + 1,
-        total_tokens=F("total_tokens") + total_tokens
+        total_tokens=F("total_tokens") + total_tokens,
     )
 
     # Update team stats atomically
     await Team.filter(id=agent.team.id).update(
         total_messages=F("total_messages") + 1,
-        total_tokens=F("total_tokens") + total_tokens
+        total_tokens=F("total_tokens") + total_tokens,
     )
 
 
@@ -275,7 +277,7 @@ async def build_messages(
     file_urls: list[dict] | None = None,
 ) -> list[LLMMessage]:
     """Build message list for LLM call.
-    
+
     Args:
         agent: The agent
         conversation: The conversation
@@ -291,10 +293,10 @@ async def build_messages(
         system_prompt = agent.system_prompt
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-        
+
         # Inject {{query}} variable - user's current input
         system_prompt = system_prompt.replace("{{query}}", user_message)
-        
+
         # Inject file content into {{fileContent}} variable (legacy)
         if file_content:
             system_prompt = system_prompt.replace("{{fileContent}}", file_content)
@@ -403,7 +405,9 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
     from app.models.tool import Tool
     from app.models.agent import RAGMode
 
-    tools_config = list(agent.tools_config or [])  # Make a copy to avoid modifying original
+    tools_config = list(
+        agent.tools_config or []
+    )  # Make a copy to avoid modifying original
     openai_tools: list[dict] = []
 
     # Add knowledge_search tool only for agentic RAG mode
@@ -579,7 +583,9 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
                 custom_tool = await Tool.filter(id=tool_id, is_enabled=True).first()
                 if custom_tool:
                     # Custom tools use custom_<name> format
-                    display_names[f"custom_{custom_tool.name}"] = custom_tool.display_name
+                    display_names[f"custom_{custom_tool.name}"] = (
+                        custom_tool.display_name
+                    )
 
         elif tool_type == "mcp":
             tool_id = config.get("server_id") or config.get("tool_id")
@@ -594,7 +600,9 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
                             # MCP tools use mcp_<server_name>_<tool_name> format
                             tool_key = f"mcp_{mcp_tool.name}_{mt.name}"
                             # Use MCP tool's description as display name, or server/tool name
-                            display_names[tool_key] = f"{mcp_tool.display_name}/{mt.name}"
+                            display_names[tool_key] = (
+                                f"{mcp_tool.display_name}/{mt.name}"
+                            )
                     except Exception:
                         pass
 
@@ -616,9 +624,7 @@ async def execute_tool_call(
 
     try:
         if not tool_name:
-            return json.dumps(
-                {"error": "Tool name is required"}, ensure_ascii=False
-            )
+            return json.dumps({"error": "Tool name is required"}, ensure_ascii=False)
         # Handle knowledge_search - internal tool for RAG
         if tool_name == "knowledge_search":
             if not agent:
@@ -742,8 +748,7 @@ async def execute_tool_call(
 
                 # Try team-specific config first
                 tool_config = await ToolConfig.filter(
-                    tool_name=tool_name,
-                    team_id=agent.team_id
+                    tool_name=tool_name, team_id=agent.team_id
                 ).first()
                 if tool_config:
                     credentials = tool_config.credentials or {}
@@ -751,13 +756,14 @@ async def execute_tool_call(
                 # If no team config, try global config
                 if not credentials:
                     global_config = await ToolConfig.filter(
-                        tool_name=tool_name,
-                        team_id=None
+                        tool_name=tool_name, team_id=None
                     ).first()
                     if global_config:
                         credentials = global_config.credentials or {}
 
-            result = await tool_registry.execute(tool_name, arguments, credentials=credentials)
+            result = await tool_registry.execute(
+                tool_name, arguments, credentials=credentials
+            )
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)
             return str(result)
@@ -925,9 +931,7 @@ def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
         )
 
     for item in aggregated:
-        item["content"] = "\n\n".join(
-            [p for p in item.get("content_parts", []) if p]
-        )
+        item["content"] = "\n\n".join([p for p in item.get("content_parts", []) if p])
         item.pop("content_parts", None)
 
     return aggregated
@@ -1017,7 +1021,9 @@ async def get_public_agent_info(
 async def chat(
     agent_id: UUID,
     chat_in: ChatRequest,
-    auth_result: tuple[User, "APIKey | None"] = Depends(deps.get_current_user_or_api_key),
+    auth_result: tuple[User, "APIKey | None"] = Depends(
+        deps.get_current_user_or_api_key
+    ),
 ) -> Any:
     """
     Chat with an agent (non-streaming).
@@ -1026,7 +1032,7 @@ async def chat(
     Creates a new conversation if conversation_id is not provided.
     """
     current_user, api_key = auth_result
-    
+
     # 检查用户是否激活
     if not current_user.is_active:
         raise BusinessError(
@@ -1034,10 +1040,10 @@ async def chat(
             msg_key="inactive_user",
             status_code=401,
         )
-    
+
     # 如果使用 API Key，检查是否有权访问该 Agent
     await deps.check_api_key_agent_access(api_key, agent_id)
-    
+
     start_time = time.time()
 
     agent = await check_agent_chat_access(agent_id, current_user)
@@ -1063,7 +1069,9 @@ async def chat(
         role=MessageRole.USER,
         content=chat_in.message,
         images=[img.model_dump() for img in chat_in.images] if chat_in.images else None,
-        file_urls=[f.model_dump() for f in chat_in.file_urls] if chat_in.file_urls else None,
+        file_urls=[f.model_dump() for f in chat_in.file_urls]
+        if chat_in.file_urls
+        else None,
         rag_context=rag_contexts if rag_contexts else None,
     )
 
@@ -1119,6 +1127,7 @@ async def chat(
                 total_completion_tokens += response.usage.completion_tokens or 0
 
             if response.tool_calls:
+
                 def safe_parse_arguments(args):
                     if not args:
                         return {}
@@ -1176,9 +1185,7 @@ async def chat(
                     except json.JSONDecodeError:
                         arguments = {}
 
-                    result = await execute_tool_call(
-                        tool_name, arguments, agent=agent
-                    )
+                    result = await execute_tool_call(tool_name, arguments, agent=agent)
 
                     await Message.create(
                         conversation=conversation,
@@ -1215,10 +1222,16 @@ async def chat(
             token_usage={
                 "prompt": total_prompt_tokens
                 if total_prompt_tokens
-                else (final_response.usage.prompt_tokens if final_response.usage else 0),
+                else (
+                    final_response.usage.prompt_tokens if final_response.usage else 0
+                ),
                 "completion": total_completion_tokens
                 if total_completion_tokens
-                else (final_response.usage.completion_tokens if final_response.usage else 0),
+                else (
+                    final_response.usage.completion_tokens
+                    if final_response.usage
+                    else 0
+                ),
             },
             duration_ms=duration_ms,
             tool_calls=[tc.model_dump() for tc in final_response.tool_calls]
@@ -1227,14 +1240,23 @@ async def chat(
         )
 
         # Update message stats with token usage
-        await update_message_stats(agent, token_usage={
-            "prompt": total_prompt_tokens
-            if total_prompt_tokens
-            else (final_response.usage.prompt_tokens if final_response.usage else 0),
-            "completion": total_completion_tokens
-            if total_completion_tokens
-            else (final_response.usage.completion_tokens if final_response.usage else 0),
-        })
+        await update_message_stats(
+            agent,
+            token_usage={
+                "prompt": total_prompt_tokens
+                if total_prompt_tokens
+                else (
+                    final_response.usage.prompt_tokens if final_response.usage else 0
+                ),
+                "completion": total_completion_tokens
+                if total_completion_tokens
+                else (
+                    final_response.usage.completion_tokens
+                    if final_response.usage
+                    else 0
+                ),
+            },
+        )
 
         # Update conversation stats atomically
         title_update = {}
@@ -1268,7 +1290,9 @@ async def chat(
                     "total_tokens": total_prompt_tokens + total_completion_tokens,
                 }
                 if (total_prompt_tokens or total_completion_tokens)
-                else (final_response.usage.model_dump() if final_response.usage else None),
+                else (
+                    final_response.usage.model_dump() if final_response.usage else None
+                ),
             ),
             msg_key="chat_success",
         )
@@ -1294,7 +1318,9 @@ async def chat_stream(
     agent_id: UUID,
     chat_in: ChatRequest,
     request: Request,
-    auth_result: tuple[User, "APIKey | None"] = Depends(deps.get_current_user_or_api_key),
+    auth_result: tuple[User, "APIKey | None"] = Depends(
+        deps.get_current_user_or_api_key
+    ),
 ) -> StreamingResponse:
     """
     Chat with an agent (streaming via SSE).
@@ -1310,7 +1336,7 @@ async def chat_stream(
     - error: {"code": ..., "msg": "..."}
     """
     current_user, api_key = auth_result
-    
+
     # 检查用户是否激活
     if not current_user.is_active:
         raise BusinessError(
@@ -1318,10 +1344,10 @@ async def chat_stream(
             msg_key="inactive_user",
             status_code=401,
         )
-    
+
     # 如果使用 API Key，检查是否有权访问该 Agent
     await deps.check_api_key_agent_access(api_key, agent_id)
-    
+
     agent = await check_agent_chat_access(agent_id, current_user)
     conversation = await get_or_create_conversation(
         agent, current_user, chat_in.conversation_id, chat_in.variables
@@ -1386,8 +1412,12 @@ async def chat_stream(
                 conversation=conversation,
                 role=MessageRole.USER,
                 content=chat_in.message,
-                images=[img.model_dump() for img in chat_in.images] if chat_in.images else None,
-                file_urls=[f.model_dump() for f in chat_in.file_urls] if chat_in.file_urls else None,
+                images=[img.model_dump() for img in chat_in.images]
+                if chat_in.images
+                else None,
+                file_urls=[f.model_dump() for f in chat_in.file_urls]
+                if chat_in.file_urls
+                else None,
                 rag_context=rag_contexts if rag_contexts else None,
             )
 
@@ -1413,9 +1443,9 @@ async def chat_stream(
                     ParsedFile,
                     FileParseConfig,
                 )
-                
+
                 parsed_files: list[ParsedFile] = []
-                
+
                 # Get file upload config
                 file_config = agent.file_upload_config or {}
                 parser_config = file_config.get("parser")
@@ -1423,19 +1453,21 @@ async def chat_stream(
                     max_content_length=file_config.get("max_content_length", 100000),
                     truncate_strategy=file_config.get("truncate_strategy", "end"),
                 )
-                
+
                 # Handle file_urls: download and parse files
                 if chat_in.file_urls and parser_config:
                     import httpx
-                    
+
                     # Check parser type
                     parser_type = parser_config.get("type", "builtin")
                     parser_name = parser_config.get("name", "markitdown")
                     parser_tool_id = parser_config.get("tool_id")
-                    
+
                     if parser_type == "builtin" and parser_name == "markitdown":
                         # Use built-in file_parser_service
-                        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                        async with httpx.AsyncClient(
+                            timeout=60, follow_redirects=True
+                        ) as client:
                             for f in chat_in.file_urls:
                                 try:
                                     url = f.url
@@ -1443,11 +1475,11 @@ async def chat_stream(
                                     if url.startswith("/"):
                                         base_url = settings.API_BASE_URL.rstrip("/")
                                         url = f"{base_url}{url}"
-                                    
+
                                     response = await client.get(url)
                                     response.raise_for_status()
                                     file_content = response.content
-                                    
+
                                     # Parse file
                                     parsed = await file_parser_service.parse_file(
                                         file_content,
@@ -1456,19 +1488,26 @@ async def chat_stream(
                                     )
                                     parsed_files.append(parsed)
                                 except Exception as e:
-                                    logger.warning(f"Failed to parse file {f.filename}: {e}")
+                                    logger.warning(
+                                        f"Failed to parse file {f.filename}: {e}"
+                                    )
                                     # Add error placeholder
-                                    parsed_files.append(ParsedFile(
-                                        filename=f.filename,
-                                        content=f"[文件解析失败: {str(e)}]",
-                                        mime_type=f.mime_type,
-                                        size=f.size,
-                                    ))
-                    
+                                    parsed_files.append(
+                                        ParsedFile(
+                                            filename=f.filename,
+                                            content=f"[文件解析失败: {str(e)}]",
+                                            mime_type=f.mime_type,
+                                            size=f.size,
+                                        )
+                                    )
+
                     elif parser_type == "custom" and parser_tool_id:
                         # Use custom tool for parsing
                         from app.models.tool import Tool
-                        custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
+
+                        custom_tool = await Tool.filter(
+                            id=parser_tool_id, is_enabled=True
+                        ).first()
                         if custom_tool:
                             try:
                                 # Call custom tool with files_url parameter
@@ -1480,50 +1519,60 @@ async def chat_stream(
                                 )
                                 # Custom tool returns parsed content as string
                                 if result:
-                                    parsed_files.append(ParsedFile(
-                                        filename="自定义解析结果",
-                                        content=result,
-                                        mime_type="text/plain",
-                                        size=len(result),
-                                    ))
+                                    parsed_files.append(
+                                        ParsedFile(
+                                            filename="自定义解析结果",
+                                            content=result,
+                                            mime_type="text/plain",
+                                            size=len(result),
+                                        )
+                                    )
                             except Exception as e:
                                 logger.warning(f"Custom parser failed: {e}")
-                                parsed_files.append(ParsedFile(
-                                    filename="解析错误",
-                                    content=f"[自定义解析器失败: {str(e)}]",
-                                    mime_type="text/plain",
-                                    size=0,
-                                ))
-                
+                                parsed_files.append(
+                                    ParsedFile(
+                                        filename="解析错误",
+                                        content=f"[自定义解析器失败: {str(e)}]",
+                                        mime_type="text/plain",
+                                        size=0,
+                                    )
+                                )
+
                 # Handle legacy files field (deprecated, frontend sends parsed content)
                 elif chat_in.files:
                     for f in chat_in.files:
-                        parsed_files.append(ParsedFile(
-                            filename=f.filename,
-                            content=f.content,
-                            mime_type=f.mime_type,
-                            size=f.size,
-                            truncated=f.truncated,
-                            original_length=f.original_length,
-                        ))
-                
+                        parsed_files.append(
+                            ParsedFile(
+                                filename=f.filename,
+                                content=f.content,
+                                mime_type=f.mime_type,
+                                size=f.size,
+                                truncated=f.truncated,
+                                original_length=f.original_length,
+                            )
+                        )
+
                 if parsed_files:
-                    file_content_str = file_parser_service.format_files_for_prompt(parsed_files)
+                    file_content_str = file_parser_service.format_files_for_prompt(
+                        parsed_files
+                    )
 
             if agent.system_prompt:
                 system_prompt = agent.system_prompt
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-                
+
                 # Inject {{query}} variable - user's current input
                 system_prompt = system_prompt.replace("{{query}}", chat_in.message)
-                
+
                 # Inject file content into {{fileContent}} variable
                 if file_content_str:
-                    system_prompt = system_prompt.replace("{{fileContent}}", file_content_str)
+                    system_prompt = system_prompt.replace(
+                        "{{fileContent}}", file_content_str
+                    )
                 else:
                     system_prompt = system_prompt.replace("{{fileContent}}", "")
-                
+
                 messages_for_llm.append(
                     LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                 )
@@ -1583,7 +1632,9 @@ async def chat_stream(
                             LLMTypeMessage(
                                 role=LLMTypeRole.ASSISTANT,
                                 content=hist_msg.content,
-                                reasoning_content=getattr(hist_msg, "reasoning_content", None),
+                                reasoning_content=getattr(
+                                    hist_msg, "reasoning_content", None
+                                ),
                             )
                         )
 
@@ -1725,7 +1776,9 @@ async def chat_stream(
                     # Check if client disconnected - stop LLM generation to save tokens
                     if await request.is_disconnected():
                         client_disconnected = True
-                        logger.info(f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}")
+                        logger.info(
+                            f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
+                        )
                         break
 
                     # Handle reasoning content (思维链)
@@ -1759,7 +1812,11 @@ async def chat_stream(
                         break
 
                 # Fallback: if stream yields nothing and no tool calls, do a non-stream call
-                if not emitted_any and not collected_tool_calls and not client_disconnected:
+                if (
+                    not emitted_any
+                    and not collected_tool_calls
+                    and not client_disconnected
+                ):
                     response = await model_manager.team_chat(
                         team_id=str(agent.team_id),
                         messages=messages_for_llm,
@@ -1780,7 +1837,9 @@ async def chat_stream(
                 # If client disconnected, save partial content and exit
                 if client_disconnected:
                     # Record usage for partial generation
-                    iteration_output_chars = len(iteration_content) + len(iteration_reasoning)
+                    iteration_output_chars = len(iteration_content) + len(
+                        iteration_reasoning
+                    )
                     if iteration_output_chars > 0:
                         await model_manager.record_stream_usage(
                             team_id=str(agent.team_id),
@@ -1791,9 +1850,13 @@ async def chat_stream(
                     # Save partial content if any was generated
                     if full_content or full_reasoning:
                         assistant_msg.content = full_content
-                        assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                        assistant_msg.reasoning_content = (
+                            full_reasoning if full_reasoning else None
+                        )
                         assistant_msg.model_used = model_id
-                        assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                        assistant_msg.duration_ms = int(
+                            (time.time() - start_time) * 1000
+                        )
                         await assistant_msg.save()
                     return  # Exit generator - client is gone
 
@@ -1859,7 +1922,9 @@ async def chat_stream(
                         {
                             "id": tc.id,
                             "name": tc.function.name,
-                            "display_name": tool_display_names.get(tc.function.name, tc.function.name),
+                            "display_name": tool_display_names.get(
+                                tc.function.name, tc.function.name
+                            ),
                             "arguments": safe_parse_arguments(tc.function.arguments),
                         }
                         for tc in collected_tool_calls
@@ -1954,13 +2019,13 @@ async def chat_stream(
             # Update agent stats atomically
             await Agent.filter(id=agent.id).update(
                 message_count=F("message_count") + 2,
-                total_tokens=F("total_tokens") + (input_tokens + output_tokens)
+                total_tokens=F("total_tokens") + (input_tokens + output_tokens),
             )
 
             # Update team stats atomically
             await Team.filter(id=agent.team.id).update(
                 total_messages=F("total_messages") + 2,
-                total_tokens=F("total_tokens") + (input_tokens + output_tokens)
+                total_tokens=F("total_tokens") + (input_tokens + output_tokens),
             )
 
             # Send message_end event with version info
@@ -2167,8 +2232,8 @@ async def switch_message_version(
         target_tool_call_ids = set()
         if target_version.tool_calls:
             for tc in target_version.tool_calls:
-                if isinstance(tc, dict) and 'id' in tc:
-                    target_tool_call_ids.add(tc['id'])
+                if isinstance(tc, dict) and "id" in tc:
+                    target_tool_call_ids.add(tc["id"])
 
         # Deactivate all messages after the root message in the conversation
         # EXCEPT the target version itself and tool messages that belong to it
@@ -2183,7 +2248,10 @@ async def switch_message_version(
             if msg.id == target_version.id:
                 continue
             # Keep tool messages that belong to the target version
-            if msg.role == MessageRole.TOOL and msg.tool_call_id in target_tool_call_ids:
+            if (
+                msg.role == MessageRole.TOOL
+                and msg.tool_call_id in target_tool_call_ids
+            ):
                 continue
             # Deactivate all other messages
             msg.is_active = False
@@ -2431,7 +2499,9 @@ async def regenerate_message(
                     # Check if client disconnected - stop LLM generation to save tokens
                     if await request.is_disconnected():
                         client_disconnected = True
-                        logger.info(f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}")
+                        logger.info(
+                            f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
+                        )
                         break
 
                     if chunk.delta.reasoning_content:
@@ -2528,11 +2598,11 @@ async def regenerate_message(
             total_tokens = input_tokens + output_tokens
             await Agent.filter(id=agent.id).update(
                 message_count=F("message_count") + 1,
-                total_tokens=F("total_tokens") + total_tokens
+                total_tokens=F("total_tokens") + total_tokens,
             )
             await Team.filter(id=agent.team.id).update(
                 total_messages=F("total_messages") + 1,
-                total_tokens=F("total_tokens") + total_tokens
+                total_tokens=F("total_tokens") + total_tokens,
             )
 
             yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"

@@ -67,13 +67,13 @@ class TemplateNodeExecutor(NodeExecutor):
         node_data = node.get("data", {})
         # Try templateConfig first (frontend structure), then fall back to config
         config = node_data.get("templateConfig") or node_data.get("config", {})
-        
+
         logger.debug(f"Template node config: {config}")
 
         template_str = config.get("template", "")
         input_mappings = config.get("inputs", [])
         output_var = config.get("outputVariable", "output")
-        
+
         logger.debug(f"Template inputs: {input_mappings}, output_var: {output_var}")
 
         if not template_str:
@@ -81,15 +81,19 @@ class TemplateNodeExecutor(NodeExecutor):
 
         # Resolve input variables
         inputs = await self.resolve_inputs(context, input_mappings)
-        
+
         logger.info(f"Template resolved inputs: {inputs}")
 
         try:
             # Compile and render Jinja2 template
             template = self.env.from_string(template_str)
             result = template.render(**inputs)
-            
-            logger.info(f"Template result: {result[:100]}..." if len(result) > 100 else f"Template result: {result}")
+
+            logger.info(
+                f"Template result: {result[:100]}..."
+                if len(result) > 100
+                else f"Template result: {result}"
+            )
 
             return ExecutionResult(outputs={output_var: result})
 

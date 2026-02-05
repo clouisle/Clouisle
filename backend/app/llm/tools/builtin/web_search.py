@@ -43,7 +43,9 @@ async def web_search(
         }
 
 
-async def _tavily_search(query: str, num_results: int, credentials: dict[str, str] | None = None) -> dict:
+async def _tavily_search(
+    query: str, num_results: int, credentials: dict[str, str] | None = None
+) -> dict:
     """
     使用 Tavily API 搜索
 
@@ -54,7 +56,9 @@ async def _tavily_search(query: str, num_results: int, credentials: dict[str, st
     api_key = None
     if credentials:
         api_key = credentials.get("TAVILY_API_KEY")
-        logger.info(f"Tavily API key from credentials: {api_key[:15] if api_key else 'None'}...{api_key[-4:] if api_key and len(api_key) > 19 else ''}")
+        logger.info(
+            f"Tavily API key from credentials: {api_key[:15] if api_key else 'None'}...{api_key[-4:] if api_key and len(api_key) > 19 else ''}"
+        )
     else:
         logger.warning("No credentials provided to Tavily search")
 

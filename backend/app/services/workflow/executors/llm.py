@@ -71,11 +71,15 @@ class LLMNodeExecutor(NodeExecutor):
         # Note: modelId from frontend is team_models.id (TeamModel ID), not models.id
         team_model_id = llm_config.get("modelId")
         if not team_model_id:
-            logger.error(f"LLM node {node_id}: modelId not found in llmConfig. Available keys: {list(llm_config.keys())}")
+            logger.error(
+                f"LLM node {node_id}: modelId not found in llmConfig. Available keys: {list(llm_config.keys())}"
+            )
             return ExecutionResult(error="Model ID not configured")
 
         # First try to find as TeamModel ID, then fallback to Model ID
-        team_model = await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        team_model = (
+            await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        )
         if team_model:
             model = team_model.model
             model_id = str(model.id)
@@ -106,10 +110,10 @@ class LLMNodeExecutor(NodeExecutor):
 
         # Include resolved inputs in user prompt if any
         if resolved_inputs:
-            input_context = "\n".join([
-                f"{k}: {v}" for k, v in resolved_inputs.items()
-            ])
-            user_prompt = f"{input_context}\n\n{user_prompt}" if user_prompt else input_context
+            input_context = "\n".join([f"{k}: {v}" for k, v in resolved_inputs.items()])
+            user_prompt = (
+                f"{input_context}\n\n{user_prompt}" if user_prompt else input_context
+            )
 
         messages.append({"role": "user", "content": user_prompt})
 
@@ -117,7 +121,9 @@ class LLMNodeExecutor(NodeExecutor):
         temperature = llm_config.get("temperature", 0.7)
         max_tokens = llm_config.get("maxTokens", 2048)
         top_p = llm_config.get("topP", 1.0)
-        should_stream = llm_config.get("streaming", False)  # Frontend uses "streaming", default to non-streaming
+        should_stream = llm_config.get(
+            "streaming", False
+        )  # Frontend uses "streaming", default to non-streaming
 
         try:
             if should_stream:
@@ -132,9 +138,9 @@ class LLMNodeExecutor(NodeExecutor):
                     context=context,
                     source_node_id=node_id,
                 )
-                
+
                 logger.info(f"LLM node {node_id} returning lazy stream result")
-                
+
                 return ExecutionResult(
                     outputs={
                         "response": lazy_result,  # Lazy result, will be executed when referenced
@@ -155,9 +161,15 @@ class LLMNodeExecutor(NodeExecutor):
                     outputs={
                         "response": result.content or "",
                         "usage": {
-                            "prompt_tokens": result.usage.prompt_tokens if result.usage else 0,
-                            "completion_tokens": result.usage.completion_tokens if result.usage else 0,
-                            "total_tokens": result.usage.total_tokens if result.usage else 0,
+                            "prompt_tokens": result.usage.prompt_tokens
+                            if result.usage
+                            else 0,
+                            "completion_tokens": result.usage.completion_tokens
+                            if result.usage
+                            else 0,
+                            "total_tokens": result.usage.total_tokens
+                            if result.usage
+                            else 0,
                         },
                     }
                 )

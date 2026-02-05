@@ -137,9 +137,7 @@ class ExecutionPlan:
                 continue
 
             if source not in self.nodes or target not in self.nodes:
-                logger.warning(
-                    f"Edge references missing node: {source} -> {target}"
-                )
+                logger.warning(f"Edge references missing node: {source} -> {target}")
                 continue
 
             source_node = self.nodes[source]
@@ -163,9 +161,7 @@ class ExecutionPlan:
         for node_id, node in self.nodes.items():
             if node.node_type in start_types:
                 if self.start_node_id:
-                    raise WorkflowValidationError(
-                        "Workflow has multiple start nodes"
-                    )
+                    raise WorkflowValidationError("Workflow has multiple start nodes")
                 self.start_node_id = node_id
 
         if not self.start_node_id:
@@ -181,7 +177,9 @@ class ExecutionPlan:
         executed in parallel (all dependencies satisfied).
         """
         # Kahn's algorithm with level tracking
-        in_degree = {node_id: len(node.upstream) for node_id, node in self.nodes.items()}
+        in_degree = {
+            node_id: len(node.upstream) for node_id, node in self.nodes.items()
+        }
         queue = [node_id for node_id, degree in in_degree.items() if degree == 0]
         processed = set()
 
@@ -332,12 +330,20 @@ class ExecutionPlan:
         # Check for isolated nodes (no connections)
         for node_id, node in self.nodes.items():
             # Skip start nodes and internal subgraph nodes
-            if node.node_type not in {"user_input", "trigger", "iteration_start", "loop_start"}:
+            if node.node_type not in {
+                "user_input",
+                "trigger",
+                "iteration_start",
+                "loop_start",
+            }:
                 if not node.upstream:
                     errors.append(f"Node {node_id} has no upstream connections")
 
             if node.node_type != "answer":
-                if not node.downstream and node.node_type not in {"user_input", "trigger"}:
+                if not node.downstream and node.node_type not in {
+                    "user_input",
+                    "trigger",
+                }:
                     # Allow answer nodes and start nodes to have no downstream
                     pass  # OK for now, could be a dead branch
 

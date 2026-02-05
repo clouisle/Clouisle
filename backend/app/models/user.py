@@ -50,14 +50,16 @@ class Team(models.Model):
     )
 
     # Statistics (累计统计，不会因删除而减少)
-    total_conversations = fields.IntField(default=0, description="Total conversations created")
+    total_conversations = fields.IntField(
+        default=0, description="Total conversations created"
+    )
     total_messages = fields.IntField(default=0, description="Total messages created")
-    total_tokens = fields.BigIntField(default=0, description="Total tokens consumed (累计)")
+    total_tokens = fields.BigIntField(
+        default=0, description="Total tokens consumed (累计)"
+    )
 
     # Soft delete support
-    is_deleted = fields.BooleanField(
-        default=False, description="Soft delete flag"
-    )
+    is_deleted = fields.BooleanField(default=False, description="Soft delete flag")
     deleted_at = fields.DatetimeField(
         null=True, description="When the team was deleted"
     )

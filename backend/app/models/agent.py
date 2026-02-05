@@ -136,9 +136,13 @@ class Agent(models.Model):
     )
 
     # Statistics (累计统计，不会因删除而减少)
-    conversation_count = fields.IntField(default=0, description="Total conversations created")
+    conversation_count = fields.IntField(
+        default=0, description="Total conversations created"
+    )
     message_count = fields.IntField(default=0, description="Total messages created")
-    total_tokens = fields.BigIntField(default=0, description="Total tokens consumed (累计)")
+    total_tokens = fields.BigIntField(
+        default=0, description="Total tokens consumed (累计)"
+    )
 
     # Audit
     created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(

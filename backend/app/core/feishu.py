@@ -21,7 +21,9 @@ async def get_feishu_config() -> dict:
     """获取飞书配置"""
     return {
         "enabled": await SiteSetting.get_value("feishu_enabled", False),
-        "notification_type": await SiteSetting.get_value("feishu_notification_type", "webhook"),
+        "notification_type": await SiteSetting.get_value(
+            "feishu_notification_type", "webhook"
+        ),
         "webhook_url": await SiteSetting.get_value("feishu_webhook_url", ""),
         "secret": await SiteSetting.get_value("feishu_secret", ""),
         "app_id": await SiteSetting.get_value("feishu_app_id", ""),
@@ -42,8 +44,7 @@ def _generate_sign(secret: str, timestamp: int) -> str:
     """
     string_to_sign = f"{timestamp}\n{secret}"
     hmac_code = hmac.new(
-        string_to_sign.encode("utf-8"),
-        digestmod=hashlib.sha256
+        string_to_sign.encode("utf-8"), digestmod=hashlib.sha256
     ).digest()
     sign = base64.b64encode(hmac_code).decode("utf-8")
     return sign
@@ -103,20 +104,22 @@ async def send_feishu_webhook(
 
         # 添加链接按钮
         if link_url:
-            message["card"]["elements"].append({
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "查看详情",
+            message["card"]["elements"].append(
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "查看详情",
+                            },
+                            "type": "primary",
+                            "url": link_url,
                         },
-                        "type": "primary",
-                        "url": link_url,
-                    },
-                ],
-            })
+                    ],
+                }
+            )
 
         # 添加签名
         if config["secret"]:
@@ -232,20 +235,22 @@ async def send_feishu_app_message(
 
         # 添加链接按钮
         if link_url:
-            card["elements"].append({
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "查看详情",
+            card["elements"].append(
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "查看详情",
+                            },
+                            "type": "primary",
+                            "url": link_url,
                         },
-                        "type": "primary",
-                        "url": link_url,
-                    },
-                ],
-            })
+                    ],
+                }
+            )
 
         # 构建消息体
         message = {
@@ -300,6 +305,8 @@ async def send_feishu_notification(
     config = await get_feishu_config()
 
     if config["notification_type"] == "app" and receive_id:
-        return await send_feishu_app_message(title, content, link_url, receive_id, receive_id_type)
+        return await send_feishu_app_message(
+            title, content, link_url, receive_id, receive_id_type
+        )
     else:
         return await send_feishu_webhook(title, content, link_url)

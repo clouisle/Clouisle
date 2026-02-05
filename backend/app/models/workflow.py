@@ -103,7 +103,8 @@ class Workflow(models.Model):
         TriggerType, default=TriggerType.MANUAL, description="Trigger type"
     )
     trigger_config: dict = fields.JSONField(
-        default=dict, description="Trigger configuration (cron expression, webhook secret, etc.)"
+        default=dict,
+        description="Trigger configuration (cron expression, webhook secret, etc.)",
     )  # type: ignore[assignment]
     webhook_token = fields.CharField(
         max_length=100, null=True, unique=True, description="Webhook token"
@@ -113,7 +114,9 @@ class Workflow(models.Model):
     run_count = fields.IntField(default=0, description="Total run count")
     success_count = fields.IntField(default=0, description="Successful run count")
     fail_count = fields.IntField(default=0, description="Failed run count")
-    total_tokens = fields.BigIntField(default=0, description="Total tokens consumed (累计)")
+    total_tokens = fields.BigIntField(
+        default=0, description="Total tokens consumed (累计)"
+    )
 
     # Audit
     created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
@@ -170,7 +173,9 @@ class WorkflowRun(models.Model):
     )
 
     # Execution mode
-    is_debug = fields.BooleanField(default=False, description="Whether this is a debug run")
+    is_debug = fields.BooleanField(
+        default=False, description="Whether this is a debug run"
+    )
 
     # Status
     status = fields.CharEnumField(
@@ -187,8 +192,12 @@ class WorkflowRun(models.Model):
     )  # type: ignore[assignment]
 
     # Sub-workflow association
-    parent_run_id = fields.UUIDField(null=True, description="Parent run ID for nested workflows")
-    root_run_id = fields.UUIDField(null=True, description="Root run ID for nested workflows")
+    parent_run_id = fields.UUIDField(
+        null=True, description="Parent run ID for nested workflows"
+    )
+    root_run_id = fields.UUIDField(
+        null=True, description="Root run ID for nested workflows"
+    )
     depth = fields.IntField(default=0, description="Execution depth (0 for root)")
 
     # Timing
@@ -201,7 +210,9 @@ class WorkflowRun(models.Model):
     executed_nodes = fields.IntField(default=0, description="Number of executed nodes")
     failed_nodes = fields.IntField(default=0, description="Number of failed nodes")
     skipped_nodes = fields.IntField(default=0, description="Number of skipped nodes")
-    total_duration_ms = fields.IntField(null=True, description="Total duration in milliseconds")
+    total_duration_ms = fields.IntField(
+        null=True, description="Total duration in milliseconds"
+    )
     total_token_usage: dict = fields.JSONField(
         default=dict, description="Total token usage {'prompt': 0, 'completion': 0}"
     )  # type: ignore[assignment]
@@ -245,7 +256,9 @@ class NodeExecution(models.Model):
 
     # Node identification
     node_id = fields.CharField(max_length=100, description="ReactFlow node ID")
-    node_type = fields.CharField(max_length=50, description="Node type (start/end/llm/etc.)")
+    node_type = fields.CharField(
+        max_length=50, description="Node type (start/end/llm/etc.)"
+    )
     node_name = fields.CharField(max_length=200, description="Node display name")
 
     # Execution order
@@ -263,7 +276,9 @@ class NodeExecution(models.Model):
 
     # Duration (redundant for easy querying)
     queue_duration_ms = fields.IntField(null=True, description="Queue duration in ms")
-    execution_duration_ms = fields.IntField(null=True, description="Execution duration in ms")
+    execution_duration_ms = fields.IntField(
+        null=True, description="Execution duration in ms"
+    )
 
     # Input data
     inputs: dict | None = fields.JSONField(null=True, description="Node inputs")  # type: ignore[assignment]
@@ -335,9 +350,7 @@ class WorkflowVersion(models.Model):
     )  # type: ignore[assignment]
 
     # Snapshot of variables at this version
-    variables: list = fields.JSONField(
-        default=list, description="Variables snapshot"
-    )  # type: ignore[assignment]
+    variables: list = fields.JSONField(default=list, description="Variables snapshot")  # type: ignore[assignment]
 
     # Trigger configuration snapshot
     trigger_type = fields.CharEnumField(

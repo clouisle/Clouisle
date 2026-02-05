@@ -17,7 +17,9 @@ async def get_wechat_config() -> dict:
     """获取企业微信配置"""
     return {
         "enabled": await SiteSetting.get_value("wechat_enabled", False),
-        "notification_type": await SiteSetting.get_value("wechat_notification_type", "webhook"),
+        "notification_type": await SiteSetting.get_value(
+            "wechat_notification_type", "webhook"
+        ),
         "webhook_url": await SiteSetting.get_value("wechat_webhook_url", ""),
         "corp_id": await SiteSetting.get_value("wechat_corp_id", ""),
         "agent_id": await SiteSetting.get_value("wechat_agent_id", ""),

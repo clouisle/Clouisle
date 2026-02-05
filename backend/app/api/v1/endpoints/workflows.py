@@ -263,9 +263,9 @@ async def get_workflow_run_stats(
         workflow_counts[run.workflow_id] = workflow_counts.get(run.workflow_id, 0) + 1
 
     # Sort and get top 10
-    top_workflows = sorted(
-        workflow_counts.items(), key=lambda x: x[1], reverse=True
-    )[:10]
+    top_workflows = sorted(workflow_counts.items(), key=lambda x: x[1], reverse=True)[
+        :10
+    ]
 
     # Build workflow info
     workflow_map = {w.id: w for w in accessible_workflows}
@@ -273,16 +273,19 @@ async def get_workflow_run_stats(
     for workflow_id, count in top_workflows:
         workflow = workflow_map.get(workflow_id)
         if workflow:
-            runs_by_workflow.append({
-                "workflow_id": str(workflow_id),
-                "workflow_name": workflow.name,
-                "workflow_icon": workflow.icon,
-                "count": count,
-            })
+            runs_by_workflow.append(
+                {
+                    "workflow_id": str(workflow_id),
+                    "workflow_name": workflow.name,
+                    "workflow_icon": workflow.icon,
+                    "count": count,
+                }
+            )
 
     # Calculate average duration (only for completed runs)
     completed_runs = [
-        r for r in runs
+        r
+        for r in runs
         if r.status == RunStatus.SUCCESS and r.started_at and r.finished_at
     ]
     if completed_runs:
@@ -533,15 +536,16 @@ async def get_workflow_trends(
 
     # Get all runs in the period
     runs = await WorkflowRun.filter(
-        workflow_id=workflow_id,
-        created_at__gte=start_time_utc
+        workflow_id=workflow_id, created_at__gte=start_time_utc
     ).all()
 
     # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
         point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now_local.tzinfo)
+        point_start = datetime.combine(point_date, datetime.min.time()).replace(
+            tzinfo=now_local.tzinfo
+        )
         point_end = point_start + timedelta(days=1)
 
         # Filter runs for this day
@@ -565,13 +569,15 @@ async def get_workflow_trends(
         # Format label
         label = point_date.strftime("%m/%d")
 
-        data_points.append({
-            "date": label,
-            "runs": total_runs,
-            "success": success_count,
-            "failed": failed_count,
-            "avgDuration": round(avg_duration, 2),
-        })
+        data_points.append(
+            {
+                "date": label,
+                "runs": total_runs,
+                "success": success_count,
+                "failed": failed_count,
+                "avgDuration": round(avg_duration, 2),
+            }
+        )
 
     return success(
         data={
@@ -589,14 +595,20 @@ async def update_workflow(
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Update a workflow."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     # Check for duplicate name within the same team (exclude self)
     if workflow_in.name is not None and workflow_in.name != workflow.name:
-        existing = await Workflow.filter(
-            team_id=workflow.team_id,
-            name=workflow_in.name,
-        ).exclude(id=workflow_id).first()
+        existing = (
+            await Workflow.filter(
+                team_id=workflow.team_id,
+                name=workflow_in.name,
+            )
+            .exclude(id=workflow_id)
+            .first()
+        )
         if existing:
             raise BusinessError(
                 code=ResponseCode.DUPLICATE_NAME,
@@ -637,7 +649,9 @@ async def delete_workflow(
     current_user: User = Depends(deps.PermissionChecker("workflow:delete")),
 ) -> Any:
     """Delete a workflow and all its runs."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     # Delete workflow (cascades to runs and node executions)
     await workflow.delete()
@@ -651,7 +665,9 @@ async def publish_workflow(
     current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Publish a workflow and save a version snapshot."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     # Check if this version already has a snapshot
     existing_version = await WorkflowVersion.filter(
@@ -686,7 +702,9 @@ async def unpublish_workflow(
     current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Unpublish a workflow."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     workflow.status = WorkflowStatus.DRAFT
     await workflow.save()
@@ -736,7 +754,9 @@ async def regenerate_webhook_token(
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Regenerate webhook token for a workflow."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     workflow.webhook_token = secrets.token_urlsafe(32)
     await workflow.save()
@@ -810,7 +830,11 @@ async def trigger_workflow_webhook(
         )
 
     # Find workflow by webhook token using constant-time comparison
-    workflow = await Workflow.filter(webhook_token__isnull=False).prefetch_related("team").all()
+    workflow = (
+        await Workflow.filter(webhook_token__isnull=False)
+        .prefetch_related("team")
+        .all()
+    )
 
     matched_workflow = None
     for wf in workflow:
@@ -967,7 +991,9 @@ async def debug_workflow(
     """
     from app.tasks.workflow import run_workflow_task
 
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     try:
         # Create run record first
@@ -1091,13 +1117,17 @@ async def cancel_workflow_run(
     if cancelled:
         return success(data={"cancelled": True}, msg_key="workflow_run_cancelled")
     else:
-        return success(data={"cancelled": False}, msg_key="workflow_run_not_cancellable")
+        return success(
+            data={"cancelled": False}, msg_key="workflow_run_not_cancellable"
+        )
 
 
 # ============ Workflow Runs ============
 
 
-@router.get("/{workflow_id}/runs", response_model=Response[PageData[WorkflowRunListItem]])
+@router.get(
+    "/{workflow_id}/runs", response_model=Response[PageData[WorkflowRunListItem]]
+)
 async def list_workflow_runs(
     workflow_id: UUID,
     status: RunStatus | None = None,
@@ -1205,7 +1235,10 @@ async def delete_workflow_run(
 # ============ Workflow Versions ============
 
 
-@router.get("/{workflow_id}/versions", response_model=Response[PageData[WorkflowVersionListItem]])
+@router.get(
+    "/{workflow_id}/versions",
+    response_model=Response[PageData[WorkflowVersionListItem]],
+)
 async def list_workflow_versions(
     workflow_id: UUID,
     page: int = 1,
@@ -1233,7 +1266,9 @@ async def list_workflow_versions(
     )
 
 
-@router.get("/{workflow_id}/versions/{version}", response_model=Response[WorkflowVersionOut])
+@router.get(
+    "/{workflow_id}/versions/{version}", response_model=Response[WorkflowVersionOut]
+)
 async def get_workflow_version(
     workflow_id: UUID,
     version: int,
@@ -1253,7 +1288,9 @@ async def get_workflow_version(
             status_code=404,
         )
 
-    return success(data=WorkflowVersionOut.model_validate(workflow_version).model_dump())
+    return success(
+        data=WorkflowVersionOut.model_validate(workflow_version).model_dump()
+    )
 
 
 @router.post("/{workflow_id}/versions", response_model=Response[WorkflowVersionOut])
@@ -1263,7 +1300,9 @@ async def create_workflow_version(
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Manually create a version snapshot of the current workflow state."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     # Create version snapshot
     workflow_version = await WorkflowVersion.create(
@@ -1283,7 +1322,9 @@ async def create_workflow_version(
     )
 
 
-@router.post("/{workflow_id}/versions/{version}/restore", response_model=Response[WorkflowOut])
+@router.post(
+    "/{workflow_id}/versions/{version}/restore", response_model=Response[WorkflowOut]
+)
 async def restore_workflow_version(
     workflow_id: UUID,
     version: int,
@@ -1291,7 +1332,9 @@ async def restore_workflow_version(
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Restore a workflow to a specific version."""
-    workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
+    workflow = await check_workflow_access(
+        workflow_id, current_user, require_write=True
+    )
 
     # Get the version to restore
     workflow_version = await WorkflowVersion.filter(

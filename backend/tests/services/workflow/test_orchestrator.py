@@ -125,10 +125,16 @@ class TestWorkflowOrchestratorRun:
         mock_run.save = AsyncMock()
 
         with patch("app.services.workflow.orchestrator.Workflow") as mock_workflow_cls:
-            with patch("app.services.workflow.orchestrator.WorkflowRun") as mock_run_cls:
-                with patch("app.services.workflow.orchestrator.ExecutionContext") as mock_ctx_cls:
+            with patch(
+                "app.services.workflow.orchestrator.WorkflowRun"
+            ) as mock_run_cls:
+                with patch(
+                    "app.services.workflow.orchestrator.ExecutionContext"
+                ) as mock_ctx_cls:
                     with patch("app.services.workflow.orchestrator.StreamManager"):
-                        mock_workflow_cls.filter.return_value.first = AsyncMock(return_value=mock_wf)
+                        mock_workflow_cls.filter.return_value.first = AsyncMock(
+                            return_value=mock_wf
+                        )
                         mock_run_cls.create = AsyncMock(return_value=mock_run)
 
                         mock_ctx = MagicMock()
@@ -168,9 +174,13 @@ class TestWorkflowOrchestratorCancel:
         mock_run.save = AsyncMock()
 
         with patch("app.services.workflow.orchestrator.WorkflowRun") as mock_run_cls:
-            with patch("app.services.workflow.orchestrator.ExecutionContext") as mock_ctx_cls:
+            with patch(
+                "app.services.workflow.orchestrator.ExecutionContext"
+            ) as mock_ctx_cls:
                 with patch("app.services.workflow.orchestrator.StreamManager"):
-                    mock_run_cls.filter.return_value.first = AsyncMock(return_value=mock_run)
+                    mock_run_cls.filter.return_value.first = AsyncMock(
+                        return_value=mock_run
+                    )
 
                     mock_ctx = MagicMock()
                     mock_ctx.set_status = AsyncMock()
@@ -312,8 +322,16 @@ class TestWorkflowOrchestratorBranching:
             ],
             "edges": [
                 {"source": "start", "target": "condition"},
-                {"source": "condition", "target": "branch_true", "sourceHandle": "true"},
-                {"source": "condition", "target": "branch_false", "sourceHandle": "false"},
+                {
+                    "source": "condition",
+                    "target": "branch_true",
+                    "sourceHandle": "true",
+                },
+                {
+                    "source": "condition",
+                    "target": "branch_false",
+                    "sourceHandle": "false",
+                },
                 {"source": "branch_true", "target": "end"},
                 {"source": "branch_false", "target": "end"},
             ],

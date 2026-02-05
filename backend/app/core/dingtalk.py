@@ -27,7 +27,9 @@ async def get_dingtalk_config() -> dict:
         "app_key": await SiteSetting.get_value("dingtalk_app_key", ""),
         "app_secret": await SiteSetting.get_value("dingtalk_app_secret", ""),
         "agent_id": await SiteSetting.get_value("dingtalk_agent_id", ""),
-        "notification_type": await SiteSetting.get_value("dingtalk_notification_type", "webhook"),  # webhook 或 app
+        "notification_type": await SiteSetting.get_value(
+            "dingtalk_notification_type", "webhook"
+        ),  # webhook 或 app
     }
 
 
@@ -46,11 +48,13 @@ def _generate_sign(secret: str, timestamp: int) -> str:
     Returns:
         签名字符串
     """
-    secret_enc = secret.encode('utf-8')
-    string_to_sign = f'{timestamp}\n{secret}'
-    string_to_sign_enc = string_to_sign.encode('utf-8')
-    hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
-    sign = quote_plus(base64.b64encode(hmac_code).decode('utf-8'))
+    secret_enc = secret.encode("utf-8")
+    string_to_sign = f"{timestamp}\n{secret}"
+    string_to_sign_enc = string_to_sign.encode("utf-8")
+    hmac_code = hmac.new(
+        secret_enc, string_to_sign_enc, digestmod=hashlib.sha256
+    ).digest()
+    sign = quote_plus(base64.b64encode(hmac_code).decode("utf-8"))
     return sign
 
 
@@ -73,7 +77,9 @@ async def send_dingtalk_webhook(
     config = await get_dingtalk_config()
 
     # 调试日志
-    logger.info(f"DingTalk config - enabled: {config['enabled']}, webhook_url: {config['webhook_url'][:50] if config['webhook_url'] else 'empty'}..., secret: {'***' + config['secret'][-4:] if config['secret'] and len(config['secret']) > 4 else 'empty or short'}")
+    logger.info(
+        f"DingTalk config - enabled: {config['enabled']}, webhook_url: {config['webhook_url'][:50] if config['webhook_url'] else 'empty'}..., secret: {'***' + config['secret'][-4:] if config['secret'] and len(config['secret']) > 4 else 'empty or short'}"
+    )
 
     if not config["enabled"]:
         logger.warning("DingTalk is not enabled, skipping message send")
@@ -217,7 +223,9 @@ async def send_dingtalk_app_message(
             result = response.json()
 
             if result.get("errcode") == 0:
-                logger.info(f"DingTalk app message sent successfully to {len(user_id_list)} users")
+                logger.info(
+                    f"DingTalk app message sent successfully to {len(user_id_list)} users"
+                )
                 return True
             else:
                 logger.error(f"Failed to send DingTalk app message: {result}")

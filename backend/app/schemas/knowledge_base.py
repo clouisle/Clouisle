@@ -130,7 +130,8 @@ class KnowledgeBase(KnowledgeBaseBase):
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
     embedding_dimension: Optional[int] = Field(
-        None, description="Embedding vector dimension (set after first document processing)"
+        None,
+        description="Embedding vector dimension (set after first document processing)",
     )
     settings: Optional[dict] = None
     document_count: int

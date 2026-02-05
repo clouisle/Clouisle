@@ -18,21 +18,21 @@ async def init_workflow_tables():
     This handles the migration for the new workflow feature.
     """
     logger.info("Initializing workflow tables...")
-    
+
     conn = Tortoise.get_connection("default")
-    
+
     # Check if workflows table exists
     _, rows = await conn.execute_query("""
         SELECT table_name FROM information_schema.tables 
         WHERE table_schema = 'public' AND table_name = 'workflows'
     """)
-    
+
     if rows:
         logger.info("Workflow tables already exist, skipping creation")
         return
-    
+
     logger.info("Creating workflow tables...")
-    
+
     # Create workflows table
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS workflows (
@@ -57,7 +57,7 @@ async def init_workflow_tables():
         )
     """)
     logger.info("Created workflows table")
-    
+
     # Create workflow_runs table
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS workflow_runs (
@@ -86,7 +86,7 @@ async def init_workflow_tables():
         )
     """)
     logger.info("Created workflow_runs table")
-    
+
     # Create node_executions table
     await conn.execute_query("""
         CREATE TABLE IF NOT EXISTS node_executions (
@@ -118,7 +118,7 @@ async def init_workflow_tables():
         )
     """)
     logger.info("Created node_executions table")
-    
+
     # Create indexes for better query performance
     await conn.execute_query("""
         CREATE INDEX IF NOT EXISTS idx_workflows_team_id ON workflows(team_id);
@@ -133,9 +133,8 @@ async def init_workflow_tables():
         CREATE INDEX IF NOT EXISTS idx_node_executions_status ON node_executions(status);
     """)
     logger.info("Created workflow indexes")
-    
-    logger.info("Workflow tables initialization complete")
 
+    logger.info("Workflow tables initialization complete")
 
 
 async def init_agent_tools_credentials():
@@ -155,7 +154,9 @@ async def init_agent_tools_credentials():
     """)
 
     if not tables:
-        logger.info("Agents table does not exist yet, skipping tools_credentials migration")
+        logger.info(
+            "Agents table does not exist yet, skipping tools_credentials migration"
+        )
         return
 
     # Check if tools_credentials column exists
@@ -667,7 +668,9 @@ async def migrate_registration_settings_category():
             logger.info(f"Migrated {key} from 'general' to 'security' category")
 
     if migrated_count > 0:
-        logger.info(f"Migrated {migrated_count} registration settings to 'security' category")
+        logger.info(
+            f"Migrated {migrated_count} registration settings to 'security' category"
+        )
     else:
         logger.info("Registration settings already in correct category")
 
@@ -712,7 +715,9 @@ async def init_db():
     try:
         await init_agent_tools_credentials()
     except Exception as e:
-        logger.warning(f"Agent tools_credentials migration failed (may be first run): {e}")
+        logger.warning(
+            f"Agent tools_credentials migration failed (may be first run): {e}"
+        )
 
     # 1. Initialize Permissions
     permissions_data = [
@@ -975,31 +980,66 @@ async def init_db():
             # Dashboard access
             "dashboard:access",
             # User management
-            "user:read", "user:create", "user:update", "user:delete",
+            "user:read",
+            "user:create",
+            "user:update",
+            "user:delete",
             # Role management
-            "role:read", "role:create", "role:update", "role:delete",
+            "role:read",
+            "role:create",
+            "role:update",
+            "role:delete",
             # Permission read
             "permission:read",
             # Model management
-            "model:read", "model:create", "model:update", "model:delete",
+            "model:read",
+            "model:create",
+            "model:update",
+            "model:delete",
             # Site settings (read only)
             "settings:read",
             # Audit logs
-            "audit:read", "audit:export",
+            "audit:read",
+            "audit:export",
             # Team permissions (with data isolation)
-            "team:read", "team:create", "team:update", "team:delete", "team:manage",
+            "team:read",
+            "team:create",
+            "team:update",
+            "team:delete",
+            "team:manage",
             # Agent permissions (with data isolation)
-            "agent:read", "agent:create", "agent:update", "agent:delete", "agent:publish", "agent:chat",
+            "agent:read",
+            "agent:create",
+            "agent:update",
+            "agent:delete",
+            "agent:publish",
+            "agent:chat",
             # Workflow permissions (with data isolation)
-            "workflow:read", "workflow:create", "workflow:update", "workflow:delete", "workflow:publish", "workflow:run",
+            "workflow:read",
+            "workflow:create",
+            "workflow:update",
+            "workflow:delete",
+            "workflow:publish",
+            "workflow:run",
             # Knowledge Base permissions (with data isolation)
-            "kb:read", "kb:create", "kb:update", "kb:delete",
+            "kb:read",
+            "kb:create",
+            "kb:update",
+            "kb:delete",
             # Tool permissions (with data isolation)
-            "tool:read", "tool:create", "tool:update", "tool:delete", "tool:execute",
+            "tool:read",
+            "tool:create",
+            "tool:update",
+            "tool:delete",
+            "tool:execute",
             # API Key permissions (with data isolation)
-            "apikey:read", "apikey:create", "apikey:update", "apikey:delete",
+            "apikey:read",
+            "apikey:create",
+            "apikey:update",
+            "apikey:delete",
             # Conversation permissions (with data isolation)
-            "conversation:read", "conversation:delete",
+            "conversation:read",
+            "conversation:delete",
         ]
         for perm_code in admin_permissions:
             perm = await Permission.filter(code=perm_code).first()
@@ -1010,19 +1050,54 @@ async def init_db():
         # Ensure existing Admin role has all required permissions
         admin_permissions = [
             "dashboard:access",
-            "user:read", "user:create", "user:update", "user:delete",
-            "role:read", "role:create", "role:update", "role:delete",
+            "user:read",
+            "user:create",
+            "user:update",
+            "user:delete",
+            "role:read",
+            "role:create",
+            "role:update",
+            "role:delete",
             "permission:read",
-            "model:read", "model:create", "model:update", "model:delete",
+            "model:read",
+            "model:create",
+            "model:update",
+            "model:delete",
             "settings:read",
-            "audit:read", "audit:export",
-            "team:read", "team:create", "team:update", "team:delete", "team:manage",
-            "agent:read", "agent:create", "agent:update", "agent:delete", "agent:publish", "agent:chat",
-            "workflow:read", "workflow:create", "workflow:update", "workflow:delete", "workflow:publish", "workflow:run",
-            "kb:read", "kb:create", "kb:update", "kb:delete",
-            "tool:read", "tool:create", "tool:update", "tool:delete", "tool:execute",
-            "apikey:read", "apikey:create", "apikey:update", "apikey:delete",
-            "conversation:read", "conversation:delete",
+            "audit:read",
+            "audit:export",
+            "team:read",
+            "team:create",
+            "team:update",
+            "team:delete",
+            "team:manage",
+            "agent:read",
+            "agent:create",
+            "agent:update",
+            "agent:delete",
+            "agent:publish",
+            "agent:chat",
+            "workflow:read",
+            "workflow:create",
+            "workflow:update",
+            "workflow:delete",
+            "workflow:publish",
+            "workflow:run",
+            "kb:read",
+            "kb:create",
+            "kb:update",
+            "kb:delete",
+            "tool:read",
+            "tool:create",
+            "tool:update",
+            "tool:delete",
+            "tool:execute",
+            "apikey:read",
+            "apikey:create",
+            "apikey:update",
+            "apikey:delete",
+            "conversation:read",
+            "conversation:delete",
         ]
         for perm_code in admin_permissions:
             perm = await Permission.filter(code=perm_code).first()
@@ -1044,19 +1119,43 @@ async def init_db():
         # Add all resource permissions for Member role (no dashboard access, no team:delete)
         member_permissions = [
             # Team permissions (no team:delete)
-            "team:read", "team:create", "team:update", "team:manage",
+            "team:read",
+            "team:create",
+            "team:update",
+            "team:manage",
             # Agent permissions
-            "agent:read", "agent:create", "agent:update", "agent:delete", "agent:publish", "agent:chat",
+            "agent:read",
+            "agent:create",
+            "agent:update",
+            "agent:delete",
+            "agent:publish",
+            "agent:chat",
             # Workflow permissions
-            "workflow:read", "workflow:create", "workflow:update", "workflow:delete", "workflow:publish", "workflow:run",
+            "workflow:read",
+            "workflow:create",
+            "workflow:update",
+            "workflow:delete",
+            "workflow:publish",
+            "workflow:run",
             # Knowledge Base permissions
-            "kb:read", "kb:create", "kb:update", "kb:delete",
+            "kb:read",
+            "kb:create",
+            "kb:update",
+            "kb:delete",
             # Tool permissions
-            "tool:read", "tool:create", "tool:update", "tool:delete", "tool:execute",
+            "tool:read",
+            "tool:create",
+            "tool:update",
+            "tool:delete",
+            "tool:execute",
             # API Key permissions (own keys)
-            "apikey:read", "apikey:create", "apikey:update", "apikey:delete",
+            "apikey:read",
+            "apikey:create",
+            "apikey:update",
+            "apikey:delete",
             # Conversation permissions
-            "conversation:read", "conversation:delete",
+            "conversation:read",
+            "conversation:delete",
         ]
         for perm_code in member_permissions:
             perm = await Permission.filter(code=perm_code).first()
@@ -1066,13 +1165,37 @@ async def init_db():
     else:
         # Ensure existing Member role has correct permissions (remove team:delete if present)
         member_permissions = [
-            "team:read", "team:create", "team:update", "team:manage",
-            "agent:read", "agent:create", "agent:update", "agent:delete", "agent:publish", "agent:chat",
-            "workflow:read", "workflow:create", "workflow:update", "workflow:delete", "workflow:publish", "workflow:run",
-            "kb:read", "kb:create", "kb:update", "kb:delete",
-            "tool:read", "tool:create", "tool:update", "tool:delete", "tool:execute",
-            "apikey:read", "apikey:create", "apikey:update", "apikey:delete",
-            "conversation:read", "conversation:delete",
+            "team:read",
+            "team:create",
+            "team:update",
+            "team:manage",
+            "agent:read",
+            "agent:create",
+            "agent:update",
+            "agent:delete",
+            "agent:publish",
+            "agent:chat",
+            "workflow:read",
+            "workflow:create",
+            "workflow:update",
+            "workflow:delete",
+            "workflow:publish",
+            "workflow:run",
+            "kb:read",
+            "kb:create",
+            "kb:update",
+            "kb:delete",
+            "tool:read",
+            "tool:create",
+            "tool:update",
+            "tool:delete",
+            "tool:execute",
+            "apikey:read",
+            "apikey:create",
+            "apikey:update",
+            "apikey:delete",
+            "conversation:read",
+            "conversation:delete",
         ]
         for perm_code in member_permissions:
             perm = await Permission.filter(code=perm_code).first()
@@ -1084,7 +1207,9 @@ async def init_db():
         # Remove team:delete from Member role if present
         team_delete_perm = await Permission.filter(code="team:delete").first()
         if team_delete_perm:
-            existing = await member_role.permissions.filter(id=team_delete_perm.id).exists()
+            existing = await member_role.permissions.filter(
+                id=team_delete_perm.id
+            ).exists()
             if existing:
                 await member_role.permissions.remove(team_delete_perm)
                 logger.info("Removed team:delete permission from Member role")
@@ -1092,15 +1217,21 @@ async def init_db():
     # Viewer - read-only access plus execute permissions
     viewer_role, created = await Role.get_or_create(
         name="Viewer",
-        defaults={"description": "Read-only access with execute permissions", "is_system_role": True},
+        defaults={
+            "description": "Read-only access with execute permissions",
+            "is_system_role": True,
+        },
     )
     if created:
         viewer_permissions = [
             "team:read",
-            "agent:read", "agent:chat",
-            "workflow:read", "workflow:run",
+            "agent:read",
+            "agent:chat",
+            "workflow:read",
+            "workflow:run",
             "kb:read",
-            "tool:read", "tool:execute",
+            "tool:read",
+            "tool:execute",
             "apikey:read",
             "conversation:read",
         ]
@@ -1113,10 +1244,13 @@ async def init_db():
         # Ensure existing Viewer role has all required permissions
         viewer_permissions = [
             "team:read",
-            "agent:read", "agent:chat",
-            "workflow:read", "workflow:run",
+            "agent:read",
+            "agent:chat",
+            "workflow:read",
+            "workflow:run",
             "kb:read",
-            "tool:read", "tool:execute",
+            "tool:read",
+            "tool:execute",
             "apikey:read",
             "conversation:read",
         ]

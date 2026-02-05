@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class AgentService:
     """
     Service for executing agent chat interactions.
-    
+
     Supports:
     - Streaming and non-streaming responses
     - Tool calling with configurable iterations
@@ -39,7 +39,7 @@ class AgentService:
     ) -> dict[str, Any]:
         """
         Execute a non-streaming chat with the agent.
-        
+
         Args:
             agent: Agent instance
             message: User message
@@ -47,7 +47,7 @@ class AgentService:
             user_id: User ID for tracking
             max_turns: Maximum tool call iterations
             conversation_history: Previous messages in the conversation
-            
+
         Returns:
             dict with response, tool_calls, and usage
         """
@@ -57,21 +57,21 @@ class AgentService:
             context=context,
             conversation_history=conversation_history,
         )
-        
+
         tools = await self._get_agent_tools(agent)
-        
+
         # Get team model or default
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = str(agent.model_id) if agent.model_id else None
-        
+
         response_text = ""
         tool_calls = []
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        
+
         current_turn = 0
         while current_turn < max_turns:
             current_turn += 1
-            
+
             response = await model_manager.chat(
                 messages=messages,
                 tools=tools if tools else None,
@@ -79,23 +79,27 @@ class AgentService:
                 model=model_id,
                 user_id=user_id,
             )
-            
+
             # Accumulate usage
             if response.usage:
                 total_usage["prompt_tokens"] += response.usage.prompt_tokens or 0
-                total_usage["completion_tokens"] += response.usage.completion_tokens or 0
+                total_usage["completion_tokens"] += (
+                    response.usage.completion_tokens or 0
+                )
                 total_usage["total_tokens"] += response.usage.total_tokens or 0
-            
+
             # Check for tool calls
             if response.tool_calls:
                 tool_calls.extend([tc.model_dump() for tc in response.tool_calls])
 
                 # Add assistant message with tool calls
-                messages.append(Message(
-                    role=MessageRole.ASSISTANT,
-                    content=response.content or "",
-                    tool_calls=response.tool_calls,
-                ))
+                messages.append(
+                    Message(
+                        role=MessageRole.ASSISTANT,
+                        content=response.content or "",
+                        tool_calls=response.tool_calls,
+                    )
+                )
 
                 # Execute tools and add tool results
                 for tool_call in response.tool_calls:
@@ -105,11 +109,13 @@ class AgentService:
                     )
 
                     # Add tool result message
-                    messages.append(Message(
-                        role=MessageRole.TOOL,
-                        content=str(tool_result),
-                        tool_call_id=tool_call.id,
-                    ))
+                    messages.append(
+                        Message(
+                            role=MessageRole.TOOL,
+                            content=str(tool_result),
+                            tool_call_id=tool_call.id,
+                        )
+                    )
 
                 # Continue to next turn to get final response
                 continue
@@ -117,7 +123,7 @@ class AgentService:
                 # No tool calls, we have the final response
                 response_text = response.content or ""
                 break
-        
+
         return {
             "response": response_text,
             "tool_calls": tool_calls,
@@ -135,7 +141,7 @@ class AgentService:
     ) -> AsyncIterator[str | dict]:
         """
         Execute a streaming chat with the agent.
-        
+
         Yields:
             str for content tokens
             dict for tool calls and metadata ({"tool_call": ...} or {"usage": ...})
@@ -146,21 +152,21 @@ class AgentService:
             context=context,
             conversation_history=conversation_history,
         )
-        
+
         tools = await self._get_agent_tools(agent)
-        
+
         # Get team model or default
         team_id = str(agent.team_id) if agent.team_id else None
         model_id = str(agent.model_id) if agent.model_id else None
-        
+
         current_turn = 0
         while current_turn < max_turns:
             current_turn += 1
-            
+
             accumulated_content = ""
             accumulated_tool_calls = []
             final_usage = None
-            
+
             async for chunk in model_manager.chat_stream(
                 messages=messages,
                 tools=tools if tools else None,
@@ -171,27 +177,29 @@ class AgentService:
                 if chunk.delta.content:
                     accumulated_content += chunk.delta.content
                     yield chunk.delta.content
-                
+
                 if chunk.delta.tool_calls:
                     for tc in chunk.delta.tool_calls:
                         accumulated_tool_calls.append(tc)
                         yield {"tool_call": tc.model_dump()}
-                
+
                 if chunk.usage:
                     final_usage = chunk.usage
-            
+
             # Yield usage at the end
             if final_usage:
                 yield {"usage": final_usage.model_dump()}
-            
+
             # If there were tool calls, execute them
             if accumulated_tool_calls:
                 # Add assistant message with tool calls
-                messages.append(Message(
-                    role=MessageRole.ASSISTANT,
-                    content=accumulated_content,
-                    tool_calls=accumulated_tool_calls,
-                ))
+                messages.append(
+                    Message(
+                        role=MessageRole.ASSISTANT,
+                        content=accumulated_content,
+                        tool_calls=accumulated_tool_calls,
+                    )
+                )
 
                 # Execute tools and add results
                 for tool_call in accumulated_tool_calls:
@@ -201,11 +209,13 @@ class AgentService:
                     )
 
                     # Add tool result message
-                    messages.append(Message(
-                        role=MessageRole.TOOL,
-                        content=str(tool_result),
-                        tool_call_id=tool_call.id,
-                    ))
+                    messages.append(
+                        Message(
+                            role=MessageRole.TOOL,
+                            content=str(tool_result),
+                            tool_call_id=tool_call.id,
+                        )
+                    )
 
                 # Continue to next turn to get final response
                 continue
@@ -222,42 +232,48 @@ class AgentService:
     ) -> list[Message]:
         """Build message list for the chat."""
         messages = []
-        
+
         # System prompt
         system_prompt = agent.system_prompt or ""
-        
+
         # Add context variables to system prompt if provided
         if context:
             context_str = "\n\nContext:\n" + "\n".join(
                 f"- {k}: {v}" for k, v in context.items()
             )
             system_prompt += context_str
-        
+
         if system_prompt:
-            messages.append(Message(
-                role=MessageRole.SYSTEM,
-                content=system_prompt,
-            ))
-        
+            messages.append(
+                Message(
+                    role=MessageRole.SYSTEM,
+                    content=system_prompt,
+                )
+            )
+
         # Add conversation history
         if conversation_history:
             for msg in conversation_history:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                
+
                 if role == "user":
                     messages.append(Message(role=MessageRole.USER, content=content))
                 elif role == "assistant":
-                    messages.append(Message(role=MessageRole.ASSISTANT, content=content))
+                    messages.append(
+                        Message(role=MessageRole.ASSISTANT, content=content)
+                    )
                 elif role == "system":
                     messages.append(Message(role=MessageRole.SYSTEM, content=content))
-        
+
         # Add current user message
-        messages.append(Message(
-            role=MessageRole.USER,
-            content=message,
-        ))
-        
+        messages.append(
+            Message(
+                role=MessageRole.USER,
+                content=message,
+            )
+        )
+
         # RAG context (if enabled)
         if agent.rag_mode != RAGMode.OFF:
             rag_context = await self._retrieve_rag_context(agent, message)
@@ -268,18 +284,18 @@ class AgentService:
                     content=f"Relevant context:\n{rag_context}",
                 )
                 messages.insert(-1, context_message)
-        
+
         return messages
 
     async def _get_agent_tools(self, agent: Agent) -> list[ToolDefinition]:
         """Get tools configured for the agent."""
         tools = []
-        
+
         tools_config = agent.tools_config or []
-        
+
         for tool_cfg in tools_config:
             tool_type = tool_cfg.get("type", "")
-            
+
             if tool_type == "builtin":
                 # Built-in tools like web_search, code_interpreter, etc.
                 tool_name = tool_cfg.get("name", "")
@@ -289,27 +305,29 @@ class AgentService:
             elif tool_type == "mcp":
                 # MCP server tools - would need MCP integration
                 pass
-        
+
         # If agentic RAG, add search tool
         if agent.rag_mode == RAGMode.AGENTIC:
-            tools.append(ToolDefinition(
-                type="function",
-                function=FunctionDefinition(
-                    name="search_knowledge_base",
-                    description="Search the agent's knowledge base for relevant information",
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query",
+            tools.append(
+                ToolDefinition(
+                    type="function",
+                    function=FunctionDefinition(
+                        name="search_knowledge_base",
+                        description="Search the agent's knowledge base for relevant information",
+                        parameters={
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "Search query",
+                                },
                             },
+                            "required": ["query"],
                         },
-                        "required": ["query"],
-                    },
-                ),
-            ))
-        
+                    ),
+                )
+            )
+
         return tools
 
     def _get_builtin_tool(self, name: str) -> ToolDefinition | None:
@@ -371,28 +389,35 @@ class AgentService:
             else:
                 arguments = tool_call.function.arguments or {}
         except json.JSONDecodeError:
-            logger.error(f"Failed to parse tool arguments: {tool_call.function.arguments}")
+            logger.error(
+                f"Failed to parse tool arguments: {tool_call.function.arguments}"
+            )
             return {"error": "Invalid tool arguments"}
 
         # Get credentials for builtin tools
         credentials = {}
         team_id = agent.team_id
 
-        logger.info(f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}")
+        logger.info(
+            f"[TOOL EXEC] Executing tool '{tool_name}' for agent {agent.id}, team_id: {team_id}"
+        )
         logger.info(f"[TOOL EXEC] Arguments: {arguments}")
 
         # Try to get team-specific config first
         if team_id:
-            logger.info(f"[TOOL EXEC] Looking for team config: tool_name={tool_name}, team_id={team_id}")
+            logger.info(
+                f"[TOOL EXEC] Looking for team config: tool_name={tool_name}, team_id={team_id}"
+            )
             tool_config = await ToolConfig.filter(
-                tool_name=tool_name,
-                team_id=team_id
+                tool_name=tool_name, team_id=team_id
             ).first()
             if tool_config:
                 credentials = tool_config.credentials or {}
                 logger.info(f"[TOOL EXEC] Found team config for {tool_name}")
                 logger.info(f"[TOOL EXEC] Credentials keys: {list(credentials.keys())}")
-                logger.info(f"[TOOL EXEC] Has TAVILY_API_KEY: {'TAVILY_API_KEY' in credentials}")
+                logger.info(
+                    f"[TOOL EXEC] Has TAVILY_API_KEY: {'TAVILY_API_KEY' in credentials}"
+                )
             else:
                 logger.warning(f"[TOOL EXEC] No team config found for {tool_name}")
 
@@ -400,24 +425,27 @@ class AgentService:
         if not credentials:
             logger.info(f"[TOOL EXEC] Looking for global config: tool_name={tool_name}")
             global_config = await ToolConfig.filter(
-                tool_name=tool_name,
-                team_id=None
+                tool_name=tool_name, team_id=None
             ).first()
             if global_config:
                 credentials = global_config.credentials or {}
-                logger.info(f"[TOOL EXEC] Found global config for {tool_name}, has credentials: {bool(credentials)}")
+                logger.info(
+                    f"[TOOL EXEC] Found global config for {tool_name}, has credentials: {bool(credentials)}"
+                )
             else:
                 logger.warning(f"[TOOL EXEC] No global config found for {tool_name}")
 
-        logger.info(f"[TOOL EXEC] Final credentials for {tool_name}: {list(credentials.keys())}")
-        logger.info(f"[TOOL EXEC] Calling tool_registry.execute with credentials: {bool(credentials)}")
+        logger.info(
+            f"[TOOL EXEC] Final credentials for {tool_name}: {list(credentials.keys())}"
+        )
+        logger.info(
+            f"[TOOL EXEC] Calling tool_registry.execute with credentials: {bool(credentials)}"
+        )
 
         # Execute the tool
         try:
             result = await tool_registry.execute(
-                name=tool_name,
-                arguments=arguments,
-                credentials=credentials
+                name=tool_name, arguments=arguments, credentials=credentials
             )
             return result
         except Exception as e:
@@ -432,7 +460,9 @@ class AgentService:
         """Retrieve relevant context from knowledge bases."""
         try:
             # Load agent's knowledge bases
-            agent_kbs = await AgentKnowledgeBase.filter(agent_id=agent.id).prefetch_related("knowledge_base")
+            agent_kbs = await AgentKnowledgeBase.filter(
+                agent_id=agent.id
+            ).prefetch_related("knowledge_base")
 
             if not agent_kbs:
                 return None
@@ -454,11 +484,13 @@ class AgentService:
                 )
 
                 for result in results:
-                    all_chunks.append({
-                        "content": result.get("content", ""),
-                        "score": result.get("score", 0),
-                        "source": kb.name,
-                    })
+                    all_chunks.append(
+                        {
+                            "content": result.get("content", ""),
+                            "score": result.get("score", 0),
+                            "source": kb.name,
+                        }
+                    )
 
             if not all_chunks:
                 return None

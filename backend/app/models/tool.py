@@ -203,7 +203,9 @@ class ToolShare(models.Model):
     )
     shared_by_id: UUID | None  # type: ignore[assignment]
 
-    shared_at = fields.DatetimeField(auto_now_add=True, description="When the tool was shared")
+    shared_at = fields.DatetimeField(
+        auto_now_add=True, description="When the tool was shared"
+    )
 
     class Meta:
         table = "tool_shares"

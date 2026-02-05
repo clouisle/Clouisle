@@ -206,10 +206,14 @@ async def list_tools(
     builtin_tools = get_builtin_tools()
 
     # 获取团队的自定义工具（预加载创建者信息）
-    custom_db_tools = await Tool.filter(
-        team_id=team_id,
-        type=DBToolType.CUSTOM,
-    ).prefetch_related("created_by").order_by("-updated_at")
+    custom_db_tools = (
+        await Tool.filter(
+            team_id=team_id,
+            type=DBToolType.CUSTOM,
+        )
+        .prefetch_related("created_by")
+        .order_by("-updated_at")
+    )
 
     custom_tools = []
     for t in custom_db_tools:
@@ -224,10 +228,14 @@ async def list_tools(
         custom_tools.append(tool_out)
 
     # 获取团队的 MCP 工具（预加载创建者信息）
-    mcp_db_tools = await Tool.filter(
-        team_id=team_id,
-        type=DBToolType.MCP,
-    ).prefetch_related("created_by").order_by("-updated_at")
+    mcp_db_tools = (
+        await Tool.filter(
+            team_id=team_id,
+            type=DBToolType.MCP,
+        )
+        .prefetch_related("created_by")
+        .order_by("-updated_at")
+    )
 
     mcp_tools = []
     for t in mcp_db_tools:
@@ -244,9 +252,9 @@ async def list_tools(
     # 如果需要包含共享工具
     if include_shared:
         # 获取共享给该团队的工具
-        shares = await ToolShare.filter(
-            shared_with_team_id=team_id
-        ).prefetch_related("tool", "tool__team", "tool__created_by")
+        shares = await ToolShare.filter(shared_with_team_id=team_id).prefetch_related(
+            "tool", "tool__team", "tool__created_by"
+        )
 
         for share in shares:
             tool = share.tool
@@ -292,15 +300,15 @@ async def list_file_parsers(
 ) -> Any:
     """
     获取可用于文件上传功能的解析器列表
-    
+
     包括：
     - 内置的文件解析器（如 markitdown）
     - 自定义的文件解析工具（category=file）
     """
     await check_team_access(team_id, current_user)
-    
+
     parsers: list[ToolOut] = []
-    
+
     # 1. 获取内置的文件解析器
     for tool_info in tool_registry.get_all_tools():
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
@@ -328,20 +336,24 @@ async def list_file_parsers(
                     is_enabled=True,
                 )
             )
-    
+
     # 2. 获取自定义的文件解析工具（category=file 的自定义工具）
     custom_tools = await Tool.filter(
         team_id=team_id,
         is_enabled=True,
         category=ToolCategory.FILE,
     ).all()
-    
+
     for tool in custom_tools:
-        parameters = [
-            ToolParameterSchema(**p)
-            for p in (tool.http_config.get("parameters") or [])
-        ] if tool.http_config else []
-        
+        parameters = (
+            [
+                ToolParameterSchema(**p)
+                for p in (tool.http_config.get("parameters") or [])
+            ]
+            if tool.http_config
+            else []
+        )
+
         parsers.append(
             ToolOut(
                 id=str(tool.id),
@@ -355,7 +367,7 @@ async def list_file_parsers(
                 is_enabled=tool.is_enabled,
             )
         )
-    
+
     return success(data=parsers, msg_key="success")
 
 
@@ -629,8 +641,7 @@ async def test_tool(
             # 优先从团队配置获取，其次从全局配置获取
             if team_id:
                 tool_config = await ToolConfig.filter(
-                    tool_name=request.name,
-                    team_id=team_id
+                    tool_name=request.name, team_id=team_id
                 ).first()
                 if tool_config:
                     credentials = tool_config.credentials or {}
@@ -638,8 +649,7 @@ async def test_tool(
             # 如果团队配置不存在，尝试获取全局配置
             if not credentials:
                 global_config = await ToolConfig.filter(
-                    tool_name=request.name,
-                    team_id=None
+                    tool_name=request.name, team_id=None
                 ).first()
                 if global_config:
                     credentials = global_config.credentials or {}
@@ -647,13 +657,12 @@ async def test_tool(
             # 如果还是没有配置，尝试从环境变量获取（兜底）
             if not credentials:
                 from app.core.config import settings
-                if hasattr(settings, 'TAVILY_API_KEY') and settings.TAVILY_API_KEY:
-                    credentials['TAVILY_API_KEY'] = settings.TAVILY_API_KEY
+
+                if hasattr(settings, "TAVILY_API_KEY") and settings.TAVILY_API_KEY:
+                    credentials["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 
             result = await tool_registry.execute(
-                request.name,
-                request.arguments,
-                credentials=credentials
+                request.name, request.arguments, credentials=credentials
             )
             duration_ms = int((time.time() - start_time) * 1000)
 
@@ -949,11 +958,11 @@ async def list_tool_configs(
 ) -> Any:
     """
     获取工具配置列表
-    
+
     如果提供 team_id，返回该团队的配置；否则返回全局配置（仅超级管理员）
     """
     from app.models.tool_config import ToolConfig
-    
+
     if team_id:
         await check_team_access(team_id, current_user)
         configs = await ToolConfig.filter(team_id=team_id).all()
@@ -966,8 +975,9 @@ async def list_tool_configs(
                 status_code=403,
             )
         configs = await ToolConfig.filter(team_id=None).all()
-    
+
     from app.schemas.tool_config import ToolConfigOut
+
     return success(
         data=[ToolConfigOut.model_validate(c).model_dump() for c in configs],
         msg_key="success",
@@ -984,7 +994,7 @@ async def get_tool_config(
     获取指定工具的配置
     """
     from app.models.tool_config import ToolConfig
-    
+
     if team_id:
         await check_team_access(team_id, current_user)
         config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
@@ -1020,8 +1030,9 @@ async def get_tool_config(
                 msg_key="tool_config_not_found",
                 status_code=404,
             )
-    
+
     from app.schemas.tool_config import ToolConfigOut
+
     return success(
         data=ToolConfigOut.model_validate(config).model_dump(),
         msg_key="success",
@@ -1039,9 +1050,9 @@ async def create_tool_config(
     """
     from app.models.tool_config import ToolConfig
     from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
-    
+
     config_data = ToolConfigCreate(**data)
-    
+
     if team_id:
         await check_team_access(team_id, current_user)
     else:
@@ -1051,27 +1062,26 @@ async def create_tool_config(
                 msg_key="permission_denied",
                 status_code=403,
             )
-    
+
     # 检查是否已存在
     existing = await ToolConfig.filter(
-        tool_name=config_data.tool_name,
-        team_id=team_id
+        tool_name=config_data.tool_name, team_id=team_id
     ).first()
-    
+
     if existing:
         raise BusinessError(
             code=ResponseCode.DUPLICATE_NAME,
             msg_key="tool_config_already_exists",
             status_code=400,
         )
-    
+
     # 创建配置
     config = await ToolConfig.create(
         tool_name=config_data.tool_name,
         team_id=team_id,
         credentials=config_data.credentials,
     )
-    
+
     return success(
         data=ToolConfigOut.model_validate(config).model_dump(),
         msg_key="tool_config_created",
@@ -1090,9 +1100,9 @@ async def update_tool_config(
     """
     from app.models.tool_config import ToolConfig
     from app.schemas.tool_config import ToolConfigUpdate, ToolConfigOut
-    
+
     config_data = ToolConfigUpdate(**data)
-    
+
     if team_id:
         await check_team_access(team_id, current_user)
         config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
@@ -1104,18 +1114,18 @@ async def update_tool_config(
                 status_code=403,
             )
         config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-    
+
     if not config:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="tool_config_not_found",
             status_code=404,
         )
-    
+
     # 更新配置
     config.credentials = config_data.credentials
     await config.save()
-    
+
     return success(
         data=ToolConfigOut.model_validate(config).model_dump(),
         msg_key="tool_config_updated",
@@ -1132,7 +1142,7 @@ async def delete_tool_config(
     删除工具配置
     """
     from app.models.tool_config import ToolConfig
-    
+
     if team_id:
         await check_team_access(team_id, current_user)
         config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
@@ -1144,14 +1154,14 @@ async def delete_tool_config(
                 status_code=403,
             )
         config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-    
+
     if not config:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
             msg_key="tool_config_not_found",
             status_code=404,
         )
-    
+
     await config.delete()
 
     return success(
@@ -1205,8 +1215,7 @@ async def share_tool(
 
     # 检查是否已经共享
     existing_share = await ToolShare.filter(
-        tool_id=tool_id,
-        shared_with_team_id=share_data.team_id
+        tool_id=tool_id, shared_with_team_id=share_data.team_id
     ).first()
 
     if existing_share:
@@ -1267,9 +1276,11 @@ async def list_tool_shares(
     await check_team_access(tool.team_id, current_user)
 
     # 获取共享列表
-    shares = await ToolShare.filter(tool_id=tool_id).prefetch_related(
-        "tool", "shared_with_team", "shared_by"
-    ).order_by("-shared_at")
+    shares = (
+        await ToolShare.filter(tool_id=tool_id)
+        .prefetch_related("tool", "shared_with_team", "shared_by")
+        .order_by("-shared_at")
+    )
 
     share_list = [
         ToolShareOut(
@@ -1319,10 +1330,7 @@ async def unshare_tool(
     await check_team_access(tool.team_id, current_user, require_admin=True)
 
     # 查找共享记录
-    share = await ToolShare.filter(
-        tool_id=tool_id,
-        shared_with_team_id=team_id
-    ).first()
+    share = await ToolShare.filter(tool_id=tool_id, shared_with_team_id=team_id).first()
 
     if not share:
         raise BusinessError(
@@ -1352,9 +1360,9 @@ async def list_shared_tools(
     await check_team_access(team_id, current_user)
 
     # 获取共享给该团队的工具
-    shares = await ToolShare.filter(
-        shared_with_team_id=team_id
-    ).prefetch_related("tool", "tool__team", "tool__created_by")
+    shares = await ToolShare.filter(shared_with_team_id=team_id).prefetch_related(
+        "tool", "tool__team", "tool__created_by"
+    )
 
     custom_tools = []
     mcp_tools = []
@@ -1371,13 +1379,15 @@ async def list_shared_tools(
             type=ToolType.CUSTOM if tool.type == DBToolType.CUSTOM else ToolType.MCP,
             category=ToolCategory(tool.category),
             icon=tool.icon,
-            parameters=[
-                ToolParameterSchema(**param) for param in tool.parameters
-            ],
+            parameters=[ToolParameterSchema(**param) for param in tool.parameters],
             is_enabled=tool.is_enabled,
             custom_type=CustomToolType(tool.custom_type) if tool.custom_type else None,
-            http_config=HttpConfigSchema(**tool.http_config) if tool.http_config else None,
-            code_config=CodeConfigSchema(**tool.code_config) if tool.code_config else None,
+            http_config=HttpConfigSchema(**tool.http_config)
+            if tool.http_config
+            else None,
+            code_config=CodeConfigSchema(**tool.code_config)
+            if tool.code_config
+            else None,
             mcp_config=McpConfigSchema(**tool.mcp_config) if tool.mcp_config else None,
             # 共享相关字段
             is_owned=False,

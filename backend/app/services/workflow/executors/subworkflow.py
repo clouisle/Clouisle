@@ -88,7 +88,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         for mapping in input_mappings_raw:
             name = mapping.get("name", "")
             source = mapping.get("source", "variable")
-            
+
             if source == "variable":
                 var_ref = mapping.get("variableRef", "")
                 converted_mappings.append({"name": name, "value": var_ref})
@@ -107,7 +107,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             name = mapping.get("name", "")
             if not name:
                 continue
-            
+
             if "constantValue" in mapping:
                 inputs[name] = mapping["constantValue"]
             else:
@@ -157,7 +157,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
 
             # Map outputs
             sub_outputs = sub_run.outputs or {}
-            
+
             # Frontend uses outputVariable as a single output name that contains all sub-workflow outputs
             # If outputVariable is set, wrap all outputs under that key
             if output_variable:
@@ -204,10 +204,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         """Get output variables from config."""
         output_mapping = config.get("outputMapping", {})
         if output_mapping:
-            return [
-                {"name": name, "type": "any"}
-                for name in output_mapping.keys()
-            ]
+            return [{"name": name, "type": "any"} for name in output_mapping.keys()]
         return [{"name": "result", "type": "any"}]
 
 

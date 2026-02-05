@@ -40,7 +40,7 @@ class RetryPolicy:
     def get_delay(self, attempt: int) -> float:
         """Calculate delay for a retry attempt."""
         delay = min(
-            self.base_delay * (self.exponential_base ** attempt),
+            self.base_delay * (self.exponential_base**attempt),
             self.max_delay,
         )
 
@@ -109,9 +109,7 @@ async def with_retry(
                 )
                 await asyncio.sleep(delay)
             else:
-                logger.error(
-                    f"All {policy.max_retries} retries exhausted. Error: {e}"
-                )
+                logger.error(f"All {policy.max_retries} retries exhausted. Error: {e}")
 
     raise last_exception
 
@@ -307,9 +305,7 @@ class CircuitBreaker:
         elif self._state == "closed" and self._failure_count >= self.failure_threshold:
             # Too many failures, open the circuit
             self._state = "open"
-            logger.warning(
-                f"Circuit breaker opened - {self._failure_count} failures"
-            )
+            logger.warning(f"Circuit breaker opened - {self._failure_count} failures")
 
     def reset(self) -> None:
         """Reset the circuit breaker."""

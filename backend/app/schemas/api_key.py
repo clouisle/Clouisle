@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class APIKeyUserInfo(BaseModel):
     """API Key 关联的用户简要信息"""
+
     id: UUID
     username: str
 
@@ -16,6 +17,7 @@ class APIKeyUserInfo(BaseModel):
 
 class APIKeyAgentInfo(BaseModel):
     """API Key 关联的 Agent 简要信息"""
+
     id: UUID
     name: str
     icon: Optional[str] = None
@@ -26,6 +28,7 @@ class APIKeyAgentInfo(BaseModel):
 
 class APIKeyWorkflowInfo(BaseModel):
     """API Key 关联的 Workflow 简要信息"""
+
     id: UUID
     name: str
     icon: Optional[str] = None
@@ -36,31 +39,45 @@ class APIKeyWorkflowInfo(BaseModel):
 
 class APIKeyBase(BaseModel):
     """API Key 基础字段"""
+
     name: str = Field(..., min_length=1, max_length=100, description="API Key name")
     scopes: List[str] = Field(default=["chat"], description="Permission scopes")
-    rate_limit: int = Field(default=1000, ge=0, description="Rate limit per minute, 0 means unlimited")
+    rate_limit: int = Field(
+        default=1000, ge=0, description="Rate limit per minute, 0 means unlimited"
+    )
     expires_at: Optional[datetime] = Field(None, description="Expiration time")
 
 
 class APIKeyCreate(APIKeyBase):
     """创建 API Key 请求"""
-    agent_ids: List[UUID] = Field(default=[], description="List of Agent IDs this key can access")
-    workflow_ids: List[UUID] = Field(default=[], description="List of Workflow IDs this key can access")
+
+    agent_ids: List[UUID] = Field(
+        default=[], description="List of Agent IDs this key can access"
+    )
+    workflow_ids: List[UUID] = Field(
+        default=[], description="List of Workflow IDs this key can access"
+    )
 
 
 class APIKeyUpdate(BaseModel):
     """更新 API Key 请求"""
+
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     scopes: Optional[List[str]] = None
     rate_limit: Optional[int] = Field(None, ge=0)
     expires_at: Optional[datetime] = None
     is_active: Optional[bool] = None
-    agent_ids: Optional[List[UUID]] = Field(None, description="List of Agent IDs this key can access")
-    workflow_ids: Optional[List[UUID]] = Field(None, description="List of Workflow IDs this key can access")
+    agent_ids: Optional[List[UUID]] = Field(
+        None, description="List of Agent IDs this key can access"
+    )
+    workflow_ids: Optional[List[UUID]] = Field(
+        None, description="List of Workflow IDs this key can access"
+    )
 
 
 class APIKeyResponse(BaseModel):
     """API Key 响应"""
+
     id: UUID
     name: str
     key_prefix: str = Field(..., description="Key prefix for identification")
@@ -71,8 +88,12 @@ class APIKeyResponse(BaseModel):
     is_active: bool
     expires_at: Optional[datetime]
     last_used_at: Optional[datetime]
-    agents: List[APIKeyAgentInfo] = Field(default=[], description="Agents this key can access")
-    workflows: List[APIKeyWorkflowInfo] = Field(default=[], description="Workflows this key can access")
+    agents: List[APIKeyAgentInfo] = Field(
+        default=[], description="Agents this key can access"
+    )
+    workflows: List[APIKeyWorkflowInfo] = Field(
+        default=[], description="Workflows this key can access"
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -82,11 +103,13 @@ class APIKeyResponse(BaseModel):
 
 class APIKeyCreateResponse(APIKeyResponse):
     """创建 API Key 响应（包含完整密钥，仅在创建时返回一次）"""
+
     key: str = Field(..., description="Full API key, only shown once")
 
 
 class APIKeyStats(BaseModel):
     """API Key 统计"""
+
     total: int
     active: int
     inactive: int

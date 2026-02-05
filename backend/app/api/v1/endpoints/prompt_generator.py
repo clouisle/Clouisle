@@ -26,35 +26,47 @@ logger = logging.getLogger(__name__)
 
 class PromptGenerateContext(BaseModel):
     """Context information for prompt generation."""
-    
+
     agent_name: str | None = Field(None, description="Agent name")
     agent_description: str | None = Field(None, description="Agent description")
     tools: list[dict] | None = Field(None, description="Configured tools")
-    knowledge_bases: list[dict] | None = Field(None, description="Linked knowledge bases")
+    knowledge_bases: list[dict] | None = Field(
+        None, description="Linked knowledge bases"
+    )
     variables: list[dict] | None = Field(None, description="Defined variables")
 
 
 class PromptStyle(BaseModel):
     """Prompt generation style options."""
-    
-    tone: str = Field("professional", description="Tone: professional, friendly, concise, detailed")
-    focus: str = Field("balanced", description="Focus: task-oriented, conversational, balanced")
-    include_cot: bool = Field(False, description="Include chain-of-thought instructions")
+
+    tone: str = Field(
+        "professional", description="Tone: professional, friendly, concise, detailed"
+    )
+    focus: str = Field(
+        "balanced", description="Focus: task-oriented, conversational, balanced"
+    )
+    include_cot: bool = Field(
+        False, description="Include chain-of-thought instructions"
+    )
     include_constraints: bool = Field(True, description="Include behavior constraints")
 
 
 class PromptGenerateRequest(BaseModel):
     """Request body for prompt generation."""
-    
-    description: str = Field(..., description="User's description of what the agent should do")
-    context: PromptGenerateContext | None = Field(None, description="Current agent context")
+
+    description: str = Field(
+        ..., description="User's description of what the agent should do"
+    )
+    context: PromptGenerateContext | None = Field(
+        None, description="Current agent context"
+    )
     style: PromptStyle | None = Field(None, description="Generation style options")
     language: str = Field("zh", description="Output language: zh or en")
 
 
 class SSEEventType:
     """SSE event types for prompt generation."""
-    
+
     START = "start"
     CONTENT_DELTA = "content_delta"
     COMPLETE = "complete"
@@ -116,27 +128,29 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
     """Build context string from agent configuration."""
     if not context:
         return "无额外上下文" if language == "zh" else "No additional context"
-    
+
     parts = []
-    
+
     if context.agent_name:
         label = "Agent 名称" if language == "zh" else "Agent Name"
         parts.append(f"- {label}: {context.agent_name}")
-    
+
     if context.agent_description:
         label = "Agent 描述" if language == "zh" else "Agent Description"
         parts.append(f"- {label}: {context.agent_description}")
-    
+
     if context.tools:
         label = "可用工具" if language == "zh" else "Available Tools"
-        tool_names = [t.get("name", t.get("display_name", "unknown")) for t in context.tools]
+        tool_names = [
+            t.get("name", t.get("display_name", "unknown")) for t in context.tools
+        ]
         parts.append(f"- {label}: {', '.join(tool_names)}")
-    
+
     if context.knowledge_bases:
         label = "关联知识库" if language == "zh" else "Linked Knowledge Bases"
         kb_names = [kb.get("name", "unknown") for kb in context.knowledge_bases]
         parts.append(f"- {label}: {', '.join(kb_names)}")
-    
+
     if context.variables:
         label = "自定义变量" if language == "zh" else "Custom Variables"
         var_list = []
@@ -148,10 +162,10 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
             else:
                 var_list.append(var_name)
         parts.append(f"- {label}: {', '.join(var_list)}")
-    
+
     if not parts:
         return "无额外上下文" if language == "zh" else "No additional context"
-    
+
     return "\n".join(parts)
 
 
@@ -193,21 +207,27 @@ def build_style_requirements(style: PromptStyle | None, language: str) -> str:
     """Build additional style requirements."""
     if not style:
         return ""
-    
+
     requirements = []
-    
+
     if style.include_cot:
         if language == "zh":
-            requirements.append("- 包含思维链（Chain-of-Thought）引导，让 Agent 展示推理过程")
+            requirements.append(
+                "- 包含思维链（Chain-of-Thought）引导，让 Agent 展示推理过程"
+            )
         else:
-            requirements.append("- Include Chain-of-Thought guidance for showing reasoning process")
-    
+            requirements.append(
+                "- Include Chain-of-Thought guidance for showing reasoning process"
+            )
+
     if style.include_constraints:
         if language == "zh":
             requirements.append("- 包含行为约束和安全边界")
         else:
-            requirements.append("- Include behavioral constraints and safety boundaries")
-    
+            requirements.append(
+                "- Include behavioral constraints and safety boundaries"
+            )
+
     return "\n".join(requirements) if requirements else ""
 
 
@@ -221,16 +241,16 @@ async def generate_prompt(
 ) -> StreamingResponse:
     """
     Generate system prompt using AI (streaming SSE).
-    
+
     Uses the default chat model to generate prompts.
-    
+
     Returns Server-Sent Events:
     - start: Generation started
     - content_delta: {"delta": "..."}
     - complete: Generation complete
     - error: {"code": ..., "msg": "..."}
     """
-    
+
     async def event_generator():
         try:
             # Get default chat model
@@ -243,17 +263,19 @@ async def generate_prompt(
             if not default_model:
                 yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': 'no_chat_model_available'})}\n\n"
                 return
-            
+
             # Build meta-prompt
             language = request.language or "zh"
             style = request.style or PromptStyle()
-            
+
             context_str = build_context_string(request.context, language)
             tone_desc = get_tone_description(style.tone, language)
             focus_desc = get_focus_description(style.focus, language)
             style_requirements = build_style_requirements(style, language)
-            
-            meta_prompt_template = META_PROMPT_ZH if language == "zh" else META_PROMPT_EN
+
+            meta_prompt_template = (
+                META_PROMPT_ZH if language == "zh" else META_PROMPT_EN
+            )
             meta_prompt = meta_prompt_template.format(
                 description=request.description,
                 context=context_str,
@@ -261,31 +283,31 @@ async def generate_prompt(
                 focus_desc=focus_desc,
                 style_requirements=style_requirements,
             )
-            
+
             # Send start event
             yield f"event: {SSEEventType.START}\ndata: {json.dumps({'model': default_model.name})}\n\n"
-            
+
             # Import LLM manager
             from app.llm.adapters.chat.factory import create_chat_model
             from langchain_core.messages import HumanMessage
-            
+
             # Create chat model
             chat_model = create_chat_model(default_model)
-            
+
             # Stream the response
             full_content = ""
             async for chunk in chat_model.astream([HumanMessage(content=meta_prompt)]):
-                if hasattr(chunk, 'content') and chunk.content:
+                if hasattr(chunk, "content") and chunk.content:
                     full_content += chunk.content
                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.content})}\n\n"
-            
+
             # Send complete event
             yield f"event: {SSEEventType.COMPLETE}\ndata: {json.dumps({'total_length': len(full_content)})}\n\n"
-            
+
         except Exception as e:
             logger.exception(f"Error generating prompt: {e}")
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -305,10 +327,10 @@ async def optimize_prompt(
 ) -> StreamingResponse:
     """
     Optimize an existing prompt based on feedback (streaming SSE).
-    
+
     This endpoint is for iterative improvement of prompts.
     """
-    
+
     async def event_generator():
         try:
             # Get default chat model
@@ -335,30 +357,32 @@ async def optimize_prompt(
 请直接输出优化后的完整系统提示词，不要包含任何解释或前缀。
 
 请开始输出优化后的提示词："""
-            
+
             # Send start event
             yield f"event: {SSEEventType.START}\ndata: {json.dumps({'model': default_model.name})}\n\n"
-            
+
             # Import and create chat model
             from app.llm.adapters.chat.factory import create_chat_model
             from langchain_core.messages import HumanMessage
-            
+
             chat_model = create_chat_model(default_model)
-            
+
             # Stream the response
             full_content = ""
-            async for chunk in chat_model.astream([HumanMessage(content=optimize_prompt_text)]):
-                if hasattr(chunk, 'content') and chunk.content:
+            async for chunk in chat_model.astream(
+                [HumanMessage(content=optimize_prompt_text)]
+            ):
+                if hasattr(chunk, "content") and chunk.content:
                     full_content += chunk.content
                     yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.content})}\n\n"
-            
+
             # Send complete event
             yield f"event: {SSEEventType.COMPLETE}\ndata: {json.dumps({'total_length': len(full_content)})}\n\n"
-            
+
         except Exception as e:
             logger.exception(f"Error optimizing prompt: {e}")
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",

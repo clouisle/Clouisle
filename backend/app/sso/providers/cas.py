@@ -49,9 +49,7 @@ class CASProvider(BaseSSOProvider):
 
         return user_info
 
-    async def _validate_ticket(
-        self, ticket: str, service_url: str
-    ) -> Dict[str, Any]:
+    async def _validate_ticket(self, ticket: str, service_url: str) -> Dict[str, Any]:
         """
         Validate CAS ticket and get user info
 
@@ -137,7 +135,9 @@ class CASProvider(BaseSSOProvider):
                     if attributes is not None:
                         for attr in attributes:
                             # Remove namespace prefix from tag
-                            tag = attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
+                            tag = (
+                                attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
+                            )
                             user_info[tag] = attr.text
 
                 return user_info

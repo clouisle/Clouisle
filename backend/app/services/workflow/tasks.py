@@ -174,9 +174,7 @@ def execute_stage_task(
     for node_id in node_ids:
         node_data = nodes_data.get(node_id, {})
         node_type = node_data.get("data", {}).get("type", "unknown")
-        tasks.append(
-            execute_node_task.s(run_id, node_id, node_type, node_data)
-        )
+        tasks.append(execute_node_task.s(run_id, node_id, node_type, node_data))
 
     # Execute in parallel
     job = group(tasks)

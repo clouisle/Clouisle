@@ -62,7 +62,9 @@ async def check_team_access(team_id: UUID, user: User) -> Team:
     return team
 
 
-async def get_user_team_agent_ids(user: User, team_id: UUID | None = None) -> list[UUID]:
+async def get_user_team_agent_ids(
+    user: User, team_id: UUID | None = None
+) -> list[UUID]:
     """Get agent IDs that the user has access to."""
     if team_id:
         # Verify access to specific team
@@ -73,8 +75,12 @@ async def get_user_team_agent_ids(user: User, team_id: UUID | None = None) -> li
         agent_ids = await Agent.all().values_list("id", flat=True)
     else:
         # Get teams user belongs to
-        memberships = await TeamMember.filter(user=user).values_list("team_id", flat=True)
-        agent_ids = await Agent.filter(team_id__in=memberships).values_list("id", flat=True)
+        memberships = await TeamMember.filter(user=user).values_list(
+            "team_id", flat=True
+        )
+        agent_ids = await Agent.filter(team_id__in=memberships).values_list(
+            "id", flat=True
+        )
 
     return list(agent_ids)
 
@@ -161,9 +167,12 @@ async def list_all_conversations(
 
     # Paginate
     skip = (page - 1) * page_size
-    conversations = await query.select_related(
-        "agent", "user"
-    ).order_by("-updated_at").offset(skip).limit(page_size)
+    conversations = (
+        await query.select_related("agent", "user")
+        .order_by("-updated_at")
+        .offset(skip)
+        .limit(page_size)
+    )
 
     # Build response with additional info
     conv_list = []
@@ -246,11 +255,12 @@ async def get_conversation_stats(
     if has_dashboard_access:
         agent_stats_query = Conversation.filter(agent_id__in=agent_ids)
     else:
-        agent_stats_query = Conversation.filter(agent_id__in=agent_ids, user_id=current_user.id)
+        agent_stats_query = Conversation.filter(
+            agent_id__in=agent_ids, user_id=current_user.id
+        )
 
     agent_stats = (
-        await agent_stats_query
-        .annotate(count=Count("id"))
+        await agent_stats_query.annotate(count=Count("id"))
         .group_by("agent_id")
         .order_by("-count")
         .limit(10)
@@ -325,21 +335,24 @@ async def get_conversation_trends(
         for i in range(num_points):
             point_date = (now_local - timedelta(days=num_points - i - 1)).date()
             label = point_date.strftime("%m/%d")
-            data_points.append({
-                "date": label,
-                "conversations": 0,
-                "messages": 0,
-                "tokens": 0,
-            })
-        return success(data={
-            "period": period,
-            "data": data_points,
-        })
+            data_points.append(
+                {
+                    "date": label,
+                    "conversations": 0,
+                    "messages": 0,
+                    "tokens": 0,
+                }
+            )
+        return success(
+            data={
+                "period": period,
+                "data": data_points,
+            }
+        )
 
     # Get all conversations in the period for accessible agents
     conv_query = Conversation.filter(
-        created_at__gte=start_time_utc,
-        agent_id__in=agent_ids
+        created_at__gte=start_time_utc, agent_id__in=agent_ids
     )
     # Member/Viewer can only see their own conversations
     if not has_dashboard_access:
@@ -352,8 +365,7 @@ async def get_conversation_trends(
     # Get all messages in the period for these conversations
     if conv_ids:
         msg_query = Message.filter(
-            created_at__gte=start_time_utc,
-            conversation_id__in=conv_ids
+            created_at__gte=start_time_utc, conversation_id__in=conv_ids
         )
         messages = await msg_query.values("created_at", "token_usage", "role")
     else:
@@ -363,7 +375,9 @@ async def get_conversation_trends(
     data_points = []
     for i in range(num_points):
         point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now_local.tzinfo)
+        point_start = datetime.combine(point_date, datetime.min.time()).replace(
+            tzinfo=now_local.tzinfo
+        )
         point_end = point_start + timedelta(days=1)
 
         # Count conversations created in this day
@@ -375,8 +389,7 @@ async def get_conversation_trends(
 
         # Count messages and tokens in this day
         msgs_in_period = [
-            m for m in messages
-            if point_start <= to_local(m["created_at"]) < point_end
+            m for m in messages if point_start <= to_local(m["created_at"]) < point_end
         ]
         msg_count = len(msgs_in_period)
 
@@ -384,23 +397,27 @@ async def get_conversation_trends(
         tokens = 0
         for m in msgs_in_period:
             if m["token_usage"]:
-                tokens += (m["token_usage"].get("prompt", 0) or 0)
-                tokens += (m["token_usage"].get("completion", 0) or 0)
+                tokens += m["token_usage"].get("prompt", 0) or 0
+                tokens += m["token_usage"].get("completion", 0) or 0
 
         # Format label based on locale (use simple format for now)
         label = point_date.strftime("%m/%d")
 
-        data_points.append({
-            "date": label,
-            "conversations": conv_count,
-            "messages": msg_count,
-            "tokens": tokens,
-        })
+        data_points.append(
+            {
+                "date": label,
+                "conversations": conv_count,
+                "messages": msg_count,
+                "tokens": tokens,
+            }
+        )
 
-    return success(data={
-        "period": period,
-        "data": data_points,
-    })
+    return success(
+        data={
+            "period": period,
+            "data": data_points,
+        }
+    )
 
 
 @router.get("/{conversation_id}", response_model=Response[ConversationWithMessages])
@@ -557,6 +574,7 @@ async def delete_conversation_admin(
 
     # Update agent stats
     from tortoise.expressions import F
+
     await Agent.filter(id=conversation.agent_id).update(
         conversation_count=F("conversation_count") - 1,
         message_count=F("message_count") - conversation.message_count,

@@ -137,8 +137,16 @@ class TestExecutionPlanFromWorkflow:
             ],
             "edges": [
                 {"source": "start", "target": "condition"},
-                {"source": "condition", "target": "branch_true", "sourceHandle": "true"},
-                {"source": "condition", "target": "branch_false", "sourceHandle": "false"},
+                {
+                    "source": "condition",
+                    "target": "branch_true",
+                    "sourceHandle": "true",
+                },
+                {
+                    "source": "condition",
+                    "target": "branch_false",
+                    "sourceHandle": "false",
+                },
                 {"source": "branch_true", "target": "end"},
                 {"source": "branch_false", "target": "end"},
             ],

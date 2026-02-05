@@ -114,7 +114,11 @@ async def check_agent_access(
     if agent.visibility == AgentVisibility.PRIVATE:
         # Only creator can access private agents
         # If creator is deleted, treat as team-level access
-        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
@@ -198,7 +202,9 @@ async def build_agent_out(agent: Agent) -> dict:
         "tools_config": agent.tools_config or [],
         "enable_vision": agent.enable_vision,
         "enable_file_upload": agent.enable_file_upload,
-        "file_upload_config": agent.file_upload_config if agent.file_upload_config else None,
+        "file_upload_config": agent.file_upload_config
+        if agent.file_upload_config
+        else None,
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -487,10 +493,14 @@ async def update_agent(
 
     # Check for duplicate name within the same team (exclude self)
     if agent_in.name is not None and agent_in.name != agent.name:
-        existing = await Agent.filter(
-            team_id=agent.team_id,
-            name=agent_in.name,
-        ).exclude(id=agent_id).first()
+        existing = (
+            await Agent.filter(
+                team_id=agent.team_id,
+                name=agent_in.name,
+            )
+            .exclude(id=agent_id)
+            .first()
+        )
         if existing:
             raise BusinessError(
                 code=ResponseCode.DUPLICATE_NAME,
@@ -559,7 +569,11 @@ async def update_agent(
         agent.enable_file_upload = agent_in.enable_file_upload
         updated_fields.append("enable_file_upload")
     if agent_in.file_upload_config is not None:
-        agent.file_upload_config = agent_in.file_upload_config.model_dump() if hasattr(agent_in.file_upload_config, 'model_dump') else agent_in.file_upload_config
+        agent.file_upload_config = (
+            agent_in.file_upload_config.model_dump()
+            if hasattr(agent_in.file_upload_config, "model_dump")
+            else agent_in.file_upload_config
+        )
         updated_fields.append("file_upload_config")
 
     # Update rag_mode

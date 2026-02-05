@@ -143,7 +143,7 @@ class ExecutionContext:
         """
         # Store inputs as outputs of the _inputs pseudo-node
         await self.set_node_outputs("_inputs", inputs)
-        
+
         # Also store as sys.inputs.xxx variables for start node executor
         for key, value in inputs.items():
             await self.set_variable(f"sys.inputs.{key}", value)
@@ -180,26 +180,28 @@ class ExecutionContext:
             outputs: Output variables dictionary
         """
         from .lazy_stream import LazyStreamResult
-        
+
         # Separate serializable and non-serializable (lazy) outputs
         serializable_outputs = {}
         lazy_outputs = {}
-        
+
         for key, value in outputs.items():
             if isinstance(value, LazyStreamResult):
                 lazy_outputs[key] = value
                 serializable_outputs[key] = "__LAZY_STREAM__"  # Placeholder
             else:
                 serializable_outputs[key] = value
-        
+
         # Store serializable outputs in Redis
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
-        await self.redis.hset(key, node_id, json.dumps(serializable_outputs, ensure_ascii=False))
-        
+        await self.redis.hset(
+            key, node_id, json.dumps(serializable_outputs, ensure_ascii=False)
+        )
+
         # Store lazy outputs in memory
         if lazy_outputs:
             self._memory_cache[node_id] = lazy_outputs
-        
+
         logger.debug(f"Set outputs for node {node_id}: {list(outputs.keys())}")
 
     async def get_node_outputs(self, node_id: str) -> dict[str, Any] | None:
@@ -216,14 +218,14 @@ class ExecutionContext:
         value = await self.redis.hget(key, node_id)
         if not value:
             return None
-        
+
         outputs = json.loads(value)
-        
+
         # Merge lazy outputs from memory cache
         if node_id in self._memory_cache:
             for key, lazy_value in self._memory_cache[node_id].items():
                 outputs[key] = lazy_value
-        
+
         return outputs
 
     async def get_all_node_outputs(self) -> dict[str, dict[str, Any]]:
@@ -238,7 +240,9 @@ class ExecutionContext:
         """Get a system variable value."""
         return self._system_variables.get(name)
 
-    async def resolve_variable_ref(self, ref: str, stream_to_node_id: str | None = None) -> Any:
+    async def resolve_variable_ref(
+        self, ref: str, stream_to_node_id: str | None = None
+    ) -> Any:
         """
         Resolve a variable reference.
 
@@ -277,11 +281,15 @@ class ExecutionContext:
         for match in re.finditer(pattern, ref):
             var_path = match.group(1).strip()
             value = await self._resolve_single_variable(var_path, stream_to_node_id)
-            result = result.replace(match.group(0), str(value) if value is not None else "")
+            result = result.replace(
+                match.group(0), str(value) if value is not None else ""
+            )
 
         return result
 
-    async def _resolve_single_variable(self, var_path: str, stream_to_node_id: str | None = None) -> Any:
+    async def _resolve_single_variable(
+        self, var_path: str, stream_to_node_id: str | None = None
+    ) -> Any:
         """
         Resolve a single variable path.
 
@@ -294,7 +302,7 @@ class ExecutionContext:
             Resolved value or None
         """
         from .lazy_stream import LazyStreamResult
-        
+
         parts = var_path.split(".", 1)
 
         if len(parts) == 1:
@@ -303,17 +311,17 @@ class ExecutionContext:
             # 1. A node ID returning all outputs
             # 2. An input variable name (no node prefix)
             # 3. A global variable name
-            
+
             # First try as input variable (stored under _inputs)
             inputs = await self.get_node_outputs("_inputs")
             if inputs and var_name in inputs:
                 return inputs[var_name]
-            
+
             # Try as a global variable
             global_value = await self.get_variable(var_name)
             if global_value is not None:
                 return global_value
-            
+
             # Then try as node ID returning all outputs
             outputs = await self.get_node_outputs(var_name)
             return outputs
@@ -323,7 +331,7 @@ class ExecutionContext:
         if source == "sys":
             # System variable
             return self._get_system_variable(var_name)
-        
+
         if source == "conversation":
             # Conversation variable (stored via variable assignment node)
             return await self.get_variable(var_name)
@@ -332,17 +340,19 @@ class ExecutionContext:
         outputs = await self.get_node_outputs(source)
         if outputs:
             value = outputs.get(var_name)
-            
+
             # Check if it's a lazy stream result
             if isinstance(value, LazyStreamResult):
                 # Execute the lazy result, streaming to the specified node
-                logger.info(f"Executing lazy stream result for {var_path}, streaming to {stream_to_node_id}")
+                logger.info(
+                    f"Executing lazy stream result for {var_path}, streaming to {stream_to_node_id}"
+                )
                 result = await value.execute(stream_to_node_id)
                 # Update the stored value with the actual result
                 outputs[var_name] = result
                 await self.set_node_outputs(source, outputs)
                 return result
-            
+
             return value
 
         return None

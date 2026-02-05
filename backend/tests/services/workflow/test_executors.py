@@ -240,10 +240,12 @@ class TestTemplateExecutor:
         }
 
         context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(side_effect=lambda x: {
-            "name": "Alice",
-            "count": "5",
-        }.get(x, ""))
+        context.get_variable = AsyncMock(
+            side_effect=lambda x: {
+                "name": "Alice",
+                "count": "5",
+            }.get(x, "")
+        )
 
         run = MagicMock()
 
@@ -304,11 +306,13 @@ class TestVariableExecutors:
         }
 
         context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(side_effect=lambda x: {
-            "result1": "a",
-            "result2": "b",
-            "result3": "c",
-        }.get(x))
+        context.get_variable = AsyncMock(
+            side_effect=lambda x: {
+                "result1": "a",
+                "result2": "b",
+                "result3": "c",
+            }.get(x)
+        )
         context.set_variable = AsyncMock()
 
         run = MagicMock()
@@ -340,10 +344,12 @@ class TestIterationExecutors:
         }
 
         context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(side_effect=lambda x: {
-            "items": [1, 2, 3],
-            "iter_1_index": None,  # First iteration
-        }.get(x))
+        context.get_variable = AsyncMock(
+            side_effect=lambda x: {
+                "items": [1, 2, 3],
+                "iter_1_index": None,  # First iteration
+            }.get(x)
+        )
         context.set_variable = AsyncMock()
 
         run = MagicMock()
@@ -372,10 +378,12 @@ class TestIterationExecutors:
         }
 
         context = MagicMock(spec=ExecutionContext)
-        context.get_variable = AsyncMock(side_effect=lambda x: {
-            "items": [1, 2, 3],
-            "iter_1_index": 3,  # Past end
-        }.get(x))
+        context.get_variable = AsyncMock(
+            side_effect=lambda x: {
+                "items": [1, 2, 3],
+                "iter_1_index": 3,  # Past end
+            }.get(x)
+        )
         context.set_variable = AsyncMock()
 
         run = MagicMock()
@@ -417,7 +425,9 @@ class TestToolExecutors:
             mock_response.json = AsyncMock(return_value={"data": "test"})
             mock_response.headers = {}
 
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session.return_value)
+            mock_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_session.return_value
+            )
             mock_session.return_value.__aexit__ = AsyncMock()
             mock_session.return_value.request = AsyncMock(return_value=mock_response)
             mock_response.__aenter__ = AsyncMock(return_value=mock_response)

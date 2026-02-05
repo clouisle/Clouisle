@@ -69,21 +69,23 @@ async def send_slack_notification(
 
         # 添加链接按钮
         if link_url:
-            blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "View Details",
-                            "emoji": True,
+            blocks.append(
+                {
+                    "type": "actions",
+                    "elements": [
+                        {
+                            "type": "button",
+                            "text": {
+                                "type": "plain_text",
+                                "text": "View Details",
+                                "emoji": True,
+                            },
+                            "url": link_url,
+                            "style": "primary",
                         },
-                        "url": link_url,
-                        "style": "primary",
-                    },
-                ],
-            })
+                    ],
+                }
+            )
 
         # 构建消息体
         message = {

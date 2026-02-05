@@ -57,16 +57,18 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute variable assignment node.
-        
+
         This node modifies the original node's output so that all downstream
         references to the variable will get the new value.
         """
         node_data = node.get("data", {})
         # Try variableAssignmentConfig first (frontend structure), then fall back to config
-        config = node_data.get("variableAssignmentConfig") or node_data.get("config", {})
-        
+        config = node_data.get("variableAssignmentConfig") or node_data.get(
+            "config", {}
+        )
+
         logger.info(f"Variable assignment node: {node.get('id')}, config: {config}")
-        
+
         assignments = config.get("assignments", [])
 
         outputs = {}
@@ -86,7 +88,7 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
             name = target_var
 
             if name.startswith("conversation."):
-                name = name[len("conversation."):]
+                name = name[len("conversation.") :]
             elif "." in name and not name.startswith("sys."):
                 # Format: nodeId.varName (e.g., "iteration-123.results")
                 parts = name.rsplit(".", 1)
@@ -97,7 +99,9 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
             if operation == "overwrite":
                 var_ref = assignment.get("variableRef", "")
                 value = await context.resolve_variable_ref(var_ref)
-                logger.info(f"Variable assignment overwrite: var_ref={var_ref}, value={value}")
+                logger.info(
+                    f"Variable assignment overwrite: var_ref={var_ref}, value={value}"
+                )
             elif operation == "set":
                 value = assignment.get("constantValue", "")
             elif operation == "clear":
@@ -106,14 +110,18 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                 # Append based on target type
                 var_ref = assignment.get("variableRef", "")
                 append_value = await context.resolve_variable_ref(var_ref)
-                logger.info(f"Variable assignment append: var_ref={var_ref}, append_value={append_value}")
+                logger.info(
+                    f"Variable assignment append: var_ref={var_ref}, append_value={append_value}"
+                )
 
                 # Get current value of target variable
                 current_value = None
                 if target_node_id:
                     # For iteration results, get from _iteration_state first (most up-to-date)
                     if name == "results":
-                        iteration_state = await context.get_variable(f"{target_node_id}._iteration_state")
+                        iteration_state = await context.get_variable(
+                            f"{target_node_id}._iteration_state"
+                        )
                         if iteration_state:
                             current_value = iteration_state.get("results")
                     # Fallback to node outputs
@@ -122,23 +130,35 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                         if node_outputs:
                             current_value = node_outputs.get(name)
                 else:
-                    current_value = await context.get_variable(name) or await context.get_variable(f"conversation.{name}")
+                    current_value = await context.get_variable(
+                        name
+                    ) or await context.get_variable(f"conversation.{name}")
 
                 if isinstance(current_value, list):
                     # Append to array
-                    value = current_value + [append_value] if not isinstance(append_value, list) else current_value + append_value
+                    value = (
+                        current_value + [append_value]
+                        if not isinstance(append_value, list)
+                        else current_value + append_value
+                    )
                 elif isinstance(current_value, dict) and isinstance(append_value, dict):
                     # Merge into object
                     value = {**current_value, **append_value}
                 elif isinstance(current_value, str):
                     # String concatenation
                     value = current_value + str(append_value)
-                elif isinstance(current_value, (int, float)) and isinstance(append_value, (int, float)):
+                elif isinstance(current_value, (int, float)) and isinstance(
+                    append_value, (int, float)
+                ):
                     # Numeric addition
                     value = current_value + append_value
                 elif current_value is None:
                     # Initialize as array with single element
-                    value = [append_value] if not isinstance(append_value, list) else append_value
+                    value = (
+                        [append_value]
+                        if not isinstance(append_value, list)
+                        else append_value
+                    )
                 else:
                     # Convert to array and append
                     value = [current_value, append_value]
@@ -158,17 +178,27 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                 # Also update iteration/loop state if this is results
                 if name == "results":
                     # Update iteration state
-                    iteration_state = await context.get_variable(f"{target_node_id}._iteration_state")
+                    iteration_state = await context.get_variable(
+                        f"{target_node_id}._iteration_state"
+                    )
                     if iteration_state:
                         iteration_state["results"] = value
-                        await context.set_variable(f"{target_node_id}._iteration_state", iteration_state)
+                        await context.set_variable(
+                            f"{target_node_id}._iteration_state", iteration_state
+                        )
 
                     # Update loop state
-                    loop_state = await context.get_variable(f"{target_node_id}._loop_state")
+                    loop_state = await context.get_variable(
+                        f"{target_node_id}._loop_state"
+                    )
                     if loop_state:
                         loop_state["results"] = value
-                        await context.set_variable(f"{target_node_id}._loop_state", loop_state)
-                        logger.info(f"Updated {target_node_id}._loop_state.results = {value}")
+                        await context.set_variable(
+                            f"{target_node_id}._loop_state", loop_state
+                        )
+                        logger.info(
+                            f"Updated {target_node_id}._loop_state.results = {value}"
+                        )
             else:
                 # Store in global variables for conversation.xxx access
                 await context.set_variable(name, value)
@@ -192,9 +222,7 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
         """Get output variables from config."""
         assignments = config.get("assignments", [])
         return [
-            {"name": a.get("name"), "type": "any"}
-            for a in assignments
-            if a.get("name")
+            {"name": a.get("name"), "type": "any"} for a in assignments if a.get("name")
         ]
 
 
@@ -231,8 +259,10 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
         """Execute variable aggregator node."""
         node_data = node.get("data", {})
         # Try variableAggregatorConfig first (frontend structure), then fall back to config
-        config = node_data.get("variableAggregatorConfig") or node_data.get("config", {})
-        
+        config = node_data.get("variableAggregatorConfig") or node_data.get(
+            "config", {}
+        )
+
         logger.info(f"Variable aggregator node_data keys: {list(node_data.keys())}")
         logger.info(f"Variable aggregator config: {config}")
 
@@ -240,9 +270,11 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
         variables = config.get("variables", [])
         output_var = config.get("outputVariable", "result")
         separator = config.get("separator", "")
-        
-        logger.info(f"Mode: {mode}, variables count: {len(variables)}, output_var: {output_var}")
-        
+
+        logger.info(
+            f"Mode: {mode}, variables count: {len(variables)}, output_var: {output_var}"
+        )
+
         logger.debug(f"Mode: {mode}, variables: {variables}, output_var: {output_var}")
 
         # Resolve all variables - frontend uses 'sourceVariable' field with 'value' format for resolve_inputs
@@ -251,13 +283,15 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
         for var in variables:
             source_var = var.get("sourceVariable", "")
             target_key = var.get("targetKey") or var.get("id", "")
-            input_mappings.append({
-                "name": target_key,
-                "value": source_var,
-            })
-        
+            input_mappings.append(
+                {
+                    "name": target_key,
+                    "value": source_var,
+                }
+            )
+
         resolved = await self.resolve_inputs(context, input_mappings)
-        
+
         logger.info(f"Variable aggregator resolved: {resolved}")
 
         # Aggregate based on mode
@@ -280,7 +314,7 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
                     logger.warning(f"Cannot merge non-dict value: {value}")
         else:
             result = resolved
-        
+
         logger.info(f"Variable aggregator result: {result}")
 
         return ExecutionResult(outputs={output_var: result})
@@ -289,7 +323,11 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
         """Deep merge two dictionaries."""
         result = base.copy()
         for key, value in override.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = value
@@ -299,7 +337,13 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
         """Get output variables."""
         output_var = config.get("outputVariable", "result")
         mode = config.get("mode", "array")
-        var_type = "array" if mode == "array" else "object" if mode in ("object", "merge") else "string"
+        var_type = (
+            "array"
+            if mode == "array"
+            else "object"
+            if mode in ("object", "merge")
+            else "string"
+        )
         return [{"name": output_var, "type": var_type}]
 
 
@@ -352,8 +396,10 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
 
         node_data = node.get("data", {})
         # Try parameterExtractorConfig first (frontend structure), then fall back to config
-        config = node_data.get("parameterExtractorConfig") or node_data.get("config", {})
-        
+        config = node_data.get("parameterExtractorConfig") or node_data.get(
+            "config", {}
+        )
+
         logger.debug(f"Parameter extractor config: {config}")
 
         source_var = config.get("sourceVariable", "")
@@ -364,7 +410,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         input_value = await context.resolve_variable_ref(source_var)
         if input_value is None:
             return ExecutionResult(error="No input provided for extraction")
-        
+
         logger.info(f"Parameter extractor input: {str(input_value)[:200]}...")
         logger.info(f"Extraction method: {extraction_method}")
 
@@ -386,8 +432,10 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             import jsonpath_ng  # noqa: F401
             from jsonpath_ng import parse as jsonpath_parse
         except ImportError:
-            return ExecutionResult(error="jsonpath-ng package not installed. Run: pip install jsonpath-ng")
-        
+            return ExecutionResult(
+                error="jsonpath-ng package not installed. Run: pip install jsonpath-ng"
+            )
+
         # Parse input as JSON if it's a string
         if isinstance(input_value, str):
             try:
@@ -397,8 +445,10 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         elif isinstance(input_value, (dict, list)):
             data = input_value
         else:
-            return ExecutionResult(error=f"Input must be JSON string, dict, or list, got {type(input_value)}")
-        
+            return ExecutionResult(
+                error=f"Input must be JSON string, dict, or list, got {type(input_value)}"
+            )
+
         outputs = {}
         for param in parameters:
             name = param.get("name")
@@ -406,38 +456,46 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             required = param.get("required", False)
             default_value = param.get("defaultValue")
             param_type = param.get("type", "string")
-            
+
             if not name or not json_path:
                 continue
-            
+
             try:
                 # Parse and execute JSONPath
                 jsonpath_expr = jsonpath_parse(json_path)
                 matches = jsonpath_expr.find(data)
-                
+
                 if matches:
                     # Get the first match value
                     value = matches[0].value
-                    
+
                     # If multiple matches and expecting array, return all
                     if len(matches) > 1 and param_type == "array":
                         value = [m.value for m in matches]
-                    
+
                     outputs[name] = value
                 elif default_value is not None:
                     # Try to parse default value based on type
                     outputs[name] = self._parse_default_value(default_value, param_type)
                 elif required:
-                    return ExecutionResult(error=f"Required parameter '{name}' not found at path: {json_path}")
+                    return ExecutionResult(
+                        error=f"Required parameter '{name}' not found at path: {json_path}"
+                    )
                 else:
                     outputs[name] = None
-                    
+
             except Exception as e:
                 logger.warning(f"JSONPath error for {name}: {e}")
                 if required:
-                    return ExecutionResult(error=f"JSONPath error for '{name}': {str(e)}")
-                outputs[name] = self._parse_default_value(default_value, param_type) if default_value else None
-        
+                    return ExecutionResult(
+                        error=f"JSONPath error for '{name}': {str(e)}"
+                    )
+                outputs[name] = (
+                    self._parse_default_value(default_value, param_type)
+                    if default_value
+                    else None
+                )
+
         outputs["_extraction_method"] = "json_path"
         logger.info(f"JSONPath extraction outputs: {outputs}")
         return ExecutionResult(outputs=outputs)
@@ -447,7 +505,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Extract parameters using regex patterns."""
         import re
-        
+
         outputs = {}
         for param in parameters:
             name = param.get("name")
@@ -455,13 +513,13 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             required = param.get("required", False)
             default_value = param.get("defaultValue")
             param_type = param.get("type", "string")
-            
+
             if not name or not pattern:
                 continue
-            
+
             try:
                 matches = re.findall(pattern, input_text)
-                
+
                 if matches:
                     if param_type == "array":
                         # Return all matches as array
@@ -476,16 +534,24 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                 elif default_value is not None:
                     outputs[name] = self._parse_default_value(default_value, param_type)
                 elif required:
-                    return ExecutionResult(error=f"Required parameter '{name}' not found with pattern: {pattern}")
+                    return ExecutionResult(
+                        error=f"Required parameter '{name}' not found with pattern: {pattern}"
+                    )
                 else:
                     outputs[name] = None
-                    
+
             except re.error as e:
                 logger.warning(f"Regex error for {name}: {e}")
                 if required:
-                    return ExecutionResult(error=f"Invalid regex pattern for '{name}': {str(e)}")
-                outputs[name] = self._parse_default_value(default_value, param_type) if default_value else None
-        
+                    return ExecutionResult(
+                        error=f"Invalid regex pattern for '{name}': {str(e)}"
+                    )
+                outputs[name] = (
+                    self._parse_default_value(default_value, param_type)
+                    if default_value
+                    else None
+                )
+
         outputs["_extraction_method"] = "regex"
         logger.info(f"Regex extraction outputs: {outputs}")
         return ExecutionResult(outputs=outputs)
@@ -505,7 +571,9 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             return ExecutionResult(error="Model ID not configured for LLM extraction")
 
         # First try to find as TeamModel ID, then fallback to Model ID
-        team_model = await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        team_model = (
+            await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        )
         if team_model:
             model = team_model.model
             model_id = str(model.id)
@@ -529,12 +597,15 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
 
         schema_json = json.dumps(param_schema, indent=2, ensure_ascii=False)
 
-        system_prompt = config.get("systemPrompt") or f"""You are a parameter extraction assistant. Extract the following parameters from the user's input:
+        system_prompt = (
+            config.get("systemPrompt")
+            or f"""You are a parameter extraction assistant. Extract the following parameters from the user's input:
 
 {schema_json}
 
 Respond in JSON format with the extracted values. If a parameter cannot be found and is not required, use null.
 Example response: {{"date": "2024-01-15", "location": null}}"""
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -550,13 +621,14 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
             )
 
             response_text = result.content or ""
-            
+
             logger.info(f"Parameter extractor LLM response: {response_text}")
 
             # Parse JSON response
             try:
                 import re
-                json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
+
+                json_match = re.search(r"\{[^{}]*\}", response_text, re.DOTALL)
                 if json_match:
                     parsed = json.loads(json_match.group())
                 else:
@@ -578,7 +650,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
 
                 outputs["_extraction_method"] = "llm"
                 outputs["_extraction_confidence"] = 0.9  # Placeholder
-                
+
                 logger.info(f"LLM extraction outputs: {outputs}")
 
                 return ExecutionResult(outputs=outputs)
@@ -594,9 +666,9 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
         """Parse default value string to the appropriate type."""
         if value is None:
             return None
-        
+
         import json
-        
+
         try:
             if param_type == "number":
                 return float(value) if "." in value else int(value)

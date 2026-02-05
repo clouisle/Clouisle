@@ -19,6 +19,7 @@ from tortoise import Tortoise
 from app.core.config import settings
 from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
 from app.services.usage_tracker import QuotaExceededError
+
 try:
     from qdrant_client import AsyncQdrantClient
     from qdrant_client.http import models as qmodels
@@ -36,10 +37,10 @@ logger = logging.getLogger(__name__)
 jieba.setLogLevel(logging.WARNING)
 
 
-
 def _get_model_manager():
     """Get model manager lazily to avoid circular import."""
     from app.llm import model_manager
+
     return model_manager
 
 
@@ -153,7 +154,9 @@ async def _delete_qdrant_filter(collection: str, q_filter: "qmodels.Filter") -> 
         logger.warning(f"Failed to delete Qdrant points from {collection}: {e}")
 
 
-def _build_qdrant_filter(kb_id: UUID, filter_doc_ids: list[UUID] | None) -> "qmodels.Filter":
+def _build_qdrant_filter(
+    kb_id: UUID, filter_doc_ids: list[UUID] | None
+) -> "qmodels.Filter":
     if qmodels is None:
         raise RuntimeError("qdrant-client is not installed")
     conditions: list[qmodels.FieldCondition] = [
@@ -231,15 +234,13 @@ async def _qdrant_search(
     return list(result)
 
 
-
-
 async def get_kb_embedding_dimension(kb_id: UUID) -> int | None:
     """
     Get the embedding dimension for a knowledge base.
-    
+
     Args:
         kb_id: Knowledge base ID
-        
+
     Returns:
         Embedding dimension or None if not set
     """
@@ -253,11 +254,11 @@ async def set_kb_embedding_dimension(kb_id: UUID, dimension: int) -> bool:
     """
     Set the embedding dimension for a knowledge base.
     This should only be called once when processing the first document.
-    
+
     Args:
         kb_id: Knowledge base ID
         dimension: Embedding dimension
-        
+
     Returns:
         True if set successfully, False if already set
     """
@@ -265,7 +266,7 @@ async def set_kb_embedding_dimension(kb_id: UUID, dimension: int) -> bool:
     if not kb:
         logger.error(f"Knowledge base {kb_id} not found")
         return False
-    
+
     if kb.embedding_dimension is not None:
         if kb.embedding_dimension != dimension:
             logger.warning(
@@ -274,7 +275,7 @@ async def set_kb_embedding_dimension(kb_id: UUID, dimension: int) -> bool:
             )
             return False
         return True
-    
+
     kb.embedding_dimension = dimension
     await kb.save()
     logger.info(f"Set embedding dimension for KB {kb_id} to {dimension}")
@@ -283,6 +284,7 @@ async def set_kb_embedding_dimension(kb_id: UUID, dimension: int) -> bool:
 
 class DimensionMismatchError(Exception):
     """Raised when embedding dimension doesn't match knowledge base dimension."""
+
 
 async def _ensure_kb_dimension(kb_id: UUID, embedding_dim: int) -> int:
     """
@@ -390,16 +392,16 @@ class VectorStore:
         """
         if not chunk_ids or not embeddings:
             return
-        
+
         # Detect dimension from embeddings
         dim = dimension or self.embedding_dimension or self._detected_dimension
         if not dim and embeddings:
             dim = len(embeddings[0])
             self._detected_dimension = dim
-        
+
         if not dim:
             raise ValueError("Cannot determine embedding dimension")
-        
+
         collection = await _ensure_collection(dim)
         client = await _get_qdrant_client()
         points = []
@@ -497,7 +499,7 @@ class VectorStore:
     ) -> list[DocumentChunk]:
         """
         Store document chunks with embeddings in Qdrant.
-        
+
         On first document processing, detects embedding dimension and records it
         in the knowledge base. Subsequent documents must use the same dimension.
 
@@ -508,7 +510,7 @@ class VectorStore:
 
         Returns:
             List of created DocumentChunk objects
-            
+
         Raises:
             DimensionMismatchError: If embedding dimension doesn't match KB dimension
         """
@@ -518,12 +520,12 @@ class VectorStore:
         # Generate embeddings for all chunks
         texts = [c["content"] for c in chunks]
         embeddings = await self.embed_texts(texts)
-        
+
         # Detect dimension
         detected_dim = len(embeddings[0]) if embeddings else None
         if detected_dim:
             self._detected_dimension = detected_dim
-        
+
         resolved_kb_id = kb_id or document.knowledge_base_id
 
         # Handle KB dimension management
@@ -561,7 +563,9 @@ class VectorStore:
             await self._batch_store_embeddings(
                 chunk_ids, embeddings, detected_dim, payloads=payloads
             )
-            logger.info(f"Stored {len(embeddings)} embeddings (dim={detected_dim}) for document {document.id}")
+            logger.info(
+                f"Stored {len(embeddings)} embeddings (dim={detected_dim}) for document {document.id}"
+            )
         except Exception as e:
             logger.error(f"Error storing embeddings for document {document.id}: {e}")
             # Re-raise so we know there's a problem
@@ -597,11 +601,11 @@ class VectorStore:
         # Get KB dimension if not provided
         if embedding_dimension is None:
             embedding_dimension = await get_kb_embedding_dimension(kb_id)
-        
+
         # Store dimension for vector operations
         if embedding_dimension:
             self.embedding_dimension = embedding_dimension
-        
+
         results: list[dict[str, Any]] = []
 
         logger.debug(
@@ -679,21 +683,25 @@ class VectorStore:
             List of search results with similarity scores
         """
         # Get dimension from KB if not provided
-        dim = embedding_dimension or self.embedding_dimension or self._detected_dimension
+        dim = (
+            embedding_dimension or self.embedding_dimension or self._detected_dimension
+        )
         if not dim:
             dim = await get_kb_embedding_dimension(kb_id)
-        
+
         if not dim:
-            logger.warning(f"No embedding dimension for KB {kb_id}, vector search disabled")
+            logger.warning(
+                f"No embedding dimension for KB {kb_id}, vector search disabled"
+            )
             return []
-        
+
         try:
             # Generate query embedding
             query_embedding = await self.embed_query(query)
         except Exception as e:
             logger.warning(f"Failed to generate embedding for vector search: {e}")
             return []
-        
+
         # Validate dimension match
         if len(query_embedding) != dim:
             raise DimensionMismatchError(
@@ -721,13 +729,14 @@ class VectorStore:
         )
 
         if not points:
-            logger.info(f"No vectors found for kb {kb_id}, vector search returned empty")
+            logger.info(
+                f"No vectors found for kb {kb_id}, vector search returned empty"
+            )
             return []
 
         chunk_ids = [str(point.id) for point in points]
-        chunks = (
-            await DocumentChunk.filter(id__in=chunk_ids)
-            .prefetch_related("document")
+        chunks = await DocumentChunk.filter(id__in=chunk_ids).prefetch_related(
+            "document"
         )
         chunk_map = {str(chunk.id): chunk for chunk in chunks}
 
@@ -1082,15 +1091,15 @@ class VectorStore:
             if kb_id:
                 dim = await get_kb_embedding_dimension(kb_id)
                 if dim and await _collection_exists(_collection_name(dim)):
-                    await _delete_qdrant_points(
-                        _collection_name(dim), [str(chunk_id)]
-                    )
+                    await _delete_qdrant_points(_collection_name(dim), [str(chunk_id)])
 
         # Chunk deletion handles embedding deletion
         deleted = await DocumentChunk.filter(id=chunk_id).delete()
         return deleted > 0
 
-    async def update_chunk_vector(self, chunk: DocumentChunk, kb_id: UUID | None = None) -> bool:
+    async def update_chunk_vector(
+        self, chunk: DocumentChunk, kb_id: UUID | None = None
+    ) -> bool:
         """
         Update vector embedding for a chunk.
 
@@ -1143,7 +1152,7 @@ class VectorStore:
 
         Returns:
             True if added
-            
+
         Raises:
             Exception: If embedding generation or storage fails
         """

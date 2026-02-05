@@ -61,9 +61,13 @@ class SSOService:
             BusinessError: If registration is disabled or other errors
         """
         # Check if SSO connection already exists
-        connection = await UserSSOConnection.filter(
-            provider=provider, provider_user_id=provider_user_id
-        ).prefetch_related("user").first()
+        connection = (
+            await UserSSOConnection.filter(
+                provider=provider, provider_user_id=provider_user_id
+            )
+            .prefetch_related("user")
+            .first()
+        )
 
         if connection:
             # Update last login and provider data

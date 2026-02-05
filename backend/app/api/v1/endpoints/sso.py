@@ -76,26 +76,32 @@ async def sso_login(
     # Build callback URL - use configured backend URL or request base_url
     # For development, hardcode to avoid proxy issues
     from app.core.config import settings
-    backend_url = getattr(settings, 'BACKEND_URL', None)
+
+    backend_url = getattr(settings, "BACKEND_URL", None)
     if backend_url:
         base_url = backend_url.rstrip("/")
     else:
         base_url = str(request.base_url).rstrip("/")
         # If base_url is from frontend proxy, use backend port
-        if ':3000' in base_url:
-            base_url = base_url.replace(':3000', ':8000')
+        if ":3000" in base_url:
+            base_url = base_url.replace(":3000", ":8000")
 
     callback_url = f"{base_url}/api/v1/sso/callback/{provider_id}"
 
     # Log for debugging
     import logging
+
     logger = logging.getLogger(__name__)
     logger.info(f"SSO Login - Provider: {provider.name}, Callback URL: {callback_url}")
 
     try:
         if provider.protocol in ["oauth2", "oidc"]:
             # OIDC returns tuple with code_verifier and nonce
-            auth_url, code_verifier, nonce = await provider_instance.get_authorization_url(
+            (
+                auth_url,
+                code_verifier,
+                nonce,
+            ) = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
 
@@ -193,14 +199,15 @@ async def sso_callback(
     try:
         # Build callback URL - use configured backend URL or request base_url
         from app.core.config import settings
-        backend_url = getattr(settings, 'BACKEND_URL', None)
+
+        backend_url = getattr(settings, "BACKEND_URL", None)
         if backend_url:
             base_url = backend_url.rstrip("/")
         else:
             base_url = str(request.base_url).rstrip("/")
             # If base_url is from frontend proxy, use backend port
-            if ':3000' in base_url:
-                base_url = base_url.replace(':3000', ':8000')
+            if ":3000" in base_url:
+                base_url = base_url.replace(":3000", ":8000")
 
         callback_url = f"{base_url}/api/v1/sso/callback/{provider_id}"
 
@@ -250,6 +257,7 @@ async def sso_callback(
         )
 
         from app.core.config import settings
+
         frontend_url = settings.FRONTEND_URL.rstrip("/")
         final_redirect = session.redirect_url or "/dashboard"
         if final_redirect.startswith("http"):
@@ -257,9 +265,7 @@ async def sso_callback(
 
         if not user.is_active:
             await session.delete()
-            redirect_url = (
-                f"{frontend_url}/sso-callback?error=inactive&redirect={quote(final_redirect)}"
-            )
+            redirect_url = f"{frontend_url}/sso-callback?error=inactive&redirect={quote(final_redirect)}"
             return RedirectResponse(url=redirect_url)
 
         # Update last login
@@ -277,6 +283,7 @@ async def sso_callback(
         single_session = await SiteSetting.get_value("single_session", False)
         if single_session:
             from app.core.redis import set_user_session
+
             expires_in_seconds = int(access_token_expires.total_seconds())
             await set_user_session(str(user.id), access_token, expires_in_seconds)
 
@@ -301,9 +308,7 @@ async def sso_callback(
 
         # Redirect to SSO callback page, which will handle token storage
         # and then redirect to the final destination
-        redirect_url = (
-            f"{frontend_url}/sso-callback?token={access_token}&redirect={quote(final_redirect)}"
-        )
+        redirect_url = f"{frontend_url}/sso-callback?token={access_token}&redirect={quote(final_redirect)}"
 
         return RedirectResponse(url=redirect_url)
 
@@ -345,8 +350,7 @@ async def disconnect_sso(
 
     if not connection:
         raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="sso_connection_not_found"
+            code=ResponseCode.NOT_FOUND, msg_key="sso_connection_not_found"
         )
 
     # Check if user has a password (can't disconnect if SSO is the only auth method)
@@ -356,7 +360,7 @@ async def disconnect_sso(
         if connection_count <= 1:
             raise BusinessError(
                 code=ResponseCode.FORBIDDEN,
-                msg_key="cannot_disconnect_only_auth_method"
+                msg_key="cannot_disconnect_only_auth_method",
             )
 
     provider_name = connection.provider.name
@@ -389,9 +393,8 @@ async def admin_disconnect_sso(
     """Disconnect SSO connection (admin can disconnect any user's connections)"""
     from app.models.user_sso_connection import UserSSOConnection
 
-    connection = (
-        await UserSSOConnection.get_or_none(id=connection_id)
-        .prefetch_related("provider", "user")
+    connection = await UserSSOConnection.get_or_none(id=connection_id).prefetch_related(
+        "provider", "user"
     )
 
     if not connection:
@@ -432,9 +435,7 @@ async def admin_disconnect_sso(
 # Admin endpoints (require superuser)
 
 
-@router.get(
-    "/admin/providers", response_model=Response[List[SSOProviderAdmin]]
-)
+@router.get("/admin/providers", response_model=Response[List[SSOProviderAdmin]])
 async def list_providers_admin(
     current_user: User = Depends(get_current_active_superuser),
 ):
@@ -479,9 +480,7 @@ async def create_provider(
         )
 
     # Create provider
-    provider = await SSOProvider.create(
-        **data.model_dump(), created_by=current_user
-    )
+    provider = await SSOProvider.create(**data.model_dump(), created_by=current_user)
 
     await AuditLogService.log(
         user=current_user,
@@ -497,9 +496,7 @@ async def create_provider(
     return success(data=SSOProviderAdmin.model_validate(provider))
 
 
-@router.put(
-    "/admin/providers/{provider_id}", response_model=Response[SSOProviderAdmin]
-)
+@router.put("/admin/providers/{provider_id}", response_model=Response[SSOProviderAdmin])
 async def update_provider(
     provider_id: UUID,
     request: Request,

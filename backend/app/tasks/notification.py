@@ -28,12 +28,13 @@ from app.models.user import User, TeamMember, Team
 logger = logging.getLogger(__name__)
 
 # Markdown 转换器
-md = markdown.Markdown(extensions=['extra', 'nl2br', 'sane_lists'])
+md = markdown.Markdown(extensions=["extra", "nl2br", "sane_lists"])
 
 
 def _get_event_loop():
     """获取或创建事件循环"""
     import asyncio
+
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
@@ -235,7 +236,9 @@ async def _send_notification_email(notification_id: UUID):
             logger.error(f"Failed to send notification email to {email}: {e}")
             failed_emails.append(email)
 
-    logger.info(f"Sent notification email to {success_count}/{len(recipients)} recipients")
+    logger.info(
+        f"Sent notification email to {success_count}/{len(recipients)} recipients"
+    )
 
     # 更新发送状态
     if success_count == len(recipients):
@@ -276,7 +279,9 @@ async def _get_notification_recipients(notification: Notification) -> list[str]:
     elif notification.scope == NotificationScope.TEAM:
         # 团队通知：发送给团队所有成员
         if notification.team_id:
-            members = await TeamMember.filter(team_id=notification.team_id).prefetch_related("user")
+            members = await TeamMember.filter(
+                team_id=notification.team_id
+            ).prefetch_related("user")
             recipients = [
                 member.user.email
                 for member in members
@@ -359,7 +364,9 @@ async def _send_notification_dingtalk(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(f"Failed to send DingTalk notification for {notification_id}")
+        raise RuntimeError(
+            f"Failed to send DingTalk notification for {notification_id}"
+        )
 
 
 @celery_app.task(name="send_notification_wechat", bind=True, max_retries=3)
@@ -418,7 +425,9 @@ async def _send_notification_wechat(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(f"Failed to send WeChat Work notification for {notification_id}")
+        raise RuntimeError(
+            f"Failed to send WeChat Work notification for {notification_id}"
+        )
 
 
 @celery_app.task(name="send_notification_feishu", bind=True, max_retries=3)

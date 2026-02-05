@@ -35,7 +35,9 @@ async def get_dashboard_stats(
     - Growth trends
     """
     now_local = now()
-    today_start = datetime.combine(now_local.date(), datetime.min.time()).replace(tzinfo=now_local.tzinfo)
+    today_start = datetime.combine(now_local.date(), datetime.min.time()).replace(
+        tzinfo=now_local.tzinfo
+    )
     week_start = now_local - timedelta(days=7)
     month_start = now_local - timedelta(days=30)
 
@@ -49,62 +51,66 @@ async def get_dashboard_stats(
     total_messages = await Message.all().count()
 
     # Token usage
-    messages_with_tokens = await Message.filter(
-        token_usage__isnull=False
-    ).values("token_usage")
+    messages_with_tokens = await Message.filter(token_usage__isnull=False).values(
+        "token_usage"
+    )
 
     total_tokens = 0
     for msg in messages_with_tokens:
         if msg["token_usage"]:
-            total_tokens += (msg["token_usage"].get("prompt", 0) or 0)
-            total_tokens += (msg["token_usage"].get("completion", 0) or 0)
+            total_tokens += msg["token_usage"].get("prompt", 0) or 0
+            total_tokens += msg["token_usage"].get("completion", 0) or 0
 
     # Active users (based on conversation activity)
     # DAU - Daily Active Users
-    dau_user_ids = await Conversation.filter(
-        created_at__gte=today_start
-    ).values_list("user_id", flat=True)
+    dau_user_ids = await Conversation.filter(created_at__gte=today_start).values_list(
+        "user_id", flat=True
+    )
     dau = len(set(dau_user_ids))
 
     # WAU - Weekly Active Users
-    wau_user_ids = await Conversation.filter(
-        created_at__gte=week_start
-    ).values_list("user_id", flat=True)
+    wau_user_ids = await Conversation.filter(created_at__gte=week_start).values_list(
+        "user_id", flat=True
+    )
     wau = len(set(wau_user_ids))
 
     # MAU - Monthly Active Users
-    mau_user_ids = await Conversation.filter(
-        created_at__gte=month_start
-    ).values_list("user_id", flat=True)
+    mau_user_ids = await Conversation.filter(created_at__gte=month_start).values_list(
+        "user_id", flat=True
+    )
     mau = len(set(mau_user_ids))
 
     # User growth (last 30 days)
     new_users_30d = await User.filter(created_at__gte=month_start).count()
 
     # Conversation growth (last 30 days)
-    new_conversations_30d = await Conversation.filter(created_at__gte=month_start).count()
+    new_conversations_30d = await Conversation.filter(
+        created_at__gte=month_start
+    ).count()
 
-    return success(data={
-        "overview": {
-            "total_users": total_users,
-            "total_teams": total_teams,
-            "total_agents": total_agents,
-            "total_workflows": total_workflows,
-            "total_knowledge_bases": total_knowledge_bases,
-            "total_conversations": total_conversations,
-            "total_messages": total_messages,
-            "total_tokens": total_tokens,
-        },
-        "active_users": {
-            "dau": dau,
-            "wau": wau,
-            "mau": mau,
-        },
-        "growth": {
-            "new_users_30d": new_users_30d,
-            "new_conversations_30d": new_conversations_30d,
+    return success(
+        data={
+            "overview": {
+                "total_users": total_users,
+                "total_teams": total_teams,
+                "total_agents": total_agents,
+                "total_workflows": total_workflows,
+                "total_knowledge_bases": total_knowledge_bases,
+                "total_conversations": total_conversations,
+                "total_messages": total_messages,
+                "total_tokens": total_tokens,
+            },
+            "active_users": {
+                "dau": dau,
+                "wau": wau,
+                "mau": mau,
+            },
+            "growth": {
+                "new_users_30d": new_users_30d,
+                "new_conversations_30d": new_conversations_30d,
+            },
         }
-    })
+    )
 
 
 @router.get("/stats/trends", response_model=Response[dict])
@@ -136,26 +142,31 @@ async def get_dashboard_trends(
 
     # Get all data in the period
     users = await User.filter(created_at__gte=start_time_utc).values("created_at")
-    conversations = await Conversation.filter(created_at__gte=start_time_utc).values("created_at", "user_id")
-    messages = await Message.filter(created_at__gte=start_time_utc).values("created_at", "token_usage")
+    conversations = await Conversation.filter(created_at__gte=start_time_utc).values(
+        "created_at", "user_id"
+    )
+    messages = await Message.filter(created_at__gte=start_time_utc).values(
+        "created_at", "token_usage"
+    )
 
     # Build time series data
     data_points = []
     for i in range(num_points):
         point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(tzinfo=now_local.tzinfo)
+        point_start = datetime.combine(point_date, datetime.min.time()).replace(
+            tzinfo=now_local.tzinfo
+        )
         point_end = point_start + timedelta(days=1)
 
         # New users
         new_users = sum(
-            1
-            for u in users
-            if point_start <= to_local(u["created_at"]) < point_end
+            1 for u in users if point_start <= to_local(u["created_at"]) < point_end
         )
 
         # Active users (users who created conversations)
         active_user_ids = set(
-            c["user_id"] for c in conversations
+            c["user_id"]
+            for c in conversations
             if point_start <= to_local(c["created_at"]) < point_end and c["user_id"]
         )
         active_users = len(active_user_ids)
@@ -169,38 +180,44 @@ async def get_dashboard_trends(
 
         # Messages and tokens
         msgs_in_period = [
-            m for m in messages
-            if point_start <= to_local(m["created_at"]) < point_end
+            m for m in messages if point_start <= to_local(m["created_at"]) < point_end
         ]
         msg_count = len(msgs_in_period)
 
         tokens = 0
         for m in msgs_in_period:
             if m["token_usage"]:
-                tokens += (m["token_usage"].get("prompt", 0) or 0)
-                tokens += (m["token_usage"].get("completion", 0) or 0)
+                tokens += m["token_usage"].get("prompt", 0) or 0
+                tokens += m["token_usage"].get("completion", 0) or 0
 
         label = point_date.strftime("%m/%d")
 
-        data_points.append({
-            "date": label,
-            "new_users": new_users,
-            "active_users": active_users,
-            "new_conversations": new_conversations,
-            "messages": msg_count,
-            "tokens": tokens,
-        })
+        data_points.append(
+            {
+                "date": label,
+                "new_users": new_users,
+                "active_users": active_users,
+                "new_conversations": new_conversations,
+                "messages": msg_count,
+                "tokens": tokens,
+            }
+        )
 
-    return success(data={
-        "period": period,
-        "data": data_points,
-    })
+    return success(
+        data={
+            "period": period,
+            "data": data_points,
+        }
+    )
 
 
 @router.get("/stats/agents/top", response_model=Response[list[dict]])
 async def get_top_agents(
     limit: int = Query(10, ge=1, le=50, description="Number of top agents to return"),
-    metric: str = Query("conversation_count", description="Metric to sort by: conversation_count, message_count, total_tokens"),
+    metric: str = Query(
+        "conversation_count",
+        description="Metric to sort by: conversation_count, message_count, total_tokens",
+    ),
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
     current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
@@ -243,13 +260,15 @@ async def get_top_agents(
     result = []
     for agent in agents:
         value = getattr(agent, metric, 0)
-        result.append({
-            "agent_id": str(agent.id),
-            "name": agent.name,
-            "icon": agent.icon,
-            "value": value,
-            "team_name": agent.team.name if agent.team else "Unknown",
-        })
+        result.append(
+            {
+                "agent_id": str(agent.id),
+                "name": agent.name,
+                "icon": agent.icon,
+                "value": value,
+                "team_name": agent.team.name if agent.team else "Unknown",
+            }
+        )
 
     return success(data=result)
 
@@ -279,13 +298,15 @@ async def get_team_token_usage(
     # Build response
     result = []
     for team in teams:
-        result.append({
-            "team_id": str(team.id),
-            "name": team.name,
-            "total_tokens": team.total_tokens,
-            "conversations": team.total_conversations,
-            "messages": team.total_messages,
-        })
+        result.append(
+            {
+                "team_id": str(team.id),
+                "name": team.name,
+                "total_tokens": team.total_tokens,
+                "conversations": team.total_conversations,
+                "messages": team.total_messages,
+            }
+        )
 
     return success(data=result)
 
@@ -318,8 +339,7 @@ async def get_models_distribution(
     if start_time:
         start_time_utc = to_utc(start_time)
         messages_query = Message.filter(
-            created_at__gte=start_time_utc,
-            model_used__isnull=False
+            created_at__gte=start_time_utc, model_used__isnull=False
         )
     else:
         messages_query = Message.filter(model_used__isnull=False)
@@ -340,11 +360,13 @@ async def get_models_distribution(
     result = []
     for model, count in sorted(model_counts.items(), key=lambda x: x[1], reverse=True):
         percentage = (count / total_count * 100) if total_count > 0 else 0
-        result.append({
-            "model": model,
-            "count": count,
-            "percentage": round(percentage, 2),
-        })
+        result.append(
+            {
+                "model": model,
+                "count": count,
+                "percentage": round(percentage, 2),
+            }
+        )
 
     return success(data=result)
 
@@ -418,25 +440,39 @@ async def get_workflow_summary(
             workflow_stats[wf_id]["success_count"] += 1
 
     # Get workflow details for top 10
-    top_workflow_ids = sorted(workflow_stats.items(), key=lambda x: x[1]["run_count"], reverse=True)[:10]
+    top_workflow_ids = sorted(
+        workflow_stats.items(), key=lambda x: x[1]["run_count"], reverse=True
+    )[:10]
     top_workflows = []
     for wf_id, stats in top_workflow_ids:
         if wf_id != "unknown":
             workflow = await Workflow.filter(id=wf_id).first()
             if workflow:
-                success_rate_wf = (stats["success_count"] / stats["run_count"] * 100) if stats["run_count"] > 0 else 0
-                top_workflows.append({
-                    "workflow_id": wf_id,
-                    "name": workflow.name,
-                    "run_count": stats["run_count"],
-                    "success_rate": round(success_rate_wf, 2),
-                })
+                success_rate_wf = (
+                    (stats["success_count"] / stats["run_count"] * 100)
+                    if stats["run_count"] > 0
+                    else 0
+                )
+                top_workflows.append(
+                    {
+                        "workflow_id": wf_id,
+                        "name": workflow.name,
+                        "run_count": stats["run_count"],
+                        "success_rate": round(success_rate_wf, 2),
+                    }
+                )
 
-    return success(data={
-        "total_runs": total_runs,
-        "success_rate": round(success_rate, 2),
-        "avg_duration_ms": avg_duration_ms,
-        "trigger_type_distribution": [{"type": k, "count": v} for k, v in trigger_types.items()],
-        "status_distribution": [{"status": k, "count": v} for k, v in statuses.items()],
-        "top_workflows": top_workflows,
-    })
+    return success(
+        data={
+            "total_runs": total_runs,
+            "success_rate": round(success_rate, 2),
+            "avg_duration_ms": avg_duration_ms,
+            "trigger_type_distribution": [
+                {"type": k, "count": v} for k, v in trigger_types.items()
+            ],
+            "status_distribution": [
+                {"status": k, "count": v} for k, v in statuses.items()
+            ],
+            "top_workflows": top_workflows,
+        }
+    )

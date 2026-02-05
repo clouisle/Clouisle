@@ -35,6 +35,7 @@ class NotificationAuditAction(str, Enum):
 
 class NotificationChannel(str, Enum):
     """通知渠道"""
+
     EMAIL = "email"
     DINGTALK = "dingtalk"
     WECHAT = "wechat"
@@ -45,6 +46,7 @@ class NotificationChannel(str, Enum):
 
 class AutoNotificationType(str, Enum):
     """自动通知类型"""
+
     # 团队相关
     TEAM_MEMBER_ADDED = "team.member_added"
     TEAM_MEMBER_REMOVED = "team.member_removed"
@@ -83,10 +85,11 @@ class AutoNotificationType(str, Enum):
 
 class NotificationDeliveryStatus(str, Enum):
     """通知发送状态"""
-    PENDING = "pending"      # 待发送
-    SENDING = "sending"      # 发送中
-    SUCCESS = "success"      # 发送成功
-    FAILED = "failed"        # 发送失败
+
+    PENDING = "pending"  # 待发送
+    SENDING = "sending"  # 发送中
+    SUCCESS = "success"  # 发送成功
+    FAILED = "failed"  # 发送失败
 
 
 class Notification(models.Model):
@@ -191,6 +194,7 @@ class NotificationAudit(models.Model):
 
 class NotificationDelivery(models.Model):
     """通知发送记录 - 跟踪每个渠道的发送状态"""
+
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
 
     notification = fields.ForeignKeyField(

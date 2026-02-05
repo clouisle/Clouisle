@@ -19,7 +19,9 @@ class ToolConfig(models.Model):
     id = fields.UUIDField(pk=True)
 
     # Tool identification
-    tool_name = fields.CharField(max_length=100, description="Tool name (e.g., web_search)")
+    tool_name = fields.CharField(
+        max_length=100, description="Tool name (e.g., web_search)"
+    )
 
     # Team association (NULL = global configuration)
     team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(

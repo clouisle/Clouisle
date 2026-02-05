@@ -256,8 +256,7 @@ class WorkflowDebugger:
             return False
 
         session.breakpoints = [
-            bp for bp in session.breakpoints
-            if bp.id != breakpoint_id
+            bp for bp in session.breakpoints if bp.id != breakpoint_id
         ]
         return True
 
@@ -399,7 +398,11 @@ class WorkflowDebugger:
         # Update call stack
         if action == "enter":
             session.call_stack.append(node_id)
-        elif action == "exit" and session.call_stack and session.call_stack[-1] == node_id:
+        elif (
+            action == "exit"
+            and session.call_stack
+            and session.call_stack[-1] == node_id
+        ):
             session.call_stack.pop()
 
         frame = DebugFrame(
@@ -433,7 +436,7 @@ class WorkflowDebugger:
         session = self._sessions.get(session_id)
         if not session:
             return []
-        return session.frames[start:start + limit]
+        return session.frames[start : start + limit]
 
     async def get_current_frame(
         self,
@@ -588,12 +591,14 @@ class WorkflowDebugger:
         path = []
         for frame in session.frames:
             if frame.action == "enter":
-                path.append({
-                    "node_id": frame.node_id,
-                    "node_type": frame.node_type,
-                    "node_label": frame.node_label,
-                    "timestamp": frame.timestamp.isoformat(),
-                })
+                path.append(
+                    {
+                        "node_id": frame.node_id,
+                        "node_type": frame.node_type,
+                        "node_label": frame.node_label,
+                        "timestamp": frame.timestamp.isoformat(),
+                    }
+                )
         return path
 
     async def get_call_stack(

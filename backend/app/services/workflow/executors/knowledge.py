@@ -110,12 +110,14 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             context_parts = []
 
             for result in results:
-                formatted_results.append({
-                    "content": result.get("content", ""),
-                    "score": result.get("score", 0),
-                    "metadata": result.get("metadata", {}),
-                    "documentId": result.get("document_id"),
-                })
+                formatted_results.append(
+                    {
+                        "content": result.get("content", ""),
+                        "score": result.get("score", 0),
+                        "metadata": result.get("metadata", {}),
+                        "documentId": result.get("document_id"),
+                    }
+                )
                 context_parts.append(result.get("content", ""))
 
             # Combine context

@@ -73,7 +73,7 @@ async def serialize_user_with_sso(user: User) -> dict:
                         "description": perm.description,
                     }
                     for perm in role.permissions
-                ]
+                ],
             }
             for role in roles
         ],
@@ -97,7 +97,6 @@ async def serialize_user_with_sso(user: User) -> dict:
         )
 
     return user_dict
-
 
 
 @router.get("/", response_model=Response[PageData[UserSchema]])
@@ -328,9 +327,8 @@ async def read_user_me(
     """
     Get current user.
     """
-    user = (
-        await User.get(id=current_user.id)
-        .prefetch_related("roles__permissions", "sso_connections__provider")
+    user = await User.get(id=current_user.id).prefetch_related(
+        "roles__permissions", "sso_connections__provider"
     )
     return success(data=await serialize_user_with_sso(user))
 
@@ -701,7 +699,9 @@ async def update_user(
         operation="update",
         status="success",
         request=request,
-        metadata={"fields_updated": list(user_in.model_dump(exclude_unset=True).keys())},
+        metadata={
+            "fields_updated": list(user_in.model_dump(exclude_unset=True).keys())
+        },
     )
 
     # 如果密码被重置，发送通知

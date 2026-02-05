@@ -79,6 +79,7 @@ class SSOProviderAdmin(BaseModel):
 # User SSO Connection Schemas
 class UserSSOConnectionSchema(BaseModel):
     """User SSO connection info for display"""
+
     id: UUID
     provider_id: UUID
     provider_name: str

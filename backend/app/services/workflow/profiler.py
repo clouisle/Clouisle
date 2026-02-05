@@ -152,9 +152,7 @@ class ExecutionProfiler:
     def finish(self) -> WorkflowProfile:
         """Finish profiling and generate report."""
         self._profile.end_time = datetime.utcnow()
-        self._profile.total_duration_ms = int(
-            (time.time() - self._start_time) * 1000
-        )
+        self._profile.total_duration_ms = int((time.time() - self._start_time) * 1000)
 
         # Calculate summary metrics
         self._calculate_summary()
@@ -280,8 +278,8 @@ class ExecutionProfiler:
             default=1,
         )
         if profile.total_duration_ms > 0 and max_parallelism > 0:
-            profile.parallel_efficiency = (
-                total_node_time / (profile.total_duration_ms * max_parallelism)
+            profile.parallel_efficiency = total_node_time / (
+                profile.total_duration_ms * max_parallelism
             )
 
     def _detect_bottlenecks(self) -> None:
@@ -292,64 +290,78 @@ class ExecutionProfiler:
         # 1. Slow nodes (>1s or >50% of total time)
         for node_id, np in profile.node_profiles.items():
             if np.duration_ms > 1000:
-                bottlenecks.append({
-                    "type": "slow_node",
-                    "node_id": node_id,
-                    "node_type": np.node_type,
-                    "duration_ms": np.duration_ms,
-                    "severity": "high" if np.duration_ms > 5000 else "medium",
-                })
+                bottlenecks.append(
+                    {
+                        "type": "slow_node",
+                        "node_id": node_id,
+                        "node_type": np.node_type,
+                        "duration_ms": np.duration_ms,
+                        "severity": "high" if np.duration_ms > 5000 else "medium",
+                    }
+                )
             elif (
-                profile.total_duration_ms > 0 and
-                np.duration_ms / profile.total_duration_ms > 0.5
+                profile.total_duration_ms > 0
+                and np.duration_ms / profile.total_duration_ms > 0.5
             ):
-                bottlenecks.append({
-                    "type": "dominant_node",
-                    "node_id": node_id,
-                    "node_type": np.node_type,
-                    "percentage": np.duration_ms / profile.total_duration_ms * 100,
-                    "severity": "medium",
-                })
+                bottlenecks.append(
+                    {
+                        "type": "dominant_node",
+                        "node_id": node_id,
+                        "node_type": np.node_type,
+                        "percentage": np.duration_ms / profile.total_duration_ms * 100,
+                        "severity": "medium",
+                    }
+                )
 
         # 2. High retry count
         for node_id, np in profile.node_profiles.items():
             if np.retries > 2:
-                bottlenecks.append({
-                    "type": "high_retries",
-                    "node_id": node_id,
-                    "node_type": np.node_type,
-                    "retries": np.retries,
-                    "severity": "medium",
-                })
+                bottlenecks.append(
+                    {
+                        "type": "high_retries",
+                        "node_id": node_id,
+                        "node_type": np.node_type,
+                        "retries": np.retries,
+                        "severity": "medium",
+                    }
+                )
 
         # 3. Sequential bottlenecks (stages with single node taking most time)
         for sp in profile.stage_profiles:
-            if sp.parallel_nodes == 1 and sp.duration_ms > profile.total_duration_ms * 0.3:
+            if (
+                sp.parallel_nodes == 1
+                and sp.duration_ms > profile.total_duration_ms * 0.3
+            ):
                 node_id = sp.node_ids[0] if sp.node_ids else None
                 if node_id:
-                    bottlenecks.append({
-                        "type": "sequential_bottleneck",
-                        "stage_index": sp.stage_index,
-                        "node_id": node_id,
-                        "duration_ms": sp.duration_ms,
-                        "severity": "low",
-                    })
+                    bottlenecks.append(
+                        {
+                            "type": "sequential_bottleneck",
+                            "stage_index": sp.stage_index,
+                            "node_id": node_id,
+                            "duration_ms": sp.duration_ms,
+                            "severity": "low",
+                        }
+                    )
 
         # 4. Low cache hit rate for cacheable nodes
         cacheable_types = {"code", "template", "condition", "variable_assignment"}
         cacheable_nodes = [
-            np for np in profile.node_profiles.values()
+            np
+            for np in profile.node_profiles.values()
             if np.node_type in cacheable_types
         ]
         if cacheable_nodes:
             cache_hits = sum(1 for np in cacheable_nodes if np.cache_hit)
             if len(cacheable_nodes) > 5 and cache_hits / len(cacheable_nodes) < 0.3:
-                bottlenecks.append({
-                    "type": "low_cache_rate",
-                    "cacheable_nodes": len(cacheable_nodes),
-                    "cache_hits": cache_hits,
-                    "severity": "low",
-                })
+                bottlenecks.append(
+                    {
+                        "type": "low_cache_rate",
+                        "cacheable_nodes": len(cacheable_nodes),
+                        "cache_hits": cache_hits,
+                        "severity": "low",
+                    }
+                )
 
         profile.bottlenecks = bottlenecks
 
@@ -424,7 +436,9 @@ class ExecutionProfiler:
             "run_id": profile.run_id,
             "workflow_id": profile.workflow_id,
             "workflow_name": profile.workflow_name,
-            "start_time": profile.start_time.isoformat() if profile.start_time else None,
+            "start_time": profile.start_time.isoformat()
+            if profile.start_time
+            else None,
             "end_time": profile.end_time.isoformat() if profile.end_time else None,
             "total_duration_ms": profile.total_duration_ms,
             "summary": {
@@ -441,7 +455,9 @@ class ExecutionProfiler:
             "slowest_node": {
                 "node_id": profile.slowest_node_id,
                 "duration_ms": profile.slowest_node_ms,
-            } if profile.slowest_node_id else None,
+            }
+            if profile.slowest_node_id
+            else None,
             "nodes": {
                 node_id: {
                     "node_type": np.node_type,
@@ -538,13 +554,16 @@ def compare_profiles(
         "duration_change_ms": profile2.total_duration_ms - profile1.total_duration_ms,
         "duration_change_pct": (
             (profile2.total_duration_ms - profile1.total_duration_ms)
-            / profile1.total_duration_ms * 100
-            if profile1.total_duration_ms > 0 else 0
+            / profile1.total_duration_ms
+            * 100
+            if profile1.total_duration_ms > 0
+            else 0
         ),
         "token_change": profile2.total_tokens - profile1.total_tokens,
         "retry_change": profile2.total_retries - profile1.total_retries,
         "cache_hit_rate_change": profile2.cache_hit_rate - profile1.cache_hit_rate,
-        "efficiency_change": profile2.parallel_efficiency - profile1.parallel_efficiency,
+        "efficiency_change": profile2.parallel_efficiency
+        - profile1.parallel_efficiency,
         "profile1": {
             "run_id": profile1.run_id,
             "total_duration_ms": profile1.total_duration_ms,

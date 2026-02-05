@@ -37,18 +37,18 @@ async def get_current_user_or_api_key(
     if not auth_token and authorization:
         if authorization.startswith("Bearer "):
             auth_token = authorization[7:]
-    
+
     if not auth_token:
         raise BusinessError(
             code=ResponseCode.UNAUTHORIZED,
             msg_key="not_authenticated",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     # 检查是否是 API Key (以 clou_ 开头)
     if auth_token.startswith("clou_"):
         return await _authenticate_api_key(auth_token)
-    
+
     # 否则尝试 JWT 认证
     return await _authenticate_jwt(auth_token), None
 
@@ -57,27 +57,27 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
     """通过 API Key 认证"""
     # 获取 key prefix 来快速查找
     key_prefix = api_key_str[:12]
-    
+
     # 查找可能匹配的 API Key
     api_keys = await APIKey.filter(
         key_prefix=key_prefix,
         is_active=True,
     ).prefetch_related("user", "agents")
-    
+
     # 验证完整的 key
     matched_api_key = None
     for api_key in api_keys:
         if APIKey.verify_key(api_key_str, api_key.key_hash):
             matched_api_key = api_key
             break
-    
+
     if not matched_api_key:
         raise BusinessError(
             code=ResponseCode.INVALID_TOKEN,
             msg_key="invalid_api_key",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     # 检查是否过期
     if matched_api_key.expires_at and matched_api_key.expires_at < now_utc():
         raise BusinessError(
@@ -85,23 +85,27 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
             msg_key="api_key_expired",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     # 获取关联的用户
     user = matched_api_key.user
     if not user:
-        user = await User.filter(id=matched_api_key.user_id).prefetch_related("roles__permissions").first()
-    
+        user = (
+            await User.filter(id=matched_api_key.user_id)
+            .prefetch_related("roles__permissions")
+            .first()
+        )
+
     if not user or not user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
             msg_key="inactive_user",
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     # 更新最后使用时间
     matched_api_key.last_used_at = now_utc()
     await matched_api_key.save(update_fields=["last_used_at"])
-    
+
     return user, matched_api_key
 
 
@@ -201,10 +205,10 @@ async def get_current_user_optional(
     if not auth_token and authorization:
         if authorization.startswith("Bearer "):
             auth_token = authorization[7:]
-    
+
     if not auth_token:
         return None
-    
+
     # 检查是否是 API Key
     if auth_token.startswith("clou_"):
         try:
@@ -212,7 +216,7 @@ async def get_current_user_optional(
             return user
         except BusinessError:
             return None
-    
+
     # 尝试 JWT 认证
     try:
         return await _authenticate_jwt(auth_token)
@@ -265,14 +269,14 @@ async def check_api_key_agent_access(api_key: Optional[APIKey], agent_id: UUID) 
     """
     if api_key is None:
         return  # JWT 认证，跳过检查
-    
+
     # 获取 API Key 关联的 Agents
     agents = await api_key.agents.all()
-    
+
     # 如果没有关联任何 Agent，允许访问所有（向后兼容）
     if not agents:
         return
-    
+
     # 检查是否有权访问指定的 Agent
     agent_ids = [agent.id for agent in agents]
     if agent_id not in agent_ids:

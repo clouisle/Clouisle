@@ -16,6 +16,7 @@ from app.models.notification import (
 
 class NotificationDeliveryOut(BaseModel):
     """通知发送状态"""
+
     channel: NotificationChannel
     status: NotificationDeliveryStatus
     error_message: Optional[str] = None

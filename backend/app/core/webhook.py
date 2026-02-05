@@ -26,7 +26,7 @@ async def get_webhook_config() -> dict:
         "headers": await SiteSetting.get_value("webhook_headers", {}),
         "body_template": await SiteSetting.get_value(
             "webhook_body_template",
-            '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}'
+            '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
         ),
         "secret": await SiteSetting.get_value("webhook_secret", ""),
     }
@@ -66,9 +66,7 @@ def _generate_signature(secret: str, payload: str) -> str:
         签名字符串 (hex)
     """
     return hmac.new(
-        secret.encode("utf-8"),
-        payload.encode("utf-8"),
-        hashlib.sha256
+        secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
     ).hexdigest()
 
 
@@ -156,7 +154,9 @@ async def send_webhook_notification(
 
             # 检查响应状态
             if 200 <= response.status_code < 300:
-                logger.info(f"Webhook notification sent successfully, status: {response.status_code}")
+                logger.info(
+                    f"Webhook notification sent successfully, status: {response.status_code}"
+                )
                 return True
             else:
                 logger.error(

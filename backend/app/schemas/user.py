@@ -87,22 +87,22 @@ class User(UserInDBBase):
     @classmethod
     def model_validate(cls, obj, **kwargs):
         """Custom validation to handle sso_connections ReverseRelation"""
-        if hasattr(obj, '__dict__'):
+        if hasattr(obj, "__dict__"):
             # It's an ORM object, convert to dict first
             data = {
-                'id': obj.id,
-                'username': obj.username,
-                'email': obj.email,
-                'is_active': obj.is_active,
-                'is_superuser': obj.is_superuser,
-                'email_verified': obj.email_verified,
-                'avatar_url': obj.avatar_url,
-                'created_at': obj.created_at,
-                'last_login': obj.last_login,
-                'auth_source': obj.auth_source,
-                'external_id': obj.external_id,
-                'roles': obj.roles if hasattr(obj, 'roles') else [],
-                'sso_connections': [],  # Always empty, will be populated separately
+                "id": obj.id,
+                "username": obj.username,
+                "email": obj.email,
+                "is_active": obj.is_active,
+                "is_superuser": obj.is_superuser,
+                "email_verified": obj.email_verified,
+                "avatar_url": obj.avatar_url,
+                "created_at": obj.created_at,
+                "last_login": obj.last_login,
+                "auth_source": obj.auth_source,
+                "external_id": obj.external_id,
+                "roles": obj.roles if hasattr(obj, "roles") else [],
+                "sso_connections": [],  # Always empty, will be populated separately
             }
             return super().model_validate(data, **kwargs)
         return super().model_validate(obj, **kwargs)

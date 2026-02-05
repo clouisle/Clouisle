@@ -55,28 +55,20 @@ api_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"]
 api_router.include_router(
     prompt_generator.router, prefix="/prompts", tags=["prompt-generator"]
 )
-api_router.include_router(
-    workflows.router, prefix="/workflows", tags=["workflows"]
-)
-api_router.include_router(
-    workflow_metrics.router, tags=["workflow-metrics"]
-)
-api_router.include_router(
-    workflow_versions.router, tags=["workflow-versions"]
-)
+api_router.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
+api_router.include_router(workflow_metrics.router, tags=["workflow-metrics"])
+api_router.include_router(workflow_versions.router, tags=["workflow-versions"])
 api_router.include_router(
     workflow_versions.template_router, tags=["workflow-templates"]
 )
-api_router.include_router(
-    dashboard.router, prefix="/dashboard", tags=["dashboard"]
-)
-api_router.include_router(
-    audit_logs.router, prefix="/audit-logs", tags=["audit-logs"]
-)
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
 api_router.include_router(
     notifications.router, prefix="/notifications", tags=["notifications"]
 )
 api_router.include_router(
-    notifications.admin_router, prefix="/admin/notifications", tags=["notifications-admin"]
+    notifications.admin_router,
+    prefix="/admin/notifications",
+    tags=["notifications-admin"],
 )
 api_router.include_router(sso.router, prefix="/sso", tags=["sso"])

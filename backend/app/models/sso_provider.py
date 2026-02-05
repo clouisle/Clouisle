@@ -8,15 +8,17 @@ class SSOProvider(models.Model):
     name = fields.CharField(
         max_length=100, unique=True, description="Unique provider identifier"
     )
-    protocol = fields.CharField(
-        max_length=20, description="Protocol: oidc, saml2, cas"
-    )
+    protocol = fields.CharField(max_length=20, description="Protocol: oidc, saml2, cas")
 
     # Display settings
     display_name = fields.CharField(max_length=100, description="User-facing name")
-    icon_url = fields.CharField(max_length=512, null=True, description="Provider icon URL")
+    icon_url = fields.CharField(
+        max_length=512, null=True, description="Provider icon URL"
+    )
     button_text = fields.CharField(
-        max_length=50, null=True, description="Button text (e.g., 'Sign in with Google')"
+        max_length=50,
+        null=True,
+        description="Button text (e.g., 'Sign in with Google')",
     )
 
     # Configuration (JSON field)
@@ -32,7 +34,9 @@ class SSOProvider(models.Model):
     )
 
     # Settings
-    is_enabled = fields.BooleanField(default=True, description="Enable/disable provider")
+    is_enabled = fields.BooleanField(
+        default=True, description="Enable/disable provider"
+    )
     allow_signup = fields.BooleanField(
         default=True, description="Allow auto-creation of users"
     )

@@ -10,9 +10,7 @@ from app.core.config import settings
 
 # Redis URL for Celery broker and result backend
 if settings.REDIS_PASSWORD:
-    REDIS_URL = (
-        f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}"
-    )
+    REDIS_URL = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}"
 else:
     REDIS_URL = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
 

@@ -52,7 +52,7 @@ class UserInputNodeExecutor(NodeExecutor):
         """
         node_data = node.get("data", {})
         config = node_data.get("config", {})
-        
+
         # 前端存储为 "parameters"，后端兼容 "variables"
         variables = config.get("variables", [])
         if not variables:
@@ -177,9 +177,11 @@ class TriggerNodeExecutor(NodeExecutor):
             {"name": "_trigger_type", "type": "string"},
             {"name": "_trigger_time", "type": "string"},
         ]
-        result.extend([
-            {"name": var.get("name"), "type": var.get("type", "string")}
-            for var in variables
-            if var.get("name")
-        ])
+        result.extend(
+            [
+                {"name": var.get("name"), "type": var.get("type", "string")}
+                for var in variables
+                if var.get("name")
+            ]
+        )
         return result

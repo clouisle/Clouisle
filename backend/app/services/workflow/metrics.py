@@ -231,7 +231,8 @@ class MetricsCollector:
             # Keep only recent runs
             await redis.zremrangebyrank(
                 self._key("workflow", workflow_id, "durations"),
-                0, -1001,  # Keep last 1000
+                0,
+                -1001,  # Keep last 1000
             )
 
             # Record node count
@@ -289,7 +290,8 @@ class MetricsCollector:
             )
             await redis.zremrangebyrank(
                 self._key("node", node_type, "durations"),
-                0, -1001,
+                0,
+                -1001,
             )
 
             # Record retries
@@ -341,9 +343,7 @@ class MetricsCollector:
                 await redis.get(self._key("workflow", workflow_id, "cancelled")) or 0
             )
             metrics.total_runs = (
-                metrics.successful_runs +
-                metrics.failed_runs +
-                metrics.cancelled_runs
+                metrics.successful_runs + metrics.failed_runs + metrics.cancelled_runs
             )
 
             # Calculate error rate
@@ -353,7 +353,8 @@ class MetricsCollector:
             # Get duration percentiles
             durations = await redis.zrange(
                 self._key("workflow", workflow_id, "durations"),
-                0, -1,
+                0,
+                -1,
                 withscores=True,
             )
             if durations:
@@ -377,9 +378,7 @@ class MetricsCollector:
                 )
 
             # Get error breakdown
-            errors = await redis.hgetall(
-                self._key("workflow", workflow_id, "errors")
-            )
+            errors = await redis.hgetall(self._key("workflow", workflow_id, "errors"))
             metrics.errors_by_type = {k: int(v) for k, v in errors.items()}
 
             # Calculate throughput (runs per minute)
@@ -398,7 +397,9 @@ class MetricsCollector:
             if time_range_minutes > 0:
                 metrics.runs_per_minute = total_in_range / time_range_minutes
 
-            metrics.start_time = datetime.utcnow() - timedelta(minutes=time_range_minutes)
+            metrics.start_time = datetime.utcnow() - timedelta(
+                minutes=time_range_minutes
+            )
             metrics.end_time = datetime.utcnow()
 
         except Exception as e:
@@ -430,7 +431,8 @@ class MetricsCollector:
             # Get duration percentiles
             durations = await redis.zrange(
                 self._key("node", node_type, "durations"),
-                0, -1,
+                0,
+                -1,
                 withscores=True,
             )
             if durations:
@@ -458,11 +460,26 @@ class MetricsCollector:
     async def get_all_node_metrics(self) -> dict[str, NodeMetrics]:
         """Get metrics for all node types."""
         node_types = [
-            "user_input", "trigger", "answer", "llm", "condition",
-            "question_classifier", "code", "template", "variable_assignment",
-            "variable_aggregator", "parameter_extractor", "iteration", "loop",
-            "tool", "agent", "http_request", "sub_workflow", "file_to_url",
-            "knowledge_retrieval", "document_extractor",
+            "user_input",
+            "trigger",
+            "answer",
+            "llm",
+            "condition",
+            "question_classifier",
+            "code",
+            "template",
+            "variable_assignment",
+            "variable_aggregator",
+            "parameter_extractor",
+            "iteration",
+            "loop",
+            "tool",
+            "agent",
+            "http_request",
+            "sub_workflow",
+            "file_to_url",
+            "knowledge_retrieval",
+            "document_extractor",
         ]
 
         results = {}
@@ -487,12 +504,15 @@ class MetricsCollector:
                 data = await redis.hgetall(key)
                 if data.get("status") == "running":
                     run_id = key.split(":")[-1]
-                    running.append({
-                        "run_id": run_id,
-                        "workflow_id": data.get("workflow_id"),
-                        "start_time": float(data.get("start_time", 0)),
-                        "duration_s": time.time() - float(data.get("start_time", 0)),
-                    })
+                    running.append(
+                        {
+                            "run_id": run_id,
+                            "workflow_id": data.get("workflow_id"),
+                            "start_time": float(data.get("start_time", 0)),
+                            "duration_s": time.time()
+                            - float(data.get("start_time", 0)),
+                        }
+                    )
 
             return sorted(running, key=lambda x: x["start_time"])
 

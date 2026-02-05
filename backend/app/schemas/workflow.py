@@ -235,7 +235,9 @@ class LLMNodeConfig(BaseModel):
     """Configuration for LLM node"""
 
     model_id: UUID | None = None
-    prompt: str = Field(..., description="Prompt template with {{variable}} placeholders")
+    prompt: str = Field(
+        ..., description="Prompt template with {{variable}} placeholders"
+    )
     temperature: float = Field(default=0.7, ge=0, le=2)
     max_tokens: int | None = Field(default=None, ge=1)
     top_p: float | None = Field(default=None, ge=0, le=1)
@@ -245,7 +247,9 @@ class AgentNodeConfig(BaseModel):
     """Configuration for agent node"""
 
     agent_id: UUID
-    message: str = Field(..., description="Message template with {{variable}} placeholders")
+    message: str = Field(
+        ..., description="Message template with {{variable}} placeholders"
+    )
 
 
 class SubWorkflowNodeConfig(BaseModel):
@@ -276,7 +280,9 @@ class KBRetrievalNodeConfig(BaseModel):
 class ConditionNodeConfig(BaseModel):
     """Configuration for condition node"""
 
-    expression: str = Field(..., description="Boolean expression with {{variable}} placeholders")
+    expression: str = Field(
+        ..., description="Boolean expression with {{variable}} placeholders"
+    )
     true_output: str = Field(default="true")
     false_output: str = Field(default="false")
 
@@ -284,9 +290,15 @@ class ConditionNodeConfig(BaseModel):
 class LoopNodeConfig(BaseModel):
     """Configuration for loop node"""
 
-    array_expression: str = Field(..., description="Expression that evaluates to an array")
-    item_variable: str = Field(default="item", description="Variable name for current item")
-    index_variable: str = Field(default="index", description="Variable name for current index")
+    array_expression: str = Field(
+        ..., description="Expression that evaluates to an array"
+    )
+    item_variable: str = Field(
+        default="item", description="Variable name for current item"
+    )
+    index_variable: str = Field(
+        default="index", description="Variable name for current index"
+    )
     max_iterations: int = Field(default=100, ge=1, le=1000)
 
 

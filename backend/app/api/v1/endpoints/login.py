@@ -173,7 +173,10 @@ async def login_access_token(
                 notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
                 user_id=user.id,
                 title=t("notify_account_locked_title"),
-                content=t("notify_account_locked_content", lockout_minutes=(lockout_seconds or 0) // 60),
+                content=t(
+                    "notify_account_locked_content",
+                    lockout_minutes=(lockout_seconds or 0) // 60,
+                ),
                 level=NotificationLevel.HIGH,
             )
             raise BusinessError(
@@ -454,7 +457,11 @@ async def register(
         await AutoNotificationService.send_global(
             notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
             title=t("notify_user_pending_approval_title"),
-            content=t("notify_user_pending_approval_content", username=user.username, email=user.email),
+            content=t(
+                "notify_user_pending_approval_content",
+                username=user.username,
+                email=user.email,
+            ),
         )
         return success(data=user, msg_key="registration_pending_approval")
     elif email_verification:

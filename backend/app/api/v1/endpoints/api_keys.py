@@ -29,7 +29,9 @@ from app.services.audit_log import AuditLogService
 router = APIRouter()
 
 
-async def build_api_key_response(api_key: APIKey, include_agents: bool = True, include_workflows: bool = True) -> dict:
+async def build_api_key_response(
+    api_key: APIKey, include_agents: bool = True, include_workflows: bool = True
+) -> dict:
     """构建 API Key 响应数据"""
     response_data = {
         "id": api_key.id,
@@ -48,7 +50,7 @@ async def build_api_key_response(api_key: APIKey, include_agents: bool = True, i
     }
 
     # 添加用户信息（如果已预加载）
-    if hasattr(api_key, 'user') and api_key.user:
+    if hasattr(api_key, "user") and api_key.user:
         response_data["user"] = {
             "id": api_key.user.id,
             "username": api_key.user.username,
@@ -65,12 +67,13 @@ async def build_api_key_response(api_key: APIKey, include_agents: bool = True, i
     # 添加关联的 Workflow 信息
     if include_workflows:
         from app.schemas.api_key import APIKeyWorkflowInfo
+
         workflows = await api_key.workflows.all()
         response_data["workflows"] = [
             APIKeyWorkflowInfo(id=workflow.id, name=workflow.name, icon=workflow.icon)
             for workflow in workflows
         ]
-    
+
     return response_data
 
 
@@ -104,9 +107,7 @@ async def list_api_keys(
 
     # Status filter
     if status == "active":
-        query = query.filter(
-            is_active=True
-        ).filter(
+        query = query.filter(is_active=True).filter(
             Q(expires_at__isnull=True) | Q(expires_at__gt=now)
         )
     elif status == "inactive":
@@ -119,14 +120,19 @@ async def list_api_keys(
         query = query.filter(name__icontains=search)
 
     total = await query.count()
-    api_keys = await query.offset(skip).limit(page_size).order_by("-created_at").prefetch_related("user", "agents")
-    
+    api_keys = (
+        await query.offset(skip)
+        .limit(page_size)
+        .order_by("-created_at")
+        .prefetch_related("user", "agents")
+    )
+
     # 构建响应数据
     items = []
     for api_key in api_keys:
         item = await build_api_key_response(api_key)
         items.append(item)
-    
+
     return success(
         data={
             "items": items,
@@ -145,7 +151,7 @@ async def get_api_key_stats(
     Get API key statistics.
     """
     now = now_utc()
-    
+
     # Admin sees all, regular user sees only their own
     if current_user.is_superuser:
         base_query = APIKey.all()
@@ -153,11 +159,11 @@ async def get_api_key_stats(
         base_query = APIKey.filter(user_id=current_user.id)
 
     total = await base_query.count()
-    active = await base_query.filter(
-        is_active=True
-    ).filter(
-        Q(expires_at__isnull=True) | Q(expires_at__gt=now)
-    ).count()
+    active = (
+        await base_query.filter(is_active=True)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+        .count()
+    )
     inactive = await base_query.filter(is_active=False).count()
     expired = await base_query.filter(expires_at__lt=now).count()
 
@@ -201,6 +207,7 @@ async def create_api_key(
     workflows = []
     if data.workflow_ids:
         from app.models.workflow import Workflow
+
         for workflow_id in data.workflow_ids:
             workflow = await Workflow.filter(id=workflow_id).first()
             if not workflow:
@@ -252,7 +259,11 @@ async def create_api_key(
     )
 
     # 重新查询以获取关联数据
-    api_key = await APIKey.filter(id=api_key.id).prefetch_related("user", "agents", "workflows").first()
+    api_key = (
+        await APIKey.filter(id=api_key.id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
 
     # 构建响应
     response_data = await build_api_key_response(api_key)
@@ -269,8 +280,12 @@ async def get_api_key(
     """
     Get a specific API key by ID.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
-    
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
+
     if not api_key:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -301,7 +316,11 @@ async def update_api_key(
     """
     Update an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
 
     if not api_key:
         raise BusinessError(
@@ -341,6 +360,7 @@ async def update_api_key(
     if data.workflow_ids is not None:
         # 验证新的 Workflow IDs
         from app.models.workflow import Workflow
+
         new_workflows = []
         for workflow_id in data.workflow_ids:
             workflow = await Workflow.filter(id=workflow_id).first()
@@ -358,13 +378,19 @@ async def update_api_key(
             await api_key.workflows.add(*new_workflows)
 
     # Update other fields
-    update_data = data.model_dump(exclude_unset=True, exclude={"agent_ids", "workflow_ids"})
+    update_data = data.model_dump(
+        exclude_unset=True, exclude={"agent_ids", "workflow_ids"}
+    )
     if update_data:
         await api_key.update_from_dict(update_data)
         await api_key.save()
 
     # 重新加载（包括关系）
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
 
     # 记录审计日志
     await AuditLogService.log(
@@ -392,7 +418,11 @@ async def delete_api_key(
     """
     Delete an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("user", "agents", "workflows").first()
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("user", "agents", "workflows")
+        .first()
+    )
 
     if not api_key:
         raise BusinessError(

@@ -17,7 +17,9 @@ class AuditLog(models.Model):
     user_agent = fields.TextField(null=True)
 
     # 操作信息
-    action = fields.CharField(max_length=100)  # login_success, create_user, update_agent等
+    action = fields.CharField(
+        max_length=100
+    )  # login_success, create_user, update_agent等
     resource_type = fields.CharField(max_length=50)  # user, agent, role, setting等
     resource_id = fields.UUIDField(null=True)  # 资源ID
     resource_name = fields.CharField(max_length=255, null=True)  # 资源名称

@@ -151,8 +151,7 @@ class ToolExecutor:
         # Try team-specific config first
         if team_id:
             tool_config = await ToolConfig.filter(
-                tool_name=tool_name,
-                team_id=team_id
+                tool_name=tool_name, team_id=team_id
             ).first()
             if tool_config:
                 credentials = tool_config.credentials or {}
@@ -160,8 +159,7 @@ class ToolExecutor:
         # If no team config, try global config
         if not credentials:
             global_config = await ToolConfig.filter(
-                tool_name=tool_name,
-                team_id=None
+                tool_name=tool_name, team_id=None
             ).first()
             if global_config:
                 credentials = global_config.credentials or {}

@@ -176,9 +176,7 @@ class FileParserService:
             md = self._get_markitdown()
 
             # Write to temp file for MarkItDown
-            with tempfile.NamedTemporaryFile(
-                suffix=ext, delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                 tmp.write(file_content)
                 tmp_path = tmp.name
 

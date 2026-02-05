@@ -62,11 +62,7 @@ class CreatorInfo(BaseModel):
         """Create CreatorInfo from user, handling deleted users"""
         if user is None:
             return cls(id=None, username="Deleted User", avatar_url=None)
-        return cls(
-            id=user.id,
-            username=user.username,
-            avatar_url=user.avatar_url
-        )
+        return cls(id=user.id, username=user.username, avatar_url=user.avatar_url)
 
 
 class TeamInfo(BaseModel):
@@ -522,7 +518,8 @@ class ChatRequest(BaseModel):
         default_factory=list, description="Images for vision"
     )
     files: list[FileContent] = Field(
-        default_factory=list, description="Parsed files for file upload (deprecated, use file_urls instead)"
+        default_factory=list,
+        description="Parsed files for file upload (deprecated, use file_urls instead)",
     )
     file_urls: list[FileUrl] = Field(
         default_factory=list,

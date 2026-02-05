@@ -292,7 +292,9 @@ async def admin_list_notifications(
     notification_ids = [n.id for n in notifications]
     deliveries_map: dict[UUID, list] = {nid: [] for nid in notification_ids}
     if notification_ids:
-        deliveries = await NotificationDelivery.filter(notification_id__in=notification_ids)
+        deliveries = await NotificationDelivery.filter(
+            notification_id__in=notification_ids
+        )
         for d in deliveries:
             deliveries_map[d.notification_id].append(
                 NotificationDeliveryOut(
@@ -392,6 +394,7 @@ async def admin_create_notification(
         # 校验邮件渠道
         if NotificationChannel.EMAIL in payload.notify_channels:
             from app.core.email import get_smtp_config
+
             smtp_config = await get_smtp_config()
 
             if not smtp_config["enabled"]:
@@ -411,6 +414,7 @@ async def admin_create_notification(
         # 校验钉钉渠道
         if NotificationChannel.DINGTALK in payload.notify_channels:
             from app.core.dingtalk import get_dingtalk_config
+
             dingtalk_config = await get_dingtalk_config()
 
             if not dingtalk_config["enabled"]:
@@ -430,7 +434,11 @@ async def admin_create_notification(
                     )
             # 企业应用方式需要配置 app_key, app_secret, agent_id
             elif dingtalk_config["notification_type"] == "app":
-                if not dingtalk_config["app_key"] or not dingtalk_config["app_secret"] or not dingtalk_config["agent_id"]:
+                if (
+                    not dingtalk_config["app_key"]
+                    or not dingtalk_config["app_secret"]
+                    or not dingtalk_config["agent_id"]
+                ):
                     raise BusinessError(
                         code=ResponseCode.BAD_REQUEST,
                         msg_key="dingtalk_not_configured",
@@ -440,6 +448,7 @@ async def admin_create_notification(
         # 校验企业微信渠道
         if NotificationChannel.WECHAT in payload.notify_channels:
             from app.core.wechat import get_wechat_config
+
             wechat_config = await get_wechat_config()
 
             if not wechat_config["enabled"]:
@@ -457,7 +466,11 @@ async def admin_create_notification(
                         status_code=400,
                     )
             elif wechat_config["notification_type"] == "app":
-                if not wechat_config["corp_id"] or not wechat_config["secret"] or not wechat_config["agent_id"]:
+                if (
+                    not wechat_config["corp_id"]
+                    or not wechat_config["secret"]
+                    or not wechat_config["agent_id"]
+                ):
                     raise BusinessError(
                         code=ResponseCode.BAD_REQUEST,
                         msg_key="wechat_not_configured",
@@ -467,6 +480,7 @@ async def admin_create_notification(
         # 校验飞书渠道
         if NotificationChannel.FEISHU in payload.notify_channels:
             from app.core.feishu import get_feishu_config
+
             feishu_config = await get_feishu_config()
 
             if not feishu_config["enabled"]:
@@ -494,6 +508,7 @@ async def admin_create_notification(
         # 校验通用 Webhook 渠道
         if NotificationChannel.WEBHOOK in payload.notify_channels:
             from app.core.webhook import get_webhook_config
+
             webhook_config = await get_webhook_config()
 
             if not webhook_config["enabled"]:
@@ -513,6 +528,7 @@ async def admin_create_notification(
         # 校验 Slack 渠道
         if NotificationChannel.SLACK in payload.notify_channels:
             from app.core.slack import get_slack_config
+
             slack_config = await get_slack_config()
 
             if not slack_config["enabled"]:
@@ -543,7 +559,9 @@ async def admin_create_notification(
         expires_at=payload.expires_at,
     )
 
-    await create_notification(notification, actor=current_user, meta={"source": "admin"})
+    await create_notification(
+        notification, actor=current_user, meta={"source": "admin"}
+    )
 
     # 根据选择的渠道发送外部通知
     deliveries = []
@@ -552,6 +570,7 @@ async def admin_create_notification(
 
         if NotificationChannel.EMAIL in payload.notify_channels:
             from app.tasks.notification import send_notification_email_task
+
             # 创建发送记录
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
@@ -566,6 +585,7 @@ async def admin_create_notification(
 
         if NotificationChannel.DINGTALK in payload.notify_channels:
             from app.tasks.notification import send_notification_dingtalk_task
+
             # 创建发送记录
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
@@ -576,11 +596,14 @@ async def admin_create_notification(
             task_result = send_notification_dingtalk_task.delay(str(notification.id))
             delivery.task_id = task_result.id
             await delivery.save()
-            logger.info(f"DingTalk task submitted: {task_result.id}, state: {task_result.state}")
+            logger.info(
+                f"DingTalk task submitted: {task_result.id}, state: {task_result.state}"
+            )
             deliveries.append(delivery)
 
         if NotificationChannel.WECHAT in payload.notify_channels:
             from app.tasks.notification import send_notification_wechat_task
+
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
                 channel=NotificationChannel.WECHAT,
@@ -594,6 +617,7 @@ async def admin_create_notification(
 
         if NotificationChannel.FEISHU in payload.notify_channels:
             from app.tasks.notification import send_notification_feishu_task
+
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
                 channel=NotificationChannel.FEISHU,
@@ -607,6 +631,7 @@ async def admin_create_notification(
 
         if NotificationChannel.WEBHOOK in payload.notify_channels:
             from app.tasks.notification import send_notification_webhook_task
+
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
                 channel=NotificationChannel.WEBHOOK,
@@ -620,6 +645,7 @@ async def admin_create_notification(
 
         if NotificationChannel.SLACK in payload.notify_channels:
             from app.tasks.notification import send_notification_slack_task
+
             delivery = await NotificationDelivery.create(
                 notification_id=notification.id,
                 channel=NotificationChannel.SLACK,

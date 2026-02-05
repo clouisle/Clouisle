@@ -77,26 +77,26 @@ class WorkflowTemplate:
     visibility: TemplateVisibility
     author_id: str
     author_name: str
-    
+
     # Workflow structure
     nodes: list[dict]
     edges: list[dict]
     config: dict = field(default_factory=dict)
-    
+
     # Template variables
     variables: list[TemplateVariable] = field(default_factory=list)
-    
+
     # Metadata
     tags: list[str] = field(default_factory=list)
     version: str = "1.0.0"
     preview_image: str | None = None
     icon: str | None = None
-    
+
     # Stats
     usage_count: int = 0
     rating: float = 0.0
     rating_count: int = 0
-    
+
     # Timestamps
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
@@ -352,8 +352,14 @@ class TemplateManager:
                     "data": {
                         "label": "Route by Intent",
                         "conditions": [
-                            {"condition": "llm_classify.output == 'support'", "target": "llm_support"},
-                            {"condition": "llm_classify.output == 'sales'", "target": "llm_sales"},
+                            {
+                                "condition": "llm_classify.output == 'support'",
+                                "target": "llm_support",
+                            },
+                            {
+                                "condition": "llm_classify.output == 'sales'",
+                                "target": "llm_sales",
+                            },
                             {"condition": "true", "target": "llm_general"},
                         ],
                     },
@@ -629,15 +635,12 @@ class TemplateManager:
         if author_id:
             templates = [t for t in templates if t.author_id == author_id]
         if tags:
-            templates = [
-                t for t in templates
-                if any(tag in t.tags for tag in tags)
-            ]
+            templates = [t for t in templates if any(tag in t.tags for tag in tags)]
 
         # Sort by usage and rating
         templates.sort(key=lambda t: (t.usage_count, t.rating), reverse=True)
 
-        return templates[offset:offset + limit]
+        return templates[offset : offset + limit]
 
     async def search(
         self,
@@ -680,7 +683,8 @@ class TemplateManager:
     async def get_featured(self, limit: int = 10) -> list[WorkflowTemplate]:
         """Get featured/popular templates."""
         templates = [
-            t for t in self._templates.values()
+            t
+            for t in self._templates.values()
             if t.visibility == TemplateVisibility.PUBLIC
         ]
         templates.sort(key=lambda t: (t.rating, t.usage_count), reverse=True)
@@ -792,7 +796,9 @@ class TemplateManager:
     async def get_stats(self) -> dict:
         """Get template statistics."""
         templates = list(self._templates.values())
-        public_templates = [t for t in templates if t.visibility == TemplateVisibility.PUBLIC]
+        public_templates = [
+            t for t in templates if t.visibility == TemplateVisibility.PUBLIC
+        ]
 
         by_category = {}
         for template in public_templates:
@@ -802,7 +808,9 @@ class TemplateManager:
         return {
             "total_templates": len(templates),
             "public_templates": len(public_templates),
-            "builtin_templates": len([t for t in templates if t.id.startswith("builtin_")]),
+            "builtin_templates": len(
+                [t for t in templates if t.id.startswith("builtin_")]
+            ),
             "by_category": by_category,
             "total_usage": sum(t.usage_count for t in templates),
         }

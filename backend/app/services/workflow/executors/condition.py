@@ -28,8 +28,10 @@ OPERATORS = {
     "less_than": lambda a, b: float(a) < float(b),
     "greater_or_equal": lambda a, b: float(a) >= float(b),
     "less_or_equal": lambda a, b: float(a) <= float(b),
-    "is_empty": lambda a, b: not a or (isinstance(a, (list, dict, str)) and len(a) == 0),
-    "is_not_empty": lambda a, b: a and (not isinstance(a, (list, dict, str)) or len(a) > 0),
+    "is_empty": lambda a, b: not a
+    or (isinstance(a, (list, dict, str)) and len(a) == 0),
+    "is_not_empty": lambda a, b: a
+    and (not isinstance(a, (list, dict, str)) or len(a) > 0),
     "is_null": lambda a, b: a is None,
     "is_not_null": lambda a, b: a is not None,
     "regex_match": lambda a, b: bool(__import__("re").match(str(b), str(a))),
@@ -87,18 +89,18 @@ class ConditionNodeExecutor(NodeExecutor):
         """Execute condition node."""
         node_id = node.get("id")
         node_data = node.get("data", {})
-        
+
         # Frontend stores branches directly in node_data, conditions inside branches
         # Also check config/conditionConfig for backward compatibility
         config = node_data.get("config", {})
         condition_config = node_data.get("conditionConfig", config)
-        
+
         # Branches can be in node_data directly or in config
         branches = node_data.get("branches", []) or condition_config.get("branches", [])
-        
+
         # Conditions are typically inside each branch, but may also be at top level
         conditions = condition_config.get("conditions", [])
-        
+
         logger.info(f"Condition node {node_id}: branches count={len(branches)}")
 
         # Evaluate all top-level conditions first (if any)
@@ -116,15 +118,17 @@ class ConditionNodeExecutor(NodeExecutor):
         for branch in branches:
             branch_id = branch.get("id")
             is_default = branch.get("isDefault", False)
-            
+
             if is_default:
                 continue
 
             # Get conditions for this branch - they may be embedded in the branch
             branch_conditions = branch.get("conditions", [])
             logical_op = branch.get("logicalOperator", "and")
-            
-            logger.info(f"Evaluating branch {branch_id}: conditions={branch_conditions}, op={logical_op}, isDefault={is_default}")
+
+            logger.info(
+                f"Evaluating branch {branch_id}: conditions={branch_conditions}, op={logical_op}, isDefault={is_default}"
+            )
 
             if not branch_conditions:
                 continue
@@ -144,10 +148,14 @@ class ConditionNodeExecutor(NodeExecutor):
 
             # Evaluate branch condition combination
             if logical_op == "and":
-                branch_result = all(branch_condition_results) if branch_condition_results else False
+                branch_result = (
+                    all(branch_condition_results) if branch_condition_results else False
+                )
             else:  # or
-                branch_result = any(branch_condition_results) if branch_condition_results else False
-            
+                branch_result = (
+                    any(branch_condition_results) if branch_condition_results else False
+                )
+
             logger.info(f"Branch {branch_id} result: {branch_result}")
 
             if branch_result:
@@ -155,7 +163,9 @@ class ConditionNodeExecutor(NodeExecutor):
                 # Handle IS the branch ID (if, else_if_xxx, else)
                 # This matches the React Flow Handle id={branch.id} in condition-node.tsx
                 matched_handle = branch_id
-                logger.info(f"Matched branch: {matched_branch}, handle: {matched_handle}")
+                logger.info(
+                    f"Matched branch: {matched_branch}, handle: {matched_handle}"
+                )
                 break
 
         # Use default branch if no condition matched
@@ -165,7 +175,9 @@ class ConditionNodeExecutor(NodeExecutor):
                     matched_branch = branch.get("id")
                     # Handle IS the branch ID - for else branch, id is typically "else"
                     matched_handle = matched_branch
-                    logger.info(f"Using default/else branch: {matched_branch}, handle: {matched_handle}")
+                    logger.info(
+                        f"Using default/else branch: {matched_branch}, handle: {matched_handle}"
+                    )
                     break
 
         if not matched_handle:
@@ -271,11 +283,15 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
 
         node_id = node.get("id")
         node_data = node.get("data", {})
-        
+
         # Frontend stores config in questionClassifierConfig, also check config for backward compatibility
-        config = node_data.get("questionClassifierConfig", {}) or node_data.get("config", {})
-        
-        logger.info(f"Question classifier node {node_id}: config keys={list(config.keys())}")
+        config = node_data.get("questionClassifierConfig", {}) or node_data.get(
+            "config", {}
+        )
+
+        logger.info(
+            f"Question classifier node {node_id}: config keys={list(config.keys())}"
+        )
 
         # Note: modelId from frontend is team_models.id (TeamModel ID), not models.id
         team_model_id = config.get("modelId")
@@ -286,7 +302,9 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
         instruction = config.get("instruction", "")
 
         if not team_model_id:
-            logger.error(f"Question classifier node {node_id}: modelId not found. Config: {config}")
+            logger.error(
+                f"Question classifier node {node_id}: modelId not found. Config: {config}"
+            )
             return ExecutionResult(error="Model ID not configured")
 
         # Get input value
@@ -295,7 +313,9 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             return ExecutionResult(error="No input provided for classification")
 
         # First try to find as TeamModel ID, then fallback to Model ID
-        team_model = await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        team_model = (
+            await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
+        )
         if team_model:
             model = team_model.model
             model_id = str(model.id)
@@ -307,11 +327,13 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             model_id = str(model.id)
 
         # Build classification prompt
-        category_descriptions = "\n".join([
-            f"- {cat.get('id')}: {cat.get('name')} - {cat.get('description', '')}"
-            for cat in categories
-        ])
-        
+        category_descriptions = "\n".join(
+            [
+                f"- {cat.get('id')}: {cat.get('name')} - {cat.get('description', '')}"
+                for cat in categories
+            ]
+        )
+
         # Build system prompt with optional instruction
         base_prompt = f"""You are a question classifier. Classify the user's input into one of these categories:
 
@@ -344,7 +366,8 @@ Respond in JSON format:
             try:
                 # Try to extract JSON from response
                 import re
-                json_match = re.search(r'\{[^}]+\}', response_text)
+
+                json_match = re.search(r"\{[^}]+\}", response_text)
                 if json_match:
                     parsed = json.loads(json_match.group())
                 else:
@@ -357,7 +380,7 @@ Respond in JSON format:
                 # Validate category exists - check both id and name
                 valid_ids = [c.get("id") for c in categories]
                 valid_names = [c.get("name") for c in categories]
-                
+
                 if category not in valid_ids:
                     # Try matching by name
                     if category in valid_names:
@@ -385,7 +408,9 @@ Respond in JSON format:
             # Handle IS the category ID (matches React Flow Handle id={category.id})
             handle = category
             valid_ids = [c.get("id") for c in categories]
-            if not handle or (handle == default_category and default_category not in valid_ids):
+            if not handle or (
+                handle == default_category and default_category not in valid_ids
+            ):
                 # Use first category as fallback if default_category is not a valid id
                 if categories:
                     handle = categories[0].get("id")

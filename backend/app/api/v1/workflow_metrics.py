@@ -25,6 +25,7 @@ router = APIRouter(prefix="/workflows/metrics", tags=["workflow-metrics"])
 
 # Response models
 
+
 class WorkflowMetricsResponse(BaseModel):
     """Workflow metrics response."""
 
@@ -95,6 +96,7 @@ class CacheStatsResponse(BaseModel):
 
 # Endpoints
 
+
 @router.get("/dashboard", response_model=DashboardSummaryResponse)
 async def get_dashboard_summary(
     current_user: User = Depends(get_current_user),
@@ -117,8 +119,7 @@ async def get_dashboard_summary(
         success_rate=summary.get("success_rate", 0.0),
         currently_running=summary.get("currently_running", 0),
         running_workflows=[
-            RunningWorkflowResponse(**wf)
-            for wf in summary.get("running_workflows", [])
+            RunningWorkflowResponse(**wf) for wf in summary.get("running_workflows", [])
         ],
     )
 
@@ -153,7 +154,9 @@ async def get_workflow_metrics(
         cancelled_runs=metrics.cancelled_runs,
         error_rate=metrics.error_rate,
         avg_duration_ms=metrics.avg_duration_ms,
-        min_duration_ms=metrics.min_duration_ms if metrics.min_duration_ms != float("inf") else 0,
+        min_duration_ms=metrics.min_duration_ms
+        if metrics.min_duration_ms != float("inf")
+        else 0,
         max_duration_ms=metrics.max_duration_ms,
         p50_duration_ms=metrics.p50_duration_ms,
         p95_duration_ms=metrics.p95_duration_ms,
@@ -185,7 +188,9 @@ async def get_all_node_metrics(
             successful_executions=m.successful_executions,
             failed_executions=m.failed_executions,
             avg_duration_ms=m.avg_duration_ms,
-            min_duration_ms=m.min_duration_ms if m.min_duration_ms != float("inf") else 0,
+            min_duration_ms=m.min_duration_ms
+            if m.min_duration_ms != float("inf")
+            else 0,
             max_duration_ms=m.max_duration_ms,
             p50_duration_ms=m.p50_duration_ms,
             p95_duration_ms=m.p95_duration_ms,
@@ -219,7 +224,9 @@ async def get_node_type_metrics(
         successful_executions=metrics.successful_executions,
         failed_executions=metrics.failed_executions,
         avg_duration_ms=metrics.avg_duration_ms,
-        min_duration_ms=metrics.min_duration_ms if metrics.min_duration_ms != float("inf") else 0,
+        min_duration_ms=metrics.min_duration_ms
+        if metrics.min_duration_ms != float("inf")
+        else 0,
         max_duration_ms=metrics.max_duration_ms,
         p50_duration_ms=metrics.p50_duration_ms,
         p95_duration_ms=metrics.p95_duration_ms,
@@ -241,10 +248,7 @@ async def get_running_workflows(
     metrics = get_metrics_collector()
     running = await metrics.get_running_workflows()
 
-    return [
-        RunningWorkflowResponse(**wf)
-        for wf in running
-    ]
+    return [RunningWorkflowResponse(**wf) for wf in running]
 
 
 @router.get("/cache", response_model=CacheStatsResponse)

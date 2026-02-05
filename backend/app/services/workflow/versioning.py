@@ -70,7 +70,9 @@ class WorkflowVersion:
             "status": self.status.value,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat(),
-            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "published_at": self.published_at.isoformat()
+            if self.published_at
+            else None,
             "parent_version_id": self.parent_version_id,
             "content_hash": self.content_hash,
             "metadata": self.metadata,
@@ -94,12 +96,12 @@ class VersionDiff:
     def has_changes(self) -> bool:
         """Check if there are any changes."""
         return bool(
-            self.nodes_added or
-            self.nodes_removed or
-            self.nodes_modified or
-            self.edges_added or
-            self.edges_removed or
-            self.config_changes
+            self.nodes_added
+            or self.nodes_removed
+            or self.nodes_modified
+            or self.edges_added
+            or self.edges_removed
+            or self.config_changes
         )
 
     @property
@@ -278,7 +280,7 @@ class WorkflowVersionManager:
         versions = sorted(versions, key=lambda v: v.version_number, reverse=True)
 
         # Paginate
-        return versions[offset:offset + limit]
+        return versions[offset : offset + limit]
 
     async def get_latest_version(
         self,
@@ -463,20 +465,24 @@ class WorkflowVersionManager:
         # Find added nodes
         for node_id, node in to_nodes.items():
             if node_id not in from_nodes:
-                diff.nodes_added.append({
-                    "id": node_id,
-                    "type": node.get("type"),
-                    "label": node.get("data", {}).get("label", ""),
-                })
+                diff.nodes_added.append(
+                    {
+                        "id": node_id,
+                        "type": node.get("type"),
+                        "label": node.get("data", {}).get("label", ""),
+                    }
+                )
 
         # Find removed nodes
         for node_id, node in from_nodes.items():
             if node_id not in to_nodes:
-                diff.nodes_removed.append({
-                    "id": node_id,
-                    "type": node.get("type"),
-                    "label": node.get("data", {}).get("label", ""),
-                })
+                diff.nodes_removed.append(
+                    {
+                        "id": node_id,
+                        "type": node.get("type"),
+                        "label": node.get("data", {}).get("label", ""),
+                    }
+                )
 
         # Find modified nodes
         for node_id in set(from_nodes.keys()) & set(to_nodes.keys()):
@@ -485,29 +491,35 @@ class WorkflowVersionManager:
 
             changes = self._node_changes(from_node, to_node)
             if changes:
-                diff.nodes_modified.append({
-                    "id": node_id,
-                    "type": to_node.get("type"),
-                    "changes": changes,
-                })
+                diff.nodes_modified.append(
+                    {
+                        "id": node_id,
+                        "type": to_node.get("type"),
+                        "changes": changes,
+                    }
+                )
 
         # Find added edges
         for edge_key, edge in to_edges.items():
             if edge_key not in from_edges:
-                diff.edges_added.append({
-                    "source": edge.get("source"),
-                    "target": edge.get("target"),
-                    "sourceHandle": edge.get("sourceHandle"),
-                })
+                diff.edges_added.append(
+                    {
+                        "source": edge.get("source"),
+                        "target": edge.get("target"),
+                        "sourceHandle": edge.get("sourceHandle"),
+                    }
+                )
 
         # Find removed edges
         for edge_key, edge in from_edges.items():
             if edge_key not in to_edges:
-                diff.edges_removed.append({
-                    "source": edge.get("source"),
-                    "target": edge.get("target"),
-                    "sourceHandle": edge.get("sourceHandle"),
-                })
+                diff.edges_removed.append(
+                    {
+                        "source": edge.get("source"),
+                        "target": edge.get("target"),
+                        "sourceHandle": edge.get("sourceHandle"),
+                    }
+                )
 
         # Config changes (non-node/edge properties)
         for key in set(from_def.keys()) | set(to_def.keys()):
@@ -525,7 +537,9 @@ class WorkflowVersionManager:
 
     def _edge_key(self, edge: dict) -> str:
         """Generate unique key for an edge."""
-        return f"{edge.get('source')}:{edge.get('sourceHandle', '')}:{edge.get('target')}"
+        return (
+            f"{edge.get('source')}:{edge.get('sourceHandle', '')}:{edge.get('target')}"
+        )
 
     def _node_changes(self, from_node: dict, to_node: dict) -> list[dict]:
         """Find changes between two nodes."""
@@ -545,11 +559,13 @@ class WorkflowVersionManager:
             from_val = from_data.get(key)
             to_val = to_data.get(key)
             if from_val != to_val:
-                changes.append({
-                    "field": f"data.{key}",
-                    "from": from_val,
-                    "to": to_val,
-                })
+                changes.append(
+                    {
+                        "field": f"data.{key}",
+                        "from": from_val,
+                        "to": to_val,
+                    }
+                )
 
         return changes
 
@@ -590,7 +606,9 @@ class WorkflowVersionManager:
         if version_id:
             source_version = await self.get_version(version_id)
         else:
-            source_version = await self.get_latest_version(workflow_id, published_only=True)
+            source_version = await self.get_latest_version(
+                workflow_id, published_only=True
+            )
 
         if not source_version:
             raise ValueError("Source version not found")
@@ -620,9 +638,15 @@ class WorkflowVersionManager:
 
         return {
             "total_versions": len(versions),
-            "published_versions": len([v for v in versions if v.status == VersionStatus.PUBLISHED]),
-            "draft_versions": len([v for v in versions if v.status == VersionStatus.DRAFT]),
-            "archived_versions": len([v for v in versions if v.status == VersionStatus.ARCHIVED]),
+            "published_versions": len(
+                [v for v in versions if v.status == VersionStatus.PUBLISHED]
+            ),
+            "draft_versions": len(
+                [v for v in versions if v.status == VersionStatus.DRAFT]
+            ),
+            "archived_versions": len(
+                [v for v in versions if v.status == VersionStatus.ARCHIVED]
+            ),
             "first_version_date": min((v.created_at for v in versions), default=None),
             "latest_version_date": max((v.created_at for v in versions), default=None),
         }

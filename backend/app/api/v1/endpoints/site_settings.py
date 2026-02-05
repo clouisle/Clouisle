@@ -23,6 +23,7 @@ from app.tasks.audit_log import archive_old_audit_logs
 
 router = APIRouter()
 
+
 async def _ensure_superadmin_sso_bound() -> None:
     count = await UserSSOConnection.filter(user__is_superuser=True).count()
     if count == 0:
@@ -69,20 +70,26 @@ async def get_all_settings(
     return success(data=SiteSettingsResponse(settings=settings))
 
 
-@router.get("/auto-notifications", response_model=Response[AutoNotificationConfigResponse])
+@router.get(
+    "/auto-notifications", response_model=Response[AutoNotificationConfigResponse]
+)
 async def get_auto_notification_config(
     current_user: User = Depends(PermissionChecker("settings:read")),
 ):
     """Get auto notification configuration (requires settings:read permission)"""
     config = await SiteSetting.get_value("auto_notification_config", {})
 
-    return success(data=AutoNotificationConfigResponse(
-        channels=config.get("channels", []),
-        enabled_types=config.get("enabled_types", []),
-    ))
+    return success(
+        data=AutoNotificationConfigResponse(
+            channels=config.get("channels", []),
+            enabled_types=config.get("enabled_types", []),
+        )
+    )
 
 
-@router.put("/auto-notifications", response_model=Response[AutoNotificationConfigResponse])
+@router.put(
+    "/auto-notifications", response_model=Response[AutoNotificationConfigResponse]
+)
 async def update_auto_notification_config(
     request: Request,
     data: AutoNotificationConfigUpdate,
@@ -132,10 +139,12 @@ async def update_auto_notification_config(
         },
     )
 
-    return success(data=AutoNotificationConfigResponse(
-        channels=new_config["channels"],
-        enabled_types=new_config["enabled_types"],
-    ))
+    return success(
+        data=AutoNotificationConfigResponse(
+            channels=new_config["channels"],
+            enabled_types=new_config["enabled_types"],
+        )
+    )
 
 
 @router.get("/{key}", response_model=Response[SiteSettingResponse])
@@ -174,7 +183,9 @@ async def update_setting(
     old_setting = await SiteSetting.filter(key=key).first()
     old_value = None
     if old_setting:
-        old_value = SiteSetting._convert_value(old_setting.value, old_setting.value_type)
+        old_value = SiteSetting._convert_value(
+            old_setting.value, old_setting.value_type
+        )
 
     if key == "sso_allow_password_login" and data.value is False:
         await _ensure_superadmin_sso_bound()
@@ -630,5 +641,5 @@ async def trigger_archive_audit_logs(
             "retention_days": result.get("retention_days", 0),
             "cutoff_date": result.get("cutoff_date", ""),
         },
-        msg_key="archive_task_completed"
+        msg_key="archive_task_completed",
     )

@@ -120,11 +120,17 @@ async def parse_files(
             results.append(f"--- {filename} ---\n{text_content}")
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to download file {url}: HTTP {e.response.status_code}")
-            results.append(f"--- {get_filename_from_url(url)} ---\n[下载失败: HTTP {e.response.status_code}]")
+            logger.error(
+                f"Failed to download file {url}: HTTP {e.response.status_code}"
+            )
+            results.append(
+                f"--- {get_filename_from_url(url)} ---\n[下载失败: HTTP {e.response.status_code}]"
+            )
         except Exception as e:
             logger.error(f"Failed to parse file {url}: {e}")
-            results.append(f"--- {get_filename_from_url(url)} ---\n[解析失败: {str(e)}]")
+            results.append(
+                f"--- {get_filename_from_url(url)} ---\n[解析失败: {str(e)}]"
+            )
 
     return "\n\n".join(results)
 

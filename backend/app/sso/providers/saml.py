@@ -98,7 +98,9 @@ class SAMLProvider(BaseSSOProvider):
         if not auth.is_authenticated():
             errors = auth.get_errors()
             error_reason = auth.get_last_error_reason()
-            raise ValueError(f"SAML authentication failed: {error_reason}, errors: {errors}")
+            raise ValueError(
+                f"SAML authentication failed: {error_reason}, errors: {errors}"
+            )
 
         # Extract user attributes
         attributes = auth.get_attributes()
@@ -108,7 +110,9 @@ class SAMLProvider(BaseSSOProvider):
         # Flatten attributes (SAML attributes are lists)
         flattened_attributes = {}
         for key, value in attributes.items():
-            flattened_attributes[key] = value[0] if isinstance(value, list) and value else value
+            flattened_attributes[key] = (
+                value[0] if isinstance(value, list) and value else value
+            )
 
         # Build user info
         user_info = {

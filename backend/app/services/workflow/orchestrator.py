@@ -12,7 +12,13 @@ import logging
 import time
 
 
-from app.models.workflow import Workflow, WorkflowRun, RunStatus, NodeExecution, NodeStatus
+from app.models.workflow import (
+    Workflow,
+    WorkflowRun,
+    RunStatus,
+    NodeExecution,
+    NodeStatus,
+)
 from app.models.notification import AutoNotificationType
 from app.core.redis import get_redis
 from app.core.i18n import t
@@ -442,7 +448,9 @@ class WorkflowOrchestrator:
         if self._cache:
             cached = await self._cache.get_workflow(
                 str(workflow.id),
-                version=str(workflow.updated_at.timestamp()) if workflow.updated_at else None,
+                version=str(workflow.updated_at.timestamp())
+                if workflow.updated_at
+                else None,
             )
             if cached:
                 return cached
@@ -451,7 +459,9 @@ class WorkflowOrchestrator:
             await self._cache.set_workflow(
                 str(workflow.id),
                 workflow.definition,
-                version=str(workflow.updated_at.timestamp()) if workflow.updated_at else None,
+                version=str(workflow.updated_at.timestamp())
+                if workflow.updated_at
+                else None,
             )
 
         return workflow.definition
@@ -498,9 +508,15 @@ class WorkflowOrchestrator:
         # Update node execution statistics
         node_executions = await NodeExecution.filter(run_id=run.id).all()
         run.total_nodes = len(node_executions)
-        run.executed_nodes = len([n for n in node_executions if n.status == NodeStatus.SUCCESS])
-        run.failed_nodes = len([n for n in node_executions if n.status == NodeStatus.FAILED])
-        run.skipped_nodes = len([n for n in node_executions if n.status == NodeStatus.SKIPPED])
+        run.executed_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.SUCCESS]
+        )
+        run.failed_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.FAILED]
+        )
+        run.skipped_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.SKIPPED]
+        )
 
         run.status = "success"
         run.outputs = outputs
@@ -515,20 +531,21 @@ class WorkflowOrchestrator:
             # Calculate total tokens from run
             total_tokens = 0
             if run.total_token_usage:
-                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (run.total_token_usage.get("completion", 0) or 0)
+                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (
+                    run.total_token_usage.get("completion", 0) or 0
+                )
 
             # Update workflow stats atomically
             from tortoise.expressions import F
+
             await Workflow.filter(id=workflow.id).update(
                 run_count=F("run_count") + 1,
                 success_count=F("success_count") + 1,
-                total_tokens=F("total_tokens") + total_tokens
+                total_tokens=F("total_tokens") + total_tokens,
             )
 
             # Update team stats atomically
-            await workflow.team.update(
-                total_tokens=F("total_tokens") + total_tokens
-            )
+            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
 
             # Send workflow run success notification
             try:
@@ -564,9 +581,15 @@ class WorkflowOrchestrator:
         # Update node execution statistics
         node_executions = await NodeExecution.filter(run_id=run.id).all()
         run.total_nodes = len(node_executions)
-        run.executed_nodes = len([n for n in node_executions if n.status == NodeStatus.SUCCESS])
-        run.failed_nodes = len([n for n in node_executions if n.status == NodeStatus.FAILED])
-        run.skipped_nodes = len([n for n in node_executions if n.status == NodeStatus.SKIPPED])
+        run.executed_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.SUCCESS]
+        )
+        run.failed_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.FAILED]
+        )
+        run.skipped_nodes = len(
+            [n for n in node_executions if n.status == NodeStatus.SKIPPED]
+        )
 
         run.status = "failed"
         run.error_message = error
@@ -581,20 +604,21 @@ class WorkflowOrchestrator:
             # Calculate total tokens from run (even if failed, tokens were consumed)
             total_tokens = 0
             if run.total_token_usage:
-                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (run.total_token_usage.get("completion", 0) or 0)
+                total_tokens = (run.total_token_usage.get("prompt", 0) or 0) + (
+                    run.total_token_usage.get("completion", 0) or 0
+                )
 
             # Update workflow stats atomically
             from tortoise.expressions import F
+
             await Workflow.filter(id=workflow.id).update(
                 run_count=F("run_count") + 1,
                 fail_count=F("fail_count") + 1,
-                total_tokens=F("total_tokens") + total_tokens
+                total_tokens=F("total_tokens") + total_tokens,
             )
 
             # Update team stats atomically
-            await workflow.team.update(
-                total_tokens=F("total_tokens") + total_tokens
-            )
+            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
 
             # Send workflow run failed notification
             try:
@@ -605,7 +629,9 @@ class WorkflowOrchestrator:
                     content=t(
                         "notify_workflow_run_failed_content",
                         workflow_name=workflow.name,
-                        error=error[:200] if error else "Unknown error",  # Truncate long errors
+                        error=error[:200]
+                        if error
+                        else "Unknown error",  # Truncate long errors
                     ),
                     data={
                         "workflow_id": str(workflow.id),
@@ -715,8 +741,9 @@ class WorkflowOrchestrator:
                 # Check for iteration/loop nodes
                 node = plan.get_node(node_id)
                 if node and node.node_type in ("iteration", "loop"):
-                    iteration_complete = result.outputs.get("_iteration_complete") or \
-                                        result.outputs.get("_loop_complete", False)
+                    iteration_complete = result.outputs.get(
+                        "_iteration_complete"
+                    ) or result.outputs.get("_loop_complete", False)
 
                     # Get child nodes inside the iteration container (by parentId)
                     child_nodes = self._get_child_nodes(plan, node_id)
@@ -745,8 +772,9 @@ class WorkflowOrchestrator:
                             run=run,
                             stream_manager=stream_manager,
                         )
-                        iteration_complete = result.outputs.get("_iteration_complete") or \
-                                            result.outputs.get("_loop_complete", False)
+                        iteration_complete = result.outputs.get(
+                            "_iteration_complete"
+                        ) or result.outputs.get("_loop_complete", False)
 
                         # Break before executing body if iteration is complete
                         if iteration_complete:
@@ -765,26 +793,36 @@ class WorkflowOrchestrator:
                         all_handles = set(node.handle_map.keys())
                         taken_handles = set(result.next_handles)
                         skipped_handles = all_handles - taken_handles
-                        
-                        logger.info(f"Branching node {node_id}: all_handles={all_handles}, taken={taken_handles}, skipped={skipped_handles}")
+
+                        logger.info(
+                            f"Branching node {node_id}: all_handles={all_handles}, taken={taken_handles}, skipped={skipped_handles}"
+                        )
                         logger.info(f"Handle map: {node.handle_map}")
 
                         for handle in skipped_handles:
                             # Mark all downstream nodes of skipped branches
                             downstream = node.handle_map.get(handle, [])
-                            logger.info(f"Skipping handle {handle}, downstream nodes: {downstream}")
+                            logger.info(
+                                f"Skipping handle {handle}, downstream nodes: {downstream}"
+                            )
                             for downstream_id in downstream:
                                 skipped_nodes.add(downstream_id)
                                 # Also add all nodes reachable from this
                                 all_downstream = plan.get_all_downstream(downstream_id)
                                 skipped_nodes.update(all_downstream)
-                                logger.info(f"Skipping node {downstream_id} and all downstream: {all_downstream}")
+                                logger.info(
+                                    f"Skipping node {downstream_id} and all downstream: {all_downstream}"
+                                )
                                 if stream_manager:
                                     downstream_node = plan.get_node(downstream_id)
                                     if downstream_node:
                                         downstream_label = (
-                                            downstream_node.node_data.get("data", {}).get("label")
-                                            or NODE_TYPE_LABELS.get(downstream_node.node_type)
+                                            downstream_node.node_data.get(
+                                                "data", {}
+                                            ).get("label")
+                                            or NODE_TYPE_LABELS.get(
+                                                downstream_node.node_type
+                                            )
                                             or downstream_id
                                         )
                                     else:
@@ -792,7 +830,9 @@ class WorkflowOrchestrator:
                                     await stream_manager.publish_node_skip(
                                         node_id=downstream_id,
                                         reason="branch_not_taken",
-                                        node_type=downstream_node.node_type if downstream_node else None,
+                                        node_type=downstream_node.node_type
+                                        if downstream_node
+                                        else None,
                                         node_label=downstream_label,
                                     )
 
@@ -879,12 +919,12 @@ class WorkflowOrchestrator:
         # Fall back to default label by type, then node_id
         node_inner_data = node_data.get("data", {})
         node_label = (
-            node_inner_data.get("label") 
-            or NODE_TYPE_LABELS.get(node_type) 
-            or node_id
+            node_inner_data.get("label") or NODE_TYPE_LABELS.get(node_type) or node_id
         )
-        
-        logger.debug(f"Execute node {node_id}: type={node_type}, label={node_label}, data_keys={list(node_inner_data.keys())}")
+
+        logger.debug(
+            f"Execute node {node_id}: type={node_type}, label={node_label}, data_keys={list(node_inner_data.keys())}"
+        )
 
         # Check if this is a streaming answer node
         is_streaming_answer = False
@@ -953,6 +993,7 @@ class WorkflowOrchestrator:
 
             # Filter outputs for database storage - remove non-serializable objects
             from .lazy_stream import LazyStreamResult
+
             serializable_outputs = {}
             for k, v in result.outputs.items():
                 if isinstance(v, LazyStreamResult):
@@ -963,10 +1004,13 @@ class WorkflowOrchestrator:
                     # Try to serialize, skip if fails
                     try:
                         import json
+
                         json.dumps(v)
                         serializable_outputs[k] = v
                     except (TypeError, ValueError):
-                        serializable_outputs[k] = f"__NON_SERIALIZABLE_{type(v).__name__}__"
+                        serializable_outputs[k] = (
+                            f"__NON_SERIALIZABLE_{type(v).__name__}__"
+                        )
 
             # Update NodeExecution record - success
             node_execution.status = NodeStatus.SUCCESS
@@ -977,6 +1021,7 @@ class WorkflowOrchestrator:
 
             if stream_manager:
                 from .lazy_stream import LazyStreamResult
+
                 # Filter outputs for serialization - lazy results are placeholders
                 serializable_outputs = {
                     k: (v if not isinstance(v, LazyStreamResult) else "__LAZY_STREAM__")
@@ -1051,9 +1096,7 @@ class WorkflowOrchestrator:
 
         # Publish cancel event
         stream_manager = StreamManager(run_id)
-        await stream_manager.publish_workflow_error(
-            error="Workflow cancelled by user"
-        )
+        await stream_manager.publish_workflow_error(error="Workflow cancelled by user")
 
         logger.info(f"Cancelled workflow run {run_id}")
         return True

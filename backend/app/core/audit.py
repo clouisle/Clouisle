@@ -1,6 +1,7 @@
 """
 审计日志装饰器 - 简化审计日志集成
 """
+
 from functools import wraps
 from typing import Any, Callable, Optional
 

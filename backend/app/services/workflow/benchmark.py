@@ -193,10 +193,12 @@ class BenchmarkResult:
         ]
 
         if self.errors:
-            lines.extend([
-                "",
-                "Errors:",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "Errors:",
+                ]
+            )
             for error, count in self.errors.items():
                 lines.append(f"  {error}: {count}")
 
@@ -287,7 +289,9 @@ class WorkflowBenchmark:
 
             # Run benchmark
             logger.info(f"Starting benchmark: {benchmark_id}")
-            logger.info(f"Config: {config.concurrent_users} users, {config.requests_per_user} req/user")
+            logger.info(
+                f"Config: {config.concurrent_users} users, {config.requests_per_user} req/user"
+            )
 
             all_results = await self._run_concurrent(
                 benchmark_id=benchmark_id,
@@ -299,7 +303,9 @@ class WorkflowBenchmark:
             # Calculate statistics
             result.results = all_results
             result.end_time = datetime.utcnow()
-            result.total_duration_seconds = (result.end_time - result.start_time).total_seconds()
+            result.total_duration_seconds = (
+                result.end_time - result.start_time
+            ).total_seconds()
 
             self._calculate_stats(result)
 
@@ -395,7 +401,9 @@ class WorkflowBenchmark:
 
                 # Progress logging
                 if current_request % 100 == 0:
-                    logger.info(f"Progress: {current_request}/{total_requests} requests")
+                    logger.info(
+                        f"Progress: {current_request}/{total_requests} requests"
+                    )
 
         # Create user tasks with ramp-up delay
         tasks = []
@@ -411,6 +419,7 @@ class WorkflowBenchmark:
 
         # Handle duration-based stopping
         if config.duration_seconds:
+
             async def duration_stopper():
                 await asyncio.sleep(config.duration_seconds)
                 cancel_event.set()
@@ -444,6 +453,7 @@ class WorkflowBenchmark:
                 response_size = len(result)
             elif isinstance(result, dict):
                 import json
+
                 response_size = len(json.dumps(result))
 
             return RequestResult(
@@ -493,7 +503,11 @@ class WorkflowBenchmark:
             result.max_latency = max(successful_latencies)
             result.mean_latency = statistics.mean(successful_latencies)
             result.median_latency = statistics.median(successful_latencies)
-            result.stddev_latency = statistics.stdev(successful_latencies) if len(successful_latencies) > 1 else 0
+            result.stddev_latency = (
+                statistics.stdev(successful_latencies)
+                if len(successful_latencies) > 1
+                else 0
+            )
 
             # Percentiles
             n = len(successful_latencies)
@@ -503,7 +517,9 @@ class WorkflowBenchmark:
 
         # Throughput
         if result.total_duration_seconds > 0:
-            result.requests_per_second = result.successful_requests / result.total_duration_seconds
+            result.requests_per_second = (
+                result.successful_requests / result.total_duration_seconds
+            )
             total_bytes = sum(r.response_size for r in result.results if r.success)
             result.bytes_per_second = total_bytes / result.total_duration_seconds
 
@@ -535,7 +551,9 @@ class WorkflowBenchmark:
                 "requests_completed": len(result.results),
                 "successful": sum(1 for r in result.results if r.success),
                 "failed": sum(1 for r in result.results if not r.success),
-                "elapsed_seconds": (datetime.utcnow() - result.start_time).total_seconds(),
+                "elapsed_seconds": (
+                    datetime.utcnow() - result.start_time
+                ).total_seconds(),
             }
         return None
 
@@ -549,7 +567,20 @@ class LatencyHistogram:
 
         Default buckets: 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000
         """
-        self.buckets = buckets or [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+        self.buckets = buckets or [
+            1,
+            5,
+            10,
+            25,
+            50,
+            100,
+            250,
+            500,
+            1000,
+            2500,
+            5000,
+            10000,
+        ]
         self.counts = {b: 0 for b in self.buckets}
         self.counts[float("inf")] = 0
         self.total = 0
@@ -596,6 +627,7 @@ class LatencyHistogram:
 
 
 # Convenience functions
+
 
 async def run_quick_benchmark(
     executor: Callable[[dict], Awaitable[Any]],
@@ -666,7 +698,9 @@ async def compare_benchmarks(
     print("-" * 62)
     for name, result in results.items():
         success_rate = result.successful_requests / max(result.total_requests, 1) * 100
-        print(f"{name:<20} {result.requests_per_second:>10.2f} {result.mean_latency:>10.2f} {result.p95_latency:>10.2f} {success_rate:>9.1f}%")
+        print(
+            f"{name:<20} {result.requests_per_second:>10.2f} {result.mean_latency:>10.2f} {result.p95_latency:>10.2f} {success_rate:>9.1f}%"
+        )
 
     return results
 

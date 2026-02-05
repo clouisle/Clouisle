@@ -518,6 +518,7 @@ def cached(
         async def get_workflow(workflow_id: str) -> dict:
             ...
     """
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -548,6 +549,7 @@ def cached(
             return result
 
         return wrapper
+
     return decorator
 
 

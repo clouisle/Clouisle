@@ -274,7 +274,11 @@ async def pre_tortoise_init():
     )
 
     # Run migrations BEFORE generating schemas
-    from app.core.init_data import init_agent_tools_credentials, fix_cascade_delete_policies
+    from app.core.init_data import (
+        init_agent_tools_credentials,
+        fix_cascade_delete_policies,
+    )
+
     try:
         await init_agent_tools_credentials()
     except Exception as e:

@@ -46,7 +46,9 @@ class OIDCProvider(BaseSSOProvider):
         }
 
         # Build query string
-        query_string = "&".join(f"{k}={httpx.QueryParams({k: v})[k]}" for k, v in params.items())
+        query_string = "&".join(
+            f"{k}={httpx.QueryParams({k: v})[k]}" for k, v in params.items()
+        )
         authorization_url = f"{self.config['authorization_url']}?{query_string}"
 
         return authorization_url, code_verifier, nonce
@@ -110,9 +112,7 @@ class OIDCProvider(BaseSSOProvider):
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                token_url,
-                data=data,
-                headers={"Accept": "application/json"}
+                token_url, data=data, headers={"Accept": "application/json"}
             )
             response.raise_for_status()
 
@@ -123,6 +123,7 @@ class OIDCProvider(BaseSSOProvider):
             else:
                 # Parse form-encoded response (e.g., GitHub OAuth)
                 from urllib.parse import parse_qs
+
                 parsed = parse_qs(response.text)
                 return {k: v[0] if len(v) == 1 else v for k, v in parsed.items()}
 

@@ -56,7 +56,9 @@ async def archive_old_audit_logs():
                     try:
                         existing_logs = json.load(f)
                     except json.JSONDecodeError:
-                        logger.warning(f"Failed to read existing archive {archive_file}")
+                        logger.warning(
+                            f"Failed to read existing archive {archive_file}"
+                        )
 
             # 合并并写入
             all_logs = existing_logs + logs

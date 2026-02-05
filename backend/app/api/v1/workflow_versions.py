@@ -32,6 +32,7 @@ router = APIRouter(prefix="/workflow-versions", tags=["workflow-versions"])
 
 # Request/Response Models
 
+
 class CreateVersionRequest(BaseModel):
     """Request to create a new version."""
 
@@ -97,6 +98,7 @@ class ForkResponse(BaseModel):
 
 
 # Version Endpoints
+
 
 @router.post("", response_model=CreateVersionResponse)
 async def create_version(
@@ -376,10 +378,7 @@ async def get_template_categories(
 ):
     """Get available template categories."""
     return {
-        "categories": [
-            {"value": c.value, "name": c.name}
-            for c in TemplateCategory
-        ]
+        "categories": [{"value": c.value, "name": c.name} for c in TemplateCategory]
     }
 
 
