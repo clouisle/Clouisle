@@ -3,11 +3,12 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { usersApi, ApiError, type User, type UserCreateData, type UserUpdateData } from '@/lib/api'
+import { usersApi, ssoApi, rolesApi, ApiError, type User, type UserCreateData, type UserUpdateData, type SSOConnection, type Role } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { Link as LinkIcon, Loader2, Unlink } from 'lucide-react'
 
 interface UserDialogProps {
   open: boolean
@@ -28,9 +41,13 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   const t = useTranslations('users')
   const commonT = useTranslations('common')
   const authT = useTranslations('auth')
-  
+  const tSSO = useTranslations('sso')
+
   const isEditing = !!user
-  
+
+  const [currentUser, setCurrentUser] = React.useState<User | null>(null)
+  const [roles, setRoles] = React.useState<Role[]>([])
+  const [selectedRoles, setSelectedRoles] = React.useState<string[]>([])
   const [formData, setFormData] = React.useState({
     username: '',
     email: '',
@@ -40,10 +57,25 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   })
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
-  
+  const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null)
+
+  // 加载角色列表
+  React.useEffect(() => {
+    const fetchRoles = async () => {
+      try {
+        const data = await rolesApi.getRoles(1, 100)
+        setRoles(data.items)
+      } catch {
+        // 获取角色失败
+      }
+    }
+    fetchRoles()
+  }, [])
+
   // 当 user 改变或 dialog 打开时重置表单
   React.useEffect(() => {
     if (open) {
+      setCurrentUser(user ?? null)
       if (user) {
         setFormData({
           username: user.username,
@@ -52,6 +84,8 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
           confirmPassword: '',
           is_active: user.is_active,
         })
+        // 设置用户当前的角色
+        setSelectedRoles(user.roles?.map(r => r.name) || [])
       } else {
         setFormData({
           username: '',
@@ -60,10 +94,27 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
           confirmPassword: '',
           is_active: true,
         })
+        setSelectedRoles([])
       }
       setFieldErrors({})
     }
   }, [open, user])
+
+  const handleDisconnect = async (connectionId: string) => {
+    if (!user) return
+    try {
+      setDisconnectingId(connectionId)
+      await ssoApi.adminDisconnectConnection(connectionId)
+      toast.success(tSSO('disconnectSuccess'))
+      const updated = await usersApi.getUser(user.id)
+      setCurrentUser(updated)
+      onSuccess?.(updated)
+    } catch {
+      // 错误已由 API 客户端处理
+    } finally {
+      setDisconnectingId(null)
+    }
+  }
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,6 +141,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         const updateData: UserUpdateData = {
           email: formData.email,
           is_active: formData.is_active,
+          roles: selectedRoles,
         }
         if (formData.password) {
           updateData.password = formData.password
@@ -191,7 +243,111 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
               <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
             )}
           </div>
-          
+
+          {isEditing && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
+            <div className="grid gap-2">
+              <Label>{tSSO('connectedAccounts')}</Label>
+              <div className="space-y-2">
+                {currentUser.sso_connections.map((connection: SSOConnection) => (
+                  <div
+                    key={connection.id}
+                    className="flex items-center justify-between rounded-md border px-3 py-2"
+                  >
+                    <div className="flex items-center gap-3">
+                      {connection.provider_icon_url ? (
+                        <img
+                          src={connection.provider_icon_url}
+                          alt={connection.provider_display_name}
+                          className="h-6 w-6 rounded"
+                        />
+                      ) : (
+                        <LinkIcon className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      <div>
+                        <div className="text-sm font-medium">{connection.provider_display_name}</div>
+                        {connection.provider_email && (
+                          <div className="text-xs text-muted-foreground">{connection.provider_email}</div>
+                        )}
+                      </div>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        render={(props) => (
+                          <Button
+                            {...props}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={disconnectingId === connection.id}
+                          >
+                            {disconnectingId === connection.id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Unlink className="mr-2 h-4 w-4" />
+                            )}
+                            {tSSO('disconnect')}
+                          </Button>
+                        )}
+                      />
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{tSSO('disconnect')}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {tSSO('disconnectConfirm')}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => handleDisconnect(connection.id)}
+                          >
+                            {tSSO('disconnect')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 角色选择 */}
+          {isEditing && roles.length > 0 && (
+            <div className="grid gap-2">
+              <Label>{t('role')}</Label>
+              <div className="space-y-2 max-h-40 overflow-y-auto rounded-md border p-3">
+                {roles.map((role) => (
+                  <div key={role.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`role-${role.id}`}
+                      checked={selectedRoles.includes(role.name)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedRoles([...selectedRoles, role.name])
+                        } else {
+                          setSelectedRoles(selectedRoles.filter(r => r !== role.name))
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor={`role-${role.id}`}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                    >
+                      {role.name}
+                      {role.description && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ({role.description})
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <Label htmlFor="is_active">{t('active')}</Label>
             <Switch

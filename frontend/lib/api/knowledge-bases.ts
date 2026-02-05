@@ -85,6 +85,7 @@ export interface KnowledgeBaseQueryParams {
   pageSize?: number
   search?: string
   status?: string
+  teamId?: string
 }
 
 // ============ Document Types ============
@@ -198,12 +199,13 @@ export const knowledgeBasesApi = {
    * 获取知识库列表
    */
   getKnowledgeBases: async (params: KnowledgeBaseQueryParams = {}): Promise<PageData<KnowledgeBase>> => {
-    const { page = 1, pageSize = 20, search, status } = params
+    const { page = 1, pageSize = 20, search, status, teamId } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (search) queryParams.append('search', search)
     if (status) queryParams.append('status', status)
+    if (teamId) queryParams.append('team_id', teamId)
     return api.get<PageData<KnowledgeBase>>(`/knowledge-bases?${queryParams.toString()}`)
   },
 

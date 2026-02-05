@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, Zap } from 'lucide-react'
+import { Eye, EyeOff, Loader2, CheckCircle2, XCircle, Zap, Check } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -30,8 +30,26 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
 import { modelsApi, type Model, type ModelCreateInput, type ProviderInfo, type ModelTypeInfo } from '@/lib/api/models'
+
+// 供应商分组
+const PROVIDER_GROUPS = {
+  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai'],
+  domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
+  other: ['ollama', 'custom'],
+}
 
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
@@ -130,7 +148,12 @@ export function ModelDialog({
   // Azure 配置
   const [apiVersion, setApiVersion] = React.useState('')
   const [deploymentName, setDeploymentName] = React.useState('')
-  
+
+  // Thinking/Reasoning 配置
+  const [thinkingEnabled, setThinkingEnabled] = React.useState(false)
+  const [thinkingBudget, setThinkingBudget] = React.useState('')
+  const [reasoningEffort, setReasoningEffort] = React.useState('')
+
   const [isLoading, setIsLoading] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   
@@ -179,6 +202,22 @@ export function ModelDialog({
       const config = model.config || {}
       setApiVersion((config.api_version as string) || '')
       setDeploymentName((config.deployment_name as string) || '')
+
+      // Thinking 配置
+      const thinking = config.thinking as Record<string, unknown> | boolean | undefined
+      if (typeof thinking === 'boolean') {
+        setThinkingEnabled(thinking)
+        setThinkingBudget('')
+        setReasoningEffort('')
+      } else if (thinking && typeof thinking === 'object') {
+        setThinkingEnabled(thinking.enabled !== false)
+        setThinkingBudget((thinking.budget_tokens as number)?.toString() || (thinking.budget as number)?.toString() || '')
+        setReasoningEffort((thinking.effort as string) || (thinking.reasoning_effort as string) || '')
+      } else {
+        setThinkingEnabled(false)
+        setThinkingBudget('')
+        setReasoningEffort('')
+      }
     } else {
       setName('')
       setProvider('')
@@ -208,6 +247,9 @@ export function ModelDialog({
       setDefaultSpeed('')
       setApiVersion('')
       setDeploymentName('')
+      setThinkingEnabled(false)
+      setThinkingBudget('')
+      setReasoningEffort('')
     }
     setShowApiKey(false)
     setErrors({})
@@ -288,7 +330,7 @@ export function ModelDialog({
     if (!category) return providers
     
     const providersByCategory: Record<string, string[]> = {
-      text: ['openai', 'anthropic', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
+      text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       image: ['openai', 'azure_openai', 'custom'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -296,6 +338,19 @@ export function ModelDialog({
     const allowedProviders = providersByCategory[category] || []
     return providers.filter(p => allowedProviders.includes(p.code))
   }, [modelType, providers])
+
+  // 分组过滤后的供应商
+  const groupedProviders = React.useMemo(() => {
+    const codes = new Set(filteredProviders.map(p => p.code))
+    return {
+      international: PROVIDER_GROUPS.international.filter(p => codes.has(p)),
+      domestic: PROVIDER_GROUPS.domestic.filter(p => codes.has(p)),
+      other: PROVIDER_GROUPS.other.filter(p => codes.has(p)),
+    }
+  }, [filteredProviders])
+
+  // 供应商选择 Popover 状态
+  const [providerPopoverOpen, setProviderPopoverOpen] = React.useState(false)
   
   // 提交表单
   const handleSubmit = async (e: React.FormEvent) => {
@@ -345,10 +400,18 @@ export function ModelDialog({
         if (Object.keys(capabilities).length === 0) capabilities = null
       }
       
-      const config: Record<string, string> = {}
+      const config: Record<string, unknown> = {}
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
-      
+
+      // Thinking 配置
+      if (thinkingEnabled) {
+        const thinkingConfig: Record<string, unknown> = { enabled: true }
+        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+        if (reasoningEffort) thinkingConfig.effort = reasoningEffort
+        config.thinking = thinkingConfig
+      }
+
       if (isEditing && model) {
         await modelsApi.updateModel(model.id, {
           name: name.trim(),
@@ -440,18 +503,143 @@ export function ModelDialog({
           
           <div className="space-y-2">
             <Label>{t('provider')} *</Label>
-            <Select value={provider} onValueChange={(v) => v && handleProviderChange(v)} disabled={isEditing || !modelType}>
-              <SelectTrigger>
-                <SelectValue>{provider ? t(`providers.${provider}`) : t('selectProvider')}</SelectValue>
-              </SelectTrigger>
-              <SelectContent side="bottom" alignItemWithTrigger={false}>
-                {filteredProviders.map((p) => (
-                  <SelectItem key={p.code} value={p.code}>
-                    {t(`providers.${p.code}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={providerPopoverOpen} onOpenChange={setProviderPopoverOpen}>
+              <PopoverTrigger
+                render={(props) => (
+                  <Button
+                    {...props}
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={providerPopoverOpen}
+                    className={cn(
+                      "w-full justify-between font-normal",
+                      !provider && "text-muted-foreground"
+                    )}
+                    disabled={isEditing || !modelType}
+                  >
+                    {provider ? t(`providers.${provider}`) : t('selectProvider')}
+                    <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </Button>
+                )}
+              />
+              <PopoverContent className="w-[340px] p-0" align="start">
+                <div className="p-3 space-y-3 max-h-[320px] overflow-y-auto">
+                  {/* 国际供应商 */}
+                  {groupedProviders.international.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.international')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.international.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 国内供应商 */}
+                  {groupedProviders.domestic.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.domestic')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.domestic.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 其他 */}
+                  {groupedProviders.other.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-muted-foreground px-1">{t('providerGroups.other')}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {groupedProviders.other.map((code) => (
+                          <Tooltip key={code}>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <button
+                                  {...props}
+                                  type="button"
+                                  onClick={() => {
+                                    handleProviderChange(code)
+                                    setProviderPopoverOpen(false)
+                                  }}
+                                  className={cn(
+                                    "flex items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-sm transition-colors cursor-pointer",
+                                    provider === code
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-transparent bg-muted/50 hover:bg-muted"
+                                  )}
+                                >
+                                  {provider === code && <Check className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                </button>
+                              )}
+                            />
+                            <TooltipContent side="bottom">
+                              {t(`providers.${code}`)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             {errors.provider && <p className="text-sm text-destructive">{errors.provider}</p>}
             {!modelType && <p className="text-xs text-muted-foreground">{t('selectModelTypeFirst')}</p>}
           </div>
@@ -793,6 +981,11 @@ export function ModelDialog({
   )
   
   // ========== 高级内容 ==========
+  // 支持 thinking 的供应商
+  const supportsThinking = ['anthropic', 'google', 'xai', 'deepseek', 'openai'].includes(provider)
+  const showReasoningEffort = provider === 'xai'
+  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+
   const advancedContent = (
     <>
       {isChatOnly(modelType) && (
@@ -830,7 +1023,58 @@ export function ModelDialog({
           </div>
         </div>
       )}
-      
+
+      {/* Thinking/Reasoning 配置 */}
+      {isChatOnly(modelType) && supportsThinking && (
+        <div className="space-y-4">
+          <SectionTitle>{t('thinkingConfig')}</SectionTitle>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">{t('thinkingEnabled')}</Label>
+                <p className="text-xs text-muted-foreground">{t('thinkingEnabledHint')}</p>
+              </div>
+              <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+            </div>
+
+            {thinkingEnabled && (
+              <div className="grid grid-cols-2 gap-4">
+                {showThinkingBudget && (
+                  <div className="space-y-2">
+                    <Label htmlFor="thinkingBudget">{t('thinkingBudget')}</Label>
+                    <Input
+                      id="thinkingBudget"
+                      type="number"
+                      value={thinkingBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      placeholder={t('thinkingBudgetPlaceholder')}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('thinkingBudgetHint')}</p>
+                  </div>
+                )}
+
+                {showReasoningEffort && (
+                  <div className="space-y-2">
+                    <Label>{t('reasoningEffort')}</Label>
+                    <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
+                      <SelectTrigger>
+                        <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent side="bottom" alignItemWithTrigger={false}>
+                        <SelectItem value="low">{t('reasoningEffortLow')}</SelectItem>
+                        <SelectItem value="medium">{t('reasoningEffortMedium')}</SelectItem>
+                        <SelectItem value="high">{t('reasoningEffortHigh')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t('reasoningEffortHint')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {provider === 'azure_openai' && (
         <div className="space-y-4">
           <SectionTitle>{t('azureConfig')}</SectionTitle>

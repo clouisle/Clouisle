@@ -15,12 +15,18 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Agent } from '@/lib/api'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 interface AgentSidebarProps {
   agent: Agent
+  collapsed?: boolean
 }
 
-export function AgentSidebar({ agent }: AgentSidebarProps) {
+export function AgentSidebar({ agent, collapsed = false }: AgentSidebarProps) {
   const t = useTranslations('agents.orchestration.sidebar')
   const pathname = usePathname()
   const baseUrl = `/app/apps/${agent.id}`
@@ -51,8 +57,15 @@ export function AgentSidebar({ agent }: AgentSidebarProps) {
     },
   ]
 
+  if (collapsed) {
+    return null
+  }
+
   return (
-    <aside className="w-52 border-r flex flex-col h-full">
+    <aside className={cn(
+      'border-r flex flex-col h-full transition-all duration-200',
+      collapsed ? 'w-0 overflow-hidden' : 'w-52'
+    )}>
       {/* Agent Info */}
       <div className="p-4">
         <div className="flex items-center justify-between">

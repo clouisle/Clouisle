@@ -5,7 +5,8 @@ import { useTranslations } from 'next-intl'
 import { RotateCcw, Sparkles, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import type { Agent } from '@/lib/api'
+import type { Agent, ChatFileUrl } from '@/lib/api'
+import { uploadApi } from '@/lib/api'
 import {
   ChatContainer,
   ChatInput,
@@ -37,6 +38,10 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   const [input, setInput] = React.useState('')
   const [showError, setShowError] = React.useState(false)
   const [variablesOpen, setVariablesOpen] = React.useState(true)
+  
+  // File upload state with progress tracking
+  const [files, setFiles] = React.useState<ChatInputFile[]>([])
+  const [isUploading, setIsUploading] = React.useState(false)
 
   // Variable form state
   const {
@@ -67,7 +72,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   })
 
   // Handle submit - check if required variables are filled
-  const handleSubmit = async (message: string, files?: ChatInputFile[]) => {
+  const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim()) return
     if (needsVariableInput && !variablesValid) {
       // Open the variable panel if required fields are not filled
@@ -76,22 +81,91 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     }
     setShowError(false)
     
-    // Convert image files to data URLs for vision
+    // Use submittedFiles from param or current files state
+    const filesToProcess = submittedFiles || files
+    
+    // Separate image files (for vision) and document files (for file upload)
     let images: ChatImageContent[] | undefined
-    if (agent.enable_vision && files && files.length > 0) {
-      const imageFiles = files.filter(f => f.type.startsWith('image/'))
-      if (imageFiles.length > 0) {
-        images = await Promise.all(
-          imageFiles.map(async (f) => ({
-            type: 'image_url' as const,
-            url: await fileToDataUrl(f.file),
-          }))
-        )
+    let fileUrls: ChatFileUrl[] | undefined
+    
+    if (filesToProcess && filesToProcess.length > 0) {
+      // Process image files for vision
+      if (agent.enable_vision) {
+        const imageFiles = filesToProcess.filter(f => f.type.startsWith('image/') && !f.isDocument)
+        if (imageFiles.length > 0) {
+          images = await Promise.all(
+            imageFiles.map(async (f) => ({
+              type: 'image_url' as const,
+              url: await fileToDataUrl(f.file),
+            }))
+          )
+        }
+      }
+      
+      // Process document files for file upload - upload to get URLs with progress
+      if (agent.enable_file_upload) {
+        const documentFiles = filesToProcess.filter(f => f.isDocument)
+        if (documentFiles.length > 0) {
+          try {
+            setIsUploading(true)
+            
+            // Upload documents with progress tracking
+            const uploadPromises = documentFiles.map(async (f) => {
+              // Update file progress
+              const updateProgress = (progress: { percent: number }) => {
+                setFiles(prev => prev.map(file => 
+                  file.id === f.id 
+                    ? { ...file, isUploading: true, uploadProgress: progress.percent }
+                    : file
+                ))
+              }
+              
+              // Mark as uploading
+              setFiles(prev => prev.map(file => 
+                file.id === f.id 
+                  ? { ...file, isUploading: true, uploadProgress: 0 }
+                  : file
+              ))
+              
+              const result = await uploadApi.uploadFileWithProgress(
+                f.file, 
+                'documents',
+                updateProgress
+              )
+              
+              // Mark as complete
+              setFiles(prev => prev.map(file => 
+                file.id === f.id 
+                  ? { ...file, isUploading: false, uploadProgress: 100 }
+                  : file
+              ))
+              
+              return {
+                filename: f.name,
+                url: result.url,
+                size: f.size,
+                mime_type: f.type,
+              }
+            })
+            fileUrls = await Promise.all(uploadPromises)
+          } catch (err) {
+            console.error('Failed to upload files:', err)
+            // Reset upload state on error
+            setFiles(prev => prev.map(file => ({
+              ...file,
+              isUploading: false,
+              uploadProgress: undefined
+            })))
+          } finally {
+            setIsUploading(false)
+          }
+        }
       }
     }
     
-    await sendMessage(message, images)
+    await sendMessage(message, images, fileUrls)
     setInput('')
+    setFiles([])
   }
 
   // Handle reset
@@ -99,6 +173,8 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     reset()
     resetVariables()
     setInput('')
+    setFiles([])
+    setIsUploading(false)
     setShowError(false)
     setVariablesOpen(true)
   }
@@ -126,7 +202,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   }).length
 
   return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 max-h-full overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0">
         <h3 className="font-medium">{t('title')}</h3>
@@ -150,37 +226,39 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       )}
 
       {/* Messages */}
-      <ChatContainer
-        messages={messages}
-        isStreaming={isStreaming}
-        className="flex-1 min-h-0"
-        onRegenerate={regenerate}
-        onSwitchVersion={switchVersion}
-        emptyState={
-          <div className="text-center text-muted-foreground py-8 px-4">
-            <div className="flex justify-center mb-4">
-              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Sparkles className="h-6 w-6 text-primary" />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ChatContainer
+          messages={messages}
+          isStreaming={isStreaming}
+          className="h-full"
+          onRegenerate={regenerate}
+          onSwitchVersion={switchVersion}
+          emptyState={
+            <div className="text-center text-muted-foreground py-8 px-4">
+              <div className="flex justify-center mb-4">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </div>
               </div>
+              <p className="text-sm">{t('empty')}</p>
+              {/* Suggested questions */}
+              {agent.suggested_questions && agent.suggested_questions.length > 0 && (
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {agent.suggested_questions.slice(0, 3).map((question, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSubmit(question)}
+                      className="px-3 py-1.5 text-xs rounded-full border bg-background hover:bg-muted transition-colors cursor-pointer"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-sm">{t('empty')}</p>
-            {/* Suggested questions */}
-            {agent.suggested_questions && agent.suggested_questions.length > 0 && (
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {agent.suggested_questions.slice(0, 3).map((question, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSubmit(question)}
-                    className="px-3 py-1.5 text-xs rounded-full border bg-background hover:bg-muted transition-colors"
-                  >
-                    {question}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        }
-      />
+          }
+        />
+      </div>
 
       {/* Input Area with Variables */}
       <div className="relative pb-4 shrink-0">
@@ -234,7 +312,11 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           isLoading={isLoading}
           isStreaming={isStreaming}
           allowAttachments={agent.enable_vision}
-          acceptedFileTypes="image/*"
+          enableFileUpload={agent.enable_file_upload}
+          fileUploadConfig={agent.file_upload_config}
+          files={files}
+          onFilesChange={setFiles}
+          isUploading={isUploading}
         />
       </div>
     </div>

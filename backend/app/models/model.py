@@ -28,6 +28,7 @@ class ModelProvider(str, Enum):
     BAICHUAN = "baichuan"
     MINIMAX = "minimax"
     VOLCENGINE = "volcengine"  # 火山引擎 (豆包)
+    XAI = "xai"  # Grok
 
     # Local deployment
     OLLAMA = "ollama"
@@ -110,6 +111,11 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
         "name": "MiniMax",
         "base_url": "https://api.minimax.chat/v1",
         "icon": "minimax",
+    },
+    ModelProvider.XAI: {
+        "name": "xAI (Grok)",
+        "base_url": "https://api.x.ai/v1",
+        "icon": "xai",
     },
     ModelProvider.OLLAMA: {
         "name": "Ollama",

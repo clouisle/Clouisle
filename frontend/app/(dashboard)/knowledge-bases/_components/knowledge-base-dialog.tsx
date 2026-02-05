@@ -47,8 +47,8 @@ export function KnowledgeBaseDialog({
   // 表单状态
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
-  const [teamId, setTeamId] = React.useState<string | null>(null)
-  const [embeddingModelId, setEmbeddingModelId] = React.useState<string | null>(null)
+  const [teamId, setTeamId] = React.useState<string>('')
+  const [embeddingModelId, setEmbeddingModelId] = React.useState<string>('')
   const [chunkSize, setChunkSize] = React.useState(500)
   const [chunkOverlap, setChunkOverlap] = React.useState(50)
   const [separator, setSeparator] = React.useState<string>('')
@@ -105,7 +105,7 @@ export function KnowledgeBaseDialog({
       if (knowledgeBase) {
         setName(knowledgeBase.name)
         setDescription(knowledgeBase.description || '')
-        setEmbeddingModelId(knowledgeBase.embedding_model_id || null)
+        setEmbeddingModelId(knowledgeBase.embedding_model_id || '')
         setChunkSize(knowledgeBase.settings?.chunk_size ?? 500)
         setChunkOverlap(knowledgeBase.settings?.chunk_overlap ?? 50)
         setSeparator(knowledgeBase.settings?.separator || '')
@@ -114,7 +114,7 @@ export function KnowledgeBaseDialog({
       } else {
         setName('')
         setDescription('')
-        setEmbeddingModelId(null)
+        setEmbeddingModelId('')
         setChunkSize(500)
         setChunkOverlap(50)
         setSeparator('')
@@ -209,7 +209,7 @@ export function KnowledgeBaseDialog({
             {!isEditing && (
               <div className="space-y-2">
                 <Label htmlFor="team">{t('team')}</Label>
-                <Select value={teamId} onValueChange={setTeamId}>
+                <Select value={teamId} onValueChange={(v) => v && setTeamId(v)}>
                   <SelectTrigger id="team" className="w-full">
                     <SelectValue>
                       {teamId 
@@ -257,8 +257,8 @@ export function KnowledgeBaseDialog({
             <div className="space-y-2">
               <Label htmlFor="embeddingModel">{t('embeddingModel')}</Label>
               <Select 
-                value={embeddingModelId ?? undefined} 
-                onValueChange={setEmbeddingModelId}
+                value={embeddingModelId} 
+                onValueChange={(v) => v && setEmbeddingModelId(v)}
                 disabled={isEditing}
               >
                 <SelectTrigger id="embeddingModel" className="w-full">

@@ -1,0 +1,24 @@
+{
+  "errors": {
+    "notFound": "Page not found",
+    "notFoundDescription": "The page you're looking for doesn't exist.",
+    "unauthorized": "Unauthorized",
+    "unauthorizedDescription": "You don't have permission to access this page.",
+    "serverError": "Server error",
+    "serverErrorDescription": "Something went wrong. Please try again later.",
+    "goHome": "Go Home",
+    "goBack": "Go Back",
+    "backToDashboard": "Back to Dashboard",
+    "backToWorkspace": "Back to Workspace",
+    "unknown": "An unknown error occurred",
+    "networkError": "Network connection failed",
+    "quotaExceeded": "{type} quota exceeded",
+    "timeout": "Request timed out",
+    "agentNotFound": "Agent not found",
+    "agentNotPublished": "Agent is not published",
+    "modelNotConfigured": "Model not configured",
+    "modelVisionNotSupported": "The current model does not support vision. Please switch to a vision-enabled model",
+    "modelNotFound": "Model not found or not configured. Please check model settings",
+    "modelNotAuthorized": "This model is not authorized for the current team"
+  }
+}

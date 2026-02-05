@@ -154,6 +154,7 @@ class ModelBrief(BaseModel):
     provider: str
     model_id: str
     model_type: str
+    capabilities: Optional[dict[str, Any]] = None
 
     class Config:
         from_attributes = True

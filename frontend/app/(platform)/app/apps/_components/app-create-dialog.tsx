@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { agentsApi } from '@/lib/api/agents'
+import { workflowsApi } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
 
 interface AppCreateDialogProps {
@@ -80,11 +81,19 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
         // Navigate to app config page
         router.push(`/app/apps/${agent.id}`)
       } else {
-        // TODO: Create workflow
-        toast.info(t('workflowComingSoon'))
+        // Create workflow
+        const workflow = await workflowsApi.createWorkflow({
+          team_id: currentTeam.id,
+          name: name.trim(),
+          description: description.trim() || undefined,
+        })
+        toast.success(t('appCreated'))
+        onSuccess?.()
+        // Navigate to workflow editor page
+        router.push(`/app/apps/workflow/${workflow.id}`)
       }
     } catch {
-      toast.error(t('createFailed'))
+      // API client 已自动显示后端错误消息，这里不需要再显示
     } finally {
       setIsSubmitting(false)
     }
@@ -102,7 +111,6 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
       icon: GitBranch,
       title: t('types.workflow.title'),
       description: t('types.workflow.description'),
-      disabled: true,
     },
   ]
 
@@ -133,14 +141,12 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
                         'flex flex-col items-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-all',
                         appType === item.type
                           ? 'border-primary bg-primary/5'
-                          : 'border-muted hover:border-muted-foreground/50',
-                        item.disabled && 'opacity-50 cursor-not-allowed'
+                          : 'border-muted hover:border-muted-foreground/50'
                       )}
                     >
                       <RadioGroupItem
                         value={item.type}
                         className="sr-only"
-                        disabled={item.disabled}
                       />
                       <div
                         className={cn(
@@ -158,11 +164,6 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
                           {item.description}
                         </div>
                       </div>
-                      {item.disabled && (
-                        <span className="text-xs text-muted-foreground">
-                          {t('comingSoon')}
-                        </span>
-                      )}
                     </label>
                   )
                 })}

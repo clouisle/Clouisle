@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { DocumentsTable, UploadDocumentDialog, ImportUrlDialog } from './_components'
 import { KnowledgeBaseDialog } from '../_components/kb-dialog'
+import { PermissionGuard } from '@/components/permission-guard'
 
 export default function KnowledgeBaseDetailPage({
   params,
@@ -99,7 +100,8 @@ export default function KnowledgeBaseDetailPage({
   }
   
   return (
-    <div className="flex flex-col gap-6 py-6 px-8">
+    <div className="h-full overflow-auto">
+      <div className="flex flex-col gap-6 py-6 px-8 pb-8">
       {/* 页头 */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
@@ -141,17 +143,19 @@ export default function KnowledgeBaseDetailPage({
             <Search className="mr-2 h-4 w-4" />
             {t('searchTest')}
           </Button>
-          <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
-            <LinkIcon className="mr-2 h-4 w-4" />
-            {t('importUrl')}
-          </Button>
-          <Button onClick={() => setUploadDialogOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t('uploadDocument')}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
-            <Settings className="h-4 w-4" />
-          </Button>
+          <PermissionGuard permission="kb:update">
+            <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
+              <LinkIcon className="mr-2 h-4 w-4" />
+              {t('importUrl')}
+            </Button>
+            <Button onClick={() => setUploadDialogOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              {t('uploadDocument')}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -251,6 +255,7 @@ export default function KnowledgeBaseDetailPage({
         knowledgeBase={knowledgeBase}
         onSuccess={() => loadKnowledgeBase()}
       />
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -39,3 +39,19 @@ class PublicSiteSettingsResponse(BaseModel):
     email_verification: bool = True
     enable_captcha: bool = False
     allow_account_deletion: bool = True
+    sso_enabled: bool = False
+    sso_allow_password_login: bool = True
+
+
+class AutoNotificationConfigResponse(BaseModel):
+    """自动通知配置响应"""
+
+    channels: List[str] = []  # Global channels
+    enabled_types: List[str] = []  # Enabled notification types
+
+
+class AutoNotificationConfigUpdate(BaseModel):
+    """自动通知配置更新请求"""
+
+    channels: List[str] = []
+    enabled_types: List[str] = []

@@ -78,7 +78,7 @@ class Agent(models.Model):
     # Prompt configuration
     system_prompt = fields.TextField(null=True, description="System prompt")
     max_iterations = fields.IntField(
-        default=5, description="Max tool call iterations (1-20)"
+        default=5, description="Max tool call iterations (1-200)"
     )
 
     # Tools configuration (JSON array)
@@ -87,10 +87,24 @@ class Agent(models.Model):
         default=list, description="Tools configuration"
     )  # type: ignore[assignment]
 
+    # Tools credentials (JSON object)
+    # {"TAVILY_API_KEY": "tvly-xxx", "OPENWEATHER_API_KEY": "xxx"}
+    tools_credentials: dict = fields.JSONField(
+        default=dict, description="Tools credentials (API keys, tokens, etc.)"
+    )  # type: ignore[assignment]
+
     # Vision configuration
     enable_vision = fields.BooleanField(
         default=False, description="Enable vision/image understanding"
     )
+
+    # File upload configuration
+    enable_file_upload = fields.BooleanField(
+        default=False, description="Enable file upload and parsing"
+    )
+    file_upload_config: dict = fields.JSONField(
+        default=dict, description="File upload configuration"
+    )  # type: ignore[assignment]
 
     # RAG configuration
     rag_mode = fields.CharEnumField(
@@ -121,15 +135,21 @@ class Agent(models.Model):
         AgentVisibility, default=AgentVisibility.PRIVATE, description="Visibility"
     )
 
-    # Statistics
-    conversation_count = fields.IntField(default=0, description="Total conversations")
-    message_count = fields.IntField(default=0, description="Total messages")
+    # Statistics (累计统计，不会因删除而减少)
+    conversation_count = fields.IntField(
+        default=0, description="Total conversations created"
+    )
+    message_count = fields.IntField(default=0, description="Total messages created")
+    total_tokens = fields.BigIntField(
+        default=0, description="Total tokens consumed (累计)"
+    )
 
     # Audit
-    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="created_agents",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
         description="Creator",
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -175,7 +195,7 @@ class AgentKnowledgeBase(models.Model):
         default=5, description="Number of chunks to retrieve"
     )
     score_threshold = fields.FloatField(
-        default=0.5, description="Minimum similarity score"
+        default=0.3, description="Minimum similarity score (0-1, lower = more results)"
     )
 
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -207,12 +227,14 @@ class Conversation(models.Model):
 
     id = fields.UUIDField(pk=True)
 
-    agent: fields.ForeignKeyRelation[Agent] = fields.ForeignKeyField(
+    agent: fields.ForeignKeyRelation[Agent] | None = fields.ForeignKeyField(
         "models.Agent",
         related_name="conversations",
-        on_delete=fields.CASCADE,
+        on_delete=fields.SET_NULL,
+        null=True,
+        description="Agent (null if agent deleted)",
     )
-    agent_id: UUID  # type: ignore[assignment]
+    agent_id: UUID | None  # type: ignore[assignment]
 
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User",
@@ -282,6 +304,14 @@ class Message(models.Model):
         default=1, description="Version number within the group"
     )
 
+    # Attachments (for user messages with images/files)
+    images: list | None = fields.JSONField(
+        null=True, description="Image URLs (data: or https://)"
+    )  # type: ignore[assignment]
+    file_urls: list | None = fields.JSONField(
+        null=True, description="File URLs for uploaded files"
+    )  # type: ignore[assignment]
+
     # Tool call related (for assistant tool calls and tool responses)
     tool_calls: list | None = fields.JSONField(
         null=True, description="Tool calls made by assistant"
@@ -291,6 +321,11 @@ class Message(models.Model):
     )
     tool_name = fields.CharField(
         max_length=100, null=True, description="Tool name (for tool role messages)"
+    )
+
+    # Reasoning content (for assistant messages with chain-of-thought)
+    reasoning_content = fields.TextField(
+        null=True, description="Reasoning/thinking content from LLM"
     )
 
     # Metadata

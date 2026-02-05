@@ -37,7 +37,7 @@ def start_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True)
     )
 
 
-def start_worker(concurrency: int = 4, queues: str = "default"):
+def start_worker(concurrency: int = 4, queues: str = "default,workflow"):
     """Start the Celery worker."""
     os.chdir(BACKEND_DIR)
     
@@ -108,7 +108,7 @@ Examples:
     # Worker command
     worker_parser = subparsers.add_parser("worker", help="Start the Celery worker")
     worker_parser.add_argument("-c", "--concurrency", type=int, default=4, help="Number of worker processes (default: 4)")
-    worker_parser.add_argument("-Q", "--queues", default="default", help="Queues to consume (default: default)")
+    worker_parser.add_argument("-Q", "--queues", default="default,workflow", help="Queues to consume (default: default,workflow)")
     
     # Beat command
     subparsers.add_parser("beat", help="Start the Celery beat scheduler")

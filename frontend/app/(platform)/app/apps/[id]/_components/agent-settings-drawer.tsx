@@ -205,12 +205,13 @@ export function AgentSettingsDrawer({
                 <Select value={visibility} onValueChange={(v) => v && onVisibilityChange(v as AgentVisibility)}>
                   <SelectTrigger id="visibility">
                     <SelectValue>
-                      {visibility === 'private' ? t('visibilityPrivate') : t('visibilityTeam')}
+                      {visibility === 'private' ? t('visibilityPrivate') : visibility === 'team' ? t('visibilityTeam') : t('visibilityPublic')}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent side="bottom" alignItemWithTrigger={false}>
                     <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
                     <SelectItem value="team">{t('visibilityTeam')}</SelectItem>
+                    <SelectItem value="public">{t('visibilityPublic')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -297,12 +298,12 @@ export function AgentSettingsDrawer({
                   value={maxIterations}
                   onChange={(e) => {
                     const val = Number(e.target.value)
-                    if (val >= 1 && val <= 20) {
+                    if (val >= 1 && val <= 200) {
                       onMaxIterationsChange(val)
                     }
                   }}
                   min={1}
-                  max={20}
+                  max={200}
                 />
                 <p className="text-xs text-muted-foreground">
                   {ts('maxIterationsHint')}
@@ -331,11 +332,16 @@ export function AgentSettingsDrawer({
                 <Textarea
                   id="suggestedQuestions"
                   value={suggestedQuestions.join('\n')}
-                  onChange={(e) =>
-                    onSuggestedQuestionsChange(
-                      e.target.value.split('\n').filter((q) => q.trim())
-                    )
-                  }
+                  onChange={(e) => {
+                    // 保留所有行（包括空行），让用户可以换行输入
+                    const lines = e.target.value.split('\n')
+                    onSuggestedQuestionsChange(lines)
+                  }}
+                  onBlur={(e) => {
+                    // 失焦时过滤空行
+                    const lines = e.target.value.split('\n').filter((q) => q.trim())
+                    onSuggestedQuestionsChange(lines)
+                  }}
                   placeholder={ts('suggestedQuestionsPlaceholder')}
                   rows={3}
                   className="resize-none"

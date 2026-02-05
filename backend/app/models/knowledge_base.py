@@ -93,6 +93,10 @@ class KnowledgeBase(models.Model):
     embedding_model_id = fields.UUIDField(
         null=True, description="ID of the embedding model to use"
     )
+    embedding_dimension = fields.IntField(
+        null=True,
+        description="Embedding vector dimension (set on first document processing)",
+    )
 
     # Settings (JSON field for flexibility)
     settings: dict | None = fields.JSONField(
@@ -224,8 +228,8 @@ class DocumentChunk(models.Model):
         description="Chunk metadata (page number, section, etc.)",
     )
 
-    # Vector embedding stored separately in pgvector
-    # The actual vector is stored in a separate table or using pgvector extension
+    # Vector embedding stored in Qdrant
+    # The actual vector is stored externally and referenced by embedding_id
     embedding_id = fields.CharField(
         max_length=100, null=True, description="Reference to vector storage"
     )

@@ -2,6 +2,7 @@
 工具相关的 Pydantic Schema
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
@@ -36,6 +37,13 @@ class ToolCategory(str, Enum):
     API = "api"  # API 调用
     DATA = "data"  # 数据处理
     OTHER = "other"  # 其他
+
+
+class ToolSharePermission(str, Enum):
+    """工具共享权限级别"""
+
+    READ_ONLY = "read_only"  # 可查看和使用工具
+    READ_EXECUTE = "read_execute"  # 可查看、使用并查看执行结果
 
 
 class ToolParameterSchema(BaseModel):
@@ -131,6 +139,19 @@ class ToolOut(BaseModel):
         default=None, description="MCP Server 配置"
     )
 
+    # 用于后台管理的额外字段
+    team_id: UUID | None = Field(default=None, description="所属团队")
+    created_by_name: str | None = Field(default=None, description="创建者名称")
+
+    # 工具共享相关字段
+    is_owned: bool = Field(default=True, description="当前团队是否拥有此工具")
+    owner_team_id: UUID | None = Field(default=None, description="所有者团队 ID")
+    owner_team_name: str | None = Field(default=None, description="所有者团队名称")
+    share_permission: ToolSharePermission | None = Field(
+        default=None, description="共享权限级别（如果是共享工具）"
+    )
+    shared_with_count: int = Field(default=0, description="共享给的团队数量")
+
 
 class ToolListOut(BaseModel):
     """工具列表输出"""
@@ -146,6 +167,9 @@ class ToolDetailOut(ToolOut):
     team_id: UUID | None = Field(default=None, description="所属团队")
     created_at: str | None = Field(default=None, description="创建时间")
     updated_at: str | None = Field(default=None, description="更新时间")
+    created_by_id: UUID | None = Field(
+        default=None, description="创建者 ID (可能已删除)"
+    )
     created_by_name: str | None = Field(default=None, description="创建者名称")
 
 
@@ -261,6 +285,40 @@ class CodeExecuteResponse(BaseModel):
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
 
 
+# ============ Tool Sharing Schemas ============
+
+
+class ToolShareInput(BaseModel):
+    """工具共享输入"""
+
+    team_id: UUID = Field(..., description="要共享给的团队 ID")
+    permission: ToolSharePermission = Field(
+        default=ToolSharePermission.READ_ONLY, description="权限级别"
+    )
+
+
+class ToolShareOut(BaseModel):
+    """工具共享输出"""
+
+    id: UUID = Field(..., description="共享记录 ID")
+    tool_id: UUID = Field(..., description="工具 ID")
+    tool_name: str = Field(..., description="工具名称")
+    tool_display_name: str = Field(..., description="工具显示名称")
+    shared_with_team_id: UUID = Field(..., description="共享给的团队 ID")
+    shared_with_team_name: str = Field(..., description="共享给的团队名称")
+    permission: ToolSharePermission = Field(..., description="权限级别")
+    shared_by_id: UUID | None = Field(None, description="共享者 ID (可能已删除)")
+    shared_by_name: str = Field(..., description="共享者名称")
+    shared_at: datetime = Field(..., description="共享时间")
+
+
+class ToolShareListOut(BaseModel):
+    """工具共享列表输出"""
+
+    shares: list[ToolShareOut] = Field(default_factory=list, description="共享列表")
+    total: int = Field(default=0, description="总数")
+
+
 # ============ 内置工具元数据 ============
 
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
@@ -300,5 +358,12 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "category": ToolCategory.WEB,
         "icon": "🌐",
         "requires_config": False,
+    },
+    "markitdown": {
+        "display_name": "MarkItDown 文件解析",
+        "category": ToolCategory.FILE,
+        "icon": "📄",
+        "requires_config": False,
+        "is_file_parser": True,  # 标记为文件解析器，可用于文件上传功能
     },
 }

@@ -39,6 +39,9 @@ class Message(BaseModel):
     content: str | list[ContentPart] | None = Field(
         default=None, description="消息内容"
     )
+    reasoning_content: str | None = Field(
+        default=None, description="思维链内容（仅用于部分模型/历史）"
+    )
     name: str | None = Field(default=None, description="发送者名称")
     tool_call_id: str | None = Field(
         default=None, description="工具调用 ID (role=tool 时)"
@@ -93,6 +96,9 @@ class ChatResponse(BaseModel):
     id: str = Field(..., description="响应 ID")
     model: str = Field(..., description="模型名称")
     content: str | None = Field(default=None, description="响应内容")
+    reasoning_content: str | None = Field(
+        default=None, description="思维链内容（归一化字段）"
+    )
     tool_calls: list[ToolCall] | None = Field(default=None, description="工具调用列表")
     finish_reason: FinishReason = Field(..., description="完成原因")
     usage: Usage = Field(..., description="使用统计")

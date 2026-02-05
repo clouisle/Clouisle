@@ -1,0 +1,63 @@
+services:
+  qdrant_node1:
+    image: qdrant/qdrant:latest
+    command: ["./qdrant", "--uri", "http://qdrant_node1:6335"]
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+      - "6335:6335"
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__P2P__PORT: "6335"
+      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+    volumes:
+      - qdrant_node1_data:/qdrant/storage
+    networks:
+      - qdrant_cluster
+
+  qdrant_node2:
+    image: qdrant/qdrant:latest
+    command:
+      [
+        "./qdrant",
+        "--bootstrap",
+        "http://qdrant_node1:6335",
+        "--uri",
+        "http://qdrant_node2:6335",
+      ]
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__P2P__PORT: "6335"
+      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+    volumes:
+      - qdrant_node2_data:/qdrant/storage
+    networks:
+      - qdrant_cluster
+
+  qdrant_node3:
+    image: qdrant/qdrant:latest
+    command:
+      [
+        "./qdrant",
+        "--bootstrap",
+        "http://qdrant_node1:6335",
+        "--uri",
+        "http://qdrant_node3:6335",
+      ]
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+      QDRANT__CLUSTER__P2P__PORT: "6335"
+      QDRANT__SERVICE__API_KEY: clouisle-qdrant-cbd3c07d
+    volumes:
+      - qdrant_node3_data:/qdrant/storage
+    networks:
+      - qdrant_cluster
+
+volumes:
+  qdrant_node1_data:
+  qdrant_node2_data:
+  qdrant_node3_data:
+
+networks:
+  qdrant_cluster:
+    driver: bridge

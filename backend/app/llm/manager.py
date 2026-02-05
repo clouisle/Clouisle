@@ -7,7 +7,6 @@
 支持团队级调用，自动追踪 token 用量和配额检查。
 """
 
-import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -15,14 +14,8 @@ from typing import Any
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import (
-    AIMessage,
-    HumanMessage,
-    SystemMessage,
-    ToolMessage,
-)
 
-from app.models.model import Model, ModelType, TeamModel
+from app.models.model import Model, ModelType, TeamModel, ModelProvider
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
 from .adapters import (
@@ -31,6 +24,15 @@ from .adapters import (
     create_image_adapter,
     create_tts_adapter,
     create_stt_adapter,
+)
+from .adapters.chat import (
+    BaseChatAdapter,
+    OpenAIAdapter,
+    DeepSeekAdapter,
+    AnthropicAdapter,
+    GeminiAdapter,
+    XAIAdapter,
+    OpenAICompatibleAdapter,
 )
 from .errors import (
     LLMError,
@@ -45,14 +47,8 @@ from .errors import (
 )
 from .types import (
     Message,
-    MessageRole,
     ChatResponse,
     ChatStreamChunk,
-    ChatStreamDelta,
-    FinishReason,
-    Usage,
-    ToolCall,
-    FunctionCall,
     ToolDefinition,
     ImageGenerationRequest,
     ImageGenerationResponse,
@@ -166,11 +162,6 @@ class ModelManager:
         else:
             # 获取该类型的默认模型
             model = await Model.filter(model_type=model_type, is_default=True).first()
-            if not model:
-                # 如果没有默认模型，获取第一个启用的模型
-                model = await Model.filter(
-                    model_type=model_type, is_enabled=True
-                ).first()
 
         if not model:
             raise ModelNotFoundError(
@@ -186,113 +177,54 @@ class ModelManager:
 
         return model
 
-    def _convert_messages(
-        self, messages: list[Message]
-    ) -> list[SystemMessage | HumanMessage | AIMessage | ToolMessage]:
-        """将内部消息格式转换为 LangChain 消息"""
-        lc_messages: list[SystemMessage | HumanMessage | AIMessage | ToolMessage] = []
-        for msg in messages:
-            content = msg.content
-            if isinstance(content, list):
-                # TODO: 处理多模态内容
-                content = " ".join(part.text for part in content if part.text)
+    def _get_chat_adapter(self, model_config: Model) -> BaseChatAdapter:
+        """
+        根据服务商获取对应的 Chat 适配器
 
-            if msg.role == MessageRole.SYSTEM:
-                lc_messages.append(SystemMessage(content=content or ""))
-            elif msg.role == MessageRole.USER:
-                lc_messages.append(HumanMessage(content=content or ""))
-            elif msg.role == MessageRole.ASSISTANT:
-                # Convert tool_calls to LangChain format if present
-                lc_tool_calls = None
-                if msg.tool_calls:
-                    lc_tool_calls = [
-                        {
-                            "id": tc.id,
-                            "name": tc.function.name,
-                            "args": tc.function.arguments
-                            if isinstance(tc.function.arguments, dict)
-                            else self._safe_json_loads(tc.function.arguments),
-                        }
-                        for tc in msg.tool_calls
-                    ]
-                lc_messages.append(
-                    AIMessage(content=content or "", tool_calls=lc_tool_calls or [])
-                )
-            elif msg.role == MessageRole.TOOL:
-                lc_messages.append(
-                    ToolMessage(
-                        content=content or "",
-                        tool_call_id=msg.tool_call_id or "",
-                    )
-                )
+        Args:
+            model_config: 模型配置
 
-        return lc_messages
+        Returns:
+            BaseChatAdapter: Chat 适配器实例
+        """
+        provider = model_config.provider
+        provider_value = provider.value if hasattr(provider, "value") else str(provider)
 
-    def _safe_json_loads(self, s: str) -> dict:
-        """Safely parse JSON string to dict"""
-        try:
-            return json.loads(s)
-        except (json.JSONDecodeError, TypeError):
-            return {}
+        # 原生适配器
+        if provider_value == ModelProvider.OPENAI.value:
+            return OpenAIAdapter(model_config)
+        elif provider_value == ModelProvider.ANTHROPIC.value:
+            return AnthropicAdapter(model_config)
+        elif provider_value == ModelProvider.GOOGLE.value:
+            return GeminiAdapter(model_config)
+        elif provider_value == ModelProvider.DEEPSEEK.value:
+            return DeepSeekAdapter(model_config)
+        elif provider_value == ModelProvider.XAI.value:
+            return XAIAdapter(model_config)
 
-    def _convert_tools(self, tools: list[ToolDefinition] | None) -> list[dict] | None:
-        """将内部工具定义转换为 LangChain 格式"""
-        if not tools:
-            return None
+        # OpenAI 兼容服务商
+        elif provider_value == ModelProvider.AZURE_OPENAI.value:
+            # Azure OpenAI 使用 OpenAI 适配器，但需要特殊处理
+            return OpenAICompatibleAdapter(model_config, provider_hint="azure")
+        elif provider_value == ModelProvider.MOONSHOT.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="moonshot")
+        elif provider_value == ModelProvider.ZHIPU.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="zhipu")
+        elif provider_value == ModelProvider.QWEN.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="qwen")
+        elif provider_value == ModelProvider.BAICHUAN.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="baichuan")
+        elif provider_value == ModelProvider.MINIMAX.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="minimax")
+        elif provider_value == ModelProvider.VOLCENGINE.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="volcengine")
+        elif provider_value == ModelProvider.OLLAMA.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="ollama")
+        elif provider_value == ModelProvider.CUSTOM.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="custom")
 
-        return [
-            {
-                "type": tool.type,
-                "function": {
-                    "name": tool.function.name,
-                    "description": tool.function.description or "",
-                    "parameters": tool.function.parameters,
-                },
-            }
-            for tool in tools
-        ]
-
-    def _parse_response(self, response: AIMessage, model_name: str) -> ChatResponse:
-        """解析 LangChain 响应为内部格式"""
-        # 解析工具调用
-        tool_calls = None
-        if response.tool_calls:
-            tool_calls = [
-                ToolCall(
-                    id=tc.get("id") or str(uuid.uuid4()),
-                    type="function",
-                    function=FunctionCall(
-                        name=tc.get("name", ""),
-                        arguments=json.dumps(
-                            tc.get("args", {})
-                        ),  # Convert dict to JSON string
-                    ),
-                )
-                for tc in response.tool_calls
-            ]
-
-        # 确定完成原因
-        finish_reason = FinishReason.STOP
-        if tool_calls:
-            finish_reason = FinishReason.TOOL_CALLS
-
-        # 解析 usage
-        usage = Usage()
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = Usage(
-                prompt_tokens=response.usage_metadata.get("input_tokens", 0),
-                completion_tokens=response.usage_metadata.get("output_tokens", 0),
-                total_tokens=response.usage_metadata.get("total_tokens", 0),
-            )
-
-        return ChatResponse(
-            id=response.id or str(uuid.uuid4()),
-            model=model_name,
-            content=response.content if isinstance(response.content, str) else None,
-            tool_calls=tool_calls,
-            finish_reason=finish_reason,
-            usage=usage,
-        )
+        # 默认使用 OpenAI 兼容适配器
+        return OpenAICompatibleAdapter(model_config)
 
     def _handle_error(self, e: Exception, provider: str, model: str) -> LLMError:
         """统一处理异常"""
@@ -416,234 +348,6 @@ class ModelManager:
                 model=model_id,
             )
 
-    async def _stream_with_openai_sdk(
-        self,
-        model_config: Model,
-        messages: list[Message],
-        **kwargs: Any,
-    ) -> AsyncIterator[ChatStreamChunk]:
-        """
-        使用 OpenAI SDK 直接进行流式调用，以支持 reasoning_content 等扩展字段
-
-        Args:
-            model_config: 模型配置
-            messages: 消息列表
-            **kwargs: 额外参数
-
-        Yields:
-            ChatStreamChunk: 流式响应块
-        """
-        from openai import AsyncOpenAI
-
-        # 构建 OpenAI 客户端
-        client = AsyncOpenAI(
-            api_key=model_config.api_key,
-            base_url=model_config.base_url,
-            timeout=model_config.config.get("timeout", 60)
-            if model_config.config
-            else 60,
-        )
-
-        # 转换消息格式
-        openai_messages: list[dict[str, Any]] = []
-        for msg in messages:
-            content: Any = msg.content
-            if isinstance(content, list):
-                # 处理多模态内容 - convert to OpenAI vision format
-                processed_content: list[dict[str, Any]] = []
-                for part in content:
-                    if hasattr(part, "type"):
-                        part_type = (
-                            part.type.value
-                            if hasattr(part.type, "value")
-                            else part.type
-                        )
-                        if part_type == "text" and hasattr(part, "text"):
-                            processed_content.append(
-                                {"type": "text", "text": part.text}
-                            )
-                        elif part_type == "image" and hasattr(part, "image"):
-                            # Convert our ImageContent to OpenAI's image_url format
-                            img = part.image
-                            if img is not None and img.base64:
-                                # Use data URL format for base64
-                                img_format = (
-                                    img.format
-                                    if hasattr(img, "format") and img.format
-                                    else "png"
-                                )
-                                data_url = (
-                                    f"data:image/{img_format};base64,{img.base64}"
-                                )
-                                processed_content.append(
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": data_url},
-                                    }
-                                )
-                            elif img is not None and img.url:
-                                processed_content.append(
-                                    {"type": "image_url", "image_url": {"url": img.url}}
-                                )
-                        elif part_type == "image_url" and hasattr(part, "image_url"):
-                            # Legacy format - pass through
-                            processed_content.append(
-                                {"type": "image_url", "image_url": part.image_url}
-                            )
-                    elif isinstance(part, dict):
-                        processed_content.append(part)
-                content = processed_content if processed_content else ""
-
-            msg_dict = {
-                "role": msg.role.value if hasattr(msg.role, "value") else msg.role,
-                "content": content if content else "",
-            }
-
-            # Handle tool_calls for assistant messages
-            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                msg_dict["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ]
-
-            # Handle tool_call_id for tool messages
-            if hasattr(msg, "tool_call_id") and msg.tool_call_id:
-                msg_dict["tool_call_id"] = msg.tool_call_id
-
-            openai_messages.append(msg_dict)
-
-        # 从 default_params 获取参数（模型配置优先）
-        params = model_config.default_params or {}
-        config = model_config.config or {}
-
-        # 移除 kwargs 中可能传入的参数（忽略它们，只用模型配置）
-        kwargs.pop("temperature", None)
-        kwargs.pop("max_tokens", None)
-        tools = kwargs.pop("tools", None)
-
-        # temperature: 从模型 default_params 获取
-        temperature = params.get("temperature")
-
-        # max_tokens: 从模型 config 获取
-        max_tokens = config.get("max_tokens")
-
-        # 构建请求参数
-        request_params: dict[str, Any] = {
-            "model": model_config.model_id,
-            "messages": openai_messages,
-            "stream": True,
-        }
-
-        if temperature is not None:
-            request_params["temperature"] = temperature
-        if max_tokens is not None:
-            request_params["max_completion_tokens"] = max_tokens
-        if tools is not None:
-            # Convert tools to OpenAI format
-            openai_tools = []
-            for tool in tools:
-                openai_tools.append(
-                    {
-                        "type": tool.type,
-                        "function": {
-                            "name": tool.function.name,
-                            "description": tool.function.description,
-                            "parameters": tool.function.parameters,
-                        },
-                    }
-                )
-            request_params["tools"] = openai_tools
-
-        response_id = str(uuid.uuid4())
-
-        try:
-            stream = await client.chat.completions.create(**request_params)
-
-            # Track tool calls being built up during streaming
-            streaming_tool_calls: dict[
-                int, dict
-            ] = {}  # index -> {id, type, function: {name, arguments}}
-
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-                finish_reason = chunk.choices[0].finish_reason
-
-                # 获取 content
-                content = delta.content if delta.content else None
-
-                # 获取 reasoning_content (DeepSeek R1 等模型的扩展字段)
-                # 通过 model_extra 获取非标准字段
-                reasoning_content = None
-                if hasattr(delta, "model_extra") and delta.model_extra:
-                    reasoning_content = delta.model_extra.get("reasoning_content")
-
-                # 处理流式工具调用
-                tool_calls_delta = None
-                if hasattr(delta, "tool_calls") and delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in streaming_tool_calls:
-                            streaming_tool_calls[idx] = {
-                                "id": tc_delta.id or "",
-                                "type": tc_delta.type or "function",
-                                "function": {"name": "", "arguments": ""},
-                            }
-                        if tc_delta.id:
-                            streaming_tool_calls[idx]["id"] = tc_delta.id
-                        if tc_delta.type:
-                            streaming_tool_calls[idx]["type"] = tc_delta.type
-                        if tc_delta.function:
-                            if tc_delta.function.name:
-                                streaming_tool_calls[idx]["function"]["name"] += (
-                                    tc_delta.function.name
-                                )
-                            if tc_delta.function.arguments:
-                                streaming_tool_calls[idx]["function"]["arguments"] += (
-                                    tc_delta.function.arguments
-                                )
-
-                # 当 finish_reason 为 tool_calls 时，发送完整的工具调用
-                if finish_reason == "tool_calls" and streaming_tool_calls:
-                    tool_calls_delta = [
-                        ToolCall(
-                            id=tc["id"],
-                            type=tc["type"],
-                            function=FunctionCall(
-                                name=tc["function"]["name"],
-                                arguments=tc["function"]["arguments"],
-                            ),
-                        )
-                        for tc in streaming_tool_calls.values()
-                    ]
-
-                # 如果有内容、reasoning 或工具调用，才 yield
-                if content or reasoning_content or finish_reason or tool_calls_delta:
-                    yield ChatStreamChunk(
-                        id=response_id,
-                        model=model_config.model_id,
-                        delta=ChatStreamDelta(
-                            content=content,
-                            reasoning_content=reasoning_content,
-                            tool_calls=tool_calls_delta,
-                        ),
-                        finish_reason=FinishReason(finish_reason)
-                        if finish_reason
-                        else None,
-                    )
-
-        finally:
-            await client.close()
-
     # ==================== Chat 方法 ====================
 
     async def chat(
@@ -671,18 +375,10 @@ class ModelManager:
         ]
 
         model_config = await self._get_model_config(model_id, ModelType.CHAT)
-        chat_model = create_chat_model(model_config)
-
-        lc_messages = self._convert_messages(converted_messages)
-        lc_tools = self._convert_tools(tools)
+        adapter = self._get_chat_adapter(model_config)
 
         try:
-            model_to_invoke: BaseChatModel = chat_model
-            if lc_tools:
-                model_to_invoke = chat_model.bind_tools(lc_tools)  # type: ignore[assignment]
-
-            response = await model_to_invoke.ainvoke(lc_messages, **kwargs)
-            return self._parse_response(response, model_config.model_id)
+            return await adapter.chat(converted_messages, tools=tools, **kwargs)
         except Exception as e:
             logger.exception(f"Chat error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
@@ -691,6 +387,7 @@ class ModelManager:
         self,
         messages: list[Message | dict],
         model_id: str | None = None,
+        tools: list[ToolDefinition] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
         """
@@ -699,6 +396,7 @@ class ModelManager:
         Args:
             messages: 消息列表
             model_id: 模型 ID
+            tools: 工具定义列表
             **kwargs: 额外参数
 
         Yields:
@@ -709,11 +407,11 @@ class ModelManager:
         ]
 
         model_config = await self._get_model_config(model_id, ModelType.CHAT)
+        adapter = self._get_chat_adapter(model_config)
 
         try:
-            # 直接使用 OpenAI SDK 进行流式调用，以支持 reasoning_content
-            async for chunk in self._stream_with_openai_sdk(
-                model_config, converted_messages, **kwargs
+            async for chunk in adapter.chat_stream(
+                converted_messages, tools=tools, **kwargs
             ):
                 yield chunk
         except Exception as e:
@@ -933,17 +631,10 @@ class ModelManager:
             Message(**m) if isinstance(m, dict) else m for m in messages
         ]
 
-        chat_model = create_chat_model(model_config)
-        lc_messages = self._convert_messages(converted_messages)
-        lc_tools = self._convert_tools(tools)
+        adapter = self._get_chat_adapter(model_config)
 
         try:
-            model_to_invoke: BaseChatModel = chat_model
-            if lc_tools:
-                model_to_invoke = chat_model.bind_tools(lc_tools)  # type: ignore[assignment]
-
-            response = await model_to_invoke.ainvoke(lc_messages, **kwargs)
-            result = self._parse_response(response, model_config.model_id)
+            result = await adapter.chat(converted_messages, tools=tools, **kwargs)
 
             # 记录用量
             await self._check_and_record_usage(
@@ -962,6 +653,7 @@ class ModelManager:
         team_id: str,
         messages: list[Message | dict],
         model_id: str | None = None,
+        tools: list[ToolDefinition] | None = None,
         record_usage: bool = True,
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
@@ -976,6 +668,7 @@ class ModelManager:
             team_id: 团队 ID
             messages: 消息列表
             model_id: 模型 ID
+            tools: 工具定义列表
             record_usage: 是否自动记录用量（默认 True）
             **kwargs: 额外参数
 
@@ -1000,10 +693,11 @@ class ModelManager:
             Message(**m) if isinstance(m, dict) else m for m in messages
         ]
 
+        adapter = self._get_chat_adapter(model_config)
+
         try:
-            # 直接使用 OpenAI SDK 进行流式调用，以支持 reasoning_content
-            async for chunk in self._stream_with_openai_sdk(
-                model_config, converted_messages, **kwargs
+            async for chunk in adapter.chat_stream(
+                converted_messages, tools=tools, **kwargs
             ):
                 yield chunk
 

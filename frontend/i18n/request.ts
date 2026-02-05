@@ -2,6 +2,52 @@ import { getRequestConfig } from 'next-intl/server'
 import { cookies, headers } from 'next/headers'
 import { defaultLocale, locales, type Locale } from './config'
 
+// 动态加载所有翻译模块
+async function loadMessages(locale: Locale) {
+  const modules = [
+    'common',
+    'nav',
+    'auth',
+    'dashboard',
+    'teams',
+    'users',
+    'roles',
+    'permissions',
+    'settings',
+    'siteSettings',
+    'errors',
+    'models',
+    'platform',
+    'agents',
+    'apps',
+    'chat',
+    'knowledgeBases',
+    'tools',
+    'conversations',
+    'apiKeys',
+    'publicChat',
+    'promptGenerator',
+    'workflow',
+    'activities',
+    'auditLogs',
+    'sso',
+    'notifications',
+  ]
+
+  const messages: Record<string, unknown> = {}
+
+  for (const moduleName of modules) {
+    try {
+      const moduleMessages = (await import(`./${locale}/${moduleName}.json`)).default
+      Object.assign(messages, moduleMessages)
+    } catch (error) {
+      console.warn(`Failed to load ${locale}/${moduleName}.json:`, error)
+    }
+  }
+
+  return messages
+}
+
 export default getRequestConfig(async () => {
   // Try to get locale from cookie first
   const cookieStore = await cookies()
@@ -10,7 +56,7 @@ export default getRequestConfig(async () => {
   if (localeCookie && locales.includes(localeCookie)) {
     return {
       locale: localeCookie,
-      messages: (await import(`../messages/${localeCookie}.json`)).default,
+      messages: await loadMessages(localeCookie),
     }
   }
 
@@ -23,7 +69,7 @@ export default getRequestConfig(async () => {
     if (locales.includes(browserLocale)) {
       return {
         locale: browserLocale,
-        messages: (await import(`../messages/${browserLocale}.json`)).default,
+        messages: await loadMessages(browserLocale),
       }
     }
   }
@@ -31,6 +77,6 @@ export default getRequestConfig(async () => {
   // Default locale
   return {
     locale: defaultLocale,
-    messages: (await import(`../messages/${defaultLocale}.json`)).default,
+    messages: await loadMessages(defaultLocale),
   }
 })

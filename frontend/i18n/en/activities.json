@@ -1,0 +1,84 @@
+{
+  "activities": {
+    "title": "Activity Log",
+    "description": "View all conversations and workflow runs",
+    "conversations": "Conversations",
+    "workflowRuns": "Workflow Runs",
+    "rowsPerPage": "per page",
+    "pageInfo": "Page {page} of {total}",
+    "stats": {
+      "totalConversations": "Total Conversations",
+      "totalWorkflowRuns": "Total Workflow Runs",
+      "todayActivities": "Today's Activities",
+      "activeUsers": "Active Users"
+    },
+    "filters": {
+      "workflow": "Workflow",
+      "status": "Status",
+      "triggerType": "Trigger Type",
+      "triggeredBy": "Triggered By",
+      "debugRuns": "Debug Runs Only"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed",
+      "running": "Running",
+      "pending": "Pending",
+      "cancelled": "Cancelled",
+      "timeout": "Timeout"
+    },
+    "triggerType": {
+      "manual": "Manual",
+      "webhook": "Webhook",
+      "cron": "Cron"
+    },
+    "table": {
+      "runId": "Run ID",
+      "workflow": "Workflow",
+      "status": "Status",
+      "triggerType": "Trigger Type",
+      "triggeredBy": "Triggered By",
+      "duration": "Duration",
+      "createdAt": "Created At",
+      "actions": "Actions"
+    },
+    "runDetail": {
+      "title": "Run Details",
+      "basicInfo": "Basic Information",
+      "executionStats": "Execution Statistics",
+      "inputs": "Inputs",
+      "outputs": "Outputs",
+      "nodeExecutions": "Node Executions",
+      "errorInfo": "Error Information",
+      "noError": "No errors",
+      "noOutputs": "No outputs yet",
+      "executedNodes": "Executed Nodes",
+      "failedNodes": "Failed Nodes",
+      "totalTokens": "Total Tokens",
+      "viewDetails": "View Details",
+      "deleteRun": "Delete Run",
+      "confirmDelete": "Are you sure you want to delete this run?",
+      "deleteSuccess": "Run deleted successfully",
+      "deleteSelected": "Delete {count} run{count, plural, one {} other {s}}"
+    },
+    "searchPlaceholder": "Search conversations...",
+    "agent": "Agent",
+    "user": "User",
+    "messageCount": "Messages",
+    "updatedAt": "Updated At",
+    "untitled": "Untitled",
+    "noConversations": "No conversations found",
+    "loadError": "Failed to load conversations",
+    "deleteSuccess": "Conversations deleted successfully",
+    "deleteError": "Failed to delete conversations",
+    "deleteSelected": "Delete {count} selected",
+    "showing": "Showing {from} to {to} of {total}",
+    "page": "Page {current} of {total}",
+    "deleteConfirmTitle": "Delete Conversations",
+    "deleteConfirmDescription": "Are you sure you want to delete {count} conversation(s)? This action cannot be undone.",
+    "viewDetails": "View Details",
+    "noData": "No activities found",
+    "loadingStats": "Loading statistics...",
+    "loadingData": "Loading data..."
+  }
+}

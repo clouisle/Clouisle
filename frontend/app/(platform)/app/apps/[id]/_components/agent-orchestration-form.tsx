@@ -11,6 +11,7 @@ import {
   Wrench,
   Eye,
   Variable,
+  FileUp,
 } from 'lucide-react'
 import {
   knowledgeBasesApi,
@@ -20,10 +21,14 @@ import {
   type VariableDefinition,
   type AgentKnowledgeBaseConfig,
   type RAGMode,
+  type FileUploadConfig,
+  type PromptGenerateContext,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -40,6 +45,7 @@ import { VariableEditor, AddVariableButton, createNewVariable } from './variable
 import { KnowledgeBaseSelector, AddKnowledgeBaseButton } from './knowledge-base-selector'
 import { ToolSelector, AddToolButton, useTools } from './tool-selector'
 import { PromptEditor } from './prompt-editor'
+import { PromptGenerateDialog } from '@/components/ai-elements/prompt-generate-dialog'
 
 interface ConfigCardProps {
   icon: React.ElementType
@@ -141,28 +147,75 @@ export function AgentOrchestrationForm({
     agent.tools_config || []
   )
   const [enableVision, setEnableVision] = React.useState(agent.enable_vision || false)
+  const [enableFileUpload, setEnableFileUpload] = React.useState(agent.enable_file_upload || false)
+  const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig>(
+    agent.file_upload_config || {
+      parser: { type: 'builtin', name: 'markitdown' },  // default parser
+      max_file_size: 10 * 1024 * 1024,
+      max_files: 5,
+      max_content_length: 100000,
+      truncate_strategy: 'end',
+      allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
+    }
+  )
   const [ragMode, setRagMode] = React.useState<RAGMode>(agent.rag_mode || 'agentic')
+
+  // Sync state with agent prop when it changes
+  React.useEffect(() => {
+    setSystemPrompt(agent.system_prompt || '')
+    setVariables(agent.variables || [])
+    setKnowledgeBaseConfigs(
+      agent.knowledge_bases.map(akb => ({
+        knowledge_base_id: akb.knowledge_base.id,
+        retrieval_top_k: akb.retrieval_top_k,
+        score_threshold: akb.score_threshold,
+      }))
+    )
+    setToolsConfig(agent.tools_config || [])
+    setEnableVision(agent.enable_vision || false)
+    setEnableFileUpload(agent.enable_file_upload || false)
+    setFileUploadConfig(
+      agent.file_upload_config || {
+        parser: { type: 'builtin', name: 'markitdown' },
+        max_file_size: 10 * 1024 * 1024,
+        max_files: 5,
+        max_content_length: 100000,
+        truncate_strategy: 'end',
+        allowed_extensions: ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.csv', '.json', '.html'],
+      }
+    )
+    setRagMode(agent.rag_mode || 'agentic')
+  }, [agent])
 
   // Collapsed states
   const [variablesCollapsed, setVariablesCollapsed] = React.useState(true)
   const [kbCollapsed, setKbCollapsed] = React.useState(true)
   const [toolsCollapsed, setToolsCollapsed] = React.useState(true)
   const [visionCollapsed, setVisionCollapsed] = React.useState(true)
+  const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
+
+  // Prompt generate dialog state
+  const [showPromptGenerator, setShowPromptGenerator] = React.useState(false)
 
   // Data loading
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
+  const [fileParsers, setFileParsers] = React.useState<import('@/lib/api').Tool[]>([])
   const { tools: availableTools } = useTools()
 
-  // Load knowledge bases
+  // Load knowledge bases and file parsers
   React.useEffect(() => {
     const loadData = async () => {
       if (!currentTeam) return
 
       try {
-        const kbs = await knowledgeBasesApi.getKnowledgeBases()
+        const [kbs, parsers] = await Promise.all([
+          knowledgeBasesApi.getKnowledgeBases(),
+          import('@/lib/api').then(m => m.toolsApi.listFileParsers(currentTeam.id)),
+        ])
         setKnowledgeBases(
           kbs.items.filter((kb) => kb.team.id === currentTeam.id)
         )
+        setFileParsers(parsers)
       } catch {
         // Ignore errors
       }
@@ -178,15 +231,58 @@ export function AgentOrchestrationForm({
       variables: variables,
       knowledge_base_configs: knowledgeBaseConfigs,
       enable_vision: enableVision,
+      enable_file_upload: enableFileUpload,
+      file_upload_config: enableFileUpload ? fileUploadConfig : null,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, fileUploadConfig, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
 
+  // Build context for prompt generator
+  const promptGenerateContext: PromptGenerateContext = React.useMemo(() => ({
+    agent_name: agent.name,
+    agent_description: agent.description,
+    tools: toolsConfig.map((tc) => {
+      const tool = availableTools.find(
+        (t) =>
+          (tc.type === 'builtin' && t.name === tc.name) ||
+          (tc.type === 'custom' && t.id === tc.tool_id) ||
+          (tc.type === 'mcp' && t.id === tc.server_id)
+      )
+      return {
+        name: tc.name || tool?.name,
+        display_name: tool?.display_name ?? tc.name ?? undefined,
+      }
+    }).filter((t) => t.name),
+    knowledge_bases: knowledgeBases
+      .filter((kb) =>
+        knowledgeBaseConfigs.some((c) => c.knowledge_base_id === kb.id)
+      )
+      .map((kb) => ({
+        name: kb.name,
+        description: kb.description ?? undefined,
+      })),
+    variables: variables.map((v) => ({
+      name: v.name,
+      label: v.label ?? undefined,
+    })),
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables])
+
   return (
     <div className="space-y-3">
+      {/* Prompt Generate Dialog */}
+      <PromptGenerateDialog
+        open={showPromptGenerator}
+        onOpenChange={setShowPromptGenerator}
+        context={promptGenerateContext}
+        onApply={(generatedPrompt) => {
+          setSystemPrompt(generatedPrompt)
+        }}
+        language="zh"
+      />
+
       {/* Prompt Section - Always expanded, highlighted */}
       <div className="rounded-xl bg-linear-to-br from-primary/5 to-primary/10 border border-primary/20 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3">
@@ -202,7 +298,12 @@ export function AgentOrchestrationForm({
               </TooltipContent>
             </Tooltip>
           </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+            onClick={() => setShowPromptGenerator(true)}
+          >
             <Sparkles className="h-3 w-3" />
             {t('prompt.aiGenerate')}
           </Button>
@@ -219,6 +320,7 @@ export function AgentOrchestrationForm({
               setVariables([...variables, newVar])
             }}
             placeholder={t('prompt.placeholder')}
+            enableFileUpload={enableFileUpload}
           />
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-primary/10">
             <span className="text-xs text-muted-foreground">
@@ -310,7 +412,7 @@ export function AgentOrchestrationForm({
                 const newConfig: AgentKnowledgeBaseConfig = {
                   knowledge_base_id: kb.id,
                   retrieval_top_k: 3,
-                  score_threshold: 0.5,
+                  score_threshold: 0.3,
                 }
                 setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
                 setKbCollapsed(false)
@@ -414,6 +516,176 @@ export function AgentOrchestrationForm({
         <p className="text-xs text-muted-foreground py-2">
           {t('vision.description')}
         </p>
+      </ConfigCard>
+
+      {/* File Upload Section */}
+      <ConfigCard
+        icon={FileUp}
+        iconColor="text-cyan-500"
+        title={t('fileUpload.title')}
+        tooltip={t('fileUpload.tooltip')}
+        action={
+          <Switch
+            checked={enableFileUpload}
+            onCheckedChange={setEnableFileUpload}
+          />
+        }
+        collapsed={fileUploadCollapsed}
+        onToggle={() => setFileUploadCollapsed(!fileUploadCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('fileUpload.description')}
+          </p>
+          
+          {enableFileUpload && (
+            <div className="space-y-4 pt-2 border-t">
+              {/* Parser Selection */}
+              <div className="space-y-2">
+                <Label className="text-xs">{t('fileUpload.parser')}</Label>
+                <Select
+                  value={
+                    fileUploadConfig.parser
+                      ? fileUploadConfig.parser.type === 'builtin'
+                        ? `builtin:${fileUploadConfig.parser.name}`
+                        : `custom:${fileUploadConfig.parser.tool_id}`
+                      : ''
+                  }
+                  onValueChange={(value) => {
+                    if (!value) {
+                      setFileUploadConfig({
+                        ...fileUploadConfig,
+                        parser: null,
+                      })
+                    } else {
+                      const [type, id] = value.split(':')
+                      if (type === 'builtin') {
+                        setFileUploadConfig({
+                          ...fileUploadConfig,
+                          parser: { type: 'builtin', name: id },
+                        })
+                      } else {
+                        setFileUploadConfig({
+                          ...fileUploadConfig,
+                          parser: { type: 'custom', tool_id: id },
+                        })
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full h-8 text-sm bg-background">
+                    <SelectValue>
+                      {(value: string) => {
+                        if (!value) {
+                          return <span className="text-muted-foreground">{t('fileUpload.selectParser')}</span>
+                        }
+                        const selectedParser = fileParsers.find(p => 
+                          (p.type === 'builtin' ? `builtin:${p.name}` : `custom:${p.id}`) === value
+                        )
+                        if (!selectedParser) {
+                          return <span className="text-muted-foreground">{t('fileUpload.selectParser')}</span>
+                        }
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span>{selectedParser.icon}</span>
+                            <span>{selectedParser.display_name}</span>
+                          </div>
+                        )
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fileParsers.map((parser) => (
+                      <SelectItem
+                        key={parser.type === 'builtin' ? `builtin:${parser.name}` : `custom:${parser.id}`}
+                        value={parser.type === 'builtin' ? `builtin:${parser.name}` : `custom:${parser.id}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{parser.icon}</span>
+                          <span>{parser.display_name}</span>
+                          {parser.type === 'custom' && (
+                            <span className="text-xs text-muted-foreground">(自定义)</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t('fileUpload.parserHint')}
+                </p>
+              </div>
+
+              {/* Max Content Length */}
+              <div className="space-y-2">
+                <Label className="text-xs">{t('fileUpload.maxContentLength')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={fileUploadConfig.max_content_length}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 100000
+                      setFileUploadConfig({
+                        ...fileUploadConfig,
+                        max_content_length: Math.min(Math.max(val, 1000), 500000),
+                      })
+                    }}
+                    className="w-28 h-8 text-sm bg-background"
+                    min={1000}
+                    max={500000}
+                    step={10000}
+                  />
+                  <span className="text-xs text-muted-foreground">{t('fileUpload.characters')}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('fileUpload.maxContentLengthHint')}
+                </p>
+              </div>
+
+              {/* Truncate Strategy */}
+              <div className="space-y-2">
+                <Label className="text-xs">{t('fileUpload.truncateStrategy')}</Label>
+                <Select
+                  value={fileUploadConfig.truncate_strategy}
+                  onValueChange={(value) => {
+                    if (value && (value === 'end' || value === 'start' || value === 'middle')) {
+                      setFileUploadConfig({
+                        ...fileUploadConfig,
+                        truncate_strategy: value,
+                      })
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-48 h-8 text-sm bg-background">
+                    <SelectValue>
+                      {(value: string) => {
+                        if (value === 'end') return t('fileUpload.truncateEnd')
+                        if (value === 'start') return t('fileUpload.truncateStart')
+                        if (value === 'middle') return t('fileUpload.truncateMiddle')
+                        return t('fileUpload.truncateEnd')
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="w-48">
+                    <SelectItem value="end">{t('fileUpload.truncateEnd')}</SelectItem>
+                    <SelectItem value="start">{t('fileUpload.truncateStart')}</SelectItem>
+                    <SelectItem value="middle">{t('fileUpload.truncateMiddle')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Variable Hint */}
+              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                <p className="text-xs text-cyan-700 dark:text-cyan-300">
+                  {t('fileUpload.variableHint')}
+                </p>
+                <code className="mt-1 block text-xs font-mono text-cyan-600 dark:text-cyan-400">
+                  {'{{fileContent}}'}
+                </code>
+              </div>
+            </div>
+          )}
+        </div>
       </ConfigCard>
     </div>
   )

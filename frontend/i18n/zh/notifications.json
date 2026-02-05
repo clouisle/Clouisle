@@ -1,0 +1,92 @@
+{
+  "notifications": {
+    "title": "通知中心",
+    "description": "管理和查看所有系统通知",
+    "searchPlaceholder": "搜索通知...",
+    "unreadOnly": "仅未读",
+    "markAllRead": "全部已读",
+    "actions": "操作",
+    "markRead": "标记已读",
+    "empty": "暂无通知",
+    "filters": "筛选",
+    "scope": "范围",
+    "level": "优先级",
+    "type": "类型",
+    "createdAt": "创建时间",
+    "allScopes": "全部范围",
+    "allLevels": "全部优先级",
+    "rowsPerPage": "每页行数",
+    "pageInfo": "第 {page} 页，共 {total} 页",
+    "scopeOptions": {
+      "global": "全站",
+      "team": "团队",
+      "user": "个人"
+    },
+    "levelOptions": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "channel": {
+      "email": "邮件",
+      "dingtalk": "钉钉",
+      "webhook": "Webhook",
+      "slack": "Slack",
+      "wechat": "企业微信"
+    },
+    "deliveryStatus": {
+      "title": "发送状态",
+      "pending": "待发送",
+      "sending": "发送中",
+      "success": "已发送",
+      "failed": "发送失败"
+    },
+    "retryCount": "已重试 {count} 次",
+    "toast": {
+      "readUpdated": "已更新已读状态",
+      "created": "通知创建成功",
+      "deleted": "通知删除成功"
+    },
+    "admin": {
+      "title": "通知管理",
+      "create": "创建通知",
+      "createTitle": "标题",
+      "createContent": "内容",
+      "contentMarkdownHint": "支持 Markdown 语法：**粗体**、*斜体*、[链接](url)、列表等",
+      "createType": "类型",
+      "typeOptions": {
+        "system_announcement": "系统公告",
+        "team_invite": "团队邀请",
+        "team_role_changed": "团队角色变更",
+        "kb_doc_indexed": "文档索引完成",
+        "kb_doc_failed": "文档处理失败",
+        "workflow_run_failed": "工作流运行失败",
+        "app_publish": "应用发布",
+        "app_unpublish": "应用下线",
+        "model_test_failed": "模型测试失败",
+        "quota_near_limit": "配额接近上限",
+        "quota_exceeded": "配额超限",
+        "security_login_anomaly": "异常登录",
+        "user_mention": "@ 提及",
+        "user_assigned": "任务指派"
+      },
+      "createScope": "范围",
+      "createTeam": "团队",
+      "createUser": "用户",
+      "createLevel": "优先级",
+      "createLink": "链接地址",
+      "createExpiresAt": "过期时间",
+      "submit": "创建",
+      "delete": "删除",
+      "confirmDeleteTitle": "确认删除通知？",
+      "confirmDeleteDesc": "该操作无法撤销。",
+      "selectTeam": "选择团队",
+      "selectScope": "选择范围",
+      "notifyChannels": "外部通知渠道",
+      "channelEmail": "邮件",
+      "channelSlack": "Slack",
+      "channelDingtalk": "钉钉",
+      "channelWechat": "企业微信"
+    }
+  }
+}

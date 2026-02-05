@@ -9,7 +9,10 @@ from celery.signals import worker_process_init, worker_process_shutdown
 from app.core.config import settings
 
 # Redis URL for Celery broker and result backend
-REDIS_URL = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+if settings.REDIS_PASSWORD:
+    REDIS_URL = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+else:
+    REDIS_URL = f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}"
 
 # Create Celery app
 celery_app = Celery(
@@ -19,6 +22,10 @@ celery_app = Celery(
     include=[
         "app.tasks.knowledge_base",
         "app.tasks.usage",
+        "app.tasks.workflow",
+        "app.tasks.audit_log",
+        "app.tasks.notification",
+        "app.tasks.api_key",
     ],
 )
 
@@ -46,6 +53,12 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "default"},
     "app.tasks.usage.*": {"queue": "default"},
+    "app.tasks.workflow.*": {"queue": "workflow"},
+    "app.tasks.notification.*": {"queue": "default"},
+    "app.tasks.audit_log.*": {"queue": "default"},
+    "app.tasks.api_key.*": {"queue": "default"},
+    "send_notification_dingtalk": {"queue": "default"},
+    "send_notification_email": {"queue": "default"},
 }
 
 # Beat schedule for periodic tasks
@@ -59,6 +72,11 @@ celery_app.conf.beat_schedule = {
     "reset-monthly-usage": {
         "task": "tasks.reset_monthly_usage",
         "schedule": crontab(hour=0, minute=5, day_of_month=1),
+    },
+    # Check API key expiration every day at 09:00
+    "check-api-key-expiration": {
+        "task": "tasks.check_api_key_expiration",
+        "schedule": crontab(hour=9, minute=0),
     },
 }
 

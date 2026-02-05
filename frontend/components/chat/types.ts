@@ -34,6 +34,8 @@ export interface ToolCallPart {
   type: 'tool-call'
   toolCallId: string
   toolName: string
+  /** Display name for the tool (user-friendly) */
+  toolDisplayName?: string
   input: Record<string, unknown>
   state?: 'pending' | 'running' | 'done' | 'error'
 }
@@ -45,6 +47,8 @@ export interface ToolResultPart {
   type: 'tool-result'
   toolCallId: string
   toolName: string
+  /** Display name for the tool (user-friendly) */
+  toolDisplayName?: string
   output: unknown
   isError?: boolean
 }
@@ -100,12 +104,12 @@ export interface SourceDocumentPart {
 }
 
 /**
- * File/Image part
+ * File/Document part - for uploaded documents
  */
 export interface FilePart {
   type: 'file'
+  filename: string
   url?: string
-  name: string
   mimeType?: string
   size?: number
 }

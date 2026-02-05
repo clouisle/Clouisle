@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "title": "Permissions",
+    "description": "Manage system permission definitions",
+    "createPermission": "Create Permission",
+    "editPermission": "Edit Permission",
+    "createPermissionDescription": "Create a new system permission",
+    "editPermissionDescription": "Modify permission information",
+    "filterPermissions": "Search permissions...",
+    "allScopes": "All Scopes",
+    "code": "Permission Code",
+    "scope": "Scope",
+    "permissionDescription": "Description",
+    "systemPermission": "System",
+    "noPermissions": "No permissions found",
+    "rowsPerPage": "Rows per page",
+    "pageInfo": "Page {page} of {total}",
+    "permissionCreated": "Permission created successfully",
+    "permissionUpdated": "Permission updated successfully",
+    "permissionDeleted": "Permission deleted successfully",
+    "confirmDelete": "Confirm Delete",
+    "deletePermissionConfirm": "Are you sure you want to delete permission \"{code}\"? This action cannot be undone and may affect roles using this permission.",
+    "confirmBulkDelete": "Are you sure you want to delete {count} selected permissions? This action cannot be undone.",
+    "permissionsSelected": "permissions selected",
+    "bulkDeleted": "Successfully deleted {count} permissions",
+    "scopePlaceholder": "e.g., user, team, system",
+    "codePlaceholder": "e.g., user:read, team:create",
+    "descriptionPlaceholder": "Enter permission description",
+    "scopeHint": "The functional module this permission belongs to",
+    "codeHint": "Unique identifier, typically in scope:action format"
+  }
+}

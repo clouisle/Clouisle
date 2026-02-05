@@ -1,0 +1,69 @@
+{
+  "apps": {
+    "title": "Applications",
+    "description": "Create and manage your AI applications",
+    "createApp": "Create App",
+    "createAppDescription": "Select app type and fill in basic info",
+    "selectType": "Select Type",
+    "types": {
+      "agent": {
+        "title": "AI Agent",
+        "description": "Conversational AI assistant"
+      },
+      "workflow": {
+        "title": "Workflow",
+        "description": "Visual process orchestration"
+      }
+    },
+    "name": "Name",
+    "namePlaceholder": "Enter app name",
+    "nameRequired": "Name is required",
+    "teamRequired": "Please select a team",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Describe what this app does",
+    "optional": "optional",
+    "comingSoon": "Coming Soon",
+    "workflowComingSoon": "Workflow feature coming soon",
+    "noApps": "No apps yet",
+    "noAppsHint": "Create your first AI application to get started",
+    "createFirstApp": "Create First App",
+    "noDescription": "No description",
+    "appCreated": "App created successfully",
+    "appSaved": "App saved successfully",
+    "appDeleted": "App deleted successfully",
+    "appPublished": "App published",
+    "appUnpublished": "App unpublished",
+    "appDuplicated": "App duplicated",
+    "loadFailed": "Failed to load",
+    "createFailed": "Failed to create",
+    "saveFailed": "Failed to save",
+    "deleteFailed": "Failed to delete",
+    "publishFailed": "Failed to publish",
+    "duplicateFailed": "Failed to duplicate",
+    "published": "Published",
+    "draft": "Draft",
+    "conversations": "conversations",
+    "messages": "messages",
+    "runs": "runs",
+    "success": "success",
+    "failed": "failed",
+    "configure": "Configure",
+    "chat": "Chat",
+    "openPublicChat": "Open Public Page",
+    "publish": "Publish",
+    "unpublish": "Unpublish",
+    "duplicate": "Duplicate",
+    "confirmDelete": "Confirm Delete",
+    "deleteConfirmMessage": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
+    "tabs": {
+      "all": "All",
+      "agent": "Agent",
+      "workflow": "Workflow",
+      "basic": "Basic",
+      "prompt": "Prompt",
+      "knowledge": "Knowledge",
+      "tools": "Tools"
+    },
+    "searchPlaceholder": "Search apps..."
+  }
+}

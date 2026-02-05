@@ -48,6 +48,7 @@ export interface ModelBrief {
   provider: string
   model_id: string
   model_type: string
+  capabilities?: Record<string, unknown> | null
 }
 
 export interface ModelCreateInput {
@@ -132,6 +133,13 @@ export const modelsApi = {
     if (model_type) queryParams.append('model_type', model_type)
     const query = queryParams.toString()
     return api.get<ModelBrief[]>(`/models/available${query ? `?${query}` : ''}`)
+  },
+
+  /**
+   * 获取指定类型的默认模型
+   */
+  getDefaultModel: async (model_type: string): Promise<ModelBrief | null> => {
+    return api.get<ModelBrief | null>(`/models/default/${model_type}`)
   },
 
   /**

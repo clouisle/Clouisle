@@ -1,0 +1,56 @@
+# =============================================================================
+# Clouisle Docker Compose - All-in-One
+# =============================================================================
+# Single container with all services including databases
+# Suitable for development, testing, or small deployments
+#
+# Usage:
+#   docker-compose -f docker-compose.all-in-one.yml up -d
+# =============================================================================
+
+services:
+  clouisle:
+    image: clouisle:all-in-one
+    container_name: clouisle-all-in-one
+    ports:
+      - "80:80"
+    environment:
+      # Application
+      PROJECT_NAME: ${PROJECT_NAME:-Clouisle}
+      SECRET_KEY: ${SECRET_KEY:-changethis-to-a-secure-random-secret-key}
+      TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      # Internal services (using localhost inside container)
+      POSTGRES_SERVER: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-clouisle}
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-clouisle-redis-cbd3c07d}
+      QDRANT_URL: http://localhost:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-clouisle-qdrant-cbd3c07d}
+      # External APIs (optional)
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+    volumes:
+      - clouisle_postgres:/var/lib/postgresql/data
+      - clouisle_redis:/var/lib/redis
+      - clouisle_qdrant:/var/lib/qdrant
+      - clouisle_uploads:/app/uploads
+      - clouisle_logs:/var/log/supervisor
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  clouisle_postgres:
+  clouisle_redis:
+  clouisle_qdrant:
+  clouisle_uploads:
+  clouisle_logs:

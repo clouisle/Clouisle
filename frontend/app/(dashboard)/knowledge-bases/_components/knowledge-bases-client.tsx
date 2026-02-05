@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeBasesApi, type KnowledgeBase, type PageData } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -65,11 +66,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { KnowledgeBaseDialog } from './knowledge-base-dialog'
 import { DeleteKnowledgeBaseDialog } from './delete-knowledge-base-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export function KnowledgeBasesClient() {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const router = useRouter()
+  const { canPerform } = useCanPerform()
   
   // 数据状态
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
@@ -248,10 +251,12 @@ export function KnowledgeBasesClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createKb')}
-          </Button>
+          <PermissionGuard permission="kb:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createKb')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -363,45 +368,54 @@ export function KnowledgeBasesClient() {
                   </TableCell>
                   <TableCell>{getStatusBadge(kb)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(kb.created_at).toLocaleDateString()}
+                    {formatDateTime(kb.created_at)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(kb)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {commonT('edit')}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuItem onClick={() => handleToggleStatus(kb)}>
-                          {kb.status === 'active' ? (
+                    {(canPerform('kb:update') || canPerform('kb:delete')) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canPerform('kb:update') && (
+                            <DropdownMenuItem onClick={() => handleEdit(kb)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {commonT('edit')}
+                            </DropdownMenuItem>
+                          )}
+
+                          {canPerform('kb:update') && (
+                            <DropdownMenuItem onClick={() => handleToggleStatus(kb)}>
+                              {kb.status === 'active' ? (
+                                <>
+                                  <PowerOff className="mr-2 h-4 w-4" />
+                                  {t('deactivate')}
+                                </>
+                              ) : (
+                                <>
+                                  <Power className="mr-2 h-4 w-4" />
+                                  {t('activate')}
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                          )}
+
+                          {canPerform('kb:delete') && (
                             <>
-                              <PowerOff className="mr-2 h-4 w-4" />
-                              {t('deactivate')}
-                            </>
-                          ) : (
-                            <>
-                              <Power className="mr-2 h-4 w-4" />
-                              {t('activate')}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(kb)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {commonT('delete')}
+                              </DropdownMenuItem>
                             </>
                           )}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuSeparator />
-                        
-                        <DropdownMenuItem 
-                          onClick={() => handleDelete(kb)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -492,7 +506,7 @@ export function KnowledgeBasesClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedKbs.size > 0 && (
+      {selectedKbs.size > 0 && canPerform('kb:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button
@@ -503,11 +517,11 @@ export function KnowledgeBasesClient() {
             >
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedKbs.size} {t('kbsSelected')}
             </Badge>
-            
+
             <Tooltip>
               <TooltipTrigger
                 onClick={handleBulkDelete}

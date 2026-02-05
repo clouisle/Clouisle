@@ -47,6 +47,7 @@ const providerColors: Record<string, string> = {
   openai: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   anthropic: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
   google: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  xai: 'bg-neutral-500/10 text-neutral-600 dark:text-neutral-400',
   azure_openai: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
   deepseek: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
   moonshot: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',

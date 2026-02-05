@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Tool, ToolCategory, ToolType } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,8 @@ import {
   Trash2,
   Play,
   Settings,
+  Share2,
+  Users,
 } from 'lucide-react'
 
 interface ToolCardProps {
@@ -28,6 +31,7 @@ interface ToolCardProps {
   onEdit?: (tool: Tool) => void
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
+  onShare?: (tool: Tool) => void
 }
 
 // 分类图标和颜色映射
@@ -84,6 +88,7 @@ export function ToolCard({
   onEdit,
   onDelete,
   onConfigure,
+  onShare,
 }: ToolCardProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
@@ -91,6 +96,8 @@ export function ToolCard({
   const typeColor = typeColorConfig[tool.type]
   const isEditable = tool.type === 'custom' || tool.type === 'mcp'
   const needsConfig = tool.type === 'builtin' && tool.requires_config
+  const isOwned = tool.is_owned !== false // 默认为 true
+  const isShared = !isOwned // 共享给当前团队的工具
 
   // 类型标签映射（使用 i18n）
   const typeLabels: Record<ToolType, string> = {
@@ -112,6 +119,10 @@ export function ToolCard({
     other: t('categories.other'),
   }
 
+  // 判断图标是否为 URL
+  const isIconUrl = tool.icon?.startsWith('http')
+  const displayIcon = tool.icon || category.icon
+
   return (
     <Card
       size="sm"
@@ -125,8 +136,19 @@ export function ToolCard({
         {/* 上半部分：图标、标题、描述 */}
         <div className="flex items-start gap-2">
           {/* 图标 */}
-          <div className="shrink-0 w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-base">
-            {tool.icon || category.icon}
+          <div className="shrink-0 w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-base overflow-hidden relative">
+            {isIconUrl ? (
+              <Image
+                src={displayIcon}
+                alt={tool.display_name}
+                fill
+                className="object-cover"
+                loading="eager"
+                unoptimized
+              />
+            ) : (
+              displayIcon
+            )}
           </div>
 
           {/* 内容 */}
@@ -140,10 +162,30 @@ export function ToolCard({
                   <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
                 </span>
               )}
+              {/* 共享状态标识 */}
+              {isShared && (
+                <Badge variant="secondary" className="text-xs px-1.5 py-0 shrink-0">
+                  <Users className="h-3 w-3 mr-1" />
+                  {t('share.sharedBadge')}
+                </Badge>
+              )}
+              {/* 已共享数量 */}
+              {(isOwned && Number(tool.shared_with_count) > 0) && (
+                <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0">
+                  <Share2 className="h-3 w-3 mr-1" />
+                  {tool.shared_with_count}
+                </Badge>
+              )}
             </div>
 
             <CardDescription className="text-xs line-clamp-2 mt-0.5">
               {tool.description}
+              {/* 显示所有者信息（如果是共享工具） */}
+              {isShared && tool.owner_team_name && (
+                <span className="block text-muted-foreground mt-0.5">
+                  {t('share.sharedFrom', { teamName: tool.owner_team_name })}
+                </span>
+              )}
             </CardDescription>
           </div>
         </div>
@@ -210,25 +252,45 @@ export function ToolCard({
                   }
                 />
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEdit?.(tool)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    {tCommon('edit')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete?.(tool)
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {tCommon('delete')}
-                  </DropdownMenuItem>
+                  {/* 只有拥有的工具才能编辑和共享 */}
+                  {isOwned && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEdit?.(tool)
+                        }}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        {tCommon('edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onShare?.(tool)
+                        }}
+                      >
+                        <Share2 className="h-4 w-4 mr-2" />
+                        {t('share.title')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete?.(tool)
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        {tCommon('delete')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {/* 共享的工具只能查看，不能编辑或删除 */}
+                  {isShared && (
+                    <DropdownMenuItem disabled className="text-muted-foreground">
+                      {t('share.sharedFrom', { teamName: tool.owner_team_name || '' })}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

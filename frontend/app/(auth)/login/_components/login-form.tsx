@@ -1,18 +1,21 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { authApi, siteSettingsApi, ApiError, type CaptchaResponse } from '@/lib/api'
+import { authApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
 import { Loader2, RefreshCw } from 'lucide-react'
+import { Separator } from '@/components/ui/separator'
 
 export function LoginForm() {
   const t = useTranslations('auth')
   const router = useRouter()
+  const searchParams = useSearchParams()
   
   const [username, setUsername] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -22,6 +25,9 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [captchaLoading, setCaptchaLoading] = React.useState(false)
+  const [ssoProviders, setSsoProviders] = React.useState<SSOProvider[]>([])
+  const [ssoEnabled, setSsoEnabled] = React.useState(false)
+  const [passwordLoginAllowed, setPasswordLoginAllowed] = React.useState(true)
   
   // 加载验证码
   const loadCaptcha = React.useCallback(async () => {
@@ -37,20 +43,29 @@ export function LoginForm() {
     }
   }, [])
   
-  // 获取站点设置，检查是否启用验证码
+  // 获取站点设置和 SSO 提供商
   React.useEffect(() => {
-    const checkCaptcha = async () => {
+    const loadSettings = async () => {
       try {
         const settings = await siteSettingsApi.getPublic()
         setCaptchaEnabled(settings.enable_captcha)
+        setSsoEnabled(settings.sso_enabled)
+        setPasswordLoginAllowed(settings.sso_allow_password_login)
+
         if (settings.enable_captcha) {
           loadCaptcha()
         }
+
+        // 加载 SSO 提供商
+        if (settings.sso_enabled) {
+          const providers = await ssoApi.getPublicProviders()
+          setSsoProviders(providers)
+        }
       } catch {
-        // 获取设置失败，默认不启用验证码
+        // 获取设置失败，使用默认值
       }
     }
-    checkCaptcha()
+    loadSettings()
   }, [loadCaptcha])
   
   // 清除单个字段错误
@@ -86,8 +101,9 @@ export function LoginForm() {
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
       toast.success(t('loginSuccess'))
-      // 跳转到 dashboard
-      router.push('/dashboard')
+      // 跳转到重定向页面或 dashboard
+      const redirect = searchParams.get('redirect')
+      router.push(redirect || '/dashboard')
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isValidationError()) {
@@ -108,8 +124,16 @@ export function LoginForm() {
     }
   }
 
+  const handleSSOLogin = (providerId: string) => {
+    const redirect = searchParams.get('redirect')
+    ssoApi.initiateLogin(providerId, redirect || undefined)
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-y-4">
+      {/* 密码登录表单 */}
+      {passwordLoginAllowed && (
+        <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="username">{t('username')}</Label>
         <Input
@@ -193,9 +217,62 @@ export function LoginForm() {
         </div>
       )}
       
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? t('loggingIn') : t('login')}
-      </Button>
-    </form>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? t('loggingIn') : t('login')}
+          </Button>
+        </form>
+      )}
+
+      {passwordLoginAllowed && (
+        <div className="text-center">
+          <Link href="/forgot-password" className="text-sm text-primary hover:underline">
+            {t('forgotPassword')}
+          </Link>
+        </div>
+      )}
+
+      {/* 分隔线 */}
+      {ssoProviders.length > 0 && passwordLoginAllowed && (
+        <div className="relative">
+          <Separator />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2">
+            <span className="text-xs text-muted-foreground uppercase">
+              {t('orContinueWith')}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* SSO 提供商按钮 */}
+      {ssoProviders.length > 0 && (
+        <div className="space-y-3">
+          {ssoProviders.map((provider) => (
+            <Button
+              key={provider.id}
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => handleSSOLogin(provider.id)}
+            >
+              {provider.icon_url && (
+                <img
+                  src={provider.icon_url}
+                  alt={provider.display_name}
+                  className="mr-2 h-4 w-4"
+                />
+              )}
+              {provider.button_text || `Sign in with ${provider.display_name}`}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {/* 如果 SSO 启用且密码登录禁用，显示提示 */}
+      {ssoEnabled && !passwordLoginAllowed && ssoProviders.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground">
+          {t('ssoOnlyMode')}
+        </p>
+      )}
+    </div>
   )
 }

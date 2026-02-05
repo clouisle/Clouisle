@@ -36,6 +36,7 @@ export interface UpdateProfileData {
   username?: string
   email?: string
   avatar_url?: string | null
+  password?: string
 }
 
 export interface ChangePasswordData {

@@ -26,6 +26,7 @@ import { DocumentsTable } from './documents-table'
 import { UploadDocumentDialog } from './upload-document-dialog'
 import { ImportUrlDialog } from './import-url-dialog'
 import { KnowledgeBaseDialog } from '../../_components/knowledge-base-dialog'
+import { PermissionGuard } from '@/components/permission-guard'
 
 interface KnowledgeBaseDetailClientProps {
   knowledgeBaseId: string
@@ -139,17 +140,19 @@ export function KnowledgeBaseDetailClient({ knowledgeBaseId }: KnowledgeBaseDeta
             <Search className="mr-2 h-4 w-4" />
             {t('searchTest')}
           </Button>
-          <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
-            <Link className="mr-2 h-4 w-4" />
-            {t('importUrl')}
-          </Button>
-          <Button onClick={() => setUploadDialogOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t('uploadDocument')}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
-            <Settings className="h-4 w-4" />
-          </Button>
+          <PermissionGuard permission="kb:update">
+            <Button variant="outline" onClick={() => setImportUrlDialogOpen(true)}>
+              <Link className="mr-2 h-4 w-4" />
+              {t('importUrl')}
+            </Button>
+            <Button onClick={() => setUploadDialogOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              {t('uploadDocument')}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setSettingsDialogOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       

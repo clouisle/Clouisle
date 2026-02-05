@@ -1,14 +1,13 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios'
 import { toast } from 'sonner'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+import { API_BASE_URL } from '@/lib/constants'
 
 /** 获取当前语言 */
 function getLocale(): string {
   if (typeof window === 'undefined') return 'en'
   const locale = document.cookie
     .split('; ')
-    .find(row => row.startsWith('NEXT_LOCALE='))
+    .find(row => row.startsWith('locale='))
     ?.split('=')[1]
   return locale || 'en'
 }
@@ -33,6 +32,27 @@ const errorMessages: Record<string, Record<string, string>> = {
 function getErrorMessage(key: string): string {
   const locale = getLocale()
   return errorMessages[key]?.[locale] || errorMessages[key]?.['en'] || key
+}
+
+function isAuthErrorCode(code: number): boolean {
+  if (code === 4001) return true
+  if (code === 401 || code === 403) return true
+  return code >= 2000 && code < 3000
+}
+
+function redirectToLogin(): void {
+  if (typeof window === 'undefined') return
+  const current = `${window.location.pathname}${window.location.search}`
+  if (current.startsWith('/login') || current.startsWith('/register')) return
+  const target = encodeURIComponent(current)
+  window.location.replace(`/login?redirect=${target}`)
+}
+
+function shouldSkipAuthRedirect(config?: InternalAxiosRequestConfig): boolean {
+  if (!config) return false
+  if (config.skipAuthRedirect) return true
+  const url = config.url || ''
+  return url.includes('/login/access-token')
 }
 
 export interface ApiResponse<T = unknown> {
@@ -76,12 +96,15 @@ export class ApiError extends Error {
 interface RequestConfig extends AxiosRequestConfig {
   /** 是否静默处理错误（不显示 toast） */
   silent?: boolean
+  /** 是否跳过登录重定向（用于登录接口本身） */
+  skipAuthRedirect?: boolean
 }
 
 // 扩展 AxiosRequestConfig
 declare module 'axios' {
   interface InternalAxiosRequestConfig {
     silent?: boolean
+    skipAuthRedirect?: boolean
   }
 }
 
@@ -107,7 +130,7 @@ axiosInstance.interceptors.request.use(
       // 添加语言头
       const locale = document.cookie
         .split('; ')
-        .find(row => row.startsWith('NEXT_LOCALE='))
+        .find(row => row.startsWith('locale='))
         ?.split('=')[1]
       if (locale) {
         config.headers['X-Language'] = locale
@@ -123,21 +146,34 @@ axiosInstance.interceptors.request.use(
 /** 响应拦截器 */
 axiosInstance.interceptors.response.use(
   (response) => {
-    const data = response.data as ApiResponse
     const config = response.config
-    
+
+    // 跳过 blob 响应（文件下载）
+    if (config.responseType === 'blob') {
+      return response
+    }
+
+    const data = response.data as ApiResponse
+
     // 业务错误
     if (data.code !== 0) {
       const error = new ApiError(data.code, data.msg, data.data)
-      
+      if (isAuthErrorCode(error.code) && !shouldSkipAuthRedirect(config)) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('access_token')
+        }
+        redirectToLogin()
+        return Promise.reject(error)
+      }
+
       // 非静默模式且非验证错误时显示 toast
       if (!config.silent && !error.isValidationError()) {
         toast.error(data.msg)
       }
-      
+
       return Promise.reject(error)
     }
-    
+
     return response
   },
   (error: AxiosError<ApiResponse>) => {
@@ -160,7 +196,14 @@ axiosInstance.interceptors.response.use(
     const responseData = error.response.data
     if (responseData && typeof responseData === 'object' && 'code' in responseData) {
       const apiError = new ApiError(responseData.code, responseData.msg, responseData.data)
-      
+      if (isAuthErrorCode(apiError.code) && !shouldSkipAuthRedirect(config)) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('access_token')
+        }
+        redirectToLogin()
+        return Promise.reject(apiError)
+      }
+
       // 非静默模式且非验证错误时显示 toast
       if (!config?.silent && !apiError.isValidationError()) {
         toast.error(responseData.msg)
@@ -170,6 +213,14 @@ axiosInstance.interceptors.response.use(
     }
     
     // 其他 HTTP 错误
+    if ((error.response.status === 401 || error.response.status === 403) && !shouldSkipAuthRedirect(config)) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('access_token')
+      }
+      redirectToLogin()
+      return Promise.reject(new ApiError(error.response.status, 'Unauthorized'))
+    }
+
     const message = `${getErrorMessage('requestFailed')}: ${error.response.status} ${error.response.statusText}`
     if (!config?.silent) {
       toast.error(message)
@@ -216,7 +267,30 @@ export const api = {
     })
     return response.data.data
   },
+
+  /** Get base URL for SSE requests */
+  getBaseUrl: (): string => {
+    return API_BASE_URL
+  },
+
+  /** Get auth headers for SSE requests */
+  getAuthHeaders: (): Record<string, string> => {
+    const headers: Record<string, string> = {}
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const locale = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('locale='))
+        ?.split('=')[1]
+      if (locale) {
+        headers['X-Language'] = locale
+      }
+    }
+    return headers
+  },
 }
 
 export { axiosInstance }
-

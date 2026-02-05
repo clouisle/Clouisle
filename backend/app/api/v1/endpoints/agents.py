@@ -7,7 +7,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from tortoise.expressions import F, Q
 from tortoise.functions import Count
 
@@ -47,6 +47,10 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
+from app.models.notification import AutoNotificationType
+from app.core.i18n import t
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -109,12 +113,20 @@ async def check_agent_access(
     # Check visibility and team access
     if agent.visibility == AgentVisibility.PRIVATE:
         # Only creator can access private agents
-        if agent.created_by.id != user.id and not user.is_superuser:
+        # If creator is deleted, treat as team-level access
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
+        elif not agent.created_by and not user.is_superuser:
+            # Creator deleted, check team access
+            await check_team_access(agent.team.id, user, require_admin=require_write)
     else:
         # Team visibility - check team membership
         await check_team_access(agent.team.id, user, require_admin=require_write)
@@ -189,6 +201,10 @@ async def build_agent_out(agent: Agent) -> dict:
         "max_iterations": agent.max_iterations,
         "tools_config": agent.tools_config or [],
         "enable_vision": agent.enable_vision,
+        "enable_file_upload": agent.enable_file_upload,
+        "file_upload_config": agent.file_upload_config
+        if agent.file_upload_config
+        else None,
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -279,7 +295,7 @@ async def list_agents(
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:read")),
 ) -> Any:
     """
     List agents.
@@ -354,12 +370,24 @@ async def list_agents(
 @router.post("/", response_model=Response[AgentOut])
 async def create_agent(
     *,
+    request: Request,
     agent_in: AgentCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:create")),
 ) -> Any:
     """Create a new agent."""
     # Check team access
     team = await check_team_access(agent_in.team_id, current_user)
+
+    # Check for duplicate name within the same team
+    existing = await Agent.filter(
+        team_id=agent_in.team_id,
+        name=agent_in.name,
+    ).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="agent_name_exists",
+        )
 
     # Validate model_id if provided
     if agent_in.model_id:
@@ -418,6 +446,25 @@ async def create_agent(
 
     # Reload with relations
     agent = await Agent.get(id=agent.id).prefetch_related("team", "created_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="create_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team.id),
+            "team_name": team.name,
+            "visibility": agent_in.visibility,
+            "kb_count": len(agent_in.knowledge_base_configs),
+        },
+    )
+
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_created")
 
@@ -425,7 +472,7 @@ async def create_agent(
 @router.get("/{agent_id}", response_model=Response[AgentOut])
 async def get_agent(
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:read")),
 ) -> Any:
     """Get agent by ID."""
     agent = await check_agent_access(agent_id, current_user)
@@ -436,32 +483,61 @@ async def get_agent(
 @router.put("/{agent_id}", response_model=Response[AgentOut])
 async def update_agent(
     *,
+    request: Request,
     agent_id: UUID,
     agent_in: AgentUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:update")),
 ) -> Any:
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
 
+    # Check for duplicate name within the same team (exclude self)
+    if agent_in.name is not None and agent_in.name != agent.name:
+        existing = (
+            await Agent.filter(
+                team_id=agent.team_id,
+                name=agent_in.name,
+            )
+            .exclude(id=agent_id)
+            .first()
+        )
+        if existing:
+            raise BusinessError(
+                code=ResponseCode.DUPLICATE_NAME,
+                msg_key="agent_name_exists",
+            )
+
+    # Track updated fields
+    updated_fields = []
+
     # Update basic fields
     if agent_in.name is not None:
         agent.name = agent_in.name
+        updated_fields.append("name")
     if agent_in.description is not None:
         agent.description = agent_in.description
+        updated_fields.append("description")
     if agent_in.icon is not None:
         agent.icon = agent_in.icon
+        updated_fields.append("icon")
     if agent_in.avatar_url is not None:
         agent.avatar_url = agent_in.avatar_url
+        updated_fields.append("avatar_url")
     if agent_in.system_prompt is not None:
         agent.system_prompt = agent_in.system_prompt
+        updated_fields.append("system_prompt")
     if agent_in.max_iterations is not None:
         agent.max_iterations = agent_in.max_iterations
+        updated_fields.append("max_iterations")
     if agent_in.opening_message is not None:
         agent.opening_message = agent_in.opening_message
+        updated_fields.append("opening_message")
     if agent_in.suggested_questions is not None:
         agent.suggested_questions = agent_in.suggested_questions
+        updated_fields.append("suggested_questions")
     if agent_in.visibility is not None:
         agent.visibility = AgentVisibility(agent_in.visibility)
+        updated_fields.append("visibility")
 
     # Update model_id
     if agent_in.model_id is not None:
@@ -476,22 +552,39 @@ async def update_agent(
                 msg_key="model_not_authorized",
             )
         agent.model_id = agent_in.model_id
+        updated_fields.append("model_id")
 
     # Update tools config
     if agent_in.tools_config is not None:
         agent.tools_config = [t.model_dump() for t in agent_in.tools_config]
+        updated_fields.append("tools_config")
 
     # Update enable_vision
     if agent_in.enable_vision is not None:
         agent.enable_vision = agent_in.enable_vision
+        updated_fields.append("enable_vision")
+
+    # Update enable_file_upload and file_upload_config
+    if agent_in.enable_file_upload is not None:
+        agent.enable_file_upload = agent_in.enable_file_upload
+        updated_fields.append("enable_file_upload")
+    if agent_in.file_upload_config is not None:
+        agent.file_upload_config = (
+            agent_in.file_upload_config.model_dump()
+            if hasattr(agent_in.file_upload_config, "model_dump")
+            else agent_in.file_upload_config
+        )
+        updated_fields.append("file_upload_config")
 
     # Update rag_mode
     if agent_in.rag_mode is not None:
         agent.rag_mode = RAGMode(agent_in.rag_mode)
+        updated_fields.append("rag_mode")
 
     # Update variables
     if agent_in.variables is not None:
         agent.variables = [v.model_dump() for v in agent_in.variables]
+        updated_fields.append("variables")
 
     await agent.save()
 
@@ -518,20 +611,52 @@ async def update_agent(
                 retrieval_top_k=kb_config.retrieval_top_k,
                 score_threshold=kb_config.score_threshold,
             )
+        updated_fields.append("knowledge_base_configs")
 
     # Reload with relations
     agent = await Agent.get(id=agent_id).prefetch_related("team", "created_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"fields_updated": updated_fields},
+    )
+
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_updated")
 
 
 @router.delete("/{agent_id}", response_model=Response[dict])
 async def delete_agent(
+    request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:delete")),
 ) -> Any:
     """Delete an agent and all its conversations."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
+
+    # 记录审计日志（在删除前）
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(agent.team_id),
+            "visibility": agent.visibility,
+        },
+    )
 
     # Delete agent (cascades to conversations, messages, knowledge base associations)
     await agent.delete()
@@ -541,8 +666,9 @@ async def delete_agent(
 
 @router.post("/{agent_id}/publish", response_model=Response[AgentOut])
 async def publish_agent(
+    request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:publish")),
 ) -> Any:
     """Publish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
@@ -550,20 +676,63 @@ async def publish_agent(
     agent.status = AgentStatus.PUBLISHED
     await agent.save()
 
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="publish_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
+    # 发送团队通知
+    if agent.team_id:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.AGENT_PUBLISHED,
+            team_id=agent.team_id,
+            title=t("notify_agent_published_title"),
+            content=t("notify_agent_published_content", agent_name=agent.name),
+        )
+
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_published")
 
 
 @router.post("/{agent_id}/unpublish", response_model=Response[AgentOut])
 async def unpublish_agent(
+    request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:publish")),
 ) -> Any:
     """Unpublish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
 
     agent.status = AgentStatus.DRAFT
     await agent.save()
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="unpublish_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
+    # 发送团队通知
+    if agent.team_id:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
+            team_id=agent.team_id,
+            title=t("notify_agent_unpublished_title"),
+            content=t("notify_agent_unpublished_content", agent_name=agent.name),
+        )
 
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_unpublished")
@@ -572,7 +741,7 @@ async def unpublish_agent(
 @router.post("/{agent_id}/duplicate", response_model=Response[AgentOut])
 async def duplicate_agent(
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:create")),
 ) -> Any:
     """Duplicate an agent."""
     agent = await check_agent_access(agent_id, current_user)
@@ -624,7 +793,7 @@ async def list_agent_conversations(
     agent_id: UUID,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """List conversations for an agent (only user's own conversations)."""
     agent = await check_agent_access(agent_id, current_user)
@@ -657,7 +826,7 @@ async def list_my_conversations(
     agent_id: UUID | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """List all conversations for current user."""
     query = Conversation.filter(user=current_user)
@@ -692,7 +861,7 @@ async def list_my_conversations(
 )
 async def get_conversation(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """Get conversation with messages."""
     conversation = (
@@ -768,7 +937,7 @@ async def update_conversation(
     *,
     conversation_id: UUID,
     conv_in: ConversationUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """Update conversation (e.g., rename)."""
     conversation = (
@@ -801,7 +970,7 @@ async def update_conversation(
 @router.delete("/conversations/{conversation_id}", response_model=Response[dict])
 async def delete_conversation(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a conversation."""
     conversation = await Conversation.filter(
@@ -835,7 +1004,7 @@ async def delete_conversation(
 async def delete_message(
     conversation_id: UUID,
     message_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a message from a conversation."""
     conversation = await Conversation.filter(

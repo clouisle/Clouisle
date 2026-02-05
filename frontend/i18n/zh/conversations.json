@@ -1,0 +1,67 @@
+{
+  "conversations": {
+    "title": "对话",
+    "description": "查看和管理系统中的所有对话记录",
+    "fetchError": "获取对话列表失败",
+    "fetchDetailError": "获取对话详情失败",
+    "deleteSuccess": "对话已删除",
+    "deleteError": "删除对话失败",
+    "batchDeleteSuccess": "已删除 {count} 个对话",
+    "untitled": "未命名对话",
+    "noConversations": "暂无对话记录",
+    "noSearchResults": "没有找到匹配的对话",
+    "delete": "删除",
+    "cancel": "取消",
+    "confirmDelete": "删除",
+    "deleteTitle": "删除对话",
+    "deleteDescription": "确定要删除这个对话吗？此操作无法撤销。",
+    "batchDelete": "删除 ({count})",
+    "batchDeleteTitle": "批量删除对话",
+    "batchDeleteDescription": "确定要删除这 {count} 个对话吗？此操作无法撤销。",
+    "selected": "项已选中",
+    "rowsPerPage": "每页条数",
+    "pageInfo": "第 {page} / {total} 页",
+    "filters": {
+      "allTeams": "所有团队",
+      "allAgents": "所有应用",
+      "searchPlaceholder": "搜索对话标题...",
+      "team": "团队",
+      "agent": "应用",
+      "user": "用户",
+      "title": "标题",
+      "untitledOnly": "仅未命名"
+    },
+    "table": {
+      "title": "标题",
+      "agent": "应用",
+      "user": "用户",
+      "messages": "消息数",
+      "updatedAt": "更新时间"
+    },
+    "pagination": {
+      "showing": "显示 {from}-{to}，共 {total} 条",
+      "prev": "上一页",
+      "next": "下一页"
+    },
+    "stats": {
+      "totalConversations": "对话总数",
+      "totalMessages": "消息总数",
+      "avgMessagesPerConversation": "平均消息数",
+      "topAgent": "最活跃应用"
+    },
+    "drawer": {
+      "user": "用户",
+      "assistant": "助手",
+      "toolCalled": "已调用",
+      "toolCompleted": "已完成",
+      "parameters": "参数",
+      "result": "结果",
+      "modelUsed": "使用的模型",
+      "tokenBreakdown": "输入: {prompt}，输出: {completion}",
+      "responseDuration": "响应耗时",
+      "ragContext": "{count} 个来源",
+      "segment": "片段 {index}",
+      "relevance": "相关度 {score}%"
+    }
+  }
+}

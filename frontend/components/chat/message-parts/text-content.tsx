@@ -26,9 +26,13 @@ function processCitations(
   sources?: SourceDocumentPart[]
 ): { processedText: string; citations: Map<string, { index: number; source?: SourceDocumentPart }> } {
   const citations = new Map<string, { index: number; source?: SourceDocumentPart }>()
+  const normalized = text
+    .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
+    .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
+    .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
   const regex = /\[\[cite:(\d+)\]\]/g
   
-  const processedText = text.replace(regex, (match, num) => {
+  const processedText = normalized.replace(regex, (match, num) => {
     const index = parseInt(num, 10)
     const placeholder = `<cite-${index}>`
     citations.set(placeholder, { index, source: sources?.[index - 1] })
@@ -97,11 +101,28 @@ export const TextContent = memo(
         <Streamdown
           components={{
             // Override text rendering to handle citations
-            p: ({ children, ...props }) => (
-              <p {...props}>
-                <CitationRenderer>{children}</CitationRenderer>
-              </p>
-            ),
+            // Use div instead of p when paragraph contains block elements (like images)
+            // This prevents React hydration error: <div> cannot be a descendant of <p>
+            p: ({ children, node, ...props }) => {
+              // Check AST node for img elements
+              const hasImgInNode = node?.children?.some(
+                (child: { tagName?: string; type?: string }) => 
+                  child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
+              )
+              const hasBlockElements = React.Children.toArray(children).some(
+                (child) => 
+                  React.isValidElement(child) && 
+                  (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+              )
+              if (hasImgInNode || hasBlockElements) {
+                return <div className="my-4" {...props}><CitationRenderer>{children}</CitationRenderer></div>
+              }
+              return (
+                <p {...props}>
+                  <CitationRenderer>{children}</CitationRenderer>
+                </p>
+              )
+            },
             li: ({ children, ...props }) => (
               <li {...props}>
                 <CitationRenderer>{children}</CitationRenderer>

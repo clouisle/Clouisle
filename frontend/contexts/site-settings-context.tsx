@@ -19,6 +19,8 @@ const defaultSettings: PublicSiteSettings = {
   email_verification: true,
   enable_captcha: false,
   allow_account_deletion: true,
+  sso_enabled: false,
+  sso_allow_password_login: true,
 }
 
 const SiteSettingsContext = React.createContext<SiteSettingsContextType>({
@@ -27,7 +29,19 @@ const SiteSettingsContext = React.createContext<SiteSettingsContextType>({
   refresh: async () => {},
 })
 
-export function SiteSettingsProvider({ children }: { children: React.ReactNode }) {
+interface SiteSettingsProviderProps {
+  children: React.ReactNode
+  /** Skip updating document title (for pages with dynamic metadata) */
+  skipTitleUpdate?: boolean
+  /** Skip updating favicon (for pages with dynamic icon) */
+  skipFaviconUpdate?: boolean
+}
+
+export function SiteSettingsProvider({ 
+  children, 
+  skipTitleUpdate = false,
+  skipFaviconUpdate = false,
+}: SiteSettingsProviderProps) {
   const [settings, setSettings] = React.useState<PublicSiteSettings>(defaultSettings)
   const [loading, setLoading] = React.useState(true)
 
@@ -37,19 +51,20 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
       setSettings(data)
       
       // 更新页面标题
-      if (data.site_name) {
+      if (data.site_name && !skipTitleUpdate) {
         document.title = `${data.site_name} - Admin Panel`
       }
       
-      // 更新 favicon
-      if (data.site_icon) {
+      // 更新 favicon - 有自定义图标用自定义的，否则用默认的 light icon
+      if (!skipFaviconUpdate) {
+        const iconHref = data.site_icon || '/clouisle-light.svg'
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement
         if (link) {
-          link.href = data.site_icon
+          link.href = iconHref
         } else {
           const newLink = document.createElement('link')
           newLink.rel = 'icon'
-          newLink.href = data.site_icon
+          newLink.href = iconHref
           document.head.appendChild(newLink)
         }
       }
@@ -58,7 +73,7 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [skipTitleUpdate, skipFaviconUpdate])
 
   React.useEffect(() => {
     loadSettings()

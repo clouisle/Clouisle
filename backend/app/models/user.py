@@ -48,6 +48,29 @@ class Team(models.Model):
     is_default = fields.BooleanField(
         default=False, description="Default team for new users"
     )
+
+    # Statistics (累计统计，不会因删除而减少)
+    total_conversations = fields.IntField(
+        default=0, description="Total conversations created"
+    )
+    total_messages = fields.IntField(default=0, description="Total messages created")
+    total_tokens = fields.BigIntField(
+        default=0, description="Total tokens consumed (累计)"
+    )
+
+    # Soft delete support
+    is_deleted = fields.BooleanField(default=False, description="Soft delete flag")
+    deleted_at = fields.DatetimeField(
+        null=True, description="When the team was deleted"
+    )
+    deleted_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
+        "models.User",
+        related_name="deleted_teams",
+        null=True,
+        on_delete=fields.SET_NULL,
+        description="User who deleted the team",
+    )
+
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

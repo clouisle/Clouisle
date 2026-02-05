@@ -153,12 +153,13 @@ export default function LogsPage({ params }: LogsPageProps) {
 
     try {
       await agentsApi.deleteConversation(deleteId)
-      setConversations((prev) => prev.filter((c) => c.id !== deleteId))
-      setTotalConversations((prev) => prev - 1)
+      // Close drawer if deleted conversation was open
       if (selectedConversation?.id === deleteId) {
         setSelectedConversation(null)
         setDrawerOpen(false)
       }
+      // Refresh the list to get accurate data
+      await fetchConversations(currentPage)
     } catch {
       // Error handled by API client
     } finally {

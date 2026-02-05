@@ -50,12 +50,19 @@ class MessageRole:
 class CreatorInfo(BaseModel):
     """Creator user info"""
 
-    id: UUID
+    id: UUID | None = None  # Allow None for deleted users
     username: str
     avatar_url: str | None = None
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_user(cls, user):
+        """Create CreatorInfo from user, handling deleted users"""
+        if user is None:
+            return cls(id=None, username="Deleted User", avatar_url=None)
+        return cls(id=user.id, username=user.username, avatar_url=user.avatar_url)
 
 
 class TeamInfo(BaseModel):
@@ -133,6 +140,56 @@ class AgentKnowledgeBaseConfig(BaseModel):
     score_threshold: float = Field(default=0.5, ge=0, le=1)
 
 
+class FileUploadConfig(BaseModel):
+    """File upload configuration for agent"""
+
+    # Parser configuration - which tool to use for parsing files
+    # Format: {"type": "builtin", "name": "markitdown"} or {"type": "custom", "tool_id": "xxx"}
+    parser: dict | None = Field(
+        default=None,
+        description="File parser configuration. If None, file upload is disabled even if enable_file_upload is True.",
+    )
+    max_file_size: int = Field(
+        default=10 * 1024 * 1024,  # 10MB
+        ge=1024,
+        le=50 * 1024 * 1024,  # 50MB max
+        description="Maximum file size in bytes",
+    )
+    max_files: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum number of files per message",
+    )
+    max_content_length: int = Field(
+        default=100000,  # ~100KB of text
+        ge=1000,
+        le=500000,  # 500KB max
+        description="Maximum parsed content length in characters",
+    )
+    truncate_strategy: str = Field(
+        default="end",
+        description="Truncation strategy: 'end' (keep start), 'start' (keep end), 'middle' (keep start and end)",
+    )
+    allowed_extensions: list[str] = Field(
+        default_factory=lambda: [
+            ".pdf",
+            ".docx",
+            ".doc",
+            ".pptx",
+            ".ppt",
+            ".xlsx",
+            ".xls",
+            ".txt",
+            ".md",
+            ".csv",
+            ".json",
+            ".html",
+        ],
+        description="Allowed file extensions",
+    )
+
+
 # ============ Agent Schemas ============
 
 
@@ -152,11 +209,20 @@ class AgentCreate(AgentBase):
     model_id: UUID | None = Field(None, description="TeamModel ID")
     system_prompt: str | None = None
     max_iterations: int = Field(
-        default=5, ge=1, le=20, description="Max tool call iterations"
+        default=5, ge=1, le=200, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] = Field(default_factory=list)
+    tools_credentials: dict[str, str] = Field(
+        default_factory=dict, description="Tools credentials (API keys, tokens, etc.)"
+    )
     enable_vision: bool = Field(
         default=False, description="Enable vision/image understanding"
+    )
+    enable_file_upload: bool = Field(
+        default=False, description="Enable file upload and parsing"
+    )
+    file_upload_config: FileUploadConfig | None = Field(
+        default=None, description="File upload configuration"
     )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"
@@ -178,10 +244,13 @@ class AgentUpdate(BaseModel):
     model_id: UUID | None = None
     system_prompt: str | None = None
     max_iterations: int | None = Field(
-        None, ge=1, le=20, description="Max tool call iterations"
+        None, ge=1, le=200, description="Max tool call iterations"
     )
     tools_config: list[ToolConfig] | None = None
+    tools_credentials: dict[str, str] | None = None
     enable_vision: bool | None = None
+    enable_file_upload: bool | None = None
+    file_upload_config: FileUploadConfig | None = None
     rag_mode: str | None = Field(None, description="RAG mode: off, auto, or agentic")
     knowledge_base_configs: list[AgentKnowledgeBaseConfig] | None = None
     variables: list[VariableDefinition] | None = None
@@ -213,7 +282,10 @@ class AgentOut(AgentBase):
     system_prompt: str | None = None
     max_iterations: int = 5
     tools_config: list[dict[str, Any]] = []
+    tools_credentials: dict[str, str] = {}
     enable_vision: bool = False
+    enable_file_upload: bool = False
+    file_upload_config: dict[str, Any] | None = None
     rag_mode: str = RAGMode.AGENTIC
     variables: list[dict[str, Any]] = []
     opening_message: str | None = None
@@ -226,6 +298,26 @@ class AgentOut(AgentBase):
     created_by: CreatorInfo | None = None
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AgentPublicOut(BaseModel):
+    """Public agent info for chat page (minimal info exposed)"""
+
+    id: UUID
+    name: str
+    description: str | None = None
+    icon: str | None = None
+    avatar_url: str | None = None
+    opening_message: str | None = None
+    suggested_questions: list[str] = []
+    variables: list[dict[str, Any]] = []
+    enable_vision: bool = False
+    enable_file_upload: bool = False
+    file_upload_config: dict[str, Any] | None = None
+    created_by: CreatorInfo | None = None
 
     class Config:
         from_attributes = True
@@ -299,6 +391,9 @@ class ConversationListOut(BaseModel):
     message_count: int = 0
     created_at: datetime
     updated_at: datetime
+    # User info for admin view
+    user_id: UUID | None = None
+    user_name: str | None = None
 
     class Config:
         from_attributes = True
@@ -327,9 +422,16 @@ class MessageOut(BaseModel):
     conversation_id: UUID
     role: str
     content: str
+    # Attachments
+    images: list[dict[str, Any]] | None = None
+    file_urls: list[dict[str, Any]] | None = None
+    # Tool calls
     tool_calls: list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     tool_name: str | None = None
+    # Reasoning (chain-of-thought)
+    reasoning_content: str | None = None
+    # Metadata
     model_used: str | None = None
     token_usage: dict[str, int] | None = None
     duration_ms: int | None = None
@@ -377,6 +479,28 @@ class ImageContent(BaseModel):
     url: str = Field(..., description="Image URL (data:image/... or https://...)")
 
 
+class FileContent(BaseModel):
+    """Parsed file content for chat (deprecated, use FileUrl instead)"""
+
+    filename: str = Field(..., description="Original filename")
+    content: str = Field(..., description="Parsed content (markdown format)")
+    mime_type: str = Field(..., description="MIME type of the file")
+    size: int = Field(..., ge=0, description="Original file size in bytes")
+    truncated: bool = Field(default=False, description="Whether content was truncated")
+    original_length: int | None = Field(
+        default=None, description="Original content length before truncation"
+    )
+
+
+class FileUrl(BaseModel):
+    """File URL for tool-based file processing"""
+
+    filename: str = Field(..., description="Original filename")
+    url: str = Field(..., description="File URL for the markitdown tool to process")
+    size: int = Field(..., ge=0, description="File size in bytes")
+    mime_type: str = Field(..., description="MIME type of the file")
+
+
 class HistoryMessage(BaseModel):
     """Message for history override"""
 
@@ -392,6 +516,14 @@ class ChatRequest(BaseModel):
     )
     images: list[ImageContent] = Field(
         default_factory=list, description="Images for vision"
+    )
+    files: list[FileContent] = Field(
+        default_factory=list,
+        description="Parsed files for file upload (deprecated, use file_urls instead)",
+    )
+    file_urls: list[FileUrl] = Field(
+        default_factory=list,
+        description="File URLs for backend to download, parse and inject into {{fileContent}} variable.",
     )
     conversation_id: UUID | None = Field(
         None, description="Continue existing conversation"

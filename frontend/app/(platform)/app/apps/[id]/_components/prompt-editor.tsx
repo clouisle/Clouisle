@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { Variable, Plus, AlertCircle } from 'lucide-react'
+import { Variable, Plus, AlertCircle, FileText, MessageSquare } from 'lucide-react'
 import { type VariableDefinition, type VariableType } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 interface PromptEditorProps {
   value: string
@@ -13,6 +14,15 @@ interface PromptEditorProps {
   onAddVariable: (name: string, type: VariableType) => void
   placeholder?: string
   className?: string
+  enableFileUpload?: boolean
+}
+
+// System variables that are auto-injected based on features
+interface SystemVariable {
+  name: string
+  label: string
+  description: string
+  icon: React.ElementType
 }
 
 // 解析提示词中的所有变量引用
@@ -43,60 +53,197 @@ function getVariableContext(text: string, cursorPos: number): { isInVariable: bo
   return { isInVariable: false, query: '', startPos: -1 }
 }
 
-// 高亮渲染文本中的变量
-function renderHighlightedText(text: string, definedVarNames: string[]): React.ReactNode[] {
-  const parts: React.ReactNode[] = []
+// HTML 转义
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
+}
+
+// 变量信息类型
+interface VariableInfo {
+  name: string
+  label?: string
+  isSystem: boolean
+  icon?: React.ElementType
+}
+
+// 将纯文本转换为带有变量标签的 HTML
+function textToHtml(text: string, variableMap: Map<string, VariableInfo>): string {
+  if (!text) return ''
+  
   const regex = /(\{\{\w+\}\})/g
+  let result = ''
   let lastIndex = 0
   let match
 
   while ((match = regex.exec(text)) !== null) {
     // 添加变量之前的普通文本
     if (match.index > lastIndex) {
-      parts.push(
-        <span key={`text-${lastIndex}`}>
-          {text.substring(lastIndex, match.index)}
-        </span>
-      )
+      result += escapeHtml(text.substring(lastIndex, match.index))
     }
 
-    // 添加变量（带高亮）
-    const varMatch = match[1]
-    const varName = varMatch.slice(2, -2) // 移除 {{ 和 }}
-    const isDefined = definedVarNames.includes(varName)
-
-    parts.push(
-      <span
-        key={`var-${match.index}`}
-        className={cn(
-          'font-medium',
-          isDefined 
-            ? 'text-blue-600 dark:text-blue-400' 
-            : 'text-amber-600 dark:text-amber-400'
-        )}
-      >
-        {varMatch}
-      </span>
-    )
+    // 添加变量标签
+    const varName = match[1].slice(2, -2)
+    const variable = variableMap.get(varName)
+    
+    const tagClass = variable 
+      ? 'bg-primary/15 text-primary border-primary/20' 
+      : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
+    
+    // 显示格式: 系统变量显示图标类型，用户变量显示标签
+    const displayLabel = variable?.isSystem 
+      ? (variable.label ? `${variable.label}` : '')
+      : (variable?.label ? `${variable.label}` : '')
+    
+    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${varName}">`
+    result += `<span class="opacity-60 text-[10px]">{x}</span>`
+    result += `<span>${varName}</span>`
+    if (displayLabel) {
+      result += `<span class="opacity-70 text-[10px]">${displayLabel}</span>`
+    }
+    result += `</span>`
 
     lastIndex = match.index + match[0].length
   }
 
   // 添加剩余的普通文本
   if (lastIndex < text.length) {
-    parts.push(
-      <span key={`text-${lastIndex}`}>
-        {text.substring(lastIndex)}
-      </span>
-    )
+    result += escapeHtml(text.substring(lastIndex))
   }
 
-  // 如果文本为空，返回空数组
-  if (parts.length === 0 && text.length === 0) {
-    return []
-  }
+  return result
+}
 
-  return parts
+// 将 HTML 转换回纯文本
+function htmlToText(element: HTMLElement): string {
+  let result = ''
+  
+  element.childNodes.forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || ''
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      const varName = el.getAttribute('data-variable')
+      if (varName) {
+        result += `{{${varName}}}`
+      } else if (el.tagName === 'BR') {
+        result += '\n'
+      } else {
+        result += htmlToText(el)
+      }
+    }
+  })
+  
+  return result
+}
+
+// 获取光标在纯文本中的位置
+function getCursorPosition(containerEl: HTMLElement): number {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return 0
+  
+  const range = selection.getRangeAt(0)
+  let pos = 0
+  let found = false
+  
+  const traverse = (node: Node): boolean => {
+    if (found) return true
+    
+    if (node === range.startContainer) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        pos += range.startOffset
+      }
+      found = true
+      return true
+    }
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      pos += (node.textContent || '').length
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      const varName = el.getAttribute?.('data-variable')
+      if (varName) {
+        if (range.startContainer === el || el.contains(range.startContainer)) {
+          found = true
+          return true
+        }
+        pos += varName.length + 4 // {{varName}}
+        return false
+      }
+      if (el.tagName === 'BR') {
+        pos += 1
+        return false
+      }
+      for (const child of Array.from(node.childNodes)) {
+        if (traverse(child)) return true
+      }
+    }
+    return false
+  }
+  
+  traverse(containerEl)
+  return pos
+}
+
+// 设置光标位置
+function setCursorPosition(containerEl: HTMLElement, targetPos: number): void {
+  let currentPos = 0
+  
+  const traverse = (node: Node): { node: Node; offset: number } | null => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textLen = (node.textContent || '').length
+      if (currentPos + textLen >= targetPos) {
+        return { node, offset: targetPos - currentPos }
+      }
+      currentPos += textLen
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement
+      const varName = el.getAttribute?.('data-variable')
+      if (varName) {
+        const varLen = varName.length + 4
+        if (currentPos + varLen >= targetPos) {
+          const parent = el.parentNode
+          if (parent) {
+            const idx = Array.from(parent.childNodes).indexOf(el as ChildNode)
+            return { node: parent, offset: idx + 1 }
+          }
+        }
+        currentPos += varLen
+        return null
+      }
+      if (el.tagName === 'BR') {
+        if (currentPos + 1 >= targetPos) {
+          const parent = el.parentNode
+          if (parent) {
+            const idx = Array.from(parent.childNodes).indexOf(el as ChildNode)
+            return { node: parent, offset: idx + 1 }
+          }
+        }
+        currentPos += 1
+        return null
+      }
+      for (const child of Array.from(node.childNodes)) {
+        const result = traverse(child)
+        if (result) return result
+      }
+    }
+    return null
+  }
+  
+  const result = traverse(containerEl)
+  if (result) {
+    const selection = window.getSelection()
+    if (selection) {
+      const range = document.createRange()
+      range.setStart(result.node, result.offset)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+  }
 }
 
 export function PromptEditor({
@@ -106,23 +253,66 @@ export function PromptEditor({
   onAddVariable,
   placeholder,
   className,
+  enableFileUpload,
 }: PromptEditorProps) {
-  'use no memo'  // Disable React Compiler optimization for this component
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
-  const highlightRef = React.useRef<HTMLDivElement>(null)
+  const editorRef = React.useRef<HTMLDivElement>(null)
   const popoverRef = React.useRef<HTMLDivElement>(null)
   const [showSuggestions, setShowSuggestions] = React.useState(false)
   const [suggestionPosition, setSuggestionPosition] = React.useState({ top: 0, left: 0 })
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const variableStartPosRef = React.useRef(-1)
+  const isComposingRef = React.useRef(false)
+  const lastValueRef = React.useRef('')  // 初始化为空字符串，而不是 value
+  const isInternalUpdateRef = React.useRef(false)
+  const isMountedRef = React.useRef(false)
+
+  // System variables based on enabled features
+  const systemVariables = React.useMemo<SystemVariable[]>(() => {
+    const vars: SystemVariable[] = [
+      {
+        name: 'query',
+        label: '用户输入',
+        description: '用户当前的提问内容',
+        icon: MessageSquare,
+      },
+    ]
+    if (enableFileUpload) {
+      vars.push({
+        name: 'fileContent',
+        label: '文件内容',
+        description: '上传文件的解析内容',
+        icon: FileText,
+      })
+    }
+    return vars
+  }, [enableFileUpload])
+
+  // 构建变量名到变量信息的映射
+  const variableMap = React.useMemo(() => {
+    const map = new Map<string, VariableInfo>()
+    // 系统变量
+    systemVariables.forEach(v => map.set(v.name, { 
+      name: v.name, 
+      label: v.label, 
+      isSystem: true,
+      icon: v.icon 
+    }))
+    // 用户变量
+    variables.forEach(v => map.set(v.name, {
+      name: v.name,
+      label: v.label ?? undefined,
+      isSystem: false
+    }))
+    return map
+  }, [variables, systemVariables])
 
   // 获取未定义的变量
   const referencedVars = parseVariableReferences(value)
-  // Stabilize definedVarNames with useMemo to prevent React Compiler issues
   const definedVarNames = React.useMemo(() => variables.map(v => v.name), [variables])
-  const undefinedVars = referencedVars.filter(name => !definedVarNames.includes(name))
+  const systemVarNames = React.useMemo(() => systemVariables.map(v => v.name), [systemVariables])
+  const undefinedVars = referencedVars.filter(name => !definedVarNames.includes(name) && !systemVarNames.includes(name))
 
   // 过滤变量建议
   const filteredVariables = React.useMemo(() => 
@@ -130,163 +320,210 @@ export function PromptEditor({
     [variables, searchQuery]
   )
 
-  // 同步滚动
-  const handleScroll = React.useCallback(() => {
-    if (textareaRef.current && highlightRef.current) {
-      highlightRef.current.scrollTop = textareaRef.current.scrollTop
-      highlightRef.current.scrollLeft = textareaRef.current.scrollLeft
-    }
-  }, [])
+  const filteredSystemVariables = React.useMemo(() => 
+    systemVariables.filter(v => v.name.toLowerCase().includes(searchQuery.toLowerCase())),
+    [systemVariables, searchQuery]
+  )
 
-  // 计算建议框位置
-  const updatePosition = React.useCallback((cursorPos: number) => {
-    const textarea = textareaRef.current
-    if (!textarea) return
+  const totalSuggestions = filteredVariables.length + filteredSystemVariables.length
 
-    const text = textarea.value
-    const textBeforeCursor = text.substring(0, cursorPos)
-    
-    // 简单计算：基于行数和字符位置
-    const lines = textBeforeCursor.split('\n')
-    const currentLineIndex = lines.length - 1
-    const lineHeight = 20 // 大约的行高
-    
-    setSuggestionPosition({
-      top: (currentLineIndex + 1) * lineHeight + 4,
-      left: 0,
+  // 初始化和外部值变化时更新编辑器
+  React.useEffect(() => {
+    console.log('[PromptEditor] useEffect triggered:', {
+      hasEditor: !!editorRef.current,
+      isInternalUpdate: isInternalUpdateRef.current,
+      isMounted: isMountedRef.current,
+      value: value,
+      valueLength: value?.length || 0,
+      lastValue: lastValueRef.current,
+      lastValueLength: lastValueRef.current?.length || 0,
+      areEqual: value === lastValueRef.current,
     })
-  }, [])
+
+    const editor = editorRef.current
+    if (!editor) {
+      console.log('[PromptEditor] No editor ref, returning')
+      return
+    }
+
+    // 如果是内部更新触发的，跳过
+    if (isInternalUpdateRef.current) {
+      console.log('[PromptEditor] Internal update, skipping')
+      isInternalUpdateRef.current = false
+      return
+    }
+
+    // 首次挂载或值变化时，更新编辑器内容
+    if (!isMountedRef.current || value !== lastValueRef.current) {
+      console.log('[PromptEditor] Updating editor content')
+      isMountedRef.current = true
+      lastValueRef.current = value
+      const html = textToHtml(value || '', variableMap)
+      console.log('[PromptEditor] Generated HTML:', {
+        htmlLength: html.length,
+        htmlPreview: html.substring(0, 200),
+      })
+      editor.innerHTML = html || ''
+      console.log('[PromptEditor] Editor innerHTML set:', {
+        editorInnerHTML: editor.innerHTML.substring(0, 200),
+        editorTextContent: editor.textContent?.substring(0, 200),
+        editorChildNodes: editor.childNodes.length,
+      })
+    } else {
+      console.log('[PromptEditor] Value unchanged, skipping update')
+    }
+  }, [value, variableMap])
 
   // 处理输入变化
-  const handleInput = React.useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
-    const textarea = e.currentTarget
-    const newValue = textarea.value
-    const cursorPos = textarea.selectionStart
+  const handleInput = React.useCallback(() => {
+    if (isComposingRef.current) return
+    
+    const editor = editorRef.current
+    if (!editor) return
 
-    onChange(newValue)
+    const newText = htmlToText(editor)
+    
+    if (newText !== lastValueRef.current) {
+      lastValueRef.current = newText
+      isInternalUpdateRef.current = true
+      onChange(newText)
+    }
 
     // 检查变量上下文
-    const context = getVariableContext(newValue, cursorPos)
-    
+    const cursorPos = getCursorPosition(editor)
+    const context = getVariableContext(newText, cursorPos)
+
     if (context.isInVariable) {
-      variableStartPosRef.current = context.startPos
       setSearchQuery(context.query)
-      setSelectedIndex(0)
       setShowSuggestions(true)
-      updatePosition(cursorPos)
+      setSelectedIndex(0)
+      variableStartPosRef.current = context.startPos
+
+      // 计算建议框位置
+      const selection = window.getSelection()
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0)
+        const rect = range.getBoundingClientRect()
+        const containerRect = containerRef.current?.getBoundingClientRect()
+        
+        if (containerRect && rect.width >= 0) {
+          setSuggestionPosition({
+            top: rect.bottom - containerRect.top + 4,
+            left: Math.max(0, Math.min(rect.left - containerRect.left, containerRect.width - 260)),
+          })
+        }
+      }
     } else {
       setShowSuggestions(false)
-      setSearchQuery('')
       variableStartPosRef.current = -1
     }
-  }, [onChange, updatePosition])
+  }, [onChange])
 
   // 插入变量
   const insertVariable = React.useCallback((varName: string) => {
-    const textarea = textareaRef.current
-    if (!textarea || variableStartPosRef.current === -1) return
+    const editor = editorRef.current
+    if (!editor || variableStartPosRef.current === -1) return
 
+    const currentText = htmlToText(editor)
     const startPos = variableStartPosRef.current
-    const textBefore = value.substring(0, startPos)
-    const cursorPos = textarea.selectionStart
-    const textAfter = value.substring(cursorPos)
+    const cursorPos = getCursorPosition(editor)
+    
+    const textBefore = currentText.substring(0, startPos)
+    const textAfter = currentText.substring(cursorPos)
+    const newText = `${textBefore}{{${varName}}}${textAfter}`
 
-    const newValue = textBefore + `{{${varName}}}` + textAfter
-    onChange(newValue)
+    lastValueRef.current = newText
+    isInternalUpdateRef.current = true
+    onChange(newText)
+    
+    // 更新编辑器内容
+    const html = textToHtml(newText, variableMap)
+    editor.innerHTML = html
+    
+    // 设置光标位置到变量后面
+    const newCursorPos = startPos + varName.length + 4
+    setCursorPosition(editor, newCursorPos)
     
     setShowSuggestions(false)
     setSearchQuery('')
     variableStartPosRef.current = -1
-
-    // 设置光标位置到变量后面
-    const newCursorPos = startPos + varName.length + 4
-    requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-    })
-  }, [value, onChange])
+    
+    editor.focus()
+  }, [onChange, variableMap])
 
   // 处理键盘事件
-  const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!showSuggestions) return
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault()
-        setSelectedIndex(prev => 
-          filteredVariables.length > 0 ? (prev + 1) % filteredVariables.length : 0
-        )
-        break
-      case 'ArrowUp':
-        e.preventDefault()
-        setSelectedIndex(prev => 
-          filteredVariables.length > 0 
-            ? (prev - 1 + filteredVariables.length) % filteredVariables.length 
-            : 0
-        )
-        break
-      case 'Enter':
-      case 'Tab':
-        if (filteredVariables.length > 0) {
+  const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (showSuggestions && totalSuggestions > 0) {
+      switch (e.key) {
+        case 'ArrowDown':
           e.preventDefault()
-          insertVariable(filteredVariables[selectedIndex].name)
-        }
-        break
-      case 'Escape':
-        e.preventDefault()
-        setShowSuggestions(false)
-        break
+          setSelectedIndex(prev => (prev + 1) % totalSuggestions)
+          return
+        case 'ArrowUp':
+          e.preventDefault()
+          setSelectedIndex(prev => (prev - 1 + totalSuggestions) % totalSuggestions)
+          return
+        case 'Enter':
+        case 'Tab':
+          e.preventDefault()
+          if (selectedIndex < filteredSystemVariables.length) {
+            insertVariable(filteredSystemVariables[selectedIndex].name)
+          } else {
+            insertVariable(filteredVariables[selectedIndex - filteredSystemVariables.length].name)
+          }
+          return
+        case 'Escape':
+          e.preventDefault()
+          setShowSuggestions(false)
+          return
+      }
     }
-  }, [showSuggestions, filteredVariables, selectedIndex, insertVariable])
+  }, [showSuggestions, totalSuggestions, filteredSystemVariables, filteredVariables, selectedIndex, insertVariable])
 
-  // 处理失焦
-  const handleBlur = React.useCallback((e: React.FocusEvent) => {
-    // 如果焦点移到弹窗内，不关闭
-    const relatedTarget = e.relatedTarget as Node | null
-    if (popoverRef.current?.contains(relatedTarget)) {
-      return
+  // 点击外部关闭建议
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        popoverRef.current && 
+        !popoverRef.current.contains(e.target as Node) &&
+        editorRef.current &&
+        !editorRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
     }
-    // 延迟关闭，让点击事件有时间处理
-    setTimeout(() => {
-      setShowSuggestions(false)
-    }, 150)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // 渲染高亮文本
-  const highlightedContent = React.useMemo(() => {
-    const rendered = renderHighlightedText(value, definedVarNames)
-    // 添加一个额外的空格确保高度一致
-    return [...rendered, <span key="trailing">{'\n '}</span>]
-  }, [value, definedVarNames])
+  // 处理粘贴 - 只粘贴纯文本
+  const handlePaste = React.useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault()
+    const text = e.clipboardData.getData('text/plain')
+    document.execCommand('insertText', false, text)
+  }, [])
 
   return (
     <div ref={containerRef} className="relative">
-      {/* 高亮层 */}
+      {/* 可编辑区域 */}
       <div
-        ref={highlightRef}
-        aria-hidden="true"
-        className={cn(
-          'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed',
-          className
-        )}
-      >
-        {value ? highlightedContent : (
-          <span className="text-muted-foreground">{placeholder}</span>
-        )}
-      </div>
-
-      {/* 输入层 */}
-      <textarea
-        ref={textareaRef}
-        value={value}
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
-        onScroll={handleScroll}
-        placeholder=""
+        onPaste={handlePaste}
+        onCompositionStart={() => { isComposingRef.current = true }}
+        onCompositionEnd={() => { 
+          isComposingRef.current = false
+          handleInput()
+        }}
+        data-placeholder={placeholder}
         className={cn(
-          'min-h-50 w-full resize-none border-0 bg-transparent p-0 focus-visible:ring-0 shadow-none text-sm leading-relaxed focus:outline-none',
-          'text-transparent caret-foreground selection:bg-primary/20',
+          'min-h-50 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed',
+          'focus:outline-none focus-visible:ring-0 shadow-none',
+          'overflow-auto whitespace-pre-wrap',
+          'empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground empty:before:pointer-events-none',
           className
         )}
       />
@@ -295,57 +532,104 @@ export function PromptEditor({
       {showSuggestions && (
         <div
           ref={popoverRef}
-          className="absolute z-50 w-56 rounded-lg border bg-popover shadow-lg"
+          className="absolute z-50 w-64 rounded-lg border bg-popover shadow-lg overflow-hidden"
           style={{ top: suggestionPosition.top, left: suggestionPosition.left }}
           onMouseDown={(e) => e.preventDefault()}
         >
-          <div className="p-1 max-h-48 overflow-y-auto">
-            {filteredVariables.length > 0 ? (
-              filteredVariables.map((variable, index) => (
-                <button
-                  key={variable.name}
-                  type="button"
-                  className={cn(
-                    'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
-                    selectedIndex === index ? 'bg-accent' : 'hover:bg-muted'
+          <ScrollArea className="max-h-48">
+            <div className="p-1">
+              {totalSuggestions > 0 ? (
+                <>
+                  {/* System Variables */}
+                  {filteredSystemVariables.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-xs text-muted-foreground font-medium">
+                        系统变量
+                      </div>
+                      {filteredSystemVariables.map((variable, index) => {
+                        const Icon = variable.icon
+                        return (
+                          <button
+                            key={variable.name}
+                            type="button"
+                            className={cn(
+                              'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
+                              selectedIndex === index ? 'bg-accent' : 'hover:bg-muted'
+                            )}
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              insertVariable(variable.name)
+                            }}
+                            onMouseEnter={() => setSelectedIndex(index)}
+                          >
+                            <Icon className="h-3.5 w-3.5 text-cyan-500 shrink-0" />
+                            <span className="font-mono text-xs">{variable.name}</span>
+                            <span className="text-xs text-muted-foreground truncate">
+                              {variable.label}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </>
                   )}
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    insertVariable(variable.name)
-                  }}
-                >
-                  <Variable className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                  <span className="font-mono text-xs">{variable.name}</span>
-                  {variable.label && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      {variable.label}
-                    </span>
+                  {/* User Variables */}
+                  {filteredVariables.length > 0 && (
+                    <>
+                      {filteredSystemVariables.length > 0 && (
+                        <div className="px-2 py-1 text-xs text-muted-foreground font-medium mt-1">
+                          用户变量
+                        </div>
+                      )}
+                      {filteredVariables.map((variable, index) => (
+                        <button
+                          key={variable.name}
+                          type="button"
+                          className={cn(
+                            'w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors',
+                            selectedIndex === index + filteredSystemVariables.length ? 'bg-accent' : 'hover:bg-muted'
+                          )}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            insertVariable(variable.name)
+                          }}
+                          onMouseEnter={() => setSelectedIndex(index + filteredSystemVariables.length)}
+                        >
+                          <Variable className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                          <span className="font-mono text-xs">{variable.name}</span>
+                          {variable.label && (
+                            <span className="text-xs text-muted-foreground truncate">
+                              {variable.label}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </>
                   )}
-                </button>
-              ))
-            ) : (
-              <div className="px-2 py-3 text-center">
-                <p className="text-xs text-muted-foreground mb-2">
-                  {searchQuery ? `未找到变量 "${searchQuery}"` : '暂无变量'}
-                </p>
-                {searchQuery && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      onAddVariable(searchQuery, 'text')
-                      insertVariable(searchQuery)
-                    }}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    创建变量 &quot;{searchQuery}&quot;
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+                </>
+              ) : (
+                <div className="px-2 py-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {searchQuery ? `未找到变量 "${searchQuery}"` : '暂无变量'}
+                  </p>
+                  {searchQuery && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        onAddVariable(searchQuery, 'text')
+                        insertVariable(searchQuery)
+                      }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      创建变量 &quot;{searchQuery}&quot;
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </div>
       )}
 

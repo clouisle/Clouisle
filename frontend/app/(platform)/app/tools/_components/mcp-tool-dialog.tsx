@@ -20,15 +20,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { 
-  ToolCreateInput, 
-  ToolUpdateInput, 
-  ToolDetail, 
-  McpConfig, 
+import {
+  ToolCreateInput,
+  ToolUpdateInput,
+  ToolDetail,
+  McpConfig,
   McpTransportType,
   McpToolInfo,
-  toolsApi 
+  toolsApi
 } from '@/lib/api/tools'
+import { ImageUpload } from '@/components/ui/image-upload'
 
 interface McpToolDialogProps {
   tool?: ToolDetail | null
@@ -329,13 +330,17 @@ export function McpToolDialog({
 
           <div className="flex items-center gap-4">
             <div className="space-y-2">
-              <Label htmlFor="icon">{t('form.icon')}</Label>
-              <Input
-                id="icon"
-                className="w-16 text-center text-xl"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                maxLength={2}
+              <Label>{t('form.icon')}</Label>
+              <ImageUpload
+                value={icon.startsWith('http') ? icon : ''}
+                onChange={setIcon}
+                previewSize="sm"
+                category="icons"
+                placeholder={
+                  <span className="text-2xl">
+                    {icon.startsWith('http') ? '🔌' : icon}
+                  </span>
+                }
               />
             </div>
             <div className="flex-1 flex items-center justify-end gap-2">

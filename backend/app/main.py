@@ -260,13 +260,46 @@ async def root():
     return success(msg="Welcome to Clouisle API")
 
 
-# Register Tortoise
+# Pre-register hook to run migrations before Tortoise generates schemas
+@app.on_event("startup")
+async def pre_tortoise_init():
+    """Run database migrations before Tortoise initializes schemas"""
+    from tortoise import Tortoise
+
+    # Initialize Tortoise connection (without generating schemas yet)
+    await Tortoise.init(
+        db_url=settings.DATABASE_URL
+        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
+        modules={"models": ["app.models"]},
+    )
+
+    # Run migrations BEFORE generating schemas
+    from app.core.init_data import (
+        init_agent_tools_credentials,
+        fix_cascade_delete_policies,
+    )
+
+    try:
+        await init_agent_tools_credentials()
+    except Exception as e:
+        logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await fix_cascade_delete_policies()
+    except Exception as e:
+        logger.warning(f"CASCADE delete policies migration failed: {e}")
+
+    # Now generate schemas (this will validate against the updated database)
+    await Tortoise.generate_schemas()
+
+
+# Register Tortoise (but skip generate_schemas since we did it manually above)
 register_tortoise(
     app,
     db_url=settings.DATABASE_URL
     or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
     modules={"models": ["app.models"]},
-    generate_schemas=True,
+    generate_schemas=False,  # Changed to False - we handle it manually in pre_tortoise_init
     add_exception_handlers=True,
 )
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
@@ -124,6 +125,14 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
               typedArgs[param.name] = parseFloat(value)
             } else if (param.type === 'boolean') {
               typedArgs[param.name] = value === 'true'
+            } else if (param.type === 'array' || param.type === 'object') {
+              // 尝试解析 JSON
+              try {
+                typedArgs[param.name] = JSON.parse(value)
+              } catch {
+                // 如果解析失败，保持原始字符串
+                typedArgs[param.name] = value
+              }
             } else {
               typedArgs[param.name] = value
             }
@@ -158,12 +167,27 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
 
   if (!tool) return null
 
+  // 判断图标是否为 URL
+  const isIconUrl = tool.icon?.startsWith('http')
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            <span className="text-xl">{tool.icon || '🔧'}</span>
+            {isIconUrl ? (
+              <div className="relative h-6 w-6 rounded overflow-hidden shrink-0">
+                <Image
+                  src={tool.icon || ''}
+                  alt={tool.display_name}
+                  fill
+                  className="object-cover"
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <span className="text-xl">{tool.icon || '🔧'}</span>
+            )}
             {tool.display_name}
           </SheetTitle>
           <SheetDescription>{tool.description}</SheetDescription>
@@ -342,12 +366,103 @@ function McpParameterInputs({
   const t = useTranslations('platform.tools')
   
   // 解析 JSON Schema 参数
-  const properties = (parameters as { properties?: Record<string, { type?: string; description?: string }> }).properties || {}
+  const properties = (parameters as { properties?: Record<string, { type?: string; description?: string; enum?: string[] }> }).properties || {}
   const required = (parameters as { required?: string[] }).required || []
 
   if (Object.keys(properties).length === 0) {
     return (
       <p className="text-xs text-muted-foreground">{t('noParameters')}</p>
+    )
+  }
+
+  // 渲染输入控件
+  const renderInput = (name: string, schema: { type?: string; description?: string; enum?: string[] }) => {
+    const value = args[name] || ''
+    const handleChange = (newValue: string) => onChange({ ...args, [name]: newValue })
+
+    // 枚举类型
+    if (schema.enum) {
+      return (
+        <select
+          id={name}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t('selectOption')}</option>
+          {schema.enum.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      )
+    }
+
+    // 布尔类型
+    if (schema.type === 'boolean') {
+      return (
+        <select
+          id={name}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t('selectOption')}</option>
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      )
+    }
+
+    // 数组类型
+    if (schema.type === 'array') {
+      return (
+        <textarea
+          id={name}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder='["item1", "item2"]'
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
+          rows={3}
+        />
+      )
+    }
+
+    // 对象类型
+    if (schema.type === 'object') {
+      return (
+        <textarea
+          id={name}
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder='{"key": "value"}'
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
+          rows={3}
+        />
+      )
+    }
+
+    // 数字类型
+    if (schema.type === 'integer' || schema.type === 'number') {
+      return (
+        <Input
+          id={name}
+          type="number"
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          step={schema.type === 'integer' ? '1' : 'any'}
+        />
+      )
+    }
+
+    // 默认字符串类型
+    return (
+      <Input
+        id={name}
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+      />
     )
   }
 
@@ -368,12 +483,7 @@ function McpParameterInputs({
           {schema.description && (
             <p className="text-xs text-muted-foreground">{schema.description}</p>
           )}
-          <Input
-            id={name}
-            value={args[name] || ''}
-            onChange={(e) => onChange({ ...args, [name]: e.target.value })}
-            placeholder={schema.type === 'object' || schema.type === 'array' ? 'JSON...' : ''}
-          />
+          {renderInput(name, schema)}
         </div>
       ))}
     </div>
@@ -391,6 +501,96 @@ function ParameterInput({
   onChange: (value: string) => void
 }) {
   const t = useTranslations('platform.tools')
+
+  // 渲染输入控件
+  const renderInput = () => {
+    // 枚举类型 - 下拉选择
+    if (parameter.enum) {
+      return (
+        <select
+          id={parameter.name}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t('selectOption')}</option>
+          {parameter.enum.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      )
+    }
+
+    // 布尔类型 - 下拉选择
+    if (parameter.type === 'boolean') {
+      return (
+        <select
+          id={parameter.name}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t('selectOption')}</option>
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      )
+    }
+
+    // 数组类型 - 多行文本框
+    if (parameter.type === 'array') {
+      return (
+        <textarea
+          id={parameter.name}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder='["item1", "item2"]'
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
+          rows={3}
+        />
+      )
+    }
+
+    // 对象类型 - 多行文本框
+    if (parameter.type === 'object') {
+      return (
+        <textarea
+          id={parameter.name}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder='{"key": "value"}'
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
+          rows={3}
+        />
+      )
+    }
+
+    // 数字类型
+    if (parameter.type === 'integer' || parameter.type === 'number') {
+      return (
+        <Input
+          id={parameter.name}
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={parameter.default?.toString() || ''}
+          step={parameter.type === 'integer' ? '1' : 'any'}
+        />
+      )
+    }
+
+    // 默认字符串类型
+    return (
+      <Input
+        id={parameter.name}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={parameter.default?.toString() || ''}
+      />
+    )
+  }
 
   return (
     <div className="space-y-2">
@@ -410,36 +610,7 @@ function ParameterInput({
       {parameter.description && (
         <p className="text-xs text-muted-foreground">{parameter.description}</p>
       )}
-      {parameter.type === 'string' && !parameter.enum ? (
-        <Input
-          id={parameter.name}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={parameter.default?.toString() || ''}
-        />
-      ) : parameter.enum ? (
-        <select
-          id={parameter.name}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
-        >
-          <option value="">{t('selectOption')}</option>
-          {parameter.enum.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <Input
-          id={parameter.name}
-          type={parameter.type === 'integer' || parameter.type === 'number' ? 'number' : 'text'}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={parameter.default?.toString() || ''}
-        />
-      )}
+      {renderInput()}
     </div>
   )
 }

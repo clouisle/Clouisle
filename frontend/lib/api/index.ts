@@ -1,10 +1,24 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
-export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData } from './auth'
+export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
 export { usersApi, type PageData, type UserCreateData, type UserUpdateData, type UserStats, type UserQueryParams } from './users'
 export { rolesApi, permissionsApi, type Role, type Permission, type RoleCreateInput, type RoleUpdateInput, type PermissionCreateInput, type PermissionUpdateInput } from './roles'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
-export { siteSettingsApi, type SiteSetting, type SiteSettings, type PublicSiteSettings, type GeneralSettings, type SecuritySettings, type EmailSettings } from './site-settings'
-export { uploadApi, type UploadResult } from './upload'
+export {
+  siteSettingsApi,
+  type SiteSetting,
+  type SiteSettings,
+  type PublicSiteSettings,
+  type GeneralSettings,
+  type SecuritySettings,
+  type EmailSettings,
+  type DingTalkSettings,
+  type WeChatSettings,
+  type FeishuSettings,
+  type WebhookSettings,
+  type SlackSettings,
+  type AutoNotificationConfig,
+} from './site-settings'
+export { uploadApi, type UploadResult, type ParsedFileResult, type FileParseOptions } from './upload'
 export { 
   modelsApi, 
   teamModelsApi,
@@ -46,6 +60,9 @@ export {
 
 export {
   agentsApi,
+  agentStatsApi,
+  conversationsApi,
+  publicAgentsApi,
   parseSSEStream,
   type Agent,
   type AgentListItem,
@@ -56,6 +73,7 @@ export {
   type AgentVisibility,
   type AgentKnowledgeBaseConfig,
   type AgentKnowledgeBaseOut,
+  type FileUploadConfig,
   type ToolConfig,
   type VariableDefinition,
   type VariableType,
@@ -68,6 +86,8 @@ export {
   type MessageRole,
   type ChatRequest,
   type ChatImageContent,
+  type ChatFileContent,
+  type ChatFileUrl,
   type ChatResponse,
   type SSEEvent,
   type SSEEventType,
@@ -78,6 +98,16 @@ export {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type AdminConversationListItem,
+  type AdminConversationWithMessages,
+  type ConversationStats,
+  type ConversationTrends,
+  type AdminConversationQueryParams,
+  type AgentStats,
+  type AgentTrends,
+  type AgentToolUsage,
+  type RecentConversationItem,
+  type PublicAgent,
 } from './agents'
 
 export {
@@ -96,5 +126,98 @@ export {
   type ToolExecuteRequest,
   type ToolExecuteResponse,
   type McpToolInfo,
+  type ToolShare,
+  type ToolShareInput,
+  type ToolSharePermission,
+  type ToolShareListResponse,
 } from './tools'
 
+export {
+  apiKeysApi,
+  type APIKey,
+  type APIKeyWithSecret,
+  type APIKeyStats,
+  type APIKeyCreateInput,
+  type APIKeyUpdateInput,
+  type APIKeyQueryParams,
+} from './api-keys'
+
+export {
+  promptsApi,
+  parsePromptSSEStream,
+  type PromptGenerateContext,
+  type PromptStyle,
+  type PromptGenerateRequest,
+  type PromptOptimizeRequest,
+  type PromptSSEEventType,
+  type PromptSSEEvent,
+  type PromptSSEStart,
+  type PromptSSEContentDelta,
+  type PromptSSEComplete,
+  type PromptSSEError,
+} from './prompts'
+
+export {
+  workflowsApi,
+  type Workflow,
+  type WorkflowListItem,
+  type WorkflowRun,
+  type WorkflowRunListItem,
+  type WorkflowRunListItemWithWorkflow,
+  type NodeExecution,
+  type WorkflowVersion,
+  type WorkflowVersionListItem,
+  type WorkflowDefinition,
+  type WorkflowNode,
+  type NodeData,
+  type WorkflowEdge,
+  type VariableDefinition as WorkflowVariableDefinition,
+  type WorkflowCreateInput,
+  type WorkflowUpdateInput,
+  type WorkflowQueryParams,
+  type WorkflowRunQueryParams,
+  type AllWorkflowRunsQueryParams,
+  type WorkflowRunInput,
+  type WorkflowRunStartResponse,
+  type WorkflowEventType,
+  type WorkflowEvent,
+  type WorkflowStatus,
+  type TriggerType,
+  type RunStatus,
+  type NodeStatus,
+  type WorkflowRunStats,
+} from './workflows'
+
+export {
+  dashboardApi,
+  type DashboardStats,
+  type DashboardTrends,
+  type TopAgent,
+  type TeamTokenUsage,
+  type WorkflowSummary,
+  type ModelDistribution,
+} from './dashboard'
+
+export {
+  ssoApi,
+  type SSOProvider,
+  type SSOProviderAdmin,
+  type SSOProviderCreate,
+  type SSOProviderUpdate,
+} from './sso'
+
+export {
+  notificationsApi,
+  type NotificationItem,
+  type NotificationScope,
+  type NotificationSource,
+  type NotificationLevel,
+  type NotificationStatus,
+  type NotificationChannel,
+  type NotificationDelivery,
+  type NotificationListParams,
+  type NotificationAdminListParams,
+  type NotificationAdminCreateInput,
+  type NotificationReadRequest,
+  type NotificationUnreadCount,
+} from './notifications'

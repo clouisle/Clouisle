@@ -25,22 +25,31 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   toolsApi,
+  teamsApi,
   Tool,
   ToolDetail,
   ToolCreateInput,
   ToolUpdateInput,
+  type UserTeamInfo,
 } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
+import { useRequireTeam } from '@/hooks/use-require-team'
 import { ToolList, ToolTestPanel } from './_components'
 import { ToolConfigDialog } from './_components/tool-config-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
+import { ToolShareDialog } from './_components/tool-share-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export default function ToolsPage() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
   const router = useRouter()
+  const { canPerform } = useCanPerform()
+
+  // 没有团队时重定向到首页
+  useRequireTeam()
 
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,6 +72,24 @@ export default function ToolsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingTool, setDeletingTool] = useState<Tool | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Share state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [sharingTool, setSharingTool] = useState<Tool | null>(null)
+  const [availableTeams, setAvailableTeams] = useState<UserTeamInfo[]>([])
+
+  // 加载用户的团队列表
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const teams = await teamsApi.getMyTeams()
+        setAvailableTeams(teams)
+      } catch (error) {
+        console.error('Failed to load teams:', error)
+      }
+    }
+    loadTeams()
+  }, [])
 
   // 加载工具列表
   const loadTools = useCallback(async () => {
@@ -206,9 +233,35 @@ export default function ToolsPage() {
 
   // 保存内置工具配置
   const handleSaveConfig = async (config: Record<string, string>) => {
-    // TODO: 保存配置到后端
-    console.log('Saving config:', config)
-    toast.success('Configuration saved')
+    if (!currentTeam?.id || !configuringTool) return
+
+    try {
+      // 先尝试获取现有配置
+      let configExists = false
+      try {
+        await toolsApi.getConfig(configuringTool.name, currentTeam.id)
+        configExists = true
+      } catch (error: unknown) {
+        // 404 表示配置不存在，需要创建
+        const apiError = error as { response?: { status?: number } }
+        if (apiError?.response?.status !== 404) {
+          throw error
+        }
+      }
+
+      // 根据配置是否存在选择创建或更新
+      if (configExists) {
+        await toolsApi.updateConfig(configuringTool.name, config, currentTeam.id)
+      } else {
+        await toolsApi.createConfig(configuringTool.name, config, currentTeam.id)
+      }
+
+      toast.success(t('tools.configSaved'))
+      setConfigDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to save config:', error)
+      toast.error(t('tools.configSaveFailed'))
+    }
   }
 
   // 删除工具
@@ -239,6 +292,20 @@ export default function ToolsPage() {
     }
   }
 
+  // 共享工具
+  const handleShareTool = (tool: Tool) => {
+    if (!tool.id) {
+      toast.error('Cannot share built-in tools')
+      return
+    }
+    setSharingTool(tool)
+    setShareDialogOpen(true)
+  }
+
+  const handleShareSuccess = () => {
+    loadTools() // 重新加载工具列表以更新共享计数
+  }
+
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
@@ -252,39 +319,40 @@ export default function ToolsPage() {
             {t('tools.refresh')}
           </Button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('tools.createTool')}
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={handleCreateHttpTool}>
-                <Globe className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('tools.createMenu.http')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('tools.createMenu.httpDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCreateCodeTool}>
-                <Code className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('tools.createMenu.code')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('tools.createMenu.codeDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCreateMcpTool}>
-                <Plug className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('tools.createMenu.mcp')}</span>
+          <PermissionGuard permission="tool:create">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('tools.createTool')}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleCreateHttpTool}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('tools.createMenu.http')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('tools.createMenu.httpDesc')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCreateCodeTool}>
+                  <Code className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('tools.createMenu.code')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('tools.createMenu.codeDesc')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCreateMcpTool}>
+                  <Plug className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('tools.createMenu.mcp')}</span>
                   <span className="text-xs text-muted-foreground">
                     {t('tools.createMenu.mcpDesc')}
                   </span>
@@ -292,6 +360,7 @@ export default function ToolsPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </PermissionGuard>
         </div>
       </div>
 
@@ -307,30 +376,32 @@ export default function ToolsPage() {
             <CardDescription className="mb-4">
               {t('tools.createToolHint')}
             </CardDescription>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t('tools.createFirstTool')}
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="center" className="w-56">
-                <DropdownMenuItem onClick={handleCreateHttpTool}>
-                  <Globe className="mr-2 h-4 w-4" />
-                  {t('tools.createMenu.http')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleCreateCodeTool}>
-                  <Code className="mr-2 h-4 w-4" />
-                  {t('tools.createMenu.code')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleCreateMcpTool}>
-                  <Plug className="mr-2 h-4 w-4" />
-                  {t('tools.createMenu.mcp')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <PermissionGuard permission="tool:create">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button>
+                      <Plus className="mr-2 h-4 w-4" />
+                      {t('tools.createFirstTool')}
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="center" className="w-56">
+                  <DropdownMenuItem onClick={handleCreateHttpTool}>
+                    <Globe className="mr-2 h-4 w-4" />
+                    {t('tools.createMenu.http')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleCreateCodeTool}>
+                    <Code className="mr-2 h-4 w-4" />
+                    {t('tools.createMenu.code')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleCreateMcpTool}>
+                    <Plug className="mr-2 h-4 w-4" />
+                    {t('tools.createMenu.mcp')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </PermissionGuard>
           </CardContent>
         </Card>
       ) : (
@@ -338,9 +409,10 @@ export default function ToolsPage() {
           tools={tools}
           onSelect={handleSelectTool}
           onTest={handleSelectTool}
-          onEdit={handleEditTool}
-          onDelete={handleDeleteClick}
-          onConfigure={handleConfigureTool}
+          onEdit={canPerform('tool:update') ? handleEditTool : undefined}
+          onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
+          onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
+          onShare={canPerform('tool:update') ? handleShareTool : undefined}
         />
       )}
 
@@ -373,6 +445,16 @@ export default function ToolsPage() {
         open={mcpDialogOpen}
         onOpenChange={setMcpDialogOpen}
         onSave={handleSaveMcpTool}
+      />
+
+      {/* 工具共享对话框 */}
+      <ToolShareDialog
+        tool={sharingTool}
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        currentTeamId={currentTeam?.id || ''}
+        availableTeams={availableTeams}
+        onSuccess={handleShareSuccess}
       />
 
       {/* 删除确认对话框 */}

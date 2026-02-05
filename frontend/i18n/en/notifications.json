@@ -1,0 +1,92 @@
+{
+  "notifications": {
+    "title": "Notifications",
+    "description": "Manage and view all system notifications",
+    "searchPlaceholder": "Search notifications...",
+    "unreadOnly": "Unread only",
+    "markAllRead": "Mark all read",
+    "actions": "Actions",
+    "markRead": "Mark read",
+    "empty": "No notifications",
+    "filters": "Filters",
+    "scope": "Scope",
+    "level": "Priority",
+    "type": "Type",
+    "createdAt": "Created",
+    "allScopes": "All Scopes",
+    "allLevels": "All Levels",
+    "rowsPerPage": "rows per page",
+    "pageInfo": "Page {page} of {total}",
+    "scopeOptions": {
+      "global": "Global",
+      "team": "Team",
+      "user": "Personal"
+    },
+    "levelOptions": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "channel": {
+      "email": "Email",
+      "dingtalk": "DingTalk",
+      "webhook": "Webhook",
+      "slack": "Slack",
+      "wechat": "WeChat"
+    },
+    "deliveryStatus": {
+      "title": "Delivery Status",
+      "pending": "Pending",
+      "sending": "Sending",
+      "success": "Sent",
+      "failed": "Failed"
+    },
+    "retryCount": "Retried {count} times",
+    "toast": {
+      "readUpdated": "Read status updated",
+      "created": "Notification created",
+      "deleted": "Notification deleted"
+    },
+    "admin": {
+      "title": "Notification Management",
+      "create": "Create Notification",
+      "createTitle": "Title",
+      "createContent": "Content",
+      "contentMarkdownHint": "Supports Markdown syntax: **bold**, *italic*, [link](url), lists, etc.",
+      "createType": "Type",
+      "typeOptions": {
+        "system_announcement": "System announcement",
+        "team_invite": "Team invite",
+        "team_role_changed": "Team role changed",
+        "kb_doc_indexed": "Document indexed",
+        "kb_doc_failed": "Document processing failed",
+        "workflow_run_failed": "Workflow run failed",
+        "app_publish": "App published",
+        "app_unpublish": "App unpublished",
+        "model_test_failed": "Model test failed",
+        "quota_near_limit": "Quota near limit",
+        "quota_exceeded": "Quota exceeded",
+        "security_login_anomaly": "Login anomaly",
+        "user_mention": "User mention",
+        "user_assigned": "User assigned"
+      },
+      "createScope": "Scope",
+      "createTeam": "Team",
+      "createUser": "User",
+      "createLevel": "Priority",
+      "createLink": "Link URL",
+      "createExpiresAt": "Expires At",
+      "submit": "Create",
+      "delete": "Delete",
+      "confirmDeleteTitle": "Delete notification?",
+      "confirmDeleteDesc": "This action cannot be undone.",
+      "selectTeam": "Select team",
+      "selectScope": "Select scope",
+      "notifyChannels": "External Notification Channels",
+      "channelEmail": "Email",
+      "channelSlack": "Slack",
+      "channelDingtalk": "DingTalk",
+      "channelWechat": "WeChat Work"
+    }
+  }
+}

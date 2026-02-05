@@ -159,9 +159,9 @@ export function ImageUpload({
       {value && !disabled && !uploading && (
         <button
           onClick={handleRemove}
-          className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-1 text-destructive-foreground shadow-sm hover:bg-destructive/90 z-10"
+          className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-1 text-destructive-foreground shadow-sm hover:bg-destructive/90 z-10 cursor-pointer"
         >
-          <X className="h-3 w-3" />
+          <X className="h-3 w-3 text-white" />
         </button>
       )}
     </div>

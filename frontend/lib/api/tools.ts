@@ -17,6 +17,8 @@ export type ToolCategory =
   | 'data'
   | 'other'
 
+export type ToolSharePermission = 'read_only' | 'read_execute'
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export interface ToolParameter {
@@ -36,6 +38,16 @@ export interface HttpConfig {
   body_template?: string
   timeout?: number
   response_path?: string
+  // 新增：支持文件上传
+  content_type?: 'application/json' | 'multipart/form-data' | 'application/x-www-form-urlencoded'
+  form_fields?: FormField[]  // multipart 时的表单字段
+}
+
+// 表单字段（用于 multipart/form-data）
+export interface FormField {
+  name: string       // 字段名
+  type: 'text' | 'file'  // 字段类型
+  value?: string     // 文本值或变量引用 {{varName}}
 }
 
 export interface CodeConfig {
@@ -73,13 +85,19 @@ export interface Tool {
   http_config?: HttpConfig
   code_config?: CodeConfig
   mcp_config?: McpConfig
+  team_id?: string
+  created_by_name?: string
+  // 工具共享相关字段
+  is_owned?: boolean
+  owner_team_id?: string
+  owner_team_name?: string
+  share_permission?: ToolSharePermission
+  shared_with_count?: number
 }
 
 export interface ToolDetail extends Tool {
-  team_id?: string
   created_at?: string
   updated_at?: string
-  created_by_name?: string
 }
 
 export interface ToolListResponse {
@@ -162,6 +180,226 @@ export interface McpToolsListResponse {
   server_version?: string
 }
 
+export interface ToolConfig {
+  id: string
+  tool_name: string
+  team_id?: string
+  credentials: Record<string, string>
+  created_at: string
+  updated_at: string
+}
+
+// ============ Tool Sharing Types ============
+
+export interface ToolShareInput {
+  team_id: string
+  permission: ToolSharePermission
+}
+
+export interface ToolShare {
+  id: string
+  tool_id: string
+  tool_name: string
+  tool_display_name: string
+  shared_with_team_id: string
+  shared_with_team_name: string
+  permission: ToolSharePermission
+  shared_by_id: string
+  shared_by_name: string
+  shared_at: string
+}
+
+export interface ToolShareListResponse {
+  shares: ToolShare[]
+  total: number
+}
+
+type BuiltinToolI18n = {
+  zh: {
+    display_name: string
+    description: string
+    parameters?: Record<string, string>
+  }
+  en: {
+    display_name: string
+    description: string
+    parameters?: Record<string, string>
+  }
+}
+
+const BUILTIN_TOOL_I18N: Record<string, BuiltinToolI18n> = {
+  get_current_time: {
+    zh: {
+      display_name: '获取当前时间',
+      description: '获取当前时间。返回指定时区的当前日期、时间、星期和时间戳。',
+      parameters: {
+        timezone_name: "时区名称，如 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'。默认为 UTC。",
+      },
+    },
+    en: {
+      display_name: 'Get Current Time',
+      description:
+        'Get the current time. Returns the date, time, weekday, and timestamp for a specified timezone.',
+      parameters: {
+        timezone_name:
+          "Timezone name, e.g., 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'. Default is UTC.",
+      },
+    },
+  },
+  format_datetime: {
+    zh: {
+      display_name: '格式化日期时间',
+      description: '格式化日期时间。将时间戳转换为指定格式的字符串。',
+      parameters: {
+        timestamp: 'Unix 时间戳（秒），不提供则使用当前时间',
+        format_string: "Python strftime 格式字符串，如 '%Y-%m-%d %H:%M:%S'",
+        timezone_name: '时区名称，默认为 UTC',
+      },
+    },
+    en: {
+      display_name: 'Format DateTime',
+      description: 'Format a datetime. Convert a timestamp to a formatted string.',
+      parameters: {
+        timestamp: 'Unix timestamp (seconds). If omitted, uses current time.',
+        format_string: "Python strftime format string, e.g. '%Y-%m-%d %H:%M:%S'",
+        timezone_name: 'Timezone name. Default is UTC.',
+      },
+    },
+  },
+  calculate: {
+    zh: {
+      display_name: '计算器',
+      description:
+        '计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。',
+      parameters: {
+        expression: "数学表达式，如 '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
+      },
+    },
+    en: {
+      display_name: 'Calculator',
+      description:
+        'Evaluate math expressions. Supports basic operators (+, -, *, /, //, %, **), math functions (sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil), and constants (pi, e).',
+      parameters: {
+        expression: "Math expression, e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
+      },
+    },
+  },
+  unit_convert: {
+    zh: {
+      display_name: '单位转换',
+      description:
+        '单位转换。支持长度（m, km, cm, mm, mi, yd, ft, in）、重量（kg, g, mg, lb, oz, t）、温度（c, f, k）、面积（m2, km2, ha, acre）、体积（l, ml, m3, gal）、时间（s, ms, min, h, d, wk）、数据（b, kb, mb, gb, tb）。',
+      parameters: {
+        value: '要转换的数值',
+        from_unit: '源单位',
+        to_unit: '目标单位',
+      },
+    },
+    en: {
+      display_name: 'Unit Converter',
+      description:
+        'Convert units. Supports length (m, km, cm, mm, mi, yd, ft, in), weight (kg, g, mg, lb, oz, t), temperature (c, f, k), area (m2, km2, ha, acre), volume (l, ml, m3, gal), time (s, ms, min, h, d, wk), and data (b, kb, mb, gb, tb).',
+      parameters: {
+        value: 'Value to convert',
+        from_unit: 'Source unit',
+        to_unit: 'Target unit',
+      },
+    },
+  },
+  web_search: {
+    zh: {
+      display_name: '网页搜索',
+      description: '搜索网页。使用搜索引擎查找相关信息。当需要获取最新信息、查找事实或研究某个话题时使用此工具。',
+      parameters: {
+        query: '搜索关键词或问题',
+        num_results: '返回结果数量，默认 5，最大 10',
+      },
+    },
+    en: {
+      display_name: 'Web Search',
+      description:
+        'Search the web. Use a search engine to find relevant information when you need up-to-date facts or research a topic.',
+      parameters: {
+        query: 'Search keywords or question',
+        num_results: 'Number of results. Default 5, max 10.',
+      },
+    },
+  },
+  fetch_webpage: {
+    zh: {
+      display_name: '获取网页内容',
+      description: '获取网页内容。读取指定 URL 的网页文本内容。用于深入阅读搜索结果中感兴趣的页面。',
+      parameters: {
+        url: '要获取的网页 URL',
+        max_length: '返回内容的最大字符数，默认 5000',
+      },
+    },
+    en: {
+      display_name: 'Fetch Webpage',
+      description:
+        'Fetch webpage content. Read the text content of a URL for deeper inspection of search results.',
+      parameters: {
+        url: 'Webpage URL to fetch',
+        max_length: 'Max characters to return. Default 5000.',
+      },
+    },
+  },
+  markitdown: {
+    zh: {
+      display_name: 'MarkItDown 文件解析',
+      description:
+        '解析文件内容。将 PDF、Word、Excel、PPT 等文档转换为文本。当用户上传文件并希望你分析其内容时使用此工具。支持的格式：PDF、Word (.docx/.doc)、Excel (.xlsx/.xls)、PowerPoint (.pptx/.ppt)、文本文件 (.txt/.md/.csv/.json/.html/.xml)。',
+      parameters: {
+        files_url: '文件 URL 列表。每个 URL 指向一个需要解析的文件。',
+      },
+    },
+    en: {
+      display_name: 'MarkItDown File Parser',
+      description:
+        'Parse file content. Convert PDF, Word, Excel, and PowerPoint documents to text. Use this tool when a user uploads a file and wants you to analyze its content. Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html/.xml).',
+      parameters: {
+        files_url: 'List of file URLs. Each URL points to a file to parse.',
+      },
+    },
+  },
+}
+
+const getLocale = (): string => {
+  if (typeof document === 'undefined') return 'en'
+  const locale = document.cookie
+    .split('; ')
+    .find((row) => row.startsWith('locale='))
+    ?.split('=')[1]
+  return locale || 'en'
+}
+
+const applyToolDescriptionOverride = <T extends Tool>(tool: T): T => {
+  if (tool.type === 'builtin') {
+    const override = BUILTIN_TOOL_I18N[tool.name]
+    if (override) {
+      const locale = getLocale()
+      const localized = override[locale as keyof BuiltinToolI18n] || override.en
+      const parameters =
+        localized.parameters && tool.parameters?.length
+          ? tool.parameters.map((param) => ({
+              ...param,
+              description: localized.parameters?.[param.name] || param.description,
+            }))
+          : tool.parameters
+      return {
+        ...tool,
+        display_name: localized.display_name,
+        description: localized.description,
+        parameters,
+      }
+    }
+  }
+  return tool
+}
+
+const applyToolListOverrides = (tools: Tool[]): Tool[] =>
+  tools.map((tool) => applyToolDescriptionOverride(tool))
+
 // ============ API Functions ============
 
 export const toolsApi = {
@@ -169,14 +407,29 @@ export const toolsApi = {
    * 获取所有工具（内置 + 自定义 + MCP）
    */
   list: async (teamId: string): Promise<ToolListResponse> => {
-    return api.get<ToolListResponse>('/tools', { params: { team_id: teamId } })
+    const response = await api.get<ToolListResponse>('/tools', { params: { team_id: teamId } })
+    return {
+      ...response,
+      builtin: applyToolListOverrides(response.builtin),
+      custom: applyToolListOverrides(response.custom),
+      mcp: applyToolListOverrides(response.mcp),
+    }
   },
 
   /**
    * 获取所有内置工具
    */
   listBuiltin: async (): Promise<Tool[]> => {
-    return api.get<Tool[]>('/tools/builtin')
+    const tools = await api.get<Tool[]>('/tools/builtin')
+    return applyToolListOverrides(tools)
+  },
+
+  /**
+   * 获取可用的文件解析器列表
+   */
+  listFileParsers: async (teamId: string): Promise<Tool[]> => {
+    const tools = await api.get<Tool[]>('/tools/file-parsers', { params: { team_id: teamId } })
+    return applyToolListOverrides(tools)
   },
 
   /**
@@ -184,7 +437,8 @@ export const toolsApi = {
    */
   getByName: async (name: string, teamId?: string): Promise<Tool> => {
     const params = teamId ? { team_id: teamId } : {}
-    return api.get<Tool>(`/tools/name/${name}`, { params })
+    const tool = await api.get<Tool>(`/tools/name/${name}`, { params })
+    return applyToolDescriptionOverride(tool)
   },
 
   /**
@@ -249,5 +503,85 @@ export const toolsApi = {
    */
   listMcpTools: async (mcpConfig: McpConfig): Promise<McpToolsListResponse> => {
     return api.post<McpToolsListResponse>('/tools/mcp/list-tools', { mcp_config: mcpConfig })
+  },
+
+  // ============ Tool Configuration Management ============
+
+  /**
+   * 获取工具配置列表
+   */
+  listConfigs: async (teamId?: string): Promise<ToolConfig[]> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.get<ToolConfig[]>('/tools/config', { params })
+  },
+
+  /**
+   * 获取指定工具的配置
+   */
+  getConfig: async (toolName: string, teamId?: string): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.get<ToolConfig>(`/tools/config/${toolName}`, { params })
+  },
+
+  /**
+   * 创建工具配置
+   */
+  createConfig: async (
+    toolName: string,
+    credentials: Record<string, string>,
+    teamId?: string
+  ): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.post<ToolConfig>('/tools/config', { tool_name: toolName, credentials }, { params })
+  },
+
+  /**
+   * 更新工具配置
+   */
+  updateConfig: async (
+    toolName: string,
+    credentials: Record<string, string>,
+    teamId?: string
+  ): Promise<ToolConfig> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.put<ToolConfig>(`/tools/config/${toolName}`, { credentials }, { params })
+  },
+
+  /**
+   * 删除工具配置
+   */
+  deleteConfig: async (toolName: string, teamId?: string): Promise<void> => {
+    const params = teamId ? { team_id: teamId } : {}
+    return api.delete(`/tools/config/${toolName}`, { params })
+  },
+
+  // ============ Tool Sharing Management ============
+
+  /**
+   * 共享工具给其他团队
+   */
+  shareTool: async (toolId: string, data: ToolShareInput): Promise<ToolShare> => {
+    return api.post<ToolShare>(`/tools/${toolId}/share`, data)
+  },
+
+  /**
+   * 获取工具的共享列表
+   */
+  listToolShares: async (toolId: string): Promise<ToolShareListResponse> => {
+    return api.get<ToolShareListResponse>(`/tools/${toolId}/shares`)
+  },
+
+  /**
+   * 取消工具共享
+   */
+  unshareTool: async (toolId: string, teamId: string): Promise<void> => {
+    return api.delete(`/tools/${toolId}/share/${teamId}`)
+  },
+
+  /**
+   * 获取共享给当前团队的工具
+   */
+  listSharedTools: async (teamId: string): Promise<ToolListResponse> => {
+    return api.get<ToolListResponse>('/tools/shared-with-me', { params: { team_id: teamId } })
   },
 }

@@ -97,7 +97,7 @@ interface KnowledgeBaseConfigDialogProps {
 function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: KnowledgeBaseConfigDialogProps) {
   const t = useTranslations('agents.orchestration.knowledgeBase')
   const [topK, setTopK] = React.useState(item?.config.retrieval_top_k ?? 3)
-  const [threshold, setThreshold] = React.useState(item?.config.score_threshold ?? 0.5)
+  const [threshold, setThreshold] = React.useState(item?.config.score_threshold ?? 0.3)
 
   React.useEffect(() => {
     if (item) {

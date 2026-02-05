@@ -8,13 +8,18 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Clouisle"
     API_V1_STR: str = "/api/v1"
 
+    # Server URL (used for internal file access)
+    API_BASE_URL: str = "http://localhost:8000"
+
+    # Frontend URL (used for SSO redirects)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # Timezone
     TIMEZONE: str = "Asia/Shanghai"
 
     # Security
     SECRET_KEY: str = "changethis-to-a-secure-random-secret-key"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -27,11 +32,22 @@ class Settings(BaseSettings):
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+
+    # Vector DB (Qdrant)
+    VECTOR_BACKEND: str = "qdrant"
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: str | None = None
+    QDRANT_COLLECTION_PREFIX: str = "kb_dim"
+    QDRANT_DISTANCE: str = "Cosine"
 
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",  # Next.js dev server
     ]
+
+    # External API Keys
+    TAVILY_API_KEY: str | None = None  # Tavily search API key
 
     @validator("BACKEND_CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
@@ -47,7 +63,11 @@ class Settings(BaseSettings):
             return v
         return f"postgres://{values.get('POSTGRES_USER')}:{values.get('POSTGRES_PASSWORD')}@{values.get('POSTGRES_SERVER')}:{values.get('POSTGRES_PORT')}/{values.get('POSTGRES_DB')}"
 
-    model_config = SettingsConfigDict(case_sensitive=True, env_file=".env")
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=(".env", "../.env"),
+        extra="ignore",
+    )
 
 
 settings = Settings()

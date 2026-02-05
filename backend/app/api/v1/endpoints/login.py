@@ -19,6 +19,10 @@ from app.core.login_security import (
     record_failed_login,
     reset_login_attempts,
 )
+from app.core.login_anomaly import (
+    check_login_anomaly,
+    record_login,
+)
 from app.core.email import (
     generate_verification_code,
     verify_code,
@@ -29,6 +33,7 @@ from app.core.email import (
 )
 from app.core.captcha import generate_captcha, verify_captcha
 from app.core.timezone import now_utc
+from app.core.i18n import t
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -43,6 +48,9 @@ from app.schemas.verification import (
     VerificationResponse,
 )
 from app.schemas.response import Response, ResponseCode, BusinessError, success
+from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
+from app.models.notification import AutoNotificationType, NotificationLevel
 
 router = APIRouter()
 
@@ -67,6 +75,16 @@ async def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
+    # Check if password login is allowed when SSO is enabled
+    sso_enabled = await SiteSetting.get_value("sso_enabled", False)
+    allow_password = await SiteSetting.get_value("sso_allow_password_login", True)
+
+    if sso_enabled and not allow_password:
+        raise BusinessError(
+            code=ResponseCode.PASSWORD_LOGIN_DISABLED,
+            msg_key="password_login_disabled",
+        )
+
     # Check if captcha is enabled and verify it
     enable_captcha = await SiteSetting.get_value("enable_captcha", False)
     if enable_captcha:
@@ -86,6 +104,18 @@ async def login_access_token(
     try:
         user = await User.get(username=username)
     except DoesNotExist:
+        # 记录失败的登录（用户不存在）
+        await AuditLogService.log(
+            user=None,
+            action="login_failed",
+            resource_type="user",
+            resource_id=None,
+            resource_name=username,
+            operation="read",
+            status="failed",
+            request=request,
+            error_message="user_not_found",
+        )
         raise BusinessError(
             code=ResponseCode.INVALID_CREDENTIALS,
             msg_key="incorrect_email_or_password",
@@ -100,11 +130,55 @@ async def login_access_token(
             data={"remaining_seconds": remaining_seconds},
         )
 
+    # Check if user has a password set (SSO users may not have passwords)
+    if not user.hashed_password or user.hashed_password == "":
+        # 记录失败的登录（SSO 用户尝试密码登录）
+        await AuditLogService.log(
+            user=user,
+            action="login_failed",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.username,
+            operation="read",
+            status="failed",
+            request=request,
+            error_message="sso_user_no_password",
+        )
+        raise BusinessError(
+            code=ResponseCode.INVALID_CREDENTIALS,
+            msg_key="incorrect_email_or_password",
+        )
+
     if not security.verify_password(password, user.hashed_password):
         # Record failed attempt
         locked, remaining_attempts, lockout_seconds = await record_failed_login(user)
 
+        # 记录失败的登录（密码错误）
+        await AuditLogService.log(
+            user=user,
+            action="login_failed",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.username,
+            operation="read",
+            status="failed",
+            request=request,
+            error_message="incorrect_password",
+            metadata={"remaining_attempts": remaining_attempts},
+        )
+
         if locked:
+            # 发送账户锁定通知
+            await AutoNotificationService.send_to_user(
+                notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
+                user_id=user.id,
+                title=t("notify_account_locked_title"),
+                content=t(
+                    "notify_account_locked_content",
+                    lockout_minutes=(lockout_seconds or 0) // 60,
+                ),
+                level=NotificationLevel.HIGH,
+            )
             raise BusinessError(
                 code=ResponseCode.ACCOUNT_LOCKED,
                 msg_key="account_locked_after_attempts",
@@ -134,12 +208,44 @@ async def login_access_token(
     # Reset failed login attempts on successful login
     await reset_login_attempts(user)
 
+    # Check for login anomaly (new IP or device)
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    is_anomaly, anomaly_details = await check_login_anomaly(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Record this login for future anomaly detection
+    await record_login(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Send anomaly notification if detected
+    if is_anomaly:
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
+            user_id=user.id,
+            title=t("notify_login_anomaly_title"),
+            content=t(
+                "notify_login_anomaly_content",
+                ip_address=anomaly_details.get("ip_address", "unknown"),
+                login_time=anomaly_details.get("login_time", ""),
+                user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
+            ),
+            level=NotificationLevel.HIGH,
+            data=anomaly_details,
+        )
+
     # Update last login time
     user.last_login = now_utc()
     await user.save()
 
     # Get session timeout from settings
-    session_timeout_days = await SiteSetting.get_value("session_timeout_days", 30)
+    session_timeout_days = await SiteSetting.get_value("session_timeout_days", 7)
     access_token_expires = timedelta(days=session_timeout_days)
     expires_in_seconds = int(access_token_expires.total_seconds())
 
@@ -147,7 +253,8 @@ async def login_access_token(
     single_session = await SiteSetting.get_value("single_session", False)
     if single_session:
         # Invalidate previous session (kick out old login)
-        await invalidate_user_session(str(user.id), expires_in_seconds)
+        # 只需要短暂保存在黑名单中（5秒），因为主要通过 Redis 会话检查来拦截
+        await invalidate_user_session(str(user.id), token_expires_in=5)
 
     # Create new token
     access_token = security.create_access_token(
@@ -158,6 +265,18 @@ async def login_access_token(
     if single_session:
         await set_user_session(str(user.id), access_token, expires_in_seconds)
 
+    # 记录成功的登录
+    await AuditLogService.log(
+        user=user,
+        action="login_success",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="read",
+        status="success",
+        request=request,
+    )
+
     token_data = {
         "access_token": access_token,
         "token_type": "bearer",
@@ -167,6 +286,7 @@ async def login_access_token(
 
 @router.post("/logout", response_model=Response[None])
 async def logout(
+    request: Request,
     token: str = Depends(deps.reusable_oauth2),
 ) -> Any:
     """
@@ -174,6 +294,7 @@ async def logout(
     """
     from app.core.redis import clear_user_session
 
+    user = None
     try:
         # 解析 token 获取过期时间和用户 ID
         payload = jwt.decode(
@@ -182,18 +303,36 @@ async def logout(
         exp = payload.get("exp", 0)
         user_id = payload.get("sub")
 
+        # 获取用户信息用于审计日志
+        if user_id:
+            user = await User.get_or_none(id=user_id)
+
         # 计算剩余有效期（秒）
         import time
 
         remaining = max(0, exp - int(time.time()))
 
-        # 添加到黑名单，设置过期时间为 token 的剩余有效期
+        # 添加到黑名单，但只需要短暂保存（5秒）
+        # 因为主要通过会话记录清除来拦截，黑名单只是辅助保护
         if remaining > 0:
-            await add_token_to_blacklist(token, remaining)
+            await add_token_to_blacklist(token, 5)  # 只保存5秒
 
         # 清除用户会话记录（如果是单一会话模式）
         if user_id:
             await clear_user_session(user_id)
+
+        # 记录登出
+        if user:
+            await AuditLogService.log(
+                user=user,
+                action="logout",
+                resource_type="user",
+                resource_id=user.id,
+                resource_name=user.username,
+                operation="read",
+                status="success",
+                request=request,
+            )
     except jwt.PyJWTError:
         # token 无效也返回成功（用户体验）
         pass
@@ -204,6 +343,7 @@ async def logout(
 @router.post("/register", response_model=Response[UserSchema])
 async def register(
     *,
+    request: Request,
     user_in: UserCreate,
 ) -> Any:
     """
@@ -276,13 +416,53 @@ async def register(
 
         # Reload user with roles
         user = await User.get(id=user.id).prefetch_related("roles__permissions")
+
+        # 记录首个超级管理员注册
+        await AuditLogService.log(
+            user=user,
+            action="register",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.username,
+            operation="create",
+            status="success",
+            request=request,
+            metadata={"is_first_user": True, "is_superuser": True},
+        )
+
         return success(data=user, msg_key="registration_successful_superadmin")
 
     # Reload user with roles (empty but need to be a list)
     user = await User.get(id=user.id).prefetch_related("roles__permissions")
 
+    # 记录普通用户注册
+    await AuditLogService.log(
+        user=user,
+        action="register",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "require_approval": require_approval,
+            "email_verification": email_verification,
+        },
+    )
+
     # Determine response message
     if require_approval:
+        # 发送待审批通知给管理员（全局通知）
+        await AutoNotificationService.send_global(
+            notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
+            title=t("notify_user_pending_approval_title"),
+            content=t(
+                "notify_user_pending_approval_content",
+                username=user.username,
+                email=user.email,
+            ),
+        )
         return success(data=user, msg_key="registration_pending_approval")
     elif email_verification:
         return success(data=user, msg_key="registration_pending_verification")
@@ -500,6 +680,7 @@ async def forgot_password(
 @router.post("/reset-password", response_model=Response[None])
 async def reset_password(
     *,
+    request: Request,
     data: ResetPasswordConfirmRequest,
 ) -> Any:
     """
@@ -536,5 +717,17 @@ async def reset_password(
     user.failed_login_attempts = 0
     user.locked_until = None  # type: ignore[assignment]
     await user.save()
+
+    # 记录密码重置
+    await AuditLogService.log(
+        user=user,
+        action="reset_password",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+    )
 
     return success(msg_key="password_reset_success")

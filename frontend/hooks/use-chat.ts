@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import type { BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
   parseSSEStream,
   type ChatRequest,
   type ChatImageContent,
+  type ChatFileContent,
+  type ChatFileUrl,
   type SSEEventType,
   type SSEMessageStart,
   type SSEContentDelta,
@@ -53,7 +56,7 @@ export interface UseChatOptions {
 }
 
 // Re-export for convenience
-export type { ChatImageContent }
+export type { ChatImageContent, ChatFileContent, ChatFileUrl }
 
 export interface UseChatReturn {
   /** Current messages */
@@ -68,8 +71,8 @@ export interface UseChatReturn {
   isLoading: boolean
   /** Whether currently streaming */
   isStreaming: boolean
-  /** Send a message */
-  sendMessage: (message: string, images?: ChatImageContent[]) => Promise<void>
+  /** Send a message with optional images (vision) and/or file URLs (file upload) */
+  sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Regenerate (retry) a message by ID */
   regenerate: (messageId: string) => Promise<void>
   /** Switch to a different version of a message */
@@ -80,6 +83,8 @@ export interface UseChatReturn {
   reset: () => void
   /** Set messages (for loading history) */
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  /** Set conversation ID (for loading history) */
+  setConversationId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 /**
@@ -130,7 +135,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
    * Send a message to the agent
    */
   const sendMessage = useCallback(
-    async (message: string, images?: ChatImageContent[]) => {
+    async (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => {
       if (!message.trim() || isLoading) return
 
       // Clear previous error
@@ -143,6 +148,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (images && images.length > 0) {
         for (const img of images) {
           userParts.push({ type: 'image', url: img.url } as MessagePart)
+        }
+      }
+      
+      // Add file info for user message display (file content injected via {{fileContent}})
+      if (fileUrls && fileUrls.length > 0) {
+        for (const f of fileUrls) {
+          userParts.push({ type: 'file', filename: f.filename, size: f.size } as MessagePart)
         }
       }
 
@@ -177,6 +189,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const chatRequest: ChatRequest = {
           message: message.trim(),
           images: images,
+          file_urls: fileUrls,
           conversation_id: conversationId,
           variables,
         }
@@ -413,6 +426,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-call',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 input: data.arguments,
                 state: 'running',
               }
@@ -449,6 +463,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 output: data.result,
                 isError: data.is_error,
               }
@@ -672,9 +687,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     async (messageId: string, versionIndex: number) => {
       if (isLoading) return
 
-      // Find the message
-      const message = messages.find((m) => m.id === messageId)
-      if (!message) {
+      // Find the message index
+      const messageIndex = messages.findIndex((m) => m.id === messageId)
+      if (messageIndex === -1) {
         console.error('switchVersion: message not found', messageId)
         return
       }
@@ -684,7 +699,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         console.log('switchVersion: fetching versions for message', messageId)
         const versions = await agentsApi.getMessageVersions(agentId, messageId)
         console.log('switchVersion: got versions', versions)
-        
+
         if (versionIndex < 0 || versionIndex >= versions.length) {
           console.error('switchVersion: invalid versionIndex', versionIndex, 'versions.length', versions.length)
           return
@@ -692,35 +707,35 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         const targetVersion = versions[versionIndex]
         console.log('switchVersion: switching to version', targetVersion)
-        
+
         // Call backend to switch version (this updates is_active in database)
+        // Backend will also deactivate messages that came after this message
         const result = await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
         console.log('switchVersion: switch result', result)
 
-        // Update local state: replace message with new version content
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== messageId) return msg
-            // Create text part from version content
-            const textPart: TextPart = {
-              type: 'text',
-              text: targetVersion.content,
-              state: 'done',
-            }
-            return {
-              ...msg,
-              id: targetVersion.id,  // Update to new version ID
-              parts: [textPart],
-              versionNumber: targetVersion.version_number,
-              versionCount: versions.length,
-            }
-          })
-        )
+        // Reload the entire conversation to get the correct message history
+        // This ensures tool messages and subsequent messages are correctly loaded
+        if (conversationId) {
+          console.log('switchVersion: reloading conversation', conversationId)
+          const conversationData = await agentsApi.getConversation(conversationId)
+          console.log('switchVersion: conversation data', conversationData)
+          console.log('switchVersion: messages count', conversationData.messages?.length)
+
+          const { convertBackendMessages } = await import('@/lib/utils/message-converter')
+          const convertedMessages = convertBackendMessages(conversationData.messages as BackendMessage[])
+          console.log('switchVersion: converted messages count', convertedMessages.length)
+          console.log('switchVersion: converted messages', convertedMessages)
+
+          // Update all messages
+          setMessages(convertedMessages)
+        } else {
+          console.warn('switchVersion: no conversationId, cannot reload conversation')
+        }
       } catch (err) {
         console.error('Failed to switch version:', err)
       }
     },
-    [agentId, messages, isLoading]
+    [agentId, messages, isLoading, conversationId]
   )
 
   /**
@@ -995,6 +1010,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-call',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 input: data.arguments,
                 state: 'running',
               }
@@ -1025,6 +1041,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 output: data.result,
                 isError: data.is_error,
               }
@@ -1186,6 +1203,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     stop,
     reset,
     setMessages,
+    setConversationId,
   }
 }
 
@@ -1228,7 +1246,7 @@ function buildMessageParts(
 ): MessagePart[] {
   const parts: MessagePart[] = []
 
-  // Add task parts for RAG, tool calling, and generating steps
+  // Add task parts for RAG and generating steps (not tool calling - we show individual tool calls instead)
   // Keep showing them even after streaming ends so they're visible when collapsed
   if (taskState) {
     // RAG task - show if it ran (not pending)
@@ -1243,17 +1261,8 @@ function buildMessageParts(
       parts.push(ragTask)
     }
 
-    // Tool calling task - show if it ran (not pending)
-    if (taskState.toolCalling !== 'pending') {
-      const toolTask: TaskPart = {
-        type: 'task',
-        taskType: 'thinking', // Reuse 'thinking' type for tool calling visualization
-        // Mark as completed when streaming ends
-        state: isStreaming ? taskState.toolCalling : 'completed',
-        info: taskState.toolCallCount,
-      }
-      parts.push(toolTask)
-    }
+    // Note: We no longer add aggregated tool calling task here
+    // Individual tool calls are shown in the segments below
 
     // Generating task - show if it ran (not pending)
     if (taskState.generating !== 'pending') {
@@ -1336,9 +1345,9 @@ function getErrorMessage(error: ChatError): string {
     return '当前模型不支持视觉功能，请更换支持视觉的模型'
   }
 
-  // Model not found (business code 6100)
-  if (code === 6100) {
-    return message || '抱歉，模型不存在或未配置，请检查模型设置。'
+  // Model not found (business code 6100 or specific error messages)
+  if (code === 6100 || message?.includes('No model found') || message?.includes('no_default_model') || message?.includes('no_chat_model')) {
+    return '抱歉，尚未配置默认模型，请联系管理员在后台设置默认的聊天模型。'
   }
 
   // Model not authorized (business code 6104)

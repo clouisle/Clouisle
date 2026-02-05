@@ -68,6 +68,22 @@ export interface AgentKnowledgeBaseConfig {
   score_threshold: number
 }
 
+/** File parser configuration - which tool to use for parsing files */
+export interface FileParserConfig {
+  type: 'builtin' | 'custom'
+  name?: string       // for builtin, e.g., 'markitdown'
+  tool_id?: string    // for custom tools
+}
+
+export interface FileUploadConfig {
+  parser?: FileParserConfig | null  // null means no parser selected
+  max_file_size: number  // bytes
+  max_files: number
+  max_content_length: number  // characters
+  truncate_strategy: 'end' | 'start' | 'middle'
+  allowed_extensions: string[]
+}
+
 // ============ Agent Types ============
 
 export type AgentStatus = 'draft' | 'published'
@@ -98,6 +114,8 @@ export interface Agent {
   suggested_questions: string[]
   knowledge_bases: AgentKnowledgeBaseOut[]
   enable_vision: boolean
+  enable_file_upload: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode: RAGMode
   status: AgentStatus
   visibility: AgentVisibility
@@ -140,6 +158,8 @@ export interface AgentCreateInput {
   opening_message?: string | null
   suggested_questions?: string[]
   enable_vision?: boolean
+  enable_file_upload?: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -158,6 +178,8 @@ export interface AgentUpdateInput {
   opening_message?: string | null
   suggested_questions?: string[]
   enable_vision?: boolean
+  enable_file_upload?: boolean
+  file_upload_config?: FileUploadConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -168,6 +190,7 @@ export interface AgentQueryParams {
   search?: string
   status?: AgentStatus
   visibility?: AgentVisibility
+  teamId?: string
 }
 
 // ============ Conversation Types ============
@@ -209,9 +232,16 @@ export interface Message {
   conversation_id: string
   role: MessageRole
   content: string
+  // Attachments (for user messages)
+  images?: Array<{ type: string; url: string }> | null
+  file_urls?: Array<{ filename: string; url: string; size: number; mime_type: string }> | null
+  // Tool calls
   tool_calls?: Record<string, unknown>[] | null
   tool_call_id?: string | null
   tool_name?: string | null
+  // Reasoning (Chain of Thought)
+  reasoning_content?: string | null
+  // Metadata
   model_used?: string | null
   token_usage?: { prompt: number; completion: number } | null
   duration_ms?: number | null
@@ -244,6 +274,23 @@ export interface ChatImageContent {
   url: string
 }
 
+export interface ChatFileContent {
+  filename: string
+  content: string
+  mime_type: string
+  size: number
+  truncated: boolean
+  original_length?: number | null
+}
+
+/** File URL for backend file parsing and injection into {{fileContent}} */
+export interface ChatFileUrl {
+  filename: string
+  url: string
+  size: number
+  mime_type: string
+}
+
 export interface HistoryMessage {
   role: 'user' | 'assistant'
   content: string
@@ -252,6 +299,10 @@ export interface HistoryMessage {
 export interface ChatRequest {
   message: string
   images?: ChatImageContent[]
+  /** @deprecated Use file_urls instead */
+  files?: ChatFileContent[]
+  /** File URLs for backend to parse and inject into {{fileContent}} */
+  file_urls?: ChatFileUrl[]
   conversation_id?: string | null
   variables?: Record<string, unknown>
   /** Override conversation history for version switching / regeneration */
@@ -315,12 +366,14 @@ export interface SSEError {
 export interface SSEToolCall {
   tool_call_id: string
   tool_name: string
+  tool_display_name?: string
   arguments: Record<string, unknown>
 }
 
 export interface SSEToolResult {
   tool_call_id: string
   tool_name: string
+  tool_display_name?: string
   result: string
   is_error?: boolean
 }
@@ -332,13 +385,14 @@ export const agentsApi = {
    * 获取 Agent 列表
    */
   getAgents: async (params: AgentQueryParams = {}): Promise<PageData<AgentListItem>> => {
-    const { page = 1, pageSize = 20, search, status, visibility } = params
+    const { page = 1, pageSize = 20, search, status, visibility, teamId } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (search) queryParams.append('search', search)
+    if (search) queryParams.append('keyword', search)
     if (status) queryParams.append('status', status)
     if (visibility) queryParams.append('visibility', visibility)
+    if (teamId) queryParams.append('team_id', teamId)
     return api.get<PageData<AgentListItem>>(`/agents?${queryParams.toString()}`)
   },
 
@@ -569,3 +623,380 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
     }
   }
 }
+
+// ============ Agent Stats Types ============
+
+export interface AgentStatsOverview {
+  total_conversations: number
+  total_messages: number
+  user_messages: number
+  assistant_messages: number
+  tool_messages: number
+  active_users: number
+}
+
+export interface AgentStatsTokens {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+export interface AgentStatsPerformance {
+  avg_response_time_ms: number
+}
+
+export interface AgentStatsTools {
+  tool_call_count: number
+}
+
+export interface AgentStats {
+  period: string
+  overview: AgentStatsOverview
+  tokens: AgentStatsTokens
+  performance: AgentStatsPerformance
+  tools: AgentStatsTools
+}
+
+export interface AgentTrendDataPoint {
+  timestamp: string
+  label: string
+  conversations: number
+  messages: number
+  tokens: number
+  avg_response_time_ms: number
+}
+
+export interface AgentTrends {
+  period: string
+  granularity: string
+  data: AgentTrendDataPoint[]
+}
+
+export interface ToolUsageItem {
+  name: string
+  count: number
+}
+
+export interface AgentToolUsage {
+  period: string
+  tools: ToolUsageItem[]
+  total_calls: number
+}
+
+export interface RecentConversationItem {
+  id: string
+  title?: string | null
+  user?: { id: string; username: string } | null
+  message_count: number
+  token_usage: number
+  created_at: string
+  updated_at: string
+}
+
+// ============ Agent Stats API ============
+
+export const agentStatsApi = {
+  /**
+   * 获取 Agent 统计概览
+   */
+  getStats: async (agentId: string, period: string = '7d'): Promise<AgentStats> => {
+    return api.get<AgentStats>(`/agents/${agentId}/stats?period=${period}`)
+  },
+
+  /**
+   * 获取 Agent 趋势数据（用于图表）
+   */
+  getTrends: async (agentId: string, period: string = '7d'): Promise<AgentTrends> => {
+    return api.get<AgentTrends>(`/agents/${agentId}/stats/trends?period=${period}`)
+  },
+
+  /**
+   * 获取工具使用统计
+   */
+  getToolUsage: async (agentId: string, period: string = '7d'): Promise<AgentToolUsage> => {
+    return api.get<AgentToolUsage>(`/agents/${agentId}/stats/tool-usage?period=${period}`)
+  },
+
+  /**
+   * 获取最近对话
+   */
+  getRecentConversations: async (agentId: string, limit: number = 10): Promise<RecentConversationItem[]> => {
+    return api.get<RecentConversationItem[]>(`/agents/${agentId}/stats/recent-conversations?limit=${limit}`)
+  },
+}
+
+// ============ Admin Conversation Types ============
+
+export interface AdminConversationListItem extends ConversationListItem {
+  user_id?: string
+  user_name?: string | null
+}
+
+export interface AdminConversationWithMessages extends ConversationWithMessages {
+  user_id?: string
+  user_name?: string | null
+}
+
+export interface ConversationStats {
+  total_conversations: number
+  total_messages: number
+  active_users: number
+  conversations_by_agent: Array<{
+    agent_id: string
+    agent_name: string
+    agent_icon?: string | null
+    count: number
+  }>
+}
+
+export interface ConversationTrends {
+  period: string
+  data: Array<{
+    date: string
+    conversations: number
+    messages: number
+    tokens: number
+  }>
+}
+
+export interface AdminConversationQueryParams {
+  team_id?: string
+  agent_id?: string
+  user_id?: string
+  search?: string
+  untitled_only?: boolean
+  page?: number
+  pageSize?: number
+}
+
+// ============ Admin Conversation API ============
+
+export const conversationsApi = {
+  /**
+   * 获取所有对话列表（管理员）
+   */
+  listAll: async (
+    params: AdminConversationQueryParams = {}
+  ): Promise<PageData<AdminConversationListItem>> => {
+    const { page = 1, pageSize = 20, team_id, agent_id, user_id, search, untitled_only } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (team_id) queryParams.append('team_id', team_id)
+    if (agent_id) queryParams.append('agent_id', agent_id)
+    if (user_id) queryParams.append('user_id', user_id)
+    if (search) queryParams.append('search', search)
+    if (untitled_only) queryParams.append('untitled_only', 'true')
+    return api.get<PageData<AdminConversationListItem>>(
+      `/conversations?${queryParams.toString()}`
+    )
+  },
+
+  /**
+   * 获取对话统计数据
+   */
+  getStats: async (teamId?: string): Promise<ConversationStats> => {
+    const queryParams = new URLSearchParams()
+    if (teamId) queryParams.append('team_id', teamId)
+    const query = queryParams.toString()
+    return api.get<ConversationStats>(`/conversations/stats${query ? `?${query}` : ''}`)
+  },
+
+  /**
+   * 获取对话趋势数据
+   */
+  getTrends: async (teamId?: string, period: '7d' | '30d' = '7d'): Promise<ConversationTrends> => {
+    const queryParams = new URLSearchParams()
+    if (teamId) queryParams.append('team_id', teamId)
+    queryParams.append('period', period)
+    return api.get<ConversationTrends>(`/conversations/stats/trends?${queryParams.toString()}`)
+  },
+
+  /**
+   * 获取对话详情（管理员）
+   */
+  getDetail: async (conversationId: string): Promise<AdminConversationWithMessages> => {
+    return api.get<AdminConversationWithMessages>(`/conversations/${conversationId}`)
+  },
+
+  /**
+   * 删除对话（管理员）
+   */
+  delete: async (conversationId: string): Promise<void> => {
+    return api.delete<void>(`/conversations/${conversationId}`)
+  },
+
+  /**
+   * 批量删除对话（管理员）
+   */
+  batchDelete: async (ids: string[]): Promise<{ deleted_count: number; ids: string[] }> => {
+    const queryParams = new URLSearchParams()
+    ids.forEach((id) => queryParams.append('ids', id))
+    return api.delete<{ deleted_count: number; ids: string[] }>(
+      `/conversations?${queryParams.toString()}`
+    )
+  },
+}
+
+// ============ Public Agent Types ============
+
+export interface PublicAgent {
+  id: string
+  name: string
+  description?: string | null
+  icon?: string | null
+  avatar_url?: string | null
+  opening_message?: string | null
+  suggested_questions: string[]
+  variables: VariableDefinition[]
+  enable_vision: boolean
+  enable_file_upload: boolean
+  file_upload_config?: FileUploadConfig | null
+  created_by?: CreatorInfo | null
+}
+
+// ============ Public Agent API (No Auth Required) ============
+
+import { API_BASE_URL } from '@/lib/constants'
+
+export const publicAgentsApi = {
+  /**
+   * 获取 Agent 信息（可选认证）
+   * - 已登录：返回用户有权限访问的 Agent
+   * - 未登录：仅返回公开发布的 Agent
+   */
+  getPublicAgent: async (id: string): Promise<PublicAgent> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    
+    const response = await fetch(`${API_BASE_URL}/agents/${id}/public`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 获取用户与该 Agent 的对话列表
+   */
+  getConversations: async (agentId: string, params: { page?: number; pageSize?: number } = {}): Promise<PageData<ConversationListItem>> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    const { page = 1, pageSize = 50 } = params
+    
+    const response = await fetch(`${API_BASE_URL}/agents/${agentId}/conversations?page=${page}&page_size=${pageSize}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 获取对话详情（含消息）
+   */
+  getConversation: async (conversationId: string): Promise<ConversationWithMessages> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+    
+    const data = await response.json()
+    return data.data
+  },
+
+  /**
+   * 删除对话
+   */
+  deleteConversation: async (conversationId: string): Promise<void> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+  },
+
+  /**
+   * 更新对话
+   */
+  updateConversation: async (
+    conversationId: string,
+    data: ConversationUpdateInput
+  ): Promise<Conversation> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+
+    const response = await fetch(`${API_BASE_URL}/agents/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
+      throw new Error(error.msg || `HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  },
+
+  /**
+   * 公开聊天流（需要登录）
+   */
+  chatStream: (agentId: string, data: ChatRequest): { stream: Promise<Response>; abort: () => void } => {
+    const controller = new AbortController()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+
+    const stream = fetch(`${API_BASE_URL}/agents/${agentId}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+
+    return {
+      stream,
+      abort: () => controller.abort(),
+    }
+  },
+}
+

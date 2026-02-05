@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig } from '@/lib/api'
+import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -26,6 +26,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
   const [showSettings, setShowSettings] = React.useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   // Form state
   const [name, setName] = React.useState('')
@@ -42,6 +43,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [knowledgeBaseConfigs, setKnowledgeBaseConfigs] = React.useState<AgentKnowledgeBaseConfig[]>([])
   const [ragMode, setRagMode] = React.useState<RAGMode>('agentic')
   const [enableVision, setEnableVision] = React.useState(false)
+  const [enableFileUpload, setEnableFileUpload] = React.useState(false)
+  const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
 
   // Unwrap params
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
@@ -77,6 +80,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       })))
       setRagMode(data.rag_mode || 'agentic')
       setEnableVision(data.enable_vision || false)
+      setEnableFileUpload(data.enable_file_upload || false)
+      setFileUploadConfig(data.file_upload_config || null)
     } catch {
       router.push('/app/apps')
     } finally {
@@ -109,6 +114,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         knowledge_base_configs: knowledgeBaseConfigs,
         rag_mode: ragMode,
         enable_vision: enableVision,
+        enable_file_upload: enableFileUpload,
+        file_upload_config: enableFileUpload ? fileUploadConfig : null,
       })
       setAgent(updated)
       toast.success(t('agentSaved'))
@@ -140,6 +147,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     knowledgeBaseConfigs,
     ragMode,
     enableVision,
+    enableFileUpload,
+    fileUploadConfig,
     t,
   ])
 
@@ -182,6 +191,12 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     if (data.enable_vision !== undefined) {
       setEnableVision(data.enable_vision)
     }
+    if (data.enable_file_upload !== undefined) {
+      setEnableFileUpload(data.enable_file_upload)
+    }
+    if (data.file_upload_config !== undefined) {
+      setFileUploadConfig(data.file_upload_config || null)
+    }
   }
 
   // Check if tools are enabled
@@ -206,7 +221,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   return (
     <div className="h-full flex overflow-hidden">
       {/* Left Sidebar - Agent Info & Navigation */}
-      <AgentSidebar agent={agent} />
+      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -217,12 +232,14 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           onSave={handleSave}
           isSaving={isSaving}
           onSettingsClick={() => setShowSettings(true)}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
 
         {/* Content */}
-        <div className="flex-1 flex overflow-hidden p-6 gap-6 min-h-0">
+        <div className="flex-1 flex h-full overflow-hidden p-6 gap-6 min-h-0">
           {/* Orchestration Form */}
-          <ScrollArea className="flex-1 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
+          <ScrollArea className="flex-1 min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
             <div className="max-w-3xl">
               <AgentOrchestrationForm
                 agent={agent}
@@ -232,7 +249,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           </ScrollArea>
 
           {/* Preview Panel */}
-          <div className="w-95 min-w-95 shrink-0 h-full overflow-hidden border rounded-lg">
+          <div className="w-95 min-w-95 shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
             <AgentPreviewPanel agent={agent} />
           </div>
         </div>

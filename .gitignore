@@ -64,3 +64,16 @@ coverage.xml
 # Uploads
 uploads/
 
+# ai
+CLAUDE.md
+.claude
+
+# Celery beat schedule files
+backend/celerybeat-schedule
+backend/celerybeat-schedule-shm
+backend/celerybeat-schedule-wal
+
+# Debug scripts
+backend/check_dashboard_data.py
+backend/fix_stats.py
+

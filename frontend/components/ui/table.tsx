@@ -85,7 +85,7 @@ function TableHead({
     <th
       data-slot="table-head"
       className={cn(
-        "text-muted-foreground h-10 px-4 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "text-muted-foreground h-10 px-4 text-start align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:w-10 [&:has([role=checkbox])]:px-4 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
@@ -101,7 +101,7 @@ function TableCell({
     <td
       data-slot="table-cell"
       className={cn(
-        "px-4 py-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "px-4 py-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:w-10 [&:has([role=checkbox])]:px-4 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
