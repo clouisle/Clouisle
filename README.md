@@ -22,7 +22,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 </p>
 
 <p align="center">
-<a href="docs/README_zh-CN.md">简体中文</a> ·
+<a href="docs/guide/README_zh-CN.md">简体中文</a> ·
 <a href="#features">Features</a> ·
 <a href="#quick-start">Quick Start</a> ·
 <a href="#architecture">Architecture</a> ·
