@@ -134,7 +134,7 @@
 
 ```bash
 # 启动 PostgreSQL、Redis 和 Qdrant
-docker-compose -f deploy/docker-compose.yml up -d
+docker-compose -f deploy/docker-compose.dev.yml up -d
 ```
 
 ### 2. 配置环境变量
@@ -142,7 +142,13 @@ docker-compose -f deploy/docker-compose.yml up -d
 ```bash
 # 复制环境变量文件
 cp .env.example .env
-# 编辑 .env 进行配置
+
+# 生成安全密码并更新 .env
+# 重要：请为以下字段设置强随机值：
+#   - SECRET_KEY
+#   - POSTGRES_PASSWORD
+#   - REDIS_PASSWORD
+#   - QDRANT_API_KEY
 ```
 
 ### 3. 启动后端

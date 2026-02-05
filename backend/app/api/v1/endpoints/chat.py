@@ -200,8 +200,6 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
 
     return agent
 
-    return agent
-
 
 async def get_or_create_conversation(
     agent: Agent, user: User, conversation_id: UUID | None, variables: dict

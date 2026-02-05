@@ -62,7 +62,7 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
     api_keys = await APIKey.filter(
         key_prefix=key_prefix,
         is_active=True,
-    ).prefetch_related("user", "agents")
+    ).prefetch_related("user", "user__roles__permissions", "agents")
 
     # 验证完整的 key
     matched_api_key = None

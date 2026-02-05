@@ -134,7 +134,7 @@ Supports 15+ providers out of the box:
 
 ```bash
 # Start PostgreSQL, Redis, and Qdrant
-docker-compose -f deploy/docker-compose.yml up -d
+docker-compose -f deploy/docker-compose.dev.yml up -d
 ```
 
 ### 2. Configure Environment
@@ -142,7 +142,13 @@ docker-compose -f deploy/docker-compose.yml up -d
 ```bash
 # Copy environment file
 cp .env.example .env
-# Edit .env with your configuration
+
+# Generate secure passwords and update .env
+# IMPORTANT: Set strong random values for these fields:
+#   - SECRET_KEY
+#   - POSTGRES_PASSWORD
+#   - REDIS_PASSWORD
+#   - QDRANT_API_KEY
 ```
 
 ### 3. Start Backend

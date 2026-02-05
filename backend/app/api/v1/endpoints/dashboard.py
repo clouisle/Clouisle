@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from tortoise.functions import Count, Sum, Avg
 
 from app.api.deps import PermissionChecker
 from app.core.timezone import now, to_local, to_utc
@@ -50,16 +51,11 @@ async def get_dashboard_stats(
     total_conversations = await Conversation.all().count()
     total_messages = await Message.all().count()
 
-    # Token usage
-    messages_with_tokens = await Message.filter(token_usage__isnull=False).values(
-        "token_usage"
-    )
-
-    total_tokens = 0
-    for msg in messages_with_tokens:
-        if msg["token_usage"]:
-            total_tokens += msg["token_usage"].get("prompt", 0) or 0
-            total_tokens += msg["token_usage"].get("completion", 0) or 0
+    # Token usage - use pre-aggregated values from Team model
+    token_result = await Team.filter(is_deleted=False).annotate(
+        tokens_sum=Sum("total_tokens")
+    ).values("tokens_sum")
+    total_tokens = token_result[0]["tokens_sum"] or 0 if token_result else 0
 
     # Active users (based on conversation activity)
     # DAU - Daily Active Users
@@ -344,21 +340,17 @@ async def get_models_distribution(
     else:
         messages_query = Message.filter(model_used__isnull=False)
 
-    # Get all messages with model_used
-    messages = await messages_query.values("model_used")
+    # Use database-level GROUP BY for model distribution
+    model_stats = await messages_query.annotate(
+        count=Count("id")
+    ).group_by("model_used").values("model_used", "count")
 
-    # Count model usage
-    model_counts: dict[str, int] = {}
-    total_count = 0
-    for msg in messages:
-        model = msg["model_used"]
-        if model:
-            model_counts[model] = model_counts.get(model, 0) + 1
-            total_count += 1
-
-    # Build response with percentages
+    # Calculate total and build response
+    total_count = sum(item["count"] for item in model_stats)
     result = []
-    for model, count in sorted(model_counts.items(), key=lambda x: x[1], reverse=True):
+    for item in sorted(model_stats, key=lambda x: x["count"], reverse=True):
+        model = item["model_used"]
+        count = item["count"]
         percentage = (count / total_count * 100) if total_count > 0 else 0
         result.append(
             {
@@ -405,62 +397,57 @@ async def get_workflow_summary(
     else:
         runs_query = WorkflowRun.all()
 
-    # Get all runs
-    runs = await runs_query.all()
-
-    # Calculate statistics
-    total_runs = len(runs)
-    success_count = sum(1 for r in runs if r.status == "success")
+    # Use database-level aggregation for basic stats
+    total_runs = await runs_query.count()
+    success_count = await runs_query.filter(status="success").count()
     success_rate = (success_count / total_runs * 100) if total_runs > 0 else 0
 
-    # Average duration
-    durations = [r.total_duration_ms for r in runs if r.total_duration_ms]
-    avg_duration_ms = sum(durations) // len(durations) if durations else 0
+    # Average duration using database aggregation
+    avg_result = await runs_query.filter(
+        total_duration_ms__isnull=False
+    ).annotate(avg_dur=Avg("total_duration_ms")).values("avg_dur")
+    avg_duration_ms = int(avg_result[0]["avg_dur"] or 0) if avg_result else 0
 
-    # Trigger type distribution
-    trigger_types = {}
-    for run in runs:
-        trigger_type = run.trigger_type
-        trigger_types[trigger_type] = trigger_types.get(trigger_type, 0) + 1
+    # Trigger type distribution using GROUP BY
+    trigger_stats = await runs_query.annotate(
+        count=Count("id")
+    ).group_by("trigger_type").values("trigger_type", "count")
 
-    # Status distribution
-    statuses = {}
-    for run in runs:
-        status = run.status
-        statuses[status] = statuses.get(status, 0) + 1
+    # Status distribution using GROUP BY
+    status_stats = await runs_query.annotate(
+        count=Count("id")
+    ).group_by("status").values("status", "count")
 
-    # Top workflows
-    workflow_stats = {}
-    for run in runs:
-        wf_id = str(run.workflow_id) if run.workflow_id else "unknown"
-        if wf_id not in workflow_stats:
-            workflow_stats[wf_id] = {"run_count": 0, "success_count": 0}
-        workflow_stats[wf_id]["run_count"] += 1
-        if run.status == "success":
-            workflow_stats[wf_id]["success_count"] += 1
+    # Top workflows using GROUP BY
+    workflow_run_stats = await runs_query.filter(
+        workflow_id__isnull=False
+    ).annotate(
+        run_count=Count("id")
+    ).group_by("workflow_id").order_by("-run_count").limit(10).values(
+        "workflow_id", "run_count"
+    )
 
-    # Get workflow details for top 10
-    top_workflow_ids = sorted(
-        workflow_stats.items(), key=lambda x: x[1]["run_count"], reverse=True
-    )[:10]
+    # Get workflow details and success counts for top workflows
     top_workflows = []
-    for wf_id, stats in top_workflow_ids:
-        if wf_id != "unknown":
-            workflow = await Workflow.filter(id=wf_id).first()
-            if workflow:
-                success_rate_wf = (
-                    (stats["success_count"] / stats["run_count"] * 100)
-                    if stats["run_count"] > 0
-                    else 0
-                )
-                top_workflows.append(
-                    {
-                        "workflow_id": wf_id,
-                        "name": workflow.name,
-                        "run_count": stats["run_count"],
-                        "success_rate": round(success_rate_wf, 2),
-                    }
-                )
+    for stat in workflow_run_stats:
+        wf_id = stat["workflow_id"]
+        run_count = stat["run_count"]
+        workflow = await Workflow.filter(id=wf_id).first()
+        if workflow:
+            wf_success_count = await runs_query.filter(
+                workflow_id=wf_id, status="success"
+            ).count()
+            success_rate_wf = (
+                (wf_success_count / run_count * 100) if run_count > 0 else 0
+            )
+            top_workflows.append(
+                {
+                    "workflow_id": str(wf_id),
+                    "name": workflow.name,
+                    "run_count": run_count,
+                    "success_rate": round(success_rate_wf, 2),
+                }
+            )
 
     return success(
         data={
@@ -468,10 +455,12 @@ async def get_workflow_summary(
             "success_rate": round(success_rate, 2),
             "avg_duration_ms": avg_duration_ms,
             "trigger_type_distribution": [
-                {"type": k, "count": v} for k, v in trigger_types.items()
+                {"type": item["trigger_type"], "count": item["count"]}
+                for item in trigger_stats
             ],
             "status_distribution": [
-                {"status": k, "count": v} for k, v in statuses.items()
+                {"status": item["status"], "count": item["count"]}
+                for item in status_stats
             ],
             "top_workflows": top_workflows,
         }

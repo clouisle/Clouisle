@@ -14,7 +14,7 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
-from app.core.timezone import now, to_local, to_utc
+from app.core.timezone import now, to_utc
 from app.models.user import User, Team, TeamMember
 from app.models.agent import Agent, Conversation, Message
 from app.schemas.agent import (
@@ -357,20 +357,8 @@ async def get_conversation_trends(
     # Member/Viewer can only see their own conversations
     if not has_dashboard_access:
         conv_query = conv_query.filter(user_id=current_user.id)
-    conversations = await conv_query.values("id", "created_at")
 
-    # Get conversation IDs for message query
-    conv_ids = [c["id"] for c in conversations]
-
-    # Get all messages in the period for these conversations
-    if conv_ids:
-        msg_query = Message.filter(
-            created_at__gte=start_time_utc, conversation_id__in=conv_ids
-        )
-        messages = await msg_query.values("created_at", "token_usage", "role")
-    else:
-        messages = []
-
+    # Use database-level aggregation for conversation counts by day
     # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
@@ -380,25 +368,39 @@ async def get_conversation_trends(
         )
         point_end = point_start + timedelta(days=1)
 
-        # Count conversations created in this day
-        conv_count = sum(
-            1
-            for c in conversations
-            if point_start <= to_local(c["created_at"]) < point_end
-        )
+        point_start_utc = to_utc(point_start)
+        point_end_utc = to_utc(point_end)
 
-        # Count messages and tokens in this day
-        msgs_in_period = [
-            m for m in messages if point_start <= to_local(m["created_at"]) < point_end
-        ]
-        msg_count = len(msgs_in_period)
+        # Count conversations created in this day using database query
+        conv_count = await conv_query.filter(
+            created_at__gte=point_start_utc, created_at__lt=point_end_utc
+        ).count()
 
-        # Calculate total tokens
-        tokens = 0
-        for m in msgs_in_period:
-            if m["token_usage"]:
-                tokens += m["token_usage"].get("prompt", 0) or 0
-                tokens += m["token_usage"].get("completion", 0) or 0
+        # Count messages for conversations in accessible scope (not just today's conversations)
+        all_conv_ids = await conv_query.values_list("id", flat=True)
+        if all_conv_ids:
+            msg_count = await Message.filter(
+                conversation_id__in=list(all_conv_ids),
+                created_at__gte=point_start_utc,
+                created_at__lt=point_end_utc,
+            ).count()
+
+            # Get token usage for this day
+            token_messages = await Message.filter(
+                conversation_id__in=list(all_conv_ids),
+                created_at__gte=point_start_utc,
+                created_at__lt=point_end_utc,
+                token_usage__isnull=False,
+            ).values("token_usage")
+
+            tokens = 0
+            for m in token_messages:
+                if m["token_usage"]:
+                    tokens += m["token_usage"].get("prompt", 0) or 0
+                    tokens += m["token_usage"].get("completion", 0) or 0
+        else:
+            msg_count = 0
+            tokens = 0
 
         # Format label based on locale (use simple format for now)
         label = point_date.strftime("%m/%d")
