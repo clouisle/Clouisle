@@ -61,10 +61,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { RoleDialog } from './role-dialog'
 import { DeleteRoleDialog } from './delete-role-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export function RolesClient() {
   const t = useTranslations('roles')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
   
   // 数据状态
   const [roles, setRoles] = React.useState<Role[]>([])
@@ -204,10 +206,12 @@ export function RolesClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createRole')}
-          </Button>
+          <PermissionGuard permission="role:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createRole')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -308,31 +312,35 @@ export function RolesClient() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(role)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {commonT('edit')}
-                        </DropdownMenuItem>
-                        
-                        {!role.is_system_role && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => handleDelete(role)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              {commonT('delete')}
+                    {(canPerform('role:update') || canPerform('role:delete')) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canPerform('role:update') && (
+                            <DropdownMenuItem onClick={() => handleEdit(role)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {commonT('edit')}
                             </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          )}
+
+                          {!role.is_system_role && canPerform('role:delete') && (
+                            <>
+                              {canPerform('role:update') && <DropdownMenuSeparator />}
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(role)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {commonT('delete')}
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -423,7 +431,7 @@ export function RolesClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedRoles.size > 0 && (
+      {selectedRoles.size > 0 && canPerform('role:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button
@@ -434,11 +442,11 @@ export function RolesClient() {
             >
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedRoles.size} {t('rolesSelected')}
             </Badge>
-            
+
             <Tooltip>
               <TooltipTrigger
                 onClick={handleBulkDelete}

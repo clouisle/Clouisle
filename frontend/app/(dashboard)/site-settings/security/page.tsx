@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
+import { ApiError } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,6 +32,11 @@ export default function SiteSettingsSecurityPage() {
     max_login_attempts: 5,
     lockout_duration_minutes: 15,
     enable_captcha: false,
+    sso_enabled: false,
+    sso_allow_password_login: true,
+    sso_auto_create_users: true,
+    sso_require_approval: false,
+    sso_match_by_email: true,
   })
 
   const loadSettings = React.useCallback(async () => {
@@ -52,6 +58,11 @@ export default function SiteSettingsSecurityPage() {
         max_login_attempts: data.max_login_attempts ?? 5,
         lockout_duration_minutes: data.lockout_duration_minutes ?? 15,
         enable_captcha: data.enable_captcha ?? false,
+        sso_enabled: data.sso_enabled ?? false,
+        sso_allow_password_login: data.sso_allow_password_login ?? true,
+        sso_auto_create_users: data.sso_auto_create_users ?? true,
+        sso_require_approval: data.sso_require_approval ?? false,
+        sso_match_by_email: data.sso_match_by_email ?? true,
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -72,7 +83,11 @@ export default function SiteSettingsSecurityPage() {
       toast.success(t('saveSuccess'))
     } catch (error) {
       console.error('Failed to save settings:', error)
-      toast.error(t('saveError'))
+      if (error instanceof ApiError) {
+        toast.error(error.message)
+      } else {
+        toast.error(t('saveError'))
+      }
     } finally {
       setSaving(false)
     }
@@ -244,26 +259,26 @@ export default function SiteSettingsSecurityPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="maxAttempts">{t('maxLoginAttempts')}</Label>
-            <Input 
-              id="maxAttempts" 
-              type="number" 
+            <Input
+              id="maxAttempts"
+              type="number"
               value={settings.max_login_attempts}
               onChange={(e) => updateSetting('max_login_attempts', parseInt(e.target.value) || 5)}
-              min={3} 
-              max={10} 
-              className="w-32" 
+              min={3}
+              max={10}
+              className="w-32"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="lockoutDuration">{t('lockoutDuration')}</Label>
             <div className="flex items-center gap-2">
-              <Input 
-                id="lockoutDuration" 
-                type="number" 
+              <Input
+                id="lockoutDuration"
+                type="number"
                 value={settings.lockout_duration_minutes}
                 onChange={(e) => updateSetting('lockout_duration_minutes', parseInt(e.target.value) || 15)}
-                min={1} 
-                className="w-32" 
+                min={1}
+                className="w-32"
               />
               <span className="text-sm text-muted-foreground">{t('minutes')}</span>
             </div>
@@ -273,9 +288,72 @@ export default function SiteSettingsSecurityPage() {
               <Label>{t('enableCaptcha')}</Label>
               <p className="text-sm text-muted-foreground">{t('enableCaptchaDescription')}</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.enable_captcha}
               onCheckedChange={(checked) => updateSetting('enable_captcha', checked)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('ssoSettings')}</CardTitle>
+          <CardDescription>{t('ssoSettingsDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('enableSSO')}</Label>
+              <p className="text-sm text-muted-foreground">{t('enableSSODescription')}</p>
+            </div>
+            <Switch
+              checked={settings.sso_enabled}
+              onCheckedChange={(checked) => updateSetting('sso_enabled', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('allowPasswordLogin')}</Label>
+              <p className="text-sm text-muted-foreground">{t('allowPasswordLoginDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.sso_allow_password_login}
+              onCheckedChange={(checked) => updateSetting('sso_allow_password_login', checked)}
+              disabled={!settings.sso_enabled}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('autoCreateUsers')}</Label>
+              <p className="text-sm text-muted-foreground">{t('autoCreateUsersDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.sso_auto_create_users}
+              onCheckedChange={(checked) => updateSetting('sso_auto_create_users', checked)}
+              disabled={!settings.sso_enabled}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('ssoRequireApproval')}</Label>
+              <p className="text-sm text-muted-foreground">{t('ssoRequireApprovalDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.sso_require_approval}
+              onCheckedChange={(checked) => updateSetting('sso_require_approval', checked)}
+              disabled={!settings.sso_enabled}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('matchByEmail')}</Label>
+              <p className="text-sm text-muted-foreground">{t('matchByEmailDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.sso_match_by_email}
+              onCheckedChange={(checked) => updateSetting('sso_match_by_email', checked)}
+              disabled={!settings.sso_enabled}
             />
           </div>
         </CardContent>

@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "Settings",
+    "description": "Manage your account settings and preferences",
     "cancel": "Cancel",
     "profile": "Profile",
     "account": "Account",
@@ -20,8 +21,11 @@
     "avatarHint": "Recommended: 200x200 pixels, JPG, PNG, GIF format",
     "saveChanges": "Save Changes",
     "profileUpdated": "Profile updated successfully",
+    "noChanges": "No changes to save",
     "changePassword": "Change Password",
     "changePasswordDescription": "Update your password to keep your account secure",
+    "setPassword": "Set Password",
+    "setPasswordDescription": "Set a password for your account to enable password login",
     "currentPassword": "Current Password",
     "currentPasswordPlaceholder": "Enter current password",
     "newPassword": "New Password",

@@ -62,33 +62,24 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { ConversationDrawer } from './conversation-drawer'
+import { useCanPerform } from '@/components/permission-guard'
 
 // Helper to format datetime
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } else {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+function formatDateTime(dateString: string, _locale: string): string {
+  const d = new Date(dateString)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 export function ConversationsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
   const locale = useLocale()
+  const { canPerform } = useCanPerform()
 
   // State
   const [conversations, setConversations] = React.useState<AdminConversationListItem[]>([])
@@ -299,7 +290,7 @@ export function ConversationsTable() {
             )}
           </div>
 
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && canPerform('conversation:delete') && (
             <Button
               variant="destructive"
               size="sm"
@@ -385,13 +376,15 @@ export function ConversationsTable() {
                           <DropdownMenuItem onClick={() => handleViewConversation(conversation.id)}>
                             {t('viewDetails')}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteClick([conversation.id])}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {commonT('delete')}
-                          </DropdownMenuItem>
+                          {canPerform('conversation:delete') && (
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteClick([conversation.id])}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {commonT('delete')}
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

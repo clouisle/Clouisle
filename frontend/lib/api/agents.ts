@@ -366,12 +366,14 @@ export interface SSEError {
 export interface SSEToolCall {
   tool_call_id: string
   tool_name: string
+  tool_display_name?: string
   arguments: Record<string, unknown>
 }
 
 export interface SSEToolResult {
   tool_call_id: string
   tool_name: string
+  tool_display_name?: string
   result: string
   is_error?: boolean
 }

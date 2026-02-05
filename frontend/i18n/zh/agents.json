@@ -26,7 +26,7 @@
       "modelParamsHint": "温度、Top P、最大 Token 数等参数在模型配置中设置",
       "maxIterationsLabel": "最大迭代次数",
       "maxIterationsTooltip": "使用工具时，Agent 最多可以进行的迭代次数。每次工具调用计为一次迭代。",
-      "maxIterationsHint": "工具调用的最大迭代次数 (1-20)",
+      "maxIterationsHint": "工具调用的最大迭代次数 (1-200)",
       "conversationConfig": "对话配置",
       "suggestedQuestionsPlaceholder": "每行一个问题"
     },

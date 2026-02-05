@@ -22,9 +22,10 @@ interface WorkflowSettingsDrawerProps {
   open: boolean
   onClose: () => void
   onUpdate: (workflow: Workflow) => void
+  readOnly?: boolean
 }
 
-export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: WorkflowSettingsDrawerProps) {
+export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, readOnly = false }: WorkflowSettingsDrawerProps) {
   // 基本信息
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -345,6 +346,12 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
       {/* Content */}
       <ScrollArea className="h-[calc(100%-120px)]">
         <div className="p-4 space-y-4">
+          {/* 只读模式提示 */}
+          {readOnly && (
+            <div className="bg-muted/50 rounded-lg px-3 py-2 text-xs text-muted-foreground">
+              只读模式，无法编辑工作流设置
+            </div>
+          )}
           {/* 基本信息 */}
           <Collapsible open={basicInfoOpen} onOpenChange={setBasicInfoOpen}>
             <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium w-full py-1">
@@ -364,6 +371,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                   previewSize="lg"
                   category="icons"
                   placeholder={<GitBranch className="h-8 w-8 text-muted-foreground/50" />}
+                  disabled={readOnly}
                 />
               </div>
 
@@ -377,6 +385,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                   onChange={(e) => setName(e.target.value)}
                   placeholder="输入工作流名称"
                   className="h-9 text-sm"
+                  disabled={readOnly}
                 />
               </div>
 
@@ -388,6 +397,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="描述工作流的用途..."
                   className="min-h-20 text-sm resize-none"
+                  disabled={readOnly}
                 />
               </div>
 
@@ -441,7 +451,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
               {/* 触发类型 */}
               <div className="space-y-1.5">
                 <Label className="text-xs">触发方式</Label>
-                <Select value={triggerType} onValueChange={(v) => v && setTriggerType(v as TriggerType)}>
+                <Select value={triggerType} onValueChange={(v) => v && setTriggerType(v as TriggerType)} disabled={readOnly}>
                   <SelectTrigger className="h-9 text-sm">
                     <span>{triggerTypeOptions.find(t => t.value === triggerType)?.label || '选择触发方式'}</span>
                   </SelectTrigger>
@@ -463,20 +473,22 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                 <div className="space-y-2 bg-muted/30 rounded-lg p-2.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">Webhook URL</Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[10px] px-2"
-                      onClick={handleRegenerateToken}
-                      disabled={isRegenerating}
-                    >
-                      {isRegenerating ? (
-                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3 mr-1" />
-                      )}
-                      重新生成
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] px-2"
+                        onClick={handleRegenerateToken}
+                        disabled={isRegenerating}
+                      >
+                        {isRegenerating ? (
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                        )}
+                        重新生成
+                      </Button>
+                    )}
                   </div>
                   {webhookToken ? (
                     <div className="flex items-center gap-1">
@@ -515,7 +527,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                   {/* 执行频率类型 */}
                   <div className="space-y-1.5">
                     <Label className="text-xs">执行频率</Label>
-                    <Select value={scheduleType} onValueChange={(v) => v && setScheduleType(v as typeof scheduleType)}>
+                    <Select value={scheduleType} onValueChange={(v) => v && setScheduleType(v as typeof scheduleType)} disabled={readOnly}>
                       <SelectTrigger className="h-9 text-sm">
                         <span>
                           {scheduleType === 'interval' && '按间隔执行'}
@@ -539,7 +551,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                   {scheduleType === 'interval' && (
                     <div className="space-y-1.5">
                       <Label className="text-xs">执行间隔</Label>
-                      <Select value={String(intervalMinutes)} onValueChange={(v) => v && setIntervalMinutes(parseInt(v))}>
+                      <Select value={String(intervalMinutes)} onValueChange={(v) => v && setIntervalMinutes(parseInt(v))} disabled={readOnly}>
                         <SelectTrigger className="h-9 text-sm">
                           <span>{intervalMinutes < 60 ? `每 ${intervalMinutes} 分钟` : `每 ${intervalMinutes / 60} 小时`}</span>
                         </SelectTrigger>
@@ -567,6 +579,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                         value={dailyTime}
                         onChange={(e) => setDailyTime(e.target.value)}
                         className="h-9 text-sm"
+                        disabled={readOnly}
                       />
                     </div>
                   )}
@@ -576,7 +589,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                     <div className="space-y-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">星期</Label>
-                        <Select value={String(weeklyDay)} onValueChange={(v) => v && setWeeklyDay(parseInt(v))}>
+                        <Select value={String(weeklyDay)} onValueChange={(v) => v && setWeeklyDay(parseInt(v))} disabled={readOnly}>
                           <SelectTrigger className="h-9 text-sm">
                             <span>{['周日', '周一', '周二', '周三', '周四', '周五', '周六'][weeklyDay]}</span>
                           </SelectTrigger>
@@ -598,6 +611,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                           value={weeklyTime}
                           onChange={(e) => setWeeklyTime(e.target.value)}
                           className="h-9 text-sm"
+                          disabled={readOnly}
                         />
                       </div>
                     </div>
@@ -608,7 +622,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                     <div className="space-y-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">日期</Label>
-                        <Select value={String(monthlyDay)} onValueChange={(v) => v && setMonthlyDay(parseInt(v))}>
+                        <Select value={String(monthlyDay)} onValueChange={(v) => v && setMonthlyDay(parseInt(v))} disabled={readOnly}>
                           <SelectTrigger className="h-9 text-sm">
                             <span>每月 {monthlyDay} 日</span>
                           </SelectTrigger>
@@ -628,6 +642,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                           value={monthlyTime}
                           onChange={(e) => setMonthlyTime(e.target.value)}
                           className="h-9 text-sm"
+                          disabled={readOnly}
                         />
                       </div>
                     </div>
@@ -642,6 +657,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                         onChange={(e) => setCronExpression(e.target.value)}
                         placeholder="0 0 * * *"
                         className="h-9 text-sm font-mono"
+                        disabled={readOnly}
                       />
                       <p className="text-[10px] text-muted-foreground">
                         格式：分 时 日 月 周
@@ -714,7 +730,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
                           {formatTime(version.created_at)}
                         </p>
                       </div>
-                      {version.version !== workflow.version && (
+                      {version.version !== workflow.version && !readOnly && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -780,19 +796,21 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate }: Wo
       <div className="absolute bottom-0 left-0 right-0 px-4 py-3 border-t bg-card rounded-b-xl">
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" className="h-8" onClick={onClose}>
-            取消
+            {readOnly ? '关闭' : '取消'}
           </Button>
-          <Button
-            size="sm"
-            className="h-8"
-            onClick={handleSave}
-            disabled={isSaving || !hasChanges || !name.trim()}
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-            ) : null}
-            保存
-          </Button>
+          {!readOnly && (
+            <Button
+              size="sm"
+              className="h-8"
+              onClick={handleSave}
+              disabled={isSaving || !hasChanges || !name.trim()}
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : null}
+              保存
+            </Button>
+          )}
         </div>
       </div>
     </div>

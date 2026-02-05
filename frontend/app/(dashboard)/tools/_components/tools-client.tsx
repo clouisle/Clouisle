@@ -86,6 +86,7 @@ import { HttpToolDialog } from './http-tool-dialog'
 import { McpToolDialog } from './mcp-tool-dialog'
 import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 // 工具类型图标映射
 const toolTypeIcons: Record<ToolType, React.ReactNode> = {
@@ -111,6 +112,7 @@ export function ToolsClient() {
   const t = useTranslations('tools')
   const commonT = useTranslations('common')
   const router = useRouter()
+  const { canPerform } = useCanPerform()
 
   // 数据状态 - 存储所有团队的工具
   const [allTeamsTools, setAllTeamsTools] = React.useState<Map<string, ToolListResponse>>(new Map())
@@ -567,46 +569,48 @@ export function ToolsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('createTool')}
-                  <ChevronDown className="ml-2 h-4 w-4" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={handleCreateHttpTool}>
-                <Globe className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('createMenu.http')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('createMenu.httpDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCreateCodeTool}>
-                <Code className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('createMenu.code')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('createMenu.codeDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleCreateMcpTool}>
-                <Plug className="mr-2 h-4 w-4" />
-                <div className="flex flex-col">
-                  <span>{t('createMenu.mcp')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('createMenu.mcpDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <PermissionGuard permission="tool:create">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('createTool')}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={handleCreateHttpTool}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('createMenu.http')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('createMenu.httpDesc')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCreateCodeTool}>
+                  <Code className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('createMenu.code')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('createMenu.codeDesc')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCreateMcpTool}>
+                  <Plug className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>{t('createMenu.mcp')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('createMenu.mcpDesc')}
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </PermissionGuard>
         </div>
       </div>
 
@@ -761,55 +765,62 @@ export function ToolsClient() {
                     </TableCell>
                     <TableCell>{getEnabledBadge(tool.is_enabled)}</TableCell>
                     <TableCell>
-                      {tool._type !== 'builtin' && tool.id && (
+                      {tool._type !== 'builtin' && tool.id && (canPerform('tool:update') || canPerform('tool:delete')) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                             <MoreHorizontal className="h-4 w-4" />
                             <span className="sr-only">Open menu</span>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEdit(tool)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              {commonT('edit')}
-                            </DropdownMenuItem>
-
-                          <DropdownMenuItem onClick={() => handleDuplicate(tool)}>
-                            <Copy className="mr-2 h-4 w-4" />
-                            {t('duplicate')}
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem onClick={() => handleShare(tool)}>
-                            <Share2 className="mr-2 h-4 w-4" />
-                            {t('share.title')}
-                          </DropdownMenuItem>
-
-                          <DropdownMenuItem onClick={() => handleToggleStatus(tool)}>
-                            {tool.is_enabled ? (
+                            {canPerform('tool:update') && (
                               <>
-                                <ToggleLeft className="mr-2 h-4 w-4" />
-                                {t('disable')}
-                              </>
-                            ) : (
-                              <>
-                                <ToggleRight className="mr-2 h-4 w-4" />
-                                {t('enable')}
+                                <DropdownMenuItem onClick={() => handleEdit(tool)}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  {commonT('edit')}
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem onClick={() => handleDuplicate(tool)}>
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  {t('duplicate')}
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem onClick={() => handleShare(tool)}>
+                                  <Share2 className="mr-2 h-4 w-4" />
+                                  {t('share.title')}
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem onClick={() => handleToggleStatus(tool)}>
+                                  {tool.is_enabled ? (
+                                    <>
+                                      <ToggleLeft className="mr-2 h-4 w-4" />
+                                      {t('disable')}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ToggleRight className="mr-2 h-4 w-4" />
+                                      {t('enable')}
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
                               </>
                             )}
-                          </DropdownMenuItem>
 
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(tool)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {commonT('delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </TableCell>
+                            {canPerform('tool:delete') && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(tool)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  {commonT('delete')}
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TableCell>
                 </TableRow>
                 )
               })
@@ -923,7 +934,7 @@ export function ToolsClient() {
       />
 
       {/* 批量操作浮动工具栏 */}
-      {selectedTools.size > 0 && (
+      {selectedTools.size > 0 && canPerform('tool:delete') && (
         <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

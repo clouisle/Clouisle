@@ -22,6 +22,7 @@ import {
 import { toast } from 'sonner'
 import { apiKeysApi, usersApi, type APIKey, type PageData, type APIKeyStats } from '@/lib/api'
 import type { User } from '@/lib/api/auth'
+import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -67,10 +68,12 @@ import {
 import { APIKeyDialog } from './api-key-dialog'
 import { DeleteAPIKeyDialog } from './delete-api-key-dialog'
 import { ShowKeyDialog } from './show-key-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export function APIKeysClient() {
   const t = useTranslations('apiKeys')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
   
   // 数据状态
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
@@ -319,10 +322,12 @@ export function APIKeysClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createKey')}
-          </Button>
+          <PermissionGuard permission="apikey:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createKey')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -434,54 +439,63 @@ export function APIKeysClient() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {apiKey.expires_at
-                      ? new Date(apiKey.expires_at).toLocaleDateString()
+                      ? formatDateTime(apiKey.expires_at)
                       : t('never')}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {apiKey.last_used_at
-                      ? new Date(apiKey.last_used_at).toLocaleDateString()
+                      ? formatDateTime(apiKey.last_used_at)
                       : t('neverUsed')}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(apiKey.created_at).toLocaleDateString()}
+                    {formatDateTime(apiKey.created_at)}
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(apiKey)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {commonT('edit')}
-                        </DropdownMenuItem>
+                    {(canPerform('apikey:update') || canPerform('apikey:delete')) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canPerform('apikey:update') && (
+                            <DropdownMenuItem onClick={() => handleEdit(apiKey)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {commonT('edit')}
+                            </DropdownMenuItem>
+                          )}
 
-                        <DropdownMenuItem onClick={() => handleToggleStatus(apiKey)}>
-                          {apiKey.is_active ? (
+                          {canPerform('apikey:update') && (
+                            <DropdownMenuItem onClick={() => handleToggleStatus(apiKey)}>
+                              {apiKey.is_active ? (
+                                <>
+                                  <KeyRound className="mr-2 h-4 w-4" />
+                                  {t('deactivate')}
+                                </>
+                              ) : (
+                                <>
+                                  <Key className="mr-2 h-4 w-4" />
+                                  {t('activate')}
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                          )}
+
+                          {canPerform('apikey:delete') && (
                             <>
-                              <KeyRound className="mr-2 h-4 w-4" />
-                              {t('deactivate')}
-                            </>
-                          ) : (
-                            <>
-                              <Key className="mr-2 h-4 w-4" />
-                              {t('activate')}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(apiKey)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {commonT('delete')}
+                              </DropdownMenuItem>
                             </>
                           )}
-                        </DropdownMenuItem>
-
-                        <DropdownMenuSeparator />
-
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(apiKey)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -579,7 +593,7 @@ export function APIKeysClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedKeys.size > 0 && (
+      {selectedKeys.size > 0 && canPerform('apikey:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button
@@ -590,11 +604,11 @@ export function APIKeysClient() {
             >
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedKeys.size} {t('keysSelected')}
             </Badge>
-            
+
             <Tooltip>
               <TooltipTrigger
                 onClick={handleBulkDelete}

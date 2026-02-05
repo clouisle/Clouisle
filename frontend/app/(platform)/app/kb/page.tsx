@@ -15,6 +15,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
+import { useRequireTeam } from '@/hooks/use-require-team'
 import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -38,6 +39,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { KnowledgeBaseDialog } from './_components/kb-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 // 格式化 token 数量
 function formatTokens(tokens: number): string {
@@ -55,6 +57,10 @@ export default function KnowledgeBasePage() {
   const kbT = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
+  const { canPerform } = useCanPerform()
+
+  // 没有团队时重定向到首页
+  useRequireTeam()
   
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -178,18 +184,20 @@ export default function KnowledgeBasePage() {
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {/* Create New Card */}
-        <Card 
-          size="sm"
-          className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors group py-0! h-36"
-          onClick={handleCreate}
-        >
-          <CardContent className="flex flex-col items-center justify-center h-full text-muted-foreground group-hover:text-primary transition-colors">
-            <div className="rounded-full bg-muted p-1.5 mb-1 group-hover:bg-primary/10 transition-colors">
-              <Plus className="h-4 w-4" />
-            </div>
-            <span className="text-xs font-medium">{t('kb.createKb')}</span>
-          </CardContent>
-        </Card>
+        {canPerform('kb:create') && (
+          <Card
+            size="sm"
+            className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors group py-0! h-36"
+            onClick={handleCreate}
+          >
+            <CardContent className="flex flex-col items-center justify-center h-full text-muted-foreground group-hover:text-primary transition-colors">
+              <div className="rounded-full bg-muted p-1.5 mb-1 group-hover:bg-primary/10 transition-colors">
+                <Plus className="h-4 w-4" />
+              </div>
+              <span className="text-xs font-medium">{t('kb.createKb')}</span>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Knowledge Base Cards */}
         {filteredKnowledgeBases.map((kb) => (
@@ -239,24 +247,30 @@ export default function KnowledgeBasePage() {
                   )}
                 />
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleEdit(kb) }}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    {commonT('edit')}
-                  </DropdownMenuItem>
+                  {canPerform('kb:update') && (
+                    <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleEdit(kb) }}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {commonT('edit')}
+                    </DropdownMenuItem>
+                  )}
                   <Link href={`/app/kb/${kb.id}/search`}>
                     <DropdownMenuItem>
                       <Search className="mr-2 h-4 w-4" />
                       {kbT('searchTest')}
                     </DropdownMenuItem>
                   </Link>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={(e) => { e.preventDefault(); handleDeleteClick(kb) }}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {commonT('delete')}
-                  </DropdownMenuItem>
+                  {canPerform('kb:delete') && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={(e) => { e.preventDefault(); handleDeleteClick(kb) }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {commonT('delete')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

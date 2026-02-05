@@ -425,6 +425,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-call',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 input: data.arguments,
                 state: 'running',
               }
@@ -461,6 +462,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 output: data.result,
                 isError: data.is_error,
               }
@@ -1007,6 +1009,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-call',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 input: data.arguments,
                 state: 'running',
               }
@@ -1037,6 +1040,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
+                toolDisplayName: data.tool_display_name,
                 output: data.result,
                 isError: data.is_error,
               }
@@ -1241,7 +1245,7 @@ function buildMessageParts(
 ): MessagePart[] {
   const parts: MessagePart[] = []
 
-  // Add task parts for RAG, tool calling, and generating steps
+  // Add task parts for RAG and generating steps (not tool calling - we show individual tool calls instead)
   // Keep showing them even after streaming ends so they're visible when collapsed
   if (taskState) {
     // RAG task - show if it ran (not pending)
@@ -1256,17 +1260,8 @@ function buildMessageParts(
       parts.push(ragTask)
     }
 
-    // Tool calling task - show if it ran (not pending)
-    if (taskState.toolCalling !== 'pending') {
-      const toolTask: TaskPart = {
-        type: 'task',
-        taskType: 'thinking', // Reuse 'thinking' type for tool calling visualization
-        // Mark as completed when streaming ends
-        state: isStreaming ? taskState.toolCalling : 'completed',
-        info: taskState.toolCallCount,
-      }
-      parts.push(toolTask)
-    }
+    // Note: We no longer add aggregated tool calling task here
+    // Individual tool calls are shown in the segments below
 
     // Generating task - show if it ran (not pending)
     if (taskState.generating !== 'pending') {
@@ -1349,9 +1344,9 @@ function getErrorMessage(error: ChatError): string {
     return '当前模型不支持视觉功能，请更换支持视觉的模型'
   }
 
-  // Model not found (business code 6100)
-  if (code === 6100) {
-    return message || '抱歉，模型不存在或未配置，请检查模型设置。'
+  // Model not found (business code 6100 or specific error messages)
+  if (code === 6100 || message?.includes('No model found') || message?.includes('no_default_model') || message?.includes('no_chat_model')) {
+    return '抱歉，尚未配置默认模型，请联系管理员在后台设置默认的聊天模型。'
   }
 
   // Model not authorized (business code 6104)

@@ -148,7 +148,12 @@ export function ModelDialog({
   // Azure 配置
   const [apiVersion, setApiVersion] = React.useState('')
   const [deploymentName, setDeploymentName] = React.useState('')
-  
+
+  // Thinking/Reasoning 配置
+  const [thinkingEnabled, setThinkingEnabled] = React.useState(false)
+  const [thinkingBudget, setThinkingBudget] = React.useState('')
+  const [reasoningEffort, setReasoningEffort] = React.useState('')
+
   const [isLoading, setIsLoading] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   
@@ -197,6 +202,22 @@ export function ModelDialog({
       const config = model.config || {}
       setApiVersion((config.api_version as string) || '')
       setDeploymentName((config.deployment_name as string) || '')
+
+      // Thinking 配置
+      const thinking = config.thinking as Record<string, unknown> | boolean | undefined
+      if (typeof thinking === 'boolean') {
+        setThinkingEnabled(thinking)
+        setThinkingBudget('')
+        setReasoningEffort('')
+      } else if (thinking && typeof thinking === 'object') {
+        setThinkingEnabled(thinking.enabled !== false)
+        setThinkingBudget((thinking.budget_tokens as number)?.toString() || (thinking.budget as number)?.toString() || '')
+        setReasoningEffort((thinking.effort as string) || (thinking.reasoning_effort as string) || '')
+      } else {
+        setThinkingEnabled(false)
+        setThinkingBudget('')
+        setReasoningEffort('')
+      }
     } else {
       setName('')
       setProvider('')
@@ -226,6 +247,9 @@ export function ModelDialog({
       setDefaultSpeed('')
       setApiVersion('')
       setDeploymentName('')
+      setThinkingEnabled(false)
+      setThinkingBudget('')
+      setReasoningEffort('')
     }
     setShowApiKey(false)
     setErrors({})
@@ -376,10 +400,18 @@ export function ModelDialog({
         if (Object.keys(capabilities).length === 0) capabilities = null
       }
       
-      const config: Record<string, string> = {}
+      const config: Record<string, unknown> = {}
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
-      
+
+      // Thinking 配置
+      if (thinkingEnabled) {
+        const thinkingConfig: Record<string, unknown> = { enabled: true }
+        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+        if (reasoningEffort) thinkingConfig.effort = reasoningEffort
+        config.thinking = thinkingConfig
+      }
+
       if (isEditing && model) {
         await modelsApi.updateModel(model.id, {
           name: name.trim(),
@@ -949,6 +981,11 @@ export function ModelDialog({
   )
   
   // ========== 高级内容 ==========
+  // 支持 thinking 的供应商
+  const supportsThinking = ['anthropic', 'google', 'xai', 'deepseek', 'openai'].includes(provider)
+  const showReasoningEffort = provider === 'xai'
+  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+
   const advancedContent = (
     <>
       {isChatOnly(modelType) && (
@@ -986,7 +1023,58 @@ export function ModelDialog({
           </div>
         </div>
       )}
-      
+
+      {/* Thinking/Reasoning 配置 */}
+      {isChatOnly(modelType) && supportsThinking && (
+        <div className="space-y-4">
+          <SectionTitle>{t('thinkingConfig')}</SectionTitle>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+              <div className="space-y-0.5">
+                <Label className="text-sm font-medium">{t('thinkingEnabled')}</Label>
+                <p className="text-xs text-muted-foreground">{t('thinkingEnabledHint')}</p>
+              </div>
+              <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
+            </div>
+
+            {thinkingEnabled && (
+              <div className="grid grid-cols-2 gap-4">
+                {showThinkingBudget && (
+                  <div className="space-y-2">
+                    <Label htmlFor="thinkingBudget">{t('thinkingBudget')}</Label>
+                    <Input
+                      id="thinkingBudget"
+                      type="number"
+                      value={thinkingBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      placeholder={t('thinkingBudgetPlaceholder')}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('thinkingBudgetHint')}</p>
+                  </div>
+                )}
+
+                {showReasoningEffort && (
+                  <div className="space-y-2">
+                    <Label>{t('reasoningEffort')}</Label>
+                    <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
+                      <SelectTrigger>
+                        <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent side="bottom" alignItemWithTrigger={false}>
+                        <SelectItem value="low">{t('reasoningEffortLow')}</SelectItem>
+                        <SelectItem value="medium">{t('reasoningEffortMedium')}</SelectItem>
+                        <SelectItem value="high">{t('reasoningEffortHigh')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t('reasoningEffortHint')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {provider === 'azure_openai' && (
         <div className="space-y-4">
           <SectionTitle>{t('azureConfig')}</SectionTitle>

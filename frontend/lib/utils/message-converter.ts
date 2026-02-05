@@ -39,6 +39,7 @@ export interface BackendMessage {
   tool_calls?: Array<{
     id: string
     name: string
+    display_name?: string
     arguments: Record<string, unknown>
   }> | null
   tool_call_id?: string | null
@@ -143,6 +144,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
           type: 'tool-call',
           toolCallId: tc.id,
           toolName: tc.name,
+          toolDisplayName: tc.display_name,
           input: tc.arguments || {},
           state: 'done',
         } as ToolCallPart)

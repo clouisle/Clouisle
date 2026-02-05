@@ -26,6 +26,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { PermissionGuard } from '@/components/permission-guard'
 
 interface AgentToolbarProps {
   agent: Agent
@@ -92,34 +93,36 @@ export function AgentToolbar({
           </Button>
         </Link>
 
-        {/* Settings Button */}
-        <Button variant="outline" size="sm" onClick={onSettingsClick} className="cursor-pointer">
-          <Settings className="mr-1.5 h-3.5 w-3.5" />
-          {t('toolbar.settings')}
-        </Button>
+        <PermissionGuard permission="agent:update">
+          {/* Settings Button */}
+          <Button variant="outline" size="sm" onClick={onSettingsClick} className="cursor-pointer">
+            <Settings className="mr-1.5 h-3.5 w-3.5" />
+            {t('toolbar.settings')}
+          </Button>
 
-        {/* Save Button */}
-        <Button variant="outline" size="sm" onClick={onSave} disabled={isSaving} className="cursor-pointer">
-          {isSaving ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          {isSaving ? t('toolbar.saving') : t('toolbar.save')}
-        </Button>
+          {/* Save Button */}
+          <Button variant="outline" size="sm" onClick={onSave} disabled={isSaving} className="cursor-pointer">
+            {isSaving ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isSaving ? t('toolbar.saving') : t('toolbar.save')}
+          </Button>
 
-        {/* Publish Button */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 h-8 px-3">
-            {agent.status === 'published' ? t('toolbar.published') : t('toolbar.publish')}
-            <ChevronDown className="h-3.5 w-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={onPublish}>
-              {agent.status === 'published' ? t('toolbar.confirmUnpublish') : t('toolbar.confirmPublish')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          {/* Publish Button */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 h-8 px-3">
+              {agent.status === 'published' ? t('toolbar.published') : t('toolbar.publish')}
+              <ChevronDown className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onPublish}>
+                {agent.status === 'published' ? t('toolbar.confirmUnpublish') : t('toolbar.confirmPublish')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </PermissionGuard>
       </div>
     </div>
   )

@@ -68,6 +68,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { workflowsApi, Workflow, VariableDefinition } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
+import { useCanPerform } from '@/components/permission-guard'
 
 // Custom Node Types
 import { UserInputNode } from './_components/nodes/user-input-node'
@@ -223,6 +224,8 @@ function WorkflowEditorContent() {
   const router = useRouter()
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
+  const { canPerform } = useCanPerform()
+  const canUpdateWorkflow = canPerform('workflow:update')
 
   const workflowId = params.id as string
 
@@ -1126,66 +1129,74 @@ function WorkflowEditorContent() {
                 {t('run')}
               </Button>
               {/* Validation Checklist Button */}
-              <Button
-                variant="outline"
-                size="icon"
-                className="bg-card shadow-sm relative h-8 w-8"
-                onClick={() => {
-                  // 执行校验
-                  const issues = validateWorkflow(nodes, edges)
-                  setValidationIssues(issues)
-                  setShowValidationChecklist(!showValidationChecklist)
-                }}
-              >
-                <ClipboardCheck className="h-4 w-4" />
-                {validationIssues.length > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">
-                    {validationIssues.length > 9 ? '9+' : validationIssues.length}
-                  </span>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="bg-card shadow-sm h-8"
-                onClick={handleSave}
-                disabled={isSaving || !hasChanges}
-              >
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4 mr-1" />
+              {canUpdateWorkflow && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card shadow-sm relative h-8 w-8"
+                  onClick={() => {
+                    // 执行校验
+                    const issues = validateWorkflow(nodes, edges)
+                    setValidationIssues(issues)
+                    setShowValidationChecklist(!showValidationChecklist)
+                  }}
+                >
+                  <ClipboardCheck className="h-4 w-4" />
+                  {validationIssues.length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">
+                      {validationIssues.length > 9 ? '9+' : validationIssues.length}
+                    </span>
+                  )}
+                </Button>
               )}
-              {tCommon('save')}
-            </Button>
-            <Button
-              variant={workflow?.status === 'published' ? 'default' : 'outline'}
-              size="sm"
-              className={workflow?.status === 'published' ? 'h-8' : 'bg-card shadow-sm h-8'}
-              onClick={handlePublish}
-              disabled={isPublishing}
-            >
-              {isPublishing ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : workflow?.status === 'published' ? (
-                <Globe className="h-4 w-4 mr-1" />
-              ) : (
-                <GlobeLock className="h-4 w-4 mr-1" />
+              {canUpdateWorkflow && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="bg-card shadow-sm h-8"
+                  onClick={handleSave}
+                  disabled={isSaving || !hasChanges}
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-1" />
+                  )}
+                  {tCommon('save')}
+                </Button>
               )}
-              {workflow?.status === 'published' ? t('published') : t('publish')}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="bg-card shadow-sm h-8 w-8"
-              onClick={() => {
-                setConfigDrawerOpen(false)
-                setSelectedNode(null)
-                setSettingsDrawerOpen(true)
-              }}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
+              {canUpdateWorkflow && (
+                <Button
+                  variant={workflow?.status === 'published' ? 'default' : 'outline'}
+                  size="sm"
+                  className={workflow?.status === 'published' ? 'h-8' : 'bg-card shadow-sm h-8'}
+                  onClick={handlePublish}
+                  disabled={isPublishing}
+                >
+                  {isPublishing ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : workflow?.status === 'published' ? (
+                    <Globe className="h-4 w-4 mr-1" />
+                  ) : (
+                    <GlobeLock className="h-4 w-4 mr-1" />
+                  )}
+                  {workflow?.status === 'published' ? t('published') : t('publish')}
+                </Button>
+              )}
+              {canUpdateWorkflow && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="bg-card shadow-sm h-8 w-8"
+                  onClick={() => {
+                    setConfigDrawerOpen(false)
+                    setSelectedNode(null)
+                    setSettingsDrawerOpen(true)
+                  }}
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              )}
           </div>
         </div>
         )}
@@ -1193,52 +1204,56 @@ function WorkflowEditorContent() {
         {/* Left Floating Toolbar */}
         <div className="absolute left-3 top-1/2 -translate-y-1/2 z-10 pointer-events-auto">
           <div className="flex flex-col items-center gap-0.5 bg-card border border-border rounded-lg p-1 shadow-sm">
-            <button
-              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-              title="添加节点"
-              onClick={(e) => {
-                // 获取按钮位置，在按钮右侧显示弹窗
-                const rect = e.currentTarget.getBoundingClientRect()
-                setAddNodePopover({
-                  show: true,
-                  position: { x: rect.right + 8, y: rect.top },
-                  sourceNodeId: '',
-                })
-              }}
-            >
-              <PlusCircle className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <button
-              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-              title="添加注释"
-              onClick={() => {
-                // 在视口中心位置添加注释节点
-                const viewport = reactFlowInstance.getViewport()
-                const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom
-                const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom
-                
-                const newNodeId = `comment-${Date.now()}`
-                const newNode: WorkflowNode = {
-                  id: newNodeId,
-                  type: 'comment',
-                  position: { x: centerX - 120, y: centerY - 80 },
-                  style: { width: 240, height: 160 },
-                  zIndex: -1, // 置于最底层
-                  data: {
-                    type: 'comment',
-                    label: '注释',
-                    content: '',
-                    author: currentUser?.username || '',
-                    config: {},
-                  },
-                }
-                setNodes((nds) => [...nds, newNode])
-                setHasChanges(true)
-              }}
-            >
-              <StickyNote className="h-4 w-4 text-muted-foreground" />
-            </button>
-            <div className="w-full h-px bg-border my-0.5" />
+            {canUpdateWorkflow && (
+              <>
+                <button
+                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                  title="添加节点"
+                  onClick={(e) => {
+                    // 获取按钮位置，在按钮右侧显示弹窗
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setAddNodePopover({
+                      show: true,
+                      position: { x: rect.right + 8, y: rect.top },
+                      sourceNodeId: '',
+                    })
+                  }}
+                >
+                  <PlusCircle className="h-4 w-4 text-muted-foreground" />
+                </button>
+                <button
+                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                  title="添加注释"
+                  onClick={() => {
+                    // 在视口中心位置添加注释节点
+                    const viewport = reactFlowInstance.getViewport()
+                    const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom
+                    const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom
+
+                    const newNodeId = `comment-${Date.now()}`
+                    const newNode: WorkflowNode = {
+                      id: newNodeId,
+                      type: 'comment',
+                      position: { x: centerX - 120, y: centerY - 80 },
+                      style: { width: 240, height: 160 },
+                      zIndex: -1, // 置于最底层
+                      data: {
+                        type: 'comment',
+                        label: '注释',
+                        content: '',
+                        author: currentUser?.username || '',
+                        config: {},
+                      },
+                    }
+                    setNodes((nds) => [...nds, newNode])
+                    setHasChanges(true)
+                  }}
+                >
+                  <StickyNote className="h-4 w-4 text-muted-foreground" />
+                </button>
+                <div className="w-full h-px bg-border my-0.5" />
+              </>
+            )}
             <button
               className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                 editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
@@ -1261,52 +1276,56 @@ function WorkflowEditorContent() {
                 editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
               }`} />
             </button>
-            <div className="w-full h-px bg-border my-0.5" />
-            <button
-              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-              title="整理美化"
-              onClick={() => {
-                // 自动整理节点布局
-                if (nodes.length === 0) return
-                
-                // 简单的水平排列布局
-                const sortedNodes = [...nodes].sort((a, b) => {
-                  // 根据节点位置排序，从左到右
-                  return a.position.x - b.position.x
-                })
-                
-                const startX = 100
-                const startY = 100
-                const gapX = 280
-                const gapY = 150
-                
-                // 按照连接关系分层
-                const updatedNodes = sortedNodes.map((node, index) => {
-                  // 跳过子节点（它们相对于父节点定位）
-                  if (node.parentId) return node
-                  
-                  return {
-                    ...node,
-                    position: {
-                      x: startX + (index * gapX),
-                      y: startY + (index % 2 === 0 ? 0 : gapY / 2),
-                    },
-                  }
-                })
-                
-                setNodes(updatedNodes)
-                setHasChanges(true)
-                
-                // 自动适应视图
-                setTimeout(() => {
-                  reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
-                }, 100)
-                
-                toast.success('节点已整理')
-              }}
-            >
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
-            </button>
+            {canUpdateWorkflow && (
+              <>
+                <div className="w-full h-px bg-border my-0.5" />
+                <button
+                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                  title="整理美化"
+                  onClick={() => {
+                    // 自动整理节点布局
+                    if (nodes.length === 0) return
+
+                    // 简单的水平排列布局
+                    const sortedNodes = [...nodes].sort((a, b) => {
+                      // 根据节点位置排序，从左到右
+                      return a.position.x - b.position.x
+                    })
+
+                    const startX = 100
+                    const startY = 100
+                    const gapX = 280
+                    const gapY = 150
+
+                    // 按照连接关系分层
+                    const updatedNodes = sortedNodes.map((node, index) => {
+                      // 跳过子节点（它们相对于父节点定位）
+                      if (node.parentId) return node
+
+                      return {
+                        ...node,
+                        position: {
+                          x: startX + (index * gapX),
+                          y: startY + (index % 2 === 0 ? 0 : gapY / 2),
+                        },
+                      }
+                    })
+
+                    setNodes(updatedNodes)
+                    setHasChanges(true)
+
+                    // 自动适应视图
+                    setTimeout(() => {
+                      reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
+                    }, 100)
+
+                    toast.success('节点已整理')
+                  }}
+                >
+                  <Sparkles className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </>
+            )}
             <button
               className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
               title={isFullscreen ? "退出全屏" : "全屏"}
@@ -1377,6 +1396,7 @@ function WorkflowEditorContent() {
               setSelectedNode(null)
             }}
             onUpdate={handleNodeUpdate}
+            readOnly={!canUpdateWorkflow}
           />
 
           {/* Workflow Settings Panel - floating inside canvas */}
@@ -1385,6 +1405,7 @@ function WorkflowEditorContent() {
             open={settingsDrawerOpen}
             onClose={() => setSettingsDrawerOpen(false)}
             onUpdate={(updated) => setWorkflow(updated)}
+            readOnly={!canUpdateWorkflow}
           />
 
           {/* Test Run Panel - floating inside canvas */}
@@ -1398,7 +1419,7 @@ function WorkflowEditorContent() {
       </div>
 
       {/* Add Node Popover */}
-      {addNodePopover?.show && (
+      {addNodePopover?.show && canUpdateWorkflow && (
         <AddNodePopover
           position={addNodePopover.position}
           sourceNodeId={addNodePopover.sourceNodeId}

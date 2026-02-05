@@ -5,7 +5,8 @@
       "apps": "Apps",
       "kb": "Knowledge Bases",
       "tools": "Tools",
-      "models": "Models"
+      "models": "Models",
+      "notifications": "Notifications"
     },
     "profile": {
       "title": "Profile",

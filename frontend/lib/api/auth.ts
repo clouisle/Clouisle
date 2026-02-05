@@ -5,6 +5,19 @@ export interface Token {
   token_type: string
 }
 
+export interface SSOConnection {
+  id: string
+  provider_id: string
+  provider_name: string
+  provider_display_name: string
+  provider_icon_url: string | null
+  provider_user_id: string
+  provider_username: string | null
+  provider_email: string | null
+  first_login: string
+  last_login: string
+}
+
 export interface User {
   id: string
   username: string
@@ -18,6 +31,7 @@ export interface User {
   auth_source: string
   external_id: string | null
   roles: Role[]
+  sso_connections: SSOConnection[]
 }
 
 export interface Role {

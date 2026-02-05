@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "设置",
+    "description": "管理您的账户设置和偏好",
     "cancel": "取消",
     "profile": "个人资料",
     "account": "账户安全",
@@ -20,8 +21,11 @@
     "avatarHint": "推荐：200x200 像素，支持 JPG、PNG、GIF 格式",
     "saveChanges": "保存更改",
     "profileUpdated": "个人资料更新成功",
+    "noChanges": "没有需要保存的更改",
     "changePassword": "修改密码",
     "changePasswordDescription": "更新密码以保护您的账户安全",
+    "setPassword": "设置密码",
+    "setPasswordDescription": "为您的账户设置密码，以便使用密码登录",
     "currentPassword": "当前密码",
     "currentPasswordPlaceholder": "输入当前密码",
     "newPassword": "新密码",

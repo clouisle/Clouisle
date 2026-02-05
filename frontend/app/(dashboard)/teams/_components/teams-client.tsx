@@ -18,6 +18,7 @@ import {
   Calendar,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDateTime } from '@/lib/utils'
 import { teamsApi, type Team, type PageData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,10 +56,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { TeamDialog } from './team-dialog'
 import { TeamDetailDialog } from './team-detail-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export function TeamsClient() {
   const t = useTranslations('teams')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
   
   // 数据状态
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -218,12 +221,7 @@ export function TeamsClient() {
   const getTeamInitials = (name: string) => {
     return name.slice(0, 2).toUpperCase()
   }
-  
-  // 格式化日期
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString()
-  }
-  
+
   return (
     <div className="flex flex-col gap-6">
       {/* 页头 */}
@@ -233,10 +231,12 @@ export function TeamsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createTeam')}
-          </Button>
+          <PermissionGuard permission="team:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createTeam')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -325,35 +325,39 @@ export function TeamsClient() {
               )}
               
               {/* 操作菜单 */}
-              <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    onClick={(e) => e.stopPropagation()}
-                    className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none bg-background/90 shadow-sm"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(team) }}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      {commonT('edit')}
-                    </DropdownMenuItem>
-                    
-                    {!team.is_default && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); handleDelete(team) }}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
+              {(canPerform('team:update') || canPerform('team:delete')) && (
+                <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      onClick={(e) => e.stopPropagation()}
+                      className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none bg-background/90 shadow-sm"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {canPerform('team:update') && (
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(team) }}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          {commonT('edit')}
                         </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                      )}
+
+                      {!team.is_default && canPerform('team:delete') && (
+                        <>
+                          {canPerform('team:update') && <DropdownMenuSeparator />}
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); handleDelete(team) }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {commonT('delete')}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
               
               {/* 卡片内容 */}
               <div className="flex items-start gap-4">
@@ -386,7 +390,7 @@ export function TeamsClient() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4" />
-                  <span>{formatDate(team.created_at)}</span>
+                  <span>{formatDateTime(team.created_at)}</span>
                 </div>
               </div>
             </div>
@@ -498,7 +502,7 @@ export function TeamsClient() {
       </AlertDialog>
       
       {/* 批量操作浮动工具栏 */}
-      {selectedTeams.size > 0 && (
+      {selectedTeams.size > 0 && canPerform('team:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button
@@ -509,11 +513,11 @@ export function TeamsClient() {
             >
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedTeams.size} {t('teamsSelected')}
             </Badge>
-            
+
             <Tooltip>
               <TooltipTrigger
                 onClick={handleBulkDelete}

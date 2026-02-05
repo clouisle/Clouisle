@@ -10,12 +10,12 @@ export default function PlatformLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  
+
   // 工作流编辑页面不显示顶部导航
   const isWorkflowEditor = pathname?.match(/^\/app\/apps\/workflow\/[^/]+$/)
   // 代理编排页使用内部滚动，避免 main 被撑高
   const isAgentConfig = pathname?.match(/^\/app\/apps\/[^/]+$/)
-  
+
   if (isWorkflowEditor) {
     return (
       <TeamProvider>

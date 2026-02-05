@@ -15,6 +15,7 @@ import {
 import { Message as ChatMessageItem, type ChatMessage } from '@/components/chat'
 import { convertBackendMessages } from '@/lib/utils/message-converter'
 import type { AdminConversationWithMessages } from '@/lib/api'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface ConversationDrawerProps {
   conversation: AdminConversationWithMessages | null
@@ -24,24 +25,14 @@ interface ConversationDrawerProps {
   onDelete?: (id: string) => void
 }
 
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function formatDateTime(dateString: string, _locale: string): string {
+  const d = new Date(dateString)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 export function ConversationDrawer({
@@ -53,6 +44,8 @@ export function ConversationDrawer({
 }: ConversationDrawerProps) {
   const t = useTranslations('conversations')
   const locale = useLocale()
+  const { canPerform } = useCanPerform()
+  const canDeleteConversation = canPerform('conversation:delete')
 
   const totalTokens =
     conversation?.messages.reduce((sum, msg) => {
@@ -101,7 +94,7 @@ export function ConversationDrawer({
                     )}
                   </SheetDescription>
                 </div>
-                {onDelete && (
+                {onDelete && canDeleteConversation && (
                   <Button
                     variant="ghost"
                     size="icon"

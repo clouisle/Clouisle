@@ -147,7 +147,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         return (
           <Tool key={index} defaultOpen={false}>
             <ToolHeader
-              title={toolPart.toolName}
+              title={toolPart.toolDisplayName || toolPart.toolName}
               type="tool-call"
               state={state}
             />
@@ -243,19 +243,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Get task parts and reasoning parts for ChainOfThought
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
-    
-    // Check if we should show ChainOfThought (has tasks or reasoning)
-    const hasChainOfThought = taskParts.length > 0 || reasoningParts.length > 0
-    
+    const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
+
+    // Check if we should show ChainOfThought (has tasks, reasoning, or tool calls)
+    const hasChainOfThought = taskParts.length > 0 || reasoningParts.length > 0 || toolCallParts.length > 0
+
     // Get text parts to check if content has started
     const textParts = otherParts.filter(isTextPart) as TextPart[]
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
-    
+
     // Check if any step is still active (streaming)
     // Chain of thought is streaming until content starts appearing
     const isChainOfThoughtStreaming = !hasTextContent && (
-      taskParts.some(t => t.state === 'running') || 
+      taskParts.some(t => t.state === 'running') ||
       reasoningParts.some(r => r.state === 'streaming') ||
+      toolCallParts.some(tc => tc.state === 'running') ||
       isStreaming  // Still streaming but no text yet
     )
 
@@ -264,6 +266,16 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       switch (state) {
         case 'running': return 'active' as const
         case 'completed': return 'complete' as const
+        case 'error': return 'error' as const
+        default: return 'pending' as const
+      }
+    }
+
+    // Convert tool call state to step status
+    const getToolCallStepStatus = (state: ToolCallPart['state']) => {
+      switch (state) {
+        case 'running': return 'active' as const
+        case 'done': return 'complete' as const
         case 'error': return 'error' as const
         default: return 'pending' as const
       }
@@ -280,14 +292,77 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       if (taskPart.taskType === 'generating') {
         return tTask('generating')
       }
-      if (taskPart.taskType === 'thinking') {
-        // 'thinking' is reused for tool calling visualization
-        if (taskPart.state === 'completed' && taskPart.info) {
-          return tTask('toolsExecuted', { count: taskPart.info })
-        }
-        return tTask('executingTools')
-      }
+      // Skip 'thinking' type - we now show individual tool calls instead
       return ''
+    }
+
+    // Build chain of thought steps in order: RAG -> tools -> reasoning -> generating
+    const buildChainOfThoughtSteps = () => {
+      const steps: React.ReactNode[] = []
+
+      // 1. RAG steps first
+      taskParts.filter(t => t.taskType === 'rag').forEach((taskPart, index) => {
+        steps.push(
+          <ChainOfThoughtStep
+            key={`rag-${index}`}
+            icon={SearchIcon}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
+          />
+        )
+      })
+
+      // 2. Tool calls (before reasoning)
+      otherParts.forEach((part, index) => {
+        if (isToolCallPart(part)) {
+          const toolPart = part as ToolCallPart
+          steps.push(
+            <ChainOfThoughtStep
+              key={`tool-${toolPart.toolCallId}`}
+              icon={Wrench}
+              label={toolPart.toolDisplayName || toolPart.toolName}
+              status={getToolCallStepStatus(toolPart.state)}
+            />
+          )
+        }
+      })
+
+      // 3. Reasoning (after tool calls)
+      otherParts.forEach((part, index) => {
+        if (isReasoningPart(part)) {
+          const reasoningPart = part as ReasoningPart
+          steps.push(
+            <ChainOfThoughtStep
+              key={`reasoning-${index}`}
+              label={reasoningPart.state === 'streaming'
+                ? tReasoning('processing')
+                : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
+              }
+              status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
+            >
+              {reasoningPart.text && (
+                <div className="text-xs text-muted-foreground/70 mt-1">
+                  <Streamdown>{reasoningPart.text}</Streamdown>
+                </div>
+              )}
+            </ChainOfThoughtStep>
+          )
+        }
+      })
+
+      // 4. Generating steps last
+      taskParts.filter(t => t.taskType === 'generating').forEach((taskPart, index) => {
+        steps.push(
+          <ChainOfThoughtStep
+            key={`generating-${index}`}
+            icon={SparklesIcon}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
+          />
+        )
+      })
+
+      return steps
     }
 
     // Filter parts for file attachments
@@ -316,55 +391,12 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             <MessageContent>
-              {/* Chain of Thought: aggregates RAG, generating, and reasoning steps */}
+              {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought isStreaming={isChainOfThoughtStreaming}>
                   <ChainOfThoughtHeader title={tReasoning('thought')} />
                   <ChainOfThoughtContent>
-                    {/* RAG step */}
-                    {taskParts.filter(t => t.taskType === 'rag').map((taskPart, index) => (
-                      <ChainOfThoughtStep
-                        key={`rag-${index}`}
-                        icon={SearchIcon}
-                        label={getTaskTitle(taskPart)}
-                        status={getStepStatus(taskPart.state)}
-                      />
-                    ))}
-                    {/* Tool calling step (using 'thinking' taskType) */}
-                    {taskParts.filter(t => t.taskType === 'thinking').map((taskPart, index) => (
-                      <ChainOfThoughtStep
-                        key={`tool-${index}`}
-                        icon={Wrench}
-                        label={getTaskTitle(taskPart)}
-                        status={getStepStatus(taskPart.state)}
-                      />
-                    ))}
-                    {/* Reasoning step (if has content, show with streaming text) */}
-                    {reasoningParts.map((reasoningPart, index) => (
-                      <ChainOfThoughtStep
-                        key={`reasoning-${index}`}
-                        label={reasoningPart.state === 'streaming' 
-                          ? tReasoning('processing')
-                          : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
-                        }
-                        status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
-                      >
-                        {reasoningPart.text && (
-                          <div className="text-xs text-muted-foreground/70 mt-1">
-                            <Streamdown>{reasoningPart.text}</Streamdown>
-                          </div>
-                        )}
-                      </ChainOfThoughtStep>
-                    ))}
-                    {/* Generating step */}
-                    {taskParts.filter(t => t.taskType === 'generating').map((taskPart, index) => (
-                      <ChainOfThoughtStep
-                        key={`generating-${index}`}
-                        icon={SparklesIcon}
-                        label={getTaskTitle(taskPart)}
-                        status={getStepStatus(taskPart.state)}
-                      />
-                    ))}
+                    {buildChainOfThoughtSteps()}
                   </ChainOfThoughtContent>
                 </ChainOfThought>
               )}

@@ -17,38 +17,46 @@ export default function SiteSettingsLayout({
   const settingsNav = [
     { title: t('general'), href: '/site-settings', description: t('generalDescription') },
     { title: t('security'), href: '/site-settings/security', description: t('securityDescription') },
-    { title: t('email'), href: '/site-settings/email', description: t('emailDescription') },
+    { title: t('notifications.title'), href: '/site-settings/notifications', description: t('notifications.description') },
+    { title: t('storage'), href: '/site-settings/storage', description: t('storageDescription') },
+    { title: t('sso'), href: '/site-settings/sso', description: t('ssoDescription') },
   ]
 
   return (
     <div className="flex h-full flex-col">
       <Header />
-      <div className="flex flex-1 flex-col gap-4 overflow-auto p-4">
-        <h1 className="text-2xl font-bold">{t('title')}</h1>
-        <p className="text-muted-foreground">{t('description')}</p>
-        
-        <div className="flex flex-col md:flex-row gap-8 mt-4">
+      <div className="flex flex-1 flex-col overflow-hidden p-4">
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold">{t('title')}</h1>
+          <p className="text-muted-foreground">{t('description')}</p>
+        </div>
+
+        <div className="flex flex-1 flex-col md:flex-row gap-8 min-h-0">
           {/* Settings Navigation */}
-          <nav className="flex md:flex-col gap-2 md:w-48 overflow-x-auto">
-            {settingsNav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "px-4 py-2 text-sm rounded-md whitespace-nowrap transition-colors",
-                  pathname === item.href
-                    ? "bg-muted font-medium"
-                    : "hover:bg-muted/50 text-muted-foreground"
-                )}
-              >
-                {item.title}
-              </Link>
-            ))}
-          </nav>
+          <div className="md:w-48 shrink-0">
+            <nav className="flex md:flex-col gap-2 overflow-x-auto md:sticky md:top-4">
+              {settingsNav.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "px-4 py-2 text-sm rounded-md whitespace-nowrap transition-colors",
+                    pathname === item.href
+                      ? "bg-muted font-medium"
+                      : "hover:bg-muted/50 text-muted-foreground"
+                  )}
+                >
+                  {item.title}
+                </Link>
+              ))}
+            </nav>
+          </div>
 
           {/* Settings Content */}
-          <div className="flex-1 max-w-2xl">
-            {children}
+          <div className="flex-1 min-h-0 overflow-auto p-1">
+            <div className="max-w-2xl">
+              {children}
+            </div>
           </div>
         </div>
       </div>

@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface WorkflowRunDrawerProps {
   runId: string
@@ -45,28 +46,15 @@ interface WorkflowRunDrawerProps {
 }
 
 // Helper to format datetime
-function formatDateTime(dateString: string | null | undefined, locale: string): string {
+function formatDateTime(dateString: string | null | undefined, _locale: string): string {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  } else {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-  }
+  const d = new Date(dateString)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 // Helper to format duration
@@ -124,6 +112,8 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
   const locale = useLocale()
+  const { canPerform } = useCanPerform()
+  const canDeleteWorkflowRun = canPerform('workflow:delete')
 
   const [run, setRun] = React.useState<WorkflowRun | null>(null)
   const [nodeExecutions, setNodeExecutions] = React.useState<NodeExecution[]>([])
@@ -374,13 +364,15 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
               >
                 {commonT('close')}
               </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setDeleteDialogOpen(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t('runDetail.deleteRun')}
-              </Button>
+              {canDeleteWorkflowRun && (
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {t('runDetail.deleteRun')}
+                </Button>
+              )}
             </div>
           </div>
         </div>

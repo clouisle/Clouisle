@@ -7,6 +7,7 @@
     "delete": "Delete",
     "edit": "Edit",
     "create": "Create",
+    "creating": "Creating...",
     "search": "Search",
     "toggleSidebar": "Toggle Sidebar",
     "appearanceSettings": "Appearance Settings",

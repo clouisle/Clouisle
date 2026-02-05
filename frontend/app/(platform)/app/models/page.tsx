@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Bot, Search, X } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
+import { useRequireTeam } from '@/hooks/use-require-team'
 import { teamModelsApi, type TeamModel } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,9 @@ export default function ModelsPage() {
   const modelsT = useTranslations('models')
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
+
+  // 没有团队时重定向到首页
+  useRequireTeam()
   
   const [teamModels, setTeamModels] = React.useState<TeamModel[]>([])
   const [isLoading, setIsLoading] = React.useState(true)

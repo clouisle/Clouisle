@@ -70,6 +70,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface DocumentsTableProps {
   knowledgeBaseId: string
@@ -96,6 +97,9 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
   const router = useRouter()
+  const { canPerform } = useCanPerform()
+  const canUpdateKb = canPerform('kb:update')
+  const canDeleteKb = canPerform('kb:delete')
   
   // 数据状态
   const [documents, setDocuments] = React.useState<Document[]>([])
@@ -455,7 +459,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                         <span className="sr-only">Open menu</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {doc.status === 'pending' && (
+                        {doc.status === 'pending' && canUpdateKb && (
                           <>
                             <DropdownMenuItem onClick={() => handleConfigure(doc)}>
                               <Settings2 className="mr-2 h-4 w-4" />
@@ -468,44 +472,47 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                             <DropdownMenuSeparator />
                           </>
                         )}
-                        
+
                         {doc.status === 'completed' && (
                           <DropdownMenuItem onClick={() => handleViewChunks(doc)}>
                             <Eye className="mr-2 h-4 w-4" />
                             {t('viewChunks')}
                           </DropdownMenuItem>
                         )}
-                        
-                        {(doc.status === 'error' || doc.status === 'completed') && (
+
+                        {(doc.status === 'error' || doc.status === 'completed') && canUpdateKb && (
                           <DropdownMenuItem onClick={() => handleReprocess(doc)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {t('reprocess')}
                           </DropdownMenuItem>
                         )}
-                        
+
                         {doc.file_path && doc.doc_type !== 'url' && (
                           <DropdownMenuItem onClick={() => handleDownload(doc)}>
                             <Download className="mr-2 h-4 w-4" />
                             {t('downloadOriginal')}
                           </DropdownMenuItem>
                         )}
-                        
+
                         {doc.source_url && doc.doc_type === 'url' && (
                           <DropdownMenuItem onClick={() => window.open(doc.source_url!, '_blank')}>
                             <ExternalLink className="mr-2 h-4 w-4" />
                             {t('viewSourceUrl')}
                           </DropdownMenuItem>
                         )}
-                        
-                        <DropdownMenuSeparator />
-                        
-                        <DropdownMenuItem 
-                          onClick={() => handleDelete(doc)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
-                        </DropdownMenuItem>
+
+                        {canDeleteKb && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(doc)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {commonT('delete')}
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -575,19 +582,19 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
       </AlertDialog>
       
       {/* 批量操作浮动工具栏 */}
-      {selectedDocs.size > 0 && (
+      {selectedDocs.size > 0 && (canUpdateKb || canDeleteKb) && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectedDocs(new Set())}>
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedDocs.size} {t('documentsSelected')}
             </Badge>
 
             {/* 批量处理按钮 */}
-            {documents.filter(d => selectedDocs.has(d.id) && d.status === 'pending').length > 0 && (
+            {canUpdateKb && documents.filter(d => selectedDocs.has(d.id) && d.status === 'pending').length > 0 && (
               <Tooltip>
                 <TooltipTrigger
                   onClick={() => {
@@ -610,22 +617,24 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                 <TooltipContent>{t('batchProcess')}</TooltipContent>
               </Tooltip>
             )}
-            
-            <Tooltip>
-              <TooltipTrigger
-                onClick={() => setBulkDeleteDialogOpen(true)}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{commonT('delete')}</TooltipContent>
-            </Tooltip>
+
+            {canDeleteKb && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={() => setBulkDeleteDialogOpen(true)}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
       )}

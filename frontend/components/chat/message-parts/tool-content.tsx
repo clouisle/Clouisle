@@ -46,6 +46,10 @@ function getToolState(part: ToolPart) {
 }
 
 function getToolName(part: ToolPart) {
+  // Prefer display name if available
+  if ('toolDisplayName' in part && part.toolDisplayName) {
+    return part.toolDisplayName
+  }
   return part.toolName
 }
 

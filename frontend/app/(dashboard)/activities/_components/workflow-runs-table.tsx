@@ -68,27 +68,17 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { WorkflowRunDrawer } from './workflow-run-drawer'
+import { useCanPerform } from '@/components/permission-guard'
 
 // Helper to format datetime
-function formatDateTime(dateString: string, locale: string): string {
-  const date = new Date(dateString)
-  if (locale === 'zh') {
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } else {
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
+function formatDateTime(dateString: string, _locale: string): string {
+  const d = new Date(dateString)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hour = String(d.getHours()).padStart(2, '0')
+  const minute = String(d.getMinutes()).padStart(2, '0')
+  return `${year}/${month}/${day} ${hour}:${minute}`
 }
 
 // Helper to format duration
@@ -150,6 +140,8 @@ export function WorkflowRunsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
   const locale = useLocale()
+  const { canPerform } = useCanPerform()
+  const canDeleteWorkflowRun = canPerform('workflow:delete')
 
   // State
   const [runs, setRuns] = React.useState<WorkflowRunListItemWithWorkflow[]>([])
@@ -397,7 +389,7 @@ export function WorkflowRunsTable() {
             )}
           </div>
 
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && canDeleteWorkflowRun && (
             <Button
               variant="destructive"
               size="sm"
@@ -489,13 +481,15 @@ export function WorkflowRunsTable() {
                           <DropdownMenuItem onClick={() => handleViewRun(run.id)}>
                             {t('runDetail.viewDetails')}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteClick([run.id])}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {commonT('delete')}
-                          </DropdownMenuItem>
+                          {canDeleteWorkflowRun && (
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteClick([run.id])}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {commonT('delete')}
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

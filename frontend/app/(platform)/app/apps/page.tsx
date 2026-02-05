@@ -50,7 +50,9 @@ import {
 import { agentsApi, type AgentListItem } from '@/lib/api/agents'
 import { workflowsApi, type WorkflowListItem } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
+import { useRequireTeam } from '@/hooks/use-require-team'
 import { AppCreateDialog } from './_components/app-create-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type AppType = 'all' | 'agent' | 'workflow'
 
@@ -79,6 +81,10 @@ export default function AppsPage() {
   const { currentTeam } = useTeam()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { canPerform } = useCanPerform()
+
+  // 没有团队时重定向到首页
+  useRequireTeam()
 
   const [activeTab, setActiveTab] = React.useState<AppType>('all')
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -248,10 +254,12 @@ export default function AppsPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('createApp')}
-        </Button>
+        <PermissionGuard permission={['agent:create', 'workflow:create']}>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('createApp')}
+          </Button>
+        </PermissionGuard>
       </div>
 
       {/* Filters */}
@@ -289,10 +297,12 @@ export default function AppsPage() {
             <AppWindow className="h-12 w-12 text-muted-foreground mb-4" />
             <CardTitle className="mb-2">{t('noApps')}</CardTitle>
             <CardDescription className="mb-4">{t('noAppsHint')}</CardDescription>
-            <Button onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('createFirstApp')}
-            </Button>
+            <PermissionGuard permission={['agent:create', 'workflow:create']}>
+              <Button onClick={() => setCreateDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('createFirstApp')}
+              </Button>
+            </PermissionGuard>
           </CardContent>
         </Card>
       ) : (
@@ -400,33 +410,46 @@ export default function AppsPage() {
                           </DropdownMenuItem>
                         </Link>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={(e) => {
-                        e.preventDefault()
-                        handleTogglePublish(app)
-                      }}>
-                        <Send className="mr-2 h-4 w-4" />
-                        {app.status === 'published' ? t('unpublish') : t('publish')}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => {
-                        e.preventDefault()
-                        handleDuplicate(app)
-                      }}>
-                        <Copy className="mr-2 h-4 w-4" />
-                        {t('duplicate')}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={(e) => {
+                      {((app.type === 'agent' && canPerform('agent:publish')) ||
+                        (app.type === 'workflow' && canPerform('workflow:publish'))) && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={(e) => {
+                            e.preventDefault()
+                            handleTogglePublish(app)
+                          }}>
+                            <Send className="mr-2 h-4 w-4" />
+                            {app.status === 'published' ? t('unpublish') : t('publish')}
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      {((app.type === 'agent' && canPerform('agent:create')) ||
+                        (app.type === 'workflow' && canPerform('workflow:create'))) && (
+                        <DropdownMenuItem onClick={(e) => {
                           e.preventDefault()
-                          setDeletingApp(app)
-                          setDeleteDialogOpen(true)
-                        }}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        {tCommon('delete')}
-                      </DropdownMenuItem>
+                          handleDuplicate(app)
+                        }}>
+                          <Copy className="mr-2 h-4 w-4" />
+                          {t('duplicate')}
+                        </DropdownMenuItem>
+                      )}
+                      {((app.type === 'agent' && canPerform('agent:delete')) ||
+                        (app.type === 'workflow' && canPerform('workflow:delete'))) && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.preventDefault()
+                              setDeletingApp(app)
+                              setDeleteDialogOpen(true)
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {tCommon('delete')}
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

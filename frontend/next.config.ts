@@ -5,6 +5,8 @@ import path from 'path';
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 const nextConfig: NextConfig = {
+  // Enable standalone output for Docker deployment
+  output: 'standalone',
   turbopack: {
     root: path.resolve(__dirname),
   },

@@ -44,6 +44,7 @@ import { auditLogsApi, AuditLog, AuditLogListParams } from "@/lib/api/audit-logs
 import { toast } from "sonner";
 import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
 import { AuditLogDrawer } from "./audit-log-drawer";
+import { PermissionGuard } from "@/components/permission-guard";
 
 export function AuditLogsTable() {
   const t = useTranslations("auditLogs");
@@ -220,26 +221,28 @@ export function AuditLogsTable() {
               )}
             </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    {t("export")}
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("csv")}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  {t("exportCSV")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport("json")}>
-                  <FileJson className="h-4 w-4 mr-2" />
-                  {t("exportJSON")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <PermissionGuard permission="audit:export">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      {t("export")}
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport("csv")}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    {t("exportCSV")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport("json")}>
+                    <FileJson className="h-4 w-4 mr-2" />
+                    {t("exportJSON")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </PermissionGuard>
           </div>
 
           {/* Table */}

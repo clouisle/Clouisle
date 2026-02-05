@@ -19,9 +19,11 @@ import {
   Mail,
   UserPlus,
   UserMinus,
+  Link as LinkIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usersApi, rolesApi, type User, type PageData, type UserStats } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -67,6 +69,7 @@ import {
 import { UserDialog } from './user-dialog'
 import { DeleteUserDialog } from './delete-user-dialog'
 import { SendEmailDialog } from './send-email-dialog'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type Role = {
   id: string
@@ -78,6 +81,7 @@ type Role = {
 export function UsersClient() {
   const t = useTranslations('users')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
   
   // 数据状态
   const [users, setUsers] = React.useState<User[]>([])
@@ -371,10 +375,12 @@ export function UsersClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createUser')}
-          </Button>
+          <PermissionGuard permission="user:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createUser')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -434,6 +440,7 @@ export function UsersClient() {
               </TableHead>
               <TableHead>{t('username')}</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>SSO</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('role')}</TableHead>
               <TableHead>{t('createdAt')}</TableHead>
@@ -443,13 +450,13 @@ export function UsersClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
             ) : filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   {t('noUsers')}
                 </TableCell>
               </TableRow>
@@ -471,6 +478,37 @@ export function UsersClient() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                  <TableCell>
+                    {user.sso_connections && user.sso_connections.length > 0 ? (
+                      <div className="flex items-center gap-1">
+                        {user.sso_connections.map((conn) => (
+                          <Tooltip key={conn.id}>
+                            <TooltipTrigger>
+                              {conn.provider_icon_url ? (
+                                <img
+                                  src={conn.provider_icon_url}
+                                  alt={conn.provider_display_name}
+                                  className="h-4 w-4 rounded"
+                                />
+                              ) : (
+                                <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-xs">
+                                <p className="font-medium">{conn.provider_display_name}</p>
+                                {conn.provider_email && (
+                                  <p className="text-muted-foreground">{conn.provider_email}</p>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                   <TableCell>{getStatusBadge(user)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -479,7 +517,7 @@ export function UsersClient() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(user.created_at).toLocaleDateString()}
+                    {formatDateTime(user.created_at)}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -488,34 +526,41 @@ export function UsersClient() {
                         <span className="sr-only">Open menu</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleEdit(user)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {commonT('edit')}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuItem onClick={() => handleToggleStatus(user)}>
-                          {user.is_active ? (
-                            <>
-                              <UserX className="mr-2 h-4 w-4" />
-                              {t('deactivate')}
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="mr-2 h-4 w-4" />
-                              {t('activate')}
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuSeparator />
-                        
-                        <DropdownMenuItem 
-                          onClick={() => handleDelete(user)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
-                        </DropdownMenuItem>
+                        {canPerform('user:update') && (
+                          <DropdownMenuItem onClick={() => handleEdit(user)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            {commonT('edit')}
+                          </DropdownMenuItem>
+                        )}
+
+                        {canPerform('user:update') && (
+                          <DropdownMenuItem onClick={() => handleToggleStatus(user)}>
+                            {user.is_active ? (
+                              <>
+                                <UserX className="mr-2 h-4 w-4" />
+                                {t('deactivate')}
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                {t('activate')}
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        )}
+
+                        {canPerform('user:delete') && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(user)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {commonT('delete')}
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -627,11 +672,11 @@ export function UsersClient() {
             >
               <X className="h-4 w-4" />
             </Button>
-            
+
             <Badge variant="secondary" className="px-2 py-1">
               {selectedUsers.size} {t('usersSelected')}
             </Badge>
-            
+
             <Tooltip>
               <TooltipTrigger
                 onClick={handleBulkEmail}
@@ -647,54 +692,60 @@ export function UsersClient() {
               />
               <TooltipContent>{t('sendEmail')}</TooltipContent>
             </Tooltip>
-            
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleBulkActivate}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{t('activate')}</TooltipContent>
-            </Tooltip>
-            
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleBulkDeactivate}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                  >
-                    <UserMinus className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{t('deactivate')}</TooltipContent>
-            </Tooltip>
-            
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleBulkDelete}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{commonT('delete')}</TooltipContent>
-            </Tooltip>
+
+            {canPerform('user:update') && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkActivate}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('activate')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkDeactivate}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <UserMinus className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('deactivate')}</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
+            {canPerform('user:delete') && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkDelete}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
       )}

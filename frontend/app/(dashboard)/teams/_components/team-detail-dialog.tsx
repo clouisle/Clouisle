@@ -65,6 +65,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TeamModelsTab } from './team-models-tab'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type TeamRole = 'owner' | 'admin' | 'member' | 'viewer'
 type AddableRole = 'admin' | 'member' | 'viewer'
@@ -100,6 +101,8 @@ export function TeamDetailDialog({
 }: TeamDetailDialogProps) {
   const t = useTranslations('teams')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
+  const canManageTeam = canPerform('team:manage')
   
   // 数据状态
   const [team, setTeam] = React.useState<TeamWithMembers | null>(null)
@@ -334,109 +337,120 @@ export function TeamDetailDialog({
               </DialogHeader>
               
               <Tabs defaultValue="members" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="members" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    {t('members')}
-                  </TabsTrigger>
-                  <TabsTrigger value="models" className="flex items-center gap-2">
-                    <Cpu className="h-4 w-4" />
-                    {t('modelAuth')}
-                  </TabsTrigger>
-                </TabsList>
+                {canManageTeam ? (
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="members" className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      {t('members')}
+                    </TabsTrigger>
+                    <TabsTrigger value="models" className="flex items-center gap-2">
+                      <Cpu className="h-4 w-4" />
+                      {t('modelAuth')}
+                    </TabsTrigger>
+                  </TabsList>
+                ) : (
+                  <TabsList className="grid w-full grid-cols-1">
+                    <TabsTrigger value="members" className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      {t('members')}
+                    </TabsTrigger>
+                  </TabsList>
+                )}
                 
                 <TabsContent value="members" className="mt-4 space-y-4">
                   {/* 成员列表 */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-medium">{t('members')} ({team.members.length})</h3>
-                      <Popover open={addMemberOpen} onOpenChange={setAddMemberOpen}>
-                        <PopoverTrigger
-                          render={
-                            <Button variant="outline" size="sm">
-                              <UserPlus className="mr-2 h-4 w-4" />
-                              {t('addMember')}
-                            </Button>
-                          }
-                        />
-                        <PopoverContent className="w-80 p-0" align="end">
-                          <div className="p-3 border-b">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                              <Input
-                                placeholder={t('searchUsers')}
-                                value={userSearch}
-                                onChange={(e) => setUserSearch(e.target.value)}
-                                className="pl-8"
-                              />
-                            </div>
-                          </div>
-                          <ScrollArea className="h-48">
-                            {filteredUsers.length === 0 ? (
-                              <div className="p-4 text-center text-muted-foreground text-sm">
-                                {t('noUsersFound')}
+                      <PermissionGuard permission="team:manage">
+                        <Popover open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+                          <PopoverTrigger
+                            render={
+                              <Button variant="outline" size="sm">
+                                <UserPlus className="mr-2 h-4 w-4" />
+                                {t('addMember')}
+                              </Button>
+                            }
+                          />
+                          <PopoverContent className="w-80 p-0" align="end">
+                            <div className="p-3 border-b">
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                  placeholder={t('searchUsers')}
+                                  value={userSearch}
+                                  onChange={(e) => setUserSearch(e.target.value)}
+                                  className="pl-8"
+                                />
                               </div>
-                            ) : (
-                              <div className="p-2">
-                                {filteredUsers.map((user) => (
-                                  <button
-                                    key={user.id}
-                                    type="button"
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-left"
-                                    onClick={() => setSelectedUserId(user.id)}
-                                  >
-                                    <Avatar className="h-6 w-6">
-                                      <AvatarImage src={user.avatar_url || undefined} />
-                                      <AvatarFallback className="text-xs">
-                                        {getUserInitials(user.username)}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <span className="text-sm flex-1">{user.username}</span>
-                                    {selectedUserId === user.id && (
-                                      <Check className="h-4 w-4 text-primary" />
-                                    )}
-                                  </button>
-                                ))}
+                            </div>
+                            <ScrollArea className="h-48">
+                              {filteredUsers.length === 0 ? (
+                                <div className="p-4 text-center text-muted-foreground text-sm">
+                                  {t('noUsersFound')}
+                                </div>
+                              ) : (
+                                <div className="p-2">
+                                  {filteredUsers.map((user) => (
+                                    <button
+                                      key={user.id}
+                                      type="button"
+                                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-left"
+                                      onClick={() => setSelectedUserId(user.id)}
+                                    >
+                                      <Avatar className="h-6 w-6">
+                                        <AvatarImage src={user.avatar_url || undefined} />
+                                        <AvatarFallback className="text-xs">
+                                          {getUserInitials(user.username)}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <span className="text-sm flex-1">{user.username}</span>
+                                      {selectedUserId === user.id && (
+                                        <Check className="h-4 w-4 text-primary" />
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </ScrollArea>
+                            {selectedUserId && (
+                              <div className="border-t p-3 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{t('role')}:</span>
+                                  <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as AddableRole)}>
+                                    <SelectTrigger className="flex-1 h-8">
+                                      <SelectValue>
+                                        <div className="flex items-center gap-2">
+                                          <RoleIcon role={selectedRole} />
+                                          <span>{t(`roles.${selectedRole}`)}</span>
+                                        </div>
+                                      </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent side="top" alignItemWithTrigger={false}>
+                                      {roles.map((role) => (
+                                        <SelectItem key={role} value={role}>
+                                          <div className="flex items-center gap-2">
+                                            <RoleIcon role={role} />
+                                            <span>{t(`roles.${role}`)}</span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <Button
+                                  className="w-full"
+                                  size="sm"
+                                  disabled={isAddingMember}
+                                  onClick={handleAddMember}
+                                >
+                                  {isAddingMember ? commonT('loading') : t('addMember')}
+                                </Button>
                               </div>
                             )}
-                          </ScrollArea>
-                          {selectedUserId && (
-                            <div className="border-t p-3 space-y-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{t('role')}:</span>
-                                <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as AddableRole)}>
-                                  <SelectTrigger className="flex-1 h-8">
-                                    <SelectValue>
-                                      <div className="flex items-center gap-2">
-                                        <RoleIcon role={selectedRole} />
-                                        <span>{t(`roles.${selectedRole}`)}</span>
-                                      </div>
-                                    </SelectValue>
-                                  </SelectTrigger>
-                                  <SelectContent side="top" alignItemWithTrigger={false}>
-                                    {roles.map((role) => (
-                                      <SelectItem key={role} value={role}>
-                                        <div className="flex items-center gap-2">
-                                          <RoleIcon role={role} />
-                                          <span>{t(`roles.${role}`)}</span>
-                                        </div>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <Button
-                                className="w-full"
-                                size="sm"
-                                disabled={isAddingMember}
-                                onClick={handleAddMember}
-                              >
-                                {isAddingMember ? commonT('loading') : t('addMember')}
-                              </Button>
-                            </div>
-                          )}
-                        </PopoverContent>
-                      </Popover>
+                          </PopoverContent>
+                        </Popover>
+                      </PermissionGuard>
                     </div>
                   
                   <ScrollArea className="h-64">
@@ -467,8 +481,8 @@ export function TeamDetailDialog({
                               <RoleIcon role={member.role} />
                               <span>{t(`roles.${member.role}`)}</span>
                             </Badge>
-                            
-                            {member.role !== 'owner' && (
+
+                            {member.role !== 'owner' && canPerform('team:manage') && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger
                                   render={
@@ -518,27 +532,33 @@ export function TeamDetailDialog({
                           <LogOut className="mr-2 h-4 w-4" />
                           {t('leaveTeam')}
                         </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => setDeleteDialogOpen(true)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {commonT('delete')}
-                        </Button>
+                        <PermissionGuard permission="team:delete">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteDialogOpen(true)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {commonT('delete')}
+                          </Button>
+                        </PermissionGuard>
                       </>
                     )}
                   </div>
-                  <Button variant="outline" size="sm" onClick={onEdit}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    {commonT('edit')}
-                  </Button>
+                  <PermissionGuard permission="team:update">
+                    <Button variant="outline" size="sm" onClick={onEdit}>
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {commonT('edit')}
+                    </Button>
+                  </PermissionGuard>
                 </div>
               </TabsContent>
-              
-              <TabsContent value="models" className="mt-4">
-                <TeamModelsTab teamId={teamId!} />
-              </TabsContent>
+
+              {canManageTeam && (
+                <TabsContent value="models" className="mt-4">
+                  <TeamModelsTab teamId={teamId!} />
+                </TabsContent>
+              )}
             </Tabs>
             </>
           ) : (

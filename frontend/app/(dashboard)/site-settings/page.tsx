@@ -14,10 +14,13 @@ import { Loader2 } from 'lucide-react'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { siteSettingsApi, type GeneralSettings } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export default function SiteSettingsGeneralPage() {
   const t = useTranslations('siteSettings')
   const { refresh: refreshSiteSettings } = useSiteSettings()
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('settings:update')
   
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -106,6 +109,7 @@ export default function SiteSettingsGeneralPage() {
               placeholder={t('siteNamePlaceholder')}
               value={settings.site_name}
               onChange={(e) => updateSetting('site_name', e.target.value)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="space-y-2">
@@ -116,6 +120,7 @@ export default function SiteSettingsGeneralPage() {
               rows={3}
               value={settings.site_description}
               onChange={(e) => updateSetting('site_description', e.target.value)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="space-y-2">
@@ -125,6 +130,7 @@ export default function SiteSettingsGeneralPage() {
               placeholder="https://example.com"
               value={settings.site_url}
               onChange={(e) => updateSetting('site_url', e.target.value)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -145,6 +151,7 @@ export default function SiteSettingsGeneralPage() {
                 onChange={(url) => updateSetting('site_icon', url)}
                 previewSize="md"
                 category="icons"
+                disabled={!canUpdate}
               />
               <p className="text-xs text-muted-foreground mt-2">{t('siteIconHint')}</p>
             </div>
@@ -152,12 +159,14 @@ export default function SiteSettingsGeneralPage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('saveChanges')}
-        </Button>
-      </div>
+      <PermissionGuard permission="settings:update">
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('saveChanges')}
+          </Button>
+        </div>
+      </PermissionGuard>
     </div>
   )
 }

@@ -65,9 +65,10 @@ interface NodeConfigDrawerProps {
   open: boolean
   onClose: () => void
   onUpdate: (nodeId: string, data: Record<string, unknown>) => void
+  readOnly?: boolean
 }
 
-export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate }: NodeConfigDrawerProps) {
+export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false }: NodeConfigDrawerProps) {
   const [label, setLabel] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [parameters, setParameters] = React.useState<Parameter[]>([])
@@ -246,6 +247,9 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
 
   // 自动保存
   React.useEffect(() => {
+    // 只读模式下不自动保存
+    if (readOnly) return
+
     if (node && (label || description || parameters.length >= 0)) {
       const timer = setTimeout(() => {
         const nodeType = node.type || (node.data as { type?: string })?.type || 'user_input'
@@ -255,7 +259,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           description,
           parameters,
         }
-        
+
         if (nodeType === 'condition') updateData.branches = branches
         if (nodeType === 'iteration') updateData.iterationConfig = iterationConfig
         if (nodeType === 'loop') updateData.loopConfig = loopConfig
@@ -275,12 +279,12 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           updateData.color = commentColor
           updateData.content = commentContent
         }
-        
+
         onUpdate(node.id, updateData)
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, commentColor, commentContent, node, onUpdate])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, commentColor, commentContent, node, onUpdate, readOnly])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -1244,6 +1248,12 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       {/* Content */}
       <ScrollArea className="h-[calc(100%-72px)]">
         <div className="p-4 pt-0 space-y-4">
+          {/* 只读模式提示 */}
+          {readOnly && (
+            <div className="bg-muted/50 rounded-lg px-3 py-2 text-xs text-muted-foreground">
+              只读模式，无法编辑节点配置
+            </div>
+          )}
           {/* 注释节点不需要显示节点名称和描述 */}
           {nodeType !== 'comment' && (
             <div className="space-y-2">
@@ -1256,6 +1266,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
                     onChange={(e) => setLabel(e.target.value)}
                     placeholder="输入节点名称"
                     className={cn(isNodeLabelDuplicate(label) && '!border-destructive !ring-destructive/20')}
+                    disabled={readOnly}
                   />
                   {isNodeLabelDuplicate(label) && (
                     <p className="text-[10px] text-destructive">节点名称与其他节点重复</p>
@@ -1268,6 +1279,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="添加描述..."
                 className="min-h-[32px] h-8 text-xs resize-none border-transparent bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border focus:bg-muted/30 focus:px-2 focus:rounded-md transition-all"
+                disabled={readOnly}
               />
             </div>
           )}

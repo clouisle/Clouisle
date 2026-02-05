@@ -57,6 +57,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 interface TeamModelsTabProps {
   teamId: string
@@ -112,6 +113,8 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
   const t = useTranslations('teams')
   const modelT = useTranslations('models')
   const commonT = useTranslations('common')
+  const { canPerform } = useCanPerform()
+  const canManageTeam = canPerform('team:manage')
 
   // 数据状态
   const [teamModels, setTeamModels] = React.useState<TeamModel[]>([])
@@ -287,85 +290,87 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
         <h3 className="font-medium">
           {t('authorizedModels')} ({teamModels.length})
         </h3>
-        <Popover open={addModelOpen} onOpenChange={setAddModelOpen}>
-          <PopoverTrigger
-            render={
-              <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                {t('addModel')}
-              </Button>
-            }
-          />
-          <PopoverContent className="w-80 p-0" align="end">
-            <div className="p-3 border-b space-y-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder={t('searchModels')}
-                  value={modelSearch}
-                  onChange={(e) => setModelSearch(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-              {filteredModels.length > 0 && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={selectedModelIds.size === filteredModels.length && filteredModels.length > 0}
-                      onCheckedChange={toggleSelectAll}
-                    />
-                    <span>{t('selectAll')}</span>
-                  </label>
-                  <span>{t('selectedCount', { count: selectedModelIds.size })}</span>
-                </div>
-              )}
-            </div>
-            <ScrollArea className="h-64">
-              {filteredModels.length === 0 ? (
-                <div className="p-4 text-center text-muted-foreground text-sm">
-                  {availableModels.length === 0
-                    ? t('allModelsAuthorized')
-                    : t('noModelsFound')}
-                </div>
-              ) : (
-                <div className="p-2 space-y-1">
-                  {filteredModels.map((model) => (
-                    <label
-                      key={model.id}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer"
-                    >
-                      <Checkbox
-                        checked={selectedModelIds.has(model.id)}
-                        onCheckedChange={() => toggleModelSelection(model.id)}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{model.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {model.provider} / {model.model_id}
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-xs shrink-0">
-                        {modelT(`types.${model.model_type}`)}
-                      </Badge>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-            {selectedModelIds.size > 0 && (
-              <div className="border-t p-3">
-                <Button
-                  className="w-full"
-                  size="sm"
-                  disabled={isAdding}
-                  onClick={handleAddModels}
-                >
-                  {isAdding ? commonT('loading') : t('authorizeModels', { count: selectedModelIds.size })}
+        <PermissionGuard permission="team:manage">
+          <Popover open={addModelOpen} onOpenChange={setAddModelOpen}>
+            <PopoverTrigger
+              render={
+                <Button variant="outline" size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  {t('addModel')}
                 </Button>
+              }
+            />
+            <PopoverContent className="w-80 p-0" align="end">
+              <div className="p-3 border-b space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder={t('searchModels')}
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+                {filteredModels.length > 0 && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModelIds.size === filteredModels.length && filteredModels.length > 0}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                      <span>{t('selectAll')}</span>
+                    </label>
+                    <span>{t('selectedCount', { count: selectedModelIds.size })}</span>
+                  </div>
+                )}
               </div>
-            )}
-          </PopoverContent>
-        </Popover>
+              <ScrollArea className="h-64">
+                {filteredModels.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    {availableModels.length === 0
+                      ? t('allModelsAuthorized')
+                      : t('noModelsFound')}
+                  </div>
+                ) : (
+                  <div className="p-2 space-y-1">
+                    {filteredModels.map((model) => (
+                      <label
+                        key={model.id}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={selectedModelIds.has(model.id)}
+                          onCheckedChange={() => toggleModelSelection(model.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{model.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {model.provider} / {model.model_id}
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="text-xs shrink-0">
+                          {modelT(`types.${model.model_type}`)}
+                        </Badge>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+              {selectedModelIds.size > 0 && (
+                <div className="border-t p-3">
+                  <Button
+                    className="w-full"
+                    size="sm"
+                    disabled={isAdding}
+                    onClick={handleAddModels}
+                  >
+                    {isAdding ? commonT('loading') : t('authorizeModels', { count: selectedModelIds.size })}
+                  </Button>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
+        </PermissionGuard>
       </div>
 
       {/* Models List */}
@@ -414,30 +419,33 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                     <Switch
                       checked={tm.is_enabled}
                       onCheckedChange={() => handleToggleEnabled(tm)}
+                      disabled={!canManageTeam}
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(tm)}
-                      >
-                        <Settings2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => {
-                          setDeletingModel(tm)
-                          setDeleteDialogOpen(true)
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {canManageTeam && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEditDialog(tm)}
+                        >
+                          <Settings2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            setDeletingModel(tm)
+                            setDeleteDialogOpen(true)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
