@@ -10,7 +10,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 
 from app.api import deps
+from app.core.i18n import t
 from app.models import Model, Team, TeamModel
+from app.models.notification import AutoNotificationType
 from app.models.user import TeamMember, User
 from app.schemas.model import (
     ModelBrief,
@@ -28,6 +30,7 @@ from app.schemas.response import (
     success,
 )
 from app.schemas.team import TeamMemberRole
+from app.services.auto_notification import AutoNotificationService
 
 router = APIRouter()
 
@@ -154,6 +157,24 @@ async def add_team_model(
     # 重新加载关联
     team_model = await TeamModel.get(id=team_model.id).prefetch_related("model")
 
+    # 发送模型授权通知给团队
+    await AutoNotificationService.send_to_team(
+        notification_type=AutoNotificationType.TEAM_MODEL_GRANTED,
+        team_id=team.id,
+        title=t("notify_team_model_granted_title"),
+        content=t(
+            "notify_team_model_granted_content",
+            model_name=model.name,
+            team_name=team.name,
+        ),
+        data={
+            "model_id": str(model.id),
+            "model_name": model.name,
+            "team_id": str(team.id),
+            "team_name": team.name,
+        },
+    )
+
     return success(
         data={
             "id": team_model.id,
@@ -251,7 +272,11 @@ async def remove_team_model(
     """
     撤销团队模型授权（仅超级管理员）
     """
-    team_model = await TeamModel.filter(team_id=team_id, model_id=model_id).first()
+    team_model = (
+        await TeamModel.filter(team_id=team_id, model_id=model_id)
+        .prefetch_related("model", "team")
+        .first()
+    )
 
     if not team_model:
         raise BusinessError(
@@ -260,7 +285,30 @@ async def remove_team_model(
             status_code=404,
         )
 
+    # 保存信息用于通知
+    model_name = team_model.model.name
+    team_name = team_model.team.name
+    team_id_for_notify = team_model.team.id
+
     await team_model.delete()
+
+    # 发送模型授权撤销通知给团队
+    await AutoNotificationService.send_to_team(
+        notification_type=AutoNotificationType.TEAM_MODEL_REVOKED,
+        team_id=team_id_for_notify,
+        title=t("notify_team_model_revoked_title"),
+        content=t(
+            "notify_team_model_revoked_content",
+            model_name=model_name,
+            team_name=team_name,
+        ),
+        data={
+            "model_id": str(model_id),
+            "model_name": model_name,
+            "team_id": str(team_id),
+            "team_name": team_name,
+        },
+    )
 
     return success(
         data={"team_id": str(team_id), "model_id": str(model_id)},
@@ -345,6 +393,26 @@ async def batch_add_team_models(
             }
         )
 
+    # 发送批量授权通知
+    if results:
+        model_names = [r["model"]["name"] for r in results]
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.TEAM_MODEL_GRANTED,
+            team_id=team.id,
+            title=t("notify_team_model_granted_title"),
+            content=t(
+                "notify_team_model_granted_content",
+                model_name=", ".join(model_names),
+                team_name=team.name,
+            ),
+            data={
+                "model_count": len(results),
+                "model_names": model_names,
+                "team_id": str(team.id),
+                "team_name": team.name,
+            },
+        )
+
     return success(data=results, msg_key="team_models_authorized")
 
 
@@ -357,9 +425,43 @@ async def batch_remove_team_models(
     """
     批量撤销团队模型授权（仅超级管理员）
     """
+    # 获取团队信息
+    team = await Team.filter(id=team_id).first()
+    if not team:
+        raise BusinessError(
+            code=ResponseCode.TEAM_NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    # 获取要删除的模型名称（用于通知）
+    team_models = await TeamModel.filter(
+        team_id=team_id, model_id__in=batch_in.model_ids
+    ).prefetch_related("model")
+    model_names = [tm.model.name for tm in team_models]
+
     deleted_count = await TeamModel.filter(
         team_id=team_id, model_id__in=batch_in.model_ids
     ).delete()
+
+    # 发送批量撤销通知
+    if deleted_count > 0 and model_names:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.TEAM_MODEL_REVOKED,
+            team_id=team.id,
+            title=t("notify_team_model_revoked_title"),
+            content=t(
+                "notify_team_model_revoked_content",
+                model_name=", ".join(model_names),
+                team_name=team.name,
+            ),
+            data={
+                "model_count": deleted_count,
+                "model_names": model_names,
+                "team_id": str(team.id),
+                "team_name": team.name,
+            },
+        )
 
     return success(
         data={"deleted_count": deleted_count},

@@ -26,6 +26,8 @@ celery_app = Celery(
         "app.tasks.usage",
         "app.tasks.workflow",
         "app.tasks.audit_log",
+        "app.tasks.notification",
+        "app.tasks.api_key",
     ],
 )
 
@@ -54,6 +56,11 @@ celery_app.conf.task_routes = {
     "app.tasks.knowledge_base.*": {"queue": "default"},
     "app.tasks.usage.*": {"queue": "default"},
     "app.tasks.workflow.*": {"queue": "workflow"},
+    "app.tasks.notification.*": {"queue": "default"},
+    "app.tasks.audit_log.*": {"queue": "default"},
+    "app.tasks.api_key.*": {"queue": "default"},
+    "send_notification_dingtalk": {"queue": "default"},
+    "send_notification_email": {"queue": "default"},
 }
 
 # Beat schedule for periodic tasks
@@ -68,10 +75,10 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.reset_monthly_usage",
         "schedule": crontab(hour=0, minute=5, day_of_month=1),
     },
-    # Archive old audit logs every day at 03:00
-    "archive-old-audit-logs": {
-        "task": "app.tasks.audit_log.archive_old_audit_logs",
-        "schedule": crontab(hour=3, minute=0),
+    # Check API key expiration every day at 09:00
+    "check-api-key-expiration": {
+        "task": "tasks.check_api_key_expiration",
+        "schedule": crontab(hour=9, minute=0),
     },
 }
 

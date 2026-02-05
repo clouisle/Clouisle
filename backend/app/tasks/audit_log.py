@@ -11,16 +11,9 @@ from app.models.site_setting import SiteSetting
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task
 async def archive_old_audit_logs():
-    """归档超过保留期限的审计日志"""
+    """归档超过保留期限的审计日志（同步执行）"""
     try:
-        # 检查是否启用归档
-        archive_enabled = await SiteSetting.get_value("audit_log_archive_enabled", True)
-        if not archive_enabled:
-            logger.info("Audit log archiving is disabled")
-            return {"status": "skipped", "reason": "archiving disabled"}
-
         # 从站点设置获取保留天数
         retention_days = await SiteSetting.get_value("audit_log_retention_days", 365)
         cutoff_date = now_utc() - timedelta(days=retention_days)
@@ -29,7 +22,12 @@ async def archive_old_audit_logs():
         old_logs = await AuditLog.filter(created_at__lt=cutoff_date).all()
         if not old_logs:
             logger.info("No audit logs to archive")
-            return {"status": "success", "archived_count": 0}
+            return {
+                "status": "success",
+                "archived_count": 0,
+                "retention_days": retention_days,
+                "cutoff_date": cutoff_date.isoformat(),
+            }
 
         # 获取归档路径
         archive_path = await SiteSetting.get_value(

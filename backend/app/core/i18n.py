@@ -142,6 +142,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Permission deleted successfully",
         "zh": "权限删除成功",
     },
+    "notification_created": {
+        "en": "Notification created successfully",
+        "zh": "通知创建成功",
+    },
+    "notification_deleted": {
+        "en": "Notification deleted successfully",
+        "zh": "通知删除成功",
+    },
+    "notification_read_updated": {
+        "en": "Notification read status updated",
+        "zh": "通知已读状态已更新",
+    },
     # Error messages - General
     "unknown_error": {
         "en": "Unknown error",
@@ -188,6 +200,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Could not validate credentials",
         "zh": "无法验证凭证",
     },
+    "notification_not_found": {
+        "en": "Notification not found",
+        "zh": "通知不存在",
+    },
+    "invalid_notification_scope": {
+        "en": "Invalid notification scope",
+        "zh": "通知范围无效",
+    },
+    "notification_scope_requires_team": {
+        "en": "Team scope requires team_id",
+        "zh": "团队范围必须提供 team_id",
+    },
+    "notification_scope_requires_user": {
+        "en": "User scope requires user_id",
+        "zh": "个人范围必须提供 user_id",
+    },
     # Account security messages
     "account_locked": {
         "en": "Account is locked. Please try again later.",
@@ -209,6 +237,94 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "smtp_not_configured": {
         "en": "Email service is not configured",
         "zh": "邮件服务未配置",
+    },
+    "smtp_not_enabled": {
+        "en": "Email service is not enabled",
+        "zh": "邮件服务未启用",
+    },
+    "dingtalk_not_configured": {
+        "en": "DingTalk service is not configured",
+        "zh": "钉钉服务未配置",
+    },
+    "dingtalk_not_enabled": {
+        "en": "DingTalk service is not enabled",
+        "zh": "钉钉服务未启用",
+    },
+    "dingtalk_send_failed": {
+        "en": "Failed to send DingTalk message",
+        "zh": "钉钉消息发送失败",
+    },
+    "test_dingtalk_sent": {
+        "en": "Test DingTalk message sent successfully",
+        "zh": "测试钉钉消息发送成功",
+    },
+    # WeChat Work
+    "wechat_not_configured": {
+        "en": "WeChat Work service is not configured",
+        "zh": "企业微信服务未配置",
+    },
+    "wechat_not_enabled": {
+        "en": "WeChat Work service is not enabled",
+        "zh": "企业微信服务未启用",
+    },
+    "wechat_send_failed": {
+        "en": "Failed to send WeChat Work message",
+        "zh": "企业微信消息发送失败",
+    },
+    "test_wechat_sent": {
+        "en": "Test WeChat Work message sent successfully",
+        "zh": "测试企业微信消息发送成功",
+    },
+    # Feishu
+    "feishu_not_configured": {
+        "en": "Feishu service is not configured",
+        "zh": "飞书服务未配置",
+    },
+    "feishu_not_enabled": {
+        "en": "Feishu service is not enabled",
+        "zh": "飞书服务未启用",
+    },
+    "feishu_send_failed": {
+        "en": "Failed to send Feishu message",
+        "zh": "飞书消息发送失败",
+    },
+    "test_feishu_sent": {
+        "en": "Test Feishu message sent successfully",
+        "zh": "测试飞书消息发送成功",
+    },
+    # Generic Webhook
+    "webhook_not_configured": {
+        "en": "Webhook is not configured",
+        "zh": "Webhook 未配置",
+    },
+    "webhook_not_enabled": {
+        "en": "Webhook is not enabled",
+        "zh": "Webhook 未启用",
+    },
+    "webhook_send_failed": {
+        "en": "Failed to send Webhook notification",
+        "zh": "Webhook 通知发送失败",
+    },
+    "test_webhook_sent": {
+        "en": "Test Webhook notification sent successfully",
+        "zh": "测试 Webhook 通知发送成功",
+    },
+    # Slack
+    "slack_not_configured": {
+        "en": "Slack service is not configured",
+        "zh": "Slack 服务未配置",
+    },
+    "slack_not_enabled": {
+        "en": "Slack service is not enabled",
+        "zh": "Slack 服务未启用",
+    },
+    "slack_send_failed": {
+        "en": "Failed to send Slack message",
+        "zh": "Slack 消息发送失败",
+    },
+    "test_slack_sent": {
+        "en": "Test Slack message sent successfully",
+        "zh": "测试 Slack 消息发送成功",
     },
     "email_send_too_frequent": {
         "en": "Please wait before requesting another email",
@@ -253,6 +369,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "test_email_sent": {
         "en": "Test email sent successfully",
         "zh": "测试邮件发送成功",
+    },
+    "archive_task_started": {
+        "en": "Archive task started successfully",
+        "zh": "归档任务已启动",
+    },
+    "archive_task_completed": {
+        "en": "Archive completed successfully",
+        "zh": "归档完成",
     },
     "email_queued": {
         "en": "Emails have been queued for sending",
@@ -1144,6 +1268,281 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_delete_workflow": {
         "en": "Delete workflow",
         "zh": "删除工作流",
+    },
+    # SSO
+    "sso_provider_not_found": {
+        "en": "SSO provider not found",
+        "zh": "SSO 提供商不存在",
+    },
+    "sso_connection_not_found": {
+        "en": "SSO connection not found",
+        "zh": "SSO 连接未找到",
+    },
+    "cannot_disconnect_only_auth_method": {
+        "en": "Cannot disconnect the only authentication method. Please set a password first.",
+        "zh": "无法解除唯一的认证方式。请先设置密码。",
+    },
+    "sso_session_expired": {
+        "en": "SSO session expired",
+        "zh": "SSO 会话已过期",
+    },
+    "sso_registration_disabled": {
+        "en": "SSO registration is disabled",
+        "zh": "SSO 注册已禁用",
+    },
+    "sso_login_failed": {
+        "en": "SSO login failed",
+        "zh": "SSO 登录失败",
+    },
+    "password_login_disabled": {
+        "en": "Password login is disabled. Please use SSO to sign in.",
+        "zh": "密码登录已禁用。请使用 SSO 登录。",
+    },
+    "sso_provider_name_exists": {
+        "en": "SSO provider name already exists",
+        "zh": "SSO 提供商名称已存在",
+    },
+    "require_superadmin_sso": {
+        "en": "At least one super admin must have an SSO connection before disabling password login.",
+        "zh": "关闭密码登录前，至少需要一个超级管理员已绑定 SSO。",
+    },
+    "unsupported_protocol": {
+        "en": "Unsupported SSO protocol",
+        "zh": "不支持的 SSO 协议",
+    },
+    "missing_user_id": {
+        "en": "Missing user ID from SSO provider",
+        "zh": "SSO 提供商未返回用户 ID",
+    },
+    "email_required": {
+        "en": "Email is required for SSO registration",
+        "zh": "SSO 注册需要邮箱地址",
+    },
+    # SSO Audit logs
+    "audit_log_sso_login_success": {
+        "en": "SSO login",
+        "zh": "SSO 登录",
+    },
+    "audit_log_sso_login_failed": {
+        "en": "SSO login failed",
+        "zh": "SSO 登录失败",
+    },
+    "audit_log_create_sso_provider": {
+        "en": "Create SSO provider",
+        "zh": "创建 SSO 提供商",
+    },
+    "audit_log_update_sso_provider": {
+        "en": "Update SSO provider",
+        "zh": "更新 SSO 提供商",
+    },
+    "audit_log_delete_sso_provider": {
+        "en": "Delete SSO provider",
+        "zh": "删除 SSO 提供商",
+    },
+    "audit_log_update_auto_notification_config": {
+        "en": "Update auto notification config",
+        "zh": "更新自动通知配置",
+    },
+    # Auto Notification Messages
+    "notify_team_member_added_title": {
+        "en": "You have joined a team",
+        "zh": "您已加入团队",
+    },
+    "notify_team_member_added_content": {
+        "en": "You have been added to team **{team_name}** by **{operator}** with role **{role}**.",
+        "zh": "您已被 **{operator}** 添加到团队 **{team_name}**，角色为 **{role}**。",
+    },
+    "notify_team_member_added_team_title": {
+        "en": "New member joined",
+        "zh": "新成员加入",
+    },
+    "notify_team_member_added_team_content": {
+        "en": "**{username}** has joined the team with role **{role}**.",
+        "zh": "**{username}** 已加入团队，角色为 **{role}**。",
+    },
+    "notify_team_member_removed_title": {
+        "en": "You have left the team",
+        "zh": "您已离开团队",
+    },
+    "notify_team_member_removed_content": {
+        "en": "You have been removed from team **{team_name}**.",
+        "zh": "您已被从团队 **{team_name}** 中移除。",
+    },
+    "notify_team_member_removed_team_title": {
+        "en": "Member left",
+        "zh": "成员离开",
+    },
+    "notify_team_member_removed_team_content": {
+        "en": "**{username}** has left the team.",
+        "zh": "**{username}** 已离开团队。",
+    },
+    "notify_team_role_changed_title": {
+        "en": "Team role changed",
+        "zh": "团队角色变更",
+    },
+    "notify_team_role_changed_content": {
+        "en": "Your role in team **{team_name}** has been changed from **{old_role}** to **{new_role}**.",
+        "zh": "您在团队 **{team_name}** 中的角色已从 **{old_role}** 变更为 **{new_role}**。",
+    },
+    "notify_user_activated_title": {
+        "en": "Account activated",
+        "zh": "账户已激活",
+    },
+    "notify_user_activated_content": {
+        "en": "Your account has been activated by the administrator. You can now use the system.",
+        "zh": "您的账户已被管理员激活，现在可以正常使用系统了。",
+    },
+    "notify_user_deactivated_title": {
+        "en": "Account deactivated",
+        "zh": "账户已停用",
+    },
+    "notify_user_deactivated_content": {
+        "en": "Your account has been deactivated by the administrator. Please contact the administrator if you have any questions.",
+        "zh": "您的账户已被管理员停用，如有疑问请联系管理员。",
+    },
+    "notify_user_password_reset_title": {
+        "en": "Password reset",
+        "zh": "密码已重置",
+    },
+    "notify_user_password_reset_content": {
+        "en": "Your password has been reset by the administrator. Please log in with your new password.",
+        "zh": "您的密码已被管理员重置，请使用新密码登录。",
+    },
+    "notify_agent_published_title": {
+        "en": "Agent published",
+        "zh": "Agent 已发布",
+    },
+    "notify_agent_published_content": {
+        "en": "Agent **{agent_name}** has been published and is now available for use.",
+        "zh": "Agent **{agent_name}** 已发布，现在可以使用了。",
+    },
+    "notify_agent_unpublished_title": {
+        "en": "Agent unpublished",
+        "zh": "Agent 已下线",
+    },
+    "notify_agent_unpublished_content": {
+        "en": "Agent **{agent_name}** has been unpublished.",
+        "zh": "Agent **{agent_name}** 已下线。",
+    },
+    # Knowledge Base Document Notifications
+    "notify_kb_doc_indexed_title": {
+        "en": "Document indexed successfully",
+        "zh": "文档索引成功",
+    },
+    "notify_kb_doc_indexed_content": {
+        "en": "Document **{doc_name}** in knowledge base **{kb_name}** has been indexed successfully. Chunks: {chunk_count}, Tokens: {token_count}.",
+        "zh": "知识库 **{kb_name}** 中的文档 **{doc_name}** 已成功索引。分块数：{chunk_count}，Token 数：{token_count}。",
+    },
+    "notify_kb_doc_failed_title": {
+        "en": "Document indexing failed",
+        "zh": "文档索引失败",
+    },
+    "notify_kb_doc_failed_content": {
+        "en": "Document **{doc_name}** in knowledge base **{kb_name}** failed to index. Error: {error}",
+        "zh": "知识库 **{kb_name}** 中的文档 **{doc_name}** 索引失败。错误：{error}",
+    },
+    # Workflow Run Notifications
+    "notify_workflow_run_success_title": {
+        "en": "Workflow run completed",
+        "zh": "工作流运行完成",
+    },
+    "notify_workflow_run_success_content": {
+        "en": "Workflow **{workflow_name}** has completed successfully. Duration: {duration}ms, Nodes executed: {node_count}.",
+        "zh": "工作流 **{workflow_name}** 已成功完成。耗时：{duration}ms，执行节点数：{node_count}。",
+    },
+    "notify_workflow_run_failed_title": {
+        "en": "Workflow run failed",
+        "zh": "工作流运行失败",
+    },
+    "notify_workflow_run_failed_content": {
+        "en": "Workflow **{workflow_name}** has failed. Error: {error}",
+        "zh": "工作流 **{workflow_name}** 运行失败。错误：{error}",
+    },
+    # Team Ownership Transfer Notifications
+    "notify_team_ownership_received_title": {
+        "en": "Team ownership received",
+        "zh": "获得团队所有权",
+    },
+    "notify_team_ownership_received_content": {
+        "en": "You have received ownership of team **{team_name}** from **{old_owner}**.",
+        "zh": "您已从 **{old_owner}** 处获得团队 **{team_name}** 的所有权。",
+    },
+    "notify_team_ownership_transferred_title": {
+        "en": "Team ownership transferred",
+        "zh": "团队所有权已转让",
+    },
+    "notify_team_ownership_transferred_content": {
+        "en": "You have transferred ownership of team **{team_name}** to **{new_owner}**.",
+        "zh": "您已将团队 **{team_name}** 的所有权转让给 **{new_owner}**。",
+    },
+    # Team Model Authorization Notifications
+    "notify_team_model_granted_title": {
+        "en": "Model authorized",
+        "zh": "模型已授权",
+    },
+    "notify_team_model_granted_content": {
+        "en": "Model **{model_name}** has been authorized for your team **{team_name}**.",
+        "zh": "模型 **{model_name}** 已授权给团队 **{team_name}**。",
+    },
+    "notify_team_model_revoked_title": {
+        "en": "Model authorization revoked",
+        "zh": "模型授权已撤销",
+    },
+    "notify_team_model_revoked_content": {
+        "en": "Model **{model_name}** authorization has been revoked from your team **{team_name}**.",
+        "zh": "团队 **{team_name}** 的模型 **{model_name}** 授权已被撤销。",
+    },
+    # User Pending Approval Notification
+    "notify_user_pending_approval_title": {
+        "en": "New user pending approval",
+        "zh": "新用户待审批",
+    },
+    "notify_user_pending_approval_content": {
+        "en": "A new user **{username}** ({email}) has registered and is pending approval.",
+        "zh": "新用户 **{username}** ({email}) 已注册，等待审批。",
+    },
+    # Security Notifications
+    "notify_account_locked_title": {
+        "en": "Account locked",
+        "zh": "账户已锁定",
+    },
+    "notify_account_locked_content": {
+        "en": "Your account has been locked due to too many failed login attempts. It will be unlocked in {lockout_minutes} minutes.",
+        "zh": "由于登录失败次数过多，您的账户已被锁定。将在 {lockout_minutes} 分钟后解锁。",
+    },
+    "notify_password_changed_title": {
+        "en": "Password changed",
+        "zh": "密码已修改",
+    },
+    "notify_password_changed_content": {
+        "en": "Your password has been changed successfully. If you did not make this change, please contact the administrator immediately.",
+        "zh": "您的密码已成功修改。如果这不是您本人的操作，请立即联系管理员。",
+    },
+    # API Key expiration notifications
+    "notify_apikey_expiring_title": {
+        "en": "API Key expiring soon",
+        "zh": "API 密钥即将过期",
+    },
+    "notify_apikey_expiring_content": {
+        "en": "Your API Key **{key_name}** ({key_prefix}...) will expire in {days} days. Please renew it to avoid service interruption.",
+        "zh": "您的 API 密钥 **{key_name}** ({key_prefix}...) 将在 {days} 天后过期。请及时续期以避免服务中断。",
+    },
+    "notify_apikey_expired_title": {
+        "en": "API Key expired",
+        "zh": "API 密钥已过期",
+    },
+    "notify_apikey_expired_content": {
+        "en": "Your API Key **{key_name}** ({key_prefix}...) has expired and is no longer valid. Please create a new API Key if needed.",
+        "zh": "您的 API 密钥 **{key_name}** ({key_prefix}...) 已过期，无法继续使用。如需使用请创建新的 API 密钥。",
+    },
+    # Login anomaly notification
+    "notify_login_anomaly_title": {
+        "en": "Unusual login detected",
+        "zh": "检测到异常登录",
+    },
+    "notify_login_anomaly_content": {
+        "en": "A login to your account was detected from an unusual location or device.\n\n- **IP Address**: {ip_address}\n- **Time**: {login_time}\n- **User Agent**: {user_agent}\n\nIf this was not you, please change your password immediately.",
+        "zh": "检测到您的账户从异常位置或设备登录。\n\n- **IP 地址**: {ip_address}\n- **时间**: {login_time}\n- **设备信息**: {user_agent}\n\n如果这不是您本人的操作，请立即修改密码。",
     },
 }
 

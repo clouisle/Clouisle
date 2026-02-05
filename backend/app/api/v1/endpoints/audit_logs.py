@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
-from app.api import deps
+from app.api.deps import PermissionChecker
 from app.core.timezone import now_utc
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -37,10 +37,10 @@ async def list_audit_logs(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:read")),
 ) -> Any:
     """
-    查询审计日志（仅超级管理员）
+    查询审计日志（需要 audit:read 权限）
 
     支持多种过滤条件和分页
     """
@@ -92,10 +92,10 @@ async def list_audit_logs(
 
 @router.get("/stats", response_model=Response[AuditLogStats])
 async def get_audit_log_stats(
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:read")),
 ) -> Any:
     """
-    获取审计日志统计信息（仅超级管理员）
+    获取审计日志统计信息（需要 audit:read 权限）
     """
     # 总日志数
     total_logs = await AuditLog.all().count()
@@ -152,9 +152,9 @@ async def get_audit_log_stats(
 
 @router.get("/stats/retention", response_model=Response[AuditLogRetentionStats])
 async def get_retention_stats(
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:read")),
 ) -> Any:
-    """获取日志保留统计信息"""
+    """获取日志保留统计信息（需要 audit:read 权限）"""
     retention_days = await SiteSetting.get_value("audit_log_retention_days", 365)
     cutoff_date = now_utc() - timedelta(days=retention_days)
 
@@ -178,9 +178,9 @@ async def get_retention_stats(
 
 @router.post("/archive", response_model=Response[dict])
 async def trigger_manual_archive(
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:export")),
 ) -> Any:
-    """手动触发归档任务"""
+    """手动触发归档任务（需要 audit:export 权限）"""
     from app.tasks.audit_log import archive_old_audit_logs
 
     # 异步执行归档任务
@@ -200,10 +200,10 @@ async def export_audit_logs(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     search: str | None = Query(None),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:export")),
 ) -> Any:
     """
-    导出审计日志（仅超级管理员）
+    导出审计日志（需要 audit:export 权限）
 
     支持CSV和JSON格式
     """
@@ -285,9 +285,9 @@ async def export_audit_logs(
 @router.get("/{log_id}", response_model=Response[AuditLogSchema])
 async def get_audit_log(
     log_id: UUID,
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("audit:read")),
 ) -> Any:
-    """获取单个审计日志详情"""
+    """获取单个审计日志详情（需要 audit:read 权限）"""
     log = await AuditLog.get_or_none(id=log_id)
     if not log:
         raise BusinessError(

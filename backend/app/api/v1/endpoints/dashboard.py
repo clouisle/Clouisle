@@ -10,13 +10,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api import deps
+from app.api.deps import PermissionChecker
 from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team
 from app.models.agent import Agent, Conversation, Message
 from app.models.workflow import Workflow, WorkflowRun
 from app.models.knowledge_base import KnowledgeBase
-from app.models.model import Model
 from app.schemas.response import Response, success
 
 router = APIRouter()
@@ -24,10 +23,10 @@ router = APIRouter()
 
 @router.get("/stats", response_model=Response[dict])
 async def get_dashboard_stats(
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get system-wide dashboard statistics (superuser only).
+    Get system-wide dashboard statistics (requires dashboard:access permission).
 
     Returns:
     - Total users, teams, agents, workflows, knowledge bases
@@ -111,10 +110,10 @@ async def get_dashboard_stats(
 @router.get("/stats/trends", response_model=Response[dict])
 async def get_dashboard_trends(
     period: str = Query("30d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get system-wide trends for dashboard charts (superuser only).
+    Get system-wide trends for dashboard charts (requires dashboard:access permission).
 
     Returns daily statistics for:
     - New users
@@ -203,10 +202,10 @@ async def get_top_agents(
     limit: int = Query(10, ge=1, le=50, description="Number of top agents to return"),
     metric: str = Query("conversation_count", description="Metric to sort by: conversation_count, message_count, total_tokens"),
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get top agents by usage metrics (superuser only).
+    Get top agents by usage metrics (requires dashboard:access permission).
 
     Returns:
     - agent_id: Agent UUID
@@ -233,9 +232,9 @@ async def get_top_agents(
         else:  # Default to 30d
             start_time = now_local - timedelta(days=30)
 
-        start_time_utc = to_utc(start_time)
         # Note: For cumulative fields, we can't filter by time range directly
         # We'll use all-time data for now
+        _ = to_utc(start_time)  # Reserved for future time-based filtering
 
     # Get agents sorted by metric
     agents = await query.order_by(f"-{metric}").limit(limit)
@@ -259,10 +258,10 @@ async def get_top_agents(
 async def get_team_token_usage(
     limit: int = Query(10, ge=1, le=50, description="Number of top teams to return"),
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get top teams by token usage (superuser only).
+    Get top teams by token usage (requires dashboard:access permission).
 
     Returns:
     - team_id: Team UUID
@@ -294,10 +293,10 @@ async def get_team_token_usage(
 @router.get("/stats/models/distribution", response_model=Response[list[dict]])
 async def get_models_distribution(
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get model usage distribution (superuser only).
+    Get model usage distribution (requires dashboard:access permission).
 
     Returns:
     - model: Model identifier
@@ -353,10 +352,10 @@ async def get_models_distribution(
 @router.get("/stats/workflows/summary", response_model=Response[dict])
 async def get_workflow_summary(
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(PermissionChecker("dashboard:access")),
 ) -> Any:
     """
-    Get workflow statistics summary (superuser only).
+    Get workflow statistics summary (requires dashboard:access permission).
 
     Returns:
     - total_runs: Total workflow runs

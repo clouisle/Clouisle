@@ -243,14 +243,7 @@ async def generate_prompt(
                 is_default=True,
                 is_enabled=True,
             ).first()
-            
-            if not default_model:
-                # Fallback: get any enabled chat model
-                default_model = await Model.filter(
-                    model_type="chat",
-                    is_enabled=True,
-                ).first()
-            
+
             if not default_model:
                 yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': 'no_chat_model_available'})}\n\n"
                 return
@@ -328,17 +321,11 @@ async def optimize_prompt(
                 is_default=True,
                 is_enabled=True,
             ).first()
-            
-            if not default_model:
-                default_model = await Model.filter(
-                    model_type="chat",
-                    is_enabled=True,
-                ).first()
-            
+
             if not default_model:
                 yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': 'no_chat_model_available'})}\n\n"
                 return
-            
+
             # Build optimization prompt
             optimize_prompt_text = f"""你是一个专业的 AI Agent 系统提示词优化专家。请根据用户的反馈优化以下系统提示词。
 

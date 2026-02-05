@@ -19,6 +19,10 @@ from app.core.login_security import (
     record_failed_login,
     reset_login_attempts,
 )
+from app.core.login_anomaly import (
+    check_login_anomaly,
+    record_login,
+)
 from app.core.email import (
     generate_verification_code,
     verify_code,
@@ -29,6 +33,7 @@ from app.core.email import (
 )
 from app.core.captcha import generate_captcha, verify_captcha
 from app.core.timezone import now_utc
+from app.core.i18n import t
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -44,6 +49,8 @@ from app.schemas.verification import (
 )
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
+from app.models.notification import AutoNotificationType, NotificationLevel
 
 router = APIRouter()
 
@@ -68,6 +75,16 @@ async def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
+    # Check if password login is allowed when SSO is enabled
+    sso_enabled = await SiteSetting.get_value("sso_enabled", False)
+    allow_password = await SiteSetting.get_value("sso_allow_password_login", True)
+
+    if sso_enabled and not allow_password:
+        raise BusinessError(
+            code=ResponseCode.PASSWORD_LOGIN_DISABLED,
+            msg_key="password_login_disabled",
+        )
+
     # Check if captcha is enabled and verify it
     enable_captcha = await SiteSetting.get_value("enable_captcha", False)
     if enable_captcha:
@@ -113,6 +130,25 @@ async def login_access_token(
             data={"remaining_seconds": remaining_seconds},
         )
 
+    # Check if user has a password set (SSO users may not have passwords)
+    if not user.hashed_password or user.hashed_password == "":
+        # 记录失败的登录（SSO 用户尝试密码登录）
+        await AuditLogService.log(
+            user=user,
+            action="login_failed",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.username,
+            operation="read",
+            status="failed",
+            request=request,
+            error_message="sso_user_no_password",
+        )
+        raise BusinessError(
+            code=ResponseCode.INVALID_CREDENTIALS,
+            msg_key="incorrect_email_or_password",
+        )
+
     if not security.verify_password(password, user.hashed_password):
         # Record failed attempt
         locked, remaining_attempts, lockout_seconds = await record_failed_login(user)
@@ -132,6 +168,14 @@ async def login_access_token(
         )
 
         if locked:
+            # 发送账户锁定通知
+            await AutoNotificationService.send_to_user(
+                notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
+                user_id=user.id,
+                title=t("notify_account_locked_title"),
+                content=t("notify_account_locked_content", lockout_minutes=(lockout_seconds or 0) // 60),
+                level=NotificationLevel.HIGH,
+            )
             raise BusinessError(
                 code=ResponseCode.ACCOUNT_LOCKED,
                 msg_key="account_locked_after_attempts",
@@ -160,6 +204,38 @@ async def login_access_token(
 
     # Reset failed login attempts on successful login
     await reset_login_attempts(user)
+
+    # Check for login anomaly (new IP or device)
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    is_anomaly, anomaly_details = await check_login_anomaly(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Record this login for future anomaly detection
+    await record_login(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Send anomaly notification if detected
+    if is_anomaly:
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
+            user_id=user.id,
+            title=t("notify_login_anomaly_title"),
+            content=t(
+                "notify_login_anomaly_content",
+                ip_address=anomaly_details.get("ip_address", "unknown"),
+                login_time=anomaly_details.get("login_time", ""),
+                user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
+            ),
+            level=NotificationLevel.HIGH,
+            data=anomaly_details,
+        )
 
     # Update last login time
     user.last_login = now_utc()
@@ -374,6 +450,12 @@ async def register(
 
     # Determine response message
     if require_approval:
+        # 发送待审批通知给管理员（全局通知）
+        await AutoNotificationService.send_global(
+            notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
+            title=t("notify_user_pending_approval_title"),
+            content=t("notify_user_pending_approval_content", username=user.username, email=user.email),
+        )
         return success(data=user, msg_key="registration_pending_approval")
     elif email_verification:
         return success(data=user, msg_key="registration_pending_verification")

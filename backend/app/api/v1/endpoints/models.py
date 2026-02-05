@@ -542,8 +542,16 @@ async def _test_chat_model(
     base_url: Optional[str],
     config: dict,
 ) -> None:
-    """Test chat model by making a simple completion request"""
-    from langchain_core.messages import HumanMessage
+    """Test chat model by making a simple completion request using new adapter architecture"""
+    from app.llm.types import Message, MessageRole
+    from app.llm.adapters.chat import (
+        OpenAIAdapter,
+        DeepSeekAdapter,
+        AnthropicAdapter,
+        GeminiAdapter,
+        XAIAdapter,
+        OpenAICompatibleAdapter,
+    )
 
     # 构建临时配置
     class TempModel:
@@ -555,13 +563,47 @@ async def _test_chat_model(
             self.default_params = {}
             self.config = config
 
-    from app.llm.adapters.chat.factory import create_chat_model
+    temp_model = TempModel()
 
-    chat_model = create_chat_model(TempModel())
+    # 根据 provider 选择适配器
+    provider_value = provider.value if hasattr(provider, "value") else str(provider)
+
+    # 国际
+    if provider_value == ModelProvider.OPENAI.value:
+        adapter = OpenAIAdapter(temp_model)
+    elif provider_value == ModelProvider.ANTHROPIC.value:
+        adapter = AnthropicAdapter(temp_model)
+    elif provider_value == ModelProvider.GOOGLE.value:
+        adapter = GeminiAdapter(temp_model)
+    elif provider_value == ModelProvider.XAI.value:
+        adapter = XAIAdapter(temp_model)
+    elif provider_value == ModelProvider.AZURE_OPENAI.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="azure")
+    # 国内
+    elif provider_value == ModelProvider.DEEPSEEK.value:
+        adapter = DeepSeekAdapter(temp_model)
+    elif provider_value == ModelProvider.MOONSHOT.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="moonshot")
+    elif provider_value == ModelProvider.ZHIPU.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="zhipu")
+    elif provider_value == ModelProvider.QWEN.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="qwen")
+    elif provider_value == ModelProvider.BAICHUAN.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="baichuan")
+    elif provider_value == ModelProvider.MINIMAX.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="minimax")
+    # 其他
+    elif provider_value == ModelProvider.OLLAMA.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="ollama")
+    elif provider_value == ModelProvider.CUSTOM.value:
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="custom")
+    else:
+        # 默认使用 OpenAI 兼容适配器
+        adapter = OpenAICompatibleAdapter(temp_model, provider_hint=provider_value)
 
     # 发送一个简单的测试消息
-    messages = [HumanMessage(content="Hi")]
-    response = await chat_model.ainvoke(messages)
+    messages = [Message(role=MessageRole.USER, content="Hi")]
+    response = await adapter.chat(messages)
 
     if not response.content:
         raise ValueError("Empty response from model")

@@ -15,7 +15,10 @@ import time
 from tortoise.transactions import in_transaction
 
 from app.models.workflow import Workflow, WorkflowRun, RunStatus, NodeExecution, NodeStatus
+from app.models.notification import AutoNotificationType
 from app.core.redis import get_redis
+from app.core.i18n import t
+from app.services.auto_notification import AutoNotificationService
 
 from .context import ExecutionContext
 from .errors import (
@@ -529,6 +532,30 @@ class WorkflowOrchestrator:
                 total_tokens=F("total_tokens") + total_tokens
             )
 
+            # Send workflow run success notification
+            try:
+                await AutoNotificationService.send_to_team(
+                    notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
+                    team_id=workflow.team_id,
+                    title=t("notify_workflow_run_success_title"),
+                    content=t(
+                        "notify_workflow_run_success_content",
+                        workflow_name=workflow.name,
+                        duration=duration_ms,
+                        node_count=run.executed_nodes,
+                    ),
+                    data={
+                        "workflow_id": str(workflow.id),
+                        "workflow_name": workflow.name,
+                        "run_id": str(run.id),
+                        "duration_ms": duration_ms,
+                        "node_count": run.executed_nodes,
+                    },
+                    link_url=f"/app/apps/workflow/{workflow.id}",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send workflow run success notification: {e}")
+
     async def _fail_run(
         self,
         run: WorkflowRun,
@@ -570,6 +597,29 @@ class WorkflowOrchestrator:
             await workflow.team.update(
                 total_tokens=F("total_tokens") + total_tokens
             )
+
+            # Send workflow run failed notification
+            try:
+                await AutoNotificationService.send_to_team(
+                    notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
+                    team_id=workflow.team_id,
+                    title=t("notify_workflow_run_failed_title"),
+                    content=t(
+                        "notify_workflow_run_failed_content",
+                        workflow_name=workflow.name,
+                        error=error[:200] if error else "Unknown error",  # Truncate long errors
+                    ),
+                    data={
+                        "workflow_id": str(workflow.id),
+                        "workflow_name": workflow.name,
+                        "run_id": str(run.id),
+                        "error": error,
+                        "duration_ms": duration_ms,
+                    },
+                    link_url=f"/app/apps/workflow/{workflow.id}",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send workflow run failed notification: {e}")
 
     async def _execute(
         self,

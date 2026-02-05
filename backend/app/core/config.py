@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Server URL (used for internal file access)
     API_BASE_URL: str = "http://localhost:8000"
 
+    # Frontend URL (used for SSO redirects)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # Timezone
     TIMEZONE: str = "Asia/Shanghai"
 

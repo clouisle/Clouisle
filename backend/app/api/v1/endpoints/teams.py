@@ -4,7 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
+from app.core.i18n import t
 from app.models.user import Team, TeamMember, User
+from app.models.notification import AutoNotificationType
 from app.schemas.team import (
     Team as TeamSchema,
     TeamCreate,
@@ -24,6 +26,7 @@ from app.schemas.response import (
     success,
 )
 from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
 
 router = APIRouter()
 
@@ -35,7 +38,7 @@ router = APIRouter()
 async def list_teams(
     page: int = 1,
     page_size: int = 50,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
     """
     List all teams the current user belongs to.
@@ -69,7 +72,7 @@ async def create_team(
     *,
     request: Request,
     team_in: TeamCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:create")),
 ) -> Any:
     """
     Create a new team. The creator becomes the owner.
@@ -116,7 +119,7 @@ async def create_team(
 
 @router.get("/my", response_model=Response[List[UserTeamInfo]])
 async def get_my_teams(
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
     """
     Get all teams the current user belongs to with their role.
@@ -142,7 +145,7 @@ async def get_my_teams(
 @router.get("/{team_id}", response_model=Response[TeamWithMembers])
 async def get_team(
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
     """
     Get team by ID with members list.
@@ -202,7 +205,7 @@ async def update_team(
     request: Request,
     team_id: UUID,
     team_in: TeamUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:update")),
 ) -> Any:
     """
     Update team info. Only owner or admin can update.
@@ -273,7 +276,7 @@ async def update_team(
 async def delete_team(
     request: Request,
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:delete")),
 ) -> Any:
     """
     Delete a team. Only owner or superuser can delete.
@@ -327,7 +330,7 @@ async def add_team_member(
     request: Request,
     team_id: UUID,
     member_in: TeamMemberAdd,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
     """
     Add a member to the team. Only owner or admin can add members.
@@ -401,6 +404,22 @@ async def add_team_member(
         },
     )
 
+    # 发送自动通知给被添加的用户
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
+        user_id=user_to_add.id,
+        title=t("notify_team_member_added_title"),
+        content=t("notify_team_member_added_content", team_name=team.name, operator=current_user.username, role=member_in.role),
+    )
+
+    # 发送团队通知
+    await AutoNotificationService.send_to_team(
+        notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
+        team_id=team.id,
+        title=t("notify_team_member_added_team_title"),
+        content=t("notify_team_member_added_team_content", username=user_to_add.username, role=member_in.role),
+    )
+
     return success(
         data={
             "id": new_member.id,
@@ -421,7 +440,7 @@ async def update_team_member(
     team_id: UUID,
     user_id: UUID,
     member_in: TeamMemberUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
     """
     Update member role. Only owner can change roles.
@@ -477,8 +496,17 @@ async def update_team_member(
             msg_key="cannot_promote_to_owner",
         )
 
+    old_role = membership.role
     membership.role = member_in.role
     await membership.save()
+
+    # 发送自动通知给角色变更的用户
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.TEAM_ROLE_CHANGED,
+        user_id=target_user.id,
+        title=t("notify_team_role_changed_title"),
+        content=t("notify_team_role_changed_content", team_name=team.name, old_role=old_role, new_role=member_in.role),
+    )
 
     return success(
         data={
@@ -499,7 +527,7 @@ async def remove_team_member(
     request: Request,
     team_id: UUID,
     user_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
     """
     Remove a member from the team.
@@ -570,6 +598,22 @@ async def remove_team_member(
         },
     )
 
+    # 发送自动通知给被移除的用户
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
+        user_id=target_user.id,
+        title=t("notify_team_member_removed_title"),
+        content=t("notify_team_member_removed_content", team_name=team.name),
+    )
+
+    # 发送团队通知
+    await AutoNotificationService.send_to_team(
+        notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
+        team_id=team.id,
+        title=t("notify_team_member_removed_team_title"),
+        content=t("notify_team_member_removed_team_content", username=target_user.username),
+    )
+
     await membership.delete()
     return success(data={"user_id": str(user_id)}, msg_key="team_member_removed")
 
@@ -577,7 +621,7 @@ async def remove_team_member(
 @router.post("/{team_id}/leave", response_model=Response[dict])
 async def leave_team(
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
     """
     Leave a team. Owner cannot leave (must transfer ownership first or delete team).
@@ -613,7 +657,7 @@ async def transfer_ownership(
     *,
     team_id: UUID,
     new_owner_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
     """
     Transfer team ownership to another member. Only current owner can do this.
@@ -642,7 +686,7 @@ async def transfer_ownership(
         if new_owner
         else None
     )
-    if not new_owner_membership:
+    if not new_owner_membership or not new_owner:
         raise BusinessError(
             code=ResponseCode.TEAM_MEMBER_NOT_FOUND,
             msg_key="team_member_not_found",
@@ -660,4 +704,22 @@ async def transfer_ownership(
     await team.save()
 
     team = await Team.get(id=team_id).prefetch_related("owner")
+
+    # 发送自动通知给新所有者 (new_owner 已在上面验证不为 None)
+    assert new_owner is not None  # for type checker
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
+        user_id=new_owner.id,
+        title=t("notify_team_ownership_received_title"),
+        content=t("notify_team_ownership_received_content", team_name=team.name, old_owner=current_user.username),
+    )
+
+    # 发送自动通知给原所有者
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
+        user_id=current_user.id,
+        title=t("notify_team_ownership_transferred_title"),
+        content=t("notify_team_ownership_transferred_content", team_name=team.name, new_owner=new_owner.username),
+    )
+
     return success(data=team, msg_key="ownership_transferred")

@@ -154,7 +154,7 @@ async def list_knowledge_bases(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     List knowledge bases.
@@ -218,7 +218,7 @@ async def list_knowledge_bases(
 async def create_knowledge_base(
     *,
     kb_in: KnowledgeBaseCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:create")),
 ) -> Any:
     """
     Create a new knowledge base.
@@ -270,7 +270,7 @@ async def create_knowledge_base(
 @router.get("/{kb_id}", response_model=Response[KnowledgeBaseSchema])
 async def get_knowledge_base(
     kb_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     Get knowledge base by ID.
@@ -285,7 +285,7 @@ async def update_knowledge_base(
     *,
     kb_id: UUID,
     kb_in: KnowledgeBaseUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Update knowledge base.
@@ -332,7 +332,7 @@ async def update_knowledge_base(
 @router.delete("/{kb_id}", response_model=Response[dict])
 async def delete_knowledge_base(
     kb_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
 ) -> Any:
     """
     Delete knowledge base and all its documents.
@@ -349,7 +349,7 @@ async def delete_knowledge_base(
 @router.get("/{kb_id}/stats", response_model=Response[KnowledgeBaseStats])
 async def get_knowledge_base_stats(
     kb_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     Get knowledge base statistics.
@@ -411,7 +411,7 @@ async def list_documents(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     List documents in a knowledge base.
@@ -440,7 +440,7 @@ async def list_documents(
 async def upload_document(
     kb_id: UUID,
     file: UploadFile = File(...),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Upload a document to the knowledge base.
@@ -498,7 +498,7 @@ async def upload_document(
 async def add_url_document(
     kb_id: UUID,
     doc_in: DocumentCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Add a URL-based document to the knowledge base.
@@ -539,7 +539,7 @@ async def add_url_document(
 async def get_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     Get document details.
@@ -567,7 +567,7 @@ async def update_document(
     kb_id: UUID,
     doc_id: UUID,
     doc_in: DocumentUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Update document name.
@@ -594,7 +594,7 @@ async def update_document(
 async def delete_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
 ) -> Any:
     """
     Delete a document and all its chunks.
@@ -646,7 +646,7 @@ async def delete_document(
 async def download_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> FileResponse:
     """
     Download the original document file.
@@ -706,7 +706,7 @@ async def process_document(
     kb_id: UUID,
     doc_id: UUID,
     process_in: Optional[ProcessRequest] = Body(default=None),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Start processing a pending document.
@@ -766,7 +766,7 @@ async def process_document_with_chunks(
     kb_id: UUID,
     doc_id: UUID,
     request: ProcessWithChunksRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Process a document with pre-defined chunks from the frontend.
@@ -908,7 +908,7 @@ async def preview_document_chunks(
     kb_id: UUID,
     doc_id: UUID,
     preview_in: ChunkPreviewRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     Preview how a document will be chunked with given settings.
@@ -998,7 +998,7 @@ async def preview_document_chunks(
 async def reprocess_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Reprocess a document (re-chunk and re-embed).
@@ -1061,7 +1061,7 @@ async def list_document_chunks(
     doc_id: UUID,
     page: int = 1,
     page_size: int = 50,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     List chunks of a document.
@@ -1101,7 +1101,7 @@ async def update_document_chunk(
     doc_id: UUID,
     chunk_id: UUID,
     chunk_in: DocumentChunkUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Update a document chunk's content.
@@ -1178,7 +1178,7 @@ async def delete_document_chunk(
     kb_id: UUID,
     doc_id: UUID,
     chunk_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
 ) -> Any:
     """
     Delete a document chunk.
@@ -1244,7 +1244,7 @@ async def create_document_chunk(
     doc_id: UUID,
     chunk_in: DocumentChunkUpdate,
     after_index: int | None = None,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Create a new chunk in a document.
@@ -1323,7 +1323,7 @@ async def rechunk_document(
     kb_id: UUID,
     doc_id: UUID,
     rechunk_in: RechunkRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
 ) -> Any:
     """
     Re-chunk a document with new chunking settings.
@@ -1391,7 +1391,7 @@ async def rechunk_document(
 async def search_knowledge_base(
     kb_id: UUID,
     search_in: SearchRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("kb:read")),
 ) -> Any:
     """
     Search the knowledge base.

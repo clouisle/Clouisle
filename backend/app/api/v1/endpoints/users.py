@@ -7,6 +7,7 @@ from tortoise.expressions import Q
 
 from app.api import deps
 from app.core import security
+from app.core.i18n import t
 from app.core.email import (
     send_email,
     check_bulk_email_rate,
@@ -16,6 +17,7 @@ from app.core.email import (
 )
 from app.models.user import User, Role
 from app.models.site_setting import SiteSetting
+from app.models.notification import AutoNotificationType, NotificationLevel
 from app.schemas.user import User as UserSchema, UserCreate, UserUpdate
 from app.schemas.response import (
     Response,
@@ -25,8 +27,77 @@ from app.schemas.response import (
     success,
 )
 from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
 
 router = APIRouter()
+
+
+async def serialize_user_with_sso(user: User) -> dict:
+    """
+    Serialize user object with SSO connections to dict.
+    Handles the case where sso_connections might not be loaded.
+    """
+    from app.schemas.sso import UserSSOConnectionSchema
+
+    roles = user.roles
+    if not isinstance(roles, list):
+        roles = await user.roles.all().prefetch_related("permissions")
+
+    sso_connections = user.sso_connections
+    if not isinstance(sso_connections, list):
+        sso_connections = await user.sso_connections.all().prefetch_related("provider")
+
+    user_dict = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "is_active": user.is_active,
+        "is_superuser": user.is_superuser,
+        "email_verified": user.email_verified,
+        "avatar_url": user.avatar_url,
+        "created_at": user.created_at,
+        "last_login": user.last_login,
+        "auth_source": user.auth_source,
+        "external_id": user.external_id,
+        "roles": [
+            {
+                "id": role.id,
+                "name": role.name,
+                "description": role.description,
+                "is_system_role": role.is_system_role,
+                "permissions": [
+                    {
+                        "id": perm.id,
+                        "scope": perm.scope,
+                        "code": perm.code,
+                        "description": perm.description,
+                    }
+                    for perm in role.permissions
+                ]
+            }
+            for role in roles
+        ],
+        "sso_connections": [],
+    }
+
+    for conn in sso_connections:
+        user_dict["sso_connections"].append(
+            UserSSOConnectionSchema(
+                id=conn.id,
+                provider_id=conn.provider.id,
+                provider_name=conn.provider.name,
+                provider_display_name=conn.provider.display_name,
+                provider_icon_url=conn.provider.icon_url,
+                provider_user_id=conn.provider_user_id,
+                provider_username=conn.provider_username,
+                provider_email=conn.provider_email,
+                first_login=conn.first_login,
+                last_login=conn.last_login,
+            ).model_dump()
+        )
+
+    return user_dict
+
 
 
 @router.get("/", response_model=Response[PageData[UserSchema]])
@@ -62,11 +133,17 @@ async def read_users(
 
     total = await query.count()
     users = (
-        await query.offset(skip).limit(page_size).prefetch_related("roles__permissions")
+        await query.offset(skip)
+        .limit(page_size)
+        .prefetch_related("roles__permissions", "sso_connections__provider")
     )
+
+    users_data = []
+    for user in users:
+        users_data.append(await serialize_user_with_sso(user))
     return success(
         data={
-            "items": users,
+            "items": users_data,
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -142,7 +219,7 @@ async def create_user(
         request=request,
     )
 
-    return success(data=user, msg_key="user_created")
+    return success(data=await serialize_user_with_sso(user), msg_key="user_created")
 
 
 class SendEmailRequest(BaseModel):
@@ -251,7 +328,11 @@ async def read_user_me(
     """
     Get current user.
     """
-    return success(data=current_user)
+    user = (
+        await User.get(id=current_user.id)
+        .prefetch_related("roles__permissions", "sso_connections__provider")
+    )
+    return success(data=await serialize_user_with_sso(user))
 
 
 class UpdateProfileRequest(BaseModel):
@@ -314,7 +395,9 @@ async def update_user_me(
         metadata={"fields_updated": list(update_data.keys())},
     )
 
-    return success(data=updated_user, msg_key="profile_updated")
+    return success(
+        data=await serialize_user_with_sso(updated_user), msg_key="profile_updated"
+    )
 
 
 class ChangePasswordRequest(BaseModel):
@@ -364,6 +447,15 @@ async def change_password(
         operation="update",
         status="success",
         request=request,
+    )
+
+    # 发送密码变更安全通知
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.SECURITY_PASSWORD_CHANGED,
+        user_id=current_user.id,
+        title=t("notify_password_changed_title"),
+        content=t("notify_password_changed_content"),
+        level=NotificationLevel.HIGH,
     )
 
     return success(msg_key="password_changed")
@@ -441,7 +533,7 @@ async def read_user_by_id(
             msg_key="user_with_id_not_exists",
             status_code=404,
         )
-    return success(data=user)
+    return success(data=await serialize_user_with_sso(user))
 
 
 @router.post("/{user_id}/activate", response_model=Response[UserSchema])
@@ -484,7 +576,17 @@ async def activate_user(
         request=request,
     )
 
-    return success(data=updated_user, msg_key="user_activated")
+    # 发送自动通知给被激活的用户
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.USER_ACTIVATED,
+        user_id=user.id,
+        title=t("notify_user_activated_title"),
+        content=t("notify_user_activated_content"),
+    )
+
+    return success(
+        data=await serialize_user_with_sso(updated_user), msg_key="user_activated"
+    )
 
 
 @router.post("/{user_id}/deactivate", response_model=Response[UserSchema])
@@ -533,7 +635,17 @@ async def deactivate_user(
         request=request,
     )
 
-    return success(data=updated_user, msg_key="user_deactivated")
+    # 发送自动通知给被停用的用户
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.USER_DEACTIVATED,
+        user_id=user.id,
+        title=t("notify_user_deactivated_title"),
+        content=t("notify_user_deactivated_content"),
+    )
+
+    return success(
+        data=await serialize_user_with_sso(updated_user), msg_key="user_deactivated"
+    )
 
 
 @router.put("/{user_id}", response_model=Response[UserSchema])
@@ -557,9 +669,11 @@ async def update_user(
 
     user_data = user_in.model_dump(exclude_unset=True)
 
+    password_changed = False
     if "password" in user_data:
         password = user_data.pop("password")
         user_data["hashed_password"] = security.get_password_hash(password)
+        password_changed = True
 
     if "roles" in user_data:
         role_names = user_data.pop("roles")
@@ -590,7 +704,18 @@ async def update_user(
         metadata={"fields_updated": list(user_in.model_dump(exclude_unset=True).keys())},
     )
 
-    return success(data=updated_user, msg_key="user_updated")
+    # 如果密码被重置，发送通知
+    if password_changed:
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.USER_PASSWORD_RESET,
+            user_id=user.id,
+            title=t("notify_user_password_reset_title"),
+            content=t("notify_user_password_reset_content"),
+        )
+
+    return success(
+        data=await serialize_user_with_sso(updated_user), msg_key="user_updated"
+    )
 
 
 @router.delete("/{user_id}", response_model=Response[UserSchema])
@@ -629,4 +754,4 @@ async def delete_user(
     )
 
     await user.delete()
-    return success(data=user, msg_key="user_deleted")
+    return success(data=await serialize_user_with_sso(user), msg_key="user_deleted")

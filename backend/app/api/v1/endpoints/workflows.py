@@ -123,7 +123,7 @@ async def list_all_workflow_runs(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
     List all workflow runs across workflows (admin endpoint).
@@ -207,7 +207,7 @@ async def list_all_workflow_runs(
 @router.get("/runs/stats", response_model=Response[dict])
 async def get_workflow_run_stats(
     team_id: UUID | None = Query(None),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
     Get workflow run statistics.
@@ -316,7 +316,7 @@ async def list_workflows(
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
     List workflows.
@@ -366,7 +366,7 @@ async def list_workflows(
 async def create_workflow(
     *,
     workflow_in: WorkflowCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:create")),
 ) -> Any:
     """Create a new workflow."""
     # Check team access
@@ -431,7 +431,7 @@ async def create_workflow(
 @router.get("/{workflow_id}", response_model=Response[WorkflowOut])
 async def get_workflow(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """Get workflow by ID."""
     workflow = await check_workflow_access(workflow_id, current_user)
@@ -441,7 +441,7 @@ async def get_workflow(
 @router.get("/{workflow_id}/stats", response_model=Response[dict])
 async def get_workflow_stats(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
     Get statistics for a specific workflow.
@@ -506,7 +506,7 @@ async def get_workflow_stats(
 async def get_workflow_trends(
     workflow_id: UUID,
     period: str = Query("7d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """
     Get workflow execution trends over time.
@@ -586,7 +586,7 @@ async def update_workflow(
     *,
     workflow_id: UUID,
     workflow_in: WorkflowUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Update a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -634,7 +634,7 @@ async def update_workflow(
 @router.delete("/{workflow_id}", response_model=Response[dict])
 async def delete_workflow(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:delete")),
 ) -> Any:
     """Delete a workflow and all its runs."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -648,7 +648,7 @@ async def delete_workflow(
 @router.post("/{workflow_id}/publish", response_model=Response[WorkflowOut])
 async def publish_workflow(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Publish a workflow and save a version snapshot."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -683,7 +683,7 @@ async def publish_workflow(
 @router.post("/{workflow_id}/unpublish", response_model=Response[WorkflowOut])
 async def unpublish_workflow(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Unpublish a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -700,7 +700,7 @@ async def unpublish_workflow(
 @router.post("/{workflow_id}/duplicate", response_model=Response[WorkflowOut])
 async def duplicate_workflow(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:create")),
 ) -> Any:
     """Duplicate a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user)
@@ -733,7 +733,7 @@ async def duplicate_workflow(
 @router.post("/{workflow_id}/regenerate-webhook-token", response_model=Response[dict])
 async def regenerate_webhook_token(
     workflow_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Regenerate webhook token for a workflow."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -899,7 +899,7 @@ async def trigger_workflow_webhook(
 async def run_workflow(
     workflow_id: UUID,
     run_request: WorkflowRunRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """
     Run a workflow with the given inputs.
@@ -958,7 +958,7 @@ async def run_workflow(
 async def debug_workflow(
     workflow_id: UUID,
     run_request: WorkflowRunRequest,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """
     Run a workflow in debug mode (uses current draft, not published version).
@@ -1070,7 +1070,7 @@ async def stream_workflow_run(
 @router.post("/runs/{run_id}/cancel", response_model=Response[dict])
 async def cancel_workflow_run(
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """Cancel a running workflow."""
     from app.services.workflow import WorkflowOrchestrator
@@ -1104,7 +1104,7 @@ async def list_workflow_runs(
     is_debug: bool | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """List runs for a workflow."""
     await check_workflow_access(workflow_id, current_user)
@@ -1136,7 +1136,7 @@ async def list_workflow_runs(
 @router.get("/runs/{run_id}", response_model=Response[WorkflowRunOut])
 async def get_workflow_run(
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """Get workflow run details."""
     run = await WorkflowRun.filter(id=run_id).prefetch_related("workflow").first()
@@ -1157,7 +1157,7 @@ async def get_workflow_run(
 @router.get("/runs/{run_id}/nodes", response_model=Response[list[NodeExecutionOut]])
 async def list_run_node_executions(
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """Get all node executions for a run."""
     run = await WorkflowRun.filter(id=run_id).prefetch_related("workflow").first()
@@ -1182,7 +1182,7 @@ async def list_run_node_executions(
 @router.delete("/runs/{run_id}", response_model=Response[dict])
 async def delete_workflow_run(
     run_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:delete")),
 ) -> Any:
     """Delete a workflow run."""
     run = await WorkflowRun.filter(id=run_id).prefetch_related("workflow").first()
@@ -1210,7 +1210,7 @@ async def list_workflow_versions(
     workflow_id: UUID,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """List version history for a workflow."""
     await check_workflow_access(workflow_id, current_user)
@@ -1237,7 +1237,7 @@ async def list_workflow_versions(
 async def get_workflow_version(
     workflow_id: UUID,
     version: int,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """Get a specific version of a workflow."""
     await check_workflow_access(workflow_id, current_user)
@@ -1260,7 +1260,7 @@ async def get_workflow_version(
 async def create_workflow_version(
     workflow_id: UUID,
     version_in: WorkflowVersionCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Manually create a version snapshot of the current workflow state."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)
@@ -1288,7 +1288,7 @@ async def restore_workflow_version(
     workflow_id: UUID,
     version: int,
     restore_in: WorkflowVersionRestore,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Restore a workflow to a specific version."""
     workflow = await check_workflow_access(workflow_id, current_user, require_write=True)

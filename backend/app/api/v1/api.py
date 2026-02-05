@@ -21,6 +21,8 @@ from app.api.v1.endpoints import (
     workflows,
     dashboard,
     audit_logs,
+    notifications,
+    sso,
 )
 from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
@@ -71,3 +73,10 @@ api_router.include_router(
 api_router.include_router(
     audit_logs.router, prefix="/audit-logs", tags=["audit-logs"]
 )
+api_router.include_router(
+    notifications.router, prefix="/notifications", tags=["notifications"]
+)
+api_router.include_router(
+    notifications.admin_router, prefix="/admin/notifications", tags=["notifications-admin"]
+)
+api_router.include_router(sso.router, prefix="/sso", tags=["sso"])

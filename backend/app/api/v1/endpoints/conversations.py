@@ -91,28 +91,65 @@ async def list_all_conversations(
     untitled_only: bool = Query(False, description="Show only untitled conversations"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """
-    List all conversations (admin endpoint).
-    
-    Returns conversations across all users, filterable by team and agent.
-    Requires appropriate permissions (to be enforced by permission system).
-    """
-    query = Conversation.all()
+    List conversations.
 
-    # Apply filters
-    if team_id:
-        # Get all agents for this team, then filter conversations
-        agent_ids = await Agent.filter(team_id=team_id).values_list("id", flat=True)
-        query = query.filter(agent_id__in=agent_ids)
-    
+    - Super Admin: Can see all conversations
+    - Admin (has dashboard:access): Can see all conversations in their teams
+    - Member/Viewer: Can only see their own conversations
+    """
+    # Check if user has dashboard:access permission (Admin level)
+    has_dashboard_access = current_user.is_superuser
+    if not has_dashboard_access:
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
+    # Get agent IDs user has access to (team isolation for non-superusers)
+    accessible_agent_ids = await get_user_team_agent_ids(current_user, team_id)
+
+    if not accessible_agent_ids:
+        # User has no access to any agents
+        return success(
+            data={
+                "items": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+    # Start with accessible agents filter
+    query = Conversation.filter(agent_id__in=accessible_agent_ids)
+
+    # Member/Viewer can only see their own conversations
+    if not has_dashboard_access:
+        query = query.filter(user_id=current_user.id)
+
+    # Apply additional filters
     if agent_id:
+        # Verify agent is in accessible list
+        if agent_id not in accessible_agent_ids:
+            return success(
+                data={
+                    "items": [],
+                    "total": 0,
+                    "page": page,
+                    "page_size": page_size,
+                }
+            )
         query = query.filter(agent_id=agent_id)
-    
-    if user_id:
+
+    # user_id filter only applies for admins (members already filtered to own)
+    if user_id and has_dashboard_access:
         query = query.filter(user_id=user_id)
-    
+
     if untitled_only:
         # Filter conversations with null or empty title
         query = query.filter(Q(title__isnull=True) | Q(title=""))
@@ -159,12 +196,25 @@ async def list_all_conversations(
 @router.get("/stats", response_model=Response[dict])
 async def get_conversation_stats(
     team_id: UUID | None = Query(None, description="Filter by team"),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """
-    Get conversation statistics for admin dashboard.
-    Returns stats for teams the user has access to.
+    Get conversation statistics.
+
+    - Super Admin/Admin: Stats for all conversations in accessible teams
+    - Member/Viewer: Stats for their own conversations only
     """
+    # Check if user has dashboard:access permission (Admin level)
+    has_dashboard_access = current_user.is_superuser
+    if not has_dashboard_access:
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
     # Get agent IDs user has access to
     agent_ids = await get_user_team_agent_ids(current_user, team_id)
 
@@ -180,6 +230,11 @@ async def get_conversation_stats(
 
     # Get conversations for accessible agents
     query = Conversation.filter(agent_id__in=agent_ids)
+
+    # Member/Viewer can only see their own conversations
+    if not has_dashboard_access:
+        query = query.filter(user_id=current_user.id)
+
     total_conversations = await query.count()
 
     # Get total messages
@@ -187,9 +242,14 @@ async def get_conversation_stats(
     message_query = Message.filter(conversation_id__in=conv_ids)
     total_messages = await message_query.count()
 
-    # Get conversations by agent (top 10)
+    # Get conversations by agent (top 10) - also apply user filter for non-admins
+    if has_dashboard_access:
+        agent_stats_query = Conversation.filter(agent_id__in=agent_ids)
+    else:
+        agent_stats_query = Conversation.filter(agent_id__in=agent_ids, user_id=current_user.id)
+
     agent_stats = (
-        await Conversation.filter(agent_id__in=agent_ids)
+        await agent_stats_query
         .annotate(count=Count("id"))
         .group_by("agent_id")
         .order_by("-count")
@@ -225,12 +285,25 @@ async def get_conversation_stats(
 async def get_conversation_trends(
     team_id: UUID | None = Query(None, description="Filter by team"),
     period: str = Query("7d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """
-    Get conversation and message trends for dashboard charts.
-    Returns daily statistics for teams the user has access to.
+    Get conversation and message trends.
+
+    - Super Admin/Admin: Trends for all conversations in accessible teams
+    - Member/Viewer: Trends for their own conversations only
     """
+    # Check if user has dashboard:access permission (Admin level)
+    has_dashboard_access = current_user.is_superuser
+    if not has_dashboard_access:
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
     now_local = now()
 
     # Determine time range
@@ -268,14 +341,23 @@ async def get_conversation_trends(
         created_at__gte=start_time_utc,
         agent_id__in=agent_ids
     )
+    # Member/Viewer can only see their own conversations
+    if not has_dashboard_access:
+        conv_query = conv_query.filter(user_id=current_user.id)
     conversations = await conv_query.values("id", "created_at")
 
-    # Get all messages in the period for accessible agents
-    msg_query = Message.filter(
-        created_at__gte=start_time_utc,
-        conversation__agent_id__in=agent_ids
-    )
-    messages = await msg_query.values("created_at", "token_usage", "role")
+    # Get conversation IDs for message query
+    conv_ids = [c["id"] for c in conversations]
+
+    # Get all messages in the period for these conversations
+    if conv_ids:
+        msg_query = Message.filter(
+            created_at__gte=start_time_utc,
+            conversation_id__in=conv_ids
+        )
+        messages = await msg_query.values("created_at", "token_usage", "role")
+    else:
+        messages = []
 
     # Build time series data grouped by day
     data_points = []
@@ -324,12 +406,13 @@ async def get_conversation_trends(
 @router.get("/{conversation_id}", response_model=Response[ConversationWithMessages])
 async def get_conversation_detail(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """
-    Get conversation detail with messages (admin endpoint).
-    
-    Returns full conversation data including all messages.
+    Get conversation detail with messages.
+
+    - Super Admin/Admin: Can access any conversation in accessible teams
+    - Member/Viewer: Can only access their own conversations
     """
     conversation = (
         await Conversation.filter(id=conversation_id)
@@ -343,6 +426,37 @@ async def get_conversation_detail(
             msg_key="conversation_not_found",
             status_code=404,
         )
+
+    # Check access permissions
+    if not current_user.is_superuser:
+        # Check if user has dashboard:access permission (Admin level)
+        has_dashboard_access = False
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
+        if has_dashboard_access:
+            # Admin can access any conversation in their teams
+            if conversation.agent_id:
+                accessible_agent_ids = await get_user_team_agent_ids(current_user)
+                if conversation.agent_id not in accessible_agent_ids:
+                    raise BusinessError(
+                        code=ResponseCode.PERMISSION_DENIED,
+                        msg_key="not_team_member",
+                        status_code=403,
+                    )
+        else:
+            # Member/Viewer can only access their own conversations
+            if conversation.user_id != current_user.id:
+                raise BusinessError(
+                    code=ResponseCode.PERMISSION_DENIED,
+                    msg_key="conversation_not_found",
+                    status_code=404,
+                )
 
     # Get only active messages
     messages = await Message.filter(
@@ -393,12 +507,13 @@ async def get_conversation_detail(
 @router.delete("/{conversation_id}", response_model=Response[dict])
 async def delete_conversation_admin(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """
-    Delete a conversation (admin endpoint).
-    
-    Admins can delete any conversation regardless of owner.
+    Delete a conversation.
+
+    - Super Admin/Admin: Can delete any conversation in accessible teams
+    - Member/Viewer: Can only delete their own conversations
     """
     conversation = await Conversation.filter(id=conversation_id).first()
 
@@ -408,6 +523,37 @@ async def delete_conversation_admin(
             msg_key="conversation_not_found",
             status_code=404,
         )
+
+    # Check access permissions
+    if not current_user.is_superuser:
+        # Check if user has dashboard:access permission (Admin level)
+        has_dashboard_access = False
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
+        if has_dashboard_access:
+            # Admin can delete any conversation in their teams
+            if conversation.agent_id:
+                accessible_agent_ids = await get_user_team_agent_ids(current_user)
+                if conversation.agent_id not in accessible_agent_ids:
+                    raise BusinessError(
+                        code=ResponseCode.PERMISSION_DENIED,
+                        msg_key="not_team_member",
+                        status_code=403,
+                    )
+        else:
+            # Member/Viewer can only delete their own conversations
+            if conversation.user_id != current_user.id:
+                raise BusinessError(
+                    code=ResponseCode.PERMISSION_DENIED,
+                    msg_key="conversation_not_found",
+                    status_code=404,
+                )
 
     # Update agent stats
     from tortoise.expressions import F
@@ -425,22 +571,57 @@ async def delete_conversation_admin(
 @router.delete("", response_model=Response[dict])
 async def batch_delete_conversations(
     ids: list[UUID] = Query(..., description="Conversation IDs to delete"),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """
-    Batch delete conversations (admin endpoint).
+    Batch delete conversations.
+
+    - Super Admin/Admin: Can delete any conversation in accessible teams
+    - Member/Viewer: Can only delete their own conversations
     """
     from tortoise.expressions import F
 
     # Get conversations to delete
     conversations = await Conversation.filter(id__in=ids)
-    
+
     if not conversations:
         raise BusinessError(
             code=ResponseCode.CONVERSATION_NOT_FOUND,
             msg_key="conversation_not_found",
             status_code=404,
         )
+
+    # Check access permissions
+    if not current_user.is_superuser:
+        # Check if user has dashboard:access permission (Admin level)
+        has_dashboard_access = False
+        for role in current_user.roles:
+            for perm in role.permissions:
+                if perm.code == "dashboard:access" or perm.code == "*":
+                    has_dashboard_access = True
+                    break
+            if has_dashboard_access:
+                break
+
+        if has_dashboard_access:
+            # Admin can delete any conversation in their teams
+            accessible_agent_ids = await get_user_team_agent_ids(current_user)
+            for conv in conversations:
+                if conv.agent_id and conv.agent_id not in accessible_agent_ids:
+                    raise BusinessError(
+                        code=ResponseCode.PERMISSION_DENIED,
+                        msg_key="not_team_member",
+                        status_code=403,
+                    )
+        else:
+            # Member/Viewer can only delete their own conversations
+            for conv in conversations:
+                if conv.user_id != current_user.id:
+                    raise BusinessError(
+                        code=ResponseCode.PERMISSION_DENIED,
+                        msg_key="conversation_not_found",
+                        status_code=404,
+                    )
 
     # Update agent stats for each conversation
     for conv in conversations:

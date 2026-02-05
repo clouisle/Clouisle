@@ -39,6 +39,22 @@ from .tool import (
 from .tool_config import ToolConfig
 from .api_key import APIKey
 from .audit_log import AuditLog
+from .notification import (
+    Notification,
+    NotificationRead,
+    NotificationAudit,
+    NotificationDelivery,
+    NotificationScope,
+    NotificationSource,
+    NotificationLevel,
+    NotificationStatus,
+    NotificationAuditAction,
+    NotificationChannel,
+    NotificationDeliveryStatus,
+)
+from .sso_provider import SSOProvider
+from .user_sso_connection import UserSSOConnection
+from .sso_session import SSOSession
 
 __all__ = [
     "User",
@@ -84,4 +100,15 @@ __all__ = [
     "ToolConfig",
     "APIKey",
     "AuditLog",
+    "Notification",
+    "NotificationRead",
+    "NotificationAudit",
+    "NotificationScope",
+    "NotificationSource",
+    "NotificationLevel",
+    "NotificationStatus",
+    "NotificationAuditAction",
+    "SSOProvider",
+    "UserSSOConnection",
+    "SSOSession",
 ]

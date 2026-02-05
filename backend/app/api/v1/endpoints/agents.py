@@ -48,6 +48,9 @@ from app.schemas.response import (
     success,
 )
 from app.services.audit_log import AuditLogService
+from app.services.auto_notification import AutoNotificationService
+from app.models.notification import AutoNotificationType
+from app.core.i18n import t
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -286,7 +289,7 @@ async def list_agents(
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:read")),
 ) -> Any:
     """
     List agents.
@@ -363,7 +366,7 @@ async def create_agent(
     *,
     request: Request,
     agent_in: AgentCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:create")),
 ) -> Any:
     """Create a new agent."""
     # Check team access
@@ -463,7 +466,7 @@ async def create_agent(
 @router.get("/{agent_id}", response_model=Response[AgentOut])
 async def get_agent(
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:read")),
 ) -> Any:
     """Get agent by ID."""
     agent = await check_agent_access(agent_id, current_user)
@@ -477,7 +480,7 @@ async def update_agent(
     request: Request,
     agent_id: UUID,
     agent_in: AgentUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:update")),
 ) -> Any:
     """Update an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
@@ -620,7 +623,7 @@ async def update_agent(
 async def delete_agent(
     request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:delete")),
 ) -> Any:
     """Delete an agent and all its conversations."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
@@ -651,7 +654,7 @@ async def delete_agent(
 async def publish_agent(
     request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:publish")),
 ) -> Any:
     """Publish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
@@ -671,6 +674,15 @@ async def publish_agent(
         request=request,
     )
 
+    # 发送团队通知
+    if agent.team_id:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.AGENT_PUBLISHED,
+            team_id=agent.team_id,
+            title=t("notify_agent_published_title"),
+            content=t("notify_agent_published_content", agent_name=agent.name),
+        )
+
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_published")
 
@@ -679,7 +691,7 @@ async def publish_agent(
 async def unpublish_agent(
     request: Request,
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:publish")),
 ) -> Any:
     """Unpublish an agent."""
     agent = await check_agent_access(agent_id, current_user, require_write=True)
@@ -699,6 +711,15 @@ async def unpublish_agent(
         request=request,
     )
 
+    # 发送团队通知
+    if agent.team_id:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
+            team_id=agent.team_id,
+            title=t("notify_agent_unpublished_title"),
+            content=t("notify_agent_unpublished_content", agent_name=agent.name),
+        )
+
     agent_data = await build_agent_out(agent)
     return success(data=agent_data, msg_key="agent_unpublished")
 
@@ -706,7 +727,7 @@ async def unpublish_agent(
 @router.post("/{agent_id}/duplicate", response_model=Response[AgentOut])
 async def duplicate_agent(
     agent_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("agent:create")),
 ) -> Any:
     """Duplicate an agent."""
     agent = await check_agent_access(agent_id, current_user)
@@ -758,7 +779,7 @@ async def list_agent_conversations(
     agent_id: UUID,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """List conversations for an agent (only user's own conversations)."""
     agent = await check_agent_access(agent_id, current_user)
@@ -791,7 +812,7 @@ async def list_my_conversations(
     agent_id: UUID | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """List all conversations for current user."""
     query = Conversation.filter(user=current_user)
@@ -826,7 +847,7 @@ async def list_my_conversations(
 )
 async def get_conversation(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """Get conversation with messages."""
     conversation = (
@@ -902,7 +923,7 @@ async def update_conversation(
     *,
     conversation_id: UUID,
     conv_in: ConversationUpdate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """Update conversation (e.g., rename)."""
     conversation = (
@@ -935,7 +956,7 @@ async def update_conversation(
 @router.delete("/conversations/{conversation_id}", response_model=Response[dict])
 async def delete_conversation(
     conversation_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a conversation."""
     conversation = await Conversation.filter(
@@ -969,7 +990,7 @@ async def delete_conversation(
 async def delete_message(
     conversation_id: UUID,
     message_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """Delete a message from a conversation."""
     conversation = await Conversation.filter(

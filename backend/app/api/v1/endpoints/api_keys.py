@@ -252,6 +252,9 @@ async def create_api_key(
         },
     )
 
+    # 重新查询以获取关联数据
+    api_key = await APIKey.filter(id=api_key.id).prefetch_related("user", "agents", "workflows").first()
+
     # 构建响应
     response_data = await build_api_key_response(api_key)
     response_data["key"] = full_key  # Only returned once

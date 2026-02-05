@@ -193,7 +193,7 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
 async def list_tools(
     team_id: UUID,
     include_shared: bool = True,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取所有可用工具
@@ -277,7 +277,7 @@ async def list_tools(
 
 @router.get("/builtin", response_model=Response[list[ToolOut]])
 async def list_builtin_tools(
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """获取所有内置工具"""
     return success(
@@ -289,7 +289,7 @@ async def list_builtin_tools(
 @router.get("/file-parsers", response_model=Response[list[ToolOut]])
 async def list_file_parsers(
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取可用于文件上传功能的解析器列表
@@ -363,7 +363,7 @@ async def list_file_parsers(
 @router.post("/mcp/list-tools", response_model=Response[McpToolsListResponse])
 async def get_mcp_tools(
     request: McpToolsListRequest,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取 MCP 服务器的工具列表
@@ -400,7 +400,7 @@ async def get_mcp_tools(
 async def create_tool(
     team_id: UUID,
     tool_in: ToolCreateInput,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:create")),
 ) -> Any:
     """创建自定义工具"""
     await check_team_access(team_id, current_user, require_admin=True)
@@ -444,7 +444,7 @@ async def create_tool(
 @router.get("/id/{tool_id}", response_model=Response[ToolDetailOut])
 async def get_tool_by_id(
     tool_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """根据 ID 获取工具详情"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
@@ -468,7 +468,7 @@ async def get_tool_by_id(
 async def get_tool_by_name(
     tool_name: str,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """根据名称获取工具（内置或自定义）"""
     # 先检查内置工具
@@ -524,7 +524,7 @@ async def get_tool_by_name(
 async def update_tool(
     tool_id: UUID,
     tool_in: ToolUpdateInput,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """更新工具"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
@@ -584,7 +584,7 @@ async def update_tool(
 @router.delete("/{tool_id}", response_model=Response[None])
 async def delete_tool(
     tool_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:delete")),
 ) -> Any:
     """删除工具"""
     tool = await Tool.filter(id=tool_id).first()
@@ -609,7 +609,7 @@ async def delete_tool(
 async def test_tool(
     request: ToolExecuteRequest,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:execute")),
 ) -> Any:
     """
     测试执行工具
@@ -824,7 +824,7 @@ async def test_tool(
 @router.post("/execute-code", response_model=Response[CodeExecuteResponse])
 async def execute_code_directly(
     request: CodeExecuteRequest,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:execute")),
 ) -> Any:
     """
     直接执行代码（不需要保存工具）
@@ -868,7 +868,7 @@ async def execute_code_directly(
 @router.post("/{tool_id}/toggle", response_model=Response[ToolDetailOut])
 async def toggle_tool(
     tool_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """切换工具启用状态"""
     tool = await Tool.filter(id=tool_id).prefetch_related("created_by").first()
@@ -894,7 +894,7 @@ async def toggle_tool(
 @router.post("/{tool_id}/duplicate", response_model=Response[ToolDetailOut])
 async def duplicate_tool(
     tool_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:create")),
 ) -> Any:
     """复制工具"""
     tool = await Tool.filter(id=tool_id).first()
@@ -946,7 +946,7 @@ async def duplicate_tool(
 @router.get("/config", response_model=Response[list[dict]])
 async def list_tool_configs(
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取工具配置列表
@@ -979,7 +979,7 @@ async def list_tool_configs(
 async def get_tool_config(
     tool_name: str,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取指定工具的配置
@@ -997,13 +997,30 @@ async def get_tool_config(
                 status_code=403,
             )
         config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
-    
+
     if not config:
-        raise BusinessError(
-            code=ResponseCode.NOT_FOUND,
-            msg_key="tool_config_not_found",
-            status_code=404,
-        )
+        # For team-scoped builtin tools, create a default empty config
+        if team_id:
+            from app.llm.tools import tool_registry
+
+            if tool_registry.get_tool(tool_name):
+                config = await ToolConfig.create(
+                    tool_name=tool_name,
+                    team_id=team_id,
+                    credentials={},
+                )
+            else:
+                raise BusinessError(
+                    code=ResponseCode.NOT_FOUND,
+                    msg_key="tool_config_not_found",
+                    status_code=404,
+                )
+        else:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="tool_config_not_found",
+                status_code=404,
+            )
     
     from app.schemas.tool_config import ToolConfigOut
     return success(
@@ -1016,7 +1033,7 @@ async def get_tool_config(
 async def create_tool_config(
     data: dict,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
     创建工具配置
@@ -1067,7 +1084,7 @@ async def update_tool_config(
     tool_name: str,
     data: dict,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
     更新工具配置
@@ -1110,7 +1127,7 @@ async def update_tool_config(
 async def delete_tool_config(
     tool_name: str,
     team_id: UUID | None = None,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:delete")),
 ) -> Any:
     """
     删除工具配置
@@ -1151,7 +1168,7 @@ async def delete_tool_config(
 async def share_tool(
     tool_id: UUID,
     share_data: ToolShareInput,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
     共享工具给其他团队
@@ -1231,7 +1248,7 @@ async def share_tool(
 @router.get("/{tool_id}/shares", response_model=Response[ToolShareListOut])
 async def list_tool_shares(
     tool_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取工具的共享列表
@@ -1283,7 +1300,7 @@ async def list_tool_shares(
 async def unshare_tool(
     tool_id: UUID,
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
     取消工具共享
@@ -1327,7 +1344,7 @@ async def unshare_tool(
 @router.get("/shared-with-me", response_model=Response[ToolListOut])
 async def list_shared_tools(
     team_id: UUID,
-    current_user: User = Depends(deps.get_current_user),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
     """
     获取共享给当前团队的工具列表

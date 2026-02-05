@@ -8,14 +8,80 @@ from uuid import UUID
 
 from celery import shared_task
 
+from app.core.i18n import t
 from app.models.knowledge_base import (
     Document,
     DocumentStatus,
 )
+from app.models.notification import AutoNotificationType
+from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
 from app.services.vector_store import VectorStore, DimensionMismatchError
 
 logger = logging.getLogger(__name__)
+
+
+async def _send_doc_indexed_notification(
+    document: Document,
+    kb_name: str,
+    team_id: UUID,
+    chunk_count: int,
+    token_count: int,
+) -> None:
+    """Send notification when document is indexed successfully."""
+    try:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.KB_DOC_INDEXED,
+            team_id=team_id,
+            title=t("notify_kb_doc_indexed_title"),
+            content=t(
+                "notify_kb_doc_indexed_content",
+                doc_name=document.name,
+                kb_name=kb_name,
+                chunk_count=chunk_count,
+                token_count=token_count,
+            ),
+            data={
+                "document_id": str(document.id),
+                "document_name": document.name,
+                "kb_name": kb_name,
+                "chunk_count": chunk_count,
+                "token_count": token_count,
+            },
+            link_url=f"/kb/{document.knowledge_base_id}",
+        )
+    except Exception as e:
+        logger.error(f"Failed to send doc indexed notification: {e}")
+
+
+async def _send_doc_failed_notification(
+    document: Document,
+    kb_name: str,
+    team_id: UUID,
+    error: str,
+) -> None:
+    """Send notification when document indexing fails."""
+    try:
+        await AutoNotificationService.send_to_team(
+            notification_type=AutoNotificationType.KB_DOC_FAILED,
+            team_id=team_id,
+            title=t("notify_kb_doc_failed_title"),
+            content=t(
+                "notify_kb_doc_failed_content",
+                doc_name=document.name,
+                kb_name=kb_name,
+                error=error[:200],  # Truncate error message
+            ),
+            data={
+                "document_id": str(document.id),
+                "document_name": document.name,
+                "kb_name": kb_name,
+                "error": error[:500],
+            },
+            link_url=f"/kb/{document.knowledge_base_id}",
+        )
+    except Exception as e:
+        logger.error(f"Failed to send doc failed notification: {e}")
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -122,7 +188,9 @@ def process_document_task(self, document_id: str) -> dict:
             # Pass kb_id to enable dimension management:
             # - First document sets the KB's embedding dimension
             # - Subsequent documents must match the dimension
-            created_chunks = await vector_store.store_chunks(document, chunks, kb_id=kb.id)
+            created_chunks = await vector_store.store_chunks(
+                document, chunks, kb_id=kb.id
+            )
             logger.info(
                 f"Document {document_id} embeddings stored, chunks={len(created_chunks)}"
             )
@@ -154,6 +222,15 @@ def process_document_task(self, document_id: str) -> dict:
                 f"{len(created_chunks)} chunks, {total_tokens} tokens"
             )
 
+            # Send success notification
+            await _send_doc_indexed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                chunk_count=len(created_chunks),
+                token_count=total_tokens,
+            )
+
             return {
                 "status": "success",
                 "document_id": document_id,
@@ -163,11 +240,19 @@ def process_document_task(self, document_id: str) -> dict:
 
         except DimensionMismatchError as e:
             logger.error(f"Dimension mismatch for document {document_id}: {e}")
-            
+
             # Update document status with specific error
             document.status = DocumentStatus.ERROR.value
             document.error_message = str(e)[:500]
             await document.save()
+
+            # Send failure notification
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=str(e),
+            )
 
             return {
                 "status": "error",
@@ -183,6 +268,14 @@ def process_document_task(self, document_id: str) -> dict:
             document.status = DocumentStatus.ERROR.value
             document.error_message = str(e)[:500]
             await document.save()
+
+            # Send failure notification
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=str(e),
+            )
 
             return {
                 "status": "error",
@@ -374,7 +467,9 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 raise ValueError("No chunks generated from document")
 
             # Store chunks with embeddings (pass kb_id for dimension management)
-            created_chunks = await vector_store.store_chunks(document, chunks, kb_id=kb.id)
+            created_chunks = await vector_store.store_chunks(
+                document, chunks, kb_id=kb.id
+            )
 
             # Calculate totals
             total_tokens = sum(c.token_count for c in created_chunks)
@@ -397,6 +492,15 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 f"{len(created_chunks)} chunks, {total_tokens} tokens"
             )
 
+            # Send success notification
+            await _send_doc_indexed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                chunk_count=len(created_chunks),
+                token_count=total_tokens,
+            )
+
             return {
                 "status": "success",
                 "document_id": document_id,
@@ -408,10 +512,18 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         except DimensionMismatchError as e:
             logger.error(f"Dimension mismatch rechunking document {document_id}: {e}")
-            
+
             document.status = DocumentStatus.ERROR.value
             document.error_message = str(e)[:500]
             await document.save()
+
+            # Send failure notification
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=str(e),
+            )
 
             return {
                 "status": "error",
@@ -427,6 +539,14 @@ def rechunk_document_task(self, document_id: str) -> dict:
             document.status = DocumentStatus.ERROR.value
             document.error_message = str(e)[:500]
             await document.save()
+
+            # Send failure notification
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=str(e),
+            )
 
             return {
                 "status": "error",
@@ -534,12 +654,22 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             if embedded_count == 0 and len(chunks) > 0:
                 # All chunks failed - mark as error
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = f"All {len(chunks)} chunks failed to embed: {last_error}"[:500]
+                document.error_message = (
+                    f"All {len(chunks)} chunks failed to embed: {last_error}"[:500]
+                )
                 await document.save()
 
                 logger.error(
                     f"Document {document_id} embedding failed: "
                     f"0/{len(chunks)} chunks embedded"
+                )
+
+                # Send failure notification
+                await _send_doc_failed_notification(
+                    document=document,
+                    kb_name=kb.name,
+                    team_id=kb.team_id,
+                    error=f"All {len(chunks)} chunks failed to embed: {last_error}",
                 )
 
                 return {
@@ -554,7 +684,9 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             if failed_count > 0:
                 # Partial failure - mark as error with details
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}"[:500]
+                document.error_message = f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}"[
+                    :500
+                ]
                 await document.save()
 
                 await _refresh_kb_stats()
@@ -562,6 +694,14 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 logger.error(
                     f"Document {document_id} embedding partially failed: "
                     f"{embedded_count}/{len(chunks)} chunks embedded, {failed_count} failed"
+                )
+
+                # Send failure notification
+                await _send_doc_failed_notification(
+                    document=document,
+                    kb_name=kb.name,
+                    team_id=kb.team_id,
+                    error=f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}",
                 )
 
                 return {
@@ -590,6 +730,15 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 f"{embedded_count}/{len(chunks)} chunks embedded"
             )
 
+            # Send success notification
+            await _send_doc_indexed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                chunk_count=document.chunk_count,
+                token_count=document.token_count,
+            )
+
             return {
                 "status": "success",
                 "document_id": document_id,
@@ -604,6 +753,14 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             document.status = DocumentStatus.ERROR.value
             document.error_message = str(e)[:500]
             await document.save()
+
+            # Send failure notification
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=str(e),
+            )
 
             return {
                 "status": "error",
