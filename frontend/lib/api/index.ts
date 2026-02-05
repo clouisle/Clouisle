@@ -1,9 +1,23 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
-export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData } from './auth'
+export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
 export { usersApi, type PageData, type UserCreateData, type UserUpdateData, type UserStats, type UserQueryParams } from './users'
 export { rolesApi, permissionsApi, type Role, type Permission, type RoleCreateInput, type RoleUpdateInput, type PermissionCreateInput, type PermissionUpdateInput } from './roles'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
-export { siteSettingsApi, type SiteSetting, type SiteSettings, type PublicSiteSettings, type GeneralSettings, type SecuritySettings, type EmailSettings } from './site-settings'
+export {
+  siteSettingsApi,
+  type SiteSetting,
+  type SiteSettings,
+  type PublicSiteSettings,
+  type GeneralSettings,
+  type SecuritySettings,
+  type EmailSettings,
+  type DingTalkSettings,
+  type WeChatSettings,
+  type FeishuSettings,
+  type WebhookSettings,
+  type SlackSettings,
+  type AutoNotificationConfig,
+} from './site-settings'
 export { uploadApi, type UploadResult, type ParsedFileResult, type FileParseOptions } from './upload'
 export { 
   modelsApi, 
@@ -184,3 +198,26 @@ export {
   type ModelDistribution,
 } from './dashboard'
 
+export {
+  ssoApi,
+  type SSOProvider,
+  type SSOProviderAdmin,
+  type SSOProviderCreate,
+  type SSOProviderUpdate,
+} from './sso'
+
+export {
+  notificationsApi,
+  type NotificationItem,
+  type NotificationScope,
+  type NotificationSource,
+  type NotificationLevel,
+  type NotificationStatus,
+  type NotificationChannel,
+  type NotificationDelivery,
+  type NotificationListParams,
+  type NotificationAdminListParams,
+  type NotificationAdminCreateInput,
+  type NotificationReadRequest,
+  type NotificationUnreadCount,
+} from './notifications'

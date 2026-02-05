@@ -40,13 +40,53 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  hideOverlay = false,
+  overlayClassName,
+  disableOverlayAnimation = false,
+  open,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  hideOverlay?: boolean
+  overlayClassName?: string
+  disableOverlayAnimation?: boolean
+  open?: boolean
 }) {
+  const [overlayVisible, setOverlayVisible] = React.useState(false)
+  const [allowOverlayTransition, setAllowOverlayTransition] = React.useState(false)
+
+  React.useEffect(() => {
+    if (hideOverlay) {
+      setOverlayVisible(false)
+      return
+    }
+    if (open === undefined) return
+
+    if (open) {
+      setOverlayVisible(true)
+      const raf = requestAnimationFrame(() => setAllowOverlayTransition(true))
+      return () => cancelAnimationFrame(raf)
+    }
+
+    const timer = window.setTimeout(() => {
+      setOverlayVisible(false)
+      setAllowOverlayTransition(false)
+    }, 200)
+    return () => window.clearTimeout(timer)
+  }, [open, hideOverlay])
+
   return (
     <DialogPortal>
-      <DialogOverlay />
+      {!hideOverlay && (!disableOverlayAnimation || overlayVisible) && (
+        <DialogOverlay
+          className={cn(
+            disableOverlayAnimation && "transition-opacity duration-200",
+            disableOverlayAnimation && (open ? "opacity-100" : "opacity-0"),
+            disableOverlayAnimation && !allowOverlayTransition && "transition-none",
+            overlayClassName
+          )}
+        />
+      )}
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

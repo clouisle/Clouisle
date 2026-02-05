@@ -19,6 +19,8 @@ const defaultSettings: PublicSiteSettings = {
   email_verification: true,
   enable_captcha: false,
   allow_account_deletion: true,
+  sso_enabled: false,
+  sso_allow_password_login: true,
 }
 
 const SiteSettingsContext = React.createContext<SiteSettingsContextType>({
@@ -53,15 +55,16 @@ export function SiteSettingsProvider({
         document.title = `${data.site_name} - Admin Panel`
       }
       
-      // 更新 favicon
-      if (data.site_icon && !skipFaviconUpdate) {
+      // 更新 favicon - 有自定义图标用自定义的，否则用默认的 light icon
+      if (!skipFaviconUpdate) {
+        const iconHref = data.site_icon || '/clouisle-light.svg'
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement
         if (link) {
-          link.href = data.site_icon
+          link.href = iconHref
         } else {
           const newLink = document.createElement('link')
           newLink.rel = 'icon'
-          newLink.href = data.site_icon
+          newLink.href = iconHref
           document.head.appendChild(newLink)
         }
       }

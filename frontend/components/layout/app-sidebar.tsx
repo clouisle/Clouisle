@@ -17,17 +17,20 @@ import {
   LogOut,
   ChevronUp,
   UsersRound,
-  Globe,
   Bot,
   Database,
   AppWindow,
-  MessageSquare,
   Wrench,
   Activity,
   FileText,
+  Bell,
+  User,
 } from 'lucide-react'
-import { authApi, type User } from '@/lib/api'
+import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
+import { usePermissions } from '@/hooks/use-permissions'
+import { SettingsDialog } from '@/components/settings-dialog'
+import { DefaultSiteIcon } from '@/components/default-site-icon'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -64,8 +67,10 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   const t = useTranslations('nav')
   const pathname = usePathname()
   const router = useRouter()
-  const [user, setUser] = React.useState<User | null>(null)
+  const [user, setUser] = React.useState<UserType | null>(null)
+  const [profileOpen, setProfileOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
+  const { hasPermission, canAccessDashboard } = usePermissions()
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -109,21 +114,25 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('dashboard'),
       url: '/dashboard',
       icon: LayoutDashboard,
+      permission: 'dashboard:access',
     },
     {
       title: t('teams'),
       url: '/teams',
       icon: UsersRound,
+      permission: 'team:read',
     },
     {
       title: t('knowledgeBases'),
       url: '/knowledge-bases',
       icon: Database,
+      permission: 'kb:read',
     },
     {
       title: t('activities'),
       url: '/activities',
       icon: Activity,
+      permission: 'conversation:read',
     },
   ]
 
@@ -132,36 +141,49 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('users'),
       url: '/users',
       icon: Users,
+      permission: 'user:read',
     },
     {
       title: t('roles'),
       url: '/roles',
       icon: Shield,
+      permission: 'role:read',
     },
     {
       title: t('permissions'),
       url: '/permissions',
       icon: Key,
+      permission: 'permission:read',
     },
     {
       title: t('apiKeys'),
       url: '/api-keys',
       icon: KeyRound,
+      permission: 'apikey:read',
     },
     {
       title: t('models'),
       url: '/models',
       icon: Bot,
+      permission: 'model:read',
     },
     {
       title: t('tools'),
       url: '/tools',
       icon: Wrench,
+      permission: 'tool:read',
+    },
+    {
+      title: t('notifications'),
+      url: '/notifications',
+      icon: Bell,
+      permission: 'dashboard:access',
     },
     {
       title: t('auditLogs'),
       url: '/audit-logs',
       icon: FileText,
+      permission: 'audit:read',
     },
   ]
 
@@ -170,13 +192,26 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('siteSettings'),
       url: '/site-settings',
       icon: Settings,
+      permission: 'settings:read',
     },
     {
       title: t('helpCenter'),
       url: '/help',
       icon: HelpCircle,
+      permission: null, // No permission required
     },
   ]
+
+  // Filter menu items based on permissions
+  const filteredGeneralItems = generalItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredAdminItems = adminItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredOtherItems = otherItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
 
   const isActive = (url: string) => pathname.startsWith(url)
 
@@ -187,18 +222,18 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           <SidebarMenuItem>
             <Link href="/dashboard">
               <SidebarMenuButton size="lg" tooltip={siteSettings.site_name || 'Clouisle'}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground overflow-hidden">
+                <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
                   {siteSettings.site_icon ? (
-                    <Image 
-                      src={siteSettings.site_icon} 
-                      alt={siteSettings.site_name} 
+                    <Image
+                      src={siteSettings.site_icon}
+                      alt={siteSettings.site_name}
                       width={32}
                       height={32}
                       className="size-full object-cover"
                       unoptimized
                     />
                   ) : (
-                    <Globe className="size-5" />
+                    <DefaultSiteIcon width={32} height={32} className="size-full" />
                   )}
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
@@ -213,61 +248,67 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
 
       <SidebarContent>
         {/* General */}
-        <SidebarGroup>
-          <SidebarGroupLabel>{t('general')}</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {generalItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <Link href={item.url}>
-                    <SidebarMenuButton isActive={isActive(item.url)}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {filteredGeneralItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('general')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredGeneralItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
-        {/* Admin */}
-        <SidebarGroup>
-          <SidebarGroupLabel>{t('admin')}</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <Link href={item.url}>
-                    <SidebarMenuButton isActive={isActive(item.url)}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Admin - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredAdminItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('admin')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredAdminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {/* Other */}
-        <SidebarGroup>
-          <SidebarGroupLabel>{t('other')}</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {otherItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <Link href={item.url}>
-                    <SidebarMenuButton isActive={isActive(item.url)}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {filteredOtherItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('other')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredOtherItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
@@ -309,12 +350,10 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
                     {t('workspace')}
                   </DropdownMenuItem>
                 </Link>
-                <Link href="/settings/profile">
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    {t('settings')}
-                  </DropdownMenuItem>
-                </Link>
+                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                  <User className="mr-2 h-4 w-4" />
+                  {t('profile')}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -325,6 +364,9 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
+      {/* Profile Settings Dialog */}
+      <SettingsDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </Sidebar>
   )
 }
