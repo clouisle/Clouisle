@@ -407,14 +407,14 @@ export function VariableAssignmentNodeConfig({
                         className="min-h-20 text-xs font-mono resize-none"
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        支持 JSON 格式，如：字符串 "hello"、数字 123、数组 [1,2,3]、对象 {`{"key":"value"}`}
+                        支持 JSON 格式，如：字符串 &quot;hello&quot;、数字 123、数组 [1,2,3]、对象 {`{"key":"value"}`}
                       </p>
                     </div>
                   )}
-                  
+
                   {assignment.operation === 'clear' && (
                     <div className="text-xs text-muted-foreground bg-muted/50 rounded-md p-2">
-                      将清空目标变量的值（字符串→""，数字→0，数组→[]，对象→{}）
+                      将清空目标变量的值（字符串→&quot;&quot;，数字→0，数组→[]，对象→{`{}`}）
                     </div>
                   )}
                 </div>

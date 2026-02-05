@@ -133,7 +133,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
     try {
       // Validate JSON
       let config: Record<string, unknown>
-      let attribute_mapping: Record<string, unknown>
+      let attribute_mapping: Record<string, string>
 
       try {
         config = JSON.parse(formData.config)
@@ -144,7 +144,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       try {
-        attribute_mapping = JSON.parse(formData.attribute_mapping)
+        attribute_mapping = JSON.parse(formData.attribute_mapping) as Record<string, string>
       } catch (err) {
         toast.error(t('invalidMappingJson') || 'Invalid attribute mapping JSON')
         setLoading(false)
@@ -173,8 +173,9 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       onClose(true)
-    } catch (error: Record<string, unknown>) {
-      toast.error(error.message || t('saveError') || 'Failed to save provider')
+    } catch (error: unknown) {
+      const err = error as { message?: string }
+      toast.error(err.message || t('saveError') || 'Failed to save provider')
     } finally {
       setLoading(false)
     }

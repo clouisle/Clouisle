@@ -188,7 +188,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
   ): BackendMessage['rag_context'] => {
     if (!contexts || contexts.length === 0) return contexts
 
-    const map = new Map<string, { ctx: any; contents: string[]; score?: number }>()
+    const map = new Map<string, { ctx: NonNullable<BackendMessage['rag_context']>[number]; contents: string[]; score?: number }>()
     const order: string[] = []
 
     for (const ctx of contexts) {
@@ -297,12 +297,12 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
 
     if (pendingToolParts.length > 0 && message.role === 'assistant') {
       const sources = chatMessage.parts.filter(isSourcePart)
-      const nonSourceParts = chatMessage.parts.filter((p) => !isSourcePart(p))
+      const nonSourceParts: MessagePart[] = chatMessage.parts.filter((p) => !isSourcePart(p))
       const insertIndex = nonSourceParts.findIndex(isTextPart)
       if (insertIndex === -1) {
-        nonSourceParts.push(...(pendingToolParts as any))
+        nonSourceParts.push(...pendingToolParts)
       } else {
-        nonSourceParts.splice(insertIndex, 0, ...(pendingToolParts as any))
+        nonSourceParts.splice(insertIndex, 0, ...pendingToolParts)
       }
       chatMessage.parts = [...nonSourceParts, ...sources]
       pendingToolParts = []

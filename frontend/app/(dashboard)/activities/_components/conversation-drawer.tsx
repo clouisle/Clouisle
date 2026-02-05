@@ -13,7 +13,7 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet'
 import { Message as ChatMessageItem, type ChatMessage } from '@/components/chat'
-import { convertBackendMessages } from '@/lib/utils/message-converter'
+import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import type { AdminConversationWithMessages } from '@/lib/api'
 import { useCanPerform } from '@/components/permission-guard'
 
@@ -57,7 +57,7 @@ export function ConversationDrawer({
 
   const chatMessages = React.useMemo<ChatMessage[]>(() => {
     if (!conversation) return []
-    return convertBackendMessages(conversation.messages as any)
+    return convertBackendMessages(conversation.messages as BackendMessage[])
   }, [conversation])
 
   return (

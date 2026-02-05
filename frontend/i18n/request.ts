@@ -34,14 +34,14 @@ async function loadMessages(locale: Locale) {
     'notifications',
   ]
 
-  const messages: Record<string, any> = {}
+  const messages: Record<string, unknown> = {}
 
-  for (const module of modules) {
+  for (const moduleName of modules) {
     try {
-      const moduleMessages = (await import(`./${locale}/${module}.json`)).default
+      const moduleMessages = (await import(`./${locale}/${moduleName}.json`)).default
       Object.assign(messages, moduleMessages)
     } catch (error) {
-      console.warn(`Failed to load ${locale}/${module}.json:`, error)
+      console.warn(`Failed to load ${locale}/${moduleName}.json:`, error)
     }
   }
 

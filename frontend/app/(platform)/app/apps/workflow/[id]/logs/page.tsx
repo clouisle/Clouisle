@@ -153,7 +153,7 @@ export default function WorkflowLogsPage() {
       const result = await workflowsApi.getWorkflowRuns(workflowId, {
         page,
         pageSize: PAGE_SIZE,
-        status: statusFilter !== 'all' ? statusFilter as any : undefined,
+        status: statusFilter !== 'all' ? statusFilter as 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' : undefined,
       })
       setRuns(result.items)
       setTotalRuns(result.total)

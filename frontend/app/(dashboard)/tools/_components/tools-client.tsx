@@ -528,6 +528,7 @@ export function ToolsClient() {
     if (tool._type === 'builtin') {
       try {
         // 尝试获取翻译，如果不存在则返回原始名称
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const translationKey = `builtinTools.${tool.name}` as any
         const translated = t(translationKey)
         // next-intl 在找不到翻译时会返回键本身

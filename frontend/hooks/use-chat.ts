@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import type { BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
   parseSSEStream,
@@ -721,7 +722,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           console.log('switchVersion: messages count', conversationData.messages?.length)
 
           const { convertBackendMessages } = await import('@/lib/utils/message-converter')
-          const convertedMessages = convertBackendMessages(conversationData.messages as any[])
+          const convertedMessages = convertBackendMessages(conversationData.messages as BackendMessage[])
           console.log('switchVersion: converted messages count', convertedMessages.length)
           console.log('switchVersion: converted messages', convertedMessages)
 

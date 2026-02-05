@@ -174,8 +174,10 @@ export const ReasoningContent = memo(
         components={{
           // Use div instead of p when paragraph contains block elements (like images)
           // This prevents React hydration error: <div> cannot be a descendant of <p>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           p: ({ children: pChildren, node, ...pProps }: any) => {
             const hasImgInNode = node?.children?.some(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               (child: any) => child.tagName === 'img'
             )
             const hasBlockElements = Children.toArray(pChildren).some(

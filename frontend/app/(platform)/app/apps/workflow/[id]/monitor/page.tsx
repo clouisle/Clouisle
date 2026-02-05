@@ -22,7 +22,7 @@ import {
   GitBranch,
 } from 'lucide-react'
 import Image from 'next/image'
-import { workflowsApi, type Workflow } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type WorkflowRunListItem } from '@/lib/api/workflows'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -76,7 +76,19 @@ function formatDuration(ms: number): string {
 }
 
 // 自定义 Tooltip
-function CustomTooltip({ active, payload, label }: any) {
+interface TooltipPayloadEntry {
+  color: string
+  name: string
+  value: number | string
+}
+
+interface CustomTooltipProps {
+  active?: boolean
+  payload?: TooltipPayloadEntry[]
+  label?: string
+}
+
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (active && payload && payload.length) {
     return (
       <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
@@ -84,7 +96,7 @@ function CustomTooltip({ active, payload, label }: any) {
           {label}
         </p>
         <div className="space-y-1.5">
-          {payload.map((entry: any, index: number) => (
+          {payload.map((entry, index: number) => (
             <div key={index} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <div
@@ -167,9 +179,16 @@ export default function WorkflowMonitorPage() {
   const workflowId = params.id as string
 
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
-  const [stats, setStats] = React.useState<any>(null)
-  const [trendsData, setTrendsData] = React.useState<any[]>([])
-  const [recentRuns, setRecentRuns] = React.useState<any[]>([])
+  const [stats, setStats] = React.useState<{
+    total_runs: number
+    success_count: number
+    failed_count: number
+    timeout_count: number
+    avg_duration_ms: number
+    last_run_at: string | null
+  } | null>(null)
+  const [trendsData, setTrendsData] = React.useState<Array<{ date: string; runs: number; success: number; failed: number }>>([])
+  const [recentRuns, setRecentRuns] = React.useState<WorkflowRunListItem[]>([])
   const [period, setPeriod] = React.useState<'7d' | '30d'>('7d')
   const [isLoading, setIsLoading] = React.useState(true)
   const [isRefreshing, setIsRefreshing] = React.useState(false)

@@ -20,6 +20,19 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 })
   const containerRef = React.useRef<HTMLDivElement>(null)
 
+  // Define handlers before useEffect that uses them
+  const handleZoomIn = React.useCallback(() => {
+    setScale((prev) => Math.min(prev + 0.25, 4))
+  }, [])
+
+  const handleZoomOut = React.useCallback(() => {
+    setScale((prev) => Math.max(prev - 0.25, 0.5))
+  }, [])
+
+  const handleRotate = React.useCallback(() => {
+    setRotation((prev) => (prev + 90) % 360)
+  }, [])
+
   // Reset state when closed
   React.useEffect(() => {
     if (!isOpen) {
@@ -33,7 +46,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return
-      
+
       switch (e.key) {
         case 'Escape':
           onClose()
@@ -53,7 +66,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, handleZoomIn, handleZoomOut, handleRotate])
 
   // Prevent body scroll when open
   React.useEffect(() => {
@@ -66,18 +79,6 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
       document.body.style.overflow = ''
     }
   }, [isOpen])
-
-  const handleZoomIn = () => {
-    setScale((prev) => Math.min(prev + 0.25, 4))
-  }
-
-  const handleZoomOut = () => {
-    setScale((prev) => Math.max(prev - 0.25, 0.5))
-  }
-
-  const handleRotate = () => {
-    setRotation((prev) => (prev + 90) % 360)
-  }
 
   const handleDownload = async () => {
     try {

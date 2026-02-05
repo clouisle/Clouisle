@@ -15,10 +15,10 @@ export interface AuditLog {
   status: string;
   error_message?: string;
   changes?: {
-    before?: any;
-    after?: any;
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
   };
-  metadata?: any;
+  metadata?: Record<string, unknown>;
   auth_method?: string;
   api_key_id?: string;
   created_at: string;

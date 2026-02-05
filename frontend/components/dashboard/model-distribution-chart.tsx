@@ -4,13 +4,7 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
 import { Cpu } from 'lucide-react'
-
-interface ModelDistribution {
-  model: string
-  count: number
-  percentage: number
-  [key: string]: any
-}
+import type { ModelDistribution } from '@/lib/api/dashboard'
 
 interface ModelDistributionChartProps {
   data: ModelDistribution[]
@@ -86,7 +80,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
             <Pie
-              data={data}
+              data={data as Array<ModelDistribution & Record<string, unknown>>}
               cx="50%"
               cy="50%"
               outerRadius={100}

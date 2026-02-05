@@ -241,9 +241,10 @@ export default function ToolsPage() {
       try {
         await toolsApi.getConfig(configuringTool.name, currentTeam.id)
         configExists = true
-      } catch (error: any) {
+      } catch (error: unknown) {
         // 404 表示配置不存在，需要创建
-        if (error?.response?.status !== 404) {
+        const apiError = error as { response?: { status?: number } }
+        if (apiError?.response?.status !== 404) {
           throw error
         }
       }

@@ -311,9 +311,11 @@ export const MessageResponse = memo(
       components={{
         // Use div instead of p when paragraph contains block elements (like images)
         // This prevents React hydration error: <div> cannot be a descendant of <p>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         p: ({ children, node, ...pProps }: any) => {
           // Check AST node for img elements
           const hasImgInNode = node?.children?.some(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (child: any) => child.tagName === 'img'
           )
           const hasBlockElements = Children.toArray(children).some(
@@ -400,7 +402,7 @@ export function MessageAttachment({
               "group inline-flex items-center gap-1.5 px-2 py-1 rounded-md border bg-muted/50 text-xs hover:bg-muted transition-colors cursor-pointer",
               className
             )}
-            {...(props as any)}
+            {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
           >
             <PaperclipIcon className="size-3.5 text-muted-foreground shrink-0" />
             <span className="truncate max-w-32">{filename || "Attachment"}</span>

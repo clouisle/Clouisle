@@ -29,7 +29,7 @@ export function CodeExamples({ webhookUrl, variables }: CodeExamplesProps) {
       return '{}'
     }
 
-    const example: Record<string, any> = {}
+    const example: Record<string, unknown> = {}
     variables.forEach((variable) => {
       switch (variable.type) {
         case 'text':

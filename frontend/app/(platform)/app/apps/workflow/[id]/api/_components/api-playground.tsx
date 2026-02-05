@@ -19,9 +19,22 @@ interface ApiPlaygroundProps {
   variables: VariableDefinition[]
 }
 
+interface WorkflowEventData {
+  data?: {
+    duration_ms?: number
+    outputs?: unknown
+    error?: string
+    node_label?: string
+    node_type?: string
+  }
+  node_id?: string
+  event?: string
+  [key: string]: unknown
+}
+
 interface WorkflowEvent {
   type: 'workflow_start' | 'workflow_complete' | 'workflow_error' | 'node_start' | 'node_complete' | 'node_error' | 'node_skip' | 'token' | 'output'
-  data?: any
+  data?: WorkflowEventData
   timestamp: number
 }
 
@@ -49,7 +62,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       return
     }
 
-    const example: Record<string, any> = {}
+    const example: Record<string, unknown> = {}
     variables.forEach((variable) => {
       switch (variable.type) {
         case 'text':
@@ -267,14 +280,14 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-3 w-3 text-green-500" />
                 <span className="text-green-600 font-medium">工作流执行完成</span>
-                {data.data?.duration_ms && (
+                {data?.data?.duration_ms && (
                   <span className="text-xs text-muted-foreground">
                     ({data.data.duration_ms}ms)
                   </span>
                 )}
               </div>
             </div>
-            {data.data?.outputs && (
+            {data?.data?.outputs !== undefined && (
               <pre className="ml-20 text-xs bg-muted p-2 rounded overflow-x-auto">
                 {JSON.stringify(data.data.outputs, null, 2)}
               </pre>
@@ -291,7 +304,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                 <XCircle className="h-3 w-3 text-red-500" />
                 <span className="text-red-600 font-medium">工作流执行失败</span>
               </div>
-              {data.data?.error && (
+              {data?.data?.error && (
                 <div className="ml-5 text-xs text-red-600">{data.data.error}</div>
               )}
             </div>
@@ -305,8 +318,8 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-blue-500" />
               <span className="text-muted-foreground text-xs">
-                {data.data?.node_label || data.node_id}
-                <span className="text-muted-foreground/60 ml-1">({data.data?.node_type})</span>
+                {data?.data?.node_label || data?.node_id}
+                <span className="text-muted-foreground/60 ml-1">({data?.data?.node_type})</span>
               </span>
             </div>
           </div>
@@ -319,8 +332,8 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <div className="flex items-center gap-2">
               <CheckCircle className="h-3 w-3 text-green-500" />
               <span className="text-muted-foreground text-xs">
-                {data.data?.node_label || data.node_id}
-                {data.data?.duration_ms && (
+                {data?.data?.node_label || data?.node_id}
+                {data?.data?.duration_ms && (
                   <span className="text-muted-foreground/60 ml-1">
                     ({data.data.duration_ms}ms)
                   </span>
@@ -337,9 +350,9 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <XCircle className="h-3 w-3 text-red-500" />
-                <span className="text-red-600 text-xs">{data.data?.node_label || data.node_id}</span>
+                <span className="text-red-600 text-xs">{data?.data?.node_label || data?.node_id}</span>
               </div>
-              {data.data?.error && (
+              {data?.data?.error && (
                 <div className="ml-5 text-xs text-red-600">{data.data.error}</div>
               )}
             </div>
