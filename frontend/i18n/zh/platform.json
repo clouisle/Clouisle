@@ -30,10 +30,6 @@
     "noTeam": {
       "title": "您还没有加入任何团队",
       "description": "要开始使用工作台，您需要先加入一个团队。请联系您的团队管理员邀请您加入。",
-      "status": "等待加入团队",
-      "contactAdmin": "联系管理员",
-      "helpText": "如果您有任何问题，请联系",
-      "supportEmail": "support@example.com",
       "steps": {
         "step1": {
           "title": "联系管理员",

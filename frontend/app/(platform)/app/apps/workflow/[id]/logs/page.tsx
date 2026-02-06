@@ -222,15 +222,19 @@ export default function WorkflowLogsPage() {
         {/* Workflow Dropdown Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input hover:bg-accent hover:text-accent-foreground h-9 bg-card shadow-sm gap-2 px-2">
-            {workflow.icon && (workflow.icon.startsWith('http') || workflow.icon.startsWith('/')) ? (
-              <Image
-                src={workflow.icon}
-                alt={workflow.name || ''}
-                width={20}
-                height={20}
-                className="rounded object-cover"
-                unoptimized
-              />
+            {workflow.icon ? (
+              workflow.icon.startsWith('http') || workflow.icon.startsWith('/') ? (
+                <Image
+                  src={workflow.icon}
+                  alt={workflow.name || ''}
+                  width={20}
+                  height={20}
+                  className="rounded object-cover"
+                  unoptimized
+                />
+              ) : (
+                <span className="text-base">{workflow.icon}</span>
+              )
             ) : (
               <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10">
                 <GitBranch className="h-3 w-3 text-primary" />
