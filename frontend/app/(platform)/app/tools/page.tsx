@@ -103,7 +103,7 @@ export default function ToolsPage() {
       setTools(allTools)
     } catch (error) {
       console.error('Failed to load tools:', error)
-      toast.error('Failed to load tools')
+      toast.error(t('tools.error.loadToolsFailed'))
     } finally {
       setLoading(false)
     }
@@ -162,13 +162,13 @@ export default function ToolsPage() {
           } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
             router.push(`/app/tools/code?id=${tool.id}`)
           } else {
-            toast.error('Unknown tool type')
+            toast.error(t('tools.error.unknownToolType'))
           }
         }
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
-      toast.error('Failed to load tool detail')
+      toast.error(t('tools.error.loadToolDetailFailed'))
     }
   }
 
@@ -206,7 +206,7 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error('Failed to save tool')
+      toast.error(t('tools.error.saveFailed'))
     }
   }
 
@@ -227,7 +227,7 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error('Failed to save tool')
+      toast.error(t('tools.error.saveFailed'))
     }
   }
 
@@ -267,7 +267,7 @@ export default function ToolsPage() {
   // 删除工具
   const handleDeleteClick = (tool: Tool) => {
     if (!tool.id) {
-      toast.error('Cannot delete built-in tools')
+      toast.error(t('tools.error.cannotDeleteBuiltin'))
       return
     }
     setDeletingTool(tool)
@@ -286,7 +286,7 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to delete tool:', error)
-      toast.error('Failed to delete tool')
+      toast.error(t('tools.error.deleteFailed'))
     } finally {
       setDeleteLoading(false)
     }
@@ -295,7 +295,7 @@ export default function ToolsPage() {
   // 共享工具
   const handleShareTool = (tool: Tool) => {
     if (!tool.id) {
-      toast.error('Cannot share built-in tools')
+      toast.error(t('tools.error.cannotShareBuiltin'))
       return
     }
     setSharingTool(tool)

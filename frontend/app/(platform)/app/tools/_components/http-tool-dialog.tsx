@@ -256,7 +256,6 @@ export function HttpToolDialog({
   const [paramsOpen, setParamsOpen] = useState(false)
   const [bodyOpen, setBodyOpen] = useState(false)
   const [formFieldsOpen, setFormFieldsOpen] = useState(false)
-  const [parametersOpen, setParametersOpen] = useState(true)
 
   // 初始化表单
   useEffect(() => {

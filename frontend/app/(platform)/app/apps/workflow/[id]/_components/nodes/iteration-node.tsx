@@ -1,9 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { Handle, Position, useReactFlow, NodeResizeControl } from '@xyflow/react'
+import { Handle, Position, NodeResizeControl } from '@xyflow/react'
 import { RefreshCw, MoreHorizontal, Play, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslations } from 'next-intl'
 
 // 迭代类型
 export type IteratorType = 'array' | 'object'
@@ -57,7 +58,8 @@ interface IterationNodeProps {
 }
 
 // 迭代容器节点 - 作为父节点容纳子节点
-export function IterationNode({ id, selected, data, width, height }: IterationNodeProps) {
+export function IterationNode({ selected, data, width, height }: IterationNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.iterationConfig || defaultIterationConfig
 
   return (
@@ -122,7 +124,7 @@ export function IterationNode({ id, selected, data, width, height }: IterationNo
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-cyan-500 text-white">
             <RefreshCw className="h-2.5 w-2.5" />
           </div>
-          <span className="text-xs font-medium">{data.label || '迭代'}</span>
+          <span className="text-xs font-medium">{data.label || t('nodesIteration.label')}</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
@@ -142,7 +144,7 @@ export function IterationNode({ id, selected, data, width, height }: IterationNo
       {/* 并行标记 */}
       {config.parallel && (
         <div className="absolute top-2 right-12 text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded">
-          并行 {config.maxParallel && `×${config.maxParallel}`}
+          {t('nodesIteration.parallel')} {config.maxParallel && `×${config.maxParallel}`}
         </div>
       )}
     </div>
@@ -163,7 +165,7 @@ interface IterationStartNodeProps {
   }
 }
 
-export function IterationStartNode({ id, selected, data }: IterationStartNodeProps) {
+export function IterationStartNode({ selected, data }: IterationStartNodeProps) {
   const config = data.iterationConfig || defaultIterationConfig
   
   return (
@@ -214,7 +216,8 @@ interface IterationExitNodeProps {
   }
 }
 
-export function IterationExitNode({ id, selected, data }: IterationExitNodeProps) {
+export function IterationExitNode({ selected }: IterationExitNodeProps) {
+  const t = useTranslations('workflow')
   return (
     <div className="group relative">
       {/* 退出循环节点 - 圆形 */}
@@ -240,7 +243,7 @@ export function IterationExitNode({ id, selected, data }: IterationExitNodeProps
       
       {/* 标签 */}
       <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground">
-        退出循环
+        {t('nodesCommon.exitLoop')}
       </div>
     </div>
   )

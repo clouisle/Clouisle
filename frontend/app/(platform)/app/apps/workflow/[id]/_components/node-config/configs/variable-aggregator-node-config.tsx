@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Trash2, Search, ChevronDown, GripVertical } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Plus, Trash2, Search, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,11 +14,11 @@ import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
-import { 
-  VariableAggregatorConfig, 
+import {
+  VariableAggregatorConfig,
   VariableMapping,
   AggregationMode,
-  aggregationModeConfig,
+  getAggregationModeConfig,
   defaultVariableAggregatorConfig,
 } from '../../nodes/variable-aggregator-node'
 
@@ -40,7 +41,9 @@ export function VariableAggregatorNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: VariableAggregatorNodeConfigProps) {
+  const t = useTranslations('workflow')
   const [outputOpen, setOutputOpen] = React.useState(true)
+  const aggregationModeConfig = getAggregationModeConfig(t)
 
   // 确保 config 有默认值
   const safeConfig: VariableAggregatorConfig = {
@@ -136,7 +139,7 @@ export function VariableAggregatorNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-xs">选择变量...</span>
+            <span className="text-muted-foreground text-xs">{t('configCommon.selectVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -144,7 +147,7 @@ export function VariableAggregatorNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -160,7 +163,7 @@ export function VariableAggregatorNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -213,7 +216,7 @@ export function VariableAggregatorNodeConfig({
       {/* 聚合模式 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">聚合模式</Label>
+          <Label className="text-xs font-medium">{t('configVariableAggregator.aggregationMode')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <Select
@@ -250,7 +253,7 @@ export function VariableAggregatorNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">变量列表</Label>
+            <Label className="text-xs font-medium">{t('configVariableAggregator.variableList')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Button
@@ -265,7 +268,7 @@ export function VariableAggregatorNodeConfig({
         
         {safeConfig.variables.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center bg-muted/30 rounded-md">
-            暂无变量，点击 + 添加
+            {t('configVariableAggregator.noVariables')}
           </p>
         ) : (
           <div className="space-y-1.5">
@@ -284,7 +287,7 @@ export function VariableAggregatorNodeConfig({
                   <Input
                     value={varMapping.targetKey || ''}
                     onChange={(e) => handleUpdateVariable(varMapping.id, { targetKey: e.target.value })}
-                    placeholder="键名"
+                    placeholder={t('configVariableAggregator.keyName')}
                     className={cn(
                       'w-20 h-8 text-xs font-mono shrink-0',
                       varMapping.targetKey && !isValidVariableName(varMapping.targetKey) && 'border-destructive!'
@@ -311,13 +314,13 @@ export function VariableAggregatorNodeConfig({
         
         {/* 错误提示 */}
         {safeConfig.mode === 'object' && safeConfig.variables.some(v => v.targetKey && !isValidVariableName(v.targetKey)) && (
-          <p className="text-[10px] text-destructive">键名格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configVariableAggregator.invalidKeyName')}</p>
         )}
         {safeConfig.mode === 'object' && (() => {
           const keys = safeConfig.variables.map(v => v.targetKey).filter(Boolean)
           const hasDuplicates = new Set(keys).size !== keys.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的键名</p>
+            <p className="text-[10px] text-destructive">{t('configVariableAggregator.duplicateKeyName')}</p>
           )
         })()}
       </div>
@@ -325,15 +328,15 @@ export function VariableAggregatorNodeConfig({
       {/* concat 模式特有配置 - 分隔符 */}
       {safeConfig.mode === 'concat' && (
         <div className="space-y-2">
-          <Label className="text-xs font-medium">分隔符</Label>
+          <Label className="text-xs font-medium">{t('configVariableAggregator.separator')}</Label>
           <Input
             value={safeConfig.separator || ''}
             onChange={(e) => onConfigChange({ ...safeConfig, separator: e.target.value })}
-            placeholder="留空则直接拼接"
+            placeholder={t('configVariableAggregator.separatorPlaceholder')}
             className="h-9 text-xs"
           />
           <p className="text-[10px] text-muted-foreground">
-            用于连接多个字符串的分隔符，如换行符 \n 或逗号 ,
+            {t('configVariableAggregator.separatorHint')}
           </p>
         </div>
       )}
@@ -341,7 +344,7 @@ export function VariableAggregatorNodeConfig({
       {/* merge 模式特有配置 - 合并策略 */}
       {safeConfig.mode === 'merge' && (
         <div className="space-y-2">
-          <Label className="text-xs font-medium">合并策略</Label>
+          <Label className="text-xs font-medium">{t('configVariableAggregator.mergeStrategy')}</Label>
           <Select
             value={safeConfig.mergeStrategy || 'shallow'}
             onValueChange={(v) => onConfigChange({ ...safeConfig, mergeStrategy: v as 'shallow' | 'deep' })}
@@ -350,14 +353,14 @@ export function VariableAggregatorNodeConfig({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="shallow" className="text-xs">浅合并</SelectItem>
-              <SelectItem value="deep" className="text-xs">深合并</SelectItem>
+              <SelectItem value="shallow" className="text-xs">{t('configVariableAggregator.shallowMerge')}</SelectItem>
+              <SelectItem value="deep" className="text-xs">{t('configVariableAggregator.deepMerge')}</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-[10px] text-muted-foreground">
-            {safeConfig.mergeStrategy === 'deep' 
-              ? '递归合并嵌套对象的属性' 
-              : '仅合并顶层属性，后面的覆盖前面的'}
+            {safeConfig.mergeStrategy === 'deep'
+              ? t('configVariableAggregator.deepMergeHint')
+              : t('configVariableAggregator.shallowMergeHint')}
           </p>
         </div>
       )}
@@ -369,7 +372,7 @@ export function VariableAggregatorNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariables')}</span>
           <span className="text-destructive">*</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2 space-y-2">
@@ -383,14 +386,14 @@ export function VariableAggregatorNodeConfig({
             )}
           />
           {safeConfig.outputVariable && !isValidVariableName(safeConfig.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           <div className="bg-muted/30 rounded-lg p-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-medium">{safeConfig.outputVariable || 'result'}</span>
               <span className="text-xs text-muted-foreground">{modeConfig.outputType}</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">聚合后的结果</p>
+            <p className="text-[10px] text-muted-foreground mt-1">{t('configVariableAggregator.aggregatedResult')}</p>
           </div>
         </CollapsibleContent>
       </Collapsible>

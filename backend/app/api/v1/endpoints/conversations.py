@@ -14,6 +14,7 @@ from tortoise.expressions import Q
 from tortoise.functions import Count
 
 from app.api import deps
+from app.core.i18n import t
 from app.core.timezone import now, to_utc
 from app.models.user import User, Team, TeamMember
 from app.models.agent import Agent, Conversation, Message
@@ -275,7 +276,9 @@ async def get_conversation_stats(
     conversations_by_agent = [
         {
             "agent_id": str(s["agent_id"]),
-            "agent_name": agent_map.get(str(s["agent_id"]), {}).get("name", "Unknown"),
+            "agent_name": agent_map.get(str(s["agent_id"]), {}).get(
+                "name", t("unknown")
+            ),
             "agent_icon": agent_map.get(str(s["agent_id"]), {}).get("icon"),
             "count": s["count"],
         }

@@ -167,7 +167,14 @@
     },
     "error": {
       "loadFailed": "Failed to load tool",
-      "saveFailed": "Failed to save",
+      "loadToolsFailed": "Failed to load tools",
+      "loadToolDetailFailed": "Failed to load tool detail",
+      "saveFailed": "Failed to save tool",
+      "deleteFailed": "Failed to delete tool",
+      "unknownToolType": "Unknown tool type",
+      "cannotDeleteBuiltin": "Cannot delete built-in tools",
+      "cannotShareBuiltin": "Cannot share built-in tools",
+      "noTeamSelected": "No team selected",
       "nameRequired": "Please enter tool name",
       "duplicateParamName": "Parameter names must be unique"
     },

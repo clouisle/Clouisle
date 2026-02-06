@@ -70,7 +70,11 @@
         "conversations": "Conversations",
         "tokens": "Tokens"
       },
-      "quickActions": "Quick Actions",
+      "charts": {
+      "conversations": "Conversations",
+      "count": "Count"
+    },
+    "quickActions": "Quick Actions",
       "actions": {
         "createAgent": {
           "title": "Create Agent",

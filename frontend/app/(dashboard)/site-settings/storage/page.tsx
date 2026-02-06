@@ -7,9 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, Archive, Database, HardDrive } from 'lucide-react'
+import { Loader2, Archive, Database } from 'lucide-react'
 import { siteSettingsApi } from '@/lib/api'
 import {
   AlertDialog,

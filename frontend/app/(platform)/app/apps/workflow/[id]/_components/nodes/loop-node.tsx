@@ -1,10 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { Handle, Position, useReactFlow, NodeResizeControl } from '@xyflow/react'
+import { Handle, Position, NodeResizeControl } from '@xyflow/react'
+import { useTranslations } from 'next-intl'
 import { Infinity, MoreHorizontal, Play, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ConditionRule, ConditionOperator } from './condition-node'
+import { ConditionRule } from './condition-node'
 
 // 循环变量类型
 export type LoopVariableType = 'string' | 'number' | 'boolean' | 'array' | 'object'
@@ -58,7 +59,8 @@ interface LoopNodeProps {
 }
 
 // 循环容器节点 - 作为父节点容纳子节点
-export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
+export function LoopNode({ selected, data, width, height }: LoopNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.loopConfig || defaultLoopConfig
 
   return (
@@ -123,12 +125,12 @@ export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
           <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-cyan-500 text-white">
             <Infinity className="h-2.5 w-2.5" />
           </div>
-          <span className="text-xs font-medium">{data.label || '循环'}</span>
+          <span className="text-xs font-medium">{data.label || t('nodesLoop.label')}</span>
         </div>
         <div className="flex items-center gap-1">
           {/* 最大循环次数标记 */}
           <span className="text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded mr-1">
-            最多 {config.maxIterations} 次
+            {t('nodesLoop.maxIterations', { count: config.maxIterations })}
           </span>
           <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             <Play className="h-3 w-3" />
@@ -161,7 +163,7 @@ interface LoopStartNodeProps {
   }
 }
 
-export function LoopStartNode({ id, selected, data }: LoopStartNodeProps) {
+export function LoopStartNode({ selected, data }: LoopStartNodeProps) {
   const config = data.loopConfig || defaultLoopConfig
   
   // 构建变量显示文本
@@ -217,7 +219,8 @@ interface LoopExitNodeProps {
   }
 }
 
-export function LoopExitNode({ id, selected, data }: LoopExitNodeProps) {
+export function LoopExitNode({ selected }: LoopExitNodeProps) {
+  const t = useTranslations('workflow')
   return (
     <div className="group relative">
       {/* 退出循环节点 - 圆形 */}
@@ -243,7 +246,7 @@ export function LoopExitNode({ id, selected, data }: LoopExitNodeProps) {
       
       {/* 标签 */}
       <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground">
-        退出循环
+        {t('nodesCommon.exitLoop')}
       </div>
     </div>
   )

@@ -9,7 +9,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select'
 
 interface TopAgent {
@@ -85,7 +84,7 @@ export function AgentPerformanceChart({ data, metric, onMetricChange, isLoading 
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -118,7 +117,7 @@ export function AgentPerformanceChart({ data, metric, onMetricChange, isLoading 
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -178,7 +177,7 @@ export function AgentPerformanceChart({ data, metric, onMetricChange, isLoading 
                         <span className="font-semibold">{data.name}</span>
                       </div>
                       <div className="text-sm text-muted-foreground mb-1">
-                        团队: {data.team_name}
+                        {t('common.team')}: {data.team_name}
                       </div>
                       <div className="text-sm font-medium">
                         {getMetricLabel()}: {formatValue(data.value)}

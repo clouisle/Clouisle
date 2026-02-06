@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { type VariableDefinition } from '@/lib/api/workflows'
 

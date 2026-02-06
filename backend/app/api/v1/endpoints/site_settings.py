@@ -18,6 +18,7 @@ from app.schemas.site_setting import (
 )
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.core.email import send_email
+from app.core.i18n import t
 from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
@@ -105,7 +106,8 @@ async def update_auto_notification_config(
         if type_key not in valid_types:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST,
-                msg=f"Invalid notification type: {type_key}",
+                msg_key="invalid_notification_type",
+                type_key=type_key,
             )
 
     new_config = {
@@ -157,7 +159,8 @@ async def get_setting(
     if not setting:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
-            msg=f"Setting '{key}' not found",
+            msg_key="setting_not_found",
+            key=key,
         )
     return success(
         data=SiteSettingResponse(
@@ -206,7 +209,8 @@ async def update_setting(
         else:
             raise BusinessError(
                 code=ResponseCode.NOT_FOUND,
-                msg=f"Setting '{key}' not found",
+                msg_key="setting_not_found",
+                key=key,
             )
     else:
         setting = await SiteSetting.set_value(
@@ -361,34 +365,9 @@ async def send_test_email(
 
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
-    subject = f"【{site_name}】测试邮件 / Test Email"
-    body_text = f"""这是一封来自 {site_name} 的测试邮件。
-
-如果您收到了这封邮件，说明 SMTP 配置正确。
-
----
-
-This is a test email from {site_name}.
-
-If you received this email, your SMTP configuration is working correctly."""
-
-    body_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2 style="color: #333;">✅ SMTP 配置测试成功</h2>
-    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>
-    <p style="color: #666;">如果您收到了这封邮件，说明 SMTP 配置正确。</p>
-    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-    <h2 style="color: #333;">✅ SMTP Configuration Test Successful</h2>
-    <p>This is a test email from <strong>{site_name}</strong>.</p>
-    <p style="color: #666;">If you received this email, your SMTP configuration is working correctly.</p>
-</body>
-</html>
-"""
+    subject = t("test_email_subject", site_name=site_name)
+    body_text = t("test_email_body_text", site_name=site_name)
+    body_html = t("test_email_body_html", site_name=site_name)
 
     result = await send_email(data.email, subject, body_text, body_html)
 
@@ -432,8 +411,8 @@ async def send_test_dingtalk(
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
     result = await send_dingtalk_notification(
-        title=f"【{site_name}】测试消息",
-        content="这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。\n\nThis is a test message. If you received this, your DingTalk configuration is working correctly.",
+        title=t("test_notification_title", site_name=site_name),
+        content=t("test_dingtalk_content"),
     )
 
     if not result:
@@ -476,8 +455,8 @@ async def send_test_wechat(
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
     result = await send_wechat_notification(
-        title=f"【{site_name}】测试消息",
-        content="这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。\n\nThis is a test message. If you received this, your WeChat Work configuration is working correctly.",
+        title=t("test_notification_title", site_name=site_name),
+        content=t("test_wechat_content"),
     )
 
     if not result:
@@ -520,8 +499,8 @@ async def send_test_feishu(
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
     result = await send_feishu_notification(
-        title=f"【{site_name}】测试消息",
-        content="这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。\n\nThis is a test message. If you received this, your Feishu configuration is working correctly.",
+        title=t("test_notification_title", site_name=site_name),
+        content=t("test_feishu_content"),
     )
 
     if not result:
@@ -557,8 +536,8 @@ async def send_test_webhook(
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
     result = await send_webhook_notification(
-        title=f"【{site_name}】测试消息",
-        content="这是一条测试消息，如果您收到此消息，说明 Webhook 通知配置正确。\n\nThis is a test message. If you received this, your Webhook configuration is working correctly.",
+        title=t("test_notification_title", site_name=site_name),
+        content=t("test_webhook_content"),
     )
 
     if not result:
@@ -594,8 +573,8 @@ async def send_test_slack(
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
 
     result = await send_slack_notification(
-        title=f"【{site_name}】Test Message",
-        content="This is a test message. If you received this, your Slack configuration is working correctly.\n\n这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。",
+        title=t("test_notification_title", site_name=site_name),
+        content=t("test_slack_content"),
     )
 
     if not result:
@@ -632,7 +611,7 @@ async def trigger_archive_audit_logs(
     if result.get("status") == "failed":
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
-            msg=result.get("error", "Archive failed"),
+            msg_key="archive_failed",
         )
 
     return success(

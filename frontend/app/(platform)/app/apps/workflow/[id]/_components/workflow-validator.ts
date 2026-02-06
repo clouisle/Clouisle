@@ -1,5 +1,3 @@
-'use client'
-
 import type { Node, Edge } from '@xyflow/react'
 
 // 校验问题类型
@@ -7,9 +5,12 @@ export interface ValidationIssue {
   id: string
   nodeId: string
   nodeLabel: string
+  nodeLabelKey: string
   nodeType: string
   severity: 'error' | 'warning'
   message: string
+  messageKey: string
+  messageParams?: Record<string, string | number>
   field?: string
 }
 
@@ -133,30 +134,30 @@ interface WorkflowNodeData {
 
 type WorkflowNode = Node<WorkflowNodeData>
 
-// 节点类型显示名称
-const nodeTypeLabels: Record<string, string> = {
-  user_input: '开始',
-  trigger: '触发器',
-  llm: 'LLM',
-  condition: '条件分支',
-  sub_workflow: '子工作流',
-  tool: '工具',
-  iteration: '迭代',
-  iteration_start: '迭代开始',
-  iteration_exit: '迭代结束',
-  loop: '循环',
-  loop_start: '循环开始',
-  loop_exit: '循环结束',
-  code: '代码',
-  template: '模板',
-  file_to_url: '文件转URL',
-  variable_aggregator: '变量聚合',
-  variable_assignment: '变量赋值',
-  parameter_extractor: '参数提取',
-  question_classifier: '问题分类器',
-  answer: '输出',
-  start: '开始',
-  end: '结束',
+// 节点类型 i18n key 映射 (对应 workflow.nodeLabels.*)
+const nodeTypeLabelKeys: Record<string, string> = {
+  user_input: 'nodeLabels.user_input',
+  trigger: 'nodeLabels.trigger',
+  llm: 'nodeLabels.llm',
+  condition: 'nodeLabels.condition',
+  sub_workflow: 'nodeLabels.sub_workflow',
+  tool: 'nodeLabels.tool',
+  iteration: 'nodeLabels.iteration',
+  iteration_start: 'nodeLabels.iteration_start',
+  iteration_exit: 'nodeLabels.iteration_exit',
+  loop: 'nodeLabels.loop',
+  loop_start: 'nodeLabels.loop_start',
+  loop_exit: 'nodeLabels.loop_exit',
+  code: 'nodeLabels.code',
+  template: 'nodeLabels.template',
+  file_to_url: 'nodeLabels.file_to_url',
+  variable_aggregator: 'nodeLabels.variable_aggregator',
+  variable_assignment: 'nodeLabels.variable_assignment',
+  parameter_extractor: 'nodeLabels.parameter_extractor',
+  question_classifier: 'nodeLabels.question_classifier',
+  answer: 'nodeLabels.answer',
+  start: 'nodeLabels.start',
+  end: 'nodeLabels.end',
 }
 
 // 获取节点类型图标颜色
@@ -446,17 +447,25 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
   const createIssue = (
     node: WorkflowNode,
     severity: 'error' | 'warning',
-    message: string,
-    field?: string
-  ): ValidationIssue => ({
-    id: `issue-${++issueId}`,
-    nodeId: node.id,
-    nodeLabel: node.data.label || nodeTypeLabels[node.type || ''] || node.type || '未知节点',
-    nodeType: node.type || '',
-    severity,
-    message,
-    field,
-  })
+    messageKey: string,
+    field?: string,
+    messageParams?: Record<string, string | number>
+  ): ValidationIssue => {
+    const nodeType = node.type || ''
+    const nodeLabelKey = nodeTypeLabelKeys[nodeType] || 'validation.unknownNode'
+    return {
+      id: `issue-${++issueId}`,
+      nodeId: node.id,
+      nodeLabel: node.data.label || nodeType,
+      nodeLabelKey,
+      nodeType,
+      severity,
+      message: messageKey,
+      messageKey: `validation.${messageKey}`,
+      messageParams,
+      field,
+    }
+  }
 
   // 排除注释节点
   const workflowNodes = nodes.filter(n => n.type !== 'comment' && n.data.type !== 'comment')
@@ -472,27 +481,27 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 问题分类器 ==========
       case 'question_classifier': {
         const config = node.data.questionClassifierConfig
-        
+
         // 检查输入变量
         if (!config?.sourceVariable) {
-          issues.push(createIssue(node, 'error', '输入变量 不能为空', 'sourceVariable'))
+          issues.push(createIssue(node, 'error', 'inputVariableEmpty', 'sourceVariable'))
         } else if (!isVariableAvailable(config.sourceVariable, availableVars)) {
-          issues.push(createIssue(node, 'error', `变量 "${extractVariableName(config.sourceVariable)}" 不存在或不可用`, 'sourceVariable'))
+          issues.push(createIssue(node, 'error', 'variableNotAvailable', 'sourceVariable', { name: extractVariableName(config.sourceVariable) }))
         }
-        
+
         // 检查模型
         if (!config?.modelId) {
-          issues.push(createIssue(node, 'error', '未选择模型', 'modelId'))
+          issues.push(createIssue(node, 'error', 'modelNotSelected', 'modelId'))
         }
-        
+
         // 检查分类类别
         if (!config?.categories || config.categories.length === 0) {
-          issues.push(createIssue(node, 'error', '至少需要一个分类类别', 'categories'))
+          issues.push(createIssue(node, 'error', 'atLeastOneCategory', 'categories'))
         } else {
           // 检查每个类别是否有名称
           const unnamedCategories = config.categories.filter(c => !c.name?.trim())
           if (unnamedCategories.length > 0) {
-            issues.push(createIssue(node, 'warning', `${unnamedCategories.length} 个分类类别未命名`, 'categories'))
+            issues.push(createIssue(node, 'warning', 'unnamedCategories', 'categories', { count: unnamedCategories.length }))
           }
         }
         break
@@ -501,28 +510,28 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 输出节点 ==========
       case 'answer': {
         const config = node.data.answerConfig
-        
+
         // 检查输出变量
         if (!config?.outputs || config.outputs.length === 0) {
-          issues.push(createIssue(node, 'error', '输出变量 不能为空', 'outputs'))
+          issues.push(createIssue(node, 'error', 'outputVariableEmpty', 'outputs'))
         } else {
           // 检查每个输出变量是否有源变量
           const missingSource = config.outputs.filter(o => !o.sourceVariable)
           if (missingSource.length > 0) {
-            issues.push(createIssue(node, 'error', `${missingSource.length} 个输出变量未设置来源`, 'outputs'))
+            issues.push(createIssue(node, 'error', 'outputsMissingSource', 'outputs', { count: missingSource.length }))
           }
-          
+
           // 检查变量名
           const unnamedOutputs = config.outputs.filter(o => !o.name?.trim())
           if (unnamedOutputs.length > 0) {
-            issues.push(createIssue(node, 'warning', `${unnamedOutputs.length} 个输出变量未命名`, 'outputs'))
+            issues.push(createIssue(node, 'warning', 'unnamedOutputs', 'outputs', { count: unnamedOutputs.length }))
           }
-          
+
           // 检查源变量是否存在
           const invalidVars = config.outputs.filter(o => o.sourceVariable && !isVariableAvailable(o.sourceVariable, availableVars))
           if (invalidVars.length > 0) {
             invalidVars.forEach(v => {
-              issues.push(createIssue(node, 'error', `变量 "${extractVariableName(v.sourceVariable!)}" 不存在或不可用`, 'outputs'))
+              issues.push(createIssue(node, 'error', 'variableNotAvailable', 'outputs', { name: extractVariableName(v.sourceVariable!) }))
             })
           }
         }
@@ -532,15 +541,15 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== LLM 节点 ==========
       case 'llm': {
         const config = node.data.llmConfig
-        
+
         // 检查模型
         if (!config?.modelId) {
-          issues.push(createIssue(node, 'error', '未选择模型', 'modelId'))
+          issues.push(createIssue(node, 'error', 'modelNotSelected', 'modelId'))
         }
-        
+
         // 检查提示词
         if (!config?.prompt?.trim() && !config?.systemPrompt?.trim()) {
-          issues.push(createIssue(node, 'warning', '建议配置提示词', 'prompt'))
+          issues.push(createIssue(node, 'warning', 'suggestPrompt', 'prompt'))
         }
         break
       }
@@ -548,28 +557,28 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 条件分支 ==========
       case 'condition': {
         const branches = node.data.branches
-        
+
         if (!branches || branches.length === 0) {
-          issues.push(createIssue(node, 'error', '至少需要配置一个条件分支', 'branches'))
+          issues.push(createIssue(node, 'error', 'atLeastOneBranch', 'branches'))
         } else {
           // 检查 IF 分支的条件
           const ifBranches = branches.filter(b => b.type !== 'else')
           for (const branch of ifBranches) {
             if (!branch.conditions || branch.conditions.length === 0) {
-              issues.push(createIssue(node, 'error', `分支 "${branch.type.toUpperCase()}" 没有配置条件`, 'branches'))
+              issues.push(createIssue(node, 'error', 'branchNoCondition', 'branches', { name: branch.type.toUpperCase() }))
             } else {
               // 检查条件是否完整
               const incompleteConditions = branch.conditions.filter(
                 c => !c.variable || !c.operator
               )
               if (incompleteConditions.length > 0) {
-                issues.push(createIssue(node, 'error', `分支 "${branch.type.toUpperCase()}" 有不完整的条件`, 'branches'))
+                issues.push(createIssue(node, 'error', 'branchIncompleteCondition', 'branches', { name: branch.type.toUpperCase() }))
               }
-              
+
               // 检查条件中的变量是否存在
               for (const condition of branch.conditions) {
                 if (condition.variable && !isVariableAvailable(condition.variable, availableVars)) {
-                  issues.push(createIssue(node, 'error', `条件变量 "${extractVariableName(condition.variable)}" 不存在或不可用`, 'branches'))
+                  issues.push(createIssue(node, 'error', 'conditionVariableNotAvailable', 'branches', { name: extractVariableName(condition.variable) }))
                 }
               }
             }
@@ -581,23 +590,23 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 代码节点 ==========
       case 'code': {
         const config = node.data.codeConfig
-        
+
         // 检查代码
         if (!config?.code?.trim()) {
-          issues.push(createIssue(node, 'error', '代码不能为空', 'code'))
+          issues.push(createIssue(node, 'error', 'codeEmpty', 'code'))
         }
-        
+
         // 检查输入变量
         if (config?.inputs && config.inputs.length > 0) {
           const missingInputs = config.inputs.filter(i => !i.value)
           if (missingInputs.length > 0) {
-            issues.push(createIssue(node, 'warning', `${missingInputs.length} 个输入变量未设置来源`, 'inputs'))
+            issues.push(createIssue(node, 'warning', 'inputsMissingSource', 'inputs', { count: missingInputs.length }))
           }
-          
+
           // 检查输入变量是否存在
           for (const input of config.inputs) {
             if (input.value && !isVariableAvailable(input.value, availableVars)) {
-              issues.push(createIssue(node, 'error', `输入变量 "${input.name}" 引用的 "${extractVariableName(input.value)}" 不存在`, 'inputs'))
+              issues.push(createIssue(node, 'error', 'inputVariableRefNotExist', 'inputs', { name: input.name, ref: extractVariableName(input.value) }))
             }
           }
         }
@@ -607,23 +616,23 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 模板节点 ==========
       case 'template': {
         const config = node.data.templateConfig
-        
+
         // 检查模板
         if (!config?.template?.trim()) {
-          issues.push(createIssue(node, 'error', '模板内容不能为空', 'template'))
+          issues.push(createIssue(node, 'error', 'templateEmpty', 'template'))
         }
-        
+
         // 检查变量
         if (config?.variables && config.variables.length > 0) {
           const missingVars = config.variables.filter(v => !v.variable)
           if (missingVars.length > 0) {
-            issues.push(createIssue(node, 'warning', `${missingVars.length} 个模板变量未设置来源`, 'variables'))
+            issues.push(createIssue(node, 'warning', 'templateVarsMissingSource', 'variables', { count: missingVars.length }))
           }
-          
+
           // 检查变量是否存在
           for (const v of config.variables) {
             if (v.variable && !isVariableAvailable(v.variable, availableVars)) {
-              issues.push(createIssue(node, 'error', `模板变量 "${v.name}" 引用的 "${extractVariableName(v.variable)}" 不存在`, 'variables'))
+              issues.push(createIssue(node, 'error', 'templateVarRefNotExist', 'variables', { name: v.name, ref: extractVariableName(v.variable) }))
             }
           }
         }
@@ -633,23 +642,23 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 工具节点 ==========
       case 'tool': {
         const config = node.data.toolConfig
-        
+
         // 检查工具
         if (!config?.toolId) {
-          issues.push(createIssue(node, 'error', '未选择工具', 'toolId'))
+          issues.push(createIssue(node, 'error', 'toolNotSelected', 'toolId'))
         }
-        
+
         // 检查必填输入
         if (config?.inputs) {
           const missingRequired = config.inputs.filter(i => i.required && !i.value)
           if (missingRequired.length > 0) {
-            issues.push(createIssue(node, 'error', `${missingRequired.length} 个必填参数未设置`, 'inputs'))
+            issues.push(createIssue(node, 'error', 'requiredParamsMissing', 'inputs', { count: missingRequired.length }))
           }
-          
+
           // 检查输入变量是否存在
           for (const input of config.inputs) {
             if (input.value && !isVariableAvailable(input.value, availableVars)) {
-              issues.push(createIssue(node, 'error', `参数 "${input.name}" 引用的 "${extractVariableName(input.value)}" 不存在`, 'inputs'))
+              issues.push(createIssue(node, 'error', 'paramRefNotExist', 'inputs', { name: input.name, ref: extractVariableName(input.value) }))
             }
           }
         }
@@ -659,23 +668,23 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 参数提取器 ==========
       case 'parameter_extractor': {
         const config = node.data.parameterExtractorConfig
-        
+
         // 检查输入变量
         if (!config?.sourceVariable) {
-          issues.push(createIssue(node, 'error', '输入变量 不能为空', 'sourceVariable'))
+          issues.push(createIssue(node, 'error', 'inputVariableEmpty', 'sourceVariable'))
         } else if (!isVariableAvailable(config.sourceVariable, availableVars)) {
-          issues.push(createIssue(node, 'error', `变量 "${extractVariableName(config.sourceVariable)}" 不存在或不可用`, 'sourceVariable'))
+          issues.push(createIssue(node, 'error', 'variableNotAvailable', 'sourceVariable', { name: extractVariableName(config.sourceVariable) }))
         }
-        
+
         // 检查模型（LLM 和 JSONPath 需要模型）
         const method = config?.extractionMethod || 'llm'
         if ((method === 'llm' || method === 'jsonpath') && !config?.modelId) {
-          issues.push(createIssue(node, 'error', '未选择模型', 'modelId'))
+          issues.push(createIssue(node, 'error', 'modelNotSelected', 'modelId'))
         }
-        
+
         // 检查参数
         if (!config?.parameters || config.parameters.length === 0) {
-          issues.push(createIssue(node, 'error', '至少需要配置一个提取参数', 'parameters'))
+          issues.push(createIssue(node, 'error', 'atLeastOneExtractParam', 'parameters'))
         }
         break
       }
@@ -683,19 +692,19 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 变量聚合器 ==========
       case 'variable_aggregator': {
         const config = node.data.variableAggregatorConfig
-        
+
         if (!config?.variables || config.variables.length === 0) {
-          issues.push(createIssue(node, 'error', '至少需要配置一个聚合变量', 'variables'))
+          issues.push(createIssue(node, 'error', 'atLeastOneAggregateVar', 'variables'))
         } else {
           const missingSource = config.variables.filter(v => !v.sourceVariable)
           if (missingSource.length > 0) {
-            issues.push(createIssue(node, 'error', `${missingSource.length} 个变量未设置来源`, 'variables'))
+            issues.push(createIssue(node, 'error', 'aggregateVarsMissingSource', 'variables', { count: missingSource.length }))
           }
-          
+
           // 检查源变量是否存在
           for (const v of config.variables) {
             if (v.sourceVariable && !isVariableAvailable(v.sourceVariable, availableVars)) {
-              issues.push(createIssue(node, 'error', `聚合变量引用的 "${extractVariableName(v.sourceVariable)}" 不存在`, 'variables'))
+              issues.push(createIssue(node, 'error', 'aggregateVarRefNotExist', 'variables', { ref: extractVariableName(v.sourceVariable) }))
             }
           }
         }
@@ -707,7 +716,7 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         const config = node.data.variableAssignmentConfig
 
         if (!config?.assignments || config.assignments.length === 0) {
-          issues.push(createIssue(node, 'error', '至少需要配置一个赋值', 'assignments'))
+          issues.push(createIssue(node, 'error', 'atLeastOneAssignment', 'assignments'))
         } else {
           // 检查赋值配置是否完整
           const incomplete = config.assignments.filter(a => {
@@ -716,13 +725,13 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
             return !a.sourceVariable && !a.value
           })
           if (incomplete.length > 0) {
-            issues.push(createIssue(node, 'error', `${incomplete.length} 个赋值配置不完整`, 'assignments'))
+            issues.push(createIssue(node, 'error', 'incompleteAssignments', 'assignments', { count: incomplete.length }))
           }
 
           // 检查源变量是否存在
           for (const assignment of config.assignments) {
             if (assignment.sourceVariable && !isVariableAvailable(assignment.sourceVariable, availableVars)) {
-              issues.push(createIssue(node, 'error', `赋值引用的 "${extractVariableName(assignment.sourceVariable)}" 不存在`, 'assignments'))
+              issues.push(createIssue(node, 'error', 'assignmentRefNotExist', 'assignments', { ref: extractVariableName(assignment.sourceVariable) }))
             }
           }
         }
@@ -735,9 +744,9 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // 检查迭代源变量
       const iteratorVar = config?.iterateVariable
       if (!iteratorVar) {
-        issues.push(createIssue(node, 'error', '迭代源变量不能为空', 'iteratorVariable'))
+        issues.push(createIssue(node, 'error', 'iterateVariableEmpty', 'iteratorVariable'))
       } else if (!isVariableAvailable(iteratorVar, availableVars)) {
-        issues.push(createIssue(node, 'error', `迭代源变量 "${extractVariableName(iteratorVar)}" 不存在或不可用`, 'iteratorVariable'))
+        issues.push(createIssue(node, 'error', 'iterateVariableNotAvailable', 'iteratorVariable', { name: extractVariableName(iteratorVar) }))
       }
 
       // 检查是否有子节点（iteration_start）
@@ -746,13 +755,13 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         n.parentId === node.id
       )
       if (!hasStartNode) {
-        issues.push(createIssue(node, 'error', '迭代容器缺少开始节点', 'structure'))
+        issues.push(createIssue(node, 'error', 'iterationMissingStart', 'structure'))
       }
 
       // 检查容器内是否有其他节点
       const childNodes = workflowNodes.filter(n => n.parentId === node.id && n.type !== 'iteration_start')
       if (childNodes.length === 0) {
-        issues.push(createIssue(node, 'warning', '迭代容器内没有处理节点', 'structure'))
+        issues.push(createIssue(node, 'warning', 'iterationNoProcessNodes', 'structure'))
       }
 
       break
@@ -763,12 +772,12 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         const config = node.data.loopConfig
 
         if (!config?.conditionVariable && !config?.maxIterations) {
-          issues.push(createIssue(node, 'warning', '建议设置循环条件或最大迭代次数', 'condition'))
+          issues.push(createIssue(node, 'warning', 'suggestLoopCondition', 'condition'))
         }
 
         // 检查条件变量是否存在
         if (config?.conditionVariable && !isVariableAvailable(config.conditionVariable, availableVars)) {
-          issues.push(createIssue(node, 'error', `条件变量 "${extractVariableName(config.conditionVariable)}" 不存在或不可用`, 'conditionVariable'))
+          issues.push(createIssue(node, 'error', 'conditionVariableNotAvailable', 'conditionVariable', { name: extractVariableName(config.conditionVariable) }))
         }
 
         // 检查是否有子节点（loop_start）
@@ -777,13 +786,13 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
           n.parentId === node.id
         )
         if (!hasStartNode) {
-          issues.push(createIssue(node, 'error', '循环容器缺少开始节点', 'structure'))
+          issues.push(createIssue(node, 'error', 'loopMissingStart', 'structure'))
         }
 
         // 检查容器内是否有其他节点
         const childNodes = workflowNodes.filter(n => n.parentId === node.id && n.type !== 'loop_start')
         if (childNodes.length === 0) {
-          issues.push(createIssue(node, 'warning', '循环容器内没有处理节点', 'structure'))
+          issues.push(createIssue(node, 'warning', 'loopNoProcessNodes', 'structure'))
         }
 
         break
@@ -792,16 +801,16 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 子工作流 ==========
       case 'sub_workflow': {
         const config = node.data.subWorkflowConfig
-        
+
         if (!config?.workflowId) {
-          issues.push(createIssue(node, 'error', '未选择子工作流', 'workflowId'))
+          issues.push(createIssue(node, 'error', 'subWorkflowNotSelected', 'workflowId'))
         }
-        
+
         // 检查输入映射的源变量是否存在
         if (config?.inputMappings) {
           for (const mapping of config.inputMappings) {
             if (mapping.sourceVariable && !isVariableAvailable(mapping.sourceVariable, availableVars)) {
-              issues.push(createIssue(node, 'error', `输入映射 "${mapping.name}" 引用的 "${extractVariableName(mapping.sourceVariable)}" 不存在`, 'inputMappings'))
+              issues.push(createIssue(node, 'error', 'inputMappingRefNotExist', 'inputMappings', { name: mapping.name, ref: extractVariableName(mapping.sourceVariable) }))
             }
           }
         }
@@ -812,9 +821,9 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       case 'user_input': {
         // 用户输入节点使用 data.parameters 存储输入变量
         const parameters = node.data.parameters as Array<{ name: string; type: string; required?: boolean }> | undefined
-        
+
         if (!parameters || parameters.length === 0) {
-          issues.push(createIssue(node, 'warning', '建议配置输入变量', 'parameters'))
+          issues.push(createIssue(node, 'warning', 'suggestInputVariables', 'parameters'))
         }
         break
       }
@@ -822,9 +831,9 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 触发器节点 ==========
       case 'trigger': {
         const config = node.data.triggerConfig
-        
+
         if (!config?.triggerType) {
-          issues.push(createIssue(node, 'error', '未选择触发类型', 'triggerType'))
+          issues.push(createIssue(node, 'error', 'triggerTypeNotSelected', 'triggerType'))
         }
         break
       }
@@ -832,12 +841,12 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== 文件转URL节点 ==========
       case 'file_to_url': {
         const config = node.data.fileToUrlConfig
-        
+
         // 检查输入配置
         if (config?.inputs && config.inputs.length > 0) {
           for (const input of config.inputs) {
             if (input.sourceVariable && !isVariableAvailable(input.sourceVariable, availableVars)) {
-              issues.push(createIssue(node, 'error', `输入 "${input.name}" 引用的 "${extractVariableName(input.sourceVariable)}" 不存在`, 'inputs'))
+              issues.push(createIssue(node, 'error', 'inputVariableRefNotExist', 'inputs', { name: input.name, ref: extractVariableName(input.sourceVariable) }))
             }
           }
         }
@@ -847,15 +856,15 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       // ========== Agent 节点 ==========
       case 'agent': {
         const config = node.data.agentConfig
-        
+
         // 检查是否选择了 Agent
         if (!config?.agentId) {
-          issues.push(createIssue(node, 'error', '未选择 Agent', 'agentId'))
+          issues.push(createIssue(node, 'error', 'agentNotSelected', 'agentId'))
         }
-        
+
         // 检查输入变量是否存在
         if (config?.inputVariable && !isVariableAvailable(config.inputVariable, availableVars)) {
-          issues.push(createIssue(node, 'error', `输入变量 "${extractVariableName(config.inputVariable)}" 不存在或不可用`, 'inputVariable'))
+          issues.push(createIssue(node, 'error', 'variableNotAvailable', 'inputVariable', { name: extractVariableName(config.inputVariable) }))
         }
         break
       }
@@ -881,13 +890,13 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         const hasInput = edges.some(e => e.target === node.id)
         if (!hasInput) {
           // 容器内的节点必须有输入连接（通常来自 iteration_start 或 loop_start）
-          issues.push(createIssue(node, 'warning', '容器内节点没有输入连接', 'connection'))
+          issues.push(createIssue(node, 'warning', 'containerNodeNoInput', 'connection'))
         }
       } else {
         // 顶层节点检查是否有输入连接
         const hasInput = edges.some(e => e.target === node.id)
         if (!hasInput && nodes.length > 1) {
-          issues.push(createIssue(node, 'warning', '节点没有输入连接', 'connection'))
+          issues.push(createIssue(node, 'warning', 'nodeNoInput', 'connection'))
         }
       }
     }
@@ -905,10 +914,12 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
       issues.push({
         id: `issue-${++issueId}`,
         nodeId: 'workflow',
-        nodeLabel: '工作流',
+        nodeLabel: 'workflow',
+        nodeLabelKey: 'validation.workflowLabel',
         nodeType: 'workflow',
         severity: 'warning',
-        message: '工作流没有输出节点',
+        message: 'noOutputNode',
+        messageKey: 'validation.noOutputNode',
       })
     }
   }
@@ -916,7 +927,7 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
   return issues
 }
 
-// 获取节点类型标签
-export function getNodeTypeLabel(nodeType: string): string {
-  return nodeTypeLabels[nodeType] || nodeType
+// 获取节点类型标签 i18n key
+export function getNodeTypeLabelKey(nodeType: string): string {
+  return nodeTypeLabelKeys[nodeType] || nodeType
 }

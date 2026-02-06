@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { X, AlertTriangle, XCircle, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ValidationIssue, getNodeTypeColor, getNodeTypeLabel } from './workflow-validator'
+import { useTranslations } from 'next-intl'
+import { ValidationIssue, getNodeTypeColor } from './workflow-validator'
 import {
   Bot,
   MessageSquareText,
@@ -48,6 +49,7 @@ interface ValidationChecklistProps {
 }
 
 export function ValidationChecklist({ issues, onClose, onSelectNode }: ValidationChecklistProps) {
+  const t = useTranslations('workflow')
   const errorCount = issues.filter(i => i.severity === 'error').length
   const warningCount = issues.filter(i => i.severity === 'warning').length
 
@@ -67,7 +69,7 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-sm">检查清单</h3>
+          <h3 className="font-semibold text-sm">{t('checklist.title')}</h3>
           <span className="text-xs text-muted-foreground">({issues.length})</span>
         </div>
         <button
@@ -81,7 +83,7 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
       {/* Description */}
       <div className="px-4 py-2 border-b border-border bg-muted/30">
         <p className="text-xs text-muted-foreground">
-          发布前确保所有问题均已解决
+          {t('checklist.description')}
         </p>
       </div>
 
@@ -94,8 +96,8 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-sm font-medium">所有检查通过</p>
-            <p className="text-xs mt-1">工作流可以发布</p>
+            <p className="text-sm font-medium">{t('checklist.allPassed')}</p>
+            <p className="text-xs mt-1">{t('checklist.readyToPublish')}</p>
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -103,7 +105,6 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
               const firstIssue = nodeIssues[0]
               const NodeIcon = nodeTypeIcons[firstIssue.nodeType] || Bot
               const iconBgColor = getNodeTypeColor(firstIssue.nodeType)
-              const hasError = nodeIssues.some(i => i.severity === 'error')
 
               return (
                 <div key={nodeId} className="p-3">
@@ -125,7 +126,7 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
                     
                     {/* Node Name */}
                     <span className="flex-1 text-sm font-medium text-left truncate">
-                      {firstIssue.nodeLabel}
+                      {firstIssue.nodeLabel !== firstIssue.nodeType ? firstIssue.nodeLabel : t(firstIssue.nodeLabelKey)}
                     </span>
 
                     {/* Navigate Icon */}
@@ -151,7 +152,7 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
                         ) : (
                           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                         )}
-                        <span>{issue.message}</span>
+                        <span>{t(issue.messageKey, issue.messageParams)}</span>
                       </div>
                     ))}
                   </div>
@@ -168,13 +169,13 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
           {errorCount > 0 && (
             <span className="flex items-center gap-1 text-red-500">
               <XCircle className="h-3.5 w-3.5" />
-              {errorCount} 个错误
+              {t('checklist.errorCount', { count: errorCount })}
             </span>
           )}
           {warningCount > 0 && (
             <span className="flex items-center gap-1 text-amber-500">
               <AlertTriangle className="h-3.5 w-3.5" />
-              {warningCount} 个警告
+              {t('checklist.warningCount', { count: warningCount })}
             </span>
           )}
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Search, File, Image, Files, Images } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +51,7 @@ export function FileToUrlInputDialog({
   onOpenVariablePopoverChange,
   onSave,
 }: FileToUrlInputDialogProps) {
+  const t = useTranslations('workflow')
   const [form, setForm] = React.useState<Partial<FileToUrlInput>>({})
 
   React.useEffect(() => {
@@ -116,22 +118,22 @@ export function FileToUrlInputDialog({
     onOpenChange(false)
   }
 
-  const nameError = form.name && !isValidVariableName(form.name) ? '变量名格式无效' : null
+  const nameError = form.name && !isValidVariableName(form.name) ? t('dialogs.fileToUrlInput.nameFormatError') : null
   const duplicateError = form.name && existingInputs.some(
     i => i.id !== editingInput?.id && i.name === form.name
-  ) ? '变量名已存在' : null
+  ) ? t('dialogs.fileToUrlInput.nameDuplicate') : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-100 flex flex-col max-h-[85vh]">
         <DialogHeader>
-          <DialogTitle className="text-sm">{editingInput ? '编辑文件输入' : '添加文件输入'}</DialogTitle>
+          <DialogTitle className="text-sm">{editingInput ? t('dialogs.fileToUrlInput.editTitle') : t('dialogs.fileToUrlInput.addTitle')}</DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto py-2 px-1 -mx-1">
           <div className="space-y-4 px-0.5">
             {/* 选择文件变量 */}
             <div className="space-y-2">
-              <Label className="text-xs">选择文件变量 *</Label>
+              <Label className="text-xs">{t('dialogs.fileToUrlInput.selectFileVarLabel')}</Label>
               <Popover 
                 open={openVariablePopover === 'file-to-url-source'}
                 onOpenChange={(isOpen) => {
@@ -153,7 +155,7 @@ export function FileToUrlInputDialog({
                       </span>
                     </span>
                   ) : (
-                    <span className="text-muted-foreground text-xs">选择文件/图片变量...</span>
+                    <span className="text-muted-foreground text-xs">{t('dialogs.fileToUrlInput.selectFileVarPlaceholder')}</span>
                   )}
                 </PopoverTrigger>
                 <PopoverContent className="w-72 p-0" align="start">
@@ -161,7 +163,7 @@ export function FileToUrlInputDialog({
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
-                        placeholder="搜索变量"
+                        placeholder={t('dialogs.fileToUrlInput.searchPlaceholder')}
                         value={variableSearch}
                         onChange={(e) => onVariableSearchChange(e.target.value)}
                         className="h-8 pl-8 text-xs"
@@ -177,9 +179,9 @@ export function FileToUrlInputDialog({
                         if (groupEntries.length === 0) {
                           return (
                             <div className="py-4 text-center text-xs text-muted-foreground">
-                              {variables.length === 0 
-                                ? '没有可用的文件变量，请先在开始节点添加'
-                                : '未找到匹配的变量'
+                              {variables.length === 0
+                                ? t('dialogs.fileToUrlInput.noFileVarsAvailable')
+                                : t('dialogs.fileToUrlInput.noMatch')
                               }
                             </div>
                           )
@@ -233,12 +235,12 @@ export function FileToUrlInputDialog({
 
             {/* 输出变量名 */}
             <div className="space-y-2">
-              <Label htmlFor="filetourlput-name" className="text-xs">输出变量名 *</Label>
+              <Label htmlFor="filetourlput-name" className="text-xs">{t('dialogs.fileToUrlInput.outputNameLabel')}</Label>
               <Input
                 id="filetourlput-name"
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如: image_url, file_urls"
+                placeholder={t('dialogs.fileToUrlInput.outputNamePlaceholder')}
                 className={cn(
                   'h-9 font-mono',
                   (nameError || duplicateError) && 'border-destructive! ring-destructive/20!'
@@ -251,21 +253,21 @@ export function FileToUrlInputDialog({
                 <p className="text-[10px] text-destructive">{duplicateError}</p>
               )}
               <p className="text-[10px] text-muted-foreground">
-                输出类型：{form.sourceType === 'files' || form.sourceType === 'images' ? 'string[] (URL 数组)' : 'string (URL)'}
+                {t('dialogs.fileToUrlInput.outputTypePrefix')}{form.sourceType === 'files' || form.sourceType === 'images' ? t('dialogs.fileToUrlInput.outputTypeUrlArray') : t('dialogs.fileToUrlInput.outputTypeUrl')}
               </p>
             </div>
           </div>
         </div>
         <DialogFooter className="shrink-0">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            取消
+            {t('dialogs.fileToUrlInput.cancel')}
           </Button>
-          <Button 
-            size="sm" 
-            onClick={handleSave} 
+          <Button
+            size="sm"
+            onClick={handleSave}
             disabled={!form.name?.trim() || !form.sourceVariable || !!nameError || !!duplicateError}
           >
-            {editingInput ? '保存' : '添加'}
+            {editingInput ? t('dialogs.fileToUrlInput.save') : t('dialogs.fileToUrlInput.add')}
           </Button>
         </DialogFooter>
       </DialogContent>

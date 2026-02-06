@@ -488,7 +488,7 @@ export function createNewVariable(
     hidden: false,
     default: type === 'checkbox' ? 'false' : null,
     description: null,
-    options: type === 'select' ? ['选项1', '选项2'] : null,
+    options: type === 'select' ? ['Option 1', 'Option 2'] : null,
     maxLength: null,
   }
 }

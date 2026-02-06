@@ -137,7 +137,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
 
       try {
         config = JSON.parse(formData.config)
-      } catch (err) {
+      } catch {
         toast.error(t('invalidConfigJson') || 'Invalid configuration JSON')
         setLoading(false)
         return
@@ -145,7 +145,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
 
       try {
         attribute_mapping = JSON.parse(formData.attribute_mapping) as Record<string, string>
-      } catch (err) {
+      } catch {
         toast.error(t('invalidMappingJson') || 'Invalid attribute mapping JSON')
         setLoading(false)
         return

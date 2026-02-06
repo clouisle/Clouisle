@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Bot, MoreHorizontal, Play, Sparkles } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { LLMNodeConfigData } from '../node-config/configs/llm-node-config'
 
@@ -19,7 +20,8 @@ interface LLMNodeProps {
   data: LLMNodeData
 }
 
-export function LLMNode({ id, selected, data }: LLMNodeProps) {
+export function LLMNode({ selected, data }: LLMNodeProps) {
+  const t = useTranslations('workflow')
   // 从 llmConfig 获取模型信息
   const modelName = data.llmConfig?.modelName
   const hasModel = !!data.llmConfig?.modelId
@@ -30,7 +32,7 @@ export function LLMNode({ id, selected, data }: LLMNodeProps) {
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">LLM</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -72,7 +74,7 @@ export function LLMNode({ id, selected, data }: LLMNodeProps) {
               <span className="text-xs text-muted-foreground truncate">{modelName}</span>
             </div>
           ) : (
-            <span className="text-xs text-amber-500">未选择模型</span>
+            <span className="text-xs text-amber-500">{t('nodesCommon.modelNotSelected')}</span>
           )}
         </div>
 

@@ -1431,7 +1431,8 @@ async def search_knowledge_base(
     except Exception as e:
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
-            msg=f"Vector search failed: {e}",
+            msg_key="vector_search_failed",
+            error=str(e),
         )
 
     return success(

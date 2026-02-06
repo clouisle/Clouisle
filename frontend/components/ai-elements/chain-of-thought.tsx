@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import {
   Collapsible,
@@ -104,6 +105,7 @@ export const ChainOfThoughtHeader = memo(
     ...props
   }: ChainOfThoughtHeaderProps) => {
     const { isOpen, isStreaming } = useChainOfThought();
+    const t = useTranslations('chat.reasoning');
 
     return (
       <CollapsibleTrigger
@@ -116,9 +118,9 @@ export const ChainOfThoughtHeader = memo(
         <Icon className="size-4" />
         {children ?? (
           isStreaming ? (
-            <Shimmer duration={1}>{title ?? "思考中..."}</Shimmer>
+            <Shimmer duration={1}>{title ?? t('thinkingDefault')}</Shimmer>
           ) : (
-            <span>{title ?? "思考过程"}</span>
+            <span>{title ?? t('thoughtDefault')}</span>
           )
         )}
         <ChevronDownIcon

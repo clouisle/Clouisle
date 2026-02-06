@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,129 +15,62 @@ interface AddNodePopoverProps {
   onClose: () => void
 }
 
-// 普通节点分类
-const nodeCategories = [
-  {
-    label: '模型',
-    nodes: [
-      { type: 'llm', icon: Bot, color: 'bg-blue-500', title: 'LLM', description: '调用大语言模型' },
-    ],
-  },
-  {
-    label: '逻辑',
-    nodes: [
-      { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
-      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
-      { type: 'iteration', icon: RefreshCw, color: 'bg-cyan-500', title: '迭代', description: '遍历数组数据' },
-      { type: 'loop', icon: Infinity, color: 'bg-cyan-500', title: '循环', description: '重复执行直到满足条件' },
-    ],
-  },
-  {
-    label: '转换',
-    nodes: [
-      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
-      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
-      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
-      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
-      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
-      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
-    ],
-  },
-  {
-    label: '扩展',
-    nodes: [
-      { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
-      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
-      { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-      { type: 'answer', icon: MessageSquareText, color: 'bg-emerald-500', title: '输出', description: '定义工作流输出' },
-    ],
-  },
+// Node definitions without labels (labels come from i18n)
+const nodeDefinitions: Record<string, { icon: React.ElementType; color: string }> = {
+  llm: { icon: Bot, color: 'bg-blue-500' },
+  condition: { icon: GitBranch, color: 'bg-cyan-500' },
+  question_classifier: { icon: Tags, color: 'bg-violet-500' },
+  iteration: { icon: RefreshCw, color: 'bg-cyan-500' },
+  loop: { icon: Infinity, color: 'bg-cyan-500' },
+  iteration_exit: { icon: LogOut, color: 'bg-orange-500' },
+  loop_exit: { icon: LogOut, color: 'bg-orange-500' },
+  code: { icon: Code, color: 'bg-blue-500' },
+  template: { icon: FileText, color: 'bg-blue-500' },
+  file_to_url: { icon: Link, color: 'bg-teal-500' },
+  variable_aggregator: { icon: Combine, color: 'bg-blue-500' },
+  variable_assignment: { icon: Variable, color: 'bg-blue-500' },
+  parameter_extractor: { icon: Braces, color: 'bg-blue-500' },
+  sub_workflow: { icon: Workflow, color: 'bg-purple-500' },
+  agent: { icon: Sparkles, color: 'bg-indigo-500' },
+  tool: { icon: Wrench, color: 'bg-emerald-500' },
+  answer: { icon: MessageSquareText, color: 'bg-emerald-500' },
+}
+
+// Category structure definitions (type references only)
+type CategoryDef = { labelKey: string; nodeTypes: string[] }
+
+const normalCategories: CategoryDef[] = [
+  { labelKey: 'model', nodeTypes: ['llm'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration', 'loop'] },
+  { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'answer'] },
 ]
 
-// 迭代内部节点分类
-const iterationNodeCategories = [
-  {
-    label: '模型',
-    nodes: [
-      { type: 'llm', icon: Bot, color: 'bg-blue-500', title: 'LLM', description: '调用大语言模型' },
-    ],
-  },
-  {
-    label: '逻辑',
-    nodes: [
-      { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
-      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
-      { type: 'iteration_exit', icon: LogOut, color: 'bg-orange-500', title: '退出迭代', description: '提前退出迭代' },
-    ],
-  },
-  {
-    label: '转换',
-    nodes: [
-      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
-      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
-      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
-      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
-      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
-      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
-    ],
-  },
-  {
-    label: '扩展',
-    nodes: [
-      { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
-      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
-      { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-    ],
-  },
+const iterationCategories: CategoryDef[] = [
+  { labelKey: 'model', nodeTypes: ['llm'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration_exit'] },
+  { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool'] },
 ]
 
-// 循环内部节点分类
-const loopNodeCategories = [
-  {
-    label: '模型',
-    nodes: [
-      { type: 'llm', icon: Bot, color: 'bg-blue-500', title: 'LLM', description: '调用大语言模型' },
-    ],
-  },
-  {
-    label: '逻辑',
-    nodes: [
-      { type: 'condition', icon: GitBranch, color: 'bg-cyan-500', title: '条件分支', description: 'IF/ELSE 逻辑判断' },
-      { type: 'question_classifier', icon: Tags, color: 'bg-violet-500', title: '问题分类', description: 'LLM 智能分类问题' },
-      { type: 'loop_exit', icon: LogOut, color: 'bg-orange-500', title: '退出循环', description: '提前退出循环' },
-    ],
-  },
-  {
-    label: '转换',
-    nodes: [
-      { type: 'code', icon: Code, color: 'bg-blue-500', title: '代码执行', description: '执行自定义代码' },
-      { type: 'template', icon: FileText, color: 'bg-blue-500', title: '模板转换', description: '文本模板拼接' },
-      { type: 'file_to_url', icon: Link, color: 'bg-teal-500', title: '文件转URL', description: '将文件/图片转为URL' },
-      { type: 'variable_aggregator', icon: Combine, color: 'bg-blue-500', title: '变量聚合器', description: '聚合多个变量' },
-      { type: 'variable_assignment', icon: Variable, color: 'bg-blue-500', title: '变量赋值', description: '给变量赋值' },
-      { type: 'parameter_extractor', icon: Braces, color: 'bg-blue-500', title: '参数提取器', description: '从文本中提取参数' },
-    ],
-  },
-  {
-    label: '扩展',
-    nodes: [
-      { type: 'sub_workflow', icon: Workflow, color: 'bg-purple-500', title: '子工作流', description: '调用其他工作流' },
-      { type: 'agent', icon: Sparkles, color: 'bg-indigo-500', title: '智能体', description: '调用已发布的智能体' },
-      { type: 'tool', icon: Wrench, color: 'bg-emerald-500', title: '工具', description: '调用外部工具' },
-    ],
-  },
+const loopCategories: CategoryDef[] = [
+  { labelKey: 'model', nodeTypes: ['llm'] },
+  { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'loop_exit'] },
+  { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool'] },
 ]
 
 export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsideIteration, isInsideLoop, onSelect, onClose }: AddNodePopoverProps) {
+  const t = useTranslations('workflow')
   const popoverRef = React.useRef<HTMLDivElement>(null)
   const [adjustedPosition, setAdjustedPosition] = React.useState(position)
-  
+
   // 根据是否在容器内选择节点分类
-  const categories = isInsideIteration 
-    ? iterationNodeCategories 
-    : isInsideLoop 
-      ? loopNodeCategories 
-      : nodeCategories
+  const categoryDefs = isInsideIteration
+    ? iterationCategories
+    : isInsideLoop
+      ? loopCategories
+      : normalCategories
 
   // 调整位置确保不超出屏幕
   React.useEffect(() => {
@@ -226,25 +160,27 @@ export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsid
         <X className="h-3 w-3 text-muted-foreground" />
       </button>
       <div className="p-2 space-y-2 max-h-[400px] overflow-y-auto">
-        {categories.map((category) => (
-          <div key={category.label}>
-            <p className="text-[10px] text-muted-foreground px-2 py-1">{category.label}</p>
+        {categoryDefs.map((category) => (
+          <div key={category.labelKey}>
+            <p className="text-[10px] text-muted-foreground px-2 py-1">{t(`nodeCategories.${category.labelKey}`)}</p>
             <div className="space-y-0.5">
-              {category.nodes.map((node) => {
-                const Icon = node.icon
+              {category.nodeTypes.map((nodeType) => {
+                const def = nodeDefinitions[nodeType]
+                if (!def) return null
+                const Icon = def.icon
                 return (
                   <button
-                    key={node.type}
-                    onClick={() => onSelect(node.type, sourceNodeId, sourceHandleId)}
+                    key={nodeType}
+                    onClick={() => onSelect(nodeType, sourceNodeId, sourceHandleId)}
                     className={cn(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer',
                       'hover:bg-accent transition-colors text-left'
                     )}
                   >
-                    <div className={cn('flex h-6 w-6 items-center justify-center rounded-md text-white shrink-0', node.color)}>
+                    <div className={cn('flex h-6 w-6 items-center justify-center rounded-md text-white shrink-0', def.color)}>
                       <Icon className="h-3.5 w-3.5" />
                     </div>
-                    <span className="text-sm truncate">{node.title}</span>
+                    <span className="text-sm truncate">{t(`nodeLabels.${nodeType}`)}</span>
                   </button>
                 )
               })}

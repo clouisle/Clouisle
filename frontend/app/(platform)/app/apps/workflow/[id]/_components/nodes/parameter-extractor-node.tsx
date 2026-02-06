@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Braces, MoreHorizontal, Play, Bot, Code, FileJson, Type, Hash, ToggleLeft, List } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 提取方式
@@ -107,44 +108,88 @@ export function generateJsonSchema(parameters: ExtractedParameter[]): object {
   }
 }
 
-// 提取方式配置
-export const extractionMethodConfig: Record<ExtractionMethod, {
-  label: string
+// 提取方式配置（静态部分）
+export const extractionMethodConfigStatic: Record<ExtractionMethod, {
   shortLabel: string
-  description: string
   icon: React.ComponentType<{ className?: string }>
   supportedTypes: ExtractedParamType[]  // 该方式支持的参数类型
   defaultType: ExtractedParamType       // 默认类型
   sourceVariableTypes: string[]         // 源变量支持的类型
 }> = {
   llm: {
-    label: 'LLM 智能提取',
     shortLabel: 'LLM',
-    description: '使用大语言模型理解文本语义，智能提取参数',
     icon: Bot,
     supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
     defaultType: 'string',
     sourceVariableTypes: ['String', 'Object', 'Array'],  // LLM 可处理文本和对象
   },
   regex: {
-    label: '正则表达式',
-    shortLabel: '正则',
-    description: '使用正则表达式匹配提取特定模式的内容',
+    shortLabel: 'Regex',
     icon: Code,
     supportedTypes: ['string', 'number', 'array'],
     defaultType: 'string',
     sourceVariableTypes: ['String'],  // 正则只处理文本
   },
   json_path: {
-    label: 'JSON Path',
     shortLabel: 'JSON',
-    description: '从 JSON 对象或字符串中按路径提取数据',
     icon: FileJson,
     supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
     defaultType: 'object',
     sourceVariableTypes: ['String', 'Object', 'Array'],  // JSON Path 可处理字符串、对象、数组
   },
 }
+
+// 提取方式配置（带翻译）- 用于需要翻译的场景
+export function getExtractionMethodConfig(t: (key: string) => string): Record<ExtractionMethod, {
+  label: string
+  shortLabel: string
+  description: string
+  icon: React.ComponentType<{ className?: string }>
+  supportedTypes: ExtractedParamType[]
+  defaultType: ExtractedParamType
+  sourceVariableTypes: string[]
+}> {
+  return {
+    llm: {
+      label: t('nodesParameterExtractor.methodLlmLabel'),
+      shortLabel: 'LLM',
+      description: t('nodesParameterExtractor.methodLlmDesc'),
+      icon: Bot,
+      supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
+      defaultType: 'string',
+      sourceVariableTypes: ['String', 'Object', 'Array'],
+    },
+    regex: {
+      label: t('nodesParameterExtractor.methodRegexLabel'),
+      shortLabel: t('nodesParameterExtractor.methodRegexShort'),
+      description: t('nodesParameterExtractor.methodRegexDesc'),
+      icon: Code,
+      supportedTypes: ['string', 'number', 'array'],
+      defaultType: 'string',
+      sourceVariableTypes: ['String'],
+    },
+    json_path: {
+      label: 'JSON Path',
+      shortLabel: 'JSON',
+      description: t('nodesParameterExtractor.methodJsonPathDesc'),
+      icon: FileJson,
+      supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
+      defaultType: 'object',
+      sourceVariableTypes: ['String', 'Object', 'Array'],
+    },
+  }
+}
+
+// 保留旧的导出以保持向后兼容（使用静态配置）
+export const extractionMethodConfig = extractionMethodConfigStatic as Record<ExtractionMethod, {
+  label: string
+  shortLabel: string
+  description: string
+  icon: React.ComponentType<{ className?: string }>
+  supportedTypes: ExtractedParamType[]
+  defaultType: ExtractedParamType
+  sourceVariableTypes: string[]
+}>
 
 // 参数类型配置
 export const extractedParamTypeConfig: Record<ExtractedParamType, {
@@ -172,9 +217,11 @@ interface ParameterExtractorNodeProps {
   data: ParameterExtractorNodeData
 }
 
-export function ParameterExtractorNode({ id, selected, data }: ParameterExtractorNodeProps) {
+export function ParameterExtractorNode({ selected, data }: ParameterExtractorNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.parameterExtractorConfig || defaultParameterExtractorConfig
-  const methodConfig = extractionMethodConfig[config.extractionMethod]
+  const methodConfigMap = getExtractionMethodConfig(t)
+  const methodConfig = methodConfigMap[config.extractionMethod]
   const MethodIcon = methodConfig.icon
   const parameters = config.parameters || []
   const hasParameters = parameters.length > 0
@@ -183,9 +230,9 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">参数提取器</span>
+        <span className="text-xs text-muted-foreground">{t('nodesParameterExtractor.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -193,14 +240,14 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
           </button>
         </div>
       </div>
-      
+
       {/* Node Card */}
       <div
         className={cn(
           'relative flex flex-col rounded-xl border bg-card shadow-sm transition-all',
           'min-w-44 max-w-56',
-          selected 
-            ? 'border-primary' 
+          selected
+            ? 'border-primary'
             : 'border-border hover:border-primary/50'
         )}
       >
@@ -218,12 +265,12 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
             <Braces className="h-3.5 w-3.5" />
           </div>
-          
+
           {/* Label */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '参数提取器'}
+            {data.label || t('nodesParameterExtractor.label')}
           </span>
-          
+
           {/* Method badge */}
           <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <MethodIcon className="h-3 w-3" />
@@ -236,9 +283,9 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
           {hasParameters ? (
             parameters.slice(0, 3).map((param) => {
               const typeConfig = extractedParamTypeConfig[param.type]
-              
+
               return (
-                <div 
+                <div
                   key={param.id}
                   className="flex items-center gap-1.5 rounded-md px-2 py-1.5 bg-amber-500/10"
                 >
@@ -246,16 +293,16 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
                   <span className="text-[11px] text-foreground/80 font-medium max-w-20 truncate">
                     {param.name}
                   </span>
-                  
+
                   {/* 类型 */}
                   <span className="text-[10px] text-muted-foreground">
                     {typeConfig.label}
                   </span>
-                  
+
                   {/* 必填标记 */}
                   {param.required && (
                     <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                      必填
+                      {t('nodesCommon.required')}
                     </span>
                   )}
                 </div>
@@ -263,14 +310,14 @@ export function ParameterExtractorNode({ id, selected, data }: ParameterExtracto
             })
           ) : (
             <div className="flex items-center justify-center py-2 text-[11px] text-muted-foreground">
-              点击配置参数
+              {t('nodesParameterExtractor.clickToConfigure')}
             </div>
           )}
-          
+
           {/* 更多指示 */}
           {parameters.length > 3 && (
             <div className="text-[10px] text-muted-foreground text-center py-0.5">
-              +{parameters.length - 3} 更多参数
+              {t('nodesParameterExtractor.moreParams', { n: parameters.length - 3 })}
             </div>
           )}
         </div>

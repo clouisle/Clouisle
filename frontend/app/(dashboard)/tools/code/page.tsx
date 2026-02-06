@@ -260,7 +260,7 @@ function CodeToolPageContent() {
     }
 
     if (!currentTeamId) {
-      toast.error('No team selected')
+      toast.error(t('error.noTeamSelected'))
       return
     }
 

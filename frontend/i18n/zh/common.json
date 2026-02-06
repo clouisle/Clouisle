@@ -29,6 +29,8 @@
     "status": "状态",
     "team": "团队",
     "createdBy": "创建人",
-    "noResults": "未找到相关结果"
+    "noResults": "未找到相关结果",
+    "openMenu": "打开菜单",
+    "copiedToClipboard": "已复制到剪贴板"
   }
 }

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from tortoise.functions import Count, Sum, Avg
 
 from app.api.deps import PermissionChecker
+from app.core.i18n import t
 from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team
 from app.models.agent import Agent, Conversation, Message
@@ -264,7 +265,7 @@ async def get_top_agents(
                 "name": agent.name,
                 "icon": agent.icon,
                 "value": value,
-                "team_name": agent.team.name if agent.team else "Unknown",
+                "team_name": agent.team.name if agent.team else t("unknown"),
             }
         )
 

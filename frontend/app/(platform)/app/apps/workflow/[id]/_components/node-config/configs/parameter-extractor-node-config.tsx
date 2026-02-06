@@ -1,14 +1,14 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Trash2, Search, ChevronDown, Home, Loader2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Plus, Trash2, Search, ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectEmpty } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -47,6 +47,7 @@ export function ParameterExtractorNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: ParameterExtractorNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   
   // 模型数据
@@ -180,7 +181,7 @@ export function ParameterExtractorNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-xs">选择源文本变量...</span>
+            <span className="text-muted-foreground text-xs">{t('configParameterExtractor.selectSourceTextVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -188,7 +189,7 @@ export function ParameterExtractorNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -204,7 +205,7 @@ export function ParameterExtractorNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -254,7 +255,7 @@ export function ParameterExtractorNodeConfig({
       {/* 提取方式 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">提取方式</Label>
+          <Label className="text-xs font-medium">{t('configParameterExtractor.extractionMethod')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <Select
@@ -301,18 +302,18 @@ export function ParameterExtractorNodeConfig({
       {/* 源文本变量 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">源文本</Label>
+          <Label className="text-xs font-medium">{t('configParameterExtractor.sourceText')}</Label>
           <span className="text-destructive">*</span>
         </div>
         {renderSourceVariableSelector()}
-        <p className="text-[10px] text-muted-foreground">选择要从中提取参数的文本变量</p>
+        <p className="text-[10px] text-muted-foreground">{t('configParameterExtractor.sourceTextHint')}</p>
       </div>
 
       {/* LLM 模式配置 */}
       {safeConfig.extractionMethod === 'llm' && (
         <>
           <div className="space-y-2">
-            <Label className="text-xs font-medium">模型</Label>
+            <Label className="text-xs font-medium">{t('configCommon.model')}</Label>
             <Select
               value={safeConfig.modelId || ''}
               onValueChange={(v) => {
@@ -330,10 +331,10 @@ export function ParameterExtractorNodeConfig({
                   {isLoadingModels ? (
                     <span className="flex items-center gap-2 text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" />
-                      加载中...
+                      {t('configCommon.loading')}
                     </span>
                   ) : (
-                    selectedModelName || '选择模型...'
+                    selectedModelName || t('configCommon.selectModel')
                   )}
                 </SelectValue>
               </SelectTrigger>
@@ -345,7 +346,7 @@ export function ParameterExtractorNodeConfig({
                     </SelectItem>
                   ))
                 ) : (
-                  <SelectEmpty>暂无可用模型</SelectEmpty>
+                  <SelectEmpty>{t('configCommon.noAvailableModels')}</SelectEmpty>
                 )}
               </SelectContent>
             </Select>
@@ -354,8 +355,8 @@ export function ParameterExtractorNodeConfig({
           {/* JSON Schema 开关 */}
           <div className="flex items-center justify-between py-2">
             <div className="space-y-0.5">
-              <Label className="text-xs font-medium">结构化输出</Label>
-              <p className="text-[10px] text-muted-foreground">使用 JSON Schema 约束 LLM 输出格式</p>
+              <Label className="text-xs font-medium">{t('configParameterExtractor.structuredOutput')}</Label>
+              <p className="text-[10px] text-muted-foreground">{t('configParameterExtractor.structuredOutputHint')}</p>
             </div>
             <Checkbox
               checked={safeConfig.useJsonSchema !== false}
@@ -369,7 +370,7 @@ export function ParameterExtractorNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">提取参数</Label>
+            <Label className="text-xs font-medium">{t('configParameterExtractor.extractionParameters')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Button
@@ -384,7 +385,7 @@ export function ParameterExtractorNodeConfig({
         
         {safeConfig.parameters.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center bg-muted/30 rounded-md">
-            暂无参数，点击 + 添加
+            {t('configParameterExtractor.noParameters')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -396,7 +397,7 @@ export function ParameterExtractorNodeConfig({
                 {/* 头部：序号 + 删除 */}
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground">
-                    参数 {index + 1}
+                    {t('configParameterExtractor.parameterIndex', { index: index + 1 })}
                   </span>
                   <Button
                     variant="ghost"
@@ -411,11 +412,11 @@ export function ParameterExtractorNodeConfig({
                 {/* 参数名 + 类型 */}
                 <div className="flex gap-2">
                   <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">参数名</Label>
+                    <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.parameterName')}</Label>
                     <Input
                       value={param.name}
                       onChange={(e) => handleUpdateParameter(param.id, { name: e.target.value })}
-                      placeholder="参数名"
+                      placeholder={t('configParameterExtractor.parameterName')}
                       className={cn(
                         'h-8 text-xs font-mono',
                         param.name && !isValidVariableName(param.name) && 'border-destructive!'
@@ -423,7 +424,7 @@ export function ParameterExtractorNodeConfig({
                     />
                   </div>
                   <div className="w-24 space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">类型</Label>
+                    <Label className="text-[10px] text-muted-foreground">{t('configCommon.type')}</Label>
                     <Select
                       value={param.type}
                       onValueChange={(v) => handleUpdateParameter(param.id, { type: v as ExtractedParamType })}
@@ -446,11 +447,11 @@ export function ParameterExtractorNodeConfig({
                 {safeConfig.extractionMethod === 'llm' && (
                   <>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground">描述（帮助LLM理解）</Label>
+                      <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.descriptionHelpLLM')}</Label>
                       <Input
                         value={param.description}
                         onChange={(e) => handleUpdateParameter(param.id, { description: e.target.value })}
-                        placeholder="例如：用户的姓名"
+                        placeholder={t('configParameterExtractor.descriptionPlaceholder')}
                         className="h-8 text-xs"
                       />
                     </div>
@@ -458,7 +459,7 @@ export function ParameterExtractorNodeConfig({
                     {/* 枚举值（仅 string 类型） */}
                     {param.type === 'string' && (
                       <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground">枚举值（可选，逗号分隔）</Label>
+                        <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.enumValues')}</Label>
                         <Input
                           value={param.enum?.join(', ') || ''}
                           onChange={(e) => {
@@ -466,7 +467,7 @@ export function ParameterExtractorNodeConfig({
                             const enumValues = val ? val.split(',').map(s => s.trim()).filter(Boolean) : undefined
                             handleUpdateParameter(param.id, { enum: enumValues })
                           }}
-                          placeholder="例如：男, 女, 未知"
+                          placeholder={t('configParameterExtractor.enumPlaceholder')}
                           className="h-8 text-xs"
                         />
                       </div>
@@ -475,7 +476,7 @@ export function ParameterExtractorNodeConfig({
                     {/* 数组元素类型（仅 array 类型） */}
                     {param.type === 'array' && (
                       <div className="space-y-1">
-                        <Label className="text-[10px] text-muted-foreground">数组元素类型</Label>
+                        <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.arrayItemType')}</Label>
                         <Select
                           value={param.arrayItemType || 'string'}
                           onValueChange={(v) => handleUpdateParameter(param.id, { arrayItemType: v as ExtractedParamType })}
@@ -498,11 +499,11 @@ export function ParameterExtractorNodeConfig({
                 {/* 正则表达式（regex 模式） */}
                 {safeConfig.extractionMethod === 'regex' && (
                   <div className="space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">正则表达式</Label>
+                    <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.regexPattern')}</Label>
                     <Input
                       value={param.pattern || ''}
                       onChange={(e) => handleUpdateParameter(param.id, { pattern: e.target.value })}
-                      placeholder="例如：\d+"
+                      placeholder={t('configParameterExtractor.regexPlaceholder')}
                       className="h-8 text-xs font-mono"
                     />
                   </div>
@@ -515,7 +516,7 @@ export function ParameterExtractorNodeConfig({
                     <Input
                       value={param.jsonPath || ''}
                       onChange={(e) => handleUpdateParameter(param.id, { jsonPath: e.target.value })}
-                      placeholder="例如：$.data.name"
+                      placeholder={t('configParameterExtractor.jsonPathPlaceholder')}
                       className="h-8 text-xs font-mono"
                     />
                   </div>
@@ -530,15 +531,15 @@ export function ParameterExtractorNodeConfig({
                       onCheckedChange={(checked) => handleUpdateParameter(param.id, { required: !!checked })}
                     />
                     <Label htmlFor={`required-${param.id}`} className="text-xs text-muted-foreground cursor-pointer">
-                      必填
+                      {t('configCommon.required')}
                     </Label>
                   </div>
                   <div className="flex-1 flex items-center gap-2">
-                    <Label className="text-xs text-muted-foreground shrink-0">默认值:</Label>
+                    <Label className="text-xs text-muted-foreground shrink-0">{t('configParameterExtractor.defaultValueLabel')}</Label>
                     <Input
                       value={param.defaultValue || ''}
                       onChange={(e) => handleUpdateParameter(param.id, { defaultValue: e.target.value })}
-                      placeholder="无"
+                      placeholder={t('configCommon.none')}
                       className="h-7 text-xs flex-1"
                     />
                   </div>
@@ -550,13 +551,13 @@ export function ParameterExtractorNodeConfig({
         
         {/* 参数名校验提示 */}
         {safeConfig.parameters.some(p => p.name && !isValidVariableName(p.name)) && (
-          <p className="text-[10px] text-destructive">参数名格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configParameterExtractor.invalidParamName')}</p>
         )}
         {(() => {
           const names = safeConfig.parameters.map(p => p.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的参数名</p>
+            <p className="text-[10px] text-destructive">{t('configParameterExtractor.duplicateParamName')}</p>
           )
         })()}
       </div>
@@ -566,7 +567,7 @@ export function ParameterExtractorNodeConfig({
         <Collapsible>
           <CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground">
             <ChevronDown className="h-3 w-3" />
-            <span>查看 JSON Schema</span>
+            <span>{t('configParameterExtractor.viewJsonSchema')}</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2">
             <pre className="text-[10px] bg-muted/50 rounded-lg p-2 overflow-x-auto max-h-40 overflow-y-auto">

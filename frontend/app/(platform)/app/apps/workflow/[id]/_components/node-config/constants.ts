@@ -1,66 +1,66 @@
-import { 
-  Home, Zap, Bot, GitBranch, Workflow, Wrench, Code, 
+import {
+  Home, Zap, Bot, GitBranch, Workflow, Wrench, Code,
   Type, AlignLeft, ListChecks, Hash, CheckSquare, RefreshCw, Infinity,
   Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles
 } from 'lucide-react'
 import type { ParameterType, SystemParameter, Parameter } from './types'
 
-// 循环变量类型配置
+// 循环变量类型配置 - labelKey references workflow.varTypes.*
 export const loopVariableTypeConfig = {
-  string: { label: '文本', icon: Type, placeholder: '如：hello', valueType: 'String' },
-  number: { label: '数字', icon: Hash, placeholder: '如：0', valueType: 'Number' },
-  boolean: { label: '布尔', icon: CheckSquare, placeholder: '如：false', valueType: 'Boolean' },
-  array: { label: '数组', icon: Brackets, placeholder: '如：[]', valueType: 'Array' },
-  object: { label: '对象', icon: Braces, placeholder: '如：{}', valueType: 'Object' },
+  string: { labelKey: 'text', icon: Type, placeholder: 'e.g. hello', valueType: 'String' },
+  number: { labelKey: 'number', icon: Hash, placeholder: 'e.g. 0', valueType: 'Number' },
+  boolean: { labelKey: 'boolean', icon: CheckSquare, placeholder: 'e.g. false', valueType: 'Boolean' },
+  array: { labelKey: 'array', icon: Brackets, placeholder: 'e.g. []', valueType: 'Array' },
+  object: { labelKey: 'object', icon: Braces, placeholder: 'e.g. {}', valueType: 'Object' },
 } as const
 
-// 参数类型配置
-export const parameterTypeConfig: Record<ParameterType, { label: string; icon: React.ElementType; valueType: string }> = {
-  text: { label: '文本', icon: Type, valueType: 'string' },
-  paragraph: { label: '段落', icon: AlignLeft, valueType: 'string' },
-  select: { label: '下拉选项', icon: ListChecks, valueType: 'string' },
-  number: { label: '数字', icon: Hash, valueType: 'number' },
-  checkbox: { label: '复选框', icon: CheckSquare, valueType: 'boolean' },
-  array: { label: '数组', icon: Brackets, valueType: 'array' },
-  object: { label: '对象', icon: Braces, valueType: 'object' },
-  file: { label: '文件', icon: File, valueType: 'file' },
-  image: { label: '图片', icon: Image, valueType: 'file' },
-  files: { label: '多文件', icon: Files, valueType: 'array' },
-  images: { label: '多图片', icon: Images, valueType: 'array' },
+// 参数类型配置 - labelKey references workflow.varTypes.*
+export const parameterTypeConfig: Record<ParameterType, { labelKey: string; icon: React.ElementType; valueType: string }> = {
+  text: { labelKey: 'text', icon: Type, valueType: 'string' },
+  paragraph: { labelKey: 'paragraph', icon: AlignLeft, valueType: 'string' },
+  select: { labelKey: 'select', icon: ListChecks, valueType: 'string' },
+  number: { labelKey: 'number', icon: Hash, valueType: 'number' },
+  checkbox: { labelKey: 'checkbox', icon: CheckSquare, valueType: 'boolean' },
+  array: { labelKey: 'array', icon: Brackets, valueType: 'array' },
+  object: { labelKey: 'object', icon: Braces, valueType: 'object' },
+  file: { labelKey: 'file', icon: File, valueType: 'file' },
+  image: { labelKey: 'image', icon: Image, valueType: 'file' },
+  files: { labelKey: 'files', icon: Files, valueType: 'array' },
+  images: { labelKey: 'images', icon: Images, valueType: 'array' },
 }
 
-// 节点类型信息
-export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: string; title: string }> = {
-  user_input: { icon: Home, color: 'bg-primary', title: '开始' },
-  trigger: { icon: Zap, color: 'bg-amber-500', title: '触发器' },
-  llm: { icon: Bot, color: 'bg-blue-500', title: 'LLM' },
-  condition: { icon: GitBranch, color: 'bg-cyan-500', title: '条件分支' },
-  iteration: { icon: RefreshCw, color: 'bg-cyan-500', title: '迭代' },
-  loop: { icon: Infinity, color: 'bg-cyan-500', title: '循环' },
-  question_classifier: { icon: Tags, color: 'bg-violet-500', title: '问题分类' },
-  answer: { icon: MessageSquareText, color: 'bg-emerald-500', title: '输出' },
-  sub_workflow: { icon: Workflow, color: 'bg-purple-500', title: '子工作流' },
-  agent: { icon: Sparkles, color: 'bg-indigo-500', title: '智能体' },
-  tool: { icon: Wrench, color: 'bg-emerald-500', title: '工具' },
-  code: { icon: Code, color: 'bg-blue-500', title: '代码执行' },
-  template: { icon: FileText, color: 'bg-blue-500', title: '模板转换' },
-  file_to_url: { icon: Link, color: 'bg-teal-500', title: '文件转URL' },
-  variable_aggregator: { icon: Combine, color: 'bg-blue-500', title: '变量聚合器' },
-  variable_assignment: { icon: Variable, color: 'bg-blue-500', title: '变量赋值' },
-  parameter_extractor: { icon: Braces, color: 'bg-blue-500', title: '参数提取器' },
-  comment: { icon: StickyNote, color: 'bg-amber-400', title: '注释' },
+// 节点类型信息 - titleKey references workflow.nodeLabels.*
+export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: string; titleKey: string }> = {
+  user_input: { icon: Home, color: 'bg-primary', titleKey: 'user_input' },
+  trigger: { icon: Zap, color: 'bg-amber-500', titleKey: 'trigger' },
+  llm: { icon: Bot, color: 'bg-blue-500', titleKey: 'llm' },
+  condition: { icon: GitBranch, color: 'bg-cyan-500', titleKey: 'condition' },
+  iteration: { icon: RefreshCw, color: 'bg-cyan-500', titleKey: 'iteration' },
+  loop: { icon: Infinity, color: 'bg-cyan-500', titleKey: 'loop' },
+  question_classifier: { icon: Tags, color: 'bg-violet-500', titleKey: 'question_classifier' },
+  answer: { icon: MessageSquareText, color: 'bg-emerald-500', titleKey: 'answer' },
+  sub_workflow: { icon: Workflow, color: 'bg-purple-500', titleKey: 'sub_workflow' },
+  agent: { icon: Sparkles, color: 'bg-indigo-500', titleKey: 'agent' },
+  tool: { icon: Wrench, color: 'bg-emerald-500', titleKey: 'tool' },
+  code: { icon: Code, color: 'bg-blue-500', titleKey: 'code' },
+  template: { icon: FileText, color: 'bg-blue-500', titleKey: 'template' },
+  file_to_url: { icon: Link, color: 'bg-teal-500', titleKey: 'file_to_url' },
+  variable_aggregator: { icon: Combine, color: 'bg-blue-500', titleKey: 'variable_aggregator' },
+  variable_assignment: { icon: Variable, color: 'bg-blue-500', titleKey: 'variable_assignment' },
+  parameter_extractor: { icon: Braces, color: 'bg-blue-500', titleKey: 'parameter_extractor' },
+  comment: { icon: StickyNote, color: 'bg-amber-400', titleKey: 'comment' },
 }
 
-// 系统参数
+// 系统参数 - descriptionKey references workflow.systemParams.*
 export const systemParameters: SystemParameter[] = [
-  { id: 'sys.user_id', name: 'sys.user_id', valueType: 'String', description: '当前用户ID' },
-  { id: 'sys.app_id', name: 'sys.app_id', valueType: 'String', description: '应用ID' },
-  { id: 'sys.workflow_id', name: 'sys.workflow_id', valueType: 'String', description: '工作流ID' },
-  { id: 'sys.workflow_run_id', name: 'sys.workflow_run_id', valueType: 'String', description: '工作流运行ID' },
-  { id: 'sys.timestamp', name: 'sys.timestamp', valueType: 'Number', description: '当前时间戳' },
+  { id: 'sys.user_id', name: 'sys.user_id', valueType: 'String', descriptionKey: 'userId' },
+  { id: 'sys.app_id', name: 'sys.app_id', valueType: 'String', descriptionKey: 'appId' },
+  { id: 'sys.workflow_id', name: 'sys.workflow_id', valueType: 'String', descriptionKey: 'workflowId' },
+  { id: 'sys.workflow_run_id', name: 'sys.workflow_run_id', valueType: 'String', descriptionKey: 'workflowRunId' },
+  { id: 'sys.timestamp', name: 'sys.timestamp', valueType: 'Number', descriptionKey: 'timestamp' },
 ]
 
-// 开始节点的默认用户参数
+// 开始节点的默认用户参数 - descriptionKey references workflow.defaultParams.*
 export const defaultStartParameters: Parameter[] = [
-  { id: 'query', name: 'query', type: 'text', required: true, defaultValue: '', description: '用户输入的查询内容' },
+  { id: 'query', name: 'query', type: 'text', required: true, defaultValue: '', descriptionKey: 'queryDescription' },
 ]

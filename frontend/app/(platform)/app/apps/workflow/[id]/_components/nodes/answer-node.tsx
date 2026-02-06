@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { MessageSquareText, MoreHorizontal, Type, Hash, ToggleLeft, Brackets, Braces, File, FileQuestion } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 输出变量定义
@@ -70,7 +71,8 @@ interface AnswerNodeProps {
   data: AnswerNodeData
 }
 
-export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
+export function AnswerNode({ selected, data }: AnswerNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.answerConfig || defaultAnswerNodeConfig
   const outputs = config.outputs || []
   const hasOutputs = outputs.length > 0
@@ -79,7 +81,7 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">输出</span>
+        <span className="text-xs text-muted-foreground">{t('nodesAnswer.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
@@ -123,10 +125,10 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
           {/* Label */}
           <div className="flex-1 min-w-0">
             <span className="block text-sm font-medium truncate">
-              {data.label || '输出'}
+              {data.label || t('nodesAnswer.label')}
             </span>
             {config.streaming.enabled && (
-              <span className="text-xs text-emerald-500">流式输出</span>
+              <span className="text-xs text-emerald-500">{t('nodesAnswer.streaming')}</span>
             )}
           </div>
         </div>
@@ -143,7 +145,7 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
                 >
                   <TypeIcon className="h-3 w-3 text-emerald-500 shrink-0" />
                   <span className="text-[11px] text-foreground/80 font-medium truncate flex-1">
-                    {output.name || '(未命名)'}
+                    {output.name || t('nodesCommon.unnamed')}
                   </span>
                   <span className="text-[10px] text-muted-foreground shrink-0">
                     {typeDisplayMap[output.type] || output.type}
@@ -153,7 +155,7 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
             })}
             {outputs.length > 4 && (
               <div className="text-[10px] text-muted-foreground text-center py-0.5">
-                +{outputs.length - 4} 个输出
+                {t('nodesAnswer.outputCount', { n: outputs.length - 4 })}
               </div>
             )}
           </div>
@@ -163,7 +165,7 @@ export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
         {!hasOutputs && (
           <div className="px-2.5 pb-2 pt-0.5">
             <div className="flex items-center justify-center py-2 text-[11px] text-muted-foreground">
-              点击配置输出变量
+              {t('nodesAnswer.clickToConfigure')}
             </div>
           </div>
         )}

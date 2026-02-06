@@ -468,6 +468,7 @@ dependencies = [
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "google-genai" },
+    { name = "gunicorn" },
     { name = "httpx", extra = ["socks"] },
     { name = "jieba" },
     { name = "jinja2" },
@@ -515,6 +516,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "google-genai", specifier = ">=1.0.0" },
+    { name = "gunicorn", specifier = ">=22.0.0" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1" },
     { name = "jieba", specifier = ">=0.42.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
@@ -912,6 +914,18 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4a/45/122df922d05655f63930cf42c9e3f72ba20aadb26c100ee105cad4ce4257/grpcio-1.76.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:1c9b93f79f48b03ada57ea24725d83a30284a012ec27eab2cf7e50a550cbbbcc", size = 7592214, upload-time = "2025-10-21T16:22:33.831Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4a/6e/0b899b7f6b66e5af39e377055fb4a6675c9ee28431df5708139df2e93233/grpcio-1.76.0-cp314-cp314-win32.whl", hash = "sha256:747fa73efa9b8b1488a95d0ba1039c8e2dca0f741612d80415b1e1c560febf4e", size = 4062961, upload-time = "2025-10-21T16:22:36.468Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/19/41/0b430b01a2eb38ee887f88c1f07644a1df8e289353b78e82b37ef988fb64/grpcio-1.76.0-cp314-cp314-win_amd64.whl", hash = "sha256:922fa70ba549fce362d2e2871ab542082d66e2aaf0c19480ea453905b01f384e", size = 4834462, upload-time = "2025-10-21T16:22:39.772Z" },
+]
+
+[[package]]
+name = "gunicorn"
+version = "25.0.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9e/83/e8327358129ca4dffd4fa6b6004aa5085dc80e913dec9b253401d6bd23ad/gunicorn-25.0.1.tar.gz", hash = "sha256:573e053aa950246e307ea908bd7ddce1870d41a40aec0c935938c586f0b9b946", size = 9693127, upload-time = "2026-02-02T13:34:05.767Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e0/dc/f1da097b7e0de5cd7552c10667305879093125cd62ff7372ad07d184ed8f/gunicorn-25.0.1-py3-none-any.whl", hash = "sha256:23cbe968c6ae3c8efc3d118c8353fa0763efc2102d89d0d3cea696cede7ff6b1", size = 169961, upload-time = "2026-02-02T13:34:02.744Z" },
 ]
 
 [[package]]

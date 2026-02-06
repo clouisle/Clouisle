@@ -1,760 +1,876 @@
-# Clouisle Deployment Guide
+# Deployment Guide
 
-This document provides a complete deployment guide for the Clouisle platform, including detailed instructions for three deployment options.
+This guide covers deploying Clouisle in production using **Docker Compose** or **Kubernetes**.
+
+---
 
 ## Table of Contents
 
-- [System Requirements](#system-requirements)
-- [Deployment Options Overview](#deployment-options-overview)
-- [Option 1: All-in-One Deployment](#option-1-all-in-one-deployment)
-- [Option 2: App Deployment](#option-2-app-deployment)
-- [Option 3: Microservices Deployment](#option-3-microservices-deployment)
-- [Environment Variables](#environment-variables)
-- [Reverse Proxy Configuration](#reverse-proxy-configuration)
-- [SSL/HTTPS Configuration](#sslhttps-configuration)
-- [Backup and Recovery](#backup-and-recovery)
-- [Monitoring and Logs](#monitoring-and-logs)
-- [FAQ](#faq)
-- [Upgrade Guide](#upgrade-guide)
+- [Architecture Overview](#architecture-overview)
+- [Prerequisites](#prerequisites)
+- [Building Images](#building-images)
+- [Docker Compose Deployment](#docker-compose-deployment)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+  - [Volume Mounts](#volume-mounts)
+  - [Port Mapping](#port-mapping)
+  - [Custom Domain & HTTPS](#custom-domain--https)
+  - [Scaling](#scaling)
+  - [Operations](#operations)
+- [Kubernetes Deployment](#kubernetes-deployment)
+  - [Quick Start (K8s)](#quick-start-k8s)
+  - [Manifest Structure](#manifest-structure)
+  - [Secrets Configuration](#secrets-configuration)
+  - [Persistent Storage](#persistent-storage)
+  - [Ingress & TLS](#ingress--tls)
+  - [Scaling (K8s)](#scaling-k8s)
+  - [Operations (K8s)](#operations-k8s)
+- [Environment Variables Reference](#environment-variables-reference)
+- [Request Flow & Proxy Architecture](#request-flow--proxy-architecture)
+- [Backup & Restore](#backup--restore)
+- [Upgrading](#upgrading)
+- [Security Checklist](#security-checklist)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## System Requirements
+## Architecture Overview
 
-### Hardware Requirements
-
-| Deployment Option | CPU | Memory | Disk |
-|-------------------|-----|--------|------|
-| All-in-One | 2+ cores | 4 GB+ | 20 GB+ |
-| App | 2+ cores | 4 GB+ | 20 GB+ |
-| Microservices | 4+ cores | 8 GB+ | 40 GB+ |
-
-### Software Requirements
-
-- Docker 20.10+
-- Docker Compose 2.0+
-- (Optional) Nginx for reverse proxy
-
-### Network Requirements
-
-| Port | Purpose | Deployment Option |
-|------|---------|-------------------|
-| 80 | HTTP access | All-in-One |
-| 443 | HTTPS access | All (via reverse proxy) |
-| 3000 | Frontend service | App / Microservices |
-| 8000 | Backend API | App / Microservices |
-
----
-
-## Deployment Options Overview
-
-Clouisle offers three deployment options for different scenarios:
-
-| Option | Containers | Use Case | Complexity |
-|--------|------------|----------|------------|
-| **All-in-One** | 1 | Development, testing, demos, small deployments | Low |
-| **App** | 4 | Small to medium production environments | Medium |
-| **Microservices** | 7 | Large production environments, independent scaling | High |
-
-### Docker Images
-
-All images are hosted on GitHub Container Registry:
+Clouisle uses **2 Docker images** running as **4 application services** + **3 infrastructure services**:
 
 ```
-ghcr.io/yunhai-dev/clouisle:all-in-one   # Full stack image (with databases)
-ghcr.io/yunhai-dev/clouisle:app          # Application image (Frontend+Backend+Worker+Beat)
-ghcr.io/yunhai-dev/clouisle:frontend     # Frontend image
-ghcr.io/yunhai-dev/clouisle:backend      # Backend API image
-ghcr.io/yunhai-dev/clouisle:worker       # Celery Worker image
-ghcr.io/yunhai-dev/clouisle:beat         # Celery Beat image
+                         ┌─────────────────────────────────────────────┐
+                         │              Frontend Container             │
+  Browser ──────────────►│  Nginx (:3000)                              │
+                         │    ├── /api/*  ──► proxy to backend:8000    │
+                         │    ├── /_next/static/* ──► local files      │
+                         │    └── /*  ──► Node.js SSR (:3001 internal) │
+                         └──────────────────┬──────────────────────────┘
+                                            │
+                         ┌──────────────────▼──────────────────────────┐
+                         │             Backend Container               │
+                         │  Gunicorn + UvicornWorker (:8000)           │
+                         │    └── FastAPI application                  │
+                         └──────┬──────────┬───────────────────────────┘
+                                │          │
+              ┌─────────────────┤          ├─────────────────┐
+              ▼                 ▼          ▼                 ▼
+         PostgreSQL          Redis      Qdrant         Celery Worker
+           (:5432)          (:6379)    (:6333)         (background)
+                                                       Celery Beat
+                                                       (scheduler)
 ```
+
+| Image | Services | Description |
+|-------|----------|-------------|
+| `clouisle-backend` | backend, worker, beat | Python 3.13 — Gunicorn API server, Celery worker, Celery beat |
+| `clouisle-frontend` | frontend | Nginx + Next.js standalone (SSR) |
+
+The backend image is shared across three services, differentiated by the startup command:
+
+| Service | Command | Replicas |
+|---------|---------|----------|
+| backend | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| beat | `python main.py beat` | **Exactly 1** |
+
+> **Important**: The beat service must always run exactly 1 replica. Running multiple beat instances will cause duplicate scheduled tasks.
 
 ---
 
-## Option 1: All-in-One Deployment
+## Prerequisites
 
-Single container with all services: Frontend, Backend, Worker, Beat, PostgreSQL, Redis, Qdrant, Nginx.
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| Docker | 24.0+ | Latest |
+| Docker Compose | v2.20+ | Latest |
+| Kubernetes (if using K8s) | 1.25+ | 1.28+ |
+| RAM | 4 GB | 8 GB+ |
+| Disk | 20 GB | 50 GB+ |
+| CPU | 2 cores | 4 cores+ |
 
-**Pros**: Simple deployment, low resource usage, quick to get started
-**Cons**: Not suitable for high availability, cannot scale independently
+---
 
-### 1.1 Quick Deployment
+## Building Images
+
+All commands run from the **project root** directory:
 
 ```bash
-# Create deployment directory
-mkdir -p /opt/clouisle && cd /opt/clouisle
+# Backend image (shared by backend, worker, beat services)
+docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend:latest .
 
-# Download configuration files
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.all-in-one.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
+# Frontend image (Nginx + Next.js)
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend:latest .
+```
 
-# Create environment configuration
+For a private registry:
+
+```bash
+docker tag clouisle-backend:latest registry.example.com/clouisle/backend:latest
+docker tag clouisle-frontend:latest registry.example.com/clouisle/frontend:latest
+docker push registry.example.com/clouisle/backend:latest
+docker push registry.example.com/clouisle/frontend:latest
+```
+
+---
+
+## Docker Compose Deployment
+
+### Quick Start
+
+```bash
+cd deploy
+
+# 1. Create and edit environment file
 cp .env.example .env
 
-# Edit configuration (at least change SECRET_KEY)
-nano .env
+# 2. Generate secure passwords (run each command, paste results into .env)
+openssl rand -base64 32    # → SECRET_KEY
+openssl rand -base64 16    # → POSTGRES_PASSWORD
+openssl rand -base64 16    # → REDIS_PASSWORD
+openssl rand -base64 16    # → QDRANT_API_KEY
 
-# Start services
-docker-compose -f docker-compose.all-in-one.yml up -d
+# 3. Build images and start all services
+docker compose up -d --build
+
+# 4. Verify all services are healthy
+docker compose ps
 ```
 
-### 1.2 Environment Configuration
+### Configuration
 
-Edit the `.env` file:
+Edit `deploy/.env` before starting. The following variables **must** be changed:
 
-```bash
-# Required changes
-SECRET_KEY=your-secure-random-key-at-least-32-characters
+| Variable | Why | Example |
+|----------|-----|---------|
+| `SECRET_KEY` | JWT signing — default is insecure | `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | Database access | `openssl rand -base64 16` |
+| `REDIS_PASSWORD` | Cache/queue access | `openssl rand -base64 16` |
+| `QDRANT_API_KEY` | Vector DB access | `openssl rand -base64 16` |
 
-# Optional changes
-PROJECT_NAME=Clouisle
-TIMEZONE=Asia/Shanghai
-POSTGRES_PASSWORD=your-db-password
-REDIS_PASSWORD=your-redis-password
-QDRANT_API_KEY=your-qdrant-key
-```
+The following should be changed for production domains:
 
-### 1.3 Access Services
+| Variable | Default | Production Example |
+|----------|---------|-------------------|
+| `API_BASE_URL` | `http://localhost:8000` | `https://api.example.com` |
+| `FRONTEND_URL` | `http://localhost:3000` | `https://example.com` |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `https://example.com` |
 
-After deployment, access `http://your-server-ip` to use the application.
+> **Note**: `POSTGRES_SERVER`, `REDIS_HOST`, `QDRANT_URL` are overridden in `docker-compose.yml` via the `environment` section (set to Docker service names `db`, `redis`, `qdrant`). You do not need to change them in `.env`.
 
-### 1.4 Data Persistence
+### Volume Mounts
 
-All-in-One mode uses the following Docker volumes:
+Docker Compose uses named volumes for data persistence:
 
-| Volume | Purpose |
-|--------|---------|
-| `clouisle_postgres` | PostgreSQL data |
-| `clouisle_redis` | Redis data |
-| `clouisle_qdrant` | Qdrant vector data |
-| `clouisle_uploads` | User uploaded files |
-| `clouisle_logs` | Application logs |
+| Volume | Container Path | Purpose | Data Loss Impact |
+|--------|---------------|---------|-----------------|
+| `postgres_data` | `/var/lib/postgresql/data` | Database files | **All data lost** |
+| `redis_data` | `/data` | Cache & Celery broker state | Task queue lost, recoverable |
+| `qdrant_data` | `/qdrant/storage` | Vector embeddings | Must re-index knowledge base |
+| `uploads_data` | `/app/uploads` | User-uploaded files | Uploaded documents lost |
 
----
-
-## Option 2: App Deployment
-
-Application container (Frontend + Backend + Worker + Beat) + separate database containers.
-
-**Pros**: Independent database management, easier backup and maintenance
-**Cons**: Cannot scale components independently
-
-### 2.1 Quick Deployment
-
-```bash
-# Create deployment directory
-mkdir -p /opt/clouisle && cd /opt/clouisle
-
-# Download configuration files
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.app.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
-
-# Create environment configuration
-cp .env.example .env
-nano .env
-
-# Start services
-docker-compose -f docker-compose.app.yml up -d
-```
-
-### 2.2 Service Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    docker-compose                        │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │              clouisle-app (:3000, :8000)        │    │
-│  │  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────┐ │    │
-│  │  │ Frontend │ │ Backend  │ │ Worker │ │ Beat │ │    │
-│  │  └──────────┘ └──────────┘ └────────┘ └──────┘ │    │
-│  └─────────────────────────────────────────────────┘    │
-│                          │                               │
-│         ┌────────────────┼────────────────┐             │
-│         ▼                ▼                ▼             │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐        │
-│  │ PostgreSQL │  │   Redis    │  │   Qdrant   │        │
-│  │  (db)      │  │  (redis)   │  │  (qdrant)  │        │
-│  └────────────┘  └────────────┘  └────────────┘        │
-└─────────────────────────────────────────────────────────┘
-```
-
-### 2.3 Access Services
-
-- Frontend: `http://your-server-ip:3000`
-- API: `http://your-server-ip:8000`
-- API Docs: `http://your-server-ip:8000/docs`
-
-### 2.4 Using External Databases
-
-If you already have PostgreSQL, Redis, and Qdrant services, modify `docker-compose.app.yml`:
+To use host-path mounts instead of named volumes (for easier backup):
 
 ```yaml
-services:
-  app:
-    image: ghcr.io/yunhai-dev/clouisle:app
-    ports:
-      - "3000:3000"
-      - "8000:8000"
-    environment:
-      # Point to external databases
-      POSTGRES_SERVER: your-postgres-host
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: your-user
-      POSTGRES_PASSWORD: your-password
-      POSTGRES_DB: clouisle
-      REDIS_HOST: your-redis-host
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: your-redis-password
-      QDRANT_URL: http://your-qdrant-host:6333
-      QDRANT_API_KEY: your-qdrant-key
-      # ... other configuration
-    volumes:
-      - uploads_data:/app/uploads
-      - logs_data:/var/log/supervisor
-
+# In docker-compose.yml, replace:
 volumes:
-  uploads_data:
-  logs_data:
+  postgres_data:
+
+# With:
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/clouisle/postgres
 ```
 
----
+Or directly in the service definition:
 
-## Option 3: Microservices Deployment
-
-Independent containers for each component, supporting independent scaling.
-
-**Pros**: High availability, independent scaling, fault isolation
-**Cons**: Complex configuration, higher resource usage
-
-### 3.1 Quick Deployment
-
-```bash
-# Create deployment directory
-mkdir -p /opt/clouisle && cd /opt/clouisle
-
-# Download configuration files
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.microservices.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
-
-# Create environment configuration
-cp .env.example .env
-nano .env
-
-# Start services
-docker-compose -f docker-compose.microservices.yml up -d
+```yaml
+volumes:
+  - /data/clouisle/postgres:/var/lib/postgresql/data
+  - /data/clouisle/uploads:/app/uploads
 ```
 
-### 3.2 Service Architecture
+> **Important**: The `uploads_data` volume is shared between `backend` and `worker` services. Both need read/write access to process uploaded documents. If using host-path mounts, ensure the directory exists and has correct permissions before starting.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      docker-compose                           │
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐                          │
-│  │   frontend   │  │   backend    │                          │
-│  │   (:3000)    │  │   (:8000)    │                          │
-│  └──────────────┘  └──────────────┘                          │
-│                           │                                   │
-│         ┌─────────────────┼─────────────────┐                │
-│         ▼                 ▼                 ▼                │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐             │
-│  │   worker   │  │    beat    │  │   qdrant   │             │
-│  └────────────┘  └────────────┘  └────────────┘             │
-│         │                 │                                   │
-│         └────────┬────────┘                                  │
-│                  ▼                                            │
-│  ┌────────────────────────────────────────────┐              │
-│  │              PostgreSQL + Redis             │              │
-│  └────────────────────────────────────────────┘              │
-└──────────────────────────────────────────────────────────────┘
-```
+### Port Mapping
 
-### 3.3 Scaling Workers
+Default exposed ports:
 
-Scale Worker count based on load:
+| Service | Host Port | Container Port | Purpose |
+|---------|-----------|---------------|---------|
+| frontend | 3000 | 3000 | Web UI (Nginx) |
+| backend | 8000 | 8000 | API (Gunicorn) |
+| db | 5432 | 5432 | PostgreSQL |
+| redis | 6379 | 6379 | Redis |
+| qdrant | 6333 | 6333 | Qdrant |
 
-```bash
-# Scale to 3 Worker instances
-docker-compose -f docker-compose.microservices.yml up -d --scale worker=3
+**For production**, you should only expose the frontend port and place it behind a reverse proxy. Remove or comment out the infrastructure ports:
+
+```yaml
+# In docker-compose.yml, remove these lines for production:
+  db:
+    ports:
+      - "5432:5432"    # Remove — no external DB access needed
+  redis:
+    ports:
+      - "6379:6379"    # Remove
+  qdrant:
+    ports:
+      - "6333:6333"    # Remove
+  backend:
+    ports:
+      - "8000:8000"    # Remove — frontend Nginx proxies API requests
 ```
 
-### 3.4 Access Services
+### Custom Domain & HTTPS
 
-- Frontend: `http://your-server-ip:3000`
-- API: `http://your-server-ip:8000`
-- API Docs: `http://your-server-ip:8000/docs`
+For production with a custom domain, place an external reverse proxy (e.g., Nginx, Caddy, Traefik) in front of the frontend container:
 
----
+**Option A: Caddy (automatic HTTPS)**
 
-## Environment Variables
-
-### Complete Configuration Reference
-
-```bash
-# =============================================================================
-# Application Configuration
-# =============================================================================
-PROJECT_NAME=Clouisle                    # Project name
-SECRET_KEY=your-secret-key               # JWT signing key (must change!)
-TIMEZONE=Asia/Shanghai                   # Timezone
-
-# URL Configuration (modify based on actual deployment address)
-API_BASE_URL=http://localhost:8000       # Backend API address
-FRONTEND_URL=http://localhost:3000       # Frontend address
-
-# =============================================================================
-# PostgreSQL Database
-# =============================================================================
-POSTGRES_SERVER=localhost                # Database host
-POSTGRES_PORT=5432                       # Database port
-POSTGRES_USER=postgres                   # Database user
-POSTGRES_PASSWORD=password               # Database password (must change for production!)
-POSTGRES_DB=clouisle                     # Database name
-
-# Or use full DSN (higher priority)
-# DATABASE_URL=postgres://user:pass@host:5432/dbname
-
-# =============================================================================
-# Redis Cache/Message Queue
-# =============================================================================
-REDIS_HOST=localhost                     # Redis host
-REDIS_PORT=6379                          # Redis port
-REDIS_PASSWORD=your-redis-password       # Redis password
-
-# =============================================================================
-# Qdrant Vector Database
-# =============================================================================
-VECTOR_BACKEND=qdrant                    # Vector database type
-QDRANT_URL=http://localhost:6333         # Qdrant address
-QDRANT_API_KEY=your-qdrant-key           # Qdrant API key
-QDRANT_COLLECTION_PREFIX=kb_dim          # Collection prefix
-QDRANT_DISTANCE=Cosine                   # Distance calculation method
-
-# =============================================================================
-# External APIs (Optional)
-# =============================================================================
-TAVILY_API_KEY=                          # Tavily search API key
-
-# =============================================================================
-# Frontend Configuration
-# =============================================================================
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1  # API URL for frontend
+```
+# Caddyfile
+example.com {
+    reverse_proxy localhost:3000
+}
 ```
 
-### Generate Secure Key
-
-```bash
-# Using openssl
-openssl rand -hex 32
-
-# Or using Python
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
----
-
-## Reverse Proxy Configuration
-
-For production environments, we recommend using Nginx as a reverse proxy for unified entry and SSL termination.
-
-### Nginx Configuration Example
-
-Create `/etc/nginx/sites-available/clouisle`:
+**Option B: External Nginx**
 
 ```nginx
-# HTTP redirect to HTTPS
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-# HTTPS configuration
 server {
     listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name example.com;
 
-    # SSL certificates
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_certificate     /etc/ssl/certs/example.com.pem;
+    ssl_certificate_key /etc/ssl/private/example.com.key;
 
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
-    ssl_prefer_server_ciphers off;
+    client_max_body_size 100m;
 
-    # Upload file size limit
-    client_max_body_size 100M;
-
-    # API requests proxy to backend
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # SSE/Streaming support
-        proxy_set_header Connection '';
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 86400s;
-    }
-
-    # API documentation
-    location ~ ^/(docs|openapi.json|redoc) {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    # Frontend requests
     location / {
         proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        # Streaming
+        proxy_buffering off;
+        proxy_read_timeout 300s;
     }
 }
 ```
 
-Enable configuration:
+When using HTTPS, update these environment variables:
 
 ```bash
-ln -s /etc/nginx/sites-available/clouisle /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
+API_BASE_URL=https://example.com
+FRONTEND_URL=https://example.com
+BACKEND_CORS_ORIGINS=https://example.com
+```
+
+### Scaling
+
+```bash
+# Scale Celery workers (safe to run multiple)
+docker compose up -d --scale worker=4
+
+# Scale backend API (safe to run multiple behind Nginx)
+docker compose up -d --scale backend=2
+
+# NEVER scale beat beyond 1
+# docker compose up -d --scale beat=2  ← DO NOT DO THIS
+```
+
+When scaling backend to multiple replicas, remove the host port mapping to avoid conflicts:
+
+```yaml
+backend:
+    # Remove: ports: ["8000:8000"]
+    expose:
+      - "8000"
+```
+
+### Operations
+
+```bash
+# View logs (follow mode)
+docker compose logs -f backend
+docker compose logs -f worker
+docker compose logs -f frontend
+
+# View logs for a specific time range
+docker compose logs --since 1h backend
+
+# Restart a single service (zero-downtime for stateless services)
+docker compose restart backend
+
+# Stop all services
+docker compose down
+
+# Stop and destroy all data (CAUTION)
+docker compose down -v
+
+# Update images and restart
+docker compose pull
+docker compose up -d --build
 ```
 
 ---
 
-## SSL/HTTPS Configuration
+## Kubernetes Deployment
 
-### Using Let's Encrypt (Recommended)
+### Quick Start (K8s)
 
-```bash
-# Install Certbot
-apt install certbot python3-certbot-nginx
-
-# Obtain certificate
-certbot --nginx -d your-domain.com
-
-# Auto-renewal (Certbot configures this automatically)
-certbot renew --dry-run
-```
-
-### Using Self-Signed Certificate (Testing)
+All resources are defined in a single file: `deploy/k8s/clouisle.yaml`.
 
 ```bash
-# Generate self-signed certificate
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/clouisle.key \
-  -out /etc/ssl/certs/clouisle.crt
+# 1. Edit the manifest — replace secret placeholders and set your domain
+vi deploy/k8s/clouisle.yaml
+
+# 2. Apply everything
+kubectl apply -f deploy/k8s/clouisle.yaml
+
+# 3. Wait for infrastructure
+kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
+
+# 4. Verify all pods
+kubectl -n clouisle get pods
 ```
 
+### Manifest Structure
+
+The manifest contains 11 resource groups, using YAML anchors to deduplicate repeated values:
+
+| # | Resource | Kind | Notes |
+|---|----------|------|-------|
+| 1 | Namespace | Namespace | `clouisle` |
+| 2 | ConfigMap | ConfigMap | Non-sensitive configuration |
+| 3 | Secret | Secret | Passwords and keys (**must edit**) |
+| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service, 10Gi storage |
+| 5 | Redis | Deployment + Service | |
+| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service, 10Gi storage |
+| 7 | Backend | Deployment + Service | 2 replicas, port 8000 |
+| 8 | Worker | Deployment | 2 replicas, no Service |
+| 9 | Beat | Deployment | 1 replica, `Recreate` strategy |
+| 10 | Frontend | Deployment + Service | 2 replicas, port 3000 |
+| 11 | Ingress | Ingress | `/api` → backend, `/` → frontend |
+
+### Secrets Configuration
+
+Before applying, replace the base64 placeholder values in the Secret section:
+
+```bash
+# Generate base64-encoded values
+echo -n 'your-strong-secret-key' | base64
+echo -n 'your-postgres-password' | base64
+echo -n 'your-redis-password' | base64
+echo -n 'your-qdrant-api-key' | base64
+```
+
+Replace in `clouisle.yaml`:
+
+```yaml
+data:
+  SECRET_KEY: <paste-base64-here>
+  POSTGRES_PASSWORD: <paste-base64-here>
+  REDIS_PASSWORD: <paste-base64-here>
+  QDRANT_API_KEY: <paste-base64-here>
+```
+
+> **Tip**: For production, consider using an external secret manager (Vault, AWS Secrets Manager, etc.) with the External Secrets Operator instead of storing secrets in YAML.
+
+### Persistent Storage
+
+| PVC | Size | Used By | StorageClass |
+|-----|------|---------|-------------|
+| `postgres-data` | 10Gi | PostgreSQL | default |
+| `qdrant-data` | 10Gi | Qdrant | default |
+
+To change the storage size or class, edit the PVC definitions:
+
+```yaml
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: your-storage-class    # Add this line
+  resources:
+    requests:
+      storage: 50Gi                       # Adjust size
+```
+
+The `uploads` volume for backend and worker uses `emptyDir` by default. For production, replace it with a PVC or a shared filesystem (e.g., NFS, EFS) so that uploaded files persist across pod restarts and are accessible by both backend and worker pods:
+
+```yaml
+# Replace in the anchors section:
+- &uploads-volume
+  name: uploads
+  persistentVolumeClaim:
+    claimName: clouisle-uploads
+
+# Add a new PVC:
 ---
-
-## Backup and Recovery
-
-### PostgreSQL Backup
-
-```bash
-# Backup database
-docker exec clouisle-db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
-
-# Compressed backup
-docker exec clouisle-db pg_dump -U postgres clouisle | gzip > backup_$(date +%Y%m%d).sql.gz
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clouisle-uploads
+  namespace: clouisle
+spec:
+  accessModes: [ReadWriteMany]    # Must be RWX for multi-pod access
+  resources:
+    requests:
+      storage: 20Gi
 ```
 
-### PostgreSQL Recovery
+> **Important**: `ReadWriteMany` requires a storage class that supports it (NFS, CephFS, EFS, etc.). Standard block storage (gp2, gp3) only supports `ReadWriteOnce`.
 
-```bash
-# Restore database
-cat backup_20240101.sql | docker exec -i clouisle-db psql -U postgres clouisle
+### Ingress & TLS
 
-# Restore from compressed file
-gunzip -c backup_20240101.sql.gz | docker exec -i clouisle-db psql -U postgres clouisle
+Edit the Ingress section to set your domain:
+
+```yaml
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: your-domain.com        # ← Change this
 ```
 
-### Qdrant Backup
+To enable TLS:
 
-```bash
-# Create snapshot
-curl -X POST "http://localhost:6333/collections/kb_dim_*/snapshots" \
-  -H "api-key: your-qdrant-key"
-
-# Backup snapshot directory
-docker cp clouisle-qdrant:/qdrant/storage/snapshots ./qdrant_backup
+```yaml
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - your-domain.com
+      secretName: clouisle-tls      # cert-manager or manual TLS secret
+  rules:
+    - host: your-domain.com
 ```
 
-### Complete Backup Script
+With cert-manager (automatic Let's Encrypt):
 
-Create `/opt/clouisle/backup.sh`:
-
-```bash
-#!/bin/bash
-set -e
-
-BACKUP_DIR="/opt/clouisle/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-mkdir -p $BACKUP_DIR
-
-echo "Backing up PostgreSQL..."
-docker exec clouisle-db pg_dump -U postgres clouisle | gzip > $BACKUP_DIR/postgres_$DATE.sql.gz
-
-echo "Backing up uploads..."
-docker cp clouisle-app:/app/uploads $BACKUP_DIR/uploads_$DATE 2>/dev/null || \
-docker cp clouisle-backend:/app/uploads $BACKUP_DIR/uploads_$DATE 2>/dev/null || \
-docker cp clouisle-all-in-one:/app/uploads $BACKUP_DIR/uploads_$DATE
-
-echo "Backing up Qdrant..."
-docker cp clouisle-qdrant:/qdrant/storage $BACKUP_DIR/qdrant_$DATE
-
-echo "Cleaning old backups (keep 7 days)..."
-find $BACKUP_DIR -type f -mtime +7 -delete
-find $BACKUP_DIR -type d -empty -delete
-
-echo "Backup completed: $BACKUP_DIR"
+```yaml
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
 
-Set up scheduled task:
+Also update the ConfigMap:
 
-```bash
-chmod +x /opt/clouisle/backup.sh
-
-# Run backup daily at 2 AM
-crontab -e
-# Add: 0 2 * * * /opt/clouisle/backup.sh >> /var/log/clouisle-backup.log 2>&1
+```yaml
+data:
+  API_BASE_URL: "https://your-domain.com"
+  FRONTEND_URL: "https://your-domain.com"
+  BACKEND_CORS_ORIGINS: "https://your-domain.com"
 ```
 
----
-
-## Monitoring and Logs
-
-### View Logs
+### Scaling (K8s)
 
 ```bash
-# All-in-One mode
-docker logs clouisle-all-in-one -f
+# Scale workers
+kubectl -n clouisle scale deployment worker --replicas=4
 
-# View supervisor-managed service logs
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/backend.log
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/worker.log
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/frontend.log
+# Scale backend
+kubectl -n clouisle scale deployment backend --replicas=3
 
-# App mode
-docker logs clouisle-app -f
+# Scale frontend
+kubectl -n clouisle scale deployment frontend --replicas=3
 
-# Microservices mode
-docker logs clouisle-backend -f
-docker logs clouisle-worker -f
-docker logs clouisle-beat -f
-docker logs clouisle-frontend -f
+# NEVER scale beat beyond 1
 ```
 
-### View Service Status
+For auto-scaling:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: clouisle
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+```
+
+### Operations (K8s)
 
 ```bash
-# View all container status
-docker-compose -f docker-compose.xxx.yml ps
+# View pod status
+kubectl -n clouisle get pods -o wide
+
+# View logs
+kubectl -n clouisle logs -f deployment/backend
+kubectl -n clouisle logs -f deployment/worker
+kubectl -n clouisle logs -f deployment/beat
+kubectl -n clouisle logs -f deployment/frontend
+
+# View logs for a specific pod
+kubectl -n clouisle logs -f <pod-name>
+
+# Restart a deployment (rolling restart)
+kubectl -n clouisle rollout restart deployment backend
+
+# Check rollout status
+kubectl -n clouisle rollout status deployment backend
+
+# Execute a command in a pod
+kubectl -n clouisle exec -it deployment/backend -- bash
 
 # View resource usage
+kubectl -n clouisle top pods
+```
+
+---
+
+## Environment Variables Reference
+
+### Required (Must Change)
+
+| Variable | Description | How to Generate |
+|----------|-------------|----------------|
+| `SECRET_KEY` | JWT token signing key. Changing this invalidates all existing sessions. | `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `openssl rand -base64 16` |
+
+### Recommended (Should Change for Production)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_PASSWORD` | *(empty)* | Redis password. Empty means no authentication. |
+| `QDRANT_API_KEY` | *(empty)* | Qdrant API key. Empty means no authentication. |
+| `API_BASE_URL` | `http://localhost:8000` | Backend URL used internally for file access and SSO callbacks. Set to your actual domain in production. |
+| `FRONTEND_URL` | `http://localhost:3000` | Frontend URL used for SSO redirect URIs. Set to your actual domain in production. |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | Comma-separated list of allowed CORS origins. Must include your frontend domain. |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PROJECT_NAME` | `Clouisle` | Display name |
+| `TIMEZONE` | `Asia/Shanghai` | Server timezone (affects scheduled tasks) |
+| `POSTGRES_SERVER` | `localhost` | PostgreSQL host. Overridden to `db` (Compose) or `postgres` (K8s) in deployment configs. |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `POSTGRES_USER` | `postgres` | PostgreSQL user |
+| `POSTGRES_DB` | `clouisle` | PostgreSQL database name |
+| `DATABASE_URL` | *(auto-assembled)* | Full PostgreSQL DSN. If set, overrides individual `POSTGRES_*` variables. |
+| `REDIS_HOST` | `localhost` | Redis host. Overridden to `redis` in deployment configs. |
+| `REDIS_PORT` | `6379` | Redis port |
+| `VECTOR_BACKEND` | `qdrant` | Vector database backend |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant URL. Overridden to `http://qdrant:6333` in deployment configs. |
+| `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection name prefix |
+| `QDRANT_DISTANCE` | `Cosine` | Vector distance metric |
+| `TAVILY_API_KEY` | *(empty)* | Tavily web search API key (for agent web search capability) |
+
+---
+
+## Request Flow & Proxy Architecture
+
+Understanding the request flow is important for debugging and configuring external reverse proxies.
+
+### Client-Side API Requests
+
+```
+Browser
+  │
+  ├── Page requests (HTML/SSR) ──► Nginx (:3000) ──► Node.js (:3001 internal)
+  │
+  └── API requests (/api/*) ──► Nginx (:3000) ──► Backend Gunicorn (:8000)
+```
+
+The frontend container runs two processes:
+1. **Nginx** on port 3000 (external) — handles routing, static files, and proxying
+2. **Node.js** on port 3001 (internal) — handles server-side rendering
+
+### Header Forwarding
+
+Nginx forwards the following headers to the backend on `/api/*` requests:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `Host` | Original host | Virtual host routing |
+| `X-Real-IP` | Client IP | Real client IP address |
+| `X-Forwarded-For` | Client IP chain | Proxy chain |
+| `X-Forwarded-Proto` | `http` or `https` | Original protocol |
+| `X-Forwarded-Host` | Original host | Original hostname |
+| `X-Forwarded-Port` | Original port | Original port |
+| `Accept-Language` | Browser language | i18n (backend fallback) |
+| `X-Language` | App locale | i18n (set by frontend, takes priority) |
+
+Gunicorn is configured with `--forwarded-allow-ips *` to trust these proxy headers.
+
+### If Using an External Reverse Proxy
+
+When placing an additional reverse proxy (Nginx, Caddy, Traefik, cloud LB) in front of the frontend container, ensure it forwards:
+
+```
+External Proxy → Frontend Nginx (:3000) → Backend Gunicorn (:8000)
+```
+
+The external proxy must set `X-Real-IP` and `X-Forwarded-For` correctly. The frontend Nginx will pass them through to the backend.
+
+---
+
+## Backup & Restore
+
+### PostgreSQL
+
+```bash
+# Docker Compose — backup
+docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
+
+# Docker Compose — restore
+docker compose exec -T db psql -U postgres clouisle < backup_20260206.sql
+
+# Kubernetes — backup
+kubectl -n clouisle exec statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
+
+# Kubernetes — restore
+kubectl -n clouisle exec -i statefulset/postgres -- psql -U postgres clouisle < backup.sql
+```
+
+### Qdrant
+
+```bash
+# Docker Compose — backup the volume
+docker run --rm -v deploy_qdrant_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
+
+# Kubernetes — use Qdrant's snapshot API
+kubectl -n clouisle exec statefulset/qdrant -- \
+  wget -qO- -post-data '{}' http://localhost:6333/snapshots
+```
+
+### Uploaded Files
+
+```bash
+# Docker Compose
+docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/uploads_backup.tar.gz -C /data .
+
+# Kubernetes (if using PVC)
+kubectl -n clouisle exec deployment/backend -- tar czf - /app/uploads > uploads_backup.tar.gz
+```
+
+### Automated Backup Schedule
+
+For production, set up a CronJob (K8s) or cron task (Docker host) to run daily backups:
+
+```yaml
+# K8s CronJob example
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: clouisle
+spec:
+  schedule: "0 2 * * *"    # Daily at 2:00 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: backup
+              image: postgres:16
+              command:
+                - sh
+                - -c
+                - pg_dump -h postgres -U postgres clouisle | gzip > /backup/clouisle_$(date +%Y%m%d).sql.gz
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: clouisle-secret
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          restartPolicy: OnFailure
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: backup-pvc
+```
+
+---
+
+## Upgrading
+
+### Docker Compose
+
+```bash
+cd deploy
+
+# 1. Pull latest code
+git pull
+
+# 2. Rebuild images
+docker compose build
+
+# 3. Rolling restart (services restart one by one)
+docker compose up -d
+
+# 4. Verify
+docker compose ps
+docker compose logs --tail=50 backend
+```
+
+### Kubernetes
+
+```bash
+# 1. Build and push new images
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/backend:v2.0.0 .
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
+docker push registry.example.com/clouisle/backend:v2.0.0
+docker push registry.example.com/clouisle/frontend:v2.0.0
+
+# 2. Update image tags in clouisle.yaml (the anchors at the top)
+#    - &backend-image registry.example.com/clouisle/backend:v2.0.0
+#    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
+
+# 3. Apply
+kubectl apply -f deploy/k8s/clouisle.yaml
+
+# 4. Monitor rollout
+kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment worker
+kubectl -n clouisle rollout status deployment frontend
+```
+
+> **Note**: Database migrations (if any) should be run before updating the backend deployment. Check the release notes for migration instructions.
+
+---
+
+## Security Checklist
+
+- [ ] **Change all default passwords** — `SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `QDRANT_API_KEY`
+- [ ] **Enable HTTPS** — Use TLS termination at the external reverse proxy or K8s Ingress
+- [ ] **Restrict exposed ports** — In production, only expose port 3000 (or 443 via reverse proxy). Remove database/Redis/Qdrant port mappings.
+- [ ] **Set CORS origins** — `BACKEND_CORS_ORIGINS` should only contain your actual frontend domain, not `*`
+- [ ] **Update `API_BASE_URL` and `FRONTEND_URL`** — Must match your actual production domain for SSO and internal file access to work correctly
+- [ ] **Network isolation** — In Docker Compose, infrastructure services (db, redis, qdrant) should not be accessible from outside. In K8s, they use ClusterIP services (no external access by default).
+- [ ] **Regular backups** — Set up automated PostgreSQL and Qdrant backups
+- [ ] **Resource limits** — Review and adjust CPU/memory limits in K8s manifests based on actual usage
+- [ ] **Image scanning** — Scan Docker images for vulnerabilities before deploying
+
+---
+
+## Troubleshooting
+
+### Backend cannot connect to database
+
+```bash
+# Docker Compose
+docker compose logs db          # Check PostgreSQL logs
+docker compose exec db pg_isready -U postgres
+
+# Kubernetes
+kubectl -n clouisle logs statefulset/postgres
+kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
+```
+
+Common causes:
+- `POSTGRES_PASSWORD` mismatch between the database and the backend
+- Database not yet ready when backend starts (healthcheck should prevent this)
+- Wrong `POSTGRES_SERVER` value (should be `db` in Compose, `postgres` in K8s)
+
+### Frontend returns 502 for API requests
+
+The frontend Nginx proxies `/api/*` to `http://backend:8000`. A 502 means the backend is unreachable.
+
+```bash
+# Check if backend is running
+docker compose ps backend
+# or
+kubectl -n clouisle get pods -l app=backend
+
+# Test connectivity from frontend container
+docker compose exec frontend wget -qO- http://backend:8000/api/v1/health
+```
+
+### Worker not processing tasks
+
+```bash
+# Check worker logs
+docker compose logs worker
+# or
+kubectl -n clouisle logs deployment/worker
+
+# Verify Redis connectivity
+docker compose exec worker python -c "import redis; r = redis.Redis(host='redis'); print(r.ping())"
+```
+
+Common causes:
+- `REDIS_PASSWORD` mismatch
+- Redis not yet ready
+- Wrong queue names
+
+### Beat running duplicate scheduled tasks
+
+Ensure only 1 beat instance is running:
+
+```bash
+# Docker Compose
+docker compose ps beat    # Should show exactly 1 replica
+
+# Kubernetes
+kubectl -n clouisle get pods -l app=beat    # Should show exactly 1 pod
+```
+
+The K8s beat Deployment uses `strategy: Recreate` to ensure the old pod is fully terminated before a new one starts.
+
+### Uploaded files not accessible
+
+The `uploads` volume must be shared between `backend` and `worker` services:
+
+```bash
+# Docker Compose — verify both mount the same volume
+docker compose exec backend ls -la /app/uploads
+docker compose exec worker ls -la /app/uploads
+```
+
+In Kubernetes, if using `emptyDir`, files are lost on pod restart. Switch to a PVC with `ReadWriteMany` access mode (see [Persistent Storage](#persistent-storage)).
+
+### Out of memory / OOM killed
+
+Check resource usage and adjust limits:
+
+```bash
+# Docker
 docker stats
+
+# Kubernetes
+kubectl -n clouisle top pods
+kubectl -n clouisle describe pod <pod-name>    # Check "Last State" for OOMKilled
 ```
 
-### Health Checks
+Adjust resource limits in `docker-compose.yml` (add `deploy.resources`) or in `clouisle.yaml` (edit the `resources` section).
 
-```bash
-# Check backend API
-curl http://localhost:8000/
+### LLM requests timing out
 
-# Check frontend
-curl http://localhost:3000/
+The default proxy timeout is 300 seconds (5 minutes). For very long LLM operations:
 
-# Check database connection
-docker exec clouisle-db pg_isready -U postgres
-
-# Check Redis
-docker exec clouisle-redis redis-cli -a your-password ping
-
-# Check Qdrant
-curl http://localhost:6333/collections -H "api-key: your-key"
-```
-
----
-
-## FAQ
-
-### Q1: Container fails to start with database connection error
-
-**Cause**: Database container not ready yet
-
-**Solution**:
-```bash
-# Check database container status
-docker-compose -f docker-compose.xxx.yml ps
-
-# Restart app after database is ready
-docker-compose -f docker-compose.xxx.yml restart app
-# or
-docker-compose -f docker-compose.xxx.yml restart backend
-```
-
-### Q2: Frontend cannot access backend API
-
-**Cause**: `NEXT_PUBLIC_API_URL` misconfigured
-
-**Solution**:
-1. Check `NEXT_PUBLIC_API_URL` in `.env`
-2. Ensure backend service is running
-3. Check firewall allows relevant ports
-
-### Q3: File upload fails
-
-**Cause**: Upload directory permission issues or size limit
-
-**Solution**:
-```bash
-# Check uploads directory
-docker exec clouisle-app ls -la /app/uploads
-
-# If using Nginx, check client_max_body_size configuration
-```
-
-### Q4: Worker not processing tasks
-
-**Cause**: Redis connection issues or queue misconfiguration
-
-**Solution**:
-```bash
-# Check Worker logs
-docker logs clouisle-worker
-
-# Check Redis connection
-docker exec clouisle-redis redis-cli -a your-password ping
-
-# Check tasks in queue
-docker exec clouisle-redis redis-cli -a your-password llen celery
-```
-
-### Q5: Out of memory
-
-**Cause**: Insufficient server resources
-
-**Solution**:
-```bash
-# View memory usage
-docker stats --no-stream
-
-# Limit container memory (add to docker-compose.yml)
-services:
-  app:
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-```
-
-### Q6: How to reset admin password
-
-```bash
-# Enter backend container
-docker exec -it clouisle-backend bash
-# or
-docker exec -it clouisle-app bash
-
-# Reset password using Python
-cd /app/backend
-python -c "
-import asyncio
-from app.models import User
-from app.core.security import get_password_hash
-from tortoise import Tortoise
-from app.core.config import settings
-
-async def reset_password():
-    await Tortoise.init(db_url=settings.DATABASE_URL, modules={'models': ['app.models']})
-    user = await User.get(username='admin')
-    user.hashed_password = get_password_hash('new-password')
-    await user.save()
-    print('Password reset successfully')
-    await Tortoise.close_connections()
-
-asyncio.run(reset_password())
-"
-```
-
----
-
-## Upgrade Guide
-
-### Upgrade Steps
-
-```bash
-cd /opt/clouisle
-
-# 1. Backup data
-./backup.sh
-
-# 2. Pull latest images
-docker-compose -f docker-compose.xxx.yml pull
-
-# 3. Stop services
-docker-compose -f docker-compose.xxx.yml down
-
-# 4. Start new version
-docker-compose -f docker-compose.xxx.yml up -d
-
-# 5. Check service status
-docker-compose -f docker-compose.xxx.yml ps
-docker-compose -f docker-compose.xxx.yml logs -f
-```
-
-### Rollback
-
-If issues occur after upgrade:
-
-```bash
-# Stop services
-docker-compose -f docker-compose.xxx.yml down
-
-# Use specific version image
-# Edit docker-compose.xxx.yml, change image tag to previous version
-# e.g.: ghcr.io/yunhai-dev/clouisle:backend-v1.0.0
-
-# Restart
-docker-compose -f docker-compose.xxx.yml up -d
-
-# Restore database if needed
-cat backup_xxx.sql | docker exec -i clouisle-db psql -U postgres clouisle
-```
-
----
-
-## Production Checklist
-
-Before deploying to production, confirm the following:
-
-- [ ] Change `SECRET_KEY` to a secure random string
-- [ ] Change all default passwords (PostgreSQL, Redis, Qdrant)
-- [ ] Configure HTTPS/SSL certificates
-- [ ] Configure firewall to only allow necessary ports
-- [ ] Set up scheduled data backup
-- [ ] Configure log rotation
-- [ ] Set up monitoring and alerts
-- [ ] Test backup and recovery process
-- [ ] Document all configurations and passwords in a secure location
-
----
-
-## Getting Help
-
-- GitHub Issues: https://github.com/yunhai-dev/Clouisle/issues
-- Documentation: https://github.com/yunhai-dev/Clouisle/docs
+- Frontend Nginx: edit `proxy_read_timeout` in `deploy/nginx/default.conf`
+- K8s Ingress: edit `nginx.ingress.kubernetes.io/proxy-read-timeout` annotation
+- Gunicorn: edit `--timeout` in the backend Dockerfile CMD

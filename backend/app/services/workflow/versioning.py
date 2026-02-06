@@ -18,6 +18,7 @@ from enum import Enum
 
 from tortoise.transactions import in_transaction
 
+from app.core.i18n import t
 from app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class VersionDiff:
             parts.append(f"-{len(self.edges_removed)} edges")
         if self.config_changes:
             parts.append(f"{len(self.config_changes)} config changes")
-        return ", ".join(parts) if parts else "No changes"
+        return ", ".join(parts) if parts else t("no_changes")
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""

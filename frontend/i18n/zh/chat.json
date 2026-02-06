@@ -12,7 +12,9 @@
       "thinking": "思考中",
       "thoughtFor": "思考了 {seconds} 秒",
       "thought": "思考过程",
-      "processing": "推理中..."
+      "processing": "推理中...",
+      "thinkingDefault": "思考中...",
+      "thoughtDefault": "思考过程"
     },
     "tool": {
       "running": "执行中...",
@@ -27,6 +29,7 @@
       "sources": "参考来源",
       "usedSources": "已使用 {count} 个来源",
       "document": "文档",
+      "documentDefault": "文档",
       "url": "链接",
       "page": "第 {page} 页",
       "segment": "片段 {index}",
@@ -65,6 +68,13 @@
       "notHelpful": "没帮助",
       "regenerate": "重新生成",
       "thinking": "思考中..."
+    },
+    "lightbox": {
+      "zoomOut": "缩小 (-)",
+      "zoomIn": "放大 (+)",
+      "rotate": "旋转 (R)",
+      "download": "下载",
+      "close": "关闭 (Esc)"
     }
   }
 }

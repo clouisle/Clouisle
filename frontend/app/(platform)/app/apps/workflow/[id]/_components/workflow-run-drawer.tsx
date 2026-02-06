@@ -154,32 +154,32 @@ const statusConfig: Record<
   { label: string; icon: React.ReactNode; className: string }
 > = {
   pending: {
-    label: '等待中',
+    label: 'statusPending',
     icon: <Clock className="h-4 w-4" />,
     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   },
   running: {
-    label: '运行中',
+    label: 'statusRunning',
     icon: <Loader2 className="h-4 w-4 animate-spin" />,
     className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
   },
   success: {
-    label: '成功',
+    label: 'statusSuccess',
     icon: <CheckCircle2 className="h-4 w-4" />,
     className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
   },
   failed: {
-    label: '失败',
+    label: 'statusFailed',
     icon: <XCircle className="h-4 w-4" />,
     className: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   },
   cancelled: {
-    label: '已取消',
+    label: 'statusCancelled',
     icon: <StopCircle className="h-4 w-4" />,
     className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
   },
   timeout: {
-    label: '超时',
+    label: 'statusTimeout',
     icon: <Clock className="h-4 w-4" />,
     className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
   },
@@ -294,7 +294,7 @@ export function WorkflowRunDrawer({
 
       case 'workflow_error':
         setRunStatus('failed')
-        setErrorMessage(data.error as string || '未知错误')
+        setErrorMessage(data.error as string || t('runDrawer.unknownError'))
         setIsRunning(false)
         // 失败时切换到详情标签页查看错误信息
         setActiveTab('detail')
@@ -449,7 +449,7 @@ export function WorkflowRunDrawer({
         setOutputs((data.outputs as Record<string, unknown>) || null)
         break
     }
-  }, [])
+  }, [t])
 
   // 运行工作流
   const handleRun = async (isDebug: boolean = false) => {
@@ -484,7 +484,7 @@ export function WorkflowRunDrawer({
               inputs[variable.name] = value
           }
         } else if (variable.required) {
-          toast.error(`请填写必填参数: ${variable.name}`)
+          toast.error(t('runDrawer.fillRequiredParam', { name: variable.name }))
           setIsRunning(false)
           setRunStatus(null)
           return
@@ -503,9 +503,9 @@ export function WorkflowRunDrawer({
         onEvent: handleStreamEvent,
         onError: (error) => {
           console.error('Stream error:', error)
-          toast.error('执行流连接失败')
+          toast.error(t('runDrawer.streamConnectionFailed'))
           setRunStatus('failed')
-          setErrorMessage('执行流连接失败')
+          setErrorMessage(t('runDrawer.streamConnectionFailed'))
           setIsRunning(false)
         },
         onComplete: () => {
@@ -514,10 +514,10 @@ export function WorkflowRunDrawer({
       })
     } catch (error) {
       console.error('Run error:', error)
-      toast.error(isDebug ? '调试失败' : '运行失败')
+      toast.error(isDebug ? t('runDrawer.debugFailed') : t('runDrawer.runFailed'))
       setIsRunning(false)
       setRunStatus('failed')
-      setErrorMessage(error instanceof Error ? error.message : '运行失败')
+      setErrorMessage(error instanceof Error ? error.message : t('runDrawer.runFailed'))
     }
   }
 
@@ -528,13 +528,13 @@ export function WorkflowRunDrawer({
     try {
       const result = await workflowsApi.cancelWorkflowRun(runId)
       if (result.cancelled) {
-        toast.success('已取消运行')
+        toast.success(t('runDrawer.cancelledRun'))
         setRunStatus('cancelled')
       } else {
-        toast.info('无法取消当前运行')
+        toast.info(t('runDrawer.cannotCancelRun'))
       }
     } catch {
-      toast.error('取消失败')
+      toast.error(t('runDrawer.cancelFailed'))
     }
 
     if (closeStreamRef.current) {
@@ -561,9 +561,9 @@ export function WorkflowRunDrawer({
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      toast.success('已复制到剪贴板')
+      toast.success(t('editor.copiedToClipboard'))
     } catch {
-      toast.error('复制失败')
+      toast.error(t('editor.copyFailed'))
     }
   }
 
@@ -627,7 +627,7 @@ export function WorkflowRunDrawer({
         <div className="p-2 bg-background rounded space-y-1">
           {!!matchedBranch && (
             <div className="text-sm">
-              <span className="text-muted-foreground">匹配分支：</span>
+              <span className="text-muted-foreground">{t('runDrawer.matchedBranch')}</span>
               <span className="font-medium ml-1">{String(matchedBranch)}</span>
             </div>
           )}
@@ -648,7 +648,7 @@ export function WorkflowRunDrawer({
         <div className="space-y-2">
           {!!statusCode && (
             <div className="text-sm">
-              <span className="text-muted-foreground">状态码：</span>
+              <span className="text-muted-foreground">{t('runDrawer.statusCode')}</span>
               <span className={cn(
                 'font-medium ml-1',
                 Number(statusCode) >= 200 && Number(statusCode) < 300 ? 'text-green-600' : 'text-red-600'
@@ -698,7 +698,7 @@ export function WorkflowRunDrawer({
         <div className="flex items-center gap-2">
           <Play className="h-5 w-5 text-primary" />
           <span className="font-medium text-sm">
-            测试运行 {runStartTimeRef.current && (
+            {t('runDrawer.testRun')} {runStartTimeRef.current && (
               <span className="text-muted-foreground text-xs ml-1">
                 ({new Date(runStartTimeRef.current).toLocaleTimeString()})
               </span>
@@ -713,10 +713,10 @@ export function WorkflowRunDrawer({
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden px-4 pt-2">
         <TabsList className="w-full grid grid-cols-4">
-          <TabsTrigger value="input" className="text-xs">输入</TabsTrigger>
-          <TabsTrigger value="result" className="text-xs">结果</TabsTrigger>
-          <TabsTrigger value="detail" className="text-xs">详情</TabsTrigger>
-          <TabsTrigger value="trace" className="text-xs">追踪</TabsTrigger>
+          <TabsTrigger value="input" className="text-xs">{t('runDrawer.input')}</TabsTrigger>
+          <TabsTrigger value="result" className="text-xs">{t('runDrawer.result')}</TabsTrigger>
+          <TabsTrigger value="detail" className="text-xs">{t('runDrawer.detail')}</TabsTrigger>
+          <TabsTrigger value="trace" className="text-xs">{t('runDrawer.trace')}</TabsTrigger>
         </TabsList>
 
         {/* 输入标签 */}
@@ -754,7 +754,7 @@ export function WorkflowRunDrawer({
                       </select>
                     ) : variable.type === 'array' || variable.type === 'object' ? (
                       <Textarea
-                        placeholder={`输入 JSON ${variable.type === 'array' ? '数组' : '对象'}...`}
+                        placeholder={t('runDrawer.inputJsonPlaceholder', { type: variable.type === 'array' ? t('varTypes.array') : t('varTypes.object') })}
                         value={inputValues[variable.name] || ''}
                         onChange={(e) =>
                           setInputValues((prev) => ({
@@ -767,7 +767,7 @@ export function WorkflowRunDrawer({
                       />
                     ) : variable.type === 'paragraph' ? (
                       <Textarea
-                        placeholder={`输入 ${variable.name}...`}
+                        placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
                         value={inputValues[variable.name] || ''}
                         onChange={(e) =>
                           setInputValues((prev) => ({
@@ -781,7 +781,7 @@ export function WorkflowRunDrawer({
                     ) : (
                       <Input
                         type={variable.type === 'number' ? 'number' : 'text'}
-                        placeholder={`输入 ${variable.name}...`}
+                        placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
                         value={inputValues[variable.name] || ''}
                         onChange={(e) =>
                           setInputValues((prev) => ({
@@ -796,7 +796,7 @@ export function WorkflowRunDrawer({
                 ))
               ) : (
                 <div className="text-sm text-muted-foreground text-center py-8">
-                  此工作流没有输入参数
+                  {t('runDrawer.noInputParams')}
                 </div>
               )}
             </div>
@@ -824,7 +824,7 @@ export function WorkflowRunDrawer({
                     onClick={() => copyToClipboard(streamingOutput)}
                   >
                     <Copy className="h-3 w-3 mr-1" />
-                    复制
+                    {t('copy')}
                   </Button>
                 </div>
                 <div className="p-3 bg-muted rounded-md text-sm whitespace-pre-wrap">
@@ -851,7 +851,7 @@ export function WorkflowRunDrawer({
                               onClick={() => copyToClipboard(outputText)}
                             >
                               <Copy className="h-3 w-3 mr-1" />
-                              复制
+                              {t('copy')}
                             </Button>
                           </div>
                           <div className="p-3 bg-muted rounded-md text-sm whitespace-pre-wrap">
@@ -861,16 +861,16 @@ export function WorkflowRunDrawer({
                       )
                     }
                   }
-                  
+
                   // 否则，找最后一个成功执行的节点（非开始节点）的输出
                   const successNodes = Array.from(nodeTraces.values())
                     .filter(n => n.status === 'success' && n.outputs && n.nodeType !== 'start' && n.nodeType !== 'user_input' && n.nodeType !== 'trigger')
-                  
+
                   if (successNodes.length > 0) {
                     const lastNode = successNodes[successNodes.length - 1]
                     const outputKeys = Object.keys(lastNode.outputs || {})
                     // 如果只有一个输出变量，直接显示其值；否则显示整个对象
-                    const outputValue = outputKeys.length === 1 
+                    const outputValue = outputKeys.length === 1
                       ? lastNode.outputs![outputKeys[0]]
                       : lastNode.outputs
                     const outputJson = JSON.stringify(outputValue, null, 2)
@@ -878,7 +878,7 @@ export function WorkflowRunDrawer({
                       <>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-muted-foreground">
-                            来自节点: {lastNode.nodeLabel}{outputKeys.length === 1 && ` (${outputKeys[0]})`}
+                            {t('runDrawer.fromNode', { name: lastNode.nodeLabel })}{outputKeys.length === 1 && ` (${outputKeys[0]})`}
                           </span>
                           <Button
                             variant="ghost"
@@ -887,7 +887,7 @@ export function WorkflowRunDrawer({
                             onClick={() => copyToClipboard(outputJson)}
                           >
                             <Copy className="h-3 w-3 mr-1" />
-                            复制
+                            {t('copy')}
                           </Button>
                         </div>
                         <pre className="p-3 bg-muted rounded-md text-xs overflow-x-auto whitespace-pre-wrap">
@@ -899,7 +899,7 @@ export function WorkflowRunDrawer({
                   
                   return (
                     <div className="text-sm text-muted-foreground text-center py-8">
-                      工作流执行完成，但没有输出结果
+                      {t('runDrawer.noOutputResult')}
                     </div>
                   )
                 })()}
@@ -907,7 +907,7 @@ export function WorkflowRunDrawer({
             ) : runStatus === 'failed' ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <XCircle className="h-12 w-12 text-red-500 mb-4" />
-                <p className="text-sm text-red-500 font-medium">执行失败</p>
+                <p className="text-sm text-red-500 font-medium">{t('runDrawer.executionFailed')}</p>
                 {errorMessage && (
                   <p className="text-xs text-muted-foreground mt-2 max-w-full break-all">
                     {errorMessage}
@@ -917,11 +917,11 @@ export function WorkflowRunDrawer({
             ) : runStatus === 'running' ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-sm text-muted-foreground">正在执行...</p>
+                <p className="text-sm text-muted-foreground">{t('runDrawer.executing')}</p>
               </div>
             ) : (
               <div className="text-sm text-muted-foreground text-center py-8">
-                运行工作流后将在此显示输出结果
+                {t('runDrawer.resultPlaceholder')}
               </div>
             )}
           </ScrollArea>
@@ -936,7 +936,7 @@ export function WorkflowRunDrawer({
                 <div className="p-3 rounded-lg bg-muted/50">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">状态</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('runDrawer.statusLabel')}</div>
                       <div className={cn(
                         'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium',
                         runStatus === 'success' && 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300',
@@ -946,17 +946,17 @@ export function WorkflowRunDrawer({
                         runStatus === 'cancelled' && 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
                       )}>
                         {statusConfig[runStatus].icon}
-                        {statusConfig[runStatus].label.toUpperCase()}
+                        {t('runDrawer.' + statusConfig[runStatus].label).toUpperCase()}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">运行时间</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('runDrawer.runTime')}</div>
                       <div className="text-sm font-medium">
                         {totalDurationMs !== null ? `${(totalDurationMs / 1000).toFixed(3)}s` : '-'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">总 TOKEN 数</div>
+                      <div className="text-xs text-muted-foreground mb-1">{t('nodeConfig.totalTokens')}</div>
                       <div className="text-sm font-medium">
                         {totalTokens > 0 ? `${totalTokens} Tokens` : '0 Tokens'}
                       </div>
@@ -968,7 +968,7 @@ export function WorkflowRunDrawer({
               {/* 输入 JSON */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">输入</span>
+                  <span className="text-sm font-medium">{t('runDrawer.inputSection')}</span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -999,7 +999,7 @@ export function WorkflowRunDrawer({
               {outputs && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">输出</span>
+                    <span className="text-sm font-medium">{t('runDrawer.outputSection')}</span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1018,7 +1018,7 @@ export function WorkflowRunDrawer({
               {/* 错误信息 */}
               {errorMessage && (
                 <div className="space-y-2">
-                  <span className="text-sm font-medium text-red-500">错误信息</span>
+                  <span className="text-sm font-medium text-red-500">{t('runDrawer.errorInfo')}</span>
                   <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-xs text-red-600 dark:text-red-400">
                     {errorMessage}
                   </div>
@@ -1028,13 +1028,13 @@ export function WorkflowRunDrawer({
               {/* 元数据 */}
               {runId && (
                 <div className="space-y-2 pt-4 border-t">
-                  <span className="text-sm font-medium">元数据</span>
+                  <span className="text-sm font-medium">{t('runDrawer.metadata')}</span>
                   <div className="grid grid-cols-2 gap-y-2 text-xs">
-                    <div className="text-muted-foreground">运行 ID</div>
+                    <div className="text-muted-foreground">{t('runDrawer.runIdLabel')}</div>
                     <div className="font-mono truncate" title={runId}>{runId}</div>
                     {runStartTimeRef.current && (
                       <>
-                        <div className="text-muted-foreground">开始时间</div>
+                        <div className="text-muted-foreground">{t('runDrawer.startTime')}</div>
                         <div>{new Date(runStartTimeRef.current).toLocaleString()}</div>
                       </>
                     )}
@@ -1096,11 +1096,11 @@ export function WorkflowRunDrawer({
                           {/* 状态信息 */}
                           <div className="flex items-center gap-4 text-xs">
                             <div>
-                              <span className="text-muted-foreground">类型：</span>
+                              <span className="text-muted-foreground">{t('runDrawer.nodeType')}</span>
                               <span className="font-medium">{trace.nodeType}</span>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">状态：</span>
+                              <span className="text-muted-foreground">{t('runDrawer.nodeStatus')}</span>
                               <span className={cn(
                                 'font-medium',
                                 trace.status === 'success' && 'text-green-600',
@@ -1113,7 +1113,7 @@ export function WorkflowRunDrawer({
                             </div>
                             {trace.durationMs !== undefined && (
                               <div>
-                                <span className="text-muted-foreground">耗时：</span>
+                                <span className="text-muted-foreground">{t('runDrawer.nodeTime')}</span>
                                 <span className="font-medium">{trace.durationMs.toFixed(3)}ms</span>
                               </div>
                             )}
@@ -1131,7 +1131,7 @@ export function WorkflowRunDrawer({
                                 <span>{trace.tokens.completion || 0}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">总计：</span>
+                                <span className="text-muted-foreground">Total：</span>
                                 <span className="font-medium">{trace.tokens.total || 0}</span>
                               </div>
                             </div>
@@ -1142,7 +1142,7 @@ export function WorkflowRunDrawer({
                             <div className="space-y-1">
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>生成中...</span>
+                                <span>{t('runDrawer.generating')}</span>
                               </div>
                               <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">
                                 {trace.streamingContent}
@@ -1155,7 +1155,7 @@ export function WorkflowRunDrawer({
                           {trace.outputs && Object.keys(trace.outputs).length > 0 && (
                             <div className="space-y-1">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">输出</span>
+                                <span className="text-xs text-muted-foreground">{t('runDrawer.outputLabel')}</span>
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1175,7 +1175,7 @@ export function WorkflowRunDrawer({
                           {/* 错误信息 */}
                           {trace.error && (
                             <div className="space-y-1">
-                              <span className="text-xs text-red-500 font-medium">错误</span>
+                              <span className="text-xs text-red-500 font-medium">{t('runDrawer.errorLabel')}</span>
                               <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-600 dark:text-red-400">
                                 {trace.error}
                               </div>
@@ -1190,11 +1190,11 @@ export function WorkflowRunDrawer({
             ) : runStatus === 'running' ? (
               <div className="flex flex-col items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-sm text-muted-foreground">等待节点执行...</p>
+                <p className="text-sm text-muted-foreground">{t('runDrawer.waitingForNodes')}</p>
               </div>
             ) : (
               <div className="text-sm text-muted-foreground text-center py-8">
-                运行工作流后将在此显示节点执行追踪
+                {t('runDrawer.traceResultPlaceholder')}
               </div>
             )}
           </ScrollArea>
@@ -1210,7 +1210,7 @@ export function WorkflowRunDrawer({
             onClick={handleCancel}
           >
             <StopCircle className="h-4 w-4 mr-2" />
-            取消运行
+            {t('runDrawer.cancelRun')}
           </Button>
         ) : (
           <>
@@ -1220,7 +1220,7 @@ export function WorkflowRunDrawer({
               disabled={!isPublished}
             >
               <Play className="h-4 w-4 mr-2" />
-              {isPublished ? '开始运行' : '请先发布工作流'}
+              {isPublished ? t('runDrawer.startRun') : t('runDrawer.publishFirst')}
             </Button>
             <Button
               variant="outline"
@@ -1228,7 +1228,7 @@ export function WorkflowRunDrawer({
               onClick={() => handleRun(true)}
             >
               <Bug className="h-4 w-4 mr-2" />
-              调试（使用草稿）
+              {t('runDrawer.debugDraft')}
             </Button>
           </>
         )}

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import {
   Search,
   MessageSquare,
@@ -65,7 +65,7 @@ import { ConversationDrawer } from './conversation-drawer'
 import { useCanPerform } from '@/components/permission-guard'
 
 // Helper to format datetime
-function formatDateTime(dateString: string, _locale: string): string {
+function formatDateTime(dateString: string): string {
   const d = new Date(dateString)
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
@@ -78,7 +78,6 @@ function formatDateTime(dateString: string, _locale: string): string {
 export function ConversationsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
-  const locale = useLocale()
   const { canPerform } = useCanPerform()
 
   // State
@@ -361,7 +360,7 @@ export function ConversationsTable() {
                     <TableCell>{conversation.user_name}</TableCell>
                     <TableCell>{conversation.message_count}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(conversation.updated_at, locale)}
+                      {formatDateTime(conversation.updated_at)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>

@@ -29,6 +29,8 @@
     "status": "Status",
     "team": "Team",
     "createdBy": "Created By",
-    "noResults": "No results found"
+    "noResults": "No results found",
+    "openMenu": "Open menu",
+    "copiedToClipboard": "Copied to clipboard"
   }
 }

@@ -241,7 +241,7 @@ export default function CodeToolPage() {
     }
 
     if (!currentTeam?.id) {
-      toast.error('No team selected')
+      toast.error(t('error.noTeamSelected'))
       return
     }
 

@@ -8,6 +8,7 @@ export interface Parameter {
   required: boolean
   defaultValue?: string
   description?: string
+  descriptionKey?: string  // i18n key for description (workflow.defaultParams.*)
   isSystem?: boolean  // 系统参数标识，不可删除
   options?: string[]  // 下拉选项的选项列表
   // 文件类型专用配置
@@ -36,7 +37,8 @@ export interface SystemParameter {
   id: string
   name: string
   valueType: 'String' | 'Number'
-  description: string
+  description?: string
+  descriptionKey?: string  // i18n key for description (workflow.systemParams.*)
 }
 
 // 可用变量类型

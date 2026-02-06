@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { X, ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps) {
+  const t = useTranslations('chat.lightbox')
   const [scale, setScale] = React.useState(1)
   const [rotation, setRotation] = React.useState(0)
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
@@ -147,7 +149,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           size="icon"
           className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
           onClick={handleZoomOut}
-          title="缩小 (-)"
+          title={t('zoomOut')}
         >
           <ZoomOut className="h-5 w-5" />
         </Button>
@@ -159,7 +161,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           size="icon"
           className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
           onClick={handleZoomIn}
-          title="放大 (+)"
+          title={t('zoomIn')}
         >
           <ZoomIn className="h-5 w-5" />
         </Button>
@@ -168,7 +170,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           size="icon"
           className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
           onClick={handleRotate}
-          title="旋转 (R)"
+          title={t('rotate')}
         >
           <RotateCw className="h-5 w-5" />
         </Button>
@@ -177,7 +179,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           size="icon"
           className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
           onClick={handleDownload}
-          title="下载"
+          title={t('download')}
         >
           <Download className="h-5 w-5" />
         </Button>
@@ -186,7 +188,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
           size="icon"
           className="h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20"
           onClick={onClose}
-          title="关闭 (Esc)"
+          title={t('close')}
         >
           <X className="h-5 w-5" />
         </Button>

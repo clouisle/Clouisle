@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { Coins, MessageSquare, Cpu } from 'lucide-react'
+import { Coins, MessageSquare } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { ModelDistributionChart } from '@/components/dashboard/model-distribution-chart'
 import { TeamTokenUsageChart } from '@/components/dashboard/team-token-usage-chart'
@@ -83,8 +83,6 @@ export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, tren
   const avgTokensPerMessage = stats.overview.total_messages > 0
     ? Math.round(stats.overview.total_tokens / stats.overview.total_messages)
     : 0
-
-  const mostUsedModel = modelData.length > 0 ? modelData[0].model : 'N/A'
 
   // Model data is already in the correct format for pie chart
   const modelChartData = modelData

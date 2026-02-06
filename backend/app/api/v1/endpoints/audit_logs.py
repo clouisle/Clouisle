@@ -186,7 +186,7 @@ async def trigger_manual_archive(
     # 异步执行归档任务
     task = archive_old_audit_logs.delay()
 
-    return success(data={"task_id": str(task.id), "message": "归档任务已启动"})
+    return success(data={"task_id": str(task.id)}, msg_key="archive_task_started")
 
 
 @router.get("/export", response_model=None)

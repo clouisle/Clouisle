@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Trash2, Pencil, Search, AlertCircle, Type, Hash, CheckSquare, Brackets, Braces } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Plus, Trash2, Pencil, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,18 +17,17 @@ import { isValidVariableName } from '../utils'
 import { loopVariableTypeConfig } from '../constants'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
-import { 
-  LoopConfig, 
-  LoopVariable, 
-  LoopVariableType, 
-  defaultLoopConfig 
+import {
+  LoopConfig,
+  LoopVariable,
+  LoopVariableType,
 } from '../../nodes/loop-node'
-import { 
-  ConditionRule, 
-  ConditionOperator, 
-  conditionOperatorLabels,
-  conditionOperatorShortLabels,
-  noValueOperators 
+import {
+  ConditionRule,
+  ConditionOperator,
+  getConditionOperatorLabels,
+  getConditionOperatorShortLabels,
+  noValueOperators
 } from '../../nodes/condition-node'
 
 interface LoopNodeConfigProps {
@@ -51,6 +51,9 @@ export function LoopNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: LoopNodeConfigProps) {
+  const t = useTranslations('workflow')
+  const conditionOperatorLabels = getConditionOperatorLabels(t)
+  const conditionOperatorShortLabels = getConditionOperatorShortLabels(t)
   // 循环变量编辑状态
   const [editingLoopVar, setEditingLoopVar] = React.useState<LoopVariable | null>(null)
   const [isLoopVarDialogOpen, setIsLoopVarDialogOpen] = React.useState(false)
@@ -95,10 +98,10 @@ export function LoopNodeConfig({
     const name = loopVarForm.name?.trim() || ''
     if (!name) return null
     if (!isValidVariableName(name)) {
-      return '变量名只能包含字母、数字、下划线，且不能以数字开头'
+      return t('configCommon.variableNameRules')
     }
     if (isLoopVarNameDuplicate(name)) {
-      return '变量名已存在'
+      return t('configCommon.variableNameExists')
     }
     return null
   })()
@@ -199,14 +202,6 @@ export function LoopNodeConfig({
     )
   }
 
-  // 过滤变量（通用）
-  const filterVariables = (search: string) => {
-    if (!search) return variables
-    return variables.filter(v =>
-      v.name.toLowerCase().includes(search.toLowerCase())
-    )
-  }
-
   // 获取 Loop 节点自己的变量（用于退出条件）
   const getLoopInternalVariables = (): AvailableVariable[] => {
     const internalVars: AvailableVariable[] = []
@@ -218,7 +213,7 @@ export function LoopNodeConfig({
       name: indexVar,
       type: 'number',
       group: nodeId,
-      groupLabel: '当前循环',
+      groupLabel: t('configLoop.currentLoop'),
       isSystem: false,
       isArray: false,
       isIterable: false,
@@ -231,7 +226,7 @@ export function LoopNodeConfig({
       name: outputVar,
       type: 'array',
       group: nodeId,
-      groupLabel: '当前循环',
+      groupLabel: t('configLoop.currentLoop'),
       isSystem: false,
       isArray: true,
       isIterable: true,
@@ -245,7 +240,7 @@ export function LoopNodeConfig({
         name: v.name,
         type: v.type,
         group: nodeId,
-        groupLabel: '当前循环',
+        groupLabel: t('configLoop.currentLoop'),
         isSystem: false,
         isArray: false,
         isIterable: false,
@@ -286,7 +281,7 @@ export function LoopNodeConfig({
         {/* 最大循环次数 */}
         <div className="space-y-2">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">最大循环次数</Label>
+            <Label className="text-xs font-medium">{t('configLoop.maxLoopIterations')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Input
@@ -297,12 +292,12 @@ export function LoopNodeConfig({
             onChange={(e) => onConfigChange({ ...config, maxIterations: parseInt(e.target.value) || 10 })}
             className="h-9 text-xs"
           />
-          <p className="text-[10px] text-muted-foreground">防止无限循环，达到最大次数后自动退出</p>
+          <p className="text-[10px] text-muted-foreground">{t('configLoop.maxLoopHint')}</p>
         </div>
         
         {/* 索引变量 */}
         <div className="space-y-2">
-          <Label className="text-xs font-medium">索引变量</Label>
+          <Label className="text-xs font-medium">{t('configIteration.indexVariable')}</Label>
           <Input
             value={config.indexVariable}
             onChange={(e) => onConfigChange({ ...config, indexVariable: e.target.value })}
@@ -313,18 +308,18 @@ export function LoopNodeConfig({
             )}
           />
           {config.indexVariable && !isValidVariableName(config.indexVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           {config.indexVariable && isIndexVarDuplicate(config.indexVariable) && (
-            <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
           )}
-          <p className="text-[10px] text-muted-foreground">从 0 开始的循环计数器</p>
+          <p className="text-[10px] text-muted-foreground">{t('configLoop.indexVariableHint')}</p>
         </div>
         
         {/* 循环变量列表 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs font-medium">循环变量</Label>
+            <Label className="text-xs font-medium">{t('configLoop.loopVariables')}</Label>
             <Button 
               variant="ghost" 
               size="sm" 
@@ -332,13 +327,13 @@ export function LoopNodeConfig({
               onClick={openAddLoopVarDialog}
             >
               <Plus className="h-3 w-3 mr-1" />
-              添加
+              {t('configCommon.add')}
             </Button>
           </div>
-          
+
           {(!config.loopVariables || config.loopVariables.length === 0) ? (
             <p className="text-xs text-muted-foreground py-3 text-center bg-muted/30 rounded-md">
-              暂无循环变量，点击添加按钮创建
+              {t('configLoop.noLoopVariables')}
             </p>
           ) : (
             <div className="space-y-1">
@@ -394,7 +389,7 @@ export function LoopNodeConfig({
         {/* 退出条件 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs font-medium">退出条件</Label>
+            <Label className="text-xs font-medium">{t('configLoop.exitConditions')}</Label>
             <Button 
               variant="ghost" 
               size="sm" 
@@ -402,13 +397,13 @@ export function LoopNodeConfig({
               onClick={addExitConditionRule}
             >
               <Plus className="h-3 w-3 mr-1" />
-              添加
+              {t('configCommon.add')}
             </Button>
           </div>
-          
+
           {(!config.exitConditions || config.exitConditions.length === 0) ? (
             <p className="text-xs text-muted-foreground py-3 text-center bg-muted/30 rounded-md">
-              仅通过最大循环次数控制退出
+              {t('configLoop.exitByMaxOnly')}
             </p>
           ) : (
             <div className="space-y-2">
@@ -439,7 +434,7 @@ export function LoopNodeConfig({
                             </span>
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">选择变量...</span>
+                          <span className="text-muted-foreground">{t('configCommon.selectVariable')}</span>
                         )}
                       </PopoverTrigger>
                       <PopoverContent className="w-64 p-0" align="start">
@@ -447,7 +442,7 @@ export function LoopNodeConfig({
                           <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
-                              placeholder="搜索变量"
+                              placeholder={t('configCommon.searchVariable')}
                               value={variableSearch}
                               onChange={(e) => onVariableSearchChange(e.target.value)}
                               className="h-7 pl-7 text-xs"
@@ -463,7 +458,7 @@ export function LoopNodeConfig({
                               if (groupEntries.length === 0) {
                                 return (
                                   <div className="py-4 text-center text-xs text-muted-foreground">
-                                    未找到匹配的变量
+                                    {t('configCommon.noMatchingVariables')}
                                   </div>
                                 )
                               }
@@ -527,7 +522,7 @@ export function LoopNodeConfig({
                         <Input
                           value={rule.value}
                           onChange={(e) => updateExitConditionRule(rule.id, { value: e.target.value })}
-                          placeholder="输入值..."
+                          placeholder={t('configCommon.enterValue')}
                           className="h-7 text-xs flex-1"
                         />
                       )}
@@ -547,7 +542,7 @@ export function LoopNodeConfig({
               
               {config.exitConditions.length > 1 && (
                 <div className="flex items-center gap-2 text-xs px-2">
-                  <span className="text-muted-foreground">满足</span>
+                  <span className="text-muted-foreground">{t('configLoop.satisfy')}</span>
                   <Select
                     value={config.exitLogicOperator || 'and'}
                     onValueChange={(v) => onConfigChange({ ...config, exitLogicOperator: v as 'and' | 'or' })}
@@ -556,11 +551,11 @@ export function LoopNodeConfig({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="and" className="text-xs">所有</SelectItem>
-                      <SelectItem value="or" className="text-xs">任一</SelectItem>
+                      <SelectItem value="and" className="text-xs">{t('configLoop.logicAll')}</SelectItem>
+                      <SelectItem value="or" className="text-xs">{t('configLoop.logicAny')}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <span className="text-muted-foreground">条件时退出</span>
+                  <span className="text-muted-foreground">{t('configLoop.conditionsToExit')}</span>
                 </div>
               )}
             </div>
@@ -570,7 +565,7 @@ export function LoopNodeConfig({
         {/* 输出变量 */}
         <div className="space-y-2">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">输出变量</Label>
+            <Label className="text-xs font-medium">{t('configCommon.outputVariable')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Input
@@ -583,10 +578,10 @@ export function LoopNodeConfig({
             )}
           />
           {config.outputVariable && !isValidVariableName(config.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           {config.outputVariable && isOutputVarInternalDuplicate(config.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
           )}
         </div>
       </div>
@@ -595,17 +590,17 @@ export function LoopNodeConfig({
       <Dialog open={isLoopVarDialogOpen} onOpenChange={setIsLoopVarDialogOpen}>
         <DialogContent className="sm:max-w-100 flex flex-col max-h-[85vh]">
           <DialogHeader>
-            <DialogTitle className="text-sm">{editingLoopVar ? '编辑变量' : '添加变量'}</DialogTitle>
+            <DialogTitle className="text-sm">{editingLoopVar ? t('configLoop.editVariable') : t('configLoop.addVariable')}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto py-2 px-1 -mx-1">
             <div className="space-y-4 px-0.5">
               <div className="space-y-2">
-                <Label htmlFor="loopvar-name" className="text-xs">变量名 *</Label>
+                <Label htmlFor="loopvar-name" className="text-xs">{t('configLoop.variableNameRequired')}</Label>
                 <Input
                   id="loopvar-name"
                   value={loopVarForm.name || ''}
                   onChange={(e) => setLoopVarForm({ ...loopVarForm, name: e.target.value })}
-                  placeholder="例如: counter, total, result"
+                  placeholder={t('configLoop.loopVarNamePlaceholder')}
                   className={cn(
                     'h-9 font-mono',
                     loopVarNameError && 'border-destructive! ring-destructive/20!'
@@ -617,7 +612,7 @@ export function LoopNodeConfig({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="loopvar-type" className="text-xs">类型</Label>
+                <Label htmlFor="loopvar-type" className="text-xs">{t('configCommon.type')}</Label>
                 <Select
                   value={loopVarForm.type || 'string'}
                   onValueChange={(v) => setLoopVarForm({ ...loopVarForm, type: v as LoopVariableType, defaultValue: '' })}
@@ -631,7 +626,7 @@ export function LoopNodeConfig({
                         return (
                           <span className="flex items-center gap-2">
                             <CurrentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{typeConfig.label}</span>
+                            <span>{t(`varTypes.${typeConfig.labelKey}`)}</span>
                           </span>
                         )
                       })()}
@@ -644,7 +639,7 @@ export function LoopNodeConfig({
                         <SelectItem key={key} value={key} className="text-sm">
                           <span className="flex items-center gap-2">
                             <OptionIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{typeConfig.label}</span>
+                            <span>{t(`varTypes.${typeConfig.labelKey}`)}</span>
                           </span>
                         </SelectItem>
                       )
@@ -656,12 +651,12 @@ export function LoopNodeConfig({
               {/* 默认值 - 根据类型显示不同输入 */}
               {(loopVarForm.type === 'string' || !loopVarForm.type) && (
                 <div className="space-y-2">
-                  <Label htmlFor="loopvar-default" className="text-xs">默认值</Label>
+                  <Label htmlFor="loopvar-default" className="text-xs">{t('configCommon.defaultValue')}</Label>
                   <Input
                     id="loopvar-default"
                     value={loopVarForm.defaultValue || ''}
                     onChange={(e) => setLoopVarForm({ ...loopVarForm, defaultValue: e.target.value })}
-                    placeholder="可选"
+                    placeholder={t('configCommon.optional')}
                     className="h-9"
                   />
                 </div>
@@ -669,7 +664,7 @@ export function LoopNodeConfig({
 
               {loopVarForm.type === 'number' && (
                 <div className="space-y-2">
-                  <Label htmlFor="loopvar-default" className="text-xs">默认值</Label>
+                  <Label htmlFor="loopvar-default" className="text-xs">{t('configCommon.defaultValue')}</Label>
                   <Input
                     id="loopvar-default"
                     type="number"
@@ -683,7 +678,7 @@ export function LoopNodeConfig({
 
               {loopVarForm.type === 'boolean' && (
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="loopvar-default" className="text-xs">默认值</Label>
+                  <Label htmlFor="loopvar-default" className="text-xs">{t('configCommon.defaultValue')}</Label>
                   <Switch
                     id="loopvar-default"
                     checked={loopVarForm.defaultValue === 'true'}
@@ -694,7 +689,7 @@ export function LoopNodeConfig({
 
               {loopVarForm.type === 'array' && (
                 <div className="space-y-2">
-                  <Label htmlFor="loopvar-default" className="text-xs">默认值 (JSON)</Label>
+                  <Label htmlFor="loopvar-default" className="text-xs">{t('configCommon.defaultValueJson')}</Label>
                   <Textarea
                     id="loopvar-default"
                     value={loopVarForm.defaultValue || ''}
@@ -702,13 +697,13 @@ export function LoopNodeConfig({
                     placeholder='["item1", "item2"]'
                     className="min-h-20 resize-none font-mono text-xs"
                   />
-                  <p className="text-[10px] text-muted-foreground">输入 JSON 数组格式</p>
+                  <p className="text-[10px] text-muted-foreground">{t('configLoop.jsonArrayFormatHint')}</p>
                 </div>
               )}
 
               {loopVarForm.type === 'object' && (
                 <div className="space-y-2">
-                  <Label htmlFor="loopvar-default" className="text-xs">默认值 (JSON)</Label>
+                  <Label htmlFor="loopvar-default" className="text-xs">{t('configCommon.defaultValueJson')}</Label>
                   <Textarea
                     id="loopvar-default"
                     value={loopVarForm.defaultValue || ''}
@@ -716,17 +711,17 @@ export function LoopNodeConfig({
                     placeholder='{"key": "value"}'
                     className="min-h-20 resize-none font-mono text-xs"
                   />
-                  <p className="text-[10px] text-muted-foreground">输入 JSON 对象格式</p>
+                  <p className="text-[10px] text-muted-foreground">{t('configLoop.jsonObjectFormatHint')}</p>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="loopvar-desc" className="text-xs">描述</Label>
+                <Label htmlFor="loopvar-desc" className="text-xs">{t('configCommon.description')}</Label>
                 <Input
                   id="loopvar-desc"
                   value={loopVarForm.description || ''}
                   onChange={(e) => setLoopVarForm({ ...loopVarForm, description: e.target.value })}
-                  placeholder="输入描述（可选）"
+                  placeholder={t('configCommon.descriptionPlaceholder')}
                   className="h-9"
                 />
               </div>
@@ -734,10 +729,10 @@ export function LoopNodeConfig({
           </div>
           <DialogFooter className="shrink-0">
             <Button variant="outline" size="sm" onClick={() => setIsLoopVarDialogOpen(false)}>
-              取消
+              {t('configCommon.cancel')}
             </Button>
             <Button size="sm" onClick={saveLoopVariable} disabled={!loopVarForm.name?.trim() || !!loopVarNameError}>
-              {editingLoopVar ? '保存' : '添加'}
+              {editingLoopVar ? t('configCommon.save') : t('configCommon.add')}
             </Button>
           </DialogFooter>
         </DialogContent>

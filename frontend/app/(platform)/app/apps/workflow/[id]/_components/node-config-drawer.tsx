@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Node, Edge } from '@xyflow/react'
 import { X, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { ConditionBranch } from './nodes/condition-node'
 import { IterationConfig, defaultIterationConfig } from './nodes/iteration-node'
@@ -17,7 +17,7 @@ import { LoopConfig, defaultLoopConfig } from './nodes/loop-node'
 import { CodeConfig, CodeInput, defaultCodeConfig } from './nodes/code-node'
 import { TemplateConfig, defaultTemplateConfig } from './nodes/template-node'
 import { FileToUrlConfig, defaultFileToUrlConfig } from './nodes/file-to-url-node'
-import { VariableAggregatorConfig, defaultVariableAggregatorConfig, aggregationModeConfig } from './nodes/variable-aggregator-node'
+import { VariableAggregatorConfig, defaultVariableAggregatorConfig, aggregationModeOutputTypes } from './nodes/variable-aggregator-node'
 import { VariableAssignmentConfig, defaultVariableAssignmentConfig } from './nodes/variable-assignment-node'
 import { ParameterExtractorConfig, defaultParameterExtractorConfig } from './nodes/parameter-extractor-node'
 import { QuestionClassifierConfig, defaultQuestionClassifierConfig } from './nodes/question-classifier-node'
@@ -69,6 +69,7 @@ interface NodeConfigDrawerProps {
 }
 
 export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false }: NodeConfigDrawerProps) {
+  const t = useTranslations('workflow')
   const [label, setLabel] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [parameters, setParameters] = React.useState<Parameter[]>([])
@@ -341,7 +342,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       const parentNode = allNodes.find(n => n.id === parentNodeId)
       if (parentNode) {
         const parentType = parentNode.type || (parentNode.data as { type?: string })?.type
-        const parentLabel = (parentNode.data as { label?: string })?.label || parentType || '循环'
+        const parentLabel = (parentNode.data as { label?: string })?.label || parentType || t('nodeLabels.loop')
 
         if (parentType === 'iteration') {
           // 迭代节点提供变量给子节点
@@ -359,7 +360,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               name: keyVar,
               type: 'String',
               group: parentNode.id,
-              groupLabel: `${parentLabel} (迭代变量)`,
+              groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
               isSystem: false,
               isArray: false,
               isIterable: false,
@@ -370,7 +371,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               name: valueVar,
               type: 'Any',
               group: parentNode.id,
-              groupLabel: `${parentLabel} (迭代变量)`,
+              groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
               isSystem: false,
               isArray: false,
               isIterable: true,
@@ -385,7 +386,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               name: itemVar,
               type: 'Any',
               group: parentNode.id,
-              groupLabel: `${parentLabel} (迭代变量)`,
+              groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
               isSystem: false,
               isArray: false,
               isIterable: true,
@@ -397,7 +398,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
                 name: indexVar,
                 type: 'Number',
                 group: parentNode.id,
-                groupLabel: `${parentLabel} (迭代变量)`,
+                groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
                 isSystem: false,
                 isArray: false,
                 isIterable: false,
@@ -411,7 +412,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             name: outputVar,
             type: 'Array',
             group: parentNode.id,
-            groupLabel: `${parentLabel} (迭代变量)`,
+            groupLabel: `${parentLabel} (${t('nodeConfig.iterationVars')})`,
             isSystem: false,
             isArray: true,
             isIterable: true,
@@ -428,7 +429,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               name: indexVar,
               type: 'Number',
               group: parentNode.id,
-              groupLabel: `${parentLabel} (循环变量)`,
+              groupLabel: `${parentLabel} (${t('nodeConfig.loopVars')})`,
               isSystem: false,
               isArray: false,
               isIterable: false,
@@ -447,7 +448,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               name: loopVar.name,
               type: getLoopVarTypeName(loopVar.type),
               group: parentNode.id,
-              groupLabel: `${parentLabel} (循环变量)`,
+              groupLabel: `${parentLabel} (${t('nodeConfig.loopVars')})`,
               isSystem: false,
               isArray: isLoopVarArray,
               isIterable: isLoopVarIterable,
@@ -508,7 +509,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       if (!upstreamNodeIds.has(n.id)) return
       const nodeType = n.type || (n.data as { type?: string })?.type
       const nodeData = n.data as { parameters?: Parameter[]; label?: string }
-      const nodeLabel = nodeData.label || nodeType || '节点'
+      const nodeLabel = nodeData.label || nodeType || t('nodeConfig.node')
       
       if (nodeType === 'user_input' || nodeType === 'trigger' || nodeType === 'start') {
         const params = nodeData.parameters || []
@@ -734,8 +735,8 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       if (nodeType === 'variable_aggregator') {
         const aggConfig = (n.data as { variableAggregatorConfig?: VariableAggregatorConfig })?.variableAggregatorConfig || defaultVariableAggregatorConfig
         const outputVar = aggConfig.outputVariable || 'result'
-        const modeConfig = aggregationModeConfig[aggConfig.mode]
-        const outputType = modeConfig.outputType
+        const modeConfig = aggregationModeOutputTypes[aggConfig.mode]
+        const outputType = modeConfig
         const isOutputArray = outputType === 'Array'
         const isOutputObject = outputType === 'Object'
         const isOutputIterable = isOutputArray || isOutputObject
@@ -862,7 +863,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
     }
     
     return variables
-  }, [allNodes, allEdges, node, getUpstreamNodeIds])
+  }, [allNodes, allEdges, node, getUpstreamNodeIds, t])
 
   // 获取对话变量（可写入的目标变量，来自开始节点的参数和子图内部变量）
   const getConversationVariables = React.useCallback((): AvailableVariable[] => {
@@ -885,7 +886,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             name: p.name,
             type: getTypeName(p.type),
             group: 'conversation',
-            groupLabel: '对话变量',
+            groupLabel: t('nodeConfig.conversationVars'),
             isSystem: false,
             isArray: p.type === 'array',
             isIterable: p.type === 'array' || p.type === 'object',
@@ -913,7 +914,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             name: 'results',
             type: 'Array',
             group: 'subgraph',
-            groupLabel: parentType === 'iteration' ? '迭代变量' : '循环变量',
+            groupLabel: parentType === 'iteration' ? t('nodeConfig.iterationVars') : t('nodeConfig.loopVars'),
             isSystem: false,
             isArray: true,
             isIterable: true,
@@ -923,19 +924,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
     }
 
     return variables
-  }, [allNodes, node])
-
-  // 检查输出变量名是否与系统变量冲突
-  const isSystemVariableConflict = React.useCallback((varName: string) => {
-    if (!varName) return false
-    const lowerName = varName.toLowerCase()
-    
-    for (const p of systemParameters) {
-      if (p.name.toLowerCase() === lowerName) return true
-    }
-    
-    return false
-  }, [])
+  }, [allNodes, node, t])
 
   // 检查节点名称是否重复
   const isNodeLabelDuplicate = (labelName: string) => {
@@ -1177,21 +1166,21 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           <div className="space-y-4">
             {/* 内容编辑 */}
             <div className="space-y-2">
-              <Label>注释内容</Label>
+              <Label>{t('nodeConfig.commentContent')}</Label>
               <Textarea
-                placeholder="输入注释内容（支持 Markdown）..."
+                placeholder={t('nodeConfig.commentPlaceholder')}
                 value={commentContent}
                 onChange={(e) => setCommentContent(e.target.value)}
                 className="min-h-[120px] text-sm resize-none font-mono"
               />
               <p className="text-[10px] text-muted-foreground">
-                支持 Markdown 语法：**粗体**、*斜体*、`代码`、列表等
+                {t('nodeConfig.commentMarkdownHint')}
               </p>
             </div>
 
             {/* 便签颜色 */}
             <div className="space-y-2">
-              <Label>便签颜色</Label>
+              <Label>{t('nodeConfig.stickyColor')}</Label>
               <div className="grid grid-cols-6 gap-1.5">
                 {(Object.keys(COMMENT_COLORS) as CommentColor[]).map((colorKey) => {
                   const colorConfig = COMMENT_COLORS[colorKey]
@@ -1238,7 +1227,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg text-white', info.color)}>
             <Icon className="h-4 w-4" />
           </div>
-          <h3 className="text-sm font-medium">{info.title}</h3>
+          <h3 className="text-sm font-medium">{t(`nodeLabels.${info.titleKey}`)}</h3>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-4 w-4" />
@@ -1251,7 +1240,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           {/* 只读模式提示 */}
           {readOnly && (
             <div className="bg-muted/50 rounded-lg px-3 py-2 text-xs text-muted-foreground">
-              只读模式，无法编辑节点配置
+              {t('nodeConfig.readOnlyNotice')}
             </div>
           )}
           {/* 注释节点不需要显示节点名称和描述 */}
@@ -1259,17 +1248,17 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             <div className="space-y-2">
               {!isStartNode && (
                 <div className="space-y-2">
-                  <Label htmlFor="node-label">节点名称</Label>
+                  <Label htmlFor="node-label">{t('nodeConfig.nodeName')}</Label>
                   <Input
                     id="node-label"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="输入节点名称"
+                    placeholder={t('nodeConfig.nodeNamePlaceholder')}
                     className={cn(isNodeLabelDuplicate(label) && '!border-destructive !ring-destructive/20')}
                     disabled={readOnly}
                   />
                   {isNodeLabelDuplicate(label) && (
-                    <p className="text-[10px] text-destructive">节点名称与其他节点重复</p>
+                    <p className="text-[10px] text-destructive">{t('nodeConfig.nodeNameDuplicate')}</p>
                   )}
                 </div>
               )}
@@ -1277,7 +1266,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
                 id="node-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="添加描述..."
+                placeholder={t('nodeConfig.addDescription')}
                 className="min-h-[32px] h-8 text-xs resize-none border-transparent bg-transparent px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:border-border focus:bg-muted/30 focus:px-2 focus:rounded-md transition-all"
                 disabled={readOnly}
               />
@@ -1290,15 +1279,15 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           ) : (
             <Tabs defaultValue="settings" className="w-full">
               <TabsList className="w-full grid grid-cols-2">
-                <TabsTrigger value="settings" className="text-xs">设置</TabsTrigger>
-                <TabsTrigger value="last-run" className="text-xs">上次执行</TabsTrigger>
+                <TabsTrigger value="settings" className="text-xs">{t('nodeConfig.settings')}</TabsTrigger>
+                <TabsTrigger value="last-run" className="text-xs">{t('nodeConfig.lastRun')}</TabsTrigger>
               </TabsList>
               <TabsContent value="settings" className="mt-3">
                 {renderConfigFields()}
               </TabsContent>
               <TabsContent value="last-run" className="mt-3">
                 <div className="text-center py-6 text-muted-foreground text-xs">
-                  暂无执行记录
+                  {t('nodeConfig.noRunHistory')}
                 </div>
               </TabsContent>
             </Tabs>
@@ -1326,7 +1315,6 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         open={isCodeInputDialogOpen}
         onOpenChange={setIsCodeInputDialogOpen}
         editingInput={editingCodeInput}
-        existingInputs={codeConfig.inputs}
         variables={getAvailableVariables()}
         variableSearch={variableSearch}
         openVariablePopover={openVariablePopover}

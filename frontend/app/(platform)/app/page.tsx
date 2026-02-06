@@ -165,7 +165,7 @@ function RecentItemCard({ item }: { item: RecentItem }) {
 // Chart 配置
 const usageTrendChartConfig = {
   conversations: {
-    label: '对话数',
+    label: 'Conversations',
     color: 'var(--chart-1)',
   },
   tokens: {
@@ -176,7 +176,7 @@ const usageTrendChartConfig = {
 
 const resourceChartConfig = {
   value: {
-    label: '数量',
+    label: 'Count',
   },
   agents: {
     label: 'Agents',

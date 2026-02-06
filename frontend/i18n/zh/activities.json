@@ -59,7 +59,9 @@
       "deleteRun": "删除运行",
       "confirmDelete": "确定要删除此运行记录吗？",
       "deleteSuccess": "运行记录删除成功",
-      "deleteSelected": "删除 {count} 条记录"
+      "deleteSelected": "删除 {count} 条记录",
+      "loadFailed": "加载运行详情失败",
+      "deleteFailed": "删除运行记录失败"
     },
     "searchPlaceholder": "搜索对话...",
     "agent": "智能体",
@@ -69,6 +71,9 @@
     "untitled": "无标题",
     "noConversations": "暂无对话",
     "loadError": "加载对话失败",
+    "loadStatsFailed": "加载部分统计数据失败",
+    "loadRunsFailed": "加载工作流运行记录失败",
+    "deleteRunsFailed": "删除运行记录失败",
     "deleteSuccess": "对话删除成功",
     "deleteError": "删除对话失败",
     "deleteSelected": "删除 {count} 个选中项",

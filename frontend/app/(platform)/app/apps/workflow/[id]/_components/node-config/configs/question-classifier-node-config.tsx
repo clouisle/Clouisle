@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, Search, GripVertical, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +41,7 @@ export function QuestionClassifierNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: QuestionClassifierNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   
   // 模型数据
@@ -114,7 +116,7 @@ export function QuestionClassifierNodeConfig({
   const handleAddCategory = () => {
     const newCategory: ClassifierCategory = {
       id: `cat_${Date.now()}`,
-      name: `类别${safeConfig.categories.length + 1}`,
+      name: `${t('configQuestionClassifier.categoryPrefix')}${safeConfig.categories.length + 1}`,
       description: '',
     }
     onConfigChange({
@@ -167,7 +169,7 @@ export function QuestionClassifierNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-xs">选择问题变量...</span>
+            <span className="text-muted-foreground text-xs">{t('configQuestionClassifier.selectQuestionVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -175,7 +177,7 @@ export function QuestionClassifierNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -191,7 +193,7 @@ export function QuestionClassifierNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -241,7 +243,7 @@ export function QuestionClassifierNodeConfig({
       {/* 模型选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">模型</Label>
+          <Label className="text-xs font-medium">{t('configCommon.model')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <Select
@@ -261,10 +263,10 @@ export function QuestionClassifierNodeConfig({
               {isLoadingModels ? (
                 <span className="flex items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  加载中...
+                  {t('configCommon.loading')}
                 </span>
               ) : (
-                selectedModelName || '选择模型...'
+                selectedModelName || t('configCommon.selectModel')
               )}
             </SelectValue>
           </SelectTrigger>
@@ -276,7 +278,7 @@ export function QuestionClassifierNodeConfig({
                 </SelectItem>
               ))
             ) : (
-              <SelectEmpty>暂无可用模型</SelectEmpty>
+              <SelectEmpty>{t('configCommon.noAvailableModels')}</SelectEmpty>
             )}
           </SelectContent>
         </Select>
@@ -285,30 +287,30 @@ export function QuestionClassifierNodeConfig({
       {/* 源变量（问题文本） */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">问题变量</Label>
+          <Label className="text-xs font-medium">{t('configQuestionClassifier.questionVariable')}</Label>
           <span className="text-destructive">*</span>
         </div>
         {renderSourceVariableSelector()}
-        <p className="text-[10px] text-muted-foreground">选择需要分类的问题文本变量</p>
+        <p className="text-[10px] text-muted-foreground">{t('configQuestionClassifier.questionVariableHint')}</p>
       </div>
 
       {/* 分类指令 */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium">分类指令（可选）</Label>
+        <Label className="text-xs font-medium">{t('configQuestionClassifier.instruction')}</Label>
         <Textarea
           value={safeConfig.instruction || ''}
           onChange={(e) => onConfigChange({ ...safeConfig, instruction: e.target.value })}
-          placeholder="为分类任务提供额外的指导说明..."
+          placeholder={t('configQuestionClassifier.instructionPlaceholder')}
           className="min-h-[60px] text-xs resize-none"
         />
-        <p className="text-[10px] text-muted-foreground">提供额外的分类规则或注意事项</p>
+        <p className="text-[10px] text-muted-foreground">{t('configQuestionClassifier.instructionHint')}</p>
       </div>
 
       {/* 分类类别 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">分类类别</Label>
+            <Label className="text-xs font-medium">{t('configQuestionClassifier.categories')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Button
@@ -323,7 +325,7 @@ export function QuestionClassifierNodeConfig({
         
         {safeConfig.categories.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center bg-muted/30 rounded-md">
-            暂无类别，点击 + 添加
+            {t('configQuestionClassifier.noCategories')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -337,7 +339,7 @@ export function QuestionClassifierNodeConfig({
                   <div className="flex items-center gap-2">
                     <GripVertical className="h-3.5 w-3.5 text-muted-foreground cursor-grab" />
                     <span className="text-xs font-medium text-violet-500">
-                      类别 {index + 1}
+                      {t('configQuestionClassifier.categoryIndex', { index: index + 1 })}
                     </span>
                   </div>
                   <Button
@@ -352,11 +354,11 @@ export function QuestionClassifierNodeConfig({
                 
                 {/* 类别名称 */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">名称</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configCommon.name')}</Label>
                   <Input
                     value={category.name}
                     onChange={(e) => handleUpdateCategory(category.id, { name: e.target.value })}
-                    placeholder="类别名称"
+                    placeholder={t('configQuestionClassifier.categoryName')}
                     className={cn(
                       'h-8 text-xs',
                       category.name && !isValidVariableName(category.name) && 'border-destructive!'
@@ -366,11 +368,11 @@ export function QuestionClassifierNodeConfig({
                 
                 {/* 类别描述 */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">描述（帮助模型理解）</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configQuestionClassifier.descriptionHelpModel')}</Label>
                   <Textarea
                     value={category.description}
                     onChange={(e) => handleUpdateCategory(category.id, { description: e.target.value })}
-                    placeholder="描述该类别的特征，帮助模型准确分类..."
+                    placeholder={t('configQuestionClassifier.categoryDescPlaceholder')}
                     className="min-h-[50px] text-xs resize-none"
                   />
                 </div>
@@ -381,18 +383,18 @@ export function QuestionClassifierNodeConfig({
         
         {/* 类别名称校验提示 */}
         {safeConfig.categories.some(c => c.name && !isValidVariableName(c.name)) && (
-          <p className="text-[10px] text-destructive">类别名称格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configQuestionClassifier.invalidCategoryName')}</p>
         )}
         {(() => {
           const names = safeConfig.categories.map(c => c.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的类别名称</p>
+            <p className="text-[10px] text-destructive">{t('configQuestionClassifier.duplicateCategoryName')}</p>
           )
         })()}
         
         <p className="text-[10px] text-muted-foreground">
-          每个类别对应一个输出分支，模型会根据问题内容选择最匹配的类别
+          {t('configQuestionClassifier.categoriesHint')}
         </p>
       </div>
     </div>

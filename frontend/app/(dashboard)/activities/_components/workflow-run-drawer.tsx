@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import {
   CheckCircle,
   XCircle,
@@ -10,7 +10,6 @@ import {
   Ban,
   AlertTriangle,
   Trash2,
-  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { workflowsApi, type WorkflowRun, type NodeExecution } from '@/lib/api'
@@ -46,7 +45,7 @@ interface WorkflowRunDrawerProps {
 }
 
 // Helper to format datetime
-function formatDateTime(dateString: string | null | undefined, _locale: string): string {
+function formatDateTime(dateString: string | null | undefined): string {
   if (!dateString) return '-'
   const d = new Date(dateString)
   const year = d.getFullYear()
@@ -111,7 +110,6 @@ function StatusBadge({ status }: { status: string }) {
 export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: WorkflowRunDrawerProps) {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
-  const locale = useLocale()
   const { canPerform } = useCanPerform()
   const canDeleteWorkflowRun = canPerform('workflow:delete')
 
@@ -141,7 +139,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
         setNodeExecutions(nodesData)
       } catch (error) {
         console.error('Failed to load run details:', error)
-        toast.error('Failed to load run details')
+        toast.error(t('runDetail.loadFailed'))
       } finally {
         setLoading(false)
       }
@@ -158,7 +156,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
       onOpenChange(false)
     } catch (error) {
       console.error('Failed to delete run:', error)
-      toast.error('Failed to delete run')
+      toast.error(t('runDetail.deleteFailed'))
     } finally {
       setDeleteDialogOpen(false)
     }
@@ -206,18 +204,18 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('table.createdAt')}</span>
-                  <span>{formatDateTime(run.created_at, locale)}</span>
+                  <span>{formatDateTime(run.created_at)}</span>
                 </div>
                 {run.started_at && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Started At</span>
-                    <span>{formatDateTime(run.started_at, locale)}</span>
+                    <span>{formatDateTime(run.started_at)}</span>
                   </div>
                 )}
                 {run.finished_at && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Finished At</span>
-                    <span>{formatDateTime(run.finished_at, locale)}</span>
+                    <span>{formatDateTime(run.finished_at)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Tags, MoreHorizontal, Play, Sparkles } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 分类类别定义
@@ -49,7 +50,8 @@ interface QuestionClassifierNodeProps {
   data: QuestionClassifierNodeData
 }
 
-export function QuestionClassifierNode({ id, selected, data }: QuestionClassifierNodeProps) {
+export function QuestionClassifierNode({ selected, data }: QuestionClassifierNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.questionClassifierConfig || defaultQuestionClassifierConfig
   const categories = config.categories || []
   const hasModel = !!config.modelId
@@ -58,9 +60,9 @@ export function QuestionClassifierNode({ id, selected, data }: QuestionClassifie
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">问题分类</span>
+        <span className="text-xs text-muted-foreground">{t('nodesQuestionClassifier.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -97,7 +99,7 @@ export function QuestionClassifierNode({ id, selected, data }: QuestionClassifie
           {/* Label & Model */}
           <div className="flex-1 min-w-0">
             <span className="block text-sm font-medium truncate">
-              {data.label || '问题分类'}
+              {data.label || t('nodesQuestionClassifier.label')}
             </span>
             {hasModel ? (
               <div className="flex items-center gap-1 mt-0.5">
@@ -105,7 +107,7 @@ export function QuestionClassifierNode({ id, selected, data }: QuestionClassifie
                 <span className="text-xs text-muted-foreground truncate">{config.modelName}</span>
               </div>
             ) : (
-              <span className="text-xs text-amber-500">未选择模型</span>
+              <span className="text-xs text-amber-500">{t('nodesCommon.modelNotSelected')}</span>
             )}
           </div>
         </div>
@@ -122,13 +124,13 @@ export function QuestionClassifierNode({ id, selected, data }: QuestionClassifie
                   {index + 1}
                 </span>
                 <span className="text-[11px] text-foreground/80 font-medium truncate flex-1">
-                  {category.name || '(未命名)'}
+                  {category.name || t('nodesCommon.unnamed')}
                 </span>
               </div>
             ))
           ) : (
             <div className="flex items-center justify-center py-2 text-[11px] text-muted-foreground">
-              点击添加分类
+              {t('nodesQuestionClassifier.clickToAdd')}
             </div>
           )}
         </div>

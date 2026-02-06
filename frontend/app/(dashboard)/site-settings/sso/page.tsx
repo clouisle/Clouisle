@@ -40,7 +40,7 @@ export default function SSOSettingsPage() {
       setLoading(true)
       const data = await ssoApi.listProviders()
       setProviders(data)
-    } catch (error) {
+    } catch {
       toast.error(t('loadError') || 'Failed to load SSO providers')
     } finally {
       setLoading(false)
@@ -58,7 +58,7 @@ export default function SSOSettingsPage() {
       await ssoApi.deleteProvider(deleteId)
       toast.success(t('deleteSuccess'))
       loadProviders()
-    } catch (error) {
+    } catch {
       toast.error(t('deleteError') || 'Failed to delete SSO provider')
     } finally {
       setDeleteId(null)
@@ -73,7 +73,7 @@ export default function SSOSettingsPage() {
       } else {
         toast.error(result.message)
       }
-    } catch (error) {
+    } catch {
       toast.error(t('testFailed'))
     }
   }
@@ -87,7 +87,7 @@ export default function SSOSettingsPage() {
         provider.is_enabled ? t('disableSuccess') : t('enableSuccess')
       )
       loadProviders()
-    } catch (error) {
+    } catch {
       toast.error(t('updateError') || 'Failed to update provider')
     }
   }

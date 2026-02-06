@@ -107,7 +107,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       let parsedInput
       try {
         parsedInput = JSON.parse(input)
-      } catch (e) {
+      } catch {
         throw new Error('Invalid JSON format')
       }
 
@@ -124,7 +124,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       // Check if response is JSON
       const contentType = response.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text()
+        await response.text()
         throw new Error(`Server returned non-JSON response (${response.status})`)
       }
 
@@ -267,7 +267,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <Badge variant="outline" className="shrink-0">{time}</Badge>
             <div className="flex items-center gap-2">
               <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
-              <span className="text-blue-600 font-medium">工作流开始执行</span>
+              <span className="text-blue-600 font-medium">{t('apiPlayground.workflowStarted')}</span>
             </div>
           </div>
         )
@@ -279,7 +279,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
               <Badge variant="outline" className="shrink-0">{time}</Badge>
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-3 w-3 text-green-500" />
-                <span className="text-green-600 font-medium">工作流执行完成</span>
+                <span className="text-green-600 font-medium">{t('apiPlayground.workflowCompleted')}</span>
                 {data?.data?.duration_ms && (
                   <span className="text-xs text-muted-foreground">
                     ({data.data.duration_ms}ms)
@@ -302,7 +302,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <XCircle className="h-3 w-3 text-red-500" />
-                <span className="text-red-600 font-medium">工作流执行失败</span>
+                <span className="text-red-600 font-medium">{t('apiPlayground.workflowFailed')}</span>
               </div>
               {data?.data?.error && (
                 <div className="ml-5 text-xs text-red-600">{data.data.error}</div>

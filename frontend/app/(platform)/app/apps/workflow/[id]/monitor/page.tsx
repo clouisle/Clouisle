@@ -13,7 +13,6 @@ import {
   Zap,
   ArrowLeft,
   RefreshCw,
-  Calendar,
   BarChart3,
   Loader2,
   ExternalLink,
@@ -200,7 +199,7 @@ export default function WorkflowMonitorPage() {
       // 获取工作流信息、统计数据、趋势数据和最近运行记录
       const [workflowData, statsData, trendsData, runsData] = await Promise.all([
         workflowsApi.getWorkflow(workflowId),
-        workflowsApi.getWorkflowStats(workflowId, period),
+        workflowsApi.getWorkflowStats(workflowId),
         workflowsApi.getWorkflowTrends(workflowId, period),
         workflowsApi.getWorkflowRuns(workflowId, { page: 1, pageSize: 5 }),
       ])

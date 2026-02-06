@@ -3,15 +3,12 @@
 import * as React from 'react'
 import { Handle, Position, NodeProps } from '@xyflow/react'
 import { Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
-interface StartNodeData {
-  type: string
-  label: string
-  config: Record<string, unknown>
-}
-
 export function StartNode({ selected }: NodeProps) {
+  const t = useTranslations('workflow')
+
   return (
     <div
       className={cn(
@@ -24,7 +21,7 @@ export function StartNode({ selected }: NodeProps) {
         <div className="p-1.5 rounded-md bg-green-500 text-white">
           <Play className="h-3.5 w-3.5" />
         </div>
-        <span className="text-sm font-medium">开始</span>
+        <span className="text-sm font-medium">{t('nodesStart.label')}</span>
       </div>
       
       {/* Output Handle */}

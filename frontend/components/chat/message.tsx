@@ -313,7 +313,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       })
 
       // 2. Tool calls (before reasoning)
-      otherParts.forEach((part, index) => {
+      otherParts.forEach((part) => {
         if (isToolCallPart(part)) {
           const toolPart = part as ToolCallPart
           steps.push(
@@ -504,6 +504,7 @@ function CitationBadge({
   index: number
   source?: SourceDocumentPart
 }) {
+  const t = useTranslations('chat.source')
   const badge = (
     <span
       className={cn(
@@ -528,7 +529,7 @@ function CitationBadge({
       <TooltipTrigger render={badge} />
       <TooltipContent side="top" className="max-w-80 p-3">
         <div className="space-y-2">
-          <div className="font-medium text-sm">{source.documentName || '文档'}</div>
+          <div className="font-medium text-sm">{source.documentName || t('documentDefault')}</div>
           <div className="text-xs text-muted-foreground line-clamp-4">
             {source.content}
           </div>

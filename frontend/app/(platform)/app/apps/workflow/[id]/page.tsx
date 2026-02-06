@@ -98,7 +98,6 @@ import { WorkflowRunDrawer } from './_components/workflow-run-drawer'
 import { StartNodeSelector, StartNodeType } from './_components/start-node-selector'
 import { NodeConfigDrawer } from './_components/node-config-drawer'
 import { WorkflowSettingsDrawer } from './_components/workflow-settings-drawer'
-import { NodePanel } from './_components/node-panel'
 import { AddNodePopover } from './_components/add-node-popover'
 import { ValidationChecklist } from './_components/validation-checklist'
 import { validateWorkflow, ValidationIssue } from './_components/workflow-validator'
@@ -151,9 +150,6 @@ const nodeTypes = {
 // 可以作为父节点的类型
 const parentableNodeTypes = ['iteration', 'loop']
 
-// 子节点的默认大小
-const childNodeDimensions = { width: 200, height: 100 }
-
 // 计算迭代节点内部子图区域的边界（用于限制子节点拖拽范围）
 // 子图区域样式: left-3 right-3 bottom-3 top-10 (12px, 12px, 12px, 40px)
 const getSubGraphExtent = (parentWidth: number, parentHeight: number): [[number, number], [number, number]] => {
@@ -179,6 +175,7 @@ type AddNodePopoverState = {
 function ZoomControl() {
   const { zoomIn, zoomOut } = useReactFlow()
   const { zoom } = useViewport()
+  const t = useTranslations('workflow')
   const zoomPercent = Math.round(zoom * 100)
 
   return (
@@ -199,7 +196,7 @@ function ZoomControl() {
           <button
             onClick={() => zoomOut()}
             className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title="缩小"
+            title={t('editor.zoomOut')}
           >
             <Minus className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
@@ -209,7 +206,7 @@ function ZoomControl() {
           <button
             onClick={() => zoomIn()}
             className="p-1 hover:bg-accent rounded cursor-pointer transition-colors"
-            title="放大"
+            title={t('editor.zoomIn')}
           >
             <Plus className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
@@ -313,7 +310,7 @@ function WorkflowEditorContent() {
       
       // 如果尝试删除开始节点，显示提示
       if (hasStartNodeRemoval) {
-        toast.error('开始节点不能被删除')
+        toast.error(t('editor.cannotDeleteStart'))
       }
       
       // 过滤掉开始节点的删除操作
@@ -410,7 +407,7 @@ function WorkflowEditorContent() {
       position: { x: 250, y: 100 },
       data: {
         type: type,
-        label: type === 'user_input' ? '开始' : '触发器',
+        label: type === 'user_input' ? t('editor.startLabel') : t('editor.triggerLabel'),
         config: {},
       },
     }
@@ -632,7 +629,7 @@ function WorkflowEditorContent() {
         }),
         data: {
           type: type,
-          label: getUniqueNodeLabel(type, nodes),
+          label: getUniqueNodeLabel(type, nodes, t),
           config: {},
           // 标记父容器ID（根据容器类型设置不同的属性）
           ...(isInsideContainer && actualParentId && {
@@ -658,12 +655,12 @@ function WorkflowEditorContent() {
           draggable: false,
           data: {
             type: 'iteration_start',
-            label: '迭代开始',
+            label: t('editor.iterationStartLabel'),
             parentIterationId: newNodeId,
             config: {},
           },
         }
-        
+
         setNodes((nds) => [...nds, newNode, startNode])
       } else if (isLoopNode) {
         // 如果是循环节点，同时创建内嵌的循环开始子节点
@@ -681,12 +678,12 @@ function WorkflowEditorContent() {
           draggable: false,
           data: {
             type: 'loop_start',
-            label: '循环开始',
+            label: t('editor.loopStartLabel'),
             parentLoopId: newNodeId,
             config: {},
           },
         }
-        
+
         setNodes((nds) => [...nds, newNode, startNode])
       } else {
         setNodes((nds) => [...nds, newNode])
@@ -824,53 +821,6 @@ function WorkflowEditorContent() {
     },
     [nodes, edges, setNodes, isInsideNode]
   )
-
-  // Add new node
-  const handleAddNode = React.useCallback((type: string) => {
-    const newNodeId = `${type}-${Date.now()}`
-    const isIterationNode = type === 'iteration'
-    
-    const newNode: WorkflowNode = {
-      id: newNodeId,
-      type: type,
-      position: { x: 300, y: 200 + nodes.length * 150 },
-      // 迭代节点设置默认尺寸
-      ...(isIterationNode && {
-        style: { width: 500, height: 280 },
-        width: 500,
-        height: 280,
-      }),
-      data: {
-        type: type,
-        label: getUniqueNodeLabel(type, nodes),
-        config: {},
-      },
-    }
-    
-    // 如果是迭代节点，同时创建内嵌的迭代开始子节点
-    if (isIterationNode) {
-      const startNodeId = `iteration_start-${Date.now()}`
-      const startNode: WorkflowNode = {
-        id: startNodeId,
-        type: 'iteration_start',
-        position: { x: 30, y: 60 }, // 相对于父节点容器内部
-        parentId: newNodeId,
-        extent: 'parent',
-        draggable: false, // 迭代开始节点不可拖动
-        data: {
-          type: 'iteration_start',
-          label: '迭代开始',
-          parentIterationId: newNodeId,
-          config: {},
-        },
-      }
-      setNodes((nds) => [...nds, newNode, startNode])
-    } else {
-      setNodes((nds) => [...nds, newNode])
-    }
-    
-    setHasChanges(true)
-  }, [nodes.length, setNodes])
 
   // Mark changes when nodes or edges change
   React.useEffect(() => {
@@ -1208,7 +1158,7 @@ function WorkflowEditorContent() {
               <>
                 <button
                   className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title="添加节点"
+                  title={t('editor.addNode')}
                   onClick={(e) => {
                     // 获取按钮位置，在按钮右侧显示弹窗
                     const rect = e.currentTarget.getBoundingClientRect()
@@ -1223,7 +1173,7 @@ function WorkflowEditorContent() {
                 </button>
                 <button
                   className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title="添加注释"
+                  title={t('editor.addComment')}
                   onClick={() => {
                     // 在视口中心位置添加注释节点
                     const viewport = reactFlowInstance.getViewport()
@@ -1239,7 +1189,7 @@ function WorkflowEditorContent() {
                       zIndex: -1, // 置于最底层
                       data: {
                         type: 'comment',
-                        label: '注释',
+                        label: t('editor.comment'),
                         content: '',
                         author: currentUser?.username || '',
                         config: {},
@@ -1258,7 +1208,7 @@ function WorkflowEditorContent() {
               className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                 editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
               }`}
-              title="指针模式"
+              title={t('editor.pointerMode')}
               onClick={() => setEditorMode('pointer')}
             >
               <MousePointer2 className={`h-4 w-4 ${
@@ -1269,7 +1219,7 @@ function WorkflowEditorContent() {
               className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                 editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
               }`}
-              title="编辑模式"
+              title={t('editor.editMode')}
               onClick={() => setEditorMode('hand')}
             >
               <Hand className={`h-4 w-4 ${
@@ -1281,7 +1231,7 @@ function WorkflowEditorContent() {
                 <div className="w-full h-px bg-border my-0.5" />
                 <button
                   className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title="整理美化"
+                  title={t('editor.autoLayout')}
                   onClick={() => {
                     // 自动整理节点布局
                     if (nodes.length === 0) return
@@ -1319,7 +1269,7 @@ function WorkflowEditorContent() {
                       reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
                     }, 100)
 
-                    toast.success('节点已整理')
+                    toast.success(t('editor.nodesArranged'))
                   }}
                 >
                   <Sparkles className="h-4 w-4 text-muted-foreground" />
@@ -1328,7 +1278,7 @@ function WorkflowEditorContent() {
             )}
             <button
               className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-              title={isFullscreen ? "退出全屏" : "全屏"}
+              title={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
               onClick={() => setIsFullscreen(!isFullscreen)}
             >
               <Maximize className="h-4 w-4 text-muted-foreground" />
@@ -1377,9 +1327,9 @@ function WorkflowEditorContent() {
             {/* Bottom Center - Last Saved Time */}
             <Panel position="bottom-center" className="mb-4!">
               <span className="text-xs text-muted-foreground">
-                {lastSavedAt 
-                  ? `上次保存 ${lastSavedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-                  : '尚未保存'
+                {lastSavedAt
+                  ? t('editor.lastSaved', { time: lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) })
+                  : t('editor.notSavedYet')
                 }
               </span>
             </Panel>
@@ -1461,18 +1411,18 @@ function WorkflowEditorContent() {
       <AlertDialog open={showExitConfirm} onOpenChange={setShowExitConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认离开？</AlertDialogTitle>
+            <AlertDialogTitle>{t('editor.confirmLeaveTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              你有未保存的更改，离开后将丢失这些更改。
+              {t('editor.confirmLeaveDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => router.push('/app/apps')}
             >
-              不保存离开
+              {t('editor.leaveWithoutSaving')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1491,45 +1441,32 @@ export default function WorkflowEditorPage() {
 }
 
 // Helper function to get node label by type
-function getNodeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    llm: 'LLM',
-    condition: '条件分支',
-    sub_workflow: '子工作流',
-    agent: '智能体',
-    tool: '工具',
-    code: '代码执行',
-    template: '模板转换',
-    variable_aggregator: '变量聚合器',
-    variable_assignment: '变量赋值',
-    parameter_extractor: '参数提取器',
-    iteration: '迭代',
-    loop: '循环',
-    question_classifier: '问题分类',
-    answer: '输出',
-  }
-  return labels[type] || type
+function getNodeLabel(type: string, t: (key: string) => string): string {
+  const key = `nodeLabels.${type}`
+  const translated = t(key)
+  // If the translation returns the key itself, fall back to the type
+  return translated !== key ? translated : type
 }
 
 // Helper function to get unique node label (auto-increment if duplicate)
-function getUniqueNodeLabel(type: string, existingNodes: WorkflowNode[]): string {
-  const baseLabel = getNodeLabel(type)
-  
+function getUniqueNodeLabel(type: string, existingNodes: WorkflowNode[], t: (key: string) => string): string {
+  const baseLabel = getNodeLabel(type, t)
+
   // 获取所有同类型节点的名称
   const existingLabels = existingNodes
     .filter(n => n.type === type || n.data?.type === type)
     .map(n => n.data?.label || '')
-  
+
   // 如果没有重复，直接返回基本名称
   if (!existingLabels.includes(baseLabel)) {
     return baseLabel
   }
-  
+
   // 找到可用的编号
   let counter = 1
   while (existingLabels.includes(`${baseLabel} ${counter}`)) {
     counter++
   }
-  
+
   return `${baseLabel} ${counter}`
 }

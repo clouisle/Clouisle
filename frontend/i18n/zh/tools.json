@@ -167,7 +167,14 @@
     },
     "error": {
       "loadFailed": "加载工具失败",
-      "saveFailed": "保存失败",
+      "loadToolsFailed": "加载工具列表失败",
+      "loadToolDetailFailed": "加载工具详情失败",
+      "saveFailed": "保存工具失败",
+      "deleteFailed": "删除工具失败",
+      "unknownToolType": "未知工具类型",
+      "cannotDeleteBuiltin": "无法删除内置工具",
+      "cannotShareBuiltin": "无法分享内置工具",
+      "noTeamSelected": "未选择团队",
       "nameRequired": "请输入工具名称",
       "duplicateParamName": "参数名称不能重复"
     },

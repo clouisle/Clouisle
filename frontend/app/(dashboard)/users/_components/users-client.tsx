@@ -523,7 +523,7 @@ export function UsersClient() {
                     <DropdownMenu>
                       <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                         <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Open menu</span>
+                        <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         {canPerform('user:update') && (

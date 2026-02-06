@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Code, MoreHorizontal, Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 代码语言类型
@@ -70,12 +71,12 @@ export const defaultErrorHandlingConfig: ErrorHandlingConfig = {
 export const defaultCodeConfig: CodeConfig = {
   language: 'python',
   code: `def main(inputs: dict) -> dict:
-    # 在这里编写你的代码
-    # inputs 包含所有输入变量
-    # 返回一个字典作为输出
-    
+    # Write your code here
+    # inputs contains all input variables
+    # Return a dictionary as output
+
     result = inputs.get("input", "")
-    
+
     return {
         "result": result
     }`,
@@ -88,24 +89,24 @@ export const defaultCodeConfig: CodeConfig = {
 
 // Python 示例代码
 export const pythonTemplate = `def main(inputs: dict) -> dict:
-    # 在这里编写你的代码
-    # inputs 包含所有输入变量
-    # 返回一个字典作为输出
-    
+    # Write your code here
+    # inputs contains all input variables
+    # Return a dictionary as output
+
     result = inputs.get("input", "")
-    
+
     return {
         "result": result
     }`
 
 // JavaScript 示例代码
 export const javascriptTemplate = `function main(params) {
-    // 在这里编写你的代码
-    // params 包含所有输入变量
-    // 返回一个对象作为输出
-    
+    // Write your code here
+    // params contains all input variables
+    // Return an object as output
+
     const result = params.input || "";
-    
+
     return {
         result: result
     };
@@ -124,7 +125,8 @@ interface CodeNodeProps {
   data: CodeNodeData
 }
 
-export function CodeNode({ id, selected, data }: CodeNodeProps) {
+export function CodeNode({ selected, data }: CodeNodeProps) {
+  const t = useTranslations('workflow')
   // 检查是否启用了异常分支
   const hasErrorBranch = data.codeConfig?.errorHandling?.type === 'error_branch'
 
@@ -132,9 +134,9 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">代码执行</span>
+        <span className="text-xs text-muted-foreground">{t('nodesCode.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -170,15 +172,15 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
           
           {/* Label */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '代码执行'}
+            {data.label || t('nodesCode.label')}
           </span>
         </div>
 
         {/* Error Branch Row - 只在启用异常分支时显示 */}
         {hasErrorBranch && (
           <div className="flex items-center justify-between px-2.5 pb-2 pt-0.5">
-            <span className="text-xs text-muted-foreground">异常时</span>
-            <span className="text-xs text-orange-500 font-medium">异常分支</span>
+            <span className="text-xs text-muted-foreground">{t('nodesCode.onException')}</span>
+            <span className="text-xs text-orange-500 font-medium">{t('nodesCode.exceptionBranch')}</span>
           </div>
         )}
 

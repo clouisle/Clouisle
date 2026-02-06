@@ -116,7 +116,7 @@ def process_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": "Document not found"}
+            return {"status": "error", "message": t("document_not_found")}
 
         kb = document.knowledge_base
 
@@ -320,7 +320,7 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": "Document not found"}
+            return {"status": "error", "message": t("document_not_found")}
 
         kb = document.knowledge_base
 
@@ -400,7 +400,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": "Document not found"}
+            return {"status": "error", "message": t("document_not_found")}
 
         kb = document.knowledge_base
 
@@ -594,7 +594,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": "Document not found"}
+            return {"status": "error", "message": t("document_not_found")}
 
         kb = document.knowledge_base
 
@@ -623,7 +623,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 await document.save()
                 return {
                     "status": "success",
-                    "message": "No chunks to embed",
+                    "message": t("no_chunks_to_embed"),
                     "embedded_count": 0,
                 }
 

@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -68,11 +69,20 @@ const categoryConfig: Record<ToolCategory, { icon: string; color: string }> = {
   other: { icon: '⚙️', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
 }
 
-// 类型标签配置
-const typeConfig: Record<ToolType, { label: string; color: string }> = {
-  builtin: { label: '内置', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300' },
-  custom: { label: '自定义', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300' },
-  mcp: { label: 'MCP', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300' },
+// 类型标签配置 - 颜色部分
+const typeColorConfig: Record<ToolType, string> = {
+  builtin: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300',
+  custom: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
+  mcp: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300',
+}
+
+// 获取类型标签（需要 t 函数）
+function getTypeLabels(t: (key: string) => string): Record<ToolType, string> {
+  return {
+    builtin: t('configTool.typeBuiltin'),
+    custom: t('configTool.typeCustom'),
+    mcp: 'MCP',
+  }
 }
 
 interface ToolNodeConfigProps {
@@ -94,9 +104,13 @@ export function ToolNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: ToolNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   const [outputOpen, setOutputOpen] = React.useState(true)
   const [paramsOpen, setParamsOpen] = React.useState(true)
+
+  // 获取类型标签
+  const typeLabels = React.useMemo(() => getTypeLabels(t), [t])
   
   // 工具数据
   const [tools, setTools] = React.useState<Tool[]>([])
@@ -372,7 +386,7 @@ export function ToolNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-[11px]">选择变量...</span>
+            <span className="text-muted-foreground text-[11px]">{t('configCommon.selectVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0" align="start">
@@ -380,7 +394,7 @@ export function ToolNodeConfig({
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-7 pl-7 text-xs"
@@ -396,7 +410,7 @@ export function ToolNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -447,7 +461,7 @@ export function ToolNodeConfig({
       {/* 工具选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">工具</Label>
+          <Label className="text-xs font-medium">{t('configTool.tool')}</Label>
           <span className="text-destructive">*</span>
         </div>
         
@@ -460,8 +474,8 @@ export function ToolNodeConfig({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-medium truncate">{selectedTool.display_name}</span>
-                <Badge variant="outline" className={cn('text-[9px] px-1 py-0', typeConfig[selectedTool.type].color)}>
-                  {typeConfig[selectedTool.type].label}
+                <Badge variant="outline" className={cn('text-[9px] px-1 py-0', typeColorConfig[selectedTool.type])}>
+                  {typeLabels[selectedTool.type]}
                 </Badge>
               </div>
               <p className="text-[10px] text-muted-foreground line-clamp-1">{selectedTool.description}</p>
@@ -484,12 +498,12 @@ export function ToolNodeConfig({
               {isLoadingTools ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  加载中...
+                  {t('configCommon.loading')}
                 </>
               ) : (
                 <>
                   <Wrench className="h-3.5 w-3.5" />
-                  选择工具...
+                  {t('configTool.selectTool')}
                 </>
               )}
             </PopoverTrigger>
@@ -499,7 +513,7 @@ export function ToolNodeConfig({
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="搜索工具..."
+                    placeholder={t('configTool.searchTools')}
                     value={toolSearch}
                     onChange={(e) => setToolSearch(e.target.value)}
                     className="h-8 pl-8 text-xs"
@@ -507,9 +521,9 @@ export function ToolNodeConfig({
                 </div>
                 <Tabs value={toolFilter} onValueChange={(v) => setToolFilter(v as 'all' | ToolType)}>
                   <TabsList className="h-7">
-                    <TabsTrigger value="all" className="text-[10px] h-5 px-2">全部 ({typeCounts.all})</TabsTrigger>
-                    <TabsTrigger value="builtin" className="text-[10px] h-5 px-2">内置 ({typeCounts.builtin})</TabsTrigger>
-                    <TabsTrigger value="custom" className="text-[10px] h-5 px-2" disabled={typeCounts.custom === 0}>自定义 ({typeCounts.custom})</TabsTrigger>
+                    <TabsTrigger value="all" className="text-[10px] h-5 px-2">{t('configTool.filterAll')} ({typeCounts.all})</TabsTrigger>
+                    <TabsTrigger value="builtin" className="text-[10px] h-5 px-2">{t('configTool.filterBuiltin')} ({typeCounts.builtin})</TabsTrigger>
+                    <TabsTrigger value="custom" className="text-[10px] h-5 px-2" disabled={typeCounts.custom === 0}>{t('configTool.filterCustom')} ({typeCounts.custom})</TabsTrigger>
                     <TabsTrigger value="mcp" className="text-[10px] h-5 px-2" disabled={typeCounts.mcp === 0}>MCP ({typeCounts.mcp})</TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -521,7 +535,7 @@ export function ToolNodeConfig({
                   {Object.keys(groupedTools).length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                       <Wrench className="h-8 w-8 mb-2" />
-                      <p className="text-xs">{toolSearch ? '未找到匹配的工具' : '暂无可用工具'}</p>
+                      <p className="text-xs">{toolSearch ? t('configTool.noMatchingTools') : t('configTool.noAvailableTools')}</p>
                     </div>
                   ) : (
                     Object.entries(groupedTools).map(([category, categoryTools]: [string, Tool[]]) => {
@@ -581,7 +595,7 @@ export function ToolNodeConfig({
       {selectedTool?.type === 'mcp' && (
         <div className="space-y-2">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">MCP 工具</Label>
+            <Label className="text-xs font-medium">{t('configTool.mcpTool')}</Label>
             <span className="text-destructive">*</span>
           </div>
           
@@ -622,12 +636,12 @@ export function ToolNodeConfig({
                 {isLoadingMcpTools ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    正在连接 MCP 服务器...
+                    {t('configTool.connectingMcpServer')}
                   </>
                 ) : (
                   <>
                     <Wrench className="h-3.5 w-3.5" />
-                    选择 MCP 工具 ({mcpTools.length} 个可用)
+                    {t('configTool.selectMcpTool', { count: mcpTools.length })}
                   </>
                 )}
               </PopoverTrigger>
@@ -636,7 +650,7 @@ export function ToolNodeConfig({
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      placeholder="搜索 MCP 工具..."
+                      placeholder={t('configTool.searchMcpTools')}
                       value={mcpToolSearch}
                       onChange={(e) => setMcpToolSearch(e.target.value)}
                       className="h-8 pl-8 text-xs"
@@ -648,7 +662,7 @@ export function ToolNodeConfig({
                     {filteredMcpTools.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                         <Wrench className="h-8 w-8 mb-2" />
-                        <p className="text-xs">{mcpToolSearch ? '未找到匹配的工具' : '暂无可用工具'}</p>
+                        <p className="text-xs">{mcpToolSearch ? t('configTool.noMatchingTools') : t('configTool.noAvailableTools')}</p>
                       </div>
                     ) : (
                       filteredMcpTools.map(mcpTool => (
@@ -692,7 +706,7 @@ export function ToolNodeConfig({
               "h-3.5 w-3.5 transition-transform",
               !paramsOpen && "-rotate-90"
             )} />
-            <span>参数配置</span>
+            <span>{t('configTool.parameterConfig')}</span>
             <span className="text-muted-foreground ml-1">({safeConfig.parameterMappings.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
@@ -722,7 +736,7 @@ export function ToolNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'variable' })}
                   >
-                    变量
+                    {t('configCommon.variable')}
                   </Button>
                   <Button
                     variant={mapping.source === 'constant' ? 'default' : 'outline'}
@@ -730,7 +744,7 @@ export function ToolNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined })}
                   >
-                    常量
+                    {t('configCommon.constant')}
                   </Button>
                 </div>
                 
@@ -741,7 +755,7 @@ export function ToolNodeConfig({
                   <Input
                     value={mapping.constantValue || ''}
                     onChange={(e) => handleUpdateMapping(mapping.name, { constantValue: e.target.value })}
-                    placeholder={`输入${mapping.name}的值...`}
+                    placeholder={t('configCommon.enterValueFor', { name: mapping.name })}
                     className="h-8 text-xs"
                   />
                 )}
@@ -758,7 +772,7 @@ export function ToolNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariables')}</span>
           <span className="text-destructive">*</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2 space-y-2">
@@ -772,7 +786,7 @@ export function ToolNodeConfig({
             )}
           />
           {safeConfig.outputVariable && !isValidVariableName(safeConfig.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           
           {/* 输出预览 */}
@@ -781,7 +795,7 @@ export function ToolNodeConfig({
               <span className="text-xs font-mono font-medium">{safeConfig.outputVariable || 'result'}</span>
               <span className="text-[10px] text-muted-foreground">Any</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">工具执行结果</p>
+            <p className="text-[10px] text-muted-foreground mt-1">{t('configTool.executionResult')}</p>
           </div>
         </CollapsibleContent>
       </Collapsible>

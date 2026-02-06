@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import Editor, { Monaco } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { useTheme } from 'next-themes'
+import { useTranslations } from 'next-intl'
 import { Copy, Check, Maximize2, X, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -210,6 +211,7 @@ function CodeEditorComponent({
   minHeight = 200,
   showLanguageSelector = true,
 }: CodeEditorProps) {
+  const t = useTranslations('workflow')
   const { resolvedTheme } = useTheme()
   const [copied, setCopied] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -315,7 +317,7 @@ function CodeEditorComponent({
             </Select>
           ) : isJinja2 ? (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span>只支持 Jinja2</span>
+              <span>{t('codeEditor.jinja2Only')}</span>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger
@@ -323,7 +325,7 @@ function CodeEditorComponent({
                   />
                   <TooltipContent side="right" className="max-w-60">
                     <p className="text-xs">
-                      Jinja2 是一种模板语言，使用 {'{{ 变量名 }}'} 语法引用变量。
+                      {t('codeEditor.jinja2Tooltip')}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -370,7 +372,7 @@ function CodeEditorComponent({
           onMount={handleEditorMount}
           loading={
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-              加载编辑器...
+              {t('codeEditor.loading')}
             </div>
           }
         />
@@ -383,7 +385,7 @@ function CodeEditorComponent({
           <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/50">
             <div className="flex items-center gap-3">
               <h2 className="text-base font-medium">
-                {isJinja2 ? '模板编辑器' : '代码编辑器'}
+                {isJinja2 ? t('codeEditor.templateEditorTitle') : t('codeEditor.codeEditorTitle')}
               </h2>
               {showLanguageSelector && !isJinja2 ? (
                 <Select value={language as CodeLanguage} onValueChange={handleLanguageSelect}>
@@ -405,7 +407,7 @@ function CodeEditorComponent({
                 </span>
               )}
               <span className="text-xs text-muted-foreground">
-                按 ESC 退出全屏
+                {t('codeEditor.escToExitFullscreen')}
               </span>
             </div>
             
@@ -445,7 +447,7 @@ function CodeEditorComponent({
               onMount={handleFullscreenEditorMount}
               loading={
                 <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                  加载编辑器...
+                  {t('codeEditor.loading')}
                 </div>
               }
             />

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Bot, MoreHorizontal, Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { AgentNodeConfig } from '../node-config/configs/agent-node-config'
 
@@ -19,7 +20,8 @@ interface AgentNodeProps {
   data: AgentNodeData
 }
 
-export function AgentNode({ id, selected, data }: AgentNodeProps) {
+export function AgentNode({ selected, data }: AgentNodeProps) {
+  const t = useTranslations('workflow')
   // 从 agentConfig 获取智能体信息
   const agentName = data.agentConfig?.agentName
   const hasAgent = !!data.agentConfig?.agentId
@@ -28,9 +30,9 @@ export function AgentNode({ id, selected, data }: AgentNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">智能体</span>
+        <span className="text-xs text-muted-foreground">{t('nodesAgent.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -64,12 +66,12 @@ export function AgentNode({ id, selected, data }: AgentNodeProps) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <span className="block text-sm font-medium truncate">
-            {data.label || '智能体'}
+            {data.label || t('nodesAgent.label')}
           </span>
           {hasAgent ? (
             <span className="text-xs text-muted-foreground truncate block">{agentName}</span>
           ) : (
-            <span className="text-xs text-amber-500">未选择智能体</span>
+            <span className="text-xs text-amber-500">{t('nodesAgent.notSelected')}</span>
           )}
         </div>
 

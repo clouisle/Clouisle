@@ -15,12 +15,9 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Copy,
-  Check,
-  Bot,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { apiKeysApi, usersApi, type APIKey, type PageData, type APIKeyStats } from '@/lib/api'
+import { apiKeysApi, usersApi, type APIKey, type PageData } from '@/lib/api'
 import type { User } from '@/lib/api/auth'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -77,7 +74,6 @@ export function APIKeysClient() {
   
   // 数据状态
   const [apiKeys, setApiKeys] = React.useState<APIKey[]>([])
-  const [stats, setStats] = React.useState<APIKeyStats | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
@@ -103,8 +99,7 @@ export function APIKeysClient() {
   // 加载统计
   const loadStats = React.useCallback(async () => {
     try {
-      const data = await apiKeysApi.getStats()
-      setStats(data)
+      await apiKeysApi.getStats()
     } catch {
       // 忽略错误
     }
@@ -302,17 +297,7 @@ export function APIKeysClient() {
     }
     return <Badge variant="outline" className="text-muted-foreground">{t('inactive')}</Badge>
   }
-  
-  // 复制 key prefix
-  const copyKeyPrefix = async (prefix: string) => {
-    try {
-      await navigator.clipboard.writeText(prefix)
-      toast.success(t('copied'))
-    } catch {
-      toast.error(t('copyFailed'))
-    }
-  }
-  
+
   return (
     <div className="flex flex-col gap-6">
       {/* 页头 */}
@@ -455,7 +440,7 @@ export function APIKeysClient() {
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Open menu</span>
+                          <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {canPerform('apikey:update') && (

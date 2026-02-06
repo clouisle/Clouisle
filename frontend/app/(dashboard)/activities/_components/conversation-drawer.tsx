@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { Clock, Zap, Loader2, User, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ interface ConversationDrawerProps {
   onDelete?: (id: string) => void
 }
 
-function formatDateTime(dateString: string, _locale: string): string {
+function formatDateTime(dateString: string): string {
   const d = new Date(dateString)
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
@@ -43,7 +43,6 @@ export function ConversationDrawer({
   onDelete,
 }: ConversationDrawerProps) {
   const t = useTranslations('conversations')
-  const locale = useLocale()
   const { canPerform } = useCanPerform()
   const canDeleteConversation = canPerform('conversation:delete')
 
@@ -79,7 +78,7 @@ export function ConversationDrawer({
                     <span className="flex items-center gap-4">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
-                        {formatDateTime(conversation.created_at, locale)}
+                        {formatDateTime(conversation.created_at)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Zap className="h-3.5 w-3.5" />

@@ -26,6 +26,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Success",
         "zh": "成功",
     },
+    "welcome_message": {
+        "en": "Welcome to Clouisle API",
+        "zh": "欢迎使用 Clouisle API",
+    },
     "login_successful": {
         "en": "Login successful",
         "zh": "登录成功",
@@ -159,11 +163,31 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Unknown error",
         "zh": "未知错误",
     },
+    "internal_server_error": {
+        "en": "Internal Server Error",
+        "zh": "服务器内部错误",
+    },
     "validation_error": {
         "en": "Validation error",
         "zh": "验证错误",
     },
+    "invalid_notification_type": {
+        "en": "Invalid notification type: {type_key}",
+        "zh": "无效的通知类型：{type_key}",
+    },
+    "setting_not_found": {
+        "en": "Setting '{key}' not found",
+        "zh": "设置 '{key}' 未找到",
+    },
+    "archive_failed": {
+        "en": "Archive failed",
+        "zh": "归档失败",
+    },
     # Error messages - Authentication
+    "not_authenticated": {
+        "en": "Not authenticated",
+        "zh": "未登录",
+    },
     "unauthorized": {
         "en": "Unauthorized",
         "zh": "未授权",
@@ -370,6 +394,42 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Test email sent successfully",
         "zh": "测试邮件发送成功",
     },
+    "test_email_subject": {
+        "en": "【{site_name}】Test Email",
+        "zh": "【{site_name}】测试邮件",
+    },
+    "test_email_body_text": {
+        "en": "This is a test email from {site_name}.\n\nIf you received this email, your SMTP configuration is working correctly.",
+        "zh": "这是一封来自 {site_name} 的测试邮件。\n\n如果您收到了这封邮件，说明 SMTP 配置正确。",
+    },
+    "test_email_body_html": {
+        "en": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP Configuration Test Successful</h2>\n    <p>This is a test email from <strong>{site_name}</strong>.</p>\n    <p style="color: #666;">If you received this email, your SMTP configuration is working correctly.</p>\n</body>\n</html>\n',
+        "zh": '\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset="utf-8">\n</head>\n<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">\n    <h2 style="color: #333;">✅ SMTP 配置测试成功</h2>\n    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>\n    <p style="color: #666;">如果您收到了这封邮件，说明 SMTP 配置正确。</p>\n</body>\n</html>\n',
+    },
+    "test_notification_title": {
+        "en": "【{site_name}】Test Message",
+        "zh": "【{site_name}】测试消息",
+    },
+    "test_dingtalk_content": {
+        "en": "This is a test message. If you received this, your DingTalk configuration is working correctly.",
+        "zh": "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。",
+    },
+    "test_wechat_content": {
+        "en": "This is a test message. If you received this, your WeChat Work configuration is working correctly.",
+        "zh": "这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。",
+    },
+    "test_feishu_content": {
+        "en": "This is a test message. If you received this, your Feishu configuration is working correctly.",
+        "zh": "这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。",
+    },
+    "test_webhook_content": {
+        "en": "This is a test message. If you received this, your Webhook configuration is working correctly.",
+        "zh": "这是一条测试消息，如果您收到此消息，说明 Webhook 通知配置正确。",
+    },
+    "test_slack_content": {
+        "en": "This is a test message. If you received this, your Slack configuration is working correctly.",
+        "zh": "这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。",
+    },
     "archive_task_started": {
         "en": "Archive task started successfully",
         "zh": "归档任务已启动",
@@ -411,6 +471,39 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "File too large",
         "zh": "文件过大",
     },
+    # File parsing messages
+    "file_required": {
+        "en": "File is required",
+        "zh": "请上传文件",
+    },
+    "unsupported_file_type": {
+        "en": "Unsupported file type",
+        "zh": "不支持的文件类型",
+    },
+    "invalid_truncate_strategy": {
+        "en": "Invalid truncate strategy",
+        "zh": "无效的截断策略",
+    },
+    "file_parse_error": {
+        "en": "Failed to parse file",
+        "zh": "文件解析失败",
+    },
+    "file_parsed": {
+        "en": "File parsed successfully",
+        "zh": "文件解析成功",
+    },
+    "too_many_files": {
+        "en": "Too many files uploaded",
+        "zh": "上传文件数量过多",
+    },
+    "all_files_failed": {
+        "en": "All files failed to parse",
+        "zh": "所有文件解析失败",
+    },
+    "files_parsed": {
+        "en": "Files parsed successfully",
+        "zh": "文件批量解析成功",
+    },
     # Captcha messages
     "captcha_required": {
         "en": "Captcha is required",
@@ -421,6 +514,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "验证码错误",
     },
     # Error messages - Permission
+    "access_denied": {
+        "en": "Access denied",
+        "zh": "访问被拒绝",
+    },
     "permission_denied": {
         "en": "Permission denied",
         "zh": "权限被拒绝",
@@ -434,6 +531,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "操作不允许。需要权限：{permission}",
     },
     # Error messages - Resource
+    "unknown": {
+        "en": "Unknown",
+        "zh": "未知",
+    },
     "not_found": {
         "en": "Resource not found",
         "zh": "资源未找到",
@@ -654,6 +755,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Model set as default successfully",
         "zh": "已设为默认模型",
     },
+    "model_type_not_supported": {
+        "en": "Model type is not supported",
+        "zh": "不支持的模型类型",
+    },
     # Team Model Authorization messages
     "team_model_authorized": {
         "en": "Model authorized to team successfully",
@@ -789,6 +894,39 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Failed to dispatch processing task. Please check if Redis is running.",
         "zh": "任务调度失败。请检查 Redis 是否正常运行。",
     },
+    # Chunk messages
+    "chunk_not_found": {
+        "en": "Chunk not found",
+        "zh": "分块未找到",
+    },
+    "chunk_created": {
+        "en": "Chunk created successfully",
+        "zh": "分块创建成功",
+    },
+    "chunk_updated": {
+        "en": "Chunk updated successfully",
+        "zh": "分块更新成功",
+    },
+    "chunk_deleted": {
+        "en": "Chunk deleted successfully",
+        "zh": "分块删除成功",
+    },
+    "vector_update_failed": {
+        "en": "Failed to update vector store",
+        "zh": "向量存储更新失败",
+    },
+    "vector_search_failed": {
+        "en": "Vector search failed: {error}",
+        "zh": "向量搜索失败：{error}",
+    },
+    "document_rechunk_started": {
+        "en": "Document re-chunking started",
+        "zh": "文档重新分块已开始",
+    },
+    "document_processing": {
+        "en": "Document is currently being processed",
+        "zh": "文档正在处理中",
+    },
     # Agent messages
     "agent_created": {
         "en": "Agent created successfully",
@@ -911,6 +1049,91 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Workflow version restored successfully",
         "zh": "工作流版本恢复成功",
     },
+    "workflow_published_version_desc": {
+        "en": "Published version",
+        "zh": "发布版本",
+    },
+    "workflow_auto_saved_before_restore": {
+        "en": "Auto-saved before restoring to v{version}",
+        "zh": "恢复到 v{version} 前自动保存",
+    },
+    "workflow_restored_from_version": {
+        "en": "Restored from v{version}",
+        "zh": "从 v{version} 恢复",
+    },
+    "workflow_copy_suffix": {
+        "en": "{name} (Copy)",
+        "zh": "{name} (副本)",
+    },
+    "node_label_start": {
+        "en": "Start",
+        "zh": "开始",
+    },
+    # Workflow node type labels
+    "node_type_user_input": {
+        "en": "Start",
+        "zh": "开始",
+    },
+    "node_type_trigger": {
+        "en": "Trigger",
+        "zh": "触发器",
+    },
+    "node_type_llm": {
+        "en": "LLM",
+        "zh": "LLM",
+    },
+    "node_type_answer": {
+        "en": "Answer",
+        "zh": "回复",
+    },
+    "node_type_condition": {
+        "en": "Condition",
+        "zh": "条件分支",
+    },
+    "node_type_question_classifier": {
+        "en": "Question Classifier",
+        "zh": "问题分类",
+    },
+    "node_type_code": {
+        "en": "Code Execution",
+        "zh": "代码执行",
+    },
+    "node_type_http_request": {
+        "en": "HTTP Request",
+        "zh": "HTTP 请求",
+    },
+    "node_type_tool": {
+        "en": "Tool",
+        "zh": "工具",
+    },
+    "node_type_sub_workflow": {
+        "en": "Sub Workflow",
+        "zh": "子工作流",
+    },
+    "node_type_variable_assignment": {
+        "en": "Variable Assignment",
+        "zh": "变量赋值",
+    },
+    "node_type_variable_aggregator": {
+        "en": "Variable Aggregator",
+        "zh": "变量聚合",
+    },
+    "node_type_parameter_extractor": {
+        "en": "Parameter Extractor",
+        "zh": "参数提取",
+    },
+    "node_type_iteration": {
+        "en": "Iteration",
+        "zh": "迭代",
+    },
+    "node_type_agent": {
+        "en": "Agent",
+        "zh": "Agent",
+    },
+    "node_type_end": {
+        "en": "End",
+        "zh": "结束",
+    },
     "webhook_token_regenerated": {
         "en": "Webhook token regenerated successfully",
         "zh": "Webhook 令牌重新生成成功",
@@ -930,6 +1153,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "workflow_run_stats_fetched": {
         "en": "Workflow run statistics fetched successfully",
         "zh": "工作流运行统计获取成功",
+    },
+    "workflow_run_not_found_after_execution": {
+        "en": "Run not found after execution",
+        "zh": "执行后未找到运行记录",
+    },
+    "no_changes": {
+        "en": "No changes",
+        "zh": "无变更",
+    },
+    "no_chunks_to_embed": {
+        "en": "No chunks to embed",
+        "zh": "没有可嵌入的分块",
     },
     # Conversation messages
     "conversation_created": {
@@ -964,6 +1199,56 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Chat completed successfully",
         "zh": "对话完成",
     },
+    "version_not_found": {
+        "en": "Message version not found",
+        "zh": "消息版本未找到",
+    },
+    "version_not_in_group": {
+        "en": "Message version does not belong to this group",
+        "zh": "消息版本不属于此分组",
+    },
+    "can_only_regenerate_assistant": {
+        "en": "Can only regenerate assistant messages",
+        "zh": "只能重新生成助手消息",
+    },
+    "no_user_message_found": {
+        "en": "No user message found for regeneration",
+        "zh": "未找到可用于重新生成的用户消息",
+    },
+    # Chat related messages
+    "chat_file_upload_instruction": {
+        "en": "[The user uploaded the following files, please use the markitdown tool to parse the file content:]",
+        "zh": "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]",
+    },
+    "tool_knowledge_search": {
+        "en": "Knowledge Search",
+        "zh": "知识库搜索",
+    },
+    "kb_no_results": {
+        "en": "No relevant information found in the knowledge base.",
+        "zh": "知识库中未找到相关信息。",
+    },
+    # File parser messages
+    "truncation_marker": {
+        "en": "...[content truncated]...",
+        "zh": "...[内容已截断]...",
+    },
+    "truncation_middle_marker": {
+        "en": "...[middle content truncated, {count} characters]...",
+        "zh": "...[中间内容已截断，共 {count} 字符]...",
+    },
+    "file_header": {
+        "en": "## File: {filename}",
+        "zh": "## 文件: {filename}",
+    },
+    "file_header_indexed": {
+        "en": "## File {index}: {filename}",
+        "zh": "## 文件 {index}: {filename}",
+    },
+    "file_header_truncated_suffix": {
+        "en": " (truncated, original length: {length} characters)",
+        "zh": " (已截断，原始长度: {length} 字符)",
+    },
     # Tool messages
     "tool_not_found": {
         "en": "Tool not found",
@@ -996,6 +1281,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "tool_execute_error": {
         "en": "Tool execution failed: {error}",
         "zh": "工具执行失败：{error}",
+    },
+    "mcp_connection_failed": {
+        "en": "Failed to connect to MCP server",
+        "zh": "连接 MCP 服务器失败",
     },
     # Tool Configuration messages
     "tool_config_created": {
@@ -1317,6 +1606,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "email_required": {
         "en": "Email is required for SSO registration",
         "zh": "SSO 注册需要邮箱地址",
+    },
+    "sso_provider_config_valid": {
+        "en": "Provider configuration is valid",
+        "zh": "SSO 提供商配置有效",
+    },
+    "sso_provider_config_error": {
+        "en": "Provider configuration error: {error}",
+        "zh": "SSO 提供商配置错误：{error}",
     },
     # SSO Audit logs
     "audit_log_sso_login_success": {

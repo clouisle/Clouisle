@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,18 +44,22 @@ const outputTypeOptions: { value: OutputVariableType; label: string }[] = [
 ]
 
 // 异常处理类型选项
-const errorHandlingOptions: { value: ErrorHandlingType; label: string; description: string }[] = [
-  { value: 'none', label: '无', description: '当发生异常且未处理时，节点将停止运行' },
-  { value: 'default_value', label: '默认值', description: '当发生异常时，指定默认输出内容。' },
-  { value: 'error_branch', label: '异常分支', description: '当发生异常时，将执行异常分支' },
-]
+function getErrorHandlingOptions(t: ReturnType<typeof useTranslations<'workflow'>>): { value: ErrorHandlingType; label: string; description: string }[] {
+  return [
+    { value: 'none', label: t('configCode.errorHandlingNone'), description: t('configCode.errorHandlingNoneDesc') },
+    { value: 'default_value', label: t('configCode.errorHandlingDefault'), description: t('configCode.errorHandlingDefaultDesc') },
+    { value: 'error_branch', label: t('configCode.errorHandlingBranch'), description: t('configCode.errorHandlingBranchDesc') },
+  ]
+}
 
 export function CodeNodeConfig({
   config,
   onConfigChange,
   onAddInput,
 }: CodeNodeConfigProps) {
+  const t = useTranslations('workflow')
   const [retryOpen, setRetryOpen] = React.useState(config.retry?.enabled || false)
+  const errorHandlingOptions = getErrorHandlingOptions(t)
 
   // 确保 config 有默认值
   const safeConfig: CodeConfig = {
@@ -129,7 +134,7 @@ export function CodeNodeConfig({
       {/* 输入变量 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium">输入变量</Label>
+          <Label className="text-xs font-medium">{t('configCommon.inputVariables')}</Label>
           <Button
             variant="ghost"
             size="icon"
@@ -139,10 +144,10 @@ export function CodeNodeConfig({
             <Plus className="h-3 w-3" />
           </Button>
         </div>
-        
+
         {safeConfig.inputs.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center bg-muted/30 rounded-md">
-            暂无输入变量
+            {t('configCode.noInputVariables')}
           </p>
         ) : (
           <div className="space-y-1.5">
@@ -190,7 +195,7 @@ export function CodeNodeConfig({
       
       {/* 代码编辑器 */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium">代码</Label>
+        <Label className="text-xs font-medium">{t('configCommon.code')}</Label>
         <CodeEditor
           value={safeConfig.code}
           language={safeConfig.language}
@@ -204,7 +209,7 @@ export function CodeNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">输出变量</Label>
+            <Label className="text-xs font-medium">{t('configCommon.outputVariable')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Button
@@ -227,7 +232,7 @@ export function CodeNodeConfig({
                 <Input
                   value={output.name}
                   onChange={(e) => handleUpdateOutput(output.id, { name: e.target.value })}
-                  placeholder="变量名"
+                  placeholder={t('configCommon.variableNamePlaceholder')}
                   className={cn(
                     'h-8 text-xs font-mono border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 flex-1',
                     hasError && 'text-destructive'
@@ -262,16 +267,16 @@ export function CodeNodeConfig({
           })}
         </div>
         {safeConfig.outputs.some(o => !o.name) && (
-          <p className="text-[10px] text-destructive">输出变量名不能为空</p>
+          <p className="text-[10px] text-destructive">{t('configCode.outputNameRequired')}</p>
         )}
         {safeConfig.outputs.some(o => o.name && !isValidVariableName(o.name)) && (
-          <p className="text-[10px] text-destructive">变量名格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableNameFormat')}</p>
         )}
         {(() => {
           const names = safeConfig.outputs.map(o => o.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">当前节点内存在重复的变量名</p>
+            <p className="text-[10px] text-destructive">{t('configCode.duplicateVariableNamesInNode')}</p>
           )
         })()}
       </div>
@@ -279,7 +284,7 @@ export function CodeNodeConfig({
       {/* 失败时重试 */}
       <Collapsible open={retryOpen} onOpenChange={setRetryOpen}>
         <div className="flex items-center justify-between py-2">
-          <Label className="text-xs font-medium">失败时重试</Label>
+          <Label className="text-xs font-medium">{t('configCode.retryOnFailure')}</Label>
           <Switch
             checked={safeConfig.retry.enabled}
             onCheckedChange={(checked) => {
@@ -291,7 +296,7 @@ export function CodeNodeConfig({
         <CollapsibleContent className="space-y-3 pt-2">
           <div className="flex items-center gap-4">
             <div className="flex-1 space-y-1">
-              <Label className="text-xs text-muted-foreground">重试次数</Label>
+              <Label className="text-xs text-muted-foreground">{t('configCode.retryCount')}</Label>
               <Input
                 type="number"
                 min={1}
@@ -302,7 +307,7 @@ export function CodeNodeConfig({
               />
             </div>
             <div className="flex-1 space-y-1">
-              <Label className="text-xs text-muted-foreground">重试间隔（毫秒）</Label>
+              <Label className="text-xs text-muted-foreground">{t('configCode.retryInterval')}</Label>
               <Input
                 type="number"
                 min={100}
@@ -320,14 +325,14 @@ export function CodeNodeConfig({
       {/* 异常处理 */}
       <div className="space-y-2 pt-2 border-t">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">异常处理</Label>
+          <Label className="text-xs font-medium">{t('configCode.errorHandling')}</Label>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger
                 render={<Info className="h-3 w-3 text-muted-foreground cursor-help" />}
               />
               <TooltipContent side="right" className="max-w-[200px]">
-                <p className="text-xs">配置代码执行发生异常时的处理方式</p>
+                <p className="text-xs">{t('configCode.errorHandlingTooltip')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -363,11 +368,11 @@ export function CodeNodeConfig({
         {/* 默认值输入 */}
         {safeConfig.errorHandling.type === 'default_value' && (
           <div className="pt-2 pl-6">
-            <Label className="text-xs text-muted-foreground mb-1 block">默认输出内容</Label>
+            <Label className="text-xs text-muted-foreground mb-1 block">{t('configCode.defaultOutputContent')}</Label>
             <Textarea
               value={safeConfig.errorHandling.defaultValue || ''}
               onChange={(e) => handleErrorHandlingChange({ defaultValue: e.target.value })}
-              placeholder="输入发生异常时的默认输出值"
+              placeholder={t('configCode.defaultOutputPlaceholder')}
               className="min-h-[60px] text-xs resize-none"
             />
           </div>

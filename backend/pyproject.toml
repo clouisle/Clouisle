@@ -46,6 +46,7 @@ dependencies = [
     "cryptography>=42.0.0",
     # Markdown processing
     "markdown>=3.5.0",
+    "gunicorn>=22.0.0",
 ]
 
 [dependency-groups]

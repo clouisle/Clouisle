@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { GitBranch, MoreHorizontal, Home } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 条件分支定义
@@ -38,40 +39,45 @@ export type ConditionOperator =
   | 'greater_or_equal' // 大于等于
   | 'less_or_equal'    // 小于等于
 
-// 操作符显示名称（用于配置面板下拉选择）
-export const conditionOperatorLabels: Record<ConditionOperator, string> = {
-  equals: '等于 (equals)',
-  not_equals: '不等于 (not equals)',
-  contains: '包含 (contains)',
-  not_contains: '不包含 (not contains)',
-  starts_with: '开头是 (starts with)',
-  ends_with: '结尾是 (ends with)',
-  is_empty: '为空 (is empty)',
-  is_not_empty: '不为空 (is not empty)',
-  greater_than: '大于 (>)',
-  less_than: '小于 (<)',
-  greater_or_equal: '大于等于 (>=)',
-  less_or_equal: '小于等于 (<=)',
-}
-
-// 操作符简短显示（用于节点卡片）
-export const conditionOperatorShortLabels: Record<ConditionOperator, string> = {
-  equals: '是',
-  not_equals: '不是',
-  contains: '包含',
-  not_contains: '不含',
-  starts_with: '开头',
-  ends_with: '结尾',
-  is_empty: '为空',
-  is_not_empty: '非空',
-  greater_than: '>',
-  less_than: '<',
-  greater_or_equal: '≥',
-  less_or_equal: '≤',
-}
 
 // 不需要值的操作符
 export const noValueOperators: ConditionOperator[] = ['is_empty', 'is_not_empty']
+
+// 获取条件操作符标签（带翻译）
+export function getConditionOperatorLabels(t: (key: string) => string): Record<ConditionOperator, string> {
+  return {
+    equals: t('nodesCondition.operatorEquals'),
+    not_equals: t('nodesCondition.operatorNotEquals'),
+    contains: t('nodesCondition.operatorContains'),
+    not_contains: t('nodesCondition.operatorNotContains'),
+    starts_with: t('nodesCondition.operatorStartsWith'),
+    ends_with: t('nodesCondition.operatorEndsWith'),
+    is_empty: t('nodesCondition.operatorIsEmpty'),
+    is_not_empty: t('nodesCondition.operatorIsNotEmpty'),
+    greater_than: t('nodesCondition.operatorGreaterThan'),
+    less_than: t('nodesCondition.operatorLessThan'),
+    greater_or_equal: t('nodesCondition.operatorGreaterOrEqual'),
+    less_or_equal: t('nodesCondition.operatorLessOrEqual'),
+  }
+}
+
+// 获取条件操作符短标签（带翻译）
+export function getConditionOperatorShortLabels(t: (key: string) => string): Record<ConditionOperator, string> {
+  return {
+    equals: t('nodesCondition.shortEquals'),
+    not_equals: t('nodesCondition.shortNotEquals'),
+    contains: t('nodesCondition.shortContains'),
+    not_contains: t('nodesCondition.shortNotContains'),
+    starts_with: t('nodesCondition.shortStartsWith'),
+    ends_with: t('nodesCondition.shortEndsWith'),
+    is_empty: t('nodesCondition.shortIsEmpty'),
+    is_not_empty: t('nodesCondition.shortIsNotEmpty'),
+    greater_than: '>',
+    less_than: '<',
+    greater_or_equal: '≥',
+    less_or_equal: '≤',
+  }
+}
 
 interface ConditionNodeData {
   type: string
@@ -98,7 +104,28 @@ const extractVariableName = (variable: string) => {
   return match ? match[1] : variable
 }
 
-export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
+export function ConditionNode({ selected, data }: ConditionNodeProps) {
+  const t = useTranslations('workflow')
+
+  // Helper function to get short operator label
+  const getShortOperatorLabel = (op: ConditionOperator) => {
+    const labels: Record<ConditionOperator, string> = {
+      equals: t('nodesCondition.shortEquals'),
+      not_equals: t('nodesCondition.shortNotEquals'),
+      contains: t('nodesCondition.shortContains'),
+      not_contains: t('nodesCondition.shortNotContains'),
+      starts_with: t('nodesCondition.shortStartsWith'),
+      ends_with: t('nodesCondition.shortEndsWith'),
+      is_empty: t('nodesCondition.shortIsEmpty'),
+      is_not_empty: t('nodesCondition.shortIsNotEmpty'),
+      greater_than: '>',
+      less_than: '<',
+      greater_or_equal: '≥',
+      less_or_equal: '≤',
+    }
+    return labels[op]
+  }
+
   // 获取分支列表
   const branches = data.branches && data.branches.length > 0 ? data.branches : defaultBranches
   
@@ -109,7 +136,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">条件分支</span>
+        <span className="text-xs text-muted-foreground">{t('nodesCondition.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
@@ -144,7 +171,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
           
           {/* Label */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '条件分支'}
+            {data.label || t('nodesCondition.label')}
           </span>
         </div>
 
@@ -181,7 +208,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
                         {/* 来源节点 */}
                         <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                           <Home className="h-2.5 w-2.5" />
-                          <span className="max-w-[50px] truncate">{firstCondition.variableSource || '开始'}</span>
+                          <span className="max-w-[50px] truncate">{firstCondition.variableSource || t('nodesCommon.start')}</span>
                         </div>
                         <span className="text-muted-foreground/50">/</span>
                         {/* 变量名 */}
@@ -194,12 +221,12 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
                         {/* 多条件指示 */}
                         {hasMultipleConditions && (
                           <span className="text-[10px] text-blue-500 font-medium ml-0.5">
-                            {branch.logicOperator === 'and' ? '且' : '或'}{conditionCount - 1}
+                            {branch.logicOperator === 'and' ? t('nodesCondition.and') : t('nodesCondition.or')}{conditionCount - 1}
                           </span>
                         )}
                       </>
                     ) : !isElse ? (
-                      <span className="text-[11px] text-muted-foreground">点击配置条件</span>
+                      <span className="text-[11px] text-muted-foreground">{t('nodesCondition.clickToConfigure')}</span>
                     ) : null}
                   </div>
                   
@@ -207,7 +234,7 @@ export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
                   {!isElse && firstCondition && (
                     <div className="flex items-center gap-1 text-[11px] shrink-0">
                       <span className="text-muted-foreground">
-                        {conditionOperatorShortLabels[firstCondition.operator]}
+                        {getShortOperatorLabel(firstCondition.operator)}
                       </span>
                       {!noValueOperators.includes(firstCondition.operator) && (
                         <span className="text-foreground font-medium max-w-[50px] truncate">
