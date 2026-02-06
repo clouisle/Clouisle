@@ -219,7 +219,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             # 返回错误响应
             return JSONResponse(
                 status_code=500,
-                content={"code": -1, "data": None, "msg": "Internal Server Error"},
+                content={"code": -1, "data": None, "msg": t("internal_server_error")},
             )
 
 
@@ -257,7 +257,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():
-    return success(msg="Welcome to Clouisle API")
+    return success(msg_key="welcome_message")
 
 
 # Pre-register hook to run migrations before Tortoise generates schemas

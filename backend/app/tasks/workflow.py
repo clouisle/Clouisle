@@ -8,6 +8,7 @@ from uuid import UUID
 from celery import shared_task
 
 from app.models.workflow import WorkflowRun, RunStatus
+from app.core.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,10 @@ def run_workflow_task(
                     "outputs": run.outputs,
                 }
             else:
-                return {"status": "error", "message": "Run not found after execution"}
+                return {
+                    "status": "error",
+                    "message": t("workflow_run_not_found_after_execution"),
+                }
 
         except Exception as e:
             logger.exception(f"Workflow execution error: {e}")

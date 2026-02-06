@@ -44,24 +44,30 @@ from .profiler import ExecutionProfiler
 logger = logging.getLogger(__name__)
 
 # Default node labels by type (for nodes without label in data)
-NODE_TYPE_LABELS = {
-    "user_input": "开始",
-    "trigger": "触发器",
-    "llm": "LLM",
-    "answer": "回复",
-    "condition": "条件分支",
-    "question_classifier": "问题分类",
-    "code": "代码执行",
-    "http_request": "HTTP 请求",
-    "tool": "工具",
-    "sub_workflow": "子工作流",
-    "variable_assignment": "变量赋值",
-    "variable_aggregator": "变量聚合",
-    "parameter_extractor": "参数提取",
-    "iteration": "迭代",
-    "agent": "Agent",
-    "end": "结束",
+NODE_TYPE_KEYS = {
+    "user_input": "node_type_user_input",
+    "trigger": "node_type_trigger",
+    "llm": "node_type_llm",
+    "answer": "node_type_answer",
+    "condition": "node_type_condition",
+    "question_classifier": "node_type_question_classifier",
+    "code": "node_type_code",
+    "http_request": "node_type_http_request",
+    "tool": "node_type_tool",
+    "sub_workflow": "node_type_sub_workflow",
+    "variable_assignment": "node_type_variable_assignment",
+    "variable_aggregator": "node_type_variable_aggregator",
+    "parameter_extractor": "node_type_parameter_extractor",
+    "iteration": "node_type_iteration",
+    "agent": "node_type_agent",
+    "end": "node_type_end",
 }
+
+
+def get_node_type_label(node_type: str) -> str | None:
+    """Get translated node type label."""
+    key = NODE_TYPE_KEYS.get(node_type)
+    return t(key) if key else None
 
 
 class WorkflowOrchestrator:
@@ -703,7 +709,7 @@ class WorkflowOrchestrator:
                         if stream_manager:
                             node_label = (
                                 node.node_data.get("data", {}).get("label")
-                                or NODE_TYPE_LABELS.get(node.node_type)
+                                or get_node_type_label(node.node_type)
                                 or node_id
                             )
                             await stream_manager.publish_node_skip(
@@ -820,7 +826,7 @@ class WorkflowOrchestrator:
                                             downstream_node.node_data.get(
                                                 "data", {}
                                             ).get("label")
-                                            or NODE_TYPE_LABELS.get(
+                                            or get_node_type_label(
                                                 downstream_node.node_type
                                             )
                                             or downstream_id
@@ -919,7 +925,7 @@ class WorkflowOrchestrator:
         # Fall back to default label by type, then node_id
         node_inner_data = node_data.get("data", {})
         node_label = (
-            node_inner_data.get("label") or NODE_TYPE_LABELS.get(node_type) or node_id
+            node_inner_data.get("label") or get_node_type_label(node_type) or node_id
         )
 
         logger.debug(

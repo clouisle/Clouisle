@@ -23,6 +23,7 @@ from tortoise.expressions import F
 
 from app.api import deps
 from app.core.config import settings
+from app.core.i18n import t
 from app.models.user import User, Team
 from app.models.model import TeamModel
 from app.models.user import TeamMember
@@ -354,7 +355,7 @@ async def build_messages(
     final_user_message = user_message
     if file_urls:
         # Add file info to the message so LLM knows to use markitdown tool
-        file_info_lines = ["[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"]
+        file_info_lines = [t("chat_file_upload_instruction")]
         for f in file_urls:
             file_info_lines.append(f"- {f['filename']} ({f['url']})")
         file_info = "\n".join(file_info_lines)
@@ -563,7 +564,7 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
     if agent.rag_mode == RAGMode.AGENTIC:
         kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id).count()
         if kb_associations > 0:
-            display_names["knowledge_search"] = "知识库搜索"
+            display_names["knowledge_search"] = t("tool_knowledge_search")
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -642,7 +643,7 @@ async def execute_tool_call(
 
             if not rag_contexts:
                 return json.dumps(
-                    {"message": "No relevant information found in the knowledge base."},
+                    {"message": t("kb_no_results")},
                     ensure_ascii=False,
                 )
 

@@ -11,6 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from app.core.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,19 +117,19 @@ class FileParserService:
 
         if strategy == "start":
             # Keep the end
-            truncated = "...[内容已截断]...\n\n" + content[-max_length:]
+            truncated = t("truncation_marker") + "\n\n" + content[-max_length:]
         elif strategy == "middle":
             # Keep both start and end
             half = max_length // 2
             truncated = (
                 content[:half]
-                + "\n\n...[中间内容已截断，共 "
-                + str(original_length - max_length)
-                + " 字符]...\n\n"
+                + "\n\n"
+                + t("truncation_middle_marker", count=str(original_length - max_length))
+                + "\n\n"
                 + content[-half:]
             )
         else:  # "end" - default, keep start
-            truncated = content[:max_length] + "\n\n...[内容已截断]..."
+            truncated = content[:max_length] + "\n\n" + t("truncation_marker")
 
         return truncated, True, original_length
 
@@ -225,17 +227,17 @@ class FileParserService:
 
         if len(files) == 1:
             file = files[0]
-            header = f"## 文件: {file.filename}"
+            header = t("file_header", filename=file.filename)
             if file.truncated:
-                header += f" (已截断，原始长度: {file.original_length} 字符)"
+                header += t("file_header_truncated_suffix", length=file.original_length)
             return f"{header}\n\n{file.content}"
 
         # Multiple files
         parts = []
         for i, file in enumerate(files, 1):
-            header = f"## 文件 {i}: {file.filename}"
+            header = t("file_header_indexed", index=i, filename=file.filename)
             if file.truncated:
-                header += f" (已截断，原始长度: {file.original_length} 字符)"
+                header += t("file_header_truncated_suffix", length=file.original_length)
             parts.append(f"{header}\n\n{file.content}")
 
         return separator.join(parts)

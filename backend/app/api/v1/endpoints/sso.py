@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from app.api import deps
 from app.api.deps import get_current_active_superuser
 from app.core import security
+from app.core.i18n import t
 from app.core.timezone import now_utc
 from app.models.site_setting import SiteSetting
 from app.models.sso_provider import SSOProvider
@@ -602,7 +603,7 @@ async def test_provider_connection(
         return success(
             data={
                 "status": "success",
-                "message": "Provider configuration is valid",
+                "message": t("sso_provider_config_valid"),
                 "authorization_url": auth_url[:100] + "...",  # Truncate for display
             }
         )
@@ -611,6 +612,6 @@ async def test_provider_connection(
         return success(
             data={
                 "status": "error",
-                "message": f"Provider configuration error: {str(e)}",
+                "message": t("sso_provider_config_error", error=str(e)),
             }
         )

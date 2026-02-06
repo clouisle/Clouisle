@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.i18n import t
 from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team, TeamMember
 from app.models.workflow import (
@@ -395,7 +396,7 @@ async def create_workflow(
                 "position": {"x": 250, "y": 100},
                 "data": {
                     "type": "user_input",
-                    "label": "开始",
+                    "label": t("node_label_start"),
                     "config": {},
                     "parameters": [
                         {
@@ -683,7 +684,7 @@ async def publish_workflow(
             variables=workflow.variables,
             trigger_type=workflow.trigger_type,
             trigger_config=workflow.trigger_config,
-            description="Published version",
+            description=t("workflow_published_version_desc"),
             created_by=current_user,
         )
 
@@ -725,7 +726,7 @@ async def duplicate_workflow(
 
     # Create a copy
     new_workflow = await Workflow.create(
-        name=f"{workflow.name} (Copy)",
+        name=t("workflow_copy_suffix", name=workflow.name),
         description=workflow.description,
         icon=workflow.icon,
         team_id=workflow.team_id,
@@ -1356,7 +1357,7 @@ async def restore_workflow_version(
         variables=workflow.variables,
         trigger_type=workflow.trigger_type,
         trigger_config=workflow.trigger_config,
-        description=f"Auto-saved before restoring to v{version}",
+        description=t("workflow_auto_saved_before_restore", version=version),
         created_by=current_user,
     )
 
@@ -1377,7 +1378,8 @@ async def restore_workflow_version(
         variables=workflow.variables,
         trigger_type=workflow.trigger_type,
         trigger_config=workflow.trigger_config,
-        description=restore_in.description or f"Restored from v{version}",
+        description=restore_in.description
+        or t("workflow_restored_from_version", version=version),
         created_by=current_user,
     )
 
