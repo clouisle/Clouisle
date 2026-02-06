@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Variable, Plus, AlertCircle, FileText, MessageSquare } from 'lucide-react'
 import { type VariableDefinition, type VariableType } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -255,6 +256,7 @@ export function PromptEditor({
   className,
   enableFileUpload,
 }: PromptEditorProps) {
+  const t = useTranslations('agents.orchestration.prompt')
   const containerRef = React.useRef<HTMLDivElement>(null)
   const editorRef = React.useRef<HTMLDivElement>(null)
   const popoverRef = React.useRef<HTMLDivElement>(null)
@@ -273,21 +275,21 @@ export function PromptEditor({
     const vars: SystemVariable[] = [
       {
         name: 'query',
-        label: '用户输入',
-        description: '用户当前的提问内容',
+        label: t('systemVars.query'),
+        description: t('systemVars.queryDesc'),
         icon: MessageSquare,
       },
     ]
     if (enableFileUpload) {
       vars.push({
         name: 'fileContent',
-        label: '文件内容',
-        description: '上传文件的解析内容',
+        label: t('systemVars.fileContent'),
+        description: t('systemVars.fileContentDesc'),
         icon: FileText,
       })
     }
     return vars
-  }, [enableFileUpload])
+  }, [enableFileUpload, t])
 
   // 构建变量名到变量信息的映射
   const variableMap = React.useMemo(() => {
@@ -544,7 +546,7 @@ export function PromptEditor({
                   {filteredSystemVariables.length > 0 && (
                     <>
                       <div className="px-2 py-1 text-xs text-muted-foreground font-medium">
-                        系统变量
+                        {t('systemVariables')}
                       </div>
                       {filteredSystemVariables.map((variable, index) => {
                         const Icon = variable.icon
@@ -577,7 +579,7 @@ export function PromptEditor({
                     <>
                       {filteredSystemVariables.length > 0 && (
                         <div className="px-2 py-1 text-xs text-muted-foreground font-medium mt-1">
-                          用户变量
+                          {t('userVariables')}
                         </div>
                       )}
                       {filteredVariables.map((variable, index) => (
@@ -609,7 +611,7 @@ export function PromptEditor({
               ) : (
                 <div className="px-2 py-3 text-center">
                   <p className="text-xs text-muted-foreground mb-2">
-                    {searchQuery ? `未找到变量 "${searchQuery}"` : '暂无变量'}
+                    {searchQuery ? t('variableNotFound', { query: searchQuery }) : t('noVariables')}
                   </p>
                   {searchQuery && (
                     <Button
@@ -623,7 +625,7 @@ export function PromptEditor({
                       }}
                     >
                       <Plus className="h-3 w-3 mr-1" />
-                      创建变量 &quot;{searchQuery}&quot;
+                      {t('createVariable', { name: searchQuery })}
                     </Button>
                   )}
                 </div>
@@ -640,7 +642,7 @@ export function PromptEditor({
             <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
-                以下变量未定义，点击添加到变量列表：
+                {t('undefinedVariablesHint')}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {undefinedVars.map(name => (

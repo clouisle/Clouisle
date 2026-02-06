@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
-import { agentsApi, type AgentListItem, type Agent, type VariableDefinition } from '@/lib/api/agents'
+import { agentsApi, type AgentListItem, type VariableDefinition } from '@/lib/api/agents'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
@@ -83,7 +83,6 @@ export function AgentNodeConfig({
   // Agent 数据
   const [agents, setAgents] = React.useState<AgentListItem[]>([])
   const [isLoadingAgents, setIsLoadingAgents] = React.useState(false)
-  const [selectedAgentDetail, setSelectedAgentDetail] = React.useState<Agent | null>(null)
   
   // Agent 选择弹窗
   const [agentSelectorOpen, setAgentSelectorOpen] = React.useState(false)
@@ -122,13 +121,11 @@ export function AgentNodeConfig({
   React.useEffect(() => {
     const loadAgentDetail = async () => {
       if (!safeConfig.agentId) {
-        setSelectedAgentDetail(null)
         return
       }
-      
+
       try {
         const detail = await agentsApi.getAgent(safeConfig.agentId)
-        setSelectedAgentDetail(detail)
         
         // 自动生成输入映射
         if (detail.variables && detail.variables.length > 0) {
@@ -148,7 +145,7 @@ export function AgentNodeConfig({
           })
         }
       } catch {
-        setSelectedAgentDetail(null)
+        // ignore error
       }
     }
     loadAgentDetail()
@@ -190,7 +187,6 @@ export function AgentNodeConfig({
       ...defaultAgentNodeConfig,
       outputVariable: safeConfig.outputVariable,
     })
-    setSelectedAgentDetail(null)
   }
 
   // 更新参数映射

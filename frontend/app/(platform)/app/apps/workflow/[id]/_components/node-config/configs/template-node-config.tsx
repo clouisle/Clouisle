@@ -173,7 +173,6 @@ export function TemplateNodeConfig({
         open={inputDialogOpen}
         onOpenChange={setInputDialogOpen}
         editingInput={editingInput}
-        existingInputs={safeConfig.inputs}
         variables={variables}
         variableSearch={variableSearch}
         openVariablePopover={openVariablePopover}

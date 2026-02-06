@@ -156,14 +156,14 @@ export function AnalyticsTab({ stats, workflowData, topAgentsData, isLoading, on
             <CardContent className="pt-6">
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-medium mb-3">系统统计</h3>
+                  <h3 className="text-sm font-medium mb-3">{t('home.systemStats')}</h3>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">总消息数</span>
+                  <span className="text-sm text-muted-foreground">{t('home.stats.totalMessages')}</span>
                   <span className="text-lg font-semibold">{formatNumber(stats.overview.total_messages)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">平均消息数/对话</span>
+                  <span className="text-sm text-muted-foreground">{t('home.stats.avgMessagesPerConv')}</span>
                   <span className="text-lg font-semibold">
                     {stats.overview.total_conversations > 0
                       ? (stats.overview.total_messages / stats.overview.total_conversations).toFixed(1)
@@ -171,7 +171,7 @@ export function AnalyticsTab({ stats, workflowData, topAgentsData, isLoading, on
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">平均 Token/消息</span>
+                  <span className="text-sm text-muted-foreground">{t('home.stats.avgTokensPerMessage')}</span>
                   <span className="text-lg font-semibold">
                     {stats.overview.total_messages > 0
                       ? formatNumber(Math.round(stats.overview.total_tokens / stats.overview.total_messages))

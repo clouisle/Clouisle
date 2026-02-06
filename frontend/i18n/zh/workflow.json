@@ -169,6 +169,11 @@
       "recentActivityDesc": "最新的工作流执行记录",
       "noRecentActivity": "暂无最近活动"
     },
+    "apiPlayground": {
+      "workflowStarted": "工作流开始执行",
+      "workflowCompleted": "工作流执行完成",
+      "workflowFailed": "工作流执行失败"
+    },
     "editor": {
       "zoomIn": "放大",
       "zoomOut": "缩小",
@@ -1001,6 +1006,7 @@
         "editTitle": "编辑输入变量",
         "addTitle": "添加输入变量",
         "nameLabel": "变量名 *",
+        "namePlaceholder": "例如: arg1, input, data",
         "valueLabel": "变量值 *",
         "selectUpstreamPlaceholder": "选择上游变量...",
         "searchPlaceholder": "搜索变量",
@@ -1014,6 +1020,7 @@
         "editTitle": "编辑输入变量",
         "addTitle": "添加输入变量",
         "nameLabel": "变量名 *",
+        "namePlaceholder": "例如: arg1, input, data",
         "valueLabel": "变量值 *",
         "selectUpstreamPlaceholder": "选择上游变量...",
         "searchPlaceholder": "搜索变量",
@@ -1033,7 +1040,10 @@
         "noFileVarsAvailable": "没有可用的文件变量，请先在开始节点添加",
         "noMatch": "未找到匹配的变量",
         "outputNameLabel": "输出变量名 *",
+        "outputNamePlaceholder": "例如: image_url, file_urls",
         "outputTypePrefix": "输出类型：",
+        "outputTypeUrlArray": "string[] (URL 数组)",
+        "outputTypeUrl": "string (URL)",
         "cancel": "取消",
         "save": "保存",
         "add": "添加"

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Trash2, Search, ChevronDown, ArrowRight, Ban, Edit3, ListPlus } from 'lucide-react'
+import { Plus, Trash2, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

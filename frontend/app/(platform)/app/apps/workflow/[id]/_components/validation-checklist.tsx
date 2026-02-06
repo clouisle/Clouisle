@@ -105,7 +105,6 @@ export function ValidationChecklist({ issues, onClose, onSelectNode }: Validatio
               const firstIssue = nodeIssues[0]
               const NodeIcon = nodeTypeIcons[firstIssue.nodeType] || Bot
               const iconBgColor = getNodeTypeColor(firstIssue.nodeType)
-              const hasError = nodeIssues.some(i => i.severity === 'error')
 
               return (
                 <div key={nodeId} className="p-3">

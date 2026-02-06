@@ -39,7 +39,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { KnowledgeBaseDialog } from './_components/kb-dialog'
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useCanPerform } from '@/components/permission-guard'
 
 // 格式化 token 数量
 function formatTokens(tokens: number): string {

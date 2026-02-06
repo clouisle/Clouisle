@@ -1,760 +1,876 @@
-# Clouisle 部署指南
+# 部署指南
 
-本文档提供 Clouisle 平台的完整部署指南，包括三种部署方案的详细说明。
+本指南介绍如何在生产环境中使用 **Docker Compose** 或 **Kubernetes** 部署 Clouisle。
+
+---
 
 ## 目录
 
-- [系统要求](#系统要求)
-- [部署方案概览](#部署方案概览)
-- [方案一：All-in-One 部署](#方案一all-in-one-部署)
-- [方案二：App 部署](#方案二app-部署)
-- [方案三：微服务部署](#方案三微服务部署)
-- [环境变量配置](#环境变量配置)
-- [反向代理配置](#反向代理配置)
-- [SSL/HTTPS 配置](#sslhttps-配置)
-- [数据备份与恢复](#数据备份与恢复)
-- [监控与日志](#监控与日志)
-- [常见问题](#常见问题)
-- [升级指南](#升级指南)
+- [架构总览](#架构总览)
+- [前置要求](#前置要求)
+- [构建镜像](#构建镜像)
+- [Docker Compose 部署](#docker-compose-部署)
+  - [快速开始](#快速开始)
+  - [配置说明](#配置说明)
+  - [卷挂载](#卷挂载)
+  - [端口映射](#端口映射)
+  - [自定义域名与 HTTPS](#自定义域名与-https)
+  - [扩缩容](#扩缩容)
+  - [运维操作](#运维操作)
+- [Kubernetes 部署](#kubernetes-部署)
+  - [快速开始（K8s）](#快速开始k8s)
+  - [清单结构](#清单结构)
+  - [Secrets 配置](#secrets-配置)
+  - [持久化存储](#持久化存储)
+  - [Ingress 与 TLS](#ingress-与-tls)
+  - [扩缩容（K8s）](#扩缩容k8s)
+  - [运维操作（K8s）](#运维操作k8s)
+- [环境变量参考](#环境变量参考)
+- [请求流与代理架构](#请求流与代理架构)
+- [备份与恢复](#备份与恢复)
+- [升级](#升级)
+- [安全检查清单](#安全检查清单)
+- [故障排查](#故障排查)
 
 ---
 
-## 系统要求
+## 架构总览
 
-### 硬件要求
-
-| 部署方案 | CPU | 内存 | 磁盘 |
-|---------|-----|------|------|
-| All-in-One | 2 核+ | 4 GB+ | 20 GB+ |
-| App | 2 核+ | 4 GB+ | 20 GB+ |
-| 微服务 | 4 核+ | 8 GB+ | 40 GB+ |
-
-### 软件要求
-
-- Docker 20.10+
-- Docker Compose 2.0+
-- (可选) Nginx 用于反向代理
-
-### 网络要求
-
-| 端口 | 用途 | 部署方案 |
-|------|------|---------|
-| 80 | HTTP 访问 | All-in-One |
-| 443 | HTTPS 访问 | 所有（通过反向代理） |
-| 3000 | 前端服务 | App / 微服务 |
-| 8000 | 后端 API | App / 微服务 |
-
----
-
-## 部署方案概览
-
-Clouisle 提供三种部署方案，适用于不同场景：
-
-| 方案 | 容器数量 | 适用场景 | 复杂度 |
-|------|---------|---------|--------|
-| **All-in-One** | 1 | 开发、测试、演示、小型部署 | 低 |
-| **App** | 4 | 中小型生产环境 | 中 |
-| **微服务** | 7 | 大型生产环境、需要独立扩展 | 高 |
-
-### Docker 镜像
-
-所有镜像托管在 GitHub Container Registry：
+Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 个基础设施服务**：
 
 ```
-ghcr.io/yunhai-dev/clouisle:all-in-one   # 全栈镜像（含数据库）
-ghcr.io/yunhai-dev/clouisle:app          # 应用镜像（前后端+Worker+Beat）
-ghcr.io/yunhai-dev/clouisle:frontend     # 前端镜像
-ghcr.io/yunhai-dev/clouisle:backend      # 后端 API 镜像
-ghcr.io/yunhai-dev/clouisle:worker       # Celery Worker 镜像
-ghcr.io/yunhai-dev/clouisle:beat         # Celery Beat 镜像
+                         ┌─────────────────────────────────────────────┐
+                         │              Frontend Container             │
+  Browser ──────────────►│  Nginx (:3000)                              │
+                         │    ├── /api/*  ──► proxy to backend:8000    │
+                         │    ├── /_next/static/* ──► local files      │
+                         │    └── /*  ──► Node.js SSR (:3001 internal) │
+                         └──────────────────┬──────────────────────────┘
+                                            │
+                         ┌──────────────────▼──────────────────────────┐
+                         │             Backend Container               │
+                         │  Gunicorn + UvicornWorker (:8000)           │
+                         │    └── FastAPI application                  │
+                         └──────┬──────────┬───────────────────────────┘
+                                │          │
+              ┌─────────────────┤          ├─────────────────┐
+              ▼                 ▼          ▼                 ▼
+         PostgreSQL          Redis      Qdrant         Celery Worker
+           (:5432)          (:6379)    (:6333)         (background)
+                                                       Celery Beat
+                                                       (scheduler)
 ```
+
+| 镜像 | 服务 | 说明 |
+|------|------|------|
+| `clouisle-backend` | backend, worker, beat | Python 3.13：Gunicorn API 服务、Celery worker、Celery beat |
+| `clouisle-frontend` | frontend | Nginx + Next.js standalone（SSR） |
+
+后端镜像被 3 个服务复用，通过启动命令区分：
+
+| 服务 | 命令 | 副本数 |
+|------|------|--------|
+| backend | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
+| worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| beat | `python main.py beat` | **必须为 1** |
+
+> **重要**：beat 服务必须始终保持 1 个副本。运行多个 beat 会导致定时任务重复执行。
 
 ---
 
-## 方案一：All-in-One 部署
+## 前置要求
 
-单容器包含所有服务：Frontend、Backend、Worker、Beat、PostgreSQL、Redis、Qdrant、Nginx。
+| 要求 | 最低配置 | 推荐配置 |
+|------|----------|----------|
+| Docker | 24.0+ | 最新版 |
+| Docker Compose | v2.20+ | 最新版 |
+| Kubernetes（如使用 K8s） | 1.25+ | 1.28+ |
+| 内存 | 4 GB | 8 GB+ |
+| 磁盘 | 20 GB | 50 GB+ |
+| CPU | 2 核 | 4 核+ |
 
-**优点**：部署简单，资源占用少，适合快速体验
-**缺点**：不适合高可用场景，无法独立扩展
+---
 
-### 1.1 快速部署
+## 构建镜像
+
+所有命令都在**项目根目录**执行：
 
 ```bash
-# 创建部署目录
-mkdir -p /opt/clouisle && cd /opt/clouisle
+# Backend image (shared by backend, worker, beat services)
+docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend:latest .
 
-# 下载配置文件
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.all-in-one.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
+# Frontend image (Nginx + Next.js)
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend:latest .
+```
 
-# 创建环境配置
+私有镜像仓库示例：
+
+```bash
+docker tag clouisle-backend:latest registry.example.com/clouisle/backend:latest
+docker tag clouisle-frontend:latest registry.example.com/clouisle/frontend:latest
+docker push registry.example.com/clouisle/backend:latest
+docker push registry.example.com/clouisle/frontend:latest
+```
+
+---
+
+## Docker Compose 部署
+
+### 快速开始
+
+```bash
+cd deploy
+
+# 1. Create and edit environment file
 cp .env.example .env
 
-# 编辑配置（至少修改 SECRET_KEY）
-nano .env
+# 2. Generate secure passwords (run each command, paste results into .env)
+openssl rand -base64 32    # → SECRET_KEY
+openssl rand -base64 16    # → POSTGRES_PASSWORD
+openssl rand -base64 16    # → REDIS_PASSWORD
+openssl rand -base64 16    # → QDRANT_API_KEY
 
-# 启动服务
-docker-compose -f docker-compose.all-in-one.yml up -d
+# 3. Build images and start all services
+docker compose up -d --build
+
+# 4. Verify all services are healthy
+docker compose ps
 ```
 
-### 1.2 环境配置
+### 配置说明
 
-编辑 `.env` 文件：
+启动前请编辑 `deploy/.env`。以下变量**必须**修改：
 
-```bash
-# 必须修改
-SECRET_KEY=your-secure-random-key-at-least-32-characters
+| 变量 | 原因 | 示例 |
+|------|------|------|
+| `SECRET_KEY` | JWT 签名密钥，默认值不安全 | `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | 数据库访问密码 | `openssl rand -base64 16` |
+| `REDIS_PASSWORD` | 缓存/队列访问密码 | `openssl rand -base64 16` |
+| `QDRANT_API_KEY` | 向量数据库访问密钥 | `openssl rand -base64 16` |
 
-# 可选修改
-PROJECT_NAME=Clouisle
-TIMEZONE=Asia/Shanghai
-POSTGRES_PASSWORD=your-db-password
-REDIS_PASSWORD=your-redis-password
-QDRANT_API_KEY=your-qdrant-key
-```
+以下变量在生产域名下建议修改：
 
-### 1.3 访问服务
+| 变量 | 默认值 | 生产示例 |
+|------|--------|----------|
+| `API_BASE_URL` | `http://localhost:8000` | `https://api.example.com` |
+| `FRONTEND_URL` | `http://localhost:3000` | `https://example.com` |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | `https://example.com` |
 
-部署完成后，访问 `http://your-server-ip` 即可使用。
+> **说明**：`POSTGRES_SERVER`、`REDIS_HOST`、`QDRANT_URL` 会在 `docker-compose.yml` 的 `environment` 中被覆盖为 Docker 服务名（`db`、`redis`、`qdrant`）。无需在 `.env` 里修改它们。
 
-### 1.4 数据持久化
+### 卷挂载
 
-All-in-One 模式使用以下 Docker volumes：
+Docker Compose 使用命名卷持久化数据：
 
-| Volume | 用途 |
-|--------|------|
-| `clouisle_postgres` | PostgreSQL 数据 |
-| `clouisle_redis` | Redis 数据 |
-| `clouisle_qdrant` | Qdrant 向量数据 |
-| `clouisle_uploads` | 用户上传文件 |
-| `clouisle_logs` | 应用日志 |
+| 卷 | 容器路径 | 用途 | 数据丢失影响 |
+|----|----------|------|--------------|
+| `postgres_data` | `/var/lib/postgresql/data` | 数据库文件 | **全部数据丢失** |
+| `redis_data` | `/data` | 缓存与 Celery broker 状态 | 队列丢失，可恢复 |
+| `qdrant_data` | `/qdrant/storage` | 向量嵌入数据 | 需重建知识库索引 |
+| `uploads_data` | `/app/uploads` | 用户上传文件 | 上传文档丢失 |
 
----
-
-## 方案二：App 部署
-
-应用容器（Frontend + Backend + Worker + Beat）+ 独立数据库容器。
-
-**优点**：数据库独立管理，便于备份和维护
-**缺点**：无法独立扩展各组件
-
-### 2.1 快速部署
-
-```bash
-# 创建部署目录
-mkdir -p /opt/clouisle && cd /opt/clouisle
-
-# 下载配置文件
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.app.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
-
-# 创建环境配置
-cp .env.example .env
-nano .env
-
-# 启动服务
-docker-compose -f docker-compose.app.yml up -d
-```
-
-### 2.2 服务架构
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    docker-compose                        │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │              clouisle-app (:3000, :8000)        │    │
-│  │  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌──────┐ │    │
-│  │  │ Frontend │ │ Backend  │ │ Worker │ │ Beat │ │    │
-│  │  └──────────┘ └──────────┘ └────────┘ └──────┘ │    │
-│  └─────────────────────────────────────────────────┘    │
-│                          │                               │
-│         ┌────────────────┼────────────────┐             │
-│         ▼                ▼                ▼             │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐        │
-│  │ PostgreSQL │  │   Redis    │  │   Qdrant   │        │
-│  │  (db)      │  │  (redis)   │  │  (qdrant)  │        │
-│  └────────────┘  └────────────┘  └────────────┘        │
-└─────────────────────────────────────────────────────────┘
-```
-
-### 2.3 访问服务
-
-- 前端：`http://your-server-ip:3000`
-- API：`http://your-server-ip:8000`
-- API 文档：`http://your-server-ip:8000/docs`
-
-### 2.4 使用外部数据库
-
-如果你已有 PostgreSQL、Redis、Qdrant 服务，可以修改 `docker-compose.app.yml`：
+如需使用主机路径挂载（便于备份），可替换为：
 
 ```yaml
-services:
-  app:
-    image: ghcr.io/yunhai-dev/clouisle:app
-    ports:
-      - "3000:3000"
-      - "8000:8000"
-    environment:
-      # 指向外部数据库
-      POSTGRES_SERVER: your-postgres-host
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: your-user
-      POSTGRES_PASSWORD: your-password
-      POSTGRES_DB: clouisle
-      REDIS_HOST: your-redis-host
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: your-redis-password
-      QDRANT_URL: http://your-qdrant-host:6333
-      QDRANT_API_KEY: your-qdrant-key
-      # ... 其他配置
-    volumes:
-      - uploads_data:/app/uploads
-      - logs_data:/var/log/supervisor
-
+# In docker-compose.yml, replace:
 volumes:
-  uploads_data:
-  logs_data:
+  postgres_data:
+
+# With:
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/clouisle/postgres
 ```
 
----
+或者直接在服务中指定：
 
-## 方案三：微服务部署
-
-各组件独立容器，支持独立扩展。
-
-**优点**：高可用、可独立扩展、故障隔离
-**缺点**：配置复杂、资源占用较多
-
-### 3.1 快速部署
-
-```bash
-# 创建部署目录
-mkdir -p /opt/clouisle && cd /opt/clouisle
-
-# 下载配置文件
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/deploy/docker-compose.microservices.yml
-curl -O https://raw.githubusercontent.com/yunhai-dev/Clouisle/main/.env.example
-
-# 创建环境配置
-cp .env.example .env
-nano .env
-
-# 启动服务
-docker-compose -f docker-compose.microservices.yml up -d
+```yaml
+volumes:
+  - /data/clouisle/postgres:/var/lib/postgresql/data
+  - /data/clouisle/uploads:/app/uploads
 ```
 
-### 3.2 服务架构
+> **重要**：`uploads_data` 在 `backend` 与 `worker` 间共享。两者都需要读写权限以处理上传文档。若使用主机路径挂载，请在启动前确保目录存在且权限正确。
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      docker-compose                           │
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐                          │
-│  │   frontend   │  │   backend    │                          │
-│  │   (:3000)    │  │   (:8000)    │                          │
-│  └──────────────┘  └──────────────┘                          │
-│                           │                                   │
-│         ┌─────────────────┼─────────────────┐                │
-│         ▼                 ▼                 ▼                │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐             │
-│  │   worker   │  │    beat    │  │   qdrant   │             │
-│  └────────────┘  └────────────┘  └────────────┘             │
-│         │                 │                                   │
-│         └────────┬────────┘                                  │
-│                  ▼                                            │
-│  ┌────────────────────────────────────────────┐              │
-│  │              PostgreSQL + Redis             │              │
-│  └────────────────────────────────────────────┘              │
-└──────────────────────────────────────────────────────────────┘
-```
+### 端口映射
 
-### 3.3 扩展 Worker
+默认暴露端口：
 
-根据负载情况扩展 Worker 数量：
+| 服务 | 主机端口 | 容器端口 | 用途 |
+|------|----------|----------|------|
+| frontend | 3000 | 3000 | Web UI（Nginx） |
+| backend | 8000 | 8000 | API（Gunicorn） |
+| db | 5432 | 5432 | PostgreSQL |
+| redis | 6379 | 6379 | Redis |
+| qdrant | 6333 | 6333 | Qdrant |
 
-```bash
-# 扩展到 3 个 Worker 实例
-docker-compose -f docker-compose.microservices.yml up -d --scale worker=3
+**生产环境**建议仅暴露 frontend 端口，并放在反向代理后。请移除或注释基础设施端口：
+
+```yaml
+# In docker-compose.yml, remove these lines for production:
+  db:
+    ports:
+      - "5432:5432"    # Remove — no external DB access needed
+  redis:
+    ports:
+      - "6379:6379"    # Remove
+  qdrant:
+    ports:
+      - "6333:6333"    # Remove
+  backend:
+    ports:
+      - "8000:8000"    # Remove — frontend Nginx proxies API requests
 ```
 
-### 3.4 访问服务
+### 自定义域名与 HTTPS
 
-- 前端：`http://your-server-ip:3000`
-- API：`http://your-server-ip:8000`
-- API 文档：`http://your-server-ip:8000/docs`
+在生产环境使用自定义域名时，建议在 frontend 容器前增加外部反向代理（如 Nginx、Caddy、Traefik）：
 
----
+**方案 A：Caddy（自动 HTTPS）**
 
-## 环境变量配置
-
-### 完整配置说明
-
-```bash
-# =============================================================================
-# 应用配置
-# =============================================================================
-PROJECT_NAME=Clouisle                    # 项目名称
-SECRET_KEY=your-secret-key               # JWT 签名密钥（必须修改！）
-TIMEZONE=Asia/Shanghai                   # 时区
-
-# URL 配置（根据实际部署地址修改）
-API_BASE_URL=http://localhost:8000       # 后端 API 地址
-FRONTEND_URL=http://localhost:3000       # 前端地址
-
-# =============================================================================
-# PostgreSQL 数据库
-# =============================================================================
-POSTGRES_SERVER=localhost                # 数据库主机
-POSTGRES_PORT=5432                       # 数据库端口
-POSTGRES_USER=postgres                   # 数据库用户
-POSTGRES_PASSWORD=password               # 数据库密码（生产环境必须修改！）
-POSTGRES_DB=clouisle                     # 数据库名称
-
-# 或使用完整 DSN（优先级更高）
-# DATABASE_URL=postgres://user:pass@host:5432/dbname
-
-# =============================================================================
-# Redis 缓存/消息队列
-# =============================================================================
-REDIS_HOST=localhost                     # Redis 主机
-REDIS_PORT=6379                          # Redis 端口
-REDIS_PASSWORD=your-redis-password       # Redis 密码
-
-# =============================================================================
-# Qdrant 向量数据库
-# =============================================================================
-VECTOR_BACKEND=qdrant                    # 向量数据库类型
-QDRANT_URL=http://localhost:6333         # Qdrant 地址
-QDRANT_API_KEY=your-qdrant-key           # Qdrant API 密钥
-QDRANT_COLLECTION_PREFIX=kb_dim          # 集合前缀
-QDRANT_DISTANCE=Cosine                   # 距离计算方式
-
-# =============================================================================
-# 外部 API（可选）
-# =============================================================================
-TAVILY_API_KEY=                          # Tavily 搜索 API 密钥
-
-# =============================================================================
-# 前端配置
-# =============================================================================
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1  # 前端访问的 API 地址
+```
+# Caddyfile
+example.com {
+    reverse_proxy localhost:3000
+}
 ```
 
-### 生成安全密钥
-
-```bash
-# 使用 openssl 生成
-openssl rand -hex 32
-
-# 或使用 Python
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
----
-
-## 反向代理配置
-
-生产环境建议使用 Nginx 作为反向代理，统一入口并提供 SSL 终止。
-
-### Nginx 配置示例
-
-创建 `/etc/nginx/sites-available/clouisle`：
+**方案 B：外部 Nginx**
 
 ```nginx
-# HTTP 重定向到 HTTPS
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-# HTTPS 配置
 server {
     listen 443 ssl http2;
-    server_name your-domain.com;
+    server_name example.com;
 
-    # SSL 证书
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_certificate     /etc/ssl/certs/example.com.pem;
+    ssl_certificate_key /etc/ssl/private/example.com.key;
 
-    # SSL 配置
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
-    ssl_prefer_server_ciphers off;
+    client_max_body_size 100m;
 
-    # 上传文件大小限制
-    client_max_body_size 100M;
-
-    # API 请求代理到后端
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # SSE/流式响应支持
-        proxy_set_header Connection '';
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 86400s;
-    }
-
-    # API 文档
-    location ~ ^/(docs|openapi.json|redoc) {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    # 前端请求
     location / {
         proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
+
+        # WebSocket
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        # Streaming
+        proxy_buffering off;
+        proxy_read_timeout 300s;
     }
 }
 ```
 
-启用配置：
+启用 HTTPS 后，同时更新如下环境变量：
 
 ```bash
-ln -s /etc/nginx/sites-available/clouisle /etc/nginx/sites-enabled/
-nginx -t
-systemctl reload nginx
+API_BASE_URL=https://example.com
+FRONTEND_URL=https://example.com
+BACKEND_CORS_ORIGINS=https://example.com
+```
+
+### 扩缩容
+
+```bash
+# Scale Celery workers (safe to run multiple)
+docker compose up -d --scale worker=4
+
+# Scale backend API (safe to run multiple behind Nginx)
+docker compose up -d --scale backend=2
+
+# NEVER scale beat beyond 1
+# docker compose up -d --scale beat=2  ← DO NOT DO THIS
+```
+
+当 backend 扩容到多个副本时，移除主机端口映射避免冲突：
+
+```yaml
+backend:
+    # Remove: ports: ["8000:8000"]
+    expose:
+      - "8000"
+```
+
+### 运维操作
+
+```bash
+# View logs (follow mode)
+docker compose logs -f backend
+docker compose logs -f worker
+docker compose logs -f frontend
+
+# View logs for a specific time range
+docker compose logs --since 1h backend
+
+# Restart a single service (zero-downtime for stateless services)
+docker compose restart backend
+
+# Stop all services
+docker compose down
+
+# Stop and destroy all data (CAUTION)
+docker compose down -v
+
+# Update images and restart
+docker compose pull
+docker compose up -d --build
 ```
 
 ---
 
-## SSL/HTTPS 配置
+## Kubernetes 部署
 
-### 使用 Let's Encrypt（推荐）
+### 快速开始（K8s）
+
+所有资源都在单一文件中定义：`deploy/k8s/clouisle.yaml`。
 
 ```bash
-# 安装 Certbot
-apt install certbot python3-certbot-nginx
+# 1. Edit the manifest — replace secret placeholders and set your domain
+vi deploy/k8s/clouisle.yaml
 
-# 获取证书
-certbot --nginx -d your-domain.com
+# 2. Apply everything
+kubectl apply -f deploy/k8s/clouisle.yaml
 
-# 自动续期（Certbot 会自动配置）
-certbot renew --dry-run
+# 3. Wait for infrastructure
+kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
+kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
+
+# 4. Verify all pods
+kubectl -n clouisle get pods
 ```
 
-### 使用自签名证书（测试环境）
+### 清单结构
+
+该清单包含 11 组资源，并使用 YAML anchor 去重重复配置：
+
+| # | 资源 | 类型 | 说明 |
+|---|------|------|------|
+| 1 | Namespace | Namespace | `clouisle` |
+| 2 | ConfigMap | ConfigMap | 非敏感配置 |
+| 3 | Secret | Secret | 密码与密钥（**必须编辑**） |
+| 4 | PostgreSQL | StatefulSet + Service + PVC | Headless Service，10Gi 存储 |
+| 5 | Redis | Deployment + Service | |
+| 6 | Qdrant | StatefulSet + Service + PVC | Headless Service，10Gi 存储 |
+| 7 | Backend | Deployment + Service | 2 副本，端口 8000 |
+| 8 | Worker | Deployment | 2 副本，无 Service |
+| 9 | Beat | Deployment | 1 副本，`Recreate` 策略 |
+| 10 | Frontend | Deployment + Service | 2 副本，端口 3000 |
+| 11 | Ingress | Ingress | `/api` → backend，`/` → frontend |
+
+### Secrets 配置
+
+应用前，先替换 Secret 段中的 base64 占位值：
 
 ```bash
-# 生成自签名证书
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/clouisle.key \
-  -out /etc/ssl/certs/clouisle.crt
+# Generate base64-encoded values
+echo -n 'your-strong-secret-key' | base64
+echo -n 'your-postgres-password' | base64
+echo -n 'your-redis-password' | base64
+echo -n 'your-qdrant-api-key' | base64
+```
+
+在 `clouisle.yaml` 中替换：
+
+```yaml
+data:
+  SECRET_KEY: <paste-base64-here>
+  POSTGRES_PASSWORD: <paste-base64-here>
+  REDIS_PASSWORD: <paste-base64-here>
+  QDRANT_API_KEY: <paste-base64-here>
+```
+
+> **提示**：生产环境建议使用外部密钥管理（Vault、AWS Secrets Manager 等）配合 External Secrets Operator，而不是将明文/编码后的密钥直接放在 YAML 中。
+
+### 持久化存储
+
+| PVC | 大小 | 使用方 | StorageClass |
+|-----|------|--------|--------------|
+| `postgres-data` | 10Gi | PostgreSQL | default |
+| `qdrant-data` | 10Gi | Qdrant | default |
+
+如需修改容量或存储类，编辑 PVC 定义：
+
+```yaml
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: your-storage-class    # Add this line
+  resources:
+    requests:
+      storage: 50Gi                       # Adjust size
+```
+
+backend 与 worker 的 `uploads` 卷默认使用 `emptyDir`。生产环境请改为 PVC 或共享文件系统（如 NFS、EFS），以便上传文件在 Pod 重启后仍保留，且 backend/worker 均可访问：
+
+```yaml
+# Replace in the anchors section:
+- &uploads-volume
+  name: uploads
+  persistentVolumeClaim:
+    claimName: clouisle-uploads
+
+# Add a new PVC:
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clouisle-uploads
+  namespace: clouisle
+spec:
+  accessModes: [ReadWriteMany]    # Must be RWX for multi-pod access
+  resources:
+    requests:
+      storage: 20Gi
+```
+
+> **重要**：`ReadWriteMany` 需要支持 RWX 的存储类（NFS、CephFS、EFS 等）。常见块存储（如 gp2、gp3）仅支持 `ReadWriteOnce`。
+
+### Ingress 与 TLS
+
+编辑 Ingress 区段，设置你的域名：
+
+```yaml
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: your-domain.com        # ← Change this
+```
+
+启用 TLS：
+
+```yaml
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - your-domain.com
+      secretName: clouisle-tls      # cert-manager or manual TLS secret
+  rules:
+    - host: your-domain.com
+```
+
+使用 cert-manager（自动 Let's Encrypt）：
+
+```yaml
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+```
+
+同时更新 ConfigMap：
+
+```yaml
+data:
+  API_BASE_URL: "https://your-domain.com"
+  FRONTEND_URL: "https://your-domain.com"
+  BACKEND_CORS_ORIGINS: "https://your-domain.com"
+```
+
+### 扩缩容（K8s）
+
+```bash
+# Scale workers
+kubectl -n clouisle scale deployment worker --replicas=4
+
+# Scale backend
+kubectl -n clouisle scale deployment backend --replicas=3
+
+# Scale frontend
+kubectl -n clouisle scale deployment frontend --replicas=3
+
+# NEVER scale beat beyond 1
+```
+
+自动扩缩容示例：
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: clouisle
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+```
+
+### 运维操作（K8s）
+
+```bash
+# View pod status
+kubectl -n clouisle get pods -o wide
+
+# View logs
+kubectl -n clouisle logs -f deployment/backend
+kubectl -n clouisle logs -f deployment/worker
+kubectl -n clouisle logs -f deployment/beat
+kubectl -n clouisle logs -f deployment/frontend
+
+# View logs for a specific pod
+kubectl -n clouisle logs -f <pod-name>
+
+# Restart a deployment (rolling restart)
+kubectl -n clouisle rollout restart deployment backend
+
+# Check rollout status
+kubectl -n clouisle rollout status deployment backend
+
+# Execute a command in a pod
+kubectl -n clouisle exec -it deployment/backend -- bash
+
+# View resource usage
+kubectl -n clouisle top pods
 ```
 
 ---
 
-## 数据备份与恢复
+## 环境变量参考
 
-### PostgreSQL 备份
+### 必填（必须修改）
 
-```bash
-# 备份数据库
-docker exec clouisle-db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
+| 变量 | 描述 | 生成方式 |
+|------|------|----------|
+| `SECRET_KEY` | JWT 签名密钥。修改后会使现有会话全部失效。 | `openssl rand -base64 32` |
+| `POSTGRES_PASSWORD` | PostgreSQL 密码 | `openssl rand -base64 16` |
 
-# 压缩备份
-docker exec clouisle-db pg_dump -U postgres clouisle | gzip > backup_$(date +%Y%m%d).sql.gz
+### 推荐（生产环境应修改）
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `REDIS_PASSWORD` | *(empty)* | Redis 密码。为空表示不鉴权。 |
+| `QDRANT_API_KEY` | *(empty)* | Qdrant API 密钥。为空表示不鉴权。 |
+| `API_BASE_URL` | `http://localhost:8000` | 后端访问地址，用于文件访问与 SSO 回调。生产环境应设置为真实域名。 |
+| `FRONTEND_URL` | `http://localhost:3000` | 前端地址，用于 SSO 重定向 URI。生产环境应设置为真实域名。 |
+| `BACKEND_CORS_ORIGINS` | `http://localhost:3000` | 允许的 CORS 源（逗号分隔）。必须包含前端域名。 |
+
+### 可选
+
+| 变量 | 默认值 | 描述 |
+|------|--------|------|
+| `PROJECT_NAME` | `Clouisle` | 展示名称 |
+| `TIMEZONE` | `Asia/Shanghai` | 服务器时区（影响定时任务） |
+| `POSTGRES_SERVER` | `localhost` | PostgreSQL 主机。部署配置中会覆盖为 Compose 的 `db` 或 K8s 的 `postgres`。 |
+| `POSTGRES_PORT` | `5432` | PostgreSQL 端口 |
+| `POSTGRES_USER` | `postgres` | PostgreSQL 用户 |
+| `POSTGRES_DB` | `clouisle` | PostgreSQL 数据库名 |
+| `DATABASE_URL` | *(auto-assembled)* | 完整 PostgreSQL DSN。若设置则覆盖 `POSTGRES_*` 变量。 |
+| `REDIS_HOST` | `localhost` | Redis 主机。部署配置中会覆盖为 `redis`。 |
+| `REDIS_PORT` | `6379` | Redis 端口 |
+| `VECTOR_BACKEND` | `qdrant` | 向量数据库后端 |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant 地址。部署配置中会覆盖为 `http://qdrant:6333`。 |
+| `QDRANT_COLLECTION_PREFIX` | `kb_dim` | Qdrant collection 前缀 |
+| `QDRANT_DISTANCE` | `Cosine` | 向量距离度量 |
+| `TAVILY_API_KEY` | *(empty)* | Tavily 网页搜索 API Key（用于 Agent 网页搜索能力） |
+
+---
+
+## 请求流与代理架构
+
+理解请求流对于调试和配置外部反向代理非常关键。
+
+### 客户端 API 请求流
+
+```
+Browser
+  │
+  ├── Page requests (HTML/SSR) ──► Nginx (:3000) ──► Node.js (:3001 internal)
+  │
+  └── API requests (/api/*) ──► Nginx (:3000) ──► Backend Gunicorn (:8000)
 ```
 
-### PostgreSQL 恢复
+frontend 容器中运行两个进程：
+1. **Nginx**（3000 端口，外部）负责路由、静态文件和代理
+2. **Node.js**（3001 端口，内部）负责 SSR
 
-```bash
-# 恢复数据库
-cat backup_20240101.sql | docker exec -i clouisle-db psql -U postgres clouisle
+### Header 转发
 
-# 从压缩文件恢复
-gunzip -c backup_20240101.sql.gz | docker exec -i clouisle-db psql -U postgres clouisle
+Nginx 在 `/api/*` 请求中向 backend 转发以下 Header：
+
+| Header | 值 | 用途 |
+|--------|----|------|
+| `Host` | 原始 Host | 虚拟主机路由 |
+| `X-Real-IP` | 客户端 IP | 真实客户端地址 |
+| `X-Forwarded-For` | 客户端 IP 链 | 代理链路追踪 |
+| `X-Forwarded-Proto` | `http` 或 `https` | 原始协议 |
+| `X-Forwarded-Host` | 原始 Host | 原始主机名 |
+| `X-Forwarded-Port` | 原始端口 | 原始端口 |
+| `Accept-Language` | 浏览器语言 | i18n（后端兜底） |
+| `X-Language` | 应用语言 | i18n（前端设置，优先级更高） |
+
+Gunicorn 配置了 `--forwarded-allow-ips *` 以信任这些代理头。
+
+### 如使用外部反向代理
+
+如果在 frontend 容器前再加一层反向代理（Nginx、Caddy、Traefik、云 LB），请确保链路为：
+
+```
+External Proxy → Frontend Nginx (:3000) → Backend Gunicorn (:8000)
 ```
 
-### Qdrant 备份
+外部代理必须正确设置 `X-Real-IP` 和 `X-Forwarded-For`，frontend Nginx 会继续透传给 backend。
+
+---
+
+## 备份与恢复
+
+### PostgreSQL
 
 ```bash
-# 创建快照
-curl -X POST "http://localhost:6333/collections/kb_dim_*/snapshots" \
-  -H "api-key: your-qdrant-key"
+# Docker Compose — backup
+docker compose exec db pg_dump -U postgres clouisle > backup_$(date +%Y%m%d).sql
 
-# 备份快照目录
-docker cp clouisle-qdrant:/qdrant/storage/snapshots ./qdrant_backup
+# Docker Compose — restore
+docker compose exec -T db psql -U postgres clouisle < backup_20260206.sql
+
+# Kubernetes — backup
+kubectl -n clouisle exec statefulset/postgres -- pg_dump -U postgres clouisle > backup.sql
+
+# Kubernetes — restore
+kubectl -n clouisle exec -i statefulset/postgres -- psql -U postgres clouisle < backup.sql
 ```
 
-### 完整备份脚本
-
-创建 `/opt/clouisle/backup.sh`：
+### Qdrant
 
 ```bash
-#!/bin/bash
-set -e
+# Docker Compose — backup the volume
+docker run --rm -v deploy_qdrant_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/qdrant_backup.tar.gz -C /data .
 
-BACKUP_DIR="/opt/clouisle/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-mkdir -p $BACKUP_DIR
-
-echo "Backing up PostgreSQL..."
-docker exec clouisle-db pg_dump -U postgres clouisle | gzip > $BACKUP_DIR/postgres_$DATE.sql.gz
-
-echo "Backing up uploads..."
-docker cp clouisle-app:/app/uploads $BACKUP_DIR/uploads_$DATE 2>/dev/null || \
-docker cp clouisle-backend:/app/uploads $BACKUP_DIR/uploads_$DATE 2>/dev/null || \
-docker cp clouisle-all-in-one:/app/uploads $BACKUP_DIR/uploads_$DATE
-
-echo "Backing up Qdrant..."
-docker cp clouisle-qdrant:/qdrant/storage $BACKUP_DIR/qdrant_$DATE
-
-echo "Cleaning old backups (keep 7 days)..."
-find $BACKUP_DIR -type f -mtime +7 -delete
-find $BACKUP_DIR -type d -empty -delete
-
-echo "Backup completed: $BACKUP_DIR"
+# Kubernetes — use Qdrant's snapshot API
+kubectl -n clouisle exec statefulset/qdrant -- \
+  wget -qO- -post-data '{}' http://localhost:6333/snapshots
 ```
 
-设置定时任务：
+### 上传文件
 
 ```bash
-chmod +x /opt/clouisle/backup.sh
+# Docker Compose
+docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/uploads_backup.tar.gz -C /data .
 
-# 每天凌晨 2 点执行备份
-crontab -e
-# 添加：0 2 * * * /opt/clouisle/backup.sh >> /var/log/clouisle-backup.log 2>&1
+# Kubernetes (if using PVC)
+kubectl -n clouisle exec deployment/backend -- tar czf - /app/uploads > uploads_backup.tar.gz
+```
+
+### 自动备份计划
+
+生产环境建议配置 CronJob（K8s）或主机 cron（Docker）执行每日备份：
+
+```yaml
+# K8s CronJob example
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: clouisle
+spec:
+  schedule: "0 2 * * *"    # Daily at 2:00 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: backup
+              image: postgres:16
+              command:
+                - sh
+                - -c
+                - pg_dump -h postgres -U postgres clouisle | gzip > /backup/clouisle_$(date +%Y%m%d).sql.gz
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: clouisle-secret
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          restartPolicy: OnFailure
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: backup-pvc
 ```
 
 ---
 
-## 监控与日志
+## 升级
 
-### 查看日志
+### Docker Compose
 
 ```bash
-# All-in-One 模式
-docker logs clouisle-all-in-one -f
+cd deploy
 
-# 查看 supervisor 管理的各服务日志
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/backend.log
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/worker.log
-docker exec clouisle-all-in-one tail -f /var/log/supervisor/frontend.log
+# 1. Pull latest code
+git pull
 
-# App 模式
-docker logs clouisle-app -f
+# 2. Rebuild images
+docker compose build
 
-# 微服务模式
-docker logs clouisle-backend -f
-docker logs clouisle-worker -f
-docker logs clouisle-beat -f
-docker logs clouisle-frontend -f
+# 3. Rolling restart (services restart one by one)
+docker compose up -d
+
+# 4. Verify
+docker compose ps
+docker compose logs --tail=50 backend
 ```
 
-### 查看服务状态
+### Kubernetes
 
 ```bash
-# 查看所有容器状态
-docker-compose -f docker-compose.xxx.yml ps
+# 1. Build and push new images
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/backend:v2.0.0 .
+docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
+docker push registry.example.com/clouisle/backend:v2.0.0
+docker push registry.example.com/clouisle/frontend:v2.0.0
 
-# 查看资源使用
+# 2. Update image tags in clouisle.yaml (the anchors at the top)
+#    - &backend-image registry.example.com/clouisle/backend:v2.0.0
+#    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
+
+# 3. Apply
+kubectl apply -f deploy/k8s/clouisle.yaml
+
+# 4. Monitor rollout
+kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment worker
+kubectl -n clouisle rollout status deployment frontend
+```
+
+> **说明**：若有数据库迁移，请先执行迁移再更新 backend Deployment。具体步骤请查看发布说明。
+
+---
+
+## 安全检查清单
+
+- [ ] **修改所有默认密码**：`SECRET_KEY`、`POSTGRES_PASSWORD`、`REDIS_PASSWORD`、`QDRANT_API_KEY`
+- [ ] **启用 HTTPS**：在外部反向代理或 K8s Ingress 做 TLS 终止
+- [ ] **限制暴露端口**：生产环境仅暴露 3000（或反向代理后的 443），移除 DB/Redis/Qdrant 的端口映射
+- [ ] **设置 CORS 来源**：`BACKEND_CORS_ORIGINS` 仅包含真实前端域名，不要使用 `*`
+- [ ] **更新 `API_BASE_URL` 与 `FRONTEND_URL`**：必须与生产域名一致，否则 SSO 与内部文件访问可能异常
+- [ ] **网络隔离**：Compose 下基础设施服务（db、redis、qdrant）不应对外访问；K8s 下默认使用 ClusterIP（不对外）
+- [ ] **定期备份**：配置 PostgreSQL 与 Qdrant 自动备份
+- [ ] **资源限制**：按实际负载调整 K8s 清单中的 CPU/内存 limits
+- [ ] **镜像扫描**：部署前对 Docker 镜像进行漏洞扫描
+
+---
+
+## 故障排查
+
+### Backend 无法连接数据库
+
+```bash
+# Docker Compose
+docker compose logs db          # Check PostgreSQL logs
+docker compose exec db pg_isready -U postgres
+
+# Kubernetes
+kubectl -n clouisle logs statefulset/postgres
+kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
+```
+
+常见原因：
+- `POSTGRES_PASSWORD` 在数据库与 backend 中不一致
+- backend 启动时数据库尚未就绪（通常 healthcheck 会避免）
+- `POSTGRES_SERVER` 错误（Compose 应为 `db`，K8s 应为 `postgres`）
+
+### Frontend 访问 API 返回 502
+
+frontend Nginx 将 `/api/*` 代理到 `http://backend:8000`。502 说明 backend 不可达。
+
+```bash
+# Check if backend is running
+docker compose ps backend
+# or
+kubectl -n clouisle get pods -l app=backend
+
+# Test connectivity from frontend container
+docker compose exec frontend wget -qO- http://backend:8000/api/v1/health
+```
+
+### Worker 不处理任务
+
+```bash
+# Check worker logs
+docker compose logs worker
+# or
+kubectl -n clouisle logs deployment/worker
+
+# Verify Redis connectivity
+docker compose exec worker python -c "import redis; r = redis.Redis(host='redis'); print(r.ping())"
+```
+
+常见原因：
+- `REDIS_PASSWORD` 不一致
+- Redis 尚未就绪
+- 队列名称配置错误
+
+### Beat 重复执行定时任务
+
+确保只有 1 个 beat 实例在运行：
+
+```bash
+# Docker Compose
+docker compose ps beat    # Should show exactly 1 replica
+
+# Kubernetes
+kubectl -n clouisle get pods -l app=beat    # Should show exactly 1 pod
+```
+
+K8s 中 beat Deployment 使用 `strategy: Recreate`，确保新 Pod 启动前旧 Pod 已完全终止。
+
+### 上传文件不可访问
+
+`uploads` 卷必须在 `backend` 与 `worker` 之间共享：
+
+```bash
+# Docker Compose — verify both mount the same volume
+docker compose exec backend ls -la /app/uploads
+docker compose exec worker ls -la /app/uploads
+```
+
+在 Kubernetes 中，若使用 `emptyDir`，Pod 重启后文件会丢失。请改为 `ReadWriteMany` 模式的 PVC（见[持久化存储](#持久化存储)）。
+
+### 内存不足 / OOMKilled
+
+检查资源使用并调整限制：
+
+```bash
+# Docker
 docker stats
+
+# Kubernetes
+kubectl -n clouisle top pods
+kubectl -n clouisle describe pod <pod-name>    # Check "Last State" for OOMKilled
 ```
 
-### 健康检查
+可在 `docker-compose.yml`（`deploy.resources`）或 `clouisle.yaml`（`resources` 段）中调大限制。
 
-```bash
-# 检查后端 API
-curl http://localhost:8000/
+### LLM 请求超时
 
-# 检查前端
-curl http://localhost:3000/
+默认代理超时为 300 秒（5 分钟）。若 LLM 操作较长：
 
-# 检查数据库连接
-docker exec clouisle-db pg_isready -U postgres
-
-# 检查 Redis
-docker exec clouisle-redis redis-cli -a your-password ping
-
-# 检查 Qdrant
-curl http://localhost:6333/collections -H "api-key: your-key"
-```
-
----
-
-## 常见问题
-
-### Q1: 容器启动失败，提示数据库连接错误
-
-**原因**：数据库容器尚未就绪
-
-**解决**：
-```bash
-# 检查数据库容器状态
-docker-compose -f docker-compose.xxx.yml ps
-
-# 等待数据库就绪后重启应用
-docker-compose -f docker-compose.xxx.yml restart app
-# 或
-docker-compose -f docker-compose.xxx.yml restart backend
-```
-
-### Q2: 前端无法访问后端 API
-
-**原因**：`NEXT_PUBLIC_API_URL` 配置错误
-
-**解决**：
-1. 检查 `.env` 中的 `NEXT_PUBLIC_API_URL` 是否正确
-2. 确保后端服务正常运行
-3. 检查防火墙是否放行相关端口
-
-### Q3: 文件上传失败
-
-**原因**：上传目录权限问题或大小限制
-
-**解决**：
-```bash
-# 检查 uploads 目录
-docker exec clouisle-app ls -la /app/uploads
-
-# 如果使用 Nginx，检查 client_max_body_size 配置
-```
-
-### Q4: Worker 不处理任务
-
-**原因**：Redis 连接问题或队列配置错误
-
-**解决**：
-```bash
-# 检查 Worker 日志
-docker logs clouisle-worker
-
-# 检查 Redis 连接
-docker exec clouisle-redis redis-cli -a your-password ping
-
-# 检查队列中的任务
-docker exec clouisle-redis redis-cli -a your-password llen celery
-```
-
-### Q5: 内存不足
-
-**原因**：服务器资源不足
-
-**解决**：
-```bash
-# 查看内存使用
-docker stats --no-stream
-
-# 限制容器内存（在 docker-compose.yml 中添加）
-services:
-  app:
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-```
-
-### Q6: 如何重置管理员密码
-
-```bash
-# 进入后端容器
-docker exec -it clouisle-backend bash
-# 或
-docker exec -it clouisle-app bash
-
-# 使用 Python 重置密码
-cd /app/backend
-python -c "
-import asyncio
-from app.models import User
-from app.core.security import get_password_hash
-from tortoise import Tortoise
-from app.core.config import settings
-
-async def reset_password():
-    await Tortoise.init(db_url=settings.DATABASE_URL, modules={'models': ['app.models']})
-    user = await User.get(username='admin')
-    user.hashed_password = get_password_hash('new-password')
-    await user.save()
-    print('Password reset successfully')
-    await Tortoise.close_connections()
-
-asyncio.run(reset_password())
-"
-```
-
----
-
-## 升级指南
-
-### 升级步骤
-
-```bash
-cd /opt/clouisle
-
-# 1. 备份数据
-./backup.sh
-
-# 2. 拉取最新镜像
-docker-compose -f docker-compose.xxx.yml pull
-
-# 3. 停止服务
-docker-compose -f docker-compose.xxx.yml down
-
-# 4. 启动新版本
-docker-compose -f docker-compose.xxx.yml up -d
-
-# 5. 检查服务状态
-docker-compose -f docker-compose.xxx.yml ps
-docker-compose -f docker-compose.xxx.yml logs -f
-```
-
-### 回滚
-
-如果升级后出现问题：
-
-```bash
-# 停止服务
-docker-compose -f docker-compose.xxx.yml down
-
-# 使用指定版本的镜像
-# 编辑 docker-compose.xxx.yml，将镜像标签改为之前的版本
-# 例如：ghcr.io/yunhai-dev/clouisle:backend-v1.0.0
-
-# 重新启动
-docker-compose -f docker-compose.xxx.yml up -d
-
-# 如需恢复数据库
-cat backup_xxx.sql | docker exec -i clouisle-db psql -U postgres clouisle
-```
-
----
-
-## 生产环境检查清单
-
-部署到生产环境前，请确认以下事项：
-
-- [ ] 修改 `SECRET_KEY` 为安全的随机字符串
-- [ ] 修改所有默认密码（PostgreSQL、Redis、Qdrant）
-- [ ] 配置 HTTPS/SSL 证书
-- [ ] 配置防火墙，仅开放必要端口
-- [ ] 设置数据备份定时任务
-- [ ] 配置日志轮转
-- [ ] 设置监控告警
-- [ ] 测试备份恢复流程
-- [ ] 记录所有配置和密码到安全位置
-
----
-
-## 获取帮助
-
-- GitHub Issues: https://github.com/yunhai-dev/Clouisle/issues
-- 文档: https://github.com/yunhai-dev/Clouisle/docs
+- Frontend Nginx：编辑 `deploy/nginx/default.conf` 中的 `proxy_read_timeout`
+- K8s Ingress：编辑 `nginx.ingress.kubernetes.io/proxy-read-timeout` 注解
+- Gunicorn：编辑 backend Dockerfile CMD 中的 `--timeout`

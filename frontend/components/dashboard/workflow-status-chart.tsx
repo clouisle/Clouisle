@@ -24,15 +24,13 @@ const COLORS = [
   'color-mix(in srgb, var(--chart-5) 70%, transparent)',
 ]
 
-const STATUS_LABELS: Record<string, string> = {
-  success: '成功',
-  failed: '失败',
-  running: '运行中',
-  pending: '等待中',
-}
-
 export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProps) {
   const t = useTranslations('dashboard')
+
+  const getStatusLabel = (status: string) => {
+    const key = `status.${status}` as const
+    return t.has(key) ? t(key) : status
+  }
 
   const formatNumber = (num: number | undefined) => {
     if (num === undefined || num === null) return '0'
@@ -55,7 +53,7 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -74,7 +72,7 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -113,13 +111,13 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
                   const percentage = totalCount > 0 ? ((data.count / totalCount) * 100).toFixed(2) : '0'
                   return (
                     <div className="rounded-lg border bg-background p-3 shadow-md">
-                      <div className="font-semibold mb-2">{STATUS_LABELS[data.status] || data.status}</div>
+                      <div className="font-semibold mb-2">{getStatusLabel(data.status)}</div>
                       <div className="text-sm space-y-1">
                         <div>
-                          数量: {formatNumber(data.count)}
+                          {t('common.count')}: {formatNumber(data.count)}
                         </div>
                         <div className="font-medium">
-                          占比: {percentage}%
+                          {t('common.percentage')}: {percentage}%
                         </div>
                       </div>
                     </div>

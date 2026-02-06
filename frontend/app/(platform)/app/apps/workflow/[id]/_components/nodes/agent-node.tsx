@@ -20,7 +20,7 @@ interface AgentNodeProps {
   data: AgentNodeData
 }
 
-export function AgentNode({ id, selected, data }: AgentNodeProps) {
+export function AgentNode({ selected, data }: AgentNodeProps) {
   const t = useTranslations('workflow')
   // 从 agentConfig 获取智能体信息
   const agentName = data.agentConfig?.agentName
@@ -66,7 +66,7 @@ export function AgentNode({ id, selected, data }: AgentNodeProps) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <span className="block text-sm font-medium truncate">
-            {data.label || '智能体'}
+            {data.label || t('nodesAgent.label')}
           </span>
           {hasAgent ? (
             <span className="text-xs text-muted-foreground truncate block">{agentName}</span>

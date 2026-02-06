@@ -6,12 +6,6 @@ import { Play } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
-interface StartNodeData {
-  type: string
-  label: string
-  config: Record<string, unknown>
-}
-
 export function StartNode({ selected }: NodeProps) {
   const t = useTranslations('workflow')
 

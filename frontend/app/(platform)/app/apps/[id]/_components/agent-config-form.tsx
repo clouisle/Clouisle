@@ -98,18 +98,18 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
     <form id="agent-config-form" onSubmit={handleSubmit}>
       <Tabs defaultValue="basic" className="w-full">
         <TabsList className="mb-4">
-          <TabsTrigger value="basic">基础设置</TabsTrigger>
-          <TabsTrigger value="prompt">提示词</TabsTrigger>
-          <TabsTrigger value="model">模型配置</TabsTrigger>
-          <TabsTrigger value="kb">知识库</TabsTrigger>
+          <TabsTrigger value="basic">{t('settings.tabs.basic')}</TabsTrigger>
+          <TabsTrigger value="prompt">{t('settings.tabs.prompt')}</TabsTrigger>
+          <TabsTrigger value="model">{t('settings.tabs.model')}</TabsTrigger>
+          <TabsTrigger value="kb">{t('settings.tabs.kb')}</TabsTrigger>
         </TabsList>
         
         {/* Basic Settings */}
         <TabsContent value="basic">
           <Card>
             <CardHeader>
-              <CardTitle>基础信息</CardTitle>
-              <CardDescription>设置 Agent 的基本信息</CardDescription>
+              <CardTitle>{t('settings.basicInfo')}</CardTitle>
+              <CardDescription>{t('settings.basicInfoDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -123,12 +123,12 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="icon">图标</Label>
+                  <Label htmlFor="icon">{t('settings.icon')}</Label>
                   <Input
                     id="icon"
                     value={icon}
                     onChange={(e) => setIcon(e.target.value)}
-                    placeholder="输入 emoji，如 🤖"
+                    placeholder={t('settings.iconPlaceholder')}
                   />
                 </div>
               </div>
@@ -174,7 +174,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                   id="suggestedQuestions"
                   value={suggestedQuestions.join('\n')}
                   onChange={(e) => handleSuggestedQuestionsChange(e.target.value)}
-                  placeholder="每行一个问题"
+                  placeholder={t('settings.suggestedQuestionsPlaceholder')}
                   rows={3}
                 />
                 <p className="text-xs text-muted-foreground">{t('suggestedQuestionsHint')}</p>
@@ -188,7 +188,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
           <Card>
             <CardHeader>
               <CardTitle>{t('systemPrompt')}</CardTitle>
-              <CardDescription>定义 Agent 的角色和行为</CardDescription>
+              <CardDescription>{t('settings.promptDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Textarea
@@ -200,7 +200,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground mt-2">
-                支持使用 {'{{变量名}}'} 格式插入变量
+                {t('settings.variableHint')}
               </p>
             </CardContent>
           </Card>
@@ -210,8 +210,8 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
         <TabsContent value="model">
           <Card>
             <CardHeader>
-              <CardTitle>模型配置</CardTitle>
-              <CardDescription>选择和配置 LLM 模型</CardDescription>
+              <CardTitle>{t('settings.modelConfig')}</CardTitle>
+              <CardDescription>{t('settings.modelConfigDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -239,7 +239,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  温度、Top P、最大 Token 等参数在模型配置中设置
+                  {t('settings.modelParamsHint')}
                 </p>
               </div>
             </CardContent>
@@ -270,13 +270,13 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                           )}
                         </div>
                         <span className="text-sm text-muted-foreground">
-                          {kb.document_count} 文档
+                          {t('settings.documents', { count: kb.document_count })}
                         </span>
                       </div>
                     )
                   })}
                   <p className="text-xs text-muted-foreground mt-2">
-                    知识库关联功能即将推出
+                    {t('settings.kbComingSoon')}
                   </p>
                 </div>
               ) : (

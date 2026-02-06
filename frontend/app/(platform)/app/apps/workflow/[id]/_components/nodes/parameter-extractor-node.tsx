@@ -217,7 +217,7 @@ interface ParameterExtractorNodeProps {
   data: ParameterExtractorNodeData
 }
 
-export function ParameterExtractorNode({ id, selected, data }: ParameterExtractorNodeProps) {
+export function ParameterExtractorNode({ selected, data }: ParameterExtractorNodeProps) {
   const t = useTranslations('workflow')
   const config = data.parameterExtractorConfig || defaultParameterExtractorConfig
   const methodConfigMap = getExtractionMethodConfig(t)

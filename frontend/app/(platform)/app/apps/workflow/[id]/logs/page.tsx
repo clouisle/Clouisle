@@ -4,13 +4,10 @@ import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import {
-  Search,
   Calendar,
-  ArrowUpDown,
   Activity,
   ChevronLeft,
   ChevronRight,
-  X,
   ArrowLeft,
   ExternalLink,
   FileText,
@@ -24,7 +21,6 @@ import {
 import Image from 'next/image'
 import { workflowsApi, type Workflow, type WorkflowRunListItem } from '@/lib/api/workflows'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -129,7 +125,6 @@ export default function WorkflowLogsPage() {
   const [isLoadingRuns, setIsLoadingRuns] = React.useState(false)
 
   // Search and filter state
-  const [searchQuery, setSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [dateFilter, setDateFilter] = React.useState('all')
 

@@ -23,11 +23,20 @@ export interface TemplateConfig {
 }
 
 // 默认模板配置
+export function getDefaultTemplateConfig(t: (key: string) => string): TemplateConfig {
+  return {
+    inputs: [],
+    template: '',
+    outputVariable: 'output',
+    outputDescription: t('nodesTemplate.outputDescription'),
+  }
+}
+
 export const defaultTemplateConfig: TemplateConfig = {
   inputs: [],
   template: '',
   outputVariable: 'output',
-  outputDescription: '转换后内容',
+  outputDescription: 'Converted content',
 }
 
 interface TemplateNodeData {
@@ -43,7 +52,7 @@ interface TemplateNodeProps {
   data: TemplateNodeData
 }
 
-export function TemplateNode({ id, selected, data }: TemplateNodeProps) {
+export function TemplateNode({ selected, data }: TemplateNodeProps) {
   const t = useTranslations('workflow')
   return (
     <div className="group relative">

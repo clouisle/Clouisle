@@ -15,11 +15,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Agent } from '@/lib/api'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 interface AgentSidebarProps {
   agent: Agent

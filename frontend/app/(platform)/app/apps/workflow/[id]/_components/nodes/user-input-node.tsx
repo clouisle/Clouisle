@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Handle, Position, useReactFlow } from '@xyflow/react'
+import { Handle, Position } from '@xyflow/react'
 import { Home, MoreHorizontal, Play, Type, AlignLeft, ListChecks, Hash, CheckSquare, File, Image, Files, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -46,12 +46,8 @@ interface UserInputNodeProps {
   data: UserInputNodeData
 }
 
-export function UserInputNode({ id, selected, data }: UserInputNodeProps) {
+export function UserInputNode({ selected, data }: UserInputNodeProps) {
   const t = useTranslations('workflow')
-  const { getEdges } = useReactFlow()
-  
-  const edges = getEdges()
-  const hasOutgoingEdge = edges.some(edge => edge.source === id)
 
   // 获取必填参数
   const requiredParams = (data.parameters || []).filter(p => p.required)

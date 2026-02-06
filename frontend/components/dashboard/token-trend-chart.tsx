@@ -45,7 +45,7 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -64,7 +64,7 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -109,7 +109,7 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
                     <div className="rounded-lg border bg-background p-3 shadow-md">
                       <div className="font-semibold mb-2">{payload[0].payload.date}</div>
                       <div className="text-sm">
-                        Token 消耗: {formatNumber(payload[0].value as number)}
+                        {t('common.tokenUsage')}: {formatNumber(payload[0].value as number)}
                       </div>
                     </div>
                   )

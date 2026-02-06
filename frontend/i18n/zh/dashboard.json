@@ -1,5 +1,29 @@
 {
   "dashboard": {
+    "common": {
+      "loading": "加载中...",
+      "noData": "暂无数据",
+      "count": "数量",
+      "percentage": "占比",
+      "usageCount": "使用次数",
+      "tokenUsage": "Token 消耗",
+      "conversations": "对话数",
+      "messages": "消息数",
+      "team": "团队",
+      "runCount": "运行 {count} 次"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失败",
+      "running": "运行中",
+      "pending": "等待中"
+    },
+    "triggers": {
+      "manual": "手动触发",
+      "scheduled": "定时触发",
+      "webhook": "Webhook",
+      "api": "API 调用"
+    },
     "tabs": {
       "overview": "概述",
       "models": "模型与使用",

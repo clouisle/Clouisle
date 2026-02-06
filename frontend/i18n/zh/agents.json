@@ -18,8 +18,11 @@
       "title": "Agent 设置",
       "description": "配置 Agent 的基本信息和模型参数",
       "basicInfo": "基本信息",
+      "basicInfoDesc": "设置 Agent 的基本信息",
       "icon": "图标",
+      "iconPlaceholder": "输入 emoji，如 🤖",
       "modelConfig": "模型配置",
+      "modelConfigDesc": "选择和配置 LLM 模型",
       "current": "当前",
       "toolCallWarningTitle": "当前模型可能不支持工具调用",
       "toolCallWarningDescription": "已启用工具功能，但所选模型可能不支持函数调用。建议选择支持工具调用的模型。",
@@ -28,7 +31,17 @@
       "maxIterationsTooltip": "使用工具时，Agent 最多可以进行的迭代次数。每次工具调用计为一次迭代。",
       "maxIterationsHint": "工具调用的最大迭代次数 (1-200)",
       "conversationConfig": "对话配置",
-      "suggestedQuestionsPlaceholder": "每行一个问题"
+      "suggestedQuestionsPlaceholder": "每行一个问题",
+      "promptDesc": "定义 Agent 的角色和行为",
+      "variableHint": "支持使用 {{变量名}} 格式插入变量",
+      "documents": "{count} 文档",
+      "kbComingSoon": "知识库关联功能即将推出",
+      "tabs": {
+        "basic": "基础设置",
+        "prompt": "提示词",
+        "model": "模型配置",
+        "kb": "知识库"
+      }
     },
     "agentCreated": "Agent 创建成功",
     "agentUpdated": "Agent 更新成功",
@@ -119,7 +132,19 @@
         "aiGenerate": "AI 生成",
         "placeholder": "在这里写你的提示词...\n\n例如：你是一个专业的客服助手，负责解答用户关于产品的问题。你应该：\n- 用友好、专业的语气回复\n- 如有不确定的问题，建议用户联系人工客服\n- 适当使用 emoji 让对话更亲切",
         "variableHint": "输入 '{{变量名}}' 插入变量",
-        "charCount": "{count} 字符"
+        "charCount": "{count} 字符",
+        "systemVariables": "系统变量",
+        "userVariables": "用户变量",
+        "noVariables": "暂无变量",
+        "variableNotFound": "未找到变量 \"{query}\"",
+        "createVariable": "创建变量 \"{name}\"",
+        "undefinedVariablesHint": "以下变量未定义，点击添加到变量列表：",
+        "systemVars": {
+          "query": "用户输入",
+          "queryDesc": "用户当前的提问内容",
+          "fileContent": "文件内容",
+          "fileContentDesc": "上传文件的解析内容"
+        }
       },
       "variables": {
         "title": "变量",
@@ -127,6 +152,10 @@
         "requiredCount": "{required}/{total} 必填",
         "add": "添加",
         "empty": "暂无变量。添加变量后，可以在提示词中使用 '{{变量名}}' 引用。",
+        "defaultOptions": {
+          "option1": "选项1",
+          "option2": "选项2"
+        },
         "types": {
           "text": "文本",
           "paragraph": "段落",
@@ -235,6 +264,7 @@
         "parser": "文件解析器",
         "selectParser": "选择文件解析器",
         "parserHint": "选择用于解析上传文件的工具。您也可以创建自定义的文件解析工具。",
+        "customParser": "(自定义)",
         "maxContentLength": "最大内容长度",
         "maxContentLengthHint": "每个文件解析后的最大字符数（1,000-500,000）",
         "characters": "字符",

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Handle, Position, useReactFlow, NodeResizeControl } from '@xyflow/react'
+import { Handle, Position, NodeResizeControl } from '@xyflow/react'
 import { RefreshCw, MoreHorizontal, Play, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslations } from 'next-intl'
@@ -58,7 +58,7 @@ interface IterationNodeProps {
 }
 
 // 迭代容器节点 - 作为父节点容纳子节点
-export function IterationNode({ id, selected, data, width, height }: IterationNodeProps) {
+export function IterationNode({ selected, data, width, height }: IterationNodeProps) {
   const t = useTranslations('workflow')
   const config = data.iterationConfig || defaultIterationConfig
 
@@ -165,7 +165,7 @@ interface IterationStartNodeProps {
   }
 }
 
-export function IterationStartNode({ id, selected, data }: IterationStartNodeProps) {
+export function IterationStartNode({ selected, data }: IterationStartNodeProps) {
   const config = data.iterationConfig || defaultIterationConfig
   
   return (
@@ -216,7 +216,7 @@ interface IterationExitNodeProps {
   }
 }
 
-export function IterationExitNode({ id, selected, data }: IterationExitNodeProps) {
+export function IterationExitNode({ selected }: IterationExitNodeProps) {
   const t = useTranslations('workflow')
   return (
     <div className="group relative">

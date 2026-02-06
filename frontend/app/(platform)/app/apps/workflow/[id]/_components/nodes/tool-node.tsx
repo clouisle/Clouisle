@@ -1,8 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { Handle, Position, useReactFlow } from '@xyflow/react'
-import { Wrench, Plus, MoreHorizontal, AlertCircle, Play } from 'lucide-react'
+import { Handle, Position } from '@xyflow/react'
+import { Wrench, MoreHorizontal, AlertCircle, Play } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { ToolCategory, ToolType } from '@/lib/api'
@@ -72,13 +72,9 @@ interface ToolNodeProps {
   data: ToolNodeData
 }
 
-export function ToolNode({ id, selected, data }: ToolNodeProps) {
+export function ToolNode({ selected, data }: ToolNodeProps) {
   const t = useTranslations('workflow')
-  const { getEdges } = useReactFlow()
-  
-  const edges = getEdges()
-  const hasOutgoingEdge = edges.some(edge => edge.source === id)
-  
+
   const config = data.toolConfig || defaultToolNodeConfig
   const hasTool = !!(config.toolId || config.toolName)
   // MCP 类型需要额外选择具体的工具

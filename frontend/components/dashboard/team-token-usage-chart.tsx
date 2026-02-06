@@ -51,7 +51,7 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -70,7 +70,7 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -110,13 +110,13 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
                       <div className="font-semibold mb-2">{data.name}</div>
                       <div className="text-sm space-y-1">
                         <div>
-                          Token 消耗: {formatNumber(data.total_tokens)}
+                          {t('common.tokenUsage')}: {formatNumber(data.total_tokens)}
                         </div>
                         <div>
-                          对话数: {data.conversations.toLocaleString()}
+                          {t('common.conversations')}: {data.conversations.toLocaleString()}
                         </div>
                         <div>
-                          消息数: {data.messages.toLocaleString()}
+                          {t('common.messages')}: {data.messages.toLocaleString()}
                         </div>
                       </div>
                     </div>

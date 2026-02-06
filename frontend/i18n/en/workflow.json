@@ -169,6 +169,11 @@
       "recentActivityDesc": "Latest workflow executions",
       "noRecentActivity": "No recent activity"
     },
+    "apiPlayground": {
+      "workflowStarted": "Workflow started",
+      "workflowCompleted": "Workflow completed",
+      "workflowFailed": "Workflow failed"
+    },
     "editor": {
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
@@ -1001,6 +1006,7 @@
         "editTitle": "Edit Input Variable",
         "addTitle": "Add Input Variable",
         "nameLabel": "Variable Name *",
+        "namePlaceholder": "e.g.: arg1, input, data",
         "valueLabel": "Variable Value *",
         "selectUpstreamPlaceholder": "Select upstream variable...",
         "searchPlaceholder": "Search variables",
@@ -1014,6 +1020,7 @@
         "editTitle": "Edit Input Variable",
         "addTitle": "Add Input Variable",
         "nameLabel": "Variable Name *",
+        "namePlaceholder": "e.g.: arg1, input, data",
         "valueLabel": "Variable Value *",
         "selectUpstreamPlaceholder": "Select upstream variable...",
         "searchPlaceholder": "Search variables",
@@ -1033,7 +1040,10 @@
         "noFileVarsAvailable": "No file variables available, please add them in the start node first",
         "noMatch": "No matching variables found",
         "outputNameLabel": "Output Variable Name *",
+        "outputNamePlaceholder": "e.g.: image_url, file_urls",
         "outputTypePrefix": "Output type:",
+        "outputTypeUrlArray": "string[] (URL array)",
+        "outputTypeUrl": "string (URL)",
         "cancel": "Cancel",
         "save": "Save",
         "add": "Add"

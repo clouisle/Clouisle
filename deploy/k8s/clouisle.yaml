@@ -1,0 +1,554 @@
+# =============================================================================
+# Clouisle Kubernetes Deployment — Single-file manifest
+# Apply:  kubectl apply -f deploy/k8s/clouisle.yaml
+# =============================================================================
+#
+# IMPORTANT: Before applying, replace base64 placeholder values in the Secret.
+#   echo -n 'your-value' | base64
+#
+# ---------------------------------------------------------------------------
+# YAML Anchors — reusable snippets
+# ---------------------------------------------------------------------------
+x-definitions:
+  # -- common labels --------------------------------------------------------
+  - &ns clouisle
+  - &backend-image clouisle-backend:latest
+  - &frontend-image clouisle-frontend:latest
+  - &pull-policy IfNotPresent
+  - &config-ref
+    configMapRef:
+      name: clouisle-config
+  - &secret-ref
+    secretRef:
+      name: clouisle-secret
+  - &env-from
+    - *config-ref
+    - *secret-ref
+  # -- shared volume: uploads -----------------------------------------------
+  - &uploads-volume
+    name: uploads
+    emptyDir: {}
+  - &uploads-mount
+    name: uploads
+    mountPath: /app/uploads
+  # -- shared probe timing --------------------------------------------------
+  - &probe-readiness-fast
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  - &probe-liveness-slow
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  # -- backend resources ----------------------------------------------------
+  - &backend-resources
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# ===========================================================================
+# 1. Namespace
+# ===========================================================================
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: *ns
+
+# ===========================================================================
+# 2. ConfigMap — non-sensitive configuration
+# ===========================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clouisle-config
+  namespace: *ns
+data:
+  PROJECT_NAME: "Clouisle"
+  TIMEZONE: "Asia/Shanghai"
+  API_BASE_URL: "http://backend:8000"
+  FRONTEND_URL: "http://frontend:3000"
+  POSTGRES_SERVER: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "postgres"
+  POSTGRES_DB: "clouisle"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  VECTOR_BACKEND: "qdrant"
+  QDRANT_URL: "http://qdrant:6333"
+  QDRANT_COLLECTION_PREFIX: "kb_dim"
+  QDRANT_DISTANCE: "Cosine"
+  BACKEND_CORS_ORIGINS: "http://localhost:3000"
+
+# ===========================================================================
+# 3. Secret — sensitive values (replace base64 placeholders!)
+# ===========================================================================
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clouisle-secret
+  namespace: *ns
+type: Opaque
+data:
+  SECRET_KEY: Y2hhbmdldGhpcy10by1hLXNlY3VyZS1yYW5kb20tc2VjcmV0LWtleQ==   # changethis-to-a-secure-random-secret-key
+  POSTGRES_PASSWORD: Y2hhbmdlbWU=   # changeme
+  REDIS_PASSWORD: Y2hhbmdlbWU=      # changeme
+  QDRANT_API_KEY: Y2hhbmdlbWU=      # changeme
+
+# ===========================================================================
+# 4. PostgreSQL — StatefulSet + Headless Service + PVC
+# ===========================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: *ns
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: *ns
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: *ns
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: clouisle-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clouisle-secret
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            <<: *probe-readiness-fast
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            <<: *probe-liveness-slow
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+
+# ===========================================================================
+# 5. Redis — Deployment + Service
+# ===========================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: *ns
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: *ns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              if [ -n "$REDIS_PASSWORD" ]; then
+                redis-server --requirepass "$REDIS_PASSWORD"
+              else
+                redis-server
+              fi
+          ports:
+            - containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clouisle-secret
+                  key: REDIS_PASSWORD
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            <<: *probe-readiness-fast
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            <<: *probe-liveness-slow
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+
+# ===========================================================================
+# 6. Qdrant — StatefulSet + Headless Service + PVC
+# ===========================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  namespace: *ns
+spec:
+  selector:
+    app: qdrant
+  ports:
+    - port: 6333
+      targetPort: 6333
+  clusterIP: None
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-data
+  namespace: *ns
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  namespace: *ns
+spec:
+  serviceName: qdrant
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+        - name: qdrant
+          image: qdrant/qdrant:latest
+          ports:
+            - containerPort: 6333
+          env:
+            - name: QDRANT__SERVICE__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: clouisle-secret
+                  key: QDRANT_API_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /qdrant/storage
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            <<: *probe-readiness-fast
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 6333
+            <<: *probe-liveness-slow
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: qdrant-data
+
+# ===========================================================================
+# 7. Backend — Deployment + Service
+# ===========================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: *ns
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: *ns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: *backend-image
+          imagePullPolicy: *pull-policy
+          ports:
+            - containerPort: 8000
+          envFrom: *env-from
+          volumeMounts:
+            - *uploads-mount
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources: *backend-resources
+      volumes:
+        - *uploads-volume
+
+# ===========================================================================
+# 8. Worker — Deployment (no Service)
+# ===========================================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: *ns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: *backend-image
+          imagePullPolicy: *pull-policy
+          command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
+          envFrom: *env-from
+          volumeMounts:
+            - *uploads-mount
+          resources: *backend-resources
+      volumes:
+        - *uploads-volume
+
+# ===========================================================================
+# 9. Beat — Deployment (single replica, Recreate)
+# ===========================================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  namespace: *ns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: beat
+  template:
+    metadata:
+      labels:
+        app: beat
+    spec:
+      containers:
+        - name: beat
+          image: *backend-image
+          imagePullPolicy: *pull-policy
+          command: ["python", "main.py", "beat"]
+          envFrom: *env-from
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+# ===========================================================================
+# 10. Frontend — Deployment + Service
+# ===========================================================================
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: *ns
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: *ns
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: *frontend-image
+          imagePullPolicy: *pull-policy
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            <<: *probe-readiness-fast
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+# ===========================================================================
+# 11. Ingress
+# ===========================================================================
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clouisle-ingress
+  namespace: *ns
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: clouisle.example.com    # Replace with your domain
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

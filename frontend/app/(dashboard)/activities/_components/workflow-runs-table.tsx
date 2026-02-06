@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations, useLocale } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import {
   Search,
   Workflow,
@@ -71,7 +71,7 @@ import { WorkflowRunDrawer } from './workflow-run-drawer'
 import { useCanPerform } from '@/components/permission-guard'
 
 // Helper to format datetime
-function formatDateTime(dateString: string, _locale: string): string {
+function formatDateTime(dateString: string): string {
   const d = new Date(dateString)
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
@@ -139,7 +139,6 @@ function StatusBadge({ status }: { status: RunStatus }) {
 export function WorkflowRunsTable() {
   const t = useTranslations('activities')
   const commonT = useTranslations('common')
-  const locale = useLocale()
   const { canPerform } = useCanPerform()
   const canDeleteWorkflowRun = canPerform('workflow:delete')
 
@@ -213,7 +212,7 @@ export function WorkflowRunsTable() {
       console.error('Failed to load workflow runs:', error)
       const err = error as { response?: { data?: unknown } }
       console.error('Error details:', err.response?.data)
-      toast.error('Failed to load workflow runs')
+      toast.error(t('loadRunsFailed'))
     } finally {
       setLoading(false)
     }
@@ -256,7 +255,7 @@ export function WorkflowRunsTable() {
       loadRuns()
     } catch (error) {
       console.error('Failed to delete runs:', error)
-      toast.error('Failed to delete runs')
+      toast.error(t('deleteRunsFailed'))
     } finally {
       setDeleteDialogOpen(false)
       setDeletingIds([])
@@ -467,7 +466,7 @@ export function WorkflowRunsTable() {
                     <TableCell>{run.triggered_by_name || '-'}</TableCell>
                     <TableCell>{formatDuration(run.total_duration_ms)}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {formatDateTime(run.created_at, locale)}
+                      {formatDateTime(run.created_at)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>

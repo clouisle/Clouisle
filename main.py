@@ -4,7 +4,8 @@ Clouisle Startup Script
 Run this file from the project root to start backend services.
 
 Usage:
-    python main.py server    - Start the backend API server
+    python main.py server    - Start the backend API server (dev, uvicorn)
+    python main.py server --no-reload        - Start production (gunicorn)
     python main.py worker    - Start the Celery worker
     python main.py beat      - Start the Celery beat scheduler
     python main.py flower    - Start the Flower monitoring (if installed)
@@ -22,19 +23,53 @@ BACKEND_DIR = os.path.join(PROJECT_ROOT, "backend")
 sys.path.insert(0, BACKEND_DIR)
 
 
-def start_server(host: str = "127.0.0.1", port: int = 8000, reload: bool = True):
-    """Start the FastAPI backend server."""
+def start_server(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    reload: bool = True,
+    workers: int = 0,
+):
+    """Start the FastAPI backend server.
+
+    Dev mode (reload=True): single-process uvicorn with hot-reload.
+    Production mode (reload=False): Gunicorn with UvicornWorker for
+    multi-process, graceful shutdown, and worker management.
+    """
     os.chdir(BACKEND_DIR)
-    import uvicorn
-    
-    print(f"🚀 Starting Clouisle API server at http://{host}:{port}")
-    uvicorn.run(
-        "app.main:app",
-        host=host,
-        port=port,
-        reload=reload,
-        reload_dirs=[BACKEND_DIR] if reload else None,
-    )
+
+    if reload:
+        import uvicorn
+
+        print(f"🚀 Starting Clouisle API server (dev) at http://{host}:{port}")
+        uvicorn.run(
+            "app.main:app",
+            host=host,
+            port=port,
+            reload=True,
+            reload_dirs=[BACKEND_DIR],
+        )
+    else:
+        if workers <= 0:
+            workers = min(os.cpu_count() or 1, 4) * 2 + 1
+
+        print(
+            f"🚀 Starting Clouisle API server (production) at http://{host}:{port} "
+            f"with {workers} workers"
+        )
+        cmd = [
+            sys.executable, "-m", "gunicorn",
+            "app.main:app",
+            "-k", "uvicorn.workers.UvicornWorker",
+            "--bind", f"{host}:{port}",
+            "--workers", str(workers),
+            "--graceful-timeout", "30",
+            "--timeout", "120",
+            "--keep-alive", "5",
+            "--access-logfile", "-",
+            "--error-logfile", "-",
+            "--forwarded-allow-ips", "*",
+        ]
+        subprocess.run(cmd)
 
 
 def start_worker(concurrency: int = 4, queues: str = "default,workflow"):
@@ -87,8 +122,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py server                    Start API server (dev mode)
-  python main.py server --no-reload        Start API server (production mode)
+  python main.py server                    Start API server (dev mode, uvicorn)
+  python main.py server --no-reload        Start API server (production, gunicorn)
+  python main.py server --no-reload -w 8   Start production with 8 workers
   python main.py server -p 8080            Start API server on port 8080
   python main.py worker                    Start Celery worker
   python main.py worker -c 8               Start worker with 8 processes
@@ -103,7 +139,8 @@ Examples:
     server_parser = subparsers.add_parser("server", help="Start the API server")
     server_parser.add_argument("-H", "--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     server_parser.add_argument("-p", "--port", type=int, default=8000, help="Port to bind (default: 8000)")
-    server_parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload")
+    server_parser.add_argument("-w", "--workers", type=int, default=0, help="Number of Gunicorn workers (default: auto, production only)")
+    server_parser.add_argument("--no-reload", action="store_true", help="Disable auto-reload (use Gunicorn for production)")
     
     # Worker command
     worker_parser = subparsers.add_parser("worker", help="Start the Celery worker")
@@ -124,7 +161,7 @@ Examples:
         sys.exit(1)
     
     if args.command == "server":
-        start_server(host=args.host, port=args.port, reload=not args.no_reload)
+        start_server(host=args.host, port=args.port, reload=not args.no_reload, workers=args.workers)
     elif args.command == "worker":
         start_worker(concurrency=args.concurrency, queues=args.queues)
     elif args.command == "beat":

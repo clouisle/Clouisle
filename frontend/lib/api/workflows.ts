@@ -293,7 +293,7 @@ export const workflowsApi = {
   /**
    * 获取工作流统计数据
    */
-  getWorkflowStats: async (id: string, period?: string): Promise<{
+  getWorkflowStats: async (id: string): Promise<{
     total_runs: number
     success_count: number
     failed_count: number

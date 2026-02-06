@@ -240,7 +240,7 @@ export function FileToUrlInputDialog({
                 id="filetourlput-name"
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如: image_url, file_urls"
+                placeholder={t('dialogs.fileToUrlInput.outputNamePlaceholder')}
                 className={cn(
                   'h-9 font-mono',
                   (nameError || duplicateError) && 'border-destructive! ring-destructive/20!'
@@ -253,7 +253,7 @@ export function FileToUrlInputDialog({
                 <p className="text-[10px] text-destructive">{duplicateError}</p>
               )}
               <p className="text-[10px] text-muted-foreground">
-                {t('dialogs.fileToUrlInput.outputTypePrefix')}{form.sourceType === 'files' || form.sourceType === 'images' ? 'string[] (URL 数组)' : 'string (URL)'}
+                {t('dialogs.fileToUrlInput.outputTypePrefix')}{form.sourceType === 'files' || form.sourceType === 'images' ? t('dialogs.fileToUrlInput.outputTypeUrlArray') : t('dialogs.fileToUrlInput.outputTypeUrl')}
               </p>
             </div>
           </div>

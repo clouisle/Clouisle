@@ -604,7 +604,7 @@ export function AgentOrchestrationForm({
                           <span>{parser.icon}</span>
                           <span>{parser.display_name}</span>
                           {parser.type === 'custom' && (
-                            <span className="text-xs text-muted-foreground">(自定义)</span>
+                            <span className="text-xs text-muted-foreground">{t('fileUpload.customParser')}</span>
                           )}
                         </div>
                       </SelectItem>

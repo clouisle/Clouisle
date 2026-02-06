@@ -112,7 +112,7 @@ const extractVariableName = (variable: string) => {
   return variable
 }
 
-export function VariableAggregatorNode({ id, selected, data }: VariableAggregatorNodeProps) {
+export function VariableAggregatorNode({ selected, data }: VariableAggregatorNodeProps) {
   const t = useTranslations('workflow')
   const config = data.variableAggregatorConfig || defaultVariableAggregatorConfig
   const aggregationModeConfig = getAggregationModeConfig(t)

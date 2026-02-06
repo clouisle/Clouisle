@@ -20,7 +20,7 @@ interface LLMNodeProps {
   data: LLMNodeData
 }
 
-export function LLMNode({ id, selected, data }: LLMNodeProps) {
+export function LLMNode({ selected, data }: LLMNodeProps) {
   const t = useTranslations('workflow')
   // 从 llmConfig 获取模型信息
   const modelName = data.llmConfig?.modelName

@@ -18,13 +18,6 @@ interface ModelDetailsCardProps {
 export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
   const t = useTranslations('dashboard')
 
-  const formatNumber = (num: number | undefined) => {
-    if (num === undefined || num === null) return '0'
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`
-    return num.toString()
-  }
-
   if (isLoading) {
     return (
       <Card>
@@ -36,7 +29,7 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -54,7 +47,7 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -78,7 +71,7 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
             >
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{model.model}</div>
-                <div className="text-xs text-muted-foreground">使用次数: {model.count.toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">{t('common.usageCount')}: {model.count.toLocaleString()}</div>
               </div>
               <div className="text-right ml-4">
                 <div className="text-sm font-semibold">{model.percentage.toFixed(1)}%</div>

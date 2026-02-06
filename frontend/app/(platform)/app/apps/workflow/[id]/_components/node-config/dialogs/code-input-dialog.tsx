@@ -18,7 +18,6 @@ interface CodeInputDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   editingInput: CodeInput | null
-  existingInputs: CodeInput[]
   variables: AvailableVariable[]
   variableSearch: string
   openVariablePopover: string | null
@@ -31,7 +30,6 @@ export function CodeInputDialog({
   open,
   onOpenChange,
   editingInput,
-  existingInputs,
   variables,
   variableSearch,
   openVariablePopover,
@@ -113,7 +111,7 @@ export function CodeInputDialog({
                 id="codeinput-name"
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如: arg1, input, data"
+                placeholder={t('dialogs.codeInput.namePlaceholder')}
                 className={cn(
                   'h-9 font-mono',
                   nameError && 'border-destructive! ring-destructive/20!'

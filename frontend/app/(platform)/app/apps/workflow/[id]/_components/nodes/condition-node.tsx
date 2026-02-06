@@ -104,27 +104,8 @@ const extractVariableName = (variable: string) => {
   return match ? match[1] : variable
 }
 
-export function ConditionNode({ id, selected, data }: ConditionNodeProps) {
+export function ConditionNode({ selected, data }: ConditionNodeProps) {
   const t = useTranslations('workflow')
-
-  // Helper function to get operator label
-  const getOperatorLabel = (op: ConditionOperator) => {
-    const labels: Record<ConditionOperator, string> = {
-      equals: t('nodesCondition.operatorEquals'),
-      not_equals: t('nodesCondition.operatorNotEquals'),
-      contains: t('nodesCondition.operatorContains'),
-      not_contains: t('nodesCondition.operatorNotContains'),
-      starts_with: t('nodesCondition.operatorStartsWith'),
-      ends_with: t('nodesCondition.operatorEndsWith'),
-      is_empty: t('nodesCondition.operatorIsEmpty'),
-      is_not_empty: t('nodesCondition.operatorIsNotEmpty'),
-      greater_than: t('nodesCondition.operatorGreaterThan'),
-      less_than: t('nodesCondition.operatorLessThan'),
-      greater_or_equal: t('nodesCondition.operatorGreaterOrEqual'),
-      less_or_equal: t('nodesCondition.operatorLessOrEqual'),
-    }
-    return labels[op]
-  }
 
   // Helper function to get short operator label
   const getShortOperatorLabel = (op: ConditionOperator) => {

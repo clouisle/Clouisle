@@ -70,7 +70,11 @@
         "conversations": "对话",
         "tokens": "Tokens"
       },
-      "quickActions": "快速操作",
+      "charts": {
+      "conversations": "对话数",
+      "count": "数量"
+    },
+    "quickActions": "快速操作",
       "actions": {
         "createAgent": {
           "title": "创建智能体",

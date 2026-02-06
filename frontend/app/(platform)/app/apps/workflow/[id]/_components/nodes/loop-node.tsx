@@ -1,11 +1,11 @@
 'use client'
 
 import * as React from 'react'
-import { Handle, Position, useReactFlow, NodeResizeControl } from '@xyflow/react'
+import { Handle, Position, NodeResizeControl } from '@xyflow/react'
 import { useTranslations } from 'next-intl'
 import { Infinity, MoreHorizontal, Play, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ConditionRule, ConditionOperator } from './condition-node'
+import { ConditionRule } from './condition-node'
 
 // 循环变量类型
 export type LoopVariableType = 'string' | 'number' | 'boolean' | 'array' | 'object'
@@ -59,7 +59,7 @@ interface LoopNodeProps {
 }
 
 // 循环容器节点 - 作为父节点容纳子节点
-export function LoopNode({ id, selected, data, width, height }: LoopNodeProps) {
+export function LoopNode({ selected, data, width, height }: LoopNodeProps) {
   const t = useTranslations('workflow')
   const config = data.loopConfig || defaultLoopConfig
 
@@ -163,7 +163,7 @@ interface LoopStartNodeProps {
   }
 }
 
-export function LoopStartNode({ id, selected, data }: LoopStartNodeProps) {
+export function LoopStartNode({ selected, data }: LoopStartNodeProps) {
   const config = data.loopConfig || defaultLoopConfig
   
   // 构建变量显示文本
@@ -219,7 +219,7 @@ interface LoopExitNodeProps {
   }
 }
 
-export function LoopExitNode({ id, selected, data }: LoopExitNodeProps) {
+export function LoopExitNode({ selected }: LoopExitNodeProps) {
   const t = useTranslations('workflow')
   return (
     <div className="group relative">

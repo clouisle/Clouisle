@@ -74,7 +74,6 @@ export function SubWorkflowNodeConfig({
   // 工作流数据
   const [workflows, setWorkflows] = React.useState<WorkflowListItem[]>([])
   const [isLoadingWorkflows, setIsLoadingWorkflows] = React.useState(false)
-  const [selectedWorkflowDetail, setSelectedWorkflowDetail] = React.useState<{ variables: Array<{ name: string; type: string; required: boolean; description?: string | null }> } | null>(null)
   
   // 工作流选择弹窗
   const [workflowSelectorOpen, setWorkflowSelectorOpen] = React.useState(false)
@@ -113,7 +112,6 @@ export function SubWorkflowNodeConfig({
   React.useEffect(() => {
     const loadWorkflowDetail = async () => {
       if (!safeConfig.workflowId) {
-        setSelectedWorkflowDetail(null)
         return
       }
       
@@ -149,10 +147,6 @@ export function SubWorkflowNodeConfig({
             }))
           }
         }
-        
-        setSelectedWorkflowDetail({
-          variables,
-        })
         
         // 自动生成输入映射（仅当没有现有映射或工作流变更时）
         if (variables.length > 0) {
@@ -199,7 +193,7 @@ export function SubWorkflowNodeConfig({
           })
         }
       } catch {
-        setSelectedWorkflowDetail(null)
+        // ignore error
       }
     }
     loadWorkflowDetail()
@@ -240,7 +234,6 @@ export function SubWorkflowNodeConfig({
       ...defaultSubWorkflowNodeConfig,
       outputVariable: safeConfig.outputVariable,
     })
-    setSelectedWorkflowDetail(null)
   }
 
   // 更新参数映射

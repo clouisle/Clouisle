@@ -20,7 +20,7 @@ interface SubWorkflowNodeProps {
   data: SubWorkflowNodeData
 }
 
-export function SubWorkflowNode({ id, selected, data }: SubWorkflowNodeProps) {
+export function SubWorkflowNode({ selected, data }: SubWorkflowNodeProps) {
   const t = useTranslations('workflow')
   // 从 subWorkflowConfig 获取工作流信息
   const workflowName = data.subWorkflowConfig?.workflowName

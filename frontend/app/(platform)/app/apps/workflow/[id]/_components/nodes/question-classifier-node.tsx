@@ -50,7 +50,7 @@ interface QuestionClassifierNodeProps {
   data: QuestionClassifierNodeData
 }
 
-export function QuestionClassifierNode({ id, selected, data }: QuestionClassifierNodeProps) {
+export function QuestionClassifierNode({ selected, data }: QuestionClassifierNodeProps) {
   const t = useTranslations('workflow')
   const config = data.questionClassifierConfig || defaultQuestionClassifierConfig
   const categories = config.categories || []

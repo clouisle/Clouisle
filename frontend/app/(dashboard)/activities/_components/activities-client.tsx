@@ -4,18 +4,19 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Activity, MessageSquare, Workflow } from 'lucide-react'
 import { toast } from 'sonner'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { conversationsApi, workflowsApi, type ConversationStats, type WorkflowRunStats } from '@/lib/api'
+import { conversationsApi, workflowsApi, type ConversationStats } from '@/lib/api'
+import { type WorkflowRunStats } from '@/lib/api/workflows'
 import { ConversationsTable } from './conversations-table'
 import { WorkflowRunsTable } from './workflow-runs-table'
 
 export function ActivitiesClient() {
   const t = useTranslations('activities')
   const [activeTab, setActiveTab] = React.useState<'conversations' | 'workflows'>('conversations')
+  const [loading, setLoading] = React.useState(true)
   const [conversationStats, setConversationStats] = React.useState<ConversationStats | null>(null)
   const [workflowStats, setWorkflowStats] = React.useState<WorkflowRunStats | null>(null)
-  const [loading, setLoading] = React.useState(true)
 
   // Load statistics
   React.useEffect(() => {
@@ -26,37 +27,27 @@ export function ActivitiesClient() {
         // Load conversation stats with fallback
         const convStats = await conversationsApi.getStats().catch((error) => {
           console.error('Failed to load conversation stats:', error)
-          return {
-            total_conversations: 0,
-            total_messages: 0,
-            active_users: 0,
-            conversations_by_agent: [],
-            conversations_by_team: [],
-          }
+          return null
         })
 
         // Load workflow stats with fallback
         const wfStats = await workflowsApi.getWorkflowRunStats().catch((error) => {
           console.error('Failed to load workflow stats:', error)
-          return {
-            total_runs: 0,
-            runs_by_status: {},
-            runs_by_workflow: [],
-            avg_duration_ms: 0,
-          }
+          return null
         })
 
         setConversationStats(convStats)
         setWorkflowStats(wfStats)
       } catch (error) {
         console.error('Failed to load statistics:', error)
-        toast.error('Failed to load some statistics')
+        toast.error(t('loadStatsFailed'))
       } finally {
         setLoading(false)
       }
     }
 
     loadStats()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -76,7 +67,7 @@ export function ActivitiesClient() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : conversationStats?.total_conversations.toLocaleString() || 0}
+              {loading ? '...' : conversationStats?.total_conversations.toLocaleString() ?? 0}
             </div>
           </CardContent>
         </Card>
@@ -88,7 +79,7 @@ export function ActivitiesClient() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : workflowStats?.total_runs.toLocaleString() || 0}
+              {loading ? '...' : workflowStats?.total_runs.toLocaleString() ?? 0}
             </div>
           </CardContent>
         </Card>
@@ -100,7 +91,7 @@ export function ActivitiesClient() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : calculateTodayActivities(conversationStats, workflowStats)}
+              {loading ? '...' : 0}
             </div>
           </CardContent>
         </Card>
@@ -112,7 +103,7 @@ export function ActivitiesClient() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loading ? '...' : conversationStats?.active_users || 0}
+              {loading ? '...' : conversationStats?.active_users ?? 0}
             </div>
           </CardContent>
         </Card>
@@ -141,14 +132,4 @@ export function ActivitiesClient() {
       </Tabs>
     </div>
   )
-}
-
-// Helper to calculate today's activities
-function calculateTodayActivities(
-  conversationStats: ConversationStats | null,
-  workflowStats: WorkflowRunStats | null
-): number {
-  // This is a simplified calculation - in a real app, you'd want to filter by today's date
-  // For now, we'll just return 0 as a placeholder
-  return 0
 }

@@ -18,8 +18,11 @@
       "title": "Agent Settings",
       "description": "Configure agent basic info and model parameters",
       "basicInfo": "Basic Info",
+      "basicInfoDesc": "Set basic information for the Agent",
       "icon": "Icon",
+      "iconPlaceholder": "Enter emoji, e.g. 🤖",
       "modelConfig": "Model Configuration",
+      "modelConfigDesc": "Select and configure LLM model",
       "current": "Current",
       "toolCallWarningTitle": "Current model may not support tool calls",
       "toolCallWarningDescription": "Tools are enabled, but the selected model may not support function calling. Consider selecting a model that supports tool calls.",
@@ -28,7 +31,17 @@
       "maxIterationsTooltip": "Maximum number of iterations the agent can perform when using tools. Each tool call counts as one iteration.",
       "maxIterationsHint": "Max tool call iterations (1-200)",
       "conversationConfig": "Conversation Settings",
-      "suggestedQuestionsPlaceholder": "One question per line"
+      "suggestedQuestionsPlaceholder": "One question per line",
+      "promptDesc": "Define the agent's role and behavior",
+      "variableHint": "Use {{variableName}} format to insert variables",
+      "documents": "{count} documents",
+      "kbComingSoon": "Knowledge base linking feature coming soon",
+      "tabs": {
+        "basic": "Basic Settings",
+        "prompt": "Prompt",
+        "model": "Model Config",
+        "kb": "Knowledge Base"
+      }
     },
     "agentCreated": "Agent created successfully",
     "agentUpdated": "Agent updated successfully",
@@ -119,7 +132,19 @@
         "aiGenerate": "AI Generate",
         "placeholder": "Write your prompt here...\n\nExample: You are a professional customer service assistant responsible for answering questions about products. You should:\n- Reply in a friendly, professional tone\n- Suggest contacting human support for uncertain questions\n- Use emoji appropriately to make conversations friendlier",
         "variableHint": "Type '{{variable}}' to insert a variable",
-        "charCount": "{count} characters"
+        "charCount": "{count} characters",
+        "systemVariables": "System Variables",
+        "userVariables": "User Variables",
+        "noVariables": "No variables",
+        "variableNotFound": "Variable \"{query}\" not found",
+        "createVariable": "Create variable \"{name}\"",
+        "undefinedVariablesHint": "The following variables are undefined. Click to add to variable list:",
+        "systemVars": {
+          "query": "User Input",
+          "queryDesc": "The user's current question",
+          "fileContent": "File Content",
+          "fileContentDesc": "Parsed content of uploaded files"
+        }
       },
       "variables": {
         "title": "Variables",
@@ -127,6 +152,10 @@
         "requiredCount": "{required}/{total} required",
         "add": "Add",
         "empty": "No variables yet. After adding, you can reference them in prompts using '{{variableName}}'.",
+        "defaultOptions": {
+          "option1": "Option 1",
+          "option2": "Option 2"
+        },
         "types": {
           "text": "Text",
           "paragraph": "Paragraph",
@@ -235,6 +264,7 @@
         "parser": "File Parser",
         "selectParser": "Select file parser",
         "parserHint": "Select a tool to parse uploaded files. You can also create custom file parsing tools.",
+        "customParser": "(Custom)",
         "maxContentLength": "Max Content Length",
         "maxContentLengthHint": "Maximum characters per parsed file (1,000-500,000)",
         "characters": "chars",

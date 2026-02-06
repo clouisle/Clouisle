@@ -25,7 +25,6 @@ import {
   Globe,
   Plug,
   Share2,
-  Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -388,13 +387,13 @@ export function ToolsClient() {
           } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
             router.push(`/tools/code?id=${tool.id}`)
           } else {
-            toast.error('Unknown tool type')
+            toast.error(t('error.unknownToolType'))
           }
         }
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
-      toast.error('Failed to load tool detail')
+      toast.error(t('error.loadToolDetailFailed'))
     }
   }
 
@@ -415,7 +414,7 @@ export function ToolsClient() {
       loadAllTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error('Failed to save tool')
+      toast.error(t('error.saveFailed'))
     }
   }
 
@@ -436,7 +435,7 @@ export function ToolsClient() {
       loadAllTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error('Failed to save tool')
+      toast.error(t('error.saveFailed'))
     }
   }
 
@@ -770,7 +769,7 @@ export function ToolsClient() {
                         <DropdownMenu>
                           <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                             <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{t('common.openMenu')}</span>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             {canPerform('tool:update') && (

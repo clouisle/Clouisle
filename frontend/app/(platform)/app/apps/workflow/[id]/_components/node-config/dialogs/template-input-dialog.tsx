@@ -18,7 +18,6 @@ interface TemplateInputDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   editingInput: TemplateInput | null
-  existingInputs: TemplateInput[]
   variables: AvailableVariable[]
   variableSearch: string
   openVariablePopover: string | null
@@ -31,7 +30,6 @@ export function TemplateInputDialog({
   open,
   onOpenChange,
   editingInput,
-  existingInputs,
   variables,
   variableSearch,
   openVariablePopover,
@@ -113,7 +111,7 @@ export function TemplateInputDialog({
                 id="templateinput-name"
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如: arg1, input, data"
+                placeholder={t('dialogs.templateInput.namePlaceholder')}
                 className={cn(
                   'h-9 font-mono',
                   nameError && 'border-destructive! ring-destructive/20!'

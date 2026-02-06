@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl'
 import { Plus, Trash2, ChevronDown, Pencil, File, Image, Files, Images } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -25,16 +24,6 @@ const typeIcons: Record<string, React.ElementType> = {
   image: Image,
   files: Files,
   images: Images,
-}
-
-// 类型标签映射
-function getTypeLabels(t: ReturnType<typeof useTranslations<'workflow'>>): Record<string, string> {
-  return {
-    file: t('configFileToUrl.fileType'),
-    image: t('configFileToUrl.imageType'),
-    files: t('configFileToUrl.multiFileType'),
-    images: t('configFileToUrl.multiImageType'),
-  }
 }
 
 interface FileToUrlNodeConfigProps {

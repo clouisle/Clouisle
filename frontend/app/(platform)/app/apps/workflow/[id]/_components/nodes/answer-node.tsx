@@ -71,7 +71,7 @@ interface AnswerNodeProps {
   data: AnswerNodeData
 }
 
-export function AnswerNode({ id, selected, data }: AnswerNodeProps) {
+export function AnswerNode({ selected, data }: AnswerNodeProps) {
   const t = useTranslations('workflow')
   const config = data.answerConfig || defaultAnswerNodeConfig
   const outputs = config.outputs || []

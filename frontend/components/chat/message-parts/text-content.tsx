@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
 import {
@@ -153,6 +154,7 @@ interface CitationBadgeProps {
 }
 
 function CitationBadge({ index, source, onClick }: CitationBadgeProps) {
+  const t = useTranslations('chat.source')
   const badge = (
     <button
       type="button"
@@ -179,7 +181,7 @@ function CitationBadge({ index, source, onClick }: CitationBadgeProps) {
       <TooltipTrigger render={badge} />
       <TooltipContent side="top" className="max-w-xs">
         <div className="space-y-1">
-          <div className="font-medium text-xs">{source.documentName || '文档'}</div>
+          <div className="font-medium text-xs">{source.documentName || t('documentDefault')}</div>
           <div className="text-xs text-muted-foreground line-clamp-3">
             {source.content}
           </div>

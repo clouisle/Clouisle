@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Trash2, Pencil, Search, AlertCircle, Type, Hash, CheckSquare, Brackets, Braces } from 'lucide-react'
+import { Plus, Trash2, Pencil, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,11 +17,10 @@ import { isValidVariableName } from '../utils'
 import { loopVariableTypeConfig } from '../constants'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
-import { 
-  LoopConfig, 
-  LoopVariable, 
-  LoopVariableType, 
-  defaultLoopConfig 
+import {
+  LoopConfig,
+  LoopVariable,
+  LoopVariableType,
 } from '../../nodes/loop-node'
 import {
   ConditionRule,
@@ -199,14 +198,6 @@ export function LoopNodeConfig({
     const allVars = getExitConditionVariables()
     if (!search) return allVars
     return allVars.filter(v =>
-      v.name.toLowerCase().includes(search.toLowerCase())
-    )
-  }
-
-  // 过滤变量（通用）
-  const filterVariables = (search: string) => {
-    if (!search) return variables
-    return variables.filter(v =>
       v.name.toLowerCase().includes(search.toLowerCase())
     )
   }

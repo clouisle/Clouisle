@@ -21,25 +21,14 @@ import {
   Sparkles,
   Pencil,
 } from 'lucide-react'
-import { 
+import {
   publicAgentsApi,
   uploadApi,
   type PublicAgent,
   type ConversationListItem,
-  type Message,
   type ChatFileUrl,
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -60,7 +49,6 @@ import { cn } from '@/lib/utils'
 import {
   ChatContainer,
   ChatInput,
-  type ChatMessage,
   type ChatInputFile,
 } from '@/components/chat'
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'

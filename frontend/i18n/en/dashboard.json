@@ -1,5 +1,29 @@
 {
   "dashboard": {
+    "common": {
+      "loading": "Loading...",
+      "noData": "No data",
+      "count": "Count",
+      "percentage": "Percentage",
+      "usageCount": "Usage count",
+      "tokenUsage": "Token usage",
+      "conversations": "Conversations",
+      "messages": "Messages",
+      "team": "Team",
+      "runCount": "Run {count} times"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed",
+      "running": "Running",
+      "pending": "Pending"
+    },
+    "triggers": {
+      "manual": "Manual",
+      "scheduled": "Scheduled",
+      "webhook": "Webhook",
+      "api": "API Call"
+    },
     "tabs": {
       "overview": "Overview",
       "models": "Models & Usage",

@@ -71,12 +71,12 @@ export const defaultErrorHandlingConfig: ErrorHandlingConfig = {
 export const defaultCodeConfig: CodeConfig = {
   language: 'python',
   code: `def main(inputs: dict) -> dict:
-    # 在这里编写你的代码
-    # inputs 包含所有输入变量
-    # 返回一个字典作为输出
-    
+    # Write your code here
+    # inputs contains all input variables
+    # Return a dictionary as output
+
     result = inputs.get("input", "")
-    
+
     return {
         "result": result
     }`,
@@ -89,24 +89,24 @@ export const defaultCodeConfig: CodeConfig = {
 
 // Python 示例代码
 export const pythonTemplate = `def main(inputs: dict) -> dict:
-    # 在这里编写你的代码
-    # inputs 包含所有输入变量
-    # 返回一个字典作为输出
-    
+    # Write your code here
+    # inputs contains all input variables
+    # Return a dictionary as output
+
     result = inputs.get("input", "")
-    
+
     return {
         "result": result
     }`
 
 // JavaScript 示例代码
 export const javascriptTemplate = `function main(params) {
-    // 在这里编写你的代码
-    // params 包含所有输入变量
-    // 返回一个对象作为输出
-    
+    // Write your code here
+    // params contains all input variables
+    // Return an object as output
+
     const result = params.input || "";
-    
+
     return {
         result: result
     };
@@ -125,7 +125,7 @@ interface CodeNodeProps {
   data: CodeNodeData
 }
 
-export function CodeNode({ id, selected, data }: CodeNodeProps) {
+export function CodeNode({ selected, data }: CodeNodeProps) {
   const t = useTranslations('workflow')
   // 检查是否启用了异常分支
   const hasErrorBranch = data.codeConfig?.errorHandling?.type === 'error_branch'
@@ -172,7 +172,7 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
           
           {/* Label */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '代码执行'}
+            {data.label || t('nodesCode.label')}
           </span>
         </div>
 

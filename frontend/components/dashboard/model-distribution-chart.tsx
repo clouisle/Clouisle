@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Cpu } from 'lucide-react'
 import type { ModelDistribution } from '@/lib/api/dashboard'
 
@@ -41,7 +41,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">加载中...</div>
+            <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
       </Card>
@@ -60,7 +60,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center">
-            <div className="text-muted-foreground">暂无数据</div>
+            <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
       </Card>
@@ -101,10 +101,10 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
                       <div className="font-semibold mb-2">{data.model}</div>
                       <div className="text-sm space-y-1">
                         <div>
-                          使用次数: {formatNumber(data.count)}
+                          {t('common.usageCount')}: {formatNumber(data.count)}
                         </div>
                         <div className="font-medium">
-                          占比: {data.percentage.toFixed(2)}%
+                          {t('common.percentage')}: {data.percentage.toFixed(2)}%
                         </div>
                       </div>
                     </div>

@@ -39,7 +39,7 @@ interface FileToUrlNodeProps {
   data: FileToUrlNodeData
 }
 
-export function FileToUrlNode({ id, selected, data }: FileToUrlNodeProps) {
+export function FileToUrlNode({ selected, data }: FileToUrlNodeProps) {
   const t = useTranslations('workflow')
   const config = data.fileToUrlConfig || defaultFileToUrlConfig
   const inputCount = config.inputs.length

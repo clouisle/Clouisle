@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl'
 import { Search, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -13,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import type { AvailableVariable } from '../types'
 import { extractVariableDisplayName } from '../types'
-import { IterationConfig, IteratorType, defaultIterationConfig } from '../../nodes/iteration-node'
+import { IterationConfig } from '../../nodes/iteration-node'
 
 interface IterationNodeConfigProps {
   config: IterationConfig

@@ -8,11 +8,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectEmpty } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ChevronDown, Image, Settings2, Loader2, Search, Info, History } from 'lucide-react'
+import { ChevronDown, Image as ImageIcon, Settings2, Loader2, Search, Info, History } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
@@ -423,7 +423,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           <CollapsibleTrigger asChild>
             <Button variant="ghost" size="sm" className="w-full justify-between px-3 h-9">
               <span className="flex items-center gap-2">
-                <Image className="h-4 w-4" />
+                <ImageIcon className="h-4 w-4" />
                 <span className="text-xs">{t('configLlm.multimodalImageInput')}</span>
                 {safeConfig.visionConfig?.enabled && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">

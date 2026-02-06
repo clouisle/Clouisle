@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Trash2, Type, AlignLeft, ListChecks, Hash, CheckSquare, Brackets, Braces, File, Image, Files, Images } from 'lucide-react'
+import { Plus, Trash2, Type, AlignLeft, ListChecks, Hash, CheckSquare, Brackets, Braces, File, Image as ImageIcon, Files, Images } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
-import type { Parameter, ParameterType, FileParameterConfig } from '../types'
+import type { Parameter, ParameterType } from '../types'
 
 interface ParameterEditDialogProps {
   open: boolean
@@ -134,7 +134,7 @@ export function ParameterEditDialog({
                         {paramForm.type === 'array' && <><Brackets className="h-4 w-4" /> {t('dialogs.parameterEdit.typeArray')}</>}
                         {paramForm.type === 'object' && <><Braces className="h-4 w-4" /> {t('dialogs.parameterEdit.typeObject')}</>}
                         {paramForm.type === 'file' && <><File className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFile')}</>}
-                        {paramForm.type === 'image' && <><Image className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</>}
+                        {paramForm.type === 'image' && <><ImageIcon className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</>}
                         {paramForm.type === 'files' && <><Files className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFiles')}</>}
                         {paramForm.type === 'images' && <><Images className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImages')}</>}
                       </span>
@@ -167,7 +167,7 @@ export function ParameterEditDialog({
                     <span className="flex items-center gap-2"><File className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFile')}</span>
                   </SelectItem>
                   <SelectItem value="image">
-                    <span className="flex items-center gap-2"><Image className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</span>
+                    <span className="flex items-center gap-2"><ImageIcon className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</span>
                   </SelectItem>
                   <SelectItem value="files">
                     <span className="flex items-center gap-2"><Files className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFiles')}</span>

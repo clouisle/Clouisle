@@ -131,6 +131,7 @@ export function ChatInput({
   
   // Support both controlled and uncontrolled files
   const files = controlledFiles ?? internalFiles;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setFiles = onFilesChange ?? setInternalFiles;
 
   // Check if input is multiline (has newlines or is long enough to wrap)

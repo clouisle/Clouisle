@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { ConditionBranch } from './nodes/condition-node'
 import { IterationConfig, defaultIterationConfig } from './nodes/iteration-node'
@@ -927,18 +926,6 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
     return variables
   }, [allNodes, node, t])
 
-  // 检查输出变量名是否与系统变量冲突
-  const isSystemVariableConflict = React.useCallback((varName: string) => {
-    if (!varName) return false
-    const lowerName = varName.toLowerCase()
-    
-    for (const p of systemParameters) {
-      if (p.name.toLowerCase() === lowerName) return true
-    }
-    
-    return false
-  }, [])
-
   // 检查节点名称是否重复
   const isNodeLabelDuplicate = (labelName: string) => {
     if (!labelName || !node) return false
@@ -1328,7 +1315,6 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         open={isCodeInputDialogOpen}
         onOpenChange={setIsCodeInputDialogOpen}
         editingInput={editingCodeInput}
-        existingInputs={codeConfig.inputs}
         variables={getAvailableVariables()}
         variableSearch={variableSearch}
         openVariablePopover={openVariablePopover}

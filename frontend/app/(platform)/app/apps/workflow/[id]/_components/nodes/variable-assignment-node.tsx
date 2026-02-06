@@ -121,7 +121,7 @@ const truncateValue = (value: string, maxLen = 10) => {
   return value.slice(0, maxLen) + '...'
 }
 
-export function VariableAssignmentNode({ id, selected, data }: VariableAssignmentNodeProps) {
+export function VariableAssignmentNode({ selected, data }: VariableAssignmentNodeProps) {
   const t = useTranslations('workflow')
   const config = data.variableAssignmentConfig || defaultVariableAssignmentConfig
   const assignments = config.assignments || []
@@ -180,7 +180,7 @@ export function VariableAssignmentNode({ id, selected, data }: VariableAssignmen
         {/* Assignments List */}
         <div className="px-2.5 pb-2 pt-0.5 flex flex-col gap-1">
           {hasAssignments ? (
-            assignments.slice(0, 3).map((assignment, index) => {
+            assignments.slice(0, 3).map((assignment) => {
               const opConfig = assignmentOperationConfig[assignment.operation]
 
               return (

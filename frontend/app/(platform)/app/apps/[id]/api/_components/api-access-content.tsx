@@ -21,21 +21,22 @@ interface ApiAccessContentProps {
 }
 
 // Code block with copy button
-function CodeBlock({ 
-  code, 
+function CodeBlock({
+  code,
   language = 'bash',
   className,
-}: { 
+}: {
   code: string
   language?: string
   className?: string
 }) {
   const [copied, setCopied] = React.useState(false)
+  const t = useTranslations('common')
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code)
     setCopied(true)
-    toast.success('已复制到剪贴板')
+    toast.success(t('copiedToClipboard'))
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -80,11 +81,6 @@ function Section({
 
 export function ApiAccessContent({ agent }: ApiAccessContentProps) {
   const t = useTranslations('agents.apiAccess')
-  
-  // Get base URL from environment or window
-  const baseUrl = typeof window !== 'undefined' 
-    ? `${window.location.protocol}//${window.location.host}` 
-    : 'http://localhost:8000'
   
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   

@@ -12,7 +12,9 @@
       "thinking": "Thinking",
       "thoughtFor": "Thought for {seconds}s",
       "thought": "Thought process",
-      "processing": "Reasoning..."
+      "processing": "Reasoning...",
+      "thinkingDefault": "Thinking...",
+      "thoughtDefault": "Thought process"
     },
     "tool": {
       "running": "Running...",
@@ -27,6 +29,7 @@
       "sources": "Sources",
       "usedSources": "Used {count} sources",
       "document": "Document",
+      "documentDefault": "Document",
       "url": "Link",
       "page": "Page {page}",
       "segment": "Segment {index}",
@@ -65,6 +68,13 @@
       "notHelpful": "Not helpful",
       "regenerate": "Regenerate",
       "thinking": "Thinking..."
+    },
+    "lightbox": {
+      "zoomOut": "Zoom out (-)",
+      "zoomIn": "Zoom in (+)",
+      "rotate": "Rotate (R)",
+      "download": "Download",
+      "close": "Close (Esc)"
     }
   }
 }
