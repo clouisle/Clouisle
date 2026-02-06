@@ -82,7 +82,7 @@ data:
   QDRANT_URL: "http://qdrant:6333"
   QDRANT_COLLECTION_PREFIX: "kb_dim"
   QDRANT_DISTANCE: "Cosine"
-  BACKEND_CORS_ORIGINS: "http://localhost:3000"
+  BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
 
 # ===========================================================================
 # 3. Secret — sensitive values (replace base64 placeholders!)

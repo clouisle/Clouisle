@@ -260,6 +260,11 @@ async def root():
     return success(msg_key="welcome_message")
 
 
+@app.get(f"{settings.API_V1_STR}/health")
+async def health():
+    return success(data={"status": "healthy"})
+
+
 # Pre-register hook to run migrations before Tortoise generates schemas
 @app.on_event("startup")
 async def pre_tortoise_init():
