@@ -137,7 +137,11 @@ function RecentItemCard({ item }: { item: RecentItem }) {
       <div className="group flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
         <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
           {item.icon ? (
-            <img src={item.icon} alt={item.name} className="size-full rounded object-cover" />
+            item.icon.startsWith('http') || item.icon.startsWith('/') ? (
+              <img src={item.icon} alt={item.name} className="size-full rounded object-cover" />
+            ) : (
+              <span className="text-base">{item.icon}</span>
+            )
           ) : (
             <Icon className="h-5 w-5 text-muted-foreground" />
           )}

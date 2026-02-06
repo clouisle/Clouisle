@@ -59,4 +59,7 @@ jobs:
       run: bun run lint
 
     - name: Build check
+      env:
+        NEXT_PUBLIC_APP_VERSION: ${{ github.ref_name }}
+        NEXT_PUBLIC_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
       run: bun run build

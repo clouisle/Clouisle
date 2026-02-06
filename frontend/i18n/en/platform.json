@@ -30,10 +30,6 @@
     "noTeam": {
       "title": "You Haven't Joined Any Team Yet",
       "description": "To start using the workspace, you need to join a team first. Please contact your team administrator to invite you.",
-      "status": "Waiting to Join Team",
-      "contactAdmin": "Contact Administrator",
-      "helpText": "If you have any questions, please contact",
-      "supportEmail": "support@example.com",
       "steps": {
         "step1": {
           "title": "Contact Admin",

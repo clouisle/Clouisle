@@ -147,7 +147,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
     if (workflow) {
       setName(workflow.name)
       setDescription(workflow.description || '')
-      setIcon(workflow.icon || '🔄')
+      setIcon(workflow.icon || '')
       setTriggerType(workflow.trigger_type)
       setWebhookToken(workflow.webhook_token || '')
       const savedCron = (workflow.trigger_config?.cron_expression as string) || ''
@@ -167,7 +167,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
     const changed = 
       name !== workflow.name ||
       description !== (workflow.description || '') ||
-      icon !== (workflow.icon || '🔄') ||
+      icon !== (workflow.icon || '') ||
       triggerType !== workflow.trigger_type ||
       (triggerType === 'cron' && currentCron !== savedCron)
     
@@ -325,16 +325,20 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div className="flex items-center gap-2">
           {icon ? (
-            <div className="w-6 h-6 rounded overflow-hidden">
-              <Image
-                src={icon}
-                alt="Workflow icon"
-                width={24}
-                height={24}
-                className="w-full h-full object-cover"
-                unoptimized
-              />
-            </div>
+            icon.startsWith('http') || icon.startsWith('/') ? (
+              <div className="w-6 h-6 rounded overflow-hidden">
+                <Image
+                  src={icon}
+                  alt="Workflow icon"
+                  width={24}
+                  height={24}
+                  className="w-full h-full object-cover"
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <span className="text-lg">{icon}</span>
+            )
           ) : (
             <GitBranch className="h-5 w-5 text-muted-foreground" />
           )}

@@ -7,10 +7,10 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
 // 应用版本
-export const APP_VERSION = '0.1.0'
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0-dev'
 
 // 构建日期
-export const BUILD_DATE = '2026-01-28'
+export const BUILD_DATE = process.env.NEXT_PUBLIC_BUILD_DATE || 'dev'
 
 // 应用名称
 export const APP_NAME = 'Clouisle'

@@ -1,0 +1,74 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push clouisle-backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dockerfiles/backend.Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-backend:${{ steps.version.outputs.VERSION }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-backend:latest
+
+  build-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push clouisle-frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dockerfiles/frontend.Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            NEXT_PUBLIC_APP_VERSION=${{ steps.version.outputs.VERSION }}
+            NEXT_PUBLIC_BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          tags: |
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-frontend:${{ steps.version.outputs.VERSION }}
+            ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/clouisle-frontend:latest
