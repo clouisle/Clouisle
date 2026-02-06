@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -105,6 +106,7 @@ interface LLMNodeConfigProps {
 }
 
 export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvailableVariables }: LLMNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   
   // 模型数据
@@ -218,7 +220,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
       {/* 模型选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">模型</Label>
+          <Label className="text-xs font-medium">{t('configCommon.model')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
@@ -228,7 +230,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
               !safeConfig.modelId && 'text-muted-foreground'
             )}>
               <span className="truncate">
-                {selectedModel ? selectedModel.model.name : '选择模型...'}
+                {selectedModel ? selectedModel.model.name : t('configCommon.selectModel')}
               </span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
             </div>
@@ -238,7 +240,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="搜索模型"
+                  placeholder={t('configCommon.searchModel')}
                   value={modelSearch}
                   onChange={(e) => setModelSearch(e.target.value)}
                   className="h-8 pl-8 text-xs"
@@ -252,7 +254,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                 </div>
               ) : Object.keys(groupedModels).length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground text-xs">
-                  {teamChatModels.length === 0 ? '暂无可用模型' : '未找到匹配的模型'}
+                  {teamChatModels.length === 0 ? t('configCommon.noAvailableModels') : t('configCommon.noMatchingModels')}
                 </div>
               ) : (
                 <div className="p-1">
@@ -294,13 +296,12 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
       
       {/* 系统提示词 */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium">系统提示词</Label>
+        <Label className="text-xs font-medium">{t('configLlm.systemPrompt')}</Label>
         <PromptTextarea
           value={safeConfig.systemPrompt || ''}
           onChange={(value) => handleChange({ systemPrompt: value })}
           variables={getAvailableVariables?.('all') || []}
-          placeholder="输入系统提示词，定义 AI 的角色和行为...
-输入 {{ 触发变量补全"
+          placeholder={t('configLlm.systemPromptPlaceholder')}
           minHeight="min-h-20"
         />
       </div>
@@ -308,15 +309,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
       {/* 用户提示词 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">用户提示词</Label>
+          <Label className="text-xs font-medium">{t('configLlm.userPrompt')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <PromptTextarea
           value={safeConfig.userPrompt || ''}
           onChange={(value) => handleChange({ userPrompt: value })}
           variables={getAvailableVariables?.('all') || []}
-          placeholder="输入用户提示词模板...
-输入 {{ 触发变量补全"
+          placeholder={t('configLlm.userPromptPlaceholder')}
           minHeight="min-h-24"
         />
       </div>
@@ -327,10 +327,10 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           <Button variant="ghost" size="sm" className="w-full justify-between px-3 h-9">
             <span className="flex items-center gap-2">
               <History className="h-4 w-4" />
-              <span className="text-xs">记忆（上下文）</span>
+              <span className="text-xs">{t('configLlm.memoryContext')}</span>
               {safeConfig.memoryConfig?.enabled && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                  已启用
+                  {t('configLlm.enabled')}
                 </span>
               )}
             </span>
@@ -340,14 +340,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
         <CollapsibleContent className="space-y-3 pt-3 border-t mt-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label className="text-xs">启用记忆</Label>
+              <Label className="text-xs">{t('configLlm.enableMemory')}</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <Info className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-50">
-                    <p className="text-xs">启用后将在对话中保持上下文记忆</p>
+                    <p className="text-xs">{t('configLlm.enableMemoryTooltip')}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -361,27 +361,27 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           {safeConfig.memoryConfig?.enabled && (
             <>
               <div className="space-y-2">
-                <Label className="text-xs">记忆模式</Label>
+                <Label className="text-xs">{t('configLlm.memoryMode')}</Label>
                 <Select
                   value={safeConfig.memoryConfig?.mode || 'window'}
                   onValueChange={(v) => handleMemoryChange({ mode: v as MemoryMode })}
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue>
-                      {safeConfig.memoryConfig?.mode === 'token_limit' ? 'Token 限制' : '窗口模式'}
+                      {safeConfig.memoryConfig?.mode === 'token_limit' ? t('configLlm.tokenLimit') : t('configLlm.windowMode')}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="window" className="text-xs">窗口模式</SelectItem>
-                    <SelectItem value="token_limit" className="text-xs">Token 限制</SelectItem>
+                    <SelectItem value="window" className="text-xs">{t('configLlm.windowMode')}</SelectItem>
+                    <SelectItem value="token_limit" className="text-xs">{t('configLlm.tokenLimit')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {safeConfig.memoryConfig?.mode === 'window' && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs">消息轮次</Label>
+                    <Label className="text-xs">{t('configLlm.messageRounds')}</Label>
                     <span className="text-xs text-muted-foreground">{safeConfig.memoryConfig?.windowSize || 10}</span>
                   </div>
                   <Slider
@@ -394,13 +394,13 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                       handleMemoryChange({ windowSize: v })
                     }}
                   />
-                  <p className="text-[10px] text-muted-foreground">保留最近 N 轮对话作为上下文</p>
+                  <p className="text-[10px] text-muted-foreground">{t('configLlm.windowSizeHint')}</p>
                 </div>
               )}
-              
+
               {safeConfig.memoryConfig?.mode === 'token_limit' && (
                 <div className="space-y-2">
-                  <Label className="text-xs">Token 限制</Label>
+                  <Label className="text-xs">{t('configLlm.tokenLimit')}</Label>
                   <Input
                     type="number"
                     min={100}
@@ -409,7 +409,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                     onChange={(e) => handleMemoryChange({ tokenLimit: parseInt(e.target.value) || 4000 })}
                     className="h-8 text-xs"
                   />
-                  <p className="text-[10px] text-muted-foreground">限制上下文的最大 Token 数</p>
+                  <p className="text-[10px] text-muted-foreground">{t('configLlm.tokenLimitHint')}</p>
                 </div>
               )}
             </>
@@ -424,10 +424,10 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             <Button variant="ghost" size="sm" className="w-full justify-between px-3 h-9">
               <span className="flex items-center gap-2">
                 <Image className="h-4 w-4" />
-                <span className="text-xs">多模态（图片输入）</span>
+                <span className="text-xs">{t('configLlm.multimodalImageInput')}</span>
                 {safeConfig.visionConfig?.enabled && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                    已启用
+                    {t('configLlm.enabled')}
                   </span>
                 )}
               </span>
@@ -436,7 +436,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           </CollapsibleTrigger>
           <CollapsibleContent className="space-y-3 pt-3 border-t mt-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">启用图片输入</Label>
+              <Label className="text-xs">{t('configLlm.enableImageInput')}</Label>
               <Switch
                 checked={safeConfig.visionConfig?.enabled || false}
                 onCheckedChange={(checked) => handleVisionChange({ enabled: checked })}
@@ -446,14 +446,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             {safeConfig.visionConfig?.enabled && (
               <>
                 <div className="space-y-2">
-                  <Label className="text-xs">图片变量</Label>
+                  <Label className="text-xs">{t('configLlm.imageVariable')}</Label>
                   {imageVariables.length > 0 ? (
                     <VariableSelector
                       open={imageVarSelectorOpen}
                       onOpenChange={setImageVarSelectorOpen}
                       variables={imageVariables}
                       selectedValue={safeConfig.visionConfig?.imageVariable}
-                      placeholder="选择图片变量"
+                      placeholder={t('configLlm.selectImageVariable')}
                       onSelect={(variable) => {
                         handleVisionChange({ imageVariable: variable.id })
                         setImageVarSelectorOpen(false)
@@ -461,13 +461,13 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                     />
                   ) : (
                     <div className="text-xs text-muted-foreground bg-muted rounded-md p-3">
-                      暂无可用的图片变量。请在开始节点添加类型为「图片」或「文件」的参数。
+                      {t('configLlm.noImageVariables')}
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs">图片位置</Label>
+                  <Label className="text-xs">{t('configLlm.imagePosition')}</Label>
                   <div className="flex gap-2">
                     <Button
                       variant={safeConfig.visionConfig?.imagePosition === 'before' ? 'default' : 'outline'}
@@ -475,7 +475,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                       className="flex-1 h-8 text-xs"
                       onClick={() => handleVisionChange({ imagePosition: 'before' })}
                     >
-                      消息前
+                      {t('configLlm.beforeMessage')}
                     </Button>
                     <Button
                       variant={safeConfig.visionConfig?.imagePosition === 'after' ? 'default' : 'outline'}
@@ -483,7 +483,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                       className="flex-1 h-8 text-xs"
                       onClick={() => handleVisionChange({ imagePosition: 'after' })}
                     >
-                      消息后
+                      {t('configLlm.afterMessage')}
                     </Button>
                   </div>
                 </div>
@@ -499,7 +499,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           <Button variant="ghost" size="sm" className="w-full justify-between px-3 h-9">
             <span className="flex items-center gap-2">
               <Settings2 className="h-4 w-4" />
-              <span className="text-xs">高级设置</span>
+              <span className="text-xs">{t('configLlm.advancedSettings')}</span>
             </span>
             <ChevronDown className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')} />
           </Button>
@@ -509,14 +509,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Label className="text-xs">温度 (Temperature)</Label>
+                <Label className="text-xs">{t('configLlm.temperature')}</Label>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger>
                       <Info className="h-3 w-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-50">
-                      <p className="text-xs">控制输出的随机性。较低的值使输出更确定，较高的值使输出更多样。</p>
+                      <p className="text-xs">{t('configLlm.temperatureTooltip')}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -546,7 +546,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                       <Info className="h-3 w-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-50">
-                      <p className="text-xs">核采样参数。控制累积概率阈值。</p>
+                      <p className="text-xs">{t('configLlm.topPTooltip')}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -568,14 +568,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           {/* 最大输出 Token */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label className="text-xs">最大输出 Token</Label>
+              <Label className="text-xs">{t('configLlm.maxOutputTokens')}</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <Info className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-50">
-                    <p className="text-xs">限制模型生成的最大 Token 数量。留空则使用模型默认值。</p>
+                    <p className="text-xs">{t('configLlm.maxOutputTokensTooltip')}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -586,26 +586,26 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
               max={128000}
               value={safeConfig.maxTokens || ''}
               onChange={(e) => handleChange({ maxTokens: e.target.value ? parseInt(e.target.value) : undefined })}
-              placeholder="默认"
+              placeholder={t('configLlm.default')}
               className="h-8 text-xs"
             />
           </div>
 
           {/* 响应格式 */}
           <div className="space-y-2">
-            <Label className="text-xs">响应格式</Label>
+            <Label className="text-xs">{t('configLlm.responseFormat')}</Label>
             <Select
               value={safeConfig.responseFormat || 'text'}
               onValueChange={(v) => handleChange({ responseFormat: v as ResponseFormat })}
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue>
-                  {safeConfig.responseFormat === 'json' ? 'JSON' : 
-                   safeConfig.responseFormat === 'json_schema' ? 'JSON Schema' : '文本'}
+                  {safeConfig.responseFormat === 'json' ? 'JSON' :
+                   safeConfig.responseFormat === 'json_schema' ? 'JSON Schema' : t('configLlm.formatText')}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="text" className="text-xs">文本</SelectItem>
+                <SelectItem value="text" className="text-xs">{t('configLlm.formatText')}</SelectItem>
                 <SelectItem value="json" className="text-xs">JSON</SelectItem>
                 <SelectItem value="json_schema" className="text-xs">JSON Schema</SelectItem>
               </SelectContent>
@@ -628,14 +628,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           {/* 流式输出 */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label className="text-xs">流式输出</Label>
+              <Label className="text-xs">{t('configLlm.streamingOutput')}</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <Info className="h-3 w-3 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-50">
-                    <p className="text-xs">启用后将逐字输出响应，提供更好的用户体验。</p>
+                    <p className="text-xs">{t('configLlm.streamingTooltip')}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -648,7 +648,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
 
           {/* 超时时间 */}
           <div className="space-y-2">
-            <Label className="text-xs">超时时间（秒）</Label>
+            <Label className="text-xs">{t('configLlm.timeoutSeconds')}</Label>
             <Input
               type="number"
               min={10}
@@ -663,19 +663,19 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
 
       {/* 输出变量 */}
       <div className="space-y-3 pt-2 border-t">
-        <Label className="text-xs font-medium">输出变量</Label>
-        
+        <Label className="text-xs font-medium">{t('configCommon.outputVariables')}</Label>
+
         {/* 模型回复 */}
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground w-16 shrink-0">模型回复</Label>
+            <Label className="text-xs text-muted-foreground w-16 shrink-0">{t('configLlm.modelResponse')}</Label>
             <Input
               value={safeConfig.outputVariables?.response || ''}
-              onChange={(e) => handleChange({ 
-                outputVariables: { 
-                  ...safeConfig.outputVariables, 
-                  response: e.target.value 
-                } 
+              onChange={(e) => handleChange({
+                outputVariables: {
+                  ...safeConfig.outputVariables,
+                  response: e.target.value
+                }
               })}
               placeholder="response"
               className={cn(
@@ -686,21 +686,21 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             <span className="text-[10px] text-muted-foreground shrink-0">String</span>
           </div>
           {safeConfig.outputVariables?.response && !isValidVariableName(safeConfig.outputVariables.response) && (
-            <p className="text-[10px] text-destructive ml-[72px]">变量名格式无效</p>
+            <p className="text-[10px] text-destructive ml-[72px]">{t('configCommon.invalidVariableName')}</p>
           )}
         </div>
 
         {/* 推理过程 */}
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground w-16 shrink-0">推理过程</Label>
+            <Label className="text-xs text-muted-foreground w-16 shrink-0">{t('configLlm.reasoningProcess')}</Label>
             <Input
               value={safeConfig.outputVariables?.reasoning || ''}
-              onChange={(e) => handleChange({ 
-                outputVariables: { 
-                  ...safeConfig.outputVariables, 
-                  reasoning: e.target.value 
-                } 
+              onChange={(e) => handleChange({
+                outputVariables: {
+                  ...safeConfig.outputVariables,
+                  reasoning: e.target.value
+                }
               })}
               placeholder="reasoning"
               className={cn(
@@ -711,21 +711,21 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             <span className="text-[10px] text-muted-foreground shrink-0">String</span>
           </div>
           {safeConfig.outputVariables?.reasoning && !isValidVariableName(safeConfig.outputVariables.reasoning) && (
-            <p className="text-[10px] text-destructive ml-[72px]">变量名格式无效</p>
+            <p className="text-[10px] text-destructive ml-[72px]">{t('configCommon.invalidVariableName')}</p>
           )}
         </div>
 
         {/* 用量统计 */}
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground w-16 shrink-0">用量统计</Label>
+            <Label className="text-xs text-muted-foreground w-16 shrink-0">{t('configLlm.usageStatistics')}</Label>
             <Input
               value={safeConfig.outputVariables?.usage || ''}
-              onChange={(e) => handleChange({ 
-                outputVariables: { 
-                  ...safeConfig.outputVariables, 
-                  usage: e.target.value 
-                } 
+              onChange={(e) => handleChange({
+                outputVariables: {
+                  ...safeConfig.outputVariables,
+                  usage: e.target.value
+                }
               })}
               placeholder="usage"
               className={cn(
@@ -736,12 +736,12 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             <span className="text-[10px] text-muted-foreground shrink-0">Number</span>
           </div>
           {safeConfig.outputVariables?.usage && !isValidVariableName(safeConfig.outputVariables.usage) && (
-            <p className="text-[10px] text-destructive ml-[72px]">变量名格式无效</p>
+            <p className="text-[10px] text-destructive ml-[72px]">{t('configCommon.invalidVariableName')}</p>
           )}
         </div>
 
         <p className="text-[10px] text-muted-foreground">
-          推理过程仅在支持思维链的模型中返回，用量统计为总 token 数
+          {t('configLlm.outputVariablesHint')}
         </p>
       </div>
     </div>

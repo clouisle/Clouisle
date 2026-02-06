@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Combine, MoreHorizontal, Home, Braces, List, Link, Merge } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 聚合模式
@@ -36,37 +37,55 @@ export const defaultVariableAggregatorConfig: VariableAggregatorConfig = {
   mergeStrategy: 'shallow',
 }
 
-// 聚合模式配置
-export const aggregationModeConfig: Record<AggregationMode, {
+// 聚合模式图标配置
+export const aggregationModeIcons: Record<AggregationMode, React.ComponentType<{ className?: string }>> = {
+  object: Braces,
+  array: List,
+  concat: Link,
+  merge: Merge,
+}
+
+// 聚合模式输出类型配置
+export const aggregationModeOutputTypes: Record<AggregationMode, string> = {
+  object: 'Object',
+  array: 'Array',
+  concat: 'String',
+  merge: 'Object',
+}
+
+// 获取聚合模式配置（带翻译）
+export function getAggregationModeConfig(t: (key: string) => string): Record<AggregationMode, {
   label: string
   description: string
   outputType: string
   icon: React.ComponentType<{ className?: string }>
-}> = {
-  object: {
-    label: '对象',
-    description: '将多个变量聚合为一个对象 { key: value }',
-    outputType: 'Object',
-    icon: Braces,
-  },
-  array: {
-    label: '数组',
-    description: '将多个变量聚合为一个数组 [item1, item2]',
-    outputType: 'Array',
-    icon: List,
-  },
-  concat: {
-    label: '拼接',
-    description: '将多个字符串变量拼接成一个字符串',
-    outputType: 'String',
-    icon: Link,
-  },
-  merge: {
-    label: '合并',
-    description: '深度合并多个对象为一个对象',
-    outputType: 'Object',
-    icon: Merge,
-  },
+}> {
+  return {
+    object: {
+      label: t('nodesVariableAggregator.modeObject'),
+      description: t('nodesVariableAggregator.modeObjectDesc'),
+      outputType: 'Object',
+      icon: Braces,
+    },
+    array: {
+      label: t('nodesVariableAggregator.modeArray'),
+      description: t('nodesVariableAggregator.modeArrayDesc'),
+      outputType: 'Array',
+      icon: List,
+    },
+    concat: {
+      label: t('nodesVariableAggregator.modeConcat'),
+      description: t('nodesVariableAggregator.modeConcatDesc'),
+      outputType: 'String',
+      icon: Link,
+    },
+    merge: {
+      label: t('nodesVariableAggregator.modeMerge'),
+      description: t('nodesVariableAggregator.modeMergeDesc'),
+      outputType: 'Object',
+      icon: Merge,
+    },
+  }
 }
 
 interface VariableAggregatorNodeData {
@@ -94,7 +113,9 @@ const extractVariableName = (variable: string) => {
 }
 
 export function VariableAggregatorNode({ id, selected, data }: VariableAggregatorNodeProps) {
+  const t = useTranslations('workflow')
   const config = data.variableAggregatorConfig || defaultVariableAggregatorConfig
+  const aggregationModeConfig = getAggregationModeConfig(t)
   const modeConfig = aggregationModeConfig[config.mode]
   const ModeIcon = modeConfig.icon
   const variables = config.variables || []
@@ -104,7 +125,7 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">变量聚合器</span>
+        <span className="text-xs text-muted-foreground">{t('nodesVariableAggregator.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
           <button className="p-1 rounded hover:bg-background">
             <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
@@ -139,7 +160,7 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
           
           {/* Label */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '变量聚合器'}
+            {data.label || t('nodesVariableAggregator.label')}
           </span>
           
           {/* Mode badge */}
@@ -163,7 +184,7 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
                 {/* 来源节点 */}
                 <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                   <Home className="h-2.5 w-2.5" />
-                  <span className="max-w-12.5 truncate">{variable.sourceNodeLabel || '未知'}</span>
+                  <span className="max-w-12.5 truncate">{variable.sourceNodeLabel || t('nodesCommon.unknown')}</span>
                 </div>
                 <span className="text-muted-foreground/50">/</span>
                 
@@ -188,14 +209,14 @@ export function VariableAggregatorNode({ id, selected, data }: VariableAggregato
             ))
           ) : (
             <div className="flex items-center justify-center py-2 text-[11px] text-muted-foreground">
-              点击配置变量
+              {t('nodesVariableAggregator.clickToConfigure')}
             </div>
           )}
           
           {/* 更多变量指示 */}
           {variables.length > 3 && (
             <div className="text-[10px] text-muted-foreground text-center py-0.5">
-              +{variables.length - 3} 更多变量
+              {t('nodesVariableAggregator.moreVariables', { n: variables.length - 3 })}
             </div>
           )}
         </div>

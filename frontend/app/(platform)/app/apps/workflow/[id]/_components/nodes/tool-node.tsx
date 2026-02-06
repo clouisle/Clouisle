@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position, useReactFlow } from '@xyflow/react'
 import { Wrench, Plus, MoreHorizontal, AlertCircle, Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { ToolCategory, ToolType } from '@/lib/api'
 
@@ -24,12 +25,6 @@ const typeColors: Record<ToolType, string> = {
   builtin: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   custom: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   mcp: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-}
-
-const typeLabels: Record<ToolType, string> = {
-  builtin: '内置',
-  custom: '自定义',
-  mcp: 'MCP',
 }
 
 // 工具节点配置
@@ -78,6 +73,7 @@ interface ToolNodeProps {
 }
 
 export function ToolNode({ id, selected, data }: ToolNodeProps) {
+  const t = useTranslations('workflow')
   const { getEdges } = useReactFlow()
   
   const edges = getEdges()
@@ -108,7 +104,7 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
         return config.mcpToolDescription
       }
       if (!config.mcpToolName && config.toolDisplayName) {
-        return `从 ${config.toolDisplayName} 选择工具`
+        return t('nodesTool.selectToolFrom', { name: config.toolDisplayName })
       }
     }
     return config.toolDescription
@@ -118,9 +114,9 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">工具</span>
+        <span className="text-xs text-muted-foreground">{t('nodesTool.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -165,16 +161,16 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
           
           {/* Label - 始终显示节点名称 */}
           <span className="flex-1 text-sm font-medium truncate">
-            {data.label || '工具'}
+            {data.label || t('nodesTool.label')}
           </span>
-          
+
           {/* Type badge / Warning */}
           {hasTool && isMcpConfigured ? (
             <div className={cn(
               'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
               typeColors[config.toolType]
             )}>
-              {typeLabels[config.toolType]}
+              {config.toolType === 'builtin' ? t('nodesTool.typeBuiltin') : config.toolType === 'custom' ? t('nodesTool.typeCustom') : 'MCP'}
             </div>
           ) : (
             <AlertCircle className="h-4 w-4 text-amber-500" />
@@ -211,11 +207,11 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
             {/* 参数状态 - 仅在 MCP 配置完成后显示 */}
             {isMcpConfigured && config.parameterMappings.length > 0 && (
               <div className="flex items-center gap-1.5 text-[10px]">
-                <span className="text-muted-foreground">参数:</span>
+                <span className="text-muted-foreground">{t('nodesTool.parameters')}</span>
                 <span className={cn(
                   unfilledRequired.length > 0 ? 'text-amber-500' : 'text-emerald-500'
                 )}>
-                  {config.parameterMappings.length - unfilledRequired.length}/{config.parameterMappings.length} 已配置
+                  {t('nodesTool.configured', { n: config.parameterMappings.length - unfilledRequired.length, total: config.parameterMappings.length })}
                 </span>
               </div>
             )}
@@ -226,7 +222,7 @@ export function ToolNode({ id, selected, data }: ToolNodeProps) {
         {!hasTool && (
           <div className="px-2.5 pb-2 pt-0.5">
             <p className="text-[10px] text-muted-foreground">
-              点击配置工具
+              {t('nodesTool.clickToConfigure')}
             </p>
           </div>
         )}

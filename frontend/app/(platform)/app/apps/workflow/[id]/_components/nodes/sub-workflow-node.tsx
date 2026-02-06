@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Workflow, MoreHorizontal, Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { SubWorkflowNodeConfig } from '../node-config/configs/sub-workflow-node-config'
 
@@ -20,6 +21,7 @@ interface SubWorkflowNodeProps {
 }
 
 export function SubWorkflowNode({ id, selected, data }: SubWorkflowNodeProps) {
+  const t = useTranslations('workflow')
   // 从 subWorkflowConfig 获取工作流信息
   const workflowName = data.subWorkflowConfig?.workflowName
   const hasWorkflow = !!data.subWorkflowConfig?.workflowId
@@ -28,9 +30,9 @@ export function SubWorkflowNode({ id, selected, data }: SubWorkflowNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">子工作流</span>
+        <span className="text-xs text-muted-foreground">{t('nodesSubWorkflow.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -64,12 +66,12 @@ export function SubWorkflowNode({ id, selected, data }: SubWorkflowNodeProps) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <span className="block text-sm font-medium truncate">
-            {data.label || '子工作流'}
+            {data.label || t('nodesSubWorkflow.label')}
           </span>
           {hasWorkflow ? (
             <span className="text-xs text-muted-foreground truncate block">{workflowName}</span>
           ) : (
-            <span className="text-xs text-amber-500">未选择工作流</span>
+            <span className="text-xs text-amber-500">{t('nodesSubWorkflow.notSelected')}</span>
           )}
         </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, Search, GripVertical, Type, Hash, ToggleLeft, Brackets, Braces, File, FileQuestion, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,15 +21,28 @@ import {
 } from '../../nodes/answer-node'
 
 // 输出变量类型配置
-const outputTypeConfig = {
-  string: { label: '文本', icon: Type },
-  number: { label: '数字', icon: Hash },
-  boolean: { label: '布尔', icon: ToggleLeft },
-  array: { label: '数组', icon: Brackets },
-  object: { label: '对象', icon: Braces },
-  file: { label: '文件', icon: File },
-  any: { label: '任意', icon: FileQuestion },
+const outputTypeIcons = {
+  string: Type,
+  number: Hash,
+  boolean: ToggleLeft,
+  array: Brackets,
+  object: Braces,
+  file: File,
+  any: FileQuestion,
 } as const
+
+// 获取带翻译的类型选项
+function getOutputTypeConfig(t: ReturnType<typeof useTranslations<'workflow'>>) {
+  return {
+    string: { label: t('configAnswer.typeText'), icon: outputTypeIcons.string },
+    number: { label: t('configAnswer.typeNumber'), icon: outputTypeIcons.number },
+    boolean: { label: t('configAnswer.typeBoolean'), icon: outputTypeIcons.boolean },
+    array: { label: t('configAnswer.typeArray'), icon: outputTypeIcons.array },
+    object: { label: t('configAnswer.typeObject'), icon: outputTypeIcons.object },
+    file: { label: t('configAnswer.typeFile'), icon: outputTypeIcons.file },
+    any: { label: t('configAnswer.typeAny'), icon: outputTypeIcons.any },
+  }
+}
 
 // 变量类型到输出类型的映射
 const varTypeToOutputType: Record<string, OutputVariable['type']> = {
@@ -60,6 +74,8 @@ export function AnswerNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: AnswerNodeConfigProps) {
+  const t = useTranslations('workflow')
+  const outputTypeConfig = getOutputTypeConfig(t)
   // 确保 config 有默认值
   const safeConfig: AnswerNodeConfigData = {
     ...defaultAnswerNodeConfig,
@@ -189,7 +205,7 @@ export function AnswerNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground">选择源变量...</span>
+            <span className="text-muted-foreground">{t('configAnswer.selectSourceVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -197,7 +213,7 @@ export function AnswerNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -213,7 +229,7 @@ export function AnswerNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -267,7 +283,7 @@ export function AnswerNodeConfig({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap className="h-4 w-4 text-emerald-500" />
-            <Label className="text-xs font-medium">流式输出</Label>
+            <Label className="text-xs font-medium">{t('configAnswer.streamingOutput')}</Label>
           </div>
           <Switch
             checked={safeConfig.streaming.enabled}
@@ -282,7 +298,7 @@ export function AnswerNodeConfig({
         
         {safeConfig.streaming.enabled && (
           <div className="space-y-1.5">
-            <Label className="text-[10px] text-muted-foreground">流式输出变量</Label>
+            <Label className="text-[10px] text-muted-foreground">{t('configAnswer.streamingOutputVariable')}</Label>
             <Select
               value={safeConfig.streaming.variable || ''}
               onValueChange={(v) => 
@@ -294,9 +310,9 @@ export function AnswerNodeConfig({
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue>
-                  {safeConfig.streaming.variable 
+                  {safeConfig.streaming.variable
                     ? getStreamingVariables().find(v => v.value === safeConfig.streaming.variable)?.label || safeConfig.streaming.variable
-                    : '选择流式输出变量...'
+                    : t('configAnswer.selectStreamingVariable')
                   }
                 </SelectValue>
               </SelectTrigger>
@@ -308,13 +324,13 @@ export function AnswerNodeConfig({
                 ))}
                 {getStreamingVariables().length === 0 && (
                   <div className="py-2 px-2 text-xs text-muted-foreground">
-                    请先添加 String 类型的输出变量
+                    {t('configAnswer.addStringOutputFirst')}
                   </div>
                 )}
               </SelectContent>
             </Select>
             <p className="text-[10px] text-muted-foreground">
-              选择一个 String 类型的输出变量作为流式输出
+              {t('configAnswer.selectStringForStreaming')}
             </p>
           </div>
         )}
@@ -324,7 +340,7 @@ export function AnswerNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">输出变量</Label>
+            <Label className="text-xs font-medium">{t('configAnswer.outputVariables')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Button
@@ -339,7 +355,7 @@ export function AnswerNodeConfig({
         
         {safeConfig.outputs.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center bg-muted/30 rounded-md">
-            暂无输出变量，点击 + 添加
+            {t('configAnswer.noOutputVariables')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -353,7 +369,7 @@ export function AnswerNodeConfig({
                   <div className="flex items-center gap-2">
                     <GripVertical className="h-3.5 w-3.5 text-muted-foreground cursor-grab" />
                     <span className="text-xs font-medium text-emerald-500">
-                      输出 {index + 1}
+                      {t('configAnswer.outputIndex', { index: index + 1 })}
                     </span>
                   </div>
                   <Button
@@ -368,17 +384,17 @@ export function AnswerNodeConfig({
                 
                 {/* 源变量 */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">源变量</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configAnswer.sourceVariable')}</Label>
                   {renderVariableSelector(output.id, output.sourceVariable, output.sourceNodeLabel, output.sourceVariableName)}
                 </div>
                 
                 {/* 输出名称 */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">输出名称</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configAnswer.outputName')}</Label>
                   <Input
                     value={output.name}
                     onChange={(e) => handleUpdateOutput(output.id, { name: e.target.value })}
-                    placeholder="输出变量名"
+                    placeholder={t('configAnswer.outputVariableName')}
                     className={cn(
                       'h-8 text-xs',
                       output.name && !isValidVariableName(output.name) && 'border-destructive!'
@@ -388,7 +404,7 @@ export function AnswerNodeConfig({
                 
                 {/* 输出类型 */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">类型</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configCommon.type')}</Label>
                   <Select
                     value={output.type}
                     onValueChange={(v) => handleUpdateOutput(output.id, { type: v as OutputVariable['type'] })}
@@ -414,11 +430,11 @@ export function AnswerNodeConfig({
                 
                 {/* 描述（可选） */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] text-muted-foreground">描述（可选）</Label>
+                  <Label className="text-[10px] text-muted-foreground">{t('configCommon.descriptionOptional')}</Label>
                   <Textarea
                     value={output.description || ''}
                     onChange={(e) => handleUpdateOutput(output.id, { description: e.target.value })}
-                    placeholder="输出变量的描述..."
+                    placeholder={t('configAnswer.outputVariableDesc')}
                     className="min-h-[40px] text-xs resize-none"
                   />
                 </div>
@@ -429,18 +445,18 @@ export function AnswerNodeConfig({
         
         {/* 变量名校验提示 */}
         {safeConfig.outputs.some(o => o.name && !isValidVariableName(o.name)) && (
-          <p className="text-[10px] text-destructive">输出名称格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configAnswer.invalidOutputNameFormat')}</p>
         )}
         {(() => {
           const names = safeConfig.outputs.map(o => o.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的输出名称</p>
+            <p className="text-[10px] text-destructive">{t('configAnswer.duplicateOutputNames')}</p>
           )
         })()}
         
         <p className="text-[10px] text-muted-foreground">
-          定义工作流的输出结果，可选择上游节点的变量作为输出
+          {t('configAnswer.outputVariableHint')}
         </p>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { Code, MoreHorizontal, Play } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
 // 代码语言类型
@@ -125,6 +126,7 @@ interface CodeNodeProps {
 }
 
 export function CodeNode({ id, selected, data }: CodeNodeProps) {
+  const t = useTranslations('workflow')
   // 检查是否启用了异常分支
   const hasErrorBranch = data.codeConfig?.errorHandling?.type === 'error_branch'
 
@@ -132,9 +134,9 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
     <div className="group relative">
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
-        <span className="text-xs text-muted-foreground">代码执行</span>
+        <span className="text-xs text-muted-foreground">{t('nodesCode.label')}</span>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title="调试运行">
+          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
             <Play className="h-3 w-3 text-muted-foreground" />
           </button>
           <button className="p-1 rounded hover:bg-background">
@@ -177,8 +179,8 @@ export function CodeNode({ id, selected, data }: CodeNodeProps) {
         {/* Error Branch Row - 只在启用异常分支时显示 */}
         {hasErrorBranch && (
           <div className="flex items-center justify-between px-2.5 pb-2 pt-0.5">
-            <span className="text-xs text-muted-foreground">异常时</span>
-            <span className="text-xs text-orange-500 font-medium">异常分支</span>
+            <span className="text-xs text-muted-foreground">{t('nodesCode.onException')}</span>
+            <span className="text-xs text-orange-500 font-medium">{t('nodesCode.exceptionBranch')}</span>
           </div>
         )}
 

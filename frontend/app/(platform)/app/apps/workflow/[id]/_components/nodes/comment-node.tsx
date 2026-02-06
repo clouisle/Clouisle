@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { NodeProps, NodeResizer, useReactFlow } from '@xyflow/react'
+import { useTranslations } from 'next-intl'
 import { Streamdown } from 'streamdown'
 import { cn } from '@/lib/utils'
 
@@ -119,6 +120,7 @@ interface CommentNodeData {
 export function CommentNode({ id, selected, data }: NodeProps) {
   const nodeData = data as unknown as CommentNodeData
   const { setNodes } = useReactFlow()
+  const t = useTranslations('workflow')
   
   // 本地内容状态
   const [content, setContent] = React.useState(nodeData.content || '')
@@ -206,7 +208,7 @@ export function CommentNode({ id, selected, data }: NodeProps) {
             <textarea
               ref={textareaRef}
               className="w-full h-full bg-transparent text-foreground/80 text-sm resize-none outline-none placeholder:text-muted-foreground/50"
-              placeholder="输入注释（支持 Markdown）..."
+              placeholder={t('nodesComment.placeholder')}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onBlur={saveContent}
@@ -218,7 +220,7 @@ export function CommentNode({ id, selected, data }: NodeProps) {
             </div>
           ) : (
             <span className="text-sm text-muted-foreground/50">
-              双击编辑（支持 Markdown）
+              {t('nodesComment.doubleClickToEdit')}
             </span>
           )}
         </div>

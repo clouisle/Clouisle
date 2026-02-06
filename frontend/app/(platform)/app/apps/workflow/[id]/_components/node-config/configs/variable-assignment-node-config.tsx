@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, Search, ChevronDown, ArrowRight, Ban, Edit3, ListPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,11 +13,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
-import { 
-  VariableAssignmentConfig, 
+import {
+  VariableAssignmentConfig,
   AssignmentItem,
   AssignmentOperation,
-  assignmentOperationConfig,
+  getAssignmentOperationConfig,
   defaultVariableAssignmentConfig,
 } from '../../nodes/variable-assignment-node'
 
@@ -41,6 +42,9 @@ export function VariableAssignmentNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: VariableAssignmentNodeConfigProps) {
+  const t = useTranslations('workflow')
+  const assignmentOperationConfig = getAssignmentOperationConfig(t)
+
   // 确保 config 有默认值
   const safeConfig: VariableAssignmentConfig = {
     ...defaultVariableAssignmentConfig,
@@ -134,7 +138,7 @@ export function VariableAssignmentNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-xs">选择目标变量...</span>
+            <span className="text-muted-foreground text-xs">{t('configVariableAssignment.selectTargetVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -142,7 +146,7 @@ export function VariableAssignmentNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索对话变量"
+                placeholder={t('configVariableAssignment.searchConversationVariables')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -157,9 +161,9 @@ export function VariableAssignmentNodeConfig({
                 if (filtered.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      {conversationVariables.length === 0 
-                        ? '暂无对话变量，请先在开始节点添加'
-                        : '未找到匹配的变量'}
+                      {conversationVariables.length === 0
+                        ? t('configVariableAssignment.noConversationVariables')
+                        : t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -219,7 +223,7 @@ export function VariableAssignmentNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-xs">选择源变量...</span>
+            <span className="text-muted-foreground text-xs">{t('configVariableAssignment.selectSourceVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-72 p-0" align="start">
@@ -227,7 +231,7 @@ export function VariableAssignmentNodeConfig({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -239,11 +243,11 @@ export function VariableAssignmentNodeConfig({
               {(() => {
                 const filtered = filterVariables(variables, variableSearch)
                 const groupEntries = groupVariables(filtered)
-                
+
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -293,7 +297,7 @@ export function VariableAssignmentNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">赋值操作</Label>
+            <Label className="text-xs font-medium">{t('configVariableAssignment.assignmentOperations')}</Label>
           </div>
           <Button
             variant="ghost"
@@ -307,7 +311,7 @@ export function VariableAssignmentNodeConfig({
         
         {safeConfig.assignments.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center bg-muted/30 rounded-md">
-            暂无赋值操作，点击 + 添加
+            {t('configVariableAssignment.noAssignments')}
           </p>
         ) : (
           <div className="space-y-3">
@@ -323,7 +327,7 @@ export function VariableAssignmentNodeConfig({
                   {/* 头部：序号 + 删除 */}
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
-                      赋值 {index + 1}
+                      {t('configVariableAssignment.assignmentIndex', { index: index + 1 })}
                     </span>
                     <Button
                       variant="ghost"
@@ -337,13 +341,13 @@ export function VariableAssignmentNodeConfig({
                   
                   {/* 目标变量 */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">目标变量</Label>
+                    <Label className="text-xs text-muted-foreground">{t('configVariableAssignment.targetVariable')}</Label>
                     {renderTargetVariableSelector(assignment)}
                   </div>
                   
                   {/* 操作类型 */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">操作</Label>
+                    <Label className="text-xs text-muted-foreground">{t('configVariableAssignment.operation')}</Label>
                     <Select
                       value={assignment.operation}
                       onValueChange={(v) => {
@@ -391,7 +395,7 @@ export function VariableAssignmentNodeConfig({
                   {(assignment.operation === 'overwrite' || assignment.operation === 'append') && (
                     <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">
-                        {assignment.operation === 'append' ? '追加值' : '源变量'}
+                        {assignment.operation === 'append' ? t('configVariableAssignment.appendValue') : t('configVariableAssignment.sourceVariable')}
                       </Label>
                       {renderSourceVariableSelector(assignment)}
                     </div>
@@ -399,22 +403,22 @@ export function VariableAssignmentNodeConfig({
                   
                   {assignment.operation === 'set' && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">常量值</Label>
+                      <Label className="text-xs text-muted-foreground">{t('configVariableAssignment.constantValue')}</Label>
                       <Textarea
                         value={assignment.constantValue || ''}
                         onChange={(e) => handleUpdateAssignment(assignment.id, { constantValue: e.target.value })}
-                        placeholder="输入要设置的值..."
+                        placeholder={t('configVariableAssignment.setValuePlaceholder')}
                         className="min-h-20 text-xs font-mono resize-none"
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        支持 JSON 格式，如：字符串 &quot;hello&quot;、数字 123、数组 [1,2,3]、对象 {`{"key":"value"}`}
+                        {t('configVariableAssignment.jsonFormatHint')}
                       </p>
                     </div>
                   )}
 
                   {assignment.operation === 'clear' && (
                     <div className="text-xs text-muted-foreground bg-muted/50 rounded-md p-2">
-                      将清空目标变量的值（字符串→&quot;&quot;，数字→0，数组→[]，对象→{`{}`}）
+                      {t('configVariableAssignment.clearHint')}
                     </div>
                   )}
                 </div>
@@ -426,10 +430,10 @@ export function VariableAssignmentNodeConfig({
 
       {/* 提示信息 */}
       <div className="text-[10px] text-muted-foreground bg-muted/30 rounded-md p-2 space-y-1">
-        <p>• <strong>覆盖</strong>：用另一个变量的值替换目标变量</p>
-        <p>• <strong>清空</strong>：将目标变量重置为空值</p>
-        <p>• <strong>设置</strong>：将目标变量设为指定的常量</p>
-        <p>• <strong>追加</strong>：数组追加元素、对象合并键值、字符串拼接、数字累加</p>
+        <p>{t('configVariableAssignment.hintOverwrite')}</p>
+        <p>{t('configVariableAssignment.hintClear')}</p>
+        <p>{t('configVariableAssignment.hintSet')}</p>
+        <p>{t('configVariableAssignment.hintAppend')}</p>
       </div>
     </div>
   )

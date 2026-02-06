@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, ChevronDown, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -36,6 +37,7 @@ export function TemplateNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: TemplateNodeConfigProps) {
+  const t = useTranslations('workflow')
   const [outputOpen, setOutputOpen] = React.useState(true)
   const [inputDialogOpen, setInputDialogOpen] = React.useState(false)
   const [editingInput, setEditingInput] = React.useState<TemplateInput | null>(null)
@@ -90,7 +92,7 @@ export function TemplateNodeConfig({
       {/* 输入变量 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium">输入变量</Label>
+          <Label className="text-xs font-medium">{t('configTemplate.inputVariables')}</Label>
           <Button
             variant="ghost"
             size="icon"
@@ -103,7 +105,7 @@ export function TemplateNodeConfig({
         
         {safeConfig.inputs.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center bg-muted/30 rounded-md">
-            暂无输入变量，点击 + 添加
+            {t('configTemplate.noInputVariables')}
           </p>
         ) : (
           <div className="space-y-1.5">
@@ -155,13 +157,13 @@ export function TemplateNodeConfig({
         
         {/* 错误提示 */}
         {safeConfig.inputs.some(i => i.name && !isValidVariableName(i.name)) && (
-          <p className="text-[10px] text-destructive">变量名格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableNameFormat')}</p>
         )}
         {(() => {
           const names = safeConfig.inputs.map(i => i.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的变量名</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableName')}</p>
           )
         })()}
       </div>
@@ -182,7 +184,7 @@ export function TemplateNodeConfig({
       
       {/* 代码/模板编辑器 */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium">代码</Label>
+        <Label className="text-xs font-medium">{t('configCommon.code')}</Label>
         <CodeEditor
           value={safeConfig.template}
           language="jinja2"
@@ -199,7 +201,7 @@ export function TemplateNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariables')}</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2">
           <div className="bg-muted/30 rounded-lg p-3 space-y-1">

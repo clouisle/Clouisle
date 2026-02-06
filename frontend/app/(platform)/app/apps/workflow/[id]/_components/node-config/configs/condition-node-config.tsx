@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, ChevronDown, ChevronUp, GripVertical, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,13 +12,13 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import type { AvailableVariable } from '../types'
 import { extractVariableDisplayName } from '../types'
-import { 
-  ConditionBranch, 
-  ConditionRule, 
-  ConditionOperator, 
-  conditionOperatorLabels,
-  conditionOperatorShortLabels,
-  noValueOperators 
+import {
+  ConditionBranch,
+  ConditionRule,
+  ConditionOperator,
+  getConditionOperatorLabels,
+  getConditionOperatorShortLabels,
+  noValueOperators
 } from '../../nodes/condition-node'
 
 interface ConditionNodeConfigProps {
@@ -43,6 +44,9 @@ export function ConditionNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: ConditionNodeConfigProps) {
+  const t = useTranslations('workflow')
+  const conditionOperatorLabels = getConditionOperatorLabels(t)
+  const conditionOperatorShortLabels = getConditionOperatorShortLabels(t)
 
   // 切换分支展开/收起
   const toggleBranchExpand = (branchId: string) => {
@@ -96,7 +100,7 @@ export function ConditionNodeConfig({
     const newRule: ConditionRule = {
       id: `rule_${Date.now()}`,
       variable: '',
-      variableSource: '开始',
+      variableSource: t('nodesCommon.start'),
       operator: 'equals',
       value: '',
     }
@@ -133,9 +137,9 @@ export function ConditionNodeConfig({
   // 选择变量
   // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
   const selectVariable = (branchId: string, ruleId: string, variableId: string, variableName: string, isSystem: boolean) => {
-    updateConditionRule(branchId, ruleId, { 
+    updateConditionRule(branchId, ruleId, {
       variable: `{{${variableId}}}`,
-      variableSource: isSystem ? 'SYSTEM' : '开始'
+      variableSource: isSystem ? 'SYSTEM' : t('nodesCommon.start')
     })
     onOpenVariablePopoverChange(null)
     onVariableSearchChange('')
@@ -208,7 +212,7 @@ export function ConditionNodeConfig({
               
               {!isElse && branch.conditions.length > 0 && (
                 <span className="text-[10px] text-muted-foreground">
-                  {branch.conditions.length} 个条件
+                  {t('configCondition.conditionCount', { count: branch.conditions.length })}
                 </span>
               )}
               
@@ -241,7 +245,7 @@ export function ConditionNodeConfig({
                 {/* 逻辑操作符选择 */}
                 {branch.conditions.length > 1 && (
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">满足</span>
+                    <span className="text-muted-foreground">{t('configCondition.satisfy')}</span>
                     <Select
                       value={branch.logicOperator}
                       onValueChange={(v) => updateBranchLogicOperator(branch.id, v as 'and' | 'or')}
@@ -250,11 +254,11 @@ export function ConditionNodeConfig({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="and" className="text-xs">所有</SelectItem>
-                        <SelectItem value="or" className="text-xs">任一</SelectItem>
+                        <SelectItem value="and" className="text-xs">{t('configCondition.logicAll')}</SelectItem>
+                        <SelectItem value="or" className="text-xs">{t('configCondition.logicAny')}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <span className="text-muted-foreground">条件时执行</span>
+                    <span className="text-muted-foreground">{t('configCondition.conditionsToExecute')}</span>
                   </div>
                 )}
                 
@@ -287,7 +291,7 @@ export function ConditionNodeConfig({
                               <span>{extractVariableDisplayName(rule.variable)}</span>
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">选择变量...</span>
+                            <span className="text-muted-foreground">{t('configCommon.selectVariable')}</span>
                           )}
                         </PopoverTrigger>
                         <PopoverContent className="w-64 p-0" align="start">
@@ -296,7 +300,7 @@ export function ConditionNodeConfig({
                             <div className="relative">
                               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                               <Input
-                                placeholder="搜索变量"
+                                placeholder={t('configCommon.searchVariable')}
                                 value={variableSearch}
                                 onChange={(e) => onVariableSearchChange(e.target.value)}
                                 className="h-7 pl-7 text-xs"
@@ -313,7 +317,7 @@ export function ConditionNodeConfig({
                                 if (groupEntries.length === 0) {
                                   return (
                                     <div className="py-4 text-center text-xs text-muted-foreground">
-                                      未找到匹配的变量
+                                      {t('configCommon.noMatchingVariables')}
                                     </div>
                                   )
                                 }
@@ -369,7 +373,7 @@ export function ConditionNodeConfig({
                           <Input
                             value={rule.value}
                             onChange={(e) => updateConditionRule(branch.id, rule.id, { value: e.target.value })}
-                            placeholder="输入值..."
+                            placeholder={t('configCommon.enterValue')}
                             className="h-7 text-xs flex-1"
                           />
                         )}
@@ -396,7 +400,7 @@ export function ConditionNodeConfig({
                   onClick={() => addConditionRule(branch.id)}
                 >
                   <Plus className="h-3 w-3 mr-1" />
-                  添加条件
+                  {t('configCondition.addCondition')}
                 </Button>
               </div>
             )}
@@ -405,7 +409,7 @@ export function ConditionNodeConfig({
             {isExpanded && isElse && (
               <div className="px-3 pb-3">
                 <p className="text-xs text-muted-foreground">
-                  当以上所有条件都不满足时执行
+                  {t('configCondition.elseDescription')}
                 </p>
               </div>
             )}
@@ -421,7 +425,7 @@ export function ConditionNodeConfig({
         onClick={addElseIfBranch}
       >
         <Plus className="h-3 w-3 mr-1" />
-        添加 ELSE IF 分支
+        {t('configCondition.addElseIfBranch')}
       </Button>
     </div>
   )

@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Search } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -24,11 +25,13 @@ export function VariableSelector({
   onOpenChange,
   variables,
   selectedValue,
-  placeholder = '选择变量...',
+  placeholder,
   onSelect,
   triggerClassName,
 }: VariableSelectorProps) {
+  const t = useTranslations('workflow')
   const [search, setSearch] = React.useState('')
+  const defaultPlaceholder = placeholder ?? t('configCommon.selectVariable')
 
   const filteredVariables = React.useMemo(() => {
     if (!search) return variables
@@ -78,7 +81,7 @@ export function VariableSelector({
             <span className="text-xs">{selectedValue.replace(/\{\{|\}\}/g, '')}</span>
           </span>
         ) : (
-          <span className="text-muted-foreground text-xs">{placeholder}</span>
+          <span className="text-muted-foreground text-xs">{defaultPlaceholder}</span>
         )}
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
@@ -87,7 +90,7 @@ export function VariableSelector({
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜索变量"
+              placeholder={t('configCommon.searchVariable')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-8 pl-8 text-xs"
@@ -99,7 +102,7 @@ export function VariableSelector({
           <div className="p-1">
             {groupedVariables.length === 0 ? (
               <div className="py-4 text-center text-xs text-muted-foreground">
-                未找到匹配的变量
+                {t('configCommon.noMatchingVariables')}
               </div>
             ) : (
               groupedVariables.map(([groupId, group]) => (

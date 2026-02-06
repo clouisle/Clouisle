@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Search, ChevronDown, Bot, Check, Loader2, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,6 +74,7 @@ export function AgentNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: AgentNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   const [outputOpen, setOutputOpen] = React.useState(true)
   const [paramsOpen, setParamsOpen] = React.useState(true)
@@ -258,7 +260,7 @@ export function AgentNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-[11px]">选择变量...</span>
+            <span className="text-muted-foreground text-[11px]">{t('configCommon.selectVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0" align="start">
@@ -266,7 +268,7 @@ export function AgentNodeConfig({
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-7 pl-7 text-xs"
@@ -282,7 +284,7 @@ export function AgentNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -349,7 +351,7 @@ export function AgentNodeConfig({
       {/* Agent 选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">选择智能体</Label>
+          <Label className="text-xs font-medium">{t('configAgent.selectAgent')}</Label>
           <span className="text-destructive">*</span>
         </div>
         
@@ -371,7 +373,7 @@ export function AgentNodeConfig({
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-medium truncate">{selectedAgent.name}</span>
                 <Badge variant="outline" className="text-[9px] px-1 py-0 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-                  已发布
+                  {t('configCommon.published')}
                 </Badge>
               </div>
               {selectedAgent.description && (
@@ -384,7 +386,7 @@ export function AgentNodeConfig({
                 size="icon"
                 className="h-6 w-6 shrink-0"
                 onClick={() => window.open(`/app/apps/${selectedAgent.id}`, '_blank')}
-                title="查看智能体"
+                title={t('configAgent.viewAgent')}
               >
                 <ExternalLink className="h-3 w-3 text-muted-foreground" />
               </Button>
@@ -407,12 +409,12 @@ export function AgentNodeConfig({
               {isLoadingAgents ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  加载中...
+                  {t('configCommon.loading')}
                 </>
               ) : (
                 <>
                   <Bot className="h-3.5 w-3.5" />
-                  选择智能体...
+                  {t('configAgent.selectAgentPlaceholder')}
                 </>
               )}
             </PopoverTrigger>
@@ -422,7 +424,7 @@ export function AgentNodeConfig({
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="搜索智能体..."
+                    placeholder={t('configAgent.searchAgent')}
                     value={agentSearch}
                     onChange={(e) => setAgentSearch(e.target.value)}
                     className="h-8 pl-8 text-xs"
@@ -436,8 +438,8 @@ export function AgentNodeConfig({
                   {filteredAgents.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                       <Bot className="h-8 w-8 mb-2" />
-                      <p className="text-xs">{agentSearch ? '未找到匹配的智能体' : '暂无已发布的智能体'}</p>
-                      <p className="text-[10px] mt-1">只能调用已发布的智能体</p>
+                      <p className="text-xs">{agentSearch ? t('configAgent.noMatchingAgents') : t('configAgent.noPublishedAgents')}</p>
+                      <p className="text-[10px] mt-1">{t('configAgent.onlyPublishedAgents')}</p>
                     </div>
                   ) : (
                     filteredAgents.map(agent => (
@@ -487,11 +489,11 @@ export function AgentNodeConfig({
               "h-3.5 w-3.5 transition-transform",
               !messageOpen && "-rotate-90"
             )} />
-            <span>消息输入</span>
+            <span>{t('configAgent.messageInput')}</span>
             <span className="text-destructive">*</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
-            <p className="text-[10px] text-muted-foreground">发送给智能体的消息内容</p>
+            <p className="text-[10px] text-muted-foreground">{t('configAgent.messageInputDesc')}</p>
             
             {/* 值来源选择 */}
             <div className="flex gap-2">
@@ -501,20 +503,20 @@ export function AgentNodeConfig({
                 className="h-6 text-[10px] flex-1"
                 onClick={() => onConfigChange({ ...safeConfig, messageSource: 'variable' })}
               >
-                变量
+                {t('configCommon.variable')}
               </Button>
               <Button
                 variant={safeConfig.messageSource === 'constant' ? 'default' : 'outline'}
                 size="sm"
                 className="h-6 text-[10px] flex-1"
-                onClick={() => onConfigChange({ 
-                  ...safeConfig, 
+                onClick={() => onConfigChange({
+                  ...safeConfig,
                   messageSource: 'constant',
                   messageVariableRef: undefined,
                   messageVariableRefNodeLabel: undefined,
                 })}
               >
-                常量
+                {t('configCommon.constant')}
               </Button>
             </div>
             
@@ -536,7 +538,7 @@ export function AgentNodeConfig({
               <Input
                 value={safeConfig.messageConstantValue || ''}
                 onChange={(e) => onConfigChange({ ...safeConfig, messageConstantValue: e.target.value })}
-                placeholder="输入消息内容..."
+                placeholder={t('configAgent.enterMessageContent')}
                 className="h-8 text-xs"
               />
             )}
@@ -552,7 +554,7 @@ export function AgentNodeConfig({
               "h-3.5 w-3.5 transition-transform",
               !paramsOpen && "-rotate-90"
             )} />
-            <span>变量配置</span>
+            <span>{t('configAgent.variableConfig')}</span>
             <span className="text-muted-foreground ml-1">({safeConfig.inputMappings.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
@@ -582,7 +584,7 @@ export function AgentNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'variable' })}
                   >
-                    变量
+                    {t('configCommon.variable')}
                   </Button>
                   <Button
                     variant={mapping.source === 'constant' ? 'default' : 'outline'}
@@ -590,7 +592,7 @@ export function AgentNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined })}
                   >
-                    常量
+                    {t('configCommon.constant')}
                   </Button>
                 </div>
                 
@@ -601,7 +603,7 @@ export function AgentNodeConfig({
                   <Input
                     value={mapping.constantValue || ''}
                     onChange={(e) => handleUpdateMapping(mapping.name, { constantValue: e.target.value })}
-                    placeholder={`输入${mapping.label || mapping.name}的值...`}
+                    placeholder={t('configCommon.enterValueFor', { name: mapping.label || mapping.name })}
                     className="h-8 text-xs"
                   />
                 )}
@@ -618,7 +620,7 @@ export function AgentNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariable')}</span>
           <span className="text-destructive">*</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2 space-y-2">
@@ -632,7 +634,7 @@ export function AgentNodeConfig({
             )}
           />
           {safeConfig.outputVariable && !isValidVariableName(safeConfig.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           
           {/* 输出预览 */}
@@ -641,7 +643,7 @@ export function AgentNodeConfig({
               <span className="text-xs font-mono font-medium">{safeConfig.outputVariable || 'response'}</span>
               <span className="text-[10px] text-muted-foreground">String</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">智能体回复内容</p>
+            <p className="text-[10px] text-muted-foreground mt-1">{t('configAgent.agentResponseContent')}</p>
           </div>
         </CollapsibleContent>
       </Collapsible>

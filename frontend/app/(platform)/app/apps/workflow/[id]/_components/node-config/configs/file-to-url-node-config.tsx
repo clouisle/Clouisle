@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, ChevronDown, Pencil, File, Image, Files, Images } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -27,11 +28,13 @@ const typeIcons: Record<string, React.ElementType> = {
 }
 
 // 类型标签映射
-const typeLabels: Record<string, string> = {
-  file: '文件',
-  image: '图片',
-  files: '多文件',
-  images: '多图片',
+function getTypeLabels(t: ReturnType<typeof useTranslations<'workflow'>>): Record<string, string> {
+  return {
+    file: t('configFileToUrl.fileType'),
+    image: t('configFileToUrl.imageType'),
+    files: t('configFileToUrl.multiFileType'),
+    images: t('configFileToUrl.multiImageType'),
+  }
 }
 
 interface FileToUrlNodeConfigProps {
@@ -53,6 +56,7 @@ export function FileToUrlNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: FileToUrlNodeConfigProps) {
+  const t = useTranslations('workflow')
   const [outputOpen, setOutputOpen] = React.useState(true)
   const [inputDialogOpen, setInputDialogOpen] = React.useState(false)
   const [editingInput, setEditingInput] = React.useState<FileToUrlInput | null>(null)
@@ -110,7 +114,7 @@ export function FileToUrlNodeConfig({
       {/* 输入配置 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium">文件输入</Label>
+          <Label className="text-xs font-medium">{t('configFileToUrl.fileInput')}</Label>
           <Button
             variant="ghost"
             size="icon"
@@ -124,11 +128,11 @@ export function FileToUrlNodeConfig({
         {safeConfig.inputs.length === 0 ? (
           <div className="text-center py-4 bg-muted/30 rounded-md">
             <p className="text-xs text-muted-foreground">
-              暂无输入，点击 + 添加文件变量
+              {t('configFileToUrl.noFileInputs')}
             </p>
             {fileVariables.length === 0 && (
               <p className="text-[10px] text-muted-foreground mt-1">
-                提示：请先在开始节点添加文件/图片类型的参数
+                {t('configFileToUrl.addFileParamHint')}
               </p>
             )}
           </div>
@@ -184,13 +188,13 @@ export function FileToUrlNodeConfig({
         
         {/* 错误提示 */}
         {safeConfig.inputs.some(i => i.name && !isValidVariableName(i.name)) && (
-          <p className="text-[10px] text-destructive">变量名格式无效（只能包含字母、数字、下划线，不能以数字开头）</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableNameFormat')}</p>
         )}
         {(() => {
           const names = safeConfig.inputs.map(i => i.name).filter(Boolean)
           const hasDuplicates = new Set(names).size !== names.length
           return hasDuplicates && (
-            <p className="text-[10px] text-destructive">存在重复的变量名</p>
+            <p className="text-[10px] text-destructive">{t('configFileToUrl.duplicateVariableNames')}</p>
           )
         })()}
       </div>
@@ -211,11 +215,11 @@ export function FileToUrlNodeConfig({
 
       {/* URL 选项 */}
       <div className="space-y-3">
-        <Label className="text-xs font-medium">选项</Label>
+        <Label className="text-xs font-medium">{t('configFileToUrl.options')}</Label>
         <div className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2">
           <div className="space-y-0.5">
-            <span className="text-xs">生成绝对 URL</span>
-            <p className="text-[10px] text-muted-foreground">包含完整的域名前缀</p>
+            <span className="text-xs">{t('configFileToUrl.generateAbsoluteUrl')}</span>
+            <p className="text-[10px] text-muted-foreground">{t('configFileToUrl.absoluteUrlDesc')}</p>
           </div>
           <Switch
             checked={safeConfig.ensureAbsolute}
@@ -234,13 +238,13 @@ export function FileToUrlNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariable')}</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2">
           <div className="space-y-1.5">
             {safeConfig.inputs.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-2 bg-muted/30 rounded-lg">
-                添加输入后将自动生成对应的输出变量
+                {t('configFileToUrl.autoGenerateOutputHint')}
               </p>
             ) : (
               safeConfig.inputs.map((input) => {
@@ -254,7 +258,7 @@ export function FileToUrlNodeConfig({
                       </span>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      {isMultiple ? 'URL 数组' : '文件 URL'}
+                      {isMultiple ? t('configFileToUrl.urlArray') : t('configFileToUrl.fileUrl')}
                     </p>
                   </div>
                 )

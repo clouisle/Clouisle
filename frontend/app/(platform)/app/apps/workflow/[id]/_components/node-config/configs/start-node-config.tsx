@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { systemParameters, parameterTypeConfig } from '../constants'
@@ -20,6 +21,8 @@ export function StartNodeConfig({
   onEditParameter,
   onRemoveParameter,
 }: StartNodeConfigProps) {
+  const t = useTranslations('workflow')
+
   return (
     <div className="space-y-4">
       {/* 系统参数（只读） */}
@@ -46,7 +49,7 @@ export function StartNodeConfig({
       {/* 用户输入参数 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium">输入参数</Label>
+          <Label className="text-xs font-medium">{t('configStart.inputParameters')}</Label>
           <Button 
             variant="ghost" 
             size="sm" 
@@ -54,13 +57,13 @@ export function StartNodeConfig({
             onClick={onAddParameter}
           >
             <Plus className="h-3 w-3 mr-1" />
-            添加
+            {t('configCommon.add')}
           </Button>
         </div>
         
         {parameters.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center">
-            暂无参数，点击添加按钮创建
+            {t('configStart.noParameters')}
           </p>
         ) : (
           <div className="space-y-1">
@@ -75,11 +78,11 @@ export function StartNodeConfig({
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <TypeIcon className="h-4 w-4 text-primary/70 shrink-0" />
-                    <span className="text-xs font-medium truncate">{param.name || '未命名'}</span>
+                    <span className="text-xs font-medium truncate">{param.name || t('configCommon.unnamed')}</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {param.required && (
-                      <span className="text-xs text-muted-foreground group-hover:hidden">必填</span>
+                      <span className="text-xs text-muted-foreground group-hover:hidden">{t('configCommon.required')}</span>
                     )}
                     <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded border border-border group-hover:hidden">
                       {typeConfig.valueType}

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Search, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,6 +34,8 @@ export function IterationNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: IterationNodeConfigProps) {
+  const t = useTranslations('workflow')
+
   // 只显示可迭代的变量
   const iterableVariables = React.useMemo(() => {
     return variables.filter(v => v.isIterable)
@@ -87,7 +90,7 @@ export function IterationNodeConfig({
       {/* 迭代对象选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">迭代对象</Label>
+          <Label className="text-xs font-medium">{t('configIteration.iterationObject')}</Label>
           <span className="text-destructive">*</span>
         </div>
         
@@ -110,7 +113,7 @@ export function IterationNodeConfig({
                 </span>
               </span>
             ) : (
-              <span className="text-muted-foreground text-xs">选择数组或对象变量...</span>
+              <span className="text-muted-foreground text-xs">{t('configIteration.selectIterableVariable')}</span>
             )}
           </PopoverTrigger>
           <PopoverContent className="w-72 p-0" align="start">
@@ -118,7 +121,7 @@ export function IterationNodeConfig({
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="搜索变量"
+                  placeholder={t('configCommon.searchVariable')}
                   value={variableSearch}
                   onChange={(e) => onVariableSearchChange(e.target.value)}
                   className="h-8 pl-8 text-xs"
@@ -134,9 +137,9 @@ export function IterationNodeConfig({
                   if (groupEntries.length === 0) {
                     return (
                       <div className="py-4 text-center text-xs text-muted-foreground">
-                        {iterableVariables.length === 0 
-                          ? '没有可迭代的变量（需要数组或对象类型）'
-                          : '未找到匹配的变量'}
+                        {iterableVariables.length === 0
+                          ? t('configIteration.noIterableVariables')
+                          : t('configCommon.noMatchingVariables')}
                       </div>
                     )
                   }
@@ -183,7 +186,7 @@ export function IterationNodeConfig({
         {!config.iteratorVariable && (
           <p className="text-[10px] text-muted-foreground flex items-center gap-1">
             <AlertCircle className="h-3 w-3" />
-            请选择一个数组或对象变量作为迭代对象
+            {t('configIteration.selectIterableHint')}
           </p>
         )}
       </div>
@@ -192,7 +195,7 @@ export function IterationNodeConfig({
       <div className="space-y-2">
         <div className="flex items-center gap-1">
           <Label className="text-xs font-medium">
-            {config.iteratorType === 'array' ? '元素变量' : '键变量'}
+            {config.iteratorType === 'array' ? t('configIteration.itemVariable') : t('configIteration.keyVariable')}
           </Label>
           <span className="text-destructive">*</span>
         </div>
@@ -211,20 +214,20 @@ export function IterationNodeConfig({
             'border-destructive! ring-destructive/20!'
           )}
         />
-        {(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) && 
+        {(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) &&
          !isValidVariableName(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) && (
-          <p className="text-[10px] text-destructive">变量名格式无效</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
         )}
-        {(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) && 
+        {(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) &&
          isInternalDuplicate(config.iteratorType === 'array' ? config.itemVariable : config.keyVariable) && (
-          <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
         )}
       </div>
       
       {config.iteratorType === 'object' && (
         <div className="space-y-2">
           <div className="flex items-center gap-1">
-            <Label className="text-xs font-medium">值变量</Label>
+            <Label className="text-xs font-medium">{t('configIteration.valueVariable')}</Label>
             <span className="text-destructive">*</span>
           </div>
           <Input
@@ -237,17 +240,17 @@ export function IterationNodeConfig({
             )}
           />
           {config.valueVariable && !isValidVariableName(config.valueVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           {config.valueVariable && isInternalDuplicate(config.valueVariable) && (
-            <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
           )}
         </div>
       )}
       
       {/* 索引变量 */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium">索引变量</Label>
+        <Label className="text-xs font-medium">{t('configIteration.indexVariable')}</Label>
         <Input
           value={config.indexVariable}
           onChange={(e) => onConfigChange({ ...config, indexVariable: e.target.value })}
@@ -258,17 +261,17 @@ export function IterationNodeConfig({
           )}
         />
         {config.indexVariable && !isValidVariableName(config.indexVariable) && (
-          <p className="text-[10px] text-destructive">变量名格式无效</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
         )}
         {config.indexVariable && isInternalDuplicate(config.indexVariable) && (
-          <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
         )}
       </div>
       
       {/* 输出变量 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">输出变量</Label>
+          <Label className="text-xs font-medium">{t('configCommon.outputVariable')}</Label>
           <span className="text-destructive">*</span>
         </div>
         <Input
@@ -281,18 +284,18 @@ export function IterationNodeConfig({
           )}
         />
         {config.outputVariable && !isValidVariableName(config.outputVariable) && (
-          <p className="text-[10px] text-destructive">变量名格式无效</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
         )}
         {config.outputVariable && isInternalDuplicate(config.outputVariable) && (
-          <p className="text-[10px] text-destructive">变量名与本节点内其他变量重复</p>
+          <p className="text-[10px] text-destructive">{t('configCommon.duplicateVariableInNode')}</p>
         )}
       </div>
       
       {/* 并行执行 */}
       <div className="flex items-center justify-between py-2">
         <div className="space-y-0.5">
-          <Label className="text-xs font-medium">并行执行</Label>
-          <p className="text-[10px] text-muted-foreground">同时执行多个迭代</p>
+          <Label className="text-xs font-medium">{t('configIteration.parallelExecution')}</Label>
+          <p className="text-[10px] text-muted-foreground">{t('configIteration.parallelExecutionDesc')}</p>
         </div>
         <Switch
           checked={config.parallel}
@@ -302,7 +305,7 @@ export function IterationNodeConfig({
       
       {config.parallel && (
         <div className="space-y-2">
-          <Label className="text-xs font-medium">最大并行数</Label>
+          <Label className="text-xs font-medium">{t('configIteration.maxParallel')}</Label>
           <Input
             type="number"
             min={1}

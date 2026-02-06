@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Plus, Trash2, Type, AlignLeft, ListChecks, Hash, CheckSquare, Brackets, Braces, File, Image, Files, Images } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +29,7 @@ export function ParameterEditDialog({
   existingParams,
   onSave,
 }: ParameterEditDialogProps) {
+  const t = useTranslations('workflow')
   const [paramForm, setParamForm] = React.useState<Partial<Parameter>>({})
 
   React.useEffect(() => {
@@ -59,10 +61,10 @@ export function ParameterEditDialog({
     const name = paramForm.name?.trim() || ''
     if (!name) return null
     if (!isValidVariableName(name)) {
-      return '变量名只能包含字母、数字、下划线，且不能以数字开头'
+      return t('dialogs.parameterEdit.nameFormatError')
     }
     if (isVariableNameDuplicate(name)) {
-      return '变量名已存在'
+      return t('dialogs.parameterEdit.nameDuplicate')
     }
     return null
   }
@@ -94,28 +96,28 @@ export function ParameterEditDialog({
       <DialogContent className="sm:max-w-100 max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-base">
-            {editingParam ? '编辑变量' : '添加变量'}
+            {editingParam ? t('dialogs.parameterEdit.editTitle') : t('dialogs.parameterEdit.addTitle')}
           </DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto -mx-6 px-6">
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="param-name" className="text-xs">变量名</Label>
+              <Label htmlFor="param-name" className="text-xs">{t('dialogs.parameterEdit.nameLabel')}</Label>
               <Input
                 id="param-name"
                 value={paramForm.name || ''}
                 onChange={(e) => setParamForm({ ...paramForm, name: e.target.value })}
-                placeholder="输入变量名（如：query）"
+                placeholder={t('dialogs.parameterEdit.namePlaceholder')}
                 className={cn('h-9', variableNameError && paramForm.name && 'border-destructive! ring-destructive/20!')}
               />
               {variableNameError && paramForm.name && (
                 <p className="text-[11px] text-destructive">{variableNameError}</p>
               )}
-              <p className="text-[10px] text-muted-foreground">只能包含字母、数字、下划线，且不能以数字开头</p>
+              <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.nameHint')}</p>
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="param-type" className="text-xs">类型</Label>
+              <Label htmlFor="param-type" className="text-xs">{t('dialogs.parameterEdit.typeLabel')}</Label>
               <Select
                 value={paramForm.type || 'text'}
                 onValueChange={(value) => setParamForm({ ...paramForm, type: value as ParameterType, fileConfig: undefined })}
@@ -124,54 +126,54 @@ export function ParameterEditDialog({
                   <SelectValue>
                     {paramForm.type && (
                       <span className="flex items-center gap-2">
-                        {paramForm.type === 'text' && <><Type className="h-4 w-4" /> 文本</>}
-                        {paramForm.type === 'paragraph' && <><AlignLeft className="h-4 w-4" /> 段落</>}
-                        {paramForm.type === 'select' && <><ListChecks className="h-4 w-4" /> 下拉选项</>}
-                        {paramForm.type === 'number' && <><Hash className="h-4 w-4" /> 数字</>}
-                        {paramForm.type === 'checkbox' && <><CheckSquare className="h-4 w-4" /> 复选框</>}
-                        {paramForm.type === 'array' && <><Brackets className="h-4 w-4" /> 数组</>}
-                        {paramForm.type === 'object' && <><Braces className="h-4 w-4" /> 对象</>}
-                        {paramForm.type === 'file' && <><File className="h-4 w-4" /> 文件</>}
-                        {paramForm.type === 'image' && <><Image className="h-4 w-4" /> 图片</>}
-                        {paramForm.type === 'files' && <><Files className="h-4 w-4" /> 多文件</>}
-                        {paramForm.type === 'images' && <><Images className="h-4 w-4" /> 多图片</>}
+                        {paramForm.type === 'text' && <><Type className="h-4 w-4" /> {t('dialogs.parameterEdit.typeText')}</>}
+                        {paramForm.type === 'paragraph' && <><AlignLeft className="h-4 w-4" /> {t('dialogs.parameterEdit.typeParagraph')}</>}
+                        {paramForm.type === 'select' && <><ListChecks className="h-4 w-4" /> {t('dialogs.parameterEdit.typeSelect')}</>}
+                        {paramForm.type === 'number' && <><Hash className="h-4 w-4" /> {t('dialogs.parameterEdit.typeNumber')}</>}
+                        {paramForm.type === 'checkbox' && <><CheckSquare className="h-4 w-4" /> {t('dialogs.parameterEdit.typeCheckbox')}</>}
+                        {paramForm.type === 'array' && <><Brackets className="h-4 w-4" /> {t('dialogs.parameterEdit.typeArray')}</>}
+                        {paramForm.type === 'object' && <><Braces className="h-4 w-4" /> {t('dialogs.parameterEdit.typeObject')}</>}
+                        {paramForm.type === 'file' && <><File className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFile')}</>}
+                        {paramForm.type === 'image' && <><Image className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</>}
+                        {paramForm.type === 'files' && <><Files className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFiles')}</>}
+                        {paramForm.type === 'images' && <><Images className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImages')}</>}
                       </span>
                     )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="text">
-                    <span className="flex items-center gap-2"><Type className="h-4 w-4" /> 文本</span>
+                    <span className="flex items-center gap-2"><Type className="h-4 w-4" /> {t('dialogs.parameterEdit.typeText')}</span>
                   </SelectItem>
                   <SelectItem value="paragraph">
-                    <span className="flex items-center gap-2"><AlignLeft className="h-4 w-4" /> 段落</span>
+                    <span className="flex items-center gap-2"><AlignLeft className="h-4 w-4" /> {t('dialogs.parameterEdit.typeParagraph')}</span>
                   </SelectItem>
                   <SelectItem value="select">
-                    <span className="flex items-center gap-2"><ListChecks className="h-4 w-4" /> 下拉选项</span>
+                    <span className="flex items-center gap-2"><ListChecks className="h-4 w-4" /> {t('dialogs.parameterEdit.typeSelect')}</span>
                   </SelectItem>
                   <SelectItem value="number">
-                    <span className="flex items-center gap-2"><Hash className="h-4 w-4" /> 数字</span>
+                    <span className="flex items-center gap-2"><Hash className="h-4 w-4" /> {t('dialogs.parameterEdit.typeNumber')}</span>
                   </SelectItem>
                   <SelectItem value="checkbox">
-                    <span className="flex items-center gap-2"><CheckSquare className="h-4 w-4" /> 复选框</span>
+                    <span className="flex items-center gap-2"><CheckSquare className="h-4 w-4" /> {t('dialogs.parameterEdit.typeCheckbox')}</span>
                   </SelectItem>
                   <SelectItem value="array">
-                    <span className="flex items-center gap-2"><Brackets className="h-4 w-4" /> 数组</span>
+                    <span className="flex items-center gap-2"><Brackets className="h-4 w-4" /> {t('dialogs.parameterEdit.typeArray')}</span>
                   </SelectItem>
                   <SelectItem value="object">
-                    <span className="flex items-center gap-2"><Braces className="h-4 w-4" /> 对象</span>
+                    <span className="flex items-center gap-2"><Braces className="h-4 w-4" /> {t('dialogs.parameterEdit.typeObject')}</span>
                   </SelectItem>
                   <SelectItem value="file">
-                    <span className="flex items-center gap-2"><File className="h-4 w-4" /> 文件</span>
+                    <span className="flex items-center gap-2"><File className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFile')}</span>
                   </SelectItem>
                   <SelectItem value="image">
-                    <span className="flex items-center gap-2"><Image className="h-4 w-4" /> 图片</span>
+                    <span className="flex items-center gap-2"><Image className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImage')}</span>
                   </SelectItem>
                   <SelectItem value="files">
-                    <span className="flex items-center gap-2"><Files className="h-4 w-4" /> 多文件</span>
+                    <span className="flex items-center gap-2"><Files className="h-4 w-4" /> {t('dialogs.parameterEdit.typeFiles')}</span>
                   </SelectItem>
                   <SelectItem value="images">
-                    <span className="flex items-center gap-2"><Images className="h-4 w-4" /> 多图片</span>
+                    <span className="flex items-center gap-2"><Images className="h-4 w-4" /> {t('dialogs.parameterEdit.typeImages')}</span>
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -180,12 +182,12 @@ export function ParameterEditDialog({
             {/* 根据类型显示不同的默认值表单 */}
             {paramForm.type === 'text' && (
               <div className="space-y-2">
-                <Label htmlFor="param-default" className="text-xs">默认值</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultValueLabel')}</Label>
                 <Input
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder="输入默认文本（可选）"
+                  placeholder={t('dialogs.parameterEdit.defaultTextPlaceholder')}
                   className="h-9"
                 />
               </div>
@@ -193,12 +195,12 @@ export function ParameterEditDialog({
 
             {paramForm.type === 'paragraph' && (
               <div className="space-y-2">
-                <Label htmlFor="param-default" className="text-xs">默认值</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultValueLabel')}</Label>
                 <Textarea
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder="输入默认段落内容（可选）"
+                  placeholder={t('dialogs.parameterEdit.defaultParagraphPlaceholder')}
                   className="min-h-20 resize-none"
                 />
               </div>
@@ -206,7 +208,7 @@ export function ParameterEditDialog({
 
             {paramForm.type === 'select' && (
               <div className="space-y-2">
-                <Label className="text-xs">选项列表</Label>
+                <Label className="text-xs">{t('dialogs.parameterEdit.optionsLabel')}</Label>
                 <div className="space-y-1.5">
                   {(paramForm.options || ['']).map((option, index) => (
                     <div key={index} className="flex items-center gap-2">
@@ -217,7 +219,7 @@ export function ParameterEditDialog({
                           newOptions[index] = e.target.value
                           setParamForm({ ...paramForm, options: newOptions })
                         }}
-                        placeholder={`选项 ${index + 1}`}
+                        placeholder={t('dialogs.parameterEdit.optionPlaceholder', { index: index + 1 })}
                         className="h-8 text-sm flex-1"
                       />
                       {(paramForm.options || ['']).length > 1 && (
@@ -244,17 +246,17 @@ export function ParameterEditDialog({
                     }}
                   >
                     <Plus className="h-3 w-3 mr-1" />
-                    添加选项
+                    {t('dialogs.parameterEdit.addOption')}
                   </Button>
                 </div>
                 <div className="space-y-2 pt-2">
-                  <Label htmlFor="param-default" className="text-xs">默认选中</Label>
+                  <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultSelectedLabel')}</Label>
                   <Select
                     value={paramForm.defaultValue || ''}
                     onValueChange={(value) => setParamForm({ ...paramForm, defaultValue: value ?? undefined })}
                   >
                     <SelectTrigger className="h-9 w-full">
-                      <SelectValue>{paramForm.defaultValue || '选择默认值（可选）'}</SelectValue>
+                      <SelectValue>{paramForm.defaultValue || t('dialogs.parameterEdit.defaultSelectPlaceholder')}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {(paramForm.options || []).filter(Boolean).map((option, index) => (
@@ -270,13 +272,13 @@ export function ParameterEditDialog({
 
             {paramForm.type === 'number' && (
               <div className="space-y-2">
-                <Label htmlFor="param-default" className="text-xs">默认值</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultValueLabel')}</Label>
                 <Input
                   id="param-default"
                   type="number"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder="输入默认数字（可选）"
+                  placeholder={t('dialogs.parameterEdit.defaultNumberPlaceholder')}
                   className="h-9"
                 />
               </div>
@@ -284,7 +286,7 @@ export function ParameterEditDialog({
 
             {paramForm.type === 'checkbox' && (
               <div className="flex items-center justify-between">
-                <Label htmlFor="param-default" className="text-xs">默认选中</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultCheckedLabel')}</Label>
                 <Switch
                   id="param-default"
                   checked={paramForm.defaultValue === 'true'}
@@ -295,7 +297,7 @@ export function ParameterEditDialog({
 
             {paramForm.type === 'array' && (
               <div className="space-y-2">
-                <Label htmlFor="param-default" className="text-xs">默认值 (JSON)</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultJsonLabel')}</Label>
                 <Textarea
                   id="param-default"
                   value={paramForm.defaultValue || ''}
@@ -303,13 +305,13 @@ export function ParameterEditDialog({
                   placeholder='["item1", "item2", "item3"]'
                   className="min-h-24 resize-none font-mono text-xs"
                 />
-                <p className="text-[10px] text-muted-foreground">输入 JSON 数组格式</p>
+                <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonArrayHint')}</p>
               </div>
             )}
 
             {paramForm.type === 'object' && (
               <div className="space-y-2">
-                <Label htmlFor="param-default" className="text-xs">默认值 (JSON)</Label>
+                <Label htmlFor="param-default" className="text-xs">{t('dialogs.parameterEdit.defaultJsonLabel')}</Label>
                 <Textarea
                   id="param-default"
                   value={paramForm.defaultValue || ''}
@@ -317,7 +319,7 @@ export function ParameterEditDialog({
                   placeholder='{"key": "value"}'
                   className="min-h-24 resize-none font-mono text-xs"
                 />
-                <p className="text-[10px] text-muted-foreground">输入 JSON 对象格式</p>
+                <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonObjectHint')}</p>
               </div>
             )}
 
@@ -325,7 +327,7 @@ export function ParameterEditDialog({
             {(paramForm.type === 'file' || paramForm.type === 'image') && (
               <div className="space-y-4 rounded-lg border p-3">
                 <div className="space-y-2">
-                  <Label className="text-xs">最大文件大小 (MB)</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.maxFileSizeLabel')}</Label>
                   <Input
                     type="number"
                     value={paramForm.fileConfig?.maxSize || (paramForm.type === 'image' ? 10 : 50)}
@@ -339,7 +341,7 @@ export function ParameterEditDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">允许的文件类型</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.acceptFileTypesLabel')}</Label>
                   <Input
                     value={(paramForm.fileConfig?.accept || []).join(', ')}
                     onChange={(e) => setParamForm({
@@ -353,7 +355,7 @@ export function ParameterEditDialog({
                     className="h-9"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    用逗号分隔，如：.pdf, .docx, image/*
+                    {t('dialogs.parameterEdit.fileTypeHint')}
                   </p>
                 </div>
               </div>
@@ -362,7 +364,7 @@ export function ParameterEditDialog({
             {paramForm.type === 'files' && (
               <div className="space-y-4 rounded-lg border p-3">
                 <div className="space-y-2">
-                  <Label className="text-xs">最大文件数量</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.maxFilesLabel')}</Label>
                   <Input
                     type="number"
                     value={paramForm.fileConfig?.maxFiles || 5}
@@ -376,7 +378,7 @@ export function ParameterEditDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">单文件最大大小 (MB)</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.maxSizePerFileLabel')}</Label>
                   <Input
                     type="number"
                     value={paramForm.fileConfig?.maxSize || 50}
@@ -390,7 +392,7 @@ export function ParameterEditDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">允许的文件类型</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.acceptFileTypesLabel')}</Label>
                   <Input
                     value={(paramForm.fileConfig?.accept || []).join(', ')}
                     onChange={(e) => setParamForm({
@@ -404,7 +406,7 @@ export function ParameterEditDialog({
                     className="h-9"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    用逗号分隔，如：.pdf, .docx, image/*
+                    {t('dialogs.parameterEdit.fileTypeHint')}
                   </p>
                 </div>
               </div>
@@ -413,7 +415,7 @@ export function ParameterEditDialog({
             {paramForm.type === 'images' && (
               <div className="space-y-4 rounded-lg border p-3">
                 <div className="space-y-2">
-                  <Label className="text-xs">最大图片数量</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.maxImagesLabel')}</Label>
                   <Input
                     type="number"
                     value={paramForm.fileConfig?.maxFiles || 9}
@@ -427,7 +429,7 @@ export function ParameterEditDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">单图片最大大小 (MB)</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.maxSizePerImageLabel')}</Label>
                   <Input
                     type="number"
                     value={paramForm.fileConfig?.maxSize || 10}
@@ -441,7 +443,7 @@ export function ParameterEditDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">允许的图片类型</Label>
+                  <Label className="text-xs">{t('dialogs.parameterEdit.acceptImageTypesLabel')}</Label>
                   <Input
                     value={(paramForm.fileConfig?.accept || []).join(', ')}
                     onChange={(e) => setParamForm({
@@ -455,24 +457,24 @@ export function ParameterEditDialog({
                     className="h-9"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    用逗号分隔，如：.jpg, .png, image/*
+                    {t('dialogs.parameterEdit.imageTypeHint')}
                   </p>
                 </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="param-desc" className="text-xs">描述</Label>
+              <Label htmlFor="param-desc" className="text-xs">{t('dialogs.parameterEdit.descriptionLabel')}</Label>
               <Input
                 id="param-desc"
                 value={paramForm.description || ''}
                 onChange={(e) => setParamForm({ ...paramForm, description: e.target.value })}
-                placeholder="输入描述（可选）"
+                placeholder={t('dialogs.parameterEdit.descriptionPlaceholder')}
                 className="h-9"
               />
             </div>
             <div className="flex items-center justify-between">
-              <Label htmlFor="param-required" className="text-xs">必填</Label>
+              <Label htmlFor="param-required" className="text-xs">{t('dialogs.parameterEdit.requiredLabel')}</Label>
               <Switch
                 id="param-required"
                 checked={paramForm.required || false}
@@ -483,10 +485,10 @@ export function ParameterEditDialog({
         </div>
         <DialogFooter className="shrink-0">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            取消
+            {t('dialogs.parameterEdit.cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={!paramForm.name?.trim() || !!variableNameError}>
-            {editingParam ? '保存' : '添加'}
+            {editingParam ? t('dialogs.parameterEdit.save') : t('dialogs.parameterEdit.add')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
+import { useTranslations } from 'next-intl'
 import { X, Copy, Check, RefreshCw, Loader2, ChevronDown, History, RotateCcw, GitBranch } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ interface WorkflowSettingsDrawerProps {
 }
 
 export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, readOnly = false }: WorkflowSettingsDrawerProps) {
+  const t = useTranslations('workflow')
   // 基本信息
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -181,7 +183,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       const result = await workflowsApi.getWorkflowVersions(workflow.id, { pageSize: 50 })
       setVersions(result.items)
     } catch {
-      toast.error('加载版本历史失败')
+      toast.error(t('settings.loadVersionsFailed'))
     } finally {
       setLoadingVersions(false)
     }
@@ -207,11 +209,11 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       onUpdate(updated)
       setRestoreDialogOpen(false)
       setSelectedVersion(null)
-      toast.success(`已恢复到 v${selectedVersion.version}`)
+      toast.success(t('settings.restoredToVersion', { version: selectedVersion.version }))
       // 重新加载版本历史
       loadVersions()
     } catch {
-      toast.error('恢复版本失败')
+      toast.error(t('settings.restoreFailed'))
     } finally {
       setIsRestoring(false)
     }
@@ -226,20 +228,20 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
     // 小于 1 小时
     if (diff < 3600000) {
       const mins = Math.floor(diff / 60000)
-      return mins <= 0 ? '刚刚' : `${mins} 分钟前`
+      return mins <= 0 ? t('settings.justNow') : t('settings.minutesAgo', { n: mins })
     }
     // 小于 24 小时
     if (diff < 86400000) {
       const hours = Math.floor(diff / 3600000)
-      return `${hours} 小时前`
+      return t('settings.hoursAgo', { n: hours })
     }
     // 小于 7 天
     if (diff < 604800000) {
       const days = Math.floor(diff / 86400000)
-      return `${days} 天前`
+      return t('settings.daysAgo', { n: days })
     }
     // 更久
-    return date.toLocaleDateString('zh-CN', {
+    return date.toLocaleDateString('en', {
       month: 'short',
       day: 'numeric',
     })
@@ -267,9 +269,9 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       
       onUpdate(updated)
       setHasChanges(false)
-      toast.success('设置已保存')
+      toast.success(t('settings.settingsSaved'))
     } catch {
-      toast.error('保存失败')
+      toast.error(t('settings.settingsSaveFailed'))
     } finally {
       setIsSaving(false)
     }
@@ -283,9 +285,9 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       setIsRegenerating(true)
       const result = await workflowsApi.regenerateWebhookToken(workflow.id)
       setWebhookToken(result.webhook_token)
-      toast.success('Webhook Token 已重新生成')
+      toast.success(t('settings.webhookTokenRegenerated'))
     } catch {
-      toast.error('重新生成失败')
+      toast.error(t('settings.regenerateFailed'))
     } finally {
       setIsRegenerating(false)
     }
@@ -298,15 +300,15 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
     const url = `${window.location.origin}/api/v1/workflows/webhook/${webhookToken}`
     navigator.clipboard.writeText(url)
     setCopied(true)
-    toast.success('已复制到剪贴板')
+    toast.success(t('editor.copiedToClipboard'))
     setTimeout(() => setCopied(false), 2000)
   }
 
   // 触发类型选项
-  const triggerTypeOptions: { value: TriggerType; label: string; description: string }[] = [
-    { value: 'manual', label: '手动触发', description: '通过 API 或界面手动运行' },
-    { value: 'webhook', label: 'Webhook', description: '通过 HTTP 请求触发' },
-    { value: 'cron', label: '定时任务', description: '按照 Cron 表达式定时运行' },
+  const triggerTypeOptions: { value: TriggerType; labelKey: string; descKey: string }[] = [
+    { value: 'manual', labelKey: 'settings.triggerManual', descKey: 'settings.triggerManualDesc' },
+    { value: 'webhook', labelKey: 'settings.triggerWebhook', descKey: 'settings.triggerWebhookDesc' },
+    { value: 'cron', labelKey: 'settings.triggerCron', descKey: 'settings.triggerCronDesc' },
   ]
 
   if (!workflow) return null
@@ -336,7 +338,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
           ) : (
             <GitBranch className="h-5 w-5 text-muted-foreground" />
           )}
-          <span className="font-medium text-sm">工作流设置</span>
+          <span className="font-medium text-sm">{t('settings.title')}</span>
         </div>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <X className="h-4 w-4" />
@@ -349,7 +351,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
           {/* 只读模式提示 */}
           {readOnly && (
             <div className="bg-muted/50 rounded-lg px-3 py-2 text-xs text-muted-foreground">
-              只读模式，无法编辑工作流设置
+              {t('settings.readOnlyNotice')}
             </div>
           )}
           {/* 基本信息 */}
@@ -359,12 +361,12 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                 "h-3.5 w-3.5 transition-transform",
                 !basicInfoOpen && "-rotate-90"
               )} />
-              <span>基本信息</span>
+              <span>{t('settings.basicInfo')}</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-3">
               {/* 图标 */}
               <div className="space-y-1.5">
-                <Label className="text-xs">图标</Label>
+                <Label className="text-xs">{t('settings.icon')}</Label>
                 <ImageUpload
                   value={icon}
                   onChange={setIcon}
@@ -378,12 +380,12 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               {/* 名称 */}
               <div className="space-y-1.5">
                 <Label className="text-xs">
-                  名称 <span className="text-destructive">*</span>
+                  {t('settings.name')} <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="输入工作流名称"
+                  placeholder={t('settings.namePlaceholder')}
                   className="h-9 text-sm"
                   disabled={readOnly}
                 />
@@ -391,11 +393,11 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
 
               {/* 描述 */}
               <div className="space-y-1.5">
-                <Label className="text-xs">描述</Label>
+                <Label className="text-xs">{t('settings.descriptionLabel')}</Label>
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="描述工作流的用途..."
+                  placeholder={t('settings.descriptionPlaceholder')}
                   className="min-h-20 text-sm resize-none"
                   disabled={readOnly}
                 />
@@ -404,7 +406,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               {/* 状态信息 */}
               <div className="bg-muted/30 rounded-lg p-2.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">状态</span>
+                  <span className="text-muted-foreground">{t('settings.statusLabel')}</span>
                   <Badge 
                     variant="outline" 
                     className={cn(
@@ -414,19 +416,19 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                         : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
                     )}
                   >
-                    {workflow.status === 'published' ? '已发布' : '草稿'}
+                    {workflow.status === 'published' ? t('settings.publishedStatus') : t('settings.draftStatus')}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">版本</span>
+                  <span className="text-muted-foreground">{t('settings.version')}</span>
                   <span className="font-mono">v{workflow.version}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">运行次数</span>
+                  <span className="text-muted-foreground">{t('settings.runCount')}</span>
                   <span>{workflow.run_count}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">成功率</span>
+                  <span className="text-muted-foreground">{t('settings.successRate')}</span>
                   <span>
                     {workflow.run_count > 0 
                       ? `${Math.round((workflow.success_count / workflow.run_count) * 100)}%`
@@ -445,26 +447,26 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                 "h-3.5 w-3.5 transition-transform",
                 !triggerOpen && "-rotate-90"
               )} />
-              <span>触发器</span>
+              <span>{t('settings.triggerSection')}</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-3">
               {/* 触发类型 */}
               <div className="space-y-1.5">
-                <Label className="text-xs">触发方式</Label>
+                <Label className="text-xs">{t('settings.triggerMethod')}</Label>
                 <Select value={triggerType} onValueChange={(v) => v && setTriggerType(v as TriggerType)} disabled={readOnly}>
                   <SelectTrigger className="h-9 text-sm">
-                    <span>{triggerTypeOptions.find(t => t.value === triggerType)?.label || '选择触发方式'}</span>
+                    <span>{triggerTypeOptions.find(o => o.value === triggerType) ? t(triggerTypeOptions.find(o => o.value === triggerType)!.labelKey) : t('settings.selectTriggerMethod')}</span>
                   </SelectTrigger>
                   <SelectContent>
                     {triggerTypeOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                        {t(opt.labelKey)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  {triggerTypeOptions.find(t => t.value === triggerType)?.description}
+                  {triggerTypeOptions.find(o => o.value === triggerType) && t(triggerTypeOptions.find(o => o.value === triggerType)!.descKey)}
                 </p>
               </div>
 
@@ -486,7 +488,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                         ) : (
                           <RefreshCw className="h-3 w-3 mr-1" />
                         )}
-                        重新生成
+                        {t('settings.regenerate')}
                       </Button>
                     )}
                   </div>
@@ -512,11 +514,11 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                     </div>
                   ) : (
                     <p className="text-[10px] text-muted-foreground">
-                      保存后将生成 Webhook URL
+                      {t('settings.webhookUrlWillGenerate')}
                     </p>
                   )}
                   <p className="text-[10px] text-muted-foreground">
-                    通过 POST 请求调用此 URL 触发工作流
+                    {t('settings.webhookPostHint')}
                   </p>
                 </div>
               )}
@@ -526,23 +528,23 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                 <div className="space-y-3">
                   {/* 执行频率类型 */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs">执行频率</Label>
+                    <Label className="text-xs">{t('settings.scheduleFrequency')}</Label>
                     <Select value={scheduleType} onValueChange={(v) => v && setScheduleType(v as typeof scheduleType)} disabled={readOnly}>
                       <SelectTrigger className="h-9 text-sm">
                         <span>
-                          {scheduleType === 'interval' && '按间隔执行'}
-                          {scheduleType === 'daily' && '每天执行'}
-                          {scheduleType === 'weekly' && '每周执行'}
-                          {scheduleType === 'monthly' && '每月执行'}
-                          {scheduleType === 'custom' && '自定义 Cron'}
+                          {scheduleType === 'interval' && t('settings.scheduleInterval')}
+                          {scheduleType === 'daily' && t('settings.scheduleDaily')}
+                          {scheduleType === 'weekly' && t('settings.scheduleWeekly')}
+                          {scheduleType === 'monthly' && t('settings.scheduleMonthly')}
+                          {scheduleType === 'custom' && t('settings.scheduleCustomCron')}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="interval">按间隔执行</SelectItem>
-                        <SelectItem value="daily">每天执行</SelectItem>
-                        <SelectItem value="weekly">每周执行</SelectItem>
-                        <SelectItem value="monthly">每月执行</SelectItem>
-                        <SelectItem value="custom">自定义 Cron</SelectItem>
+                        <SelectItem value="interval">{t('settings.scheduleInterval')}</SelectItem>
+                        <SelectItem value="daily">{t('settings.scheduleDaily')}</SelectItem>
+                        <SelectItem value="weekly">{t('settings.scheduleWeekly')}</SelectItem>
+                        <SelectItem value="monthly">{t('settings.scheduleMonthly')}</SelectItem>
+                        <SelectItem value="custom">{t('settings.scheduleCustomCron')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -550,21 +552,21 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {/* 按间隔执行 */}
                   {scheduleType === 'interval' && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs">执行间隔</Label>
+                      <Label className="text-xs">{t('settings.executionInterval')}</Label>
                       <Select value={String(intervalMinutes)} onValueChange={(v) => v && setIntervalMinutes(parseInt(v))} disabled={readOnly}>
                         <SelectTrigger className="h-9 text-sm">
-                          <span>{intervalMinutes < 60 ? `每 ${intervalMinutes} 分钟` : `每 ${intervalMinutes / 60} 小时`}</span>
+                          <span>{intervalMinutes < 60 ? t('settings.everyNMinutes', { n: intervalMinutes }) : t('settings.everyNHours', { n: intervalMinutes / 60 })}</span>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="5">每 5 分钟</SelectItem>
-                          <SelectItem value="10">每 10 分钟</SelectItem>
-                          <SelectItem value="15">每 15 分钟</SelectItem>
-                          <SelectItem value="30">每 30 分钟</SelectItem>
-                          <SelectItem value="60">每 1 小时</SelectItem>
-                          <SelectItem value="120">每 2 小时</SelectItem>
-                          <SelectItem value="180">每 3 小时</SelectItem>
-                          <SelectItem value="360">每 6 小时</SelectItem>
-                          <SelectItem value="720">每 12 小时</SelectItem>
+                          <SelectItem value="5">{t('settings.every5Min')}</SelectItem>
+                          <SelectItem value="10">{t('settings.every10Min')}</SelectItem>
+                          <SelectItem value="15">{t('settings.every15Min')}</SelectItem>
+                          <SelectItem value="30">{t('settings.every30Min')}</SelectItem>
+                          <SelectItem value="60">{t('settings.every1Hour')}</SelectItem>
+                          <SelectItem value="120">{t('settings.every2Hours')}</SelectItem>
+                          <SelectItem value="180">{t('settings.every3Hours')}</SelectItem>
+                          <SelectItem value="360">{t('settings.every6Hours')}</SelectItem>
+                          <SelectItem value="720">{t('settings.every12Hours')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -573,7 +575,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {/* 每天执行 */}
                   {scheduleType === 'daily' && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs">执行时间</Label>
+                      <Label className="text-xs">{t('settings.executionTime')}</Label>
                       <Input
                         type="time"
                         value={dailyTime}
@@ -588,24 +590,24 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {scheduleType === 'weekly' && (
                     <div className="space-y-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">星期</Label>
+                        <Label className="text-xs">{t('settings.weekday')}</Label>
                         <Select value={String(weeklyDay)} onValueChange={(v) => v && setWeeklyDay(parseInt(v))} disabled={readOnly}>
                           <SelectTrigger className="h-9 text-sm">
-                            <span>{['周日', '周一', '周二', '周三', '周四', '周五', '周六'][weeklyDay]}</span>
+                            <span>{[t('settings.sunday'), t('settings.monday'), t('settings.tuesday'), t('settings.wednesday'), t('settings.thursday'), t('settings.friday'), t('settings.saturday')][weeklyDay]}</span>
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="1">周一</SelectItem>
-                            <SelectItem value="2">周二</SelectItem>
-                            <SelectItem value="3">周三</SelectItem>
-                            <SelectItem value="4">周四</SelectItem>
-                            <SelectItem value="5">周五</SelectItem>
-                            <SelectItem value="6">周六</SelectItem>
-                            <SelectItem value="0">周日</SelectItem>
+                            <SelectItem value="1">{t('settings.monday')}</SelectItem>
+                            <SelectItem value="2">{t('settings.tuesday')}</SelectItem>
+                            <SelectItem value="3">{t('settings.wednesday')}</SelectItem>
+                            <SelectItem value="4">{t('settings.thursday')}</SelectItem>
+                            <SelectItem value="5">{t('settings.friday')}</SelectItem>
+                            <SelectItem value="6">{t('settings.saturday')}</SelectItem>
+                            <SelectItem value="0">{t('settings.sunday')}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">执行时间</Label>
+                        <Label className="text-xs">{t('settings.executionTime')}</Label>
                         <Input
                           type="time"
                           value={weeklyTime}
@@ -621,22 +623,22 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {scheduleType === 'monthly' && (
                     <div className="space-y-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">日期</Label>
+                        <Label className="text-xs">{t('settings.date')}</Label>
                         <Select value={String(monthlyDay)} onValueChange={(v) => v && setMonthlyDay(parseInt(v))} disabled={readOnly}>
                           <SelectTrigger className="h-9 text-sm">
-                            <span>每月 {monthlyDay} 日</span>
+                            <span>{t('settings.monthlyDay', { day: monthlyDay })}</span>
                           </SelectTrigger>
                           <SelectContent>
                             {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
                               <SelectItem key={day} value={String(day)}>
-                                每月 {day} 日
+                                {t('settings.monthlyDay', { day })}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">执行时间</Label>
+                        <Label className="text-xs">{t('settings.executionTime')}</Label>
                         <Input
                           type="time"
                           value={monthlyTime}
@@ -651,7 +653,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {/* 自定义 Cron */}
                   {scheduleType === 'custom' && (
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Cron 表达式</Label>
+                      <Label className="text-xs">{t('settings.cronExpression')}</Label>
                       <Input
                         value={cronExpression}
                         onChange={(e) => setCronExpression(e.target.value)}
@@ -660,7 +662,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                         disabled={readOnly}
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        格式：分 时 日 月 周
+                        {t('settings.cronFormatHint')}
                       </p>
                     </div>
                   )}
@@ -668,7 +670,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   {/* 显示生成的 Cron 表达式 */}
                   <div className="bg-muted/30 rounded-lg p-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground">Cron 表达式</span>
+                      <span className="text-[10px] text-muted-foreground">{t('settings.cronExpression')}</span>
                       <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">
                         {generateCronFromConfig()}
                       </code>
@@ -687,7 +689,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                 !versionHistoryOpen && "-rotate-90"
               )} />
               <History className="h-3.5 w-3.5 mr-0.5" />
-              <span>版本历史</span>
+              <span>{t('settings.versionHistory')}</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-3">
               {loadingVersions ? (
@@ -697,9 +699,9 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               ) : versions.length === 0 ? (
                 <div className="text-center py-6">
                   <History className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-                  <p className="text-xs text-muted-foreground">暂无版本记录</p>
+                  <p className="text-xs text-muted-foreground">{t('settings.noVersions')}</p>
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    发布工作流时会自动保存版本
+                    {t('settings.versionsAutoSaved')}
                   </p>
                 </div>
               ) : (
@@ -719,12 +721,12 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                           </span>
                           {version.version === workflow.version && (
                             <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                              当前
+                              {t('settings.current')}
                             </Badge>
                           )}
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                          {version.description || '无描述'}
+                          {version.description || t('noDescription')}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
                           {formatTime(version.created_at)}
@@ -741,7 +743,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                           }}
                         >
                           <RotateCcw className="h-3 w-3 mr-1" />
-                          恢复
+                          {t('settings.restore')}
                         </Button>
                       )}
                     </div>
@@ -757,20 +759,20 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>恢复到 v{selectedVersion?.version}</DialogTitle>
+            <DialogTitle>{t('settings.restoreToVersion', { version: selectedVersion?.version ?? '' })}</DialogTitle>
             <DialogDescription>
-              确定要恢复到此版本吗？当前版本将自动保存，之后可以随时恢复。
+              {t('settings.restoreConfirmation')}
             </DialogDescription>
           </DialogHeader>
           {selectedVersion && (
             <div className="bg-muted/50 rounded-lg p-3 text-sm">
-              <p className="text-muted-foreground text-xs mb-1">版本信息</p>
+              <p className="text-muted-foreground text-xs mb-1">{t('settings.versionInfo')}</p>
               <p className="font-medium">v{selectedVersion.version}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {selectedVersion.description || '无描述'}
+                {selectedVersion.description || t('noDescription')}
               </p>
               <p className="text-xs text-muted-foreground">
-                创建于 {new Date(selectedVersion.created_at).toLocaleString('zh-CN')}
+                {t('settings.createdAtLabel')} {new Date(selectedVersion.created_at).toLocaleString()}
               </p>
             </div>
           )}
@@ -782,11 +784,11 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                 setSelectedVersion(null)
               }}
             >
-              取消
+              {t('settings.cancel')}
             </Button>
             <Button onClick={handleRestoreVersion} disabled={isRestoring}>
               {isRestoring && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-              确认恢复
+              {t('settings.confirmRestore')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -796,7 +798,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       <div className="absolute bottom-0 left-0 right-0 px-4 py-3 border-t bg-card rounded-b-xl">
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" className="h-8" onClick={onClose}>
-            {readOnly ? '关闭' : '取消'}
+            {readOnly ? t('settings.close') : t('settings.cancel')}
           </Button>
           {!readOnly && (
             <Button
@@ -808,7 +810,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               {isSaving ? (
                 <Loader2 className="h-4 w-4 mr-1 animate-spin" />
               ) : null}
-              保存
+              {t('settings.save')}
             </Button>
           )}
         </div>

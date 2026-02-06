@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +39,7 @@ export function CodeInputDialog({
   onOpenVariablePopoverChange,
   onSave,
 }: CodeInputDialogProps) {
+  const t = useTranslations('workflow')
   const [form, setForm] = React.useState<Partial<CodeInput>>({})
 
   React.useEffect(() => {
@@ -95,18 +97,18 @@ export function CodeInputDialog({
     onOpenChange(false)
   }
 
-  const nameError = form.name && !isValidVariableName(form.name) ? '变量名格式无效' : null
+  const nameError = form.name && !isValidVariableName(form.name) ? t('dialogs.codeInput.nameFormatError') : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-100 flex flex-col max-h-[85vh]">
         <DialogHeader>
-          <DialogTitle className="text-sm">{editingInput ? '编辑输入变量' : '添加输入变量'}</DialogTitle>
+          <DialogTitle className="text-sm">{editingInput ? t('dialogs.codeInput.editTitle') : t('dialogs.codeInput.addTitle')}</DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto py-2 px-1 -mx-1">
           <div className="space-y-4 px-0.5">
             <div className="space-y-2">
-              <Label htmlFor="codeinput-name" className="text-xs">变量名 *</Label>
+              <Label htmlFor="codeinput-name" className="text-xs">{t('dialogs.codeInput.nameLabel')}</Label>
               <Input
                 id="codeinput-name"
                 value={form.name || ''}
@@ -123,7 +125,7 @@ export function CodeInputDialog({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">变量值 *</Label>
+              <Label className="text-xs">{t('dialogs.codeInput.valueLabel')}</Label>
               <Popover 
                 open={openVariablePopover === 'code-input-value'}
                 onOpenChange={(isOpen) => {
@@ -143,7 +145,7 @@ export function CodeInputDialog({
                       </span>
                     </span>
                   ) : (
-                    <span className="text-muted-foreground text-xs">选择上游变量...</span>
+                    <span className="text-muted-foreground text-xs">{t('dialogs.codeInput.selectUpstreamPlaceholder')}</span>
                   )}
                 </PopoverTrigger>
                 <PopoverContent className="w-72 p-0" align="start">
@@ -151,7 +153,7 @@ export function CodeInputDialog({
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
-                        placeholder="搜索变量"
+                        placeholder={t('dialogs.codeInput.searchPlaceholder')}
                         value={variableSearch}
                         onChange={(e) => onVariableSearchChange(e.target.value)}
                         className="h-8 pl-8 text-xs"
@@ -167,7 +169,7 @@ export function CodeInputDialog({
                         if (groupEntries.length === 0) {
                           return (
                             <div className="py-4 text-center text-xs text-muted-foreground">
-                              未找到匹配的变量
+                              {t('dialogs.codeInput.noMatch')}
                             </div>
                           )
                         }
@@ -213,14 +215,14 @@ export function CodeInputDialog({
         </div>
         <DialogFooter className="shrink-0">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            取消
+            {t('dialogs.codeInput.cancel')}
           </Button>
           <Button 
             size="sm" 
             onClick={handleSave} 
             disabled={!form.name?.trim() || !form.value || !!nameError}
           >
-            {editingInput ? '保存' : '添加'}
+            {editingInput ? t('dialogs.codeInput.save') : t('dialogs.codeInput.add')}
           </Button>
         </DialogFooter>
       </DialogContent>

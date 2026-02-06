@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Search, ChevronDown, Workflow, Check, Loader2, Trash2, ExternalLink } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -65,6 +66,7 @@ export function SubWorkflowNodeConfig({
   onVariableSearchChange,
   onOpenVariablePopoverChange,
 }: SubWorkflowNodeConfigProps) {
+  const t = useTranslations('workflow')
   const { currentTeam } = useTeam()
   const [outputOpen, setOutputOpen] = React.useState(true)
   const [paramsOpen, setParamsOpen] = React.useState(true)
@@ -305,7 +307,7 @@ export function SubWorkflowNodeConfig({
               </span>
             </>
           ) : (
-            <span className="text-muted-foreground text-[11px]">选择变量...</span>
+            <span className="text-muted-foreground text-[11px]">{t('configCommon.selectVariable')}</span>
           )}
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0" align="start">
@@ -313,7 +315,7 @@ export function SubWorkflowNodeConfig({
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
               <Input
-                placeholder="搜索变量"
+                placeholder={t('configCommon.searchVariable')}
                 value={variableSearch}
                 onChange={(e) => onVariableSearchChange(e.target.value)}
                 className="h-7 pl-7 text-xs"
@@ -329,7 +331,7 @@ export function SubWorkflowNodeConfig({
                 if (groupEntries.length === 0) {
                   return (
                     <div className="py-4 text-center text-xs text-muted-foreground">
-                      未找到匹配的变量
+                      {t('configCommon.noMatchingVariables')}
                     </div>
                   )
                 }
@@ -380,7 +382,7 @@ export function SubWorkflowNodeConfig({
       {/* 工作流选择 */}
       <div className="space-y-2">
         <div className="flex items-center gap-1">
-          <Label className="text-xs font-medium">选择工作流</Label>
+          <Label className="text-xs font-medium">{t('configSubWorkflow.selectWorkflow')}</Label>
           <span className="text-destructive">*</span>
         </div>
         
@@ -393,15 +395,15 @@ export function SubWorkflowNodeConfig({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-medium truncate">
-                  {selectedWorkflow?.name || safeConfig.workflowName || '未知工作流'}
+                  {selectedWorkflow?.name || safeConfig.workflowName || t('configSubWorkflow.unknownWorkflow')}
                 </span>
                 {selectedWorkflow ? (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-                    已发布
+                    {t('configCommon.published')}
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300">
-                    未发布
+                    {t('configCommon.unpublished')}
                   </Badge>
                 )}
               </div>
@@ -417,7 +419,7 @@ export function SubWorkflowNodeConfig({
                 size="icon"
                 className="h-6 w-6 shrink-0"
                 onClick={() => window.open(`/app/apps/workflow/${safeConfig.workflowId}`, '_blank')}
-                title="查看工作流"
+                title={t('configSubWorkflow.viewWorkflow')}
               >
                 <ExternalLink className="h-3 w-3 text-muted-foreground" />
               </Button>
@@ -440,12 +442,12 @@ export function SubWorkflowNodeConfig({
               {isLoadingWorkflows ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  加载中...
+                  {t('configCommon.loading')}
                 </>
               ) : (
                 <>
                   <Workflow className="h-3.5 w-3.5" />
-                  选择工作流...
+                  {t('configSubWorkflow.selectWorkflowPlaceholder')}
                 </>
               )}
             </PopoverTrigger>
@@ -455,7 +457,7 @@ export function SubWorkflowNodeConfig({
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="搜索工作流..."
+                    placeholder={t('configSubWorkflow.searchWorkflows')}
                     value={workflowSearch}
                     onChange={(e) => setWorkflowSearch(e.target.value)}
                     className="h-8 pl-8 text-xs"
@@ -469,8 +471,8 @@ export function SubWorkflowNodeConfig({
                   {filteredWorkflows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                       <Workflow className="h-8 w-8 mb-2" />
-                      <p className="text-xs">{workflowSearch ? '未找到匹配的工作流' : '暂无已发布的工作流'}</p>
-                      <p className="text-[10px] mt-1">只能调用已发布的工作流</p>
+                      <p className="text-xs">{workflowSearch ? t('configSubWorkflow.noMatchingWorkflows') : t('configSubWorkflow.noPublishedWorkflows')}</p>
+                      <p className="text-[10px] mt-1">{t('configSubWorkflow.onlyPublishedHint')}</p>
                     </div>
                   ) : (
                     filteredWorkflows.map(workflow => (
@@ -512,15 +514,15 @@ export function SubWorkflowNodeConfig({
               "h-3.5 w-3.5 transition-transform",
               !paramsOpen && "-rotate-90"
             )} />
-            <span>输入参数</span>
+            <span>{t('configCommon.inputParameters')}</span>
             <span className="text-muted-foreground ml-1">({safeConfig.inputMappings.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
             {safeConfig.inputMappings.length === 0 ? (
               <div className="bg-muted/30 rounded-lg p-3 text-center">
-                <p className="text-xs text-muted-foreground">该工作流没有定义输入参数</p>
+                <p className="text-xs text-muted-foreground">{t('configSubWorkflow.noInputParams')}</p>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  在目标工作流的开始节点中添加参数后，这里将显示参数配置
+                  {t('configSubWorkflow.noInputParamsHint')}
                 </p>
               </div>
             ) : (
@@ -550,7 +552,7 @@ export function SubWorkflowNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'variable' })}
                   >
-                    变量
+                    {t('configCommon.variable')}
                   </Button>
                   <Button
                     variant={mapping.source === 'constant' ? 'default' : 'outline'}
@@ -558,7 +560,7 @@ export function SubWorkflowNodeConfig({
                     className="h-6 text-[10px] flex-1"
                     onClick={() => handleUpdateMapping(mapping.name, { source: 'constant', variableRef: undefined, variableRefNodeLabel: undefined })}
                   >
-                    常量
+                    {t('configCommon.constant')}
                   </Button>
                 </div>
                 
@@ -569,7 +571,7 @@ export function SubWorkflowNodeConfig({
                   <Input
                     value={mapping.constantValue || ''}
                     onChange={(e) => handleUpdateMapping(mapping.name, { constantValue: e.target.value })}
-                    placeholder={`输入${mapping.name}的值...`}
+                    placeholder={t('configCommon.enterValueFor', { name: mapping.name })}
                     className="h-8 text-xs"
                   />
                 )}
@@ -587,7 +589,7 @@ export function SubWorkflowNodeConfig({
             "h-3.5 w-3.5 transition-transform",
             !outputOpen && "-rotate-90"
           )} />
-          <span>输出变量</span>
+          <span>{t('configCommon.outputVariables')}</span>
           <span className="text-destructive">*</span>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-2 space-y-2">
@@ -601,7 +603,7 @@ export function SubWorkflowNodeConfig({
             )}
           />
           {safeConfig.outputVariable && !isValidVariableName(safeConfig.outputVariable) && (
-            <p className="text-[10px] text-destructive">变量名格式无效</p>
+            <p className="text-[10px] text-destructive">{t('configCommon.invalidVariableName')}</p>
           )}
           
           {/* 输出预览 */}
@@ -610,7 +612,7 @@ export function SubWorkflowNodeConfig({
               <span className="text-xs font-mono font-medium">{safeConfig.outputVariable || 'result'}</span>
               <span className="text-[10px] text-muted-foreground">Object</span>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">子工作流执行结果</p>
+            <p className="text-[10px] text-muted-foreground mt-1">{t('configSubWorkflow.executionResult')}</p>
           </div>
         </CollapsibleContent>
       </Collapsible>
