@@ -1,6 +1,7 @@
-from typing import Any, List, Union
+import json
+from typing import Any
 
-from pydantic import validator
+from pydantic import FieldValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,26 +43,31 @@ class Settings(BaseSettings):
     QDRANT_DISTANCE: str = "Cosine"
 
     # CORS
-    BACKEND_CORS_ORIGINS: List[str] = [
+    BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js dev server
     ]
 
     # External API Keys
     TAVILY_API_KEY: str | None = None  # Tavily search API key
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return list(v) if isinstance(v, list) else [v]
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            if v.startswith("["):
+                return json.loads(v)
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
         raise ValueError(v)
 
-    @validator("DATABASE_URL", pre=True)
-    def assemble_db_connection(cls, v: str, values: dict[str, Any]) -> str:
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_db_connection(cls, v: str, info: FieldValidationInfo) -> str:
         if isinstance(v, str) and v:
             return v
-        return f"postgres://{values.get('POSTGRES_USER')}:{values.get('POSTGRES_PASSWORD')}@{values.get('POSTGRES_SERVER')}:{values.get('POSTGRES_PORT')}/{values.get('POSTGRES_DB')}"
+        data = info.data
+        return f"postgres://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_SERVER')}:{data.get('POSTGRES_PORT')}/{data.get('POSTGRES_DB')}"
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
