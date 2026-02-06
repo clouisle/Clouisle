@@ -25,6 +25,25 @@ This ensures the backend receives real client IP addresses and other request met
 
 ## Building Images
 
+### CI/CD (Recommended)
+
+Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`), which builds and pushes both images to ACR automatically:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Images are pushed to:
+```
+<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-backend:<version>
+<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-frontend:<version>
+```
+
+Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
+
+### Local Build
+
 From the **project root**:
 
 ```bash
@@ -48,7 +67,13 @@ cd deploy
 cp .env.example .env
 # Edit .env — set strong passwords for POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY, SECRET_KEY
 
-# 2. Build and start
+# 2a. Using ACR images (set IMAGE_REGISTRY in .env)
+#     IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-namespace/clouisle
+#     IMAGE_TAG=0.1.0
+docker compose up -d
+
+# 2b. Using local build
+#     IMAGE_REGISTRY=clouisle  (default)
 docker compose up -d --build
 ```
 

@@ -12,6 +12,8 @@
 x-definitions:
   # -- common labels --------------------------------------------------------
   - &ns clouisle
+  # Replace with your ACR address, e.g.:
+  #   registry.cn-hangzhou.aliyuncs.com/clouisle/clouisle-backend:0.1.0
   - &backend-image clouisle-backend:latest
   - &frontend-image clouisle-frontend:latest
   - &pull-policy IfNotPresent

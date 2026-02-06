@@ -61,10 +61,7 @@ services:
   # Application
   # ---------------------------------------------------------------------------
   backend:
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/backend.Dockerfile
-    image: clouisle-backend:latest
+    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -84,7 +81,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: clouisle-backend:latest
+    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
     env_file: .env
@@ -105,7 +102,7 @@ services:
         condition: service_started
 
   beat:
-    image: clouisle-backend:latest
+    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "main.py", "beat"]
     env_file: .env
@@ -122,10 +119,7 @@ services:
         condition: service_started
 
   frontend:
-    build:
-      context: ..
-      dockerfile: deploy/dockerfiles/frontend.Dockerfile
-    image: clouisle-frontend:latest
+    image: ${IMAGE_REGISTRY:-clouisle}-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "3000:3000"
