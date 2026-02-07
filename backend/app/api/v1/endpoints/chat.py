@@ -62,10 +62,10 @@ if TYPE_CHECKING:
     from app.models.tool import Tool
 
 
-# Language instruction templates
+# Language instruction templates - must be strong and explicit
 LANGUAGE_INSTRUCTIONS = {
-    "en": "Please respond in English.",
-    "zh": "请使用中文回复。",
+    "en": "IMPORTANT: You MUST respond in English only. Do not use any other language.",
+    "zh": "重要：你必须使用中文回复。不要使用其他语言。",
 }
 
 
@@ -75,9 +75,15 @@ def get_language_instruction() -> str:
     return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
 
 
-def append_language_instruction(system_prompt: str) -> str:
-    """Append language instruction to system prompt if not already present."""
+def build_system_prompt_with_language(system_prompt: str | None) -> str:
+    """Build system prompt with language instruction.
+
+    Always returns a system prompt with language instruction,
+    even if the original system prompt is empty.
+    """
     instruction = get_language_instruction()
+    if not system_prompt:
+        return instruction
     # Check if instruction already exists (avoid duplication)
     if instruction in system_prompt:
         return system_prompt
@@ -310,10 +316,10 @@ async def build_messages(
     """
     messages: list[LLMMessage] = []
 
-    # System prompt
-    if agent.system_prompt:
+    # System prompt - always add with language instruction
+    system_prompt = agent.system_prompt or ""
+    if system_prompt:
         # Replace variables in system prompt
-        system_prompt = agent.system_prompt
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
 
@@ -327,10 +333,9 @@ async def build_messages(
             # Remove the placeholder if no file content
             system_prompt = system_prompt.replace("{{fileContent}}", "")
 
-        # Append language instruction
-        system_prompt = append_language_instruction(system_prompt)
-
-        messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
+    # Build system prompt with language instruction (always added)
+    system_prompt = build_system_prompt_with_language(system_prompt)
+    messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
     # Load conversation history (only active messages)
     history = await Message.filter(
@@ -1587,8 +1592,9 @@ async def chat_stream(
                         parsed_files
                     )
 
-            if agent.system_prompt:
-                system_prompt = agent.system_prompt
+            # System prompt - always add with language instruction
+            system_prompt = agent.system_prompt or ""
+            if system_prompt:
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
 
@@ -1603,12 +1609,11 @@ async def chat_stream(
                 else:
                     system_prompt = system_prompt.replace("{{fileContent}}", "")
 
-                # Append language instruction
-                system_prompt = append_language_instruction(system_prompt)
-
-                messages_for_llm.append(
-                    LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-                )
+            # Build system prompt with language instruction (always added)
+            system_prompt = build_system_prompt_with_language(system_prompt)
+            messages_for_llm.append(
+                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+            )
 
             # Helper function to build multimodal content for vision
             def build_vision_content(text: str, images: list) -> list[ContentPart]:
@@ -2432,17 +2437,19 @@ async def regenerate_message(
             # Build messages for LLM - only include ACTIVE messages before this one
             messages_for_llm: list[LLMTypeMessage] = []
 
-            if agent.system_prompt:
-                system_prompt = agent.system_prompt
+            # System prompt - always add with language instruction
+            system_prompt = agent.system_prompt or ""
+            if system_prompt:
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
                 # Inject {{query}} variable - user's current input
                 system_prompt = system_prompt.replace("{{query}}", user_message.content)
-                # Append language instruction
-                system_prompt = append_language_instruction(system_prompt)
-                messages_for_llm.append(
-                    LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-                )
+
+            # Build system prompt with language instruction (always added)
+            system_prompt = build_system_prompt_with_language(system_prompt)
+            messages_for_llm.append(
+                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+            )
 
             # Load active history before this message
             history = await Message.filter(
