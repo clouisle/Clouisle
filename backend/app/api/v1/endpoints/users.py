@@ -35,17 +35,15 @@ router = APIRouter()
 async def serialize_user_with_sso(user: User) -> dict:
     """
     Serialize user object with SSO connections to dict.
-    Handles the case where sso_connections might not be loaded.
+    Always fetches roles and sso_connections from database to ensure proper serialization.
     """
     from app.schemas.sso import UserSSOConnectionSchema
 
-    roles = user.roles
-    if not isinstance(roles, list):
-        roles = await user.roles.all().prefetch_related("permissions")
+    # Always fetch roles with permissions
+    roles = await user.roles.all().prefetch_related("permissions")
 
-    sso_connections = user.sso_connections
-    if not isinstance(sso_connections, list):
-        sso_connections = await user.sso_connections.all().prefetch_related("provider")
+    # Always fetch sso_connections with provider
+    sso_connections = await user.sso_connections.all().prefetch_related("provider")
 
     user_dict = {
         "id": user.id,
