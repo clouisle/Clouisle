@@ -8,7 +8,7 @@ from uuid import UUID
 from celery import shared_task
 
 from app.models.workflow import WorkflowRun, RunStatus
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +68,10 @@ def run_workflow_task(
                     "outputs": run.outputs,
                 }
             else:
+                default_lang = await get_default_language()
                 return {
                     "status": "error",
-                    "message": t("workflow_run_not_found_after_execution", lang="en"),
+                    "message": t("workflow_run_not_found_after_execution", lang=default_lang),
                 }
 
         except Exception as e:

@@ -130,6 +130,7 @@ class SSOService:
             )
 
         # Create new user
+        default_language = await SiteSetting.get_value("default_language", "en")
         new_user = await User.create(
             username=username,
             email=email,
@@ -138,6 +139,7 @@ class SSOService:
             is_active=not require_approval,
             email_verified=True,  # Trust SSO provider
             avatar_url=user_info.get("picture") or user_info.get("avatar_url"),
+            locale=default_language,
         )
 
         # Assign default role if configured

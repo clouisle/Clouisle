@@ -261,6 +261,8 @@
     "siteIconDescription": "Used in browser tabs and sidebar",
     "uploadIcon": "Upload Icon",
     "siteIconHint": "Recommended: 64x64 pixels, PNG/SVG format",
+    "defaultLanguage": "Default Language",
+    "defaultLanguageDescription": "Default language for system messages and notifications",
     "registration": "Registration",
     "registrationDescription": "Control user registration behavior",
     "allowRegistration": "Allow Registration",

@@ -168,7 +168,8 @@ def process_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found", lang="en")}
+            default_lang = await get_default_language()
+            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
@@ -377,7 +378,8 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found", lang="en")}
+            default_lang = await get_default_language()
+            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
 
         kb = document.knowledge_base
 
@@ -457,7 +459,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found", lang="en")}
+            default_lang = await get_default_language()
+            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
@@ -656,7 +659,8 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found", lang="en")}
+            default_lang = await get_default_language()
+            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
@@ -685,9 +689,10 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 document.status = DocumentStatus.ERROR.value
                 document.error_message = "No chunks to embed"
                 await document.save()
+                default_lang = await get_default_language()
                 return {
                     "status": "success",
-                    "message": t("no_chunks_to_embed", lang="en"),
+                    "message": t("no_chunks_to_embed", lang=default_lang),
                     "embedded_count": 0,
                 }
 

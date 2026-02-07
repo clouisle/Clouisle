@@ -201,6 +201,11 @@ async def create_user(
     password = user_dict.pop("password")
     hashed_password = security.get_password_hash(password)
 
+    # Get default language from site settings if locale not provided
+    if "locale" not in user_dict or not user_dict.get("locale"):
+        default_language = await SiteSetting.get_value("default_language", "en")
+        user_dict["locale"] = default_language
+
     user = await User.create(
         **user_dict,
         hashed_password=hashed_password,

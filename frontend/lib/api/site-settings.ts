@@ -34,6 +34,7 @@ export interface GeneralSettings {
   site_description: string
   site_url: string
   site_icon: string
+  default_language: string
 }
 
 export interface SecuritySettings {
@@ -177,6 +178,7 @@ export const siteSettingsApi = {
       site_description: settings.site_description ?? '',
       site_url: settings.site_url ?? '',
       site_icon: settings.site_icon ?? '',
+      default_language: settings.default_language ?? 'en',
     }
   },
 

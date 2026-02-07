@@ -64,10 +64,13 @@ NODE_TYPE_KEYS = {
 }
 
 
-def get_node_type_label(node_type: str) -> str | None:
+async def get_node_type_label(node_type: str) -> str | None:
     """Get translated node type label."""
     key = NODE_TYPE_KEYS.get(node_type)
-    return t(key, lang="en") if key else None
+    if not key:
+        return None
+    default_lang = await get_default_language()
+    return t(key, lang=default_lang)
 
 
 class WorkflowOrchestrator:
@@ -764,7 +767,7 @@ class WorkflowOrchestrator:
                         if stream_manager:
                             node_label = (
                                 node.node_data.get("data", {}).get("label")
-                                or get_node_type_label(node.node_type)
+                                or await get_node_type_label(node.node_type)
                                 or node_id
                             )
                             await stream_manager.publish_node_skip(
@@ -881,7 +884,7 @@ class WorkflowOrchestrator:
                                             downstream_node.node_data.get(
                                                 "data", {}
                                             ).get("label")
-                                            or get_node_type_label(
+                                            or await get_node_type_label(
                                                 downstream_node.node_type
                                             )
                                             or downstream_id
@@ -980,7 +983,7 @@ class WorkflowOrchestrator:
         # Fall back to default label by type, then node_id
         node_inner_data = node_data.get("data", {})
         node_label = (
-            node_inner_data.get("label") or get_node_type_label(node_type) or node_id
+            node_inner_data.get("label") or await get_node_type_label(node_type) or node_id
         )
 
         logger.debug(

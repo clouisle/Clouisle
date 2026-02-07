@@ -261,6 +261,8 @@
     "siteIconDescription": "用于浏览器标签页和侧边栏显示",
     "uploadIcon": "上传图标",
     "siteIconHint": "推荐尺寸：64x64 像素，支持 PNG、SVG 格式",
+    "defaultLanguage": "默认语言",
+    "defaultLanguageDescription": "系统消息和通知的默认语言",
     "registration": "注册设置",
     "registrationDescription": "控制用户注册行为",
     "allowRegistration": "允许注册",

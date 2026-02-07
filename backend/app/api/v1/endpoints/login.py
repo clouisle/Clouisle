@@ -396,6 +396,7 @@ async def register(
     # Get registration settings
     require_approval = await SiteSetting.get_value("require_approval", False)
     email_verification = await SiteSetting.get_value("email_verification", True)
+    default_language = await SiteSetting.get_value("default_language", "en")
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -408,6 +409,7 @@ async def register(
         is_active=is_first_user or not require_approval,
         is_superuser=is_first_user,
         email_verified=is_first_user,  # First user auto-verified
+        locale=default_language,
     )
 
     # If first user, assign Super Admin role
