@@ -27,30 +27,55 @@ async def _send_doc_indexed_notification(
     team_id: UUID,
     chunk_count: int,
     token_count: int,
+    user_locale: str = "en",
 ) -> None:
     """Send notification when document is indexed successfully."""
     try:
-        await AutoNotificationService.send_to_team(
-            notification_type=AutoNotificationType.KB_DOC_INDEXED,
-            team_id=team_id,
-            title=t("notify_kb_doc_indexed_title", lang="en"),
-            content=t(
-                "notify_kb_doc_indexed_content",
-                lang="en",
-                doc_name=document.name,
-                kb_name=kb_name,
-                chunk_count=chunk_count,
-                token_count=token_count,
-            ),
-            data={
-                "document_id": str(document.id),
-                "document_name": document.name,
-                "kb_name": kb_name,
-                "chunk_count": chunk_count,
-                "token_count": token_count,
-            },
-            link_url=f"/kb/{document.knowledge_base_id}",
-        )
+        # Send to uploader if available, otherwise to team
+        if document.uploaded_by_id:
+            await AutoNotificationService.send_to_user(
+                notification_type=AutoNotificationType.KB_DOC_INDEXED,
+                user_id=document.uploaded_by_id,
+                title=t("notify_kb_doc_indexed_title", lang=user_locale),
+                content=t(
+                    "notify_kb_doc_indexed_content",
+                    lang=user_locale,
+                    doc_name=document.name,
+                    kb_name=kb_name,
+                    chunk_count=chunk_count,
+                    token_count=token_count,
+                ),
+                data={
+                    "document_id": str(document.id),
+                    "document_name": document.name,
+                    "kb_name": kb_name,
+                    "chunk_count": chunk_count,
+                    "token_count": token_count,
+                },
+                link_url=f"/kb/{document.knowledge_base_id}",
+            )
+        else:
+            await AutoNotificationService.send_to_team(
+                notification_type=AutoNotificationType.KB_DOC_INDEXED,
+                team_id=team_id,
+                title=t("notify_kb_doc_indexed_title", lang="en"),
+                content=t(
+                    "notify_kb_doc_indexed_content",
+                    lang="en",
+                    doc_name=document.name,
+                    kb_name=kb_name,
+                    chunk_count=chunk_count,
+                    token_count=token_count,
+                ),
+                data={
+                    "document_id": str(document.id),
+                    "document_name": document.name,
+                    "kb_name": kb_name,
+                    "chunk_count": chunk_count,
+                    "token_count": token_count,
+                },
+                link_url=f"/kb/{document.knowledge_base_id}",
+            )
     except Exception as e:
         logger.error(f"Failed to send doc indexed notification: {e}")
 
@@ -60,28 +85,51 @@ async def _send_doc_failed_notification(
     kb_name: str,
     team_id: UUID,
     error: str,
+    user_locale: str = "en",
 ) -> None:
     """Send notification when document indexing fails."""
     try:
-        await AutoNotificationService.send_to_team(
-            notification_type=AutoNotificationType.KB_DOC_FAILED,
-            team_id=team_id,
-            title=t("notify_kb_doc_failed_title", lang="en"),
-            content=t(
-                "notify_kb_doc_failed_content",
-                lang="en",
-                doc_name=document.name,
-                kb_name=kb_name,
-                error=error[:200],  # Truncate error message
-            ),
-            data={
-                "document_id": str(document.id),
-                "document_name": document.name,
-                "kb_name": kb_name,
-                "error": error[:500],
-            },
-            link_url=f"/kb/{document.knowledge_base_id}",
-        )
+        # Send to uploader if available, otherwise to team
+        if document.uploaded_by_id:
+            await AutoNotificationService.send_to_user(
+                notification_type=AutoNotificationType.KB_DOC_FAILED,
+                user_id=document.uploaded_by_id,
+                title=t("notify_kb_doc_failed_title", lang=user_locale),
+                content=t(
+                    "notify_kb_doc_failed_content",
+                    lang=user_locale,
+                    doc_name=document.name,
+                    kb_name=kb_name,
+                    error=error[:200],  # Truncate error message
+                ),
+                data={
+                    "document_id": str(document.id),
+                    "document_name": document.name,
+                    "kb_name": kb_name,
+                    "error": error[:500],
+                },
+                link_url=f"/kb/{document.knowledge_base_id}",
+            )
+        else:
+            await AutoNotificationService.send_to_team(
+                notification_type=AutoNotificationType.KB_DOC_FAILED,
+                team_id=team_id,
+                title=t("notify_kb_doc_failed_title", lang="en"),
+                content=t(
+                    "notify_kb_doc_failed_content",
+                    lang="en",
+                    doc_name=document.name,
+                    kb_name=kb_name,
+                    error=error[:200],  # Truncate error message
+                ),
+                data={
+                    "document_id": str(document.id),
+                    "document_name": document.name,
+                    "kb_name": kb_name,
+                    "error": error[:500],
+                },
+                link_url=f"/kb/{document.knowledge_base_id}",
+            )
     except Exception as e:
         logger.error(f"Failed to send doc failed notification: {e}")
 
@@ -109,10 +157,10 @@ def process_document_task(self, document_id: str) -> dict:
     async def _process():
         doc_uuid = UUID(document_id)
 
-        # Get document
+        # Get document with uploader for locale
         document = (
             await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base")
+            .prefetch_related("knowledge_base", "uploaded_by")
             .first()
         )
 
@@ -121,6 +169,8 @@ def process_document_task(self, document_id: str) -> dict:
             return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
+        # Get uploader's locale for notifications
+        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
 
         try:
             # Update status to processing
@@ -231,6 +281,7 @@ def process_document_task(self, document_id: str) -> dict:
                 team_id=kb.team_id,
                 chunk_count=len(created_chunks),
                 token_count=total_tokens,
+                user_locale=user_locale,
             )
 
             return {
@@ -254,6 +305,7 @@ def process_document_task(self, document_id: str) -> dict:
                 kb_name=kb.name,
                 team_id=kb.team_id,
                 error=str(e),
+                user_locale=user_locale,
             )
 
             return {
@@ -277,6 +329,7 @@ def process_document_task(self, document_id: str) -> dict:
                 kb_name=kb.name,
                 team_id=kb.team_id,
                 error=str(e),
+                user_locale=user_locale,
             )
 
             return {
@@ -393,10 +446,10 @@ def rechunk_document_task(self, document_id: str) -> dict:
     async def _rechunk():
         doc_uuid = UUID(document_id)
 
-        # Get document
+        # Get document with uploader for locale
         document = (
             await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base")
+            .prefetch_related("knowledge_base", "uploaded_by")
             .first()
         )
 
@@ -405,6 +458,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
             return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
+        # Get uploader's locale for notifications
+        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
 
         try:
             # Update status to processing
@@ -501,6 +556,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 team_id=kb.team_id,
                 chunk_count=len(created_chunks),
                 token_count=total_tokens,
+                user_locale=user_locale,
             )
 
             return {
@@ -525,6 +581,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 kb_name=kb.name,
                 team_id=kb.team_id,
                 error=str(e),
+                user_locale=user_locale,
             )
 
             return {
@@ -548,6 +605,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 kb_name=kb.name,
                 team_id=kb.team_id,
                 error=str(e),
+                user_locale=user_locale,
             )
 
             return {
@@ -587,10 +645,10 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
         doc_uuid = UUID(document_id)
 
-        # Get document with KB
+        # Get document with KB and uploader for locale
         document = (
             await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base")
+            .prefetch_related("knowledge_base", "uploaded_by")
             .first()
         )
 
@@ -599,6 +657,8 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
+        # Get uploader's locale for notifications
+        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
 
         async def _refresh_kb_stats() -> None:
             docs = await Document.filter(
@@ -672,6 +732,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                     kb_name=kb.name,
                     team_id=kb.team_id,
                     error=f"All {len(chunks)} chunks failed to embed: {last_error}",
+                    user_locale=user_locale,
                 )
 
                 return {
@@ -704,6 +765,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                     kb_name=kb.name,
                     team_id=kb.team_id,
                     error=f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}",
+                    user_locale=user_locale,
                 )
 
                 return {
@@ -739,6 +801,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 team_id=kb.team_id,
                 chunk_count=document.chunk_count,
                 token_count=document.token_count,
+                user_locale=user_locale,
             )
 
             return {
@@ -762,6 +825,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 kb_name=kb.name,
                 team_id=kb.team_id,
                 error=str(e),
+                user_locale=user_locale,
             )
 
             return {
