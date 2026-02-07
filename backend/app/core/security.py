@@ -1,13 +1,19 @@
 from datetime import timedelta
 from typing import Any, Optional, Union
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext  # type: ignore[import-untyped]
 
 from app.core.config import settings
 from app.core.timezone import now_utc
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt has a maximum password length of 72 bytes
+BCRYPT_MAX_PASSWORD_LENGTH = 72
+
+
+def _prepare_password(password: str) -> bytes:
+    """Encode and truncate password to bcrypt's maximum length of 72 bytes."""
+    return password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_LENGTH]
 
 
 def create_access_token(
@@ -26,8 +32,10 @@ def create_access_token(
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        _prepare_password(plain_password), hashed_password.encode("utf-8")
+    )
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_prepare_password(password), bcrypt.gensalt()).decode("utf-8")

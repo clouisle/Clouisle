@@ -1,5 +1,8 @@
 {
   "tools": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "工具管理",
     "description": "管理团队的工具配置",
     "createTool": "创建工具",

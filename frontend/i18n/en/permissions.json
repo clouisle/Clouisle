@@ -1,5 +1,8 @@
 {
   "permissions": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "Permissions",
     "description": "Manage system permission definitions",
     "createPermission": "Create Permission",

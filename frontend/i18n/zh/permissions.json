@@ -1,5 +1,8 @@
 {
   "permissions": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "权限管理",
     "description": "管理系统权限定义",
     "createPermission": "创建权限",

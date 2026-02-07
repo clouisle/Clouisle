@@ -1,5 +1,8 @@
 {
   "users": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "User List",
     "description": "Manage your users and their roles here.",
     "allUsers": "All Users",

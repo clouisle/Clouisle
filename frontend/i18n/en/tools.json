@@ -1,5 +1,8 @@
 {
   "tools": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "Tool Management",
     "description": "Manage team tool configurations",
     "createTool": "Create Tool",

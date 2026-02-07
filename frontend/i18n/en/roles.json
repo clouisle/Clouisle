@@ -1,5 +1,8 @@
 {
   "roles": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "Roles",
     "description": "Manage system roles and permissions",
     "createRole": "Create Role",
