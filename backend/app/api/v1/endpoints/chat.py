@@ -56,7 +56,6 @@ from app.schemas.response import (
 )
 from app.llm.tools import tool_registry
 from app.core.timezone import now_utc
-from app.core.i18n import get_language
 
 if TYPE_CHECKING:
     from app.models.tool import Tool
@@ -69,19 +68,31 @@ LANGUAGE_INSTRUCTIONS = {
 }
 
 
-def get_language_instruction() -> str:
-    """Get language instruction based on current request language."""
-    lang = get_language()
+def get_language_instruction(user_locale: str | None = None) -> str:
+    """Get language instruction based on user's locale setting.
+
+    Args:
+        user_locale: User's locale from database (e.g., "en", "zh")
+    """
+    lang = user_locale or "en"
+    # Normalize language code (e.g., "zh-CN" -> "zh")
+    lang = lang.lower().split("-")[0]
     return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
 
 
-def build_system_prompt_with_language(system_prompt: str | None) -> str:
+def build_system_prompt_with_language(
+    system_prompt: str | None, user_locale: str | None = None
+) -> str:
     """Build system prompt with language instruction.
 
     Always returns a system prompt with language instruction,
     even if the original system prompt is empty.
+
+    Args:
+        system_prompt: The original system prompt (can be None or empty)
+        user_locale: User's locale from database (e.g., "en", "zh")
     """
-    instruction = get_language_instruction()
+    instruction = get_language_instruction(user_locale)
     if not system_prompt:
         return instruction
     # Check if instruction already exists (avoid duplication)
@@ -304,6 +315,7 @@ async def build_messages(
     user_message: str,
     file_content: str | None = None,
     file_urls: list[dict] | None = None,
+    user_locale: str | None = None,
 ) -> list[LLMMessage]:
     """Build message list for LLM call.
 
@@ -313,6 +325,7 @@ async def build_messages(
         user_message: User's message text
         file_content: Legacy file content to inject into {{fileContent}} variable
         file_urls: List of file URLs for tool-based file processing
+        user_locale: User's locale from database for language instruction
     """
     messages: list[LLMMessage] = []
 
@@ -334,7 +347,7 @@ async def build_messages(
             system_prompt = system_prompt.replace("{{fileContent}}", "")
 
     # Build system prompt with language instruction (always added)
-    system_prompt = build_system_prompt_with_language(system_prompt)
+    system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
     messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
     # Load conversation history (only active messages)
@@ -1114,7 +1127,9 @@ async def chat(
     await update_message_stats(agent, token_usage=None)
 
     # Build messages for LLM
-    messages = await build_messages(agent, conversation, final_message)
+    messages = await build_messages(
+        agent, conversation, final_message, user_locale=current_user.locale
+    )
 
     # Get model identifier
     model_id = await get_model_identifier(agent)
@@ -1610,7 +1625,9 @@ async def chat_stream(
                     system_prompt = system_prompt.replace("{{fileContent}}", "")
 
             # Build system prompt with language instruction (always added)
-            system_prompt = build_system_prompt_with_language(system_prompt)
+            system_prompt = build_system_prompt_with_language(
+                system_prompt, current_user.locale
+            )
             messages_for_llm.append(
                 LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
             )
@@ -2446,7 +2463,9 @@ async def regenerate_message(
                 system_prompt = system_prompt.replace("{{query}}", user_message.content)
 
             # Build system prompt with language instruction (always added)
-            system_prompt = build_system_prompt_with_language(system_prompt)
+            system_prompt = build_system_prompt_with_language(
+                system_prompt, current_user.locale
+            )
             messages_for_llm.append(
                 LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
             )
