@@ -135,9 +135,13 @@ export function PlatformHeader() {
       // 有新通知
       const newCount = unreadCount - prevUnreadCount
       if ('Notification' in window && Notification.permission === 'granted') {
+        // 浏览器通知需要完整的 URL
+        const iconUrl = siteSettings.site_icon
+          ? (siteSettings.site_icon.startsWith('http') ? siteSettings.site_icon : `${window.location.origin}${siteSettings.site_icon}`)
+          : `${window.location.origin}/clouisle-dark.svg`
         new Notification(siteSettings.site_name || 'Clouisle', {
           body: t('newNotifications', { count: newCount }),
-          icon: siteSettings.site_icon || '/clouisle-dark.svg',
+          icon: iconUrl,
         })
       }
     }
