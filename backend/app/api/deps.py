@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.core.config import settings
 from app.core.redis import is_token_blacklisted
 from app.core.timezone import now_utc
+from app.core.i18n import set_language
 from app.models.user import User
 from app.models.api_key import APIKey
 from app.schemas.token import TokenPayload
@@ -47,10 +48,18 @@ async def get_current_user_or_api_key(
 
     # 检查是否是 API Key (以 clou_ 开头)
     if auth_token.startswith("clou_"):
-        return await _authenticate_api_key(auth_token)
+        user, api_key = await _authenticate_api_key(auth_token)
+        # Set language from user's locale preference
+        if hasattr(user, "locale") and user.locale:
+            set_language(user.locale)
+        return user, api_key
 
     # 否则尝试 JWT 认证
-    return await _authenticate_jwt(auth_token), None
+    user = await _authenticate_jwt(auth_token)
+    # Set language from user's locale preference
+    if hasattr(user, "locale") and user.locale:
+        set_language(user.locale)
+    return user, None
 
 
 async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
@@ -177,6 +186,9 @@ async def get_current_active_user(
             code=ResponseCode.INACTIVE_USER,
             msg_key="inactive_user",
         )
+    # Set language from user's locale preference
+    if hasattr(current_user, "locale") and current_user.locale:
+        set_language(current_user.locale)
     return current_user
 
 
