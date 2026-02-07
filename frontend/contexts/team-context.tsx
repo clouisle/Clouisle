@@ -23,7 +23,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
   const fetchTeams = React.useCallback(async () => {
     try {
       setIsLoading(true)
-      const data = await teamsApi.getMyTeams()
+      const data = await teamsApi.getMyTeams({ skipAuthRedirect: true })
       setTeams(data)
 
       // 从 localStorage 恢复选中的团队

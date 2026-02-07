@@ -108,7 +108,7 @@ async def get_model_types() -> Any:
     return success(data=types)
 
 
-@router.get("/", response_model=Response[PageData[ModelResponse]])
+@router.get("", response_model=Response[PageData[ModelResponse]])
 async def list_models(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -187,7 +187,7 @@ async def get_default_model(
     return success(data=model)
 
 
-@router.post("/", response_model=Response[ModelResponse])
+@router.post("", response_model=Response[ModelResponse])
 async def create_model(
     *,
     model_in: ModelCreate,

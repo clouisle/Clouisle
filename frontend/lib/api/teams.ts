@@ -74,8 +74,8 @@ export const teamsApi = {
   /**
    * 获取当前用户的团队
    */
-  getMyTeams: async (): Promise<UserTeamInfo[]> => {
-    return api.get<UserTeamInfo[]>('/teams/my')
+  getMyTeams: async (options?: { skipAuthRedirect?: boolean }): Promise<UserTeamInfo[]> => {
+    return api.get<UserTeamInfo[]>('/teams/my', { skipAuthRedirect: options?.skipAuthRedirect })
   },
 
   /**

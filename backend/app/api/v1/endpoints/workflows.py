@@ -312,7 +312,7 @@ async def get_workflow_run_stats(
 # ============ Workflow CRUD ============
 
 
-@router.get("/", response_model=Response[PageData[WorkflowListItem]])
+@router.get("", response_model=Response[PageData[WorkflowListItem]])
 async def list_workflows(
     team_id: UUID | None = None,
     status: WorkflowStatus | None = None,
@@ -366,7 +366,7 @@ async def list_workflows(
     )
 
 
-@router.post("/", response_model=Response[WorkflowOut])
+@router.post("", response_model=Response[WorkflowOut])
 async def create_workflow(
     *,
     workflow_in: WorkflowCreate,

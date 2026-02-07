@@ -75,7 +75,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   React.useEffect(() => {
     const fetchUser = async () => {
       try {
-        const userData = await authApi.getCurrentUser()
+        const userData = await authApi.getCurrentUser({ skipAuthRedirect: true })
         setUser(userData)
       } catch {
         // 获取用户信息失败，可能未登录

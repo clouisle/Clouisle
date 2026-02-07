@@ -287,7 +287,7 @@ async def build_agent_list_out(
 # ============ Agent CRUD ============
 
 
-@router.get("/", response_model=Response[PageData[AgentListOut]])
+@router.get("", response_model=Response[PageData[AgentListOut]])
 async def list_agents(
     team_id: UUID | None = None,
     status: str | None = None,
@@ -367,7 +367,7 @@ async def list_agents(
     )
 
 
-@router.post("/", response_model=Response[AgentOut])
+@router.post("", response_model=Response[AgentOut])
 async def create_agent(
     *,
     request: Request,

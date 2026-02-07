@@ -373,7 +373,7 @@ function WorkflowEditorContent() {
         setIsLoading(true)
         const [workflowData, userData] = await Promise.all([
           workflowsApi.getWorkflow(workflowId),
-          authApi.getCurrentUser(),
+          authApi.getCurrentUser({ skipAuthRedirect: true }),
         ])
         setWorkflow(workflowData)
         setCurrentUser(userData)

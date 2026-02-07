@@ -104,7 +104,7 @@ export function LoginForm() {
 
       // 获取用户信息并同步语言设置
       try {
-        const user = await authApi.getCurrentUser()
+        const user = await authApi.getCurrentUser({ skipAuthRedirect: true })
         if (user.locale && user.locale !== locale) {
           // 用户数据库中的语言与当前页面不同，同步到浏览器
           document.cookie = `locale=${user.locale};path=/;max-age=31536000`
