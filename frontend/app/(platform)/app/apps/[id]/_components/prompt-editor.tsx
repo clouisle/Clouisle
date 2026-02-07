@@ -121,8 +121,8 @@ function textToHtml(text: string, variableMap: Map<string, VariableInfo>): strin
 // 将 HTML 转换回纯文本
 function htmlToText(element: HTMLElement): string {
   let result = ''
-  
-  element.childNodes.forEach(node => {
+
+  element.childNodes.forEach((node, index) => {
     if (node.nodeType === Node.TEXT_NODE) {
       result += node.textContent || ''
     } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -132,12 +132,19 @@ function htmlToText(element: HTMLElement): string {
         result += `{{${varName}}}`
       } else if (el.tagName === 'BR') {
         result += '\n'
+      } else if (el.tagName === 'DIV' || el.tagName === 'P') {
+        // 浏览器在 contentEditable 中按 Enter 会产生 <div> 或 <p>
+        // 需要在块级元素前添加换行（跳过第一个子节点）
+        if (index > 0) {
+          result += '\n'
+        }
+        result += htmlToText(el)
       } else {
         result += htmlToText(el)
       }
     }
   })
-  
+
   return result
 }
 
