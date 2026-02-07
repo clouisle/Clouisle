@@ -331,48 +331,23 @@ export function PromptEditor({
 
   // 初始化和外部值变化时更新编辑器
   React.useEffect(() => {
-    console.log('[PromptEditor] useEffect triggered:', {
-      hasEditor: !!editorRef.current,
-      isInternalUpdate: isInternalUpdateRef.current,
-      isMounted: isMountedRef.current,
-      value: value,
-      valueLength: value?.length || 0,
-      lastValue: lastValueRef.current,
-      lastValueLength: lastValueRef.current?.length || 0,
-      areEqual: value === lastValueRef.current,
-    })
-
     const editor = editorRef.current
     if (!editor) {
-      console.log('[PromptEditor] No editor ref, returning')
       return
     }
 
     // 如果是内部更新触发的，跳过
     if (isInternalUpdateRef.current) {
-      console.log('[PromptEditor] Internal update, skipping')
       isInternalUpdateRef.current = false
       return
     }
 
     // 首次挂载或值变化时，更新编辑器内容
     if (!isMountedRef.current || value !== lastValueRef.current) {
-      console.log('[PromptEditor] Updating editor content')
       isMountedRef.current = true
       lastValueRef.current = value
       const html = textToHtml(value || '', variableMap)
-      console.log('[PromptEditor] Generated HTML:', {
-        htmlLength: html.length,
-        htmlPreview: html.substring(0, 200),
-      })
       editor.innerHTML = html || ''
-      console.log('[PromptEditor] Editor innerHTML set:', {
-        editorInnerHTML: editor.innerHTML.substring(0, 200),
-        editorTextContent: editor.textContent?.substring(0, 200),
-        editorChildNodes: editor.childNodes.length,
-      })
-    } else {
-      console.log('[PromptEditor] Value unchanged, skipping update')
     }
   }, [value, variableMap])
 

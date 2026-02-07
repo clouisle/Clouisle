@@ -124,6 +124,12 @@ export function PlatformHeader() {
     fetchUnread()
   }, [fetchUnread, pathname])
 
+  // 轮询未读通知数量（每 30 秒）
+  React.useEffect(() => {
+    const interval = setInterval(fetchUnread, 30000)
+    return () => clearInterval(interval)
+  }, [fetchUnread])
+
   // 获取用户名首字母作为头像占位
   const getInitials = (name: string) => {
     return name
