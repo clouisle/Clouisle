@@ -281,8 +281,14 @@ async def pre_tortoise_init():
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_user_locale_field,
         fix_cascade_delete_policies,
     )
+
+    try:
+        await init_user_locale_field()
+    except Exception as e:
+        logger.warning(f"User locale migration failed: {e}")
 
     try:
         await init_agent_tools_credentials()
