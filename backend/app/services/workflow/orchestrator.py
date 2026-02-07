@@ -555,26 +555,51 @@ class WorkflowOrchestrator:
 
             # Send workflow run success notification
             try:
-                await AutoNotificationService.send_to_team(
-                    notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
-                    team_id=workflow.team_id,
-                    title=t("notify_workflow_run_success_title", lang="en"),
-                    content=t(
-                        "notify_workflow_run_success_content",
-                        lang="en",
-                        workflow_name=workflow.name,
-                        duration=duration_ms,
-                        node_count=run.executed_nodes,
-                    ),
-                    data={
-                        "workflow_id": str(workflow.id),
-                        "workflow_name": workflow.name,
-                        "run_id": str(run.id),
-                        "duration_ms": duration_ms,
-                        "node_count": run.executed_nodes,
-                    },
-                    link_url=f"/app/apps/workflow/{workflow.id}",
-                )
+                # Send to triggering user if available, otherwise to team
+                if run.triggered_by_id:
+                    await run.fetch_related("triggered_by")
+                    user_locale = getattr(run.triggered_by, "locale", "en") if run.triggered_by else "en"
+                    await AutoNotificationService.send_to_user(
+                        notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
+                        user_id=run.triggered_by_id,
+                        title=t("notify_workflow_run_success_title", lang=user_locale),
+                        content=t(
+                            "notify_workflow_run_success_content",
+                            lang=user_locale,
+                            workflow_name=workflow.name,
+                            duration=duration_ms,
+                            node_count=run.executed_nodes,
+                        ),
+                        data={
+                            "workflow_id": str(workflow.id),
+                            "workflow_name": workflow.name,
+                            "run_id": str(run.id),
+                            "duration_ms": duration_ms,
+                            "node_count": run.executed_nodes,
+                        },
+                        link_url=f"/app/apps/workflow/{workflow.id}",
+                    )
+                else:
+                    await AutoNotificationService.send_to_team(
+                        notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
+                        team_id=workflow.team_id,
+                        title=t("notify_workflow_run_success_title", lang="en"),
+                        content=t(
+                            "notify_workflow_run_success_content",
+                            lang="en",
+                            workflow_name=workflow.name,
+                            duration=duration_ms,
+                            node_count=run.executed_nodes,
+                        ),
+                        data={
+                            "workflow_id": str(workflow.id),
+                            "workflow_name": workflow.name,
+                            "run_id": str(run.id),
+                            "duration_ms": duration_ms,
+                            "node_count": run.executed_nodes,
+                        },
+                        link_url=f"/app/apps/workflow/{workflow.id}",
+                    )
             except Exception as e:
                 logger.warning(f"Failed to send workflow run success notification: {e}")
 
@@ -629,27 +654,53 @@ class WorkflowOrchestrator:
 
             # Send workflow run failed notification
             try:
-                await AutoNotificationService.send_to_team(
-                    notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
-                    team_id=workflow.team_id,
-                    title=t("notify_workflow_run_failed_title", lang="en"),
-                    content=t(
-                        "notify_workflow_run_failed_content",
-                        lang="en",
-                        workflow_name=workflow.name,
-                        error=error[:200]
-                        if error
-                        else "Unknown error",  # Truncate long errors
-                    ),
-                    data={
-                        "workflow_id": str(workflow.id),
-                        "workflow_name": workflow.name,
-                        "run_id": str(run.id),
-                        "error": error,
-                        "duration_ms": duration_ms,
-                    },
-                    link_url=f"/app/apps/workflow/{workflow.id}",
-                )
+                # Send to triggering user if available, otherwise to team
+                if run.triggered_by_id:
+                    await run.fetch_related("triggered_by")
+                    user_locale = getattr(run.triggered_by, "locale", "en") if run.triggered_by else "en"
+                    await AutoNotificationService.send_to_user(
+                        notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
+                        user_id=run.triggered_by_id,
+                        title=t("notify_workflow_run_failed_title", lang=user_locale),
+                        content=t(
+                            "notify_workflow_run_failed_content",
+                            lang=user_locale,
+                            workflow_name=workflow.name,
+                            error=error[:200]
+                            if error
+                            else "Unknown error",  # Truncate long errors
+                        ),
+                        data={
+                            "workflow_id": str(workflow.id),
+                            "workflow_name": workflow.name,
+                            "run_id": str(run.id),
+                            "error": error,
+                            "duration_ms": duration_ms,
+                        },
+                        link_url=f"/app/apps/workflow/{workflow.id}",
+                    )
+                else:
+                    await AutoNotificationService.send_to_team(
+                        notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
+                        team_id=workflow.team_id,
+                        title=t("notify_workflow_run_failed_title", lang="en"),
+                        content=t(
+                            "notify_workflow_run_failed_content",
+                            lang="en",
+                            workflow_name=workflow.name,
+                            error=error[:200]
+                            if error
+                            else "Unknown error",  # Truncate long errors
+                        ),
+                        data={
+                            "workflow_id": str(workflow.id),
+                            "workflow_name": workflow.name,
+                            "run_id": str(run.id),
+                            "error": error,
+                            "duration_ms": duration_ms,
+                        },
+                        link_url=f"/app/apps/workflow/{workflow.id}",
+                    )
             except Exception as e:
                 logger.warning(f"Failed to send workflow run failed notification: {e}")
 
