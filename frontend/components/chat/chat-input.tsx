@@ -470,7 +470,6 @@ export function ChatInput({
               'min-h-9 max-h-32 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-2 px-2',
               'placeholder:text-muted-foreground/60'
             )}
-            rows={1}
           />
         </div>
 
