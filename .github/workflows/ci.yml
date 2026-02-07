@@ -14,10 +14,10 @@ jobs:
         working-directory: ./backend
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
 
     - name: Set up Python
       run: uv python install
@@ -45,10 +45,10 @@ jobs:
         working-directory: ./frontend
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install Bun
-      uses: oven-sh/setup-bun@v1
+      uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
 
