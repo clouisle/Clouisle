@@ -3,7 +3,7 @@ FROM oven/bun:1-debian AS builder
 
 WORKDIR /app
 COPY frontend/package.json frontend/bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
+RUN bun install --frozen-lockfile
 
 COPY frontend/ ./
 
