@@ -621,7 +621,11 @@ async def remove_team_member(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         user_id=target_user.id,
         title=t("notify_team_member_removed_title", lang=target_user.locale),
-        content=t("notify_team_member_removed_content", lang=target_user.locale, team_name=team.name),
+        content=t(
+            "notify_team_member_removed_content",
+            lang=target_user.locale,
+            team_name=team.name,
+        ),
     )
 
     # 发送团队通知
@@ -631,7 +635,9 @@ async def remove_team_member(
         team_id=team.id,
         title=t("notify_team_member_removed_team_title", lang=default_lang),
         content=t(
-            "notify_team_member_removed_team_content", lang=default_lang, username=target_user.username
+            "notify_team_member_removed_team_content",
+            lang=default_lang,
+            username=target_user.username,
         ),
     )
 

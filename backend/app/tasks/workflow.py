@@ -71,7 +71,9 @@ def run_workflow_task(
                 default_lang = await get_default_language()
                 return {
                     "status": "error",
-                    "message": t("workflow_run_not_found_after_execution", lang=default_lang),
+                    "message": t(
+                        "workflow_run_not_found_after_execution", lang=default_lang
+                    ),
                 }
 
         except Exception as e:

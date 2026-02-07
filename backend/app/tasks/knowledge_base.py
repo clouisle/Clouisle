@@ -169,11 +169,18 @@ def process_document_task(self, document_id: str) -> dict:
         if not document:
             logger.error(f"Document {document_id} not found")
             default_lang = await get_default_language()
-            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
-        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+        user_locale = (
+            getattr(document.uploaded_by, "locale", "en")
+            if document.uploaded_by
+            else "en"
+        )
 
         try:
             # Update status to processing
@@ -379,7 +386,10 @@ def reprocess_document_task(self, document_id: str) -> dict:
         if not document:
             logger.error(f"Document {document_id} not found")
             default_lang = await get_default_language()
-            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
 
         kb = document.knowledge_base
 
@@ -460,11 +470,18 @@ def rechunk_document_task(self, document_id: str) -> dict:
         if not document:
             logger.error(f"Document {document_id} not found")
             default_lang = await get_default_language()
-            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
-        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+        user_locale = (
+            getattr(document.uploaded_by, "locale", "en")
+            if document.uploaded_by
+            else "en"
+        )
 
         try:
             # Update status to processing
@@ -660,11 +677,18 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
         if not document:
             logger.error(f"Document {document_id} not found")
             default_lang = await get_default_language()
-            return {"status": "error", "message": t("document_not_found", lang=default_lang)}
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
 
         kb = document.knowledge_base
         # Get uploader's locale for notifications
-        user_locale = getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+        user_locale = (
+            getattr(document.uploaded_by, "locale", "en")
+            if document.uploaded_by
+            else "en"
+        )
 
         async def _refresh_kb_stats() -> None:
             docs = await Document.filter(

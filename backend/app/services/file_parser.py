@@ -119,19 +119,27 @@ class FileParserService:
 
         if strategy == "start":
             # Keep the end
-            truncated = t("truncation_marker", lang=locale) + "\n\n" + content[-max_length:]
+            truncated = (
+                t("truncation_marker", lang=locale) + "\n\n" + content[-max_length:]
+            )
         elif strategy == "middle":
             # Keep both start and end
             half = max_length // 2
             truncated = (
                 content[:half]
                 + "\n\n"
-                + t("truncation_middle_marker", lang=locale, count=str(original_length - max_length))
+                + t(
+                    "truncation_middle_marker",
+                    lang=locale,
+                    count=str(original_length - max_length),
+                )
                 + "\n\n"
                 + content[-half:]
             )
         else:  # "end" - default, keep start
-            truncated = content[:max_length] + "\n\n" + t("truncation_marker", lang=locale)
+            truncated = (
+                content[:max_length] + "\n\n" + t("truncation_marker", lang=locale)
+            )
 
         return truncated, True, original_length
 
@@ -233,15 +241,25 @@ class FileParserService:
             file = files[0]
             header = t("file_header", lang=locale, filename=file.filename)
             if file.truncated:
-                header += t("file_header_truncated_suffix", lang=locale, length=file.original_length)
+                header += t(
+                    "file_header_truncated_suffix",
+                    lang=locale,
+                    length=file.original_length,
+                )
             return f"{header}\n\n{file.content}"
 
         # Multiple files
         parts = []
         for i, file in enumerate(files, 1):
-            header = t("file_header_indexed", lang=locale, index=i, filename=file.filename)
+            header = t(
+                "file_header_indexed", lang=locale, index=i, filename=file.filename
+            )
             if file.truncated:
-                header += t("file_header_truncated_suffix", lang=locale, length=file.original_length)
+                header += t(
+                    "file_header_truncated_suffix",
+                    lang=locale,
+                    length=file.original_length,
+                )
             parts.append(f"{header}\n\n{file.content}")
 
         return separator.join(parts)

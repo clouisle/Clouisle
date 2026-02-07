@@ -59,7 +59,9 @@ def _get_event_loop():
         return loop
 
 
-async def _load_notification_context(notification_id: UUID) -> NotificationContext | None:
+async def _load_notification_context(
+    notification_id: UUID,
+) -> NotificationContext | None:
     """
     一次性加载通知所需的所有上下文数据
 
@@ -168,9 +170,7 @@ async def _get_notification_recipients(
         # 全局通知：发送给所有激活用户
         users = await User.filter(is_active=True, email__not="").all()
         recipients = [
-            (user.email, getattr(user, "locale", "en"))
-            for user in users
-            if user.email
+            (user.email, getattr(user, "locale", "en")) for user in users if user.email
         ]
 
     elif notification.scope == NotificationScope.TEAM:
@@ -350,7 +350,11 @@ async def _send_notification_email(notification_id: UUID):
             title, content, ctx.notification.link_url, ctx.site_name, locale
         )
         body_html = _build_email_html(
-            ctx.notification.title, content_html, ctx.notification.link_url, ctx.site_name, locale
+            ctx.notification.title,
+            content_html,
+            ctx.notification.link_url,
+            ctx.site_name,
+            locale,
         )
 
         # 发送给该语言组的所有收件人

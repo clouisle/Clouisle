@@ -616,7 +616,9 @@ async def get_tool_display_names(
     if agent.rag_mode == RAGMode.AGENTIC:
         kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id).count()
         if kb_associations > 0:
-            display_names["knowledge_search"] = t("tool_knowledge_search", lang=user_locale)
+            display_names["knowledge_search"] = t(
+                "tool_knowledge_search", lang=user_locale
+            )
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -1790,7 +1792,9 @@ async def chat_stream(
 
             # Get agent tools
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent, current_user.locale)
+            tool_display_names = await get_tool_display_names(
+                agent, current_user.locale
+            )
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [
@@ -2533,7 +2537,9 @@ async def regenerate_message(
             # Get model and tools
             model_id = await get_model_identifier(agent)
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent, current_user.locale)
+            tool_display_names = await get_tool_display_names(
+                agent, current_user.locale
+            )
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [

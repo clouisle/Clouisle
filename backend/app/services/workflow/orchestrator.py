@@ -561,7 +561,11 @@ class WorkflowOrchestrator:
                 # Send to triggering user if available, otherwise to team
                 if run.triggered_by_id:
                     await run.fetch_related("triggered_by")
-                    user_locale = getattr(run.triggered_by, "locale", "en") if run.triggered_by else "en"
+                    user_locale = (
+                        getattr(run.triggered_by, "locale", "en")
+                        if run.triggered_by
+                        else "en"
+                    )
                     await AutoNotificationService.send_to_user(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
                         user_id=run.triggered_by_id,
@@ -661,7 +665,11 @@ class WorkflowOrchestrator:
                 # Send to triggering user if available, otherwise to team
                 if run.triggered_by_id:
                     await run.fetch_related("triggered_by")
-                    user_locale = getattr(run.triggered_by, "locale", "en") if run.triggered_by else "en"
+                    user_locale = (
+                        getattr(run.triggered_by, "locale", "en")
+                        if run.triggered_by
+                        else "en"
+                    )
                     await AutoNotificationService.send_to_user(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
                         user_id=run.triggered_by_id,
@@ -983,7 +991,9 @@ class WorkflowOrchestrator:
         # Fall back to default label by type, then node_id
         node_inner_data = node_data.get("data", {})
         node_label = (
-            node_inner_data.get("label") or await get_node_type_label(node_type) or node_id
+            node_inner_data.get("label")
+            or await get_node_type_label(node_type)
+            or node_id
         )
 
         logger.debug(

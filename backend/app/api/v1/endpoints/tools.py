@@ -123,7 +123,9 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
         # Get display name from i18n using user's locale
         display_name_key = metadata.get("display_name_key")
         display_name = (
-            t(display_name_key, lang=user_locale) if display_name_key else tool_info.name
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else tool_info.name
         )
 
         tools.append(

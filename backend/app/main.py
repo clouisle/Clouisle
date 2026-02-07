@@ -173,7 +173,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             # 对于流式响应，直接返回不做任何处理
             content_type = response.headers.get("content-type", "")
             if "text/event-stream" in content_type or is_stream_request:
-                logger.info(f"<<< {method} {url} | Status: {response.status_code} | Stream started")
+                logger.info(
+                    f"<<< {method} {url} | Status: {response.status_code} | Stream started"
+                )
                 return response
 
             # 对于错误响应（4xx, 5xx），读取并打印响应内容
