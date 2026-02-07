@@ -55,6 +55,7 @@ async def serialize_user_with_sso(user: User) -> dict:
         "is_superuser": user.is_superuser,
         "email_verified": user.email_verified,
         "avatar_url": user.avatar_url,
+        "locale": getattr(user, "locale", "en"),
         "created_at": user.created_at,
         "last_login": user.last_login,
         "auth_source": user.auth_source,
@@ -339,6 +340,7 @@ class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @router.put("/me", response_model=Response[UserSchema])

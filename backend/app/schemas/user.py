@@ -51,6 +51,7 @@ class UserBase(BaseModel):
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
     avatar_url: Optional[str] = None
+    locale: Optional[str] = "en"
 
 
 class UserCreate(UserBase):
@@ -62,6 +63,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     avatar_url: Optional[str] = None
+    locale: Optional[str] = None
     roles: Optional[List[str]] = None  # List of role names
 
 
@@ -72,6 +74,7 @@ class UserInDBBase(UserBase):
     auth_source: str
     external_id: Optional[str] = None
     email_verified: bool = False
+    locale: str = "en"
 
     class Config:
         from_attributes = True
@@ -97,6 +100,7 @@ class User(UserInDBBase):
                 "is_superuser": obj.is_superuser,
                 "email_verified": obj.email_verified,
                 "avatar_url": obj.avatar_url,
+                "locale": getattr(obj, "locale", "en"),
                 "created_at": obj.created_at,
                 "last_login": obj.last_login,
                 "auth_source": obj.auth_source,

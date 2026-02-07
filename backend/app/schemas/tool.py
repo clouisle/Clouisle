@@ -2,12 +2,13 @@
 工具相关的 Pydantic Schema
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ToolType(str, Enum):
@@ -199,6 +200,16 @@ class ToolCreateInput(BaseModel):
     credentials: dict[str, str] = Field(default_factory=dict, description="凭证")
     is_enabled: bool = Field(default=True, description="是否启用")
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """验证工具名称格式：只允许字母、数字、下划线，且必须以字母开头"""
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+            )
+        return v
+
 
 class ToolUpdateInput(BaseModel):
     """更新工具输入"""
@@ -215,6 +226,16 @@ class ToolUpdateInput(BaseModel):
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        """验证工具名称格式"""
+        if v is not None and not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+            )
+        return v
 
 
 # ============ MCP Schemas ============

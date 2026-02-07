@@ -1841,6 +1841,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "A login to your account was detected from an unusual location or device.\n\n- **IP Address**: {ip_address}\n- **Time**: {login_time}\n- **User Agent**: {user_agent}\n\nIf this was not you, please change your password immediately.",
         "zh": "检测到您的账户从异常位置或设备登录。\n\n- **IP 地址**: {ip_address}\n- **时间**: {login_time}\n- **设备信息**: {user_agent}\n\n如果这不是您本人的操作，请立即修改密码。",
     },
+    # Email notification templates
+    "email_view_details": {
+        "en": "View Details",
+        "zh": "查看详情",
+    },
+    "email_footer": {
+        "en": "This email was sent automatically by {site_name}. Please do not reply.",
+        "zh": "此邮件由 {site_name} 系统自动发送，请勿回复。",
+    },
+    "email_team_prefix": {
+        "en": "Team",
+        "zh": "团队",
+    },
+    "email_user_prefix": {
+        "en": "User",
+        "zh": "用户",
+    },
 }
 
 

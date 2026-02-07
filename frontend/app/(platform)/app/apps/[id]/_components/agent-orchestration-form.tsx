@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useTeam } from '@/contexts/team-context'
 import {
   Sparkles,
@@ -125,6 +125,7 @@ export function AgentOrchestrationForm({
   onUpdate,
 }: AgentOrchestrationFormProps) {
   const t = useTranslations('agents.orchestration')
+  const locale = useLocale()
   const { currentTeam } = useTeam()
 
   // Form state
@@ -280,7 +281,7 @@ export function AgentOrchestrationForm({
         onApply={(generatedPrompt) => {
           setSystemPrompt(generatedPrompt)
         }}
-        language="zh"
+        language={locale}
       />
 
       {/* Prompt Section - Always expanded, highlighted */}

@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 
 export function LoginForm() {
   const t = useTranslations('auth')
+  const locale = useLocale()
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -100,6 +101,18 @@ export function LoginForm() {
       })
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
+
+      // 获取用户信息并同步语言设置
+      try {
+        const user = await authApi.getCurrentUser()
+        if (user.locale && user.locale !== locale) {
+          // 用户数据库中的语言与当前页面不同，同步到浏览器
+          document.cookie = `locale=${user.locale};path=/;max-age=31536000`
+        }
+      } catch {
+        // 获取用户信息失败，不影响登录流程
+      }
+
       toast.success(t('loginSuccess'))
       // 跳转到重定向页面或 app
       const redirect = searchParams.get('redirect')
