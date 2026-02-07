@@ -172,9 +172,10 @@ async def login_access_token(
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
                 user_id=user.id,
-                title=t("notify_account_locked_title"),
+                title=t("notify_account_locked_title", lang=user.locale),
                 content=t(
                     "notify_account_locked_content",
+                    lang=user.locale,
                     lockout_minutes=(lockout_seconds or 0) // 60,
                 ),
                 level=NotificationLevel.HIGH,
@@ -229,9 +230,10 @@ async def login_access_token(
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
             user_id=user.id,
-            title=t("notify_login_anomaly_title"),
+            title=t("notify_login_anomaly_title", lang=user.locale),
             content=t(
                 "notify_login_anomaly_content",
+                lang=user.locale,
                 ip_address=anomaly_details.get("ip_address", "unknown"),
                 login_time=anomaly_details.get("login_time", ""),
                 user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
@@ -460,9 +462,10 @@ async def register(
         # 发送待审批通知给管理员（全局通知）
         await AutoNotificationService.send_global(
             notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
-            title=t("notify_user_pending_approval_title"),
+            title=t("notify_user_pending_approval_title", lang="en"),
             content=t(
                 "notify_user_pending_approval_content",
+                lang="en",
                 username=user.username,
                 email=user.email,
             ),

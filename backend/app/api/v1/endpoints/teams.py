@@ -408,9 +408,10 @@ async def add_team_member(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         user_id=user_to_add.id,
-        title=t("notify_team_member_added_title"),
+        title=t("notify_team_member_added_title", lang=user_to_add.locale),
         content=t(
             "notify_team_member_added_content",
+            lang=user_to_add.locale,
             team_name=team.name,
             operator=current_user.username,
             role=member_in.role,
@@ -421,9 +422,10 @@ async def add_team_member(
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         team_id=team.id,
-        title=t("notify_team_member_added_team_title"),
+        title=t("notify_team_member_added_team_title", lang="en"),
         content=t(
             "notify_team_member_added_team_content",
+            lang="en",
             username=user_to_add.username,
             role=member_in.role,
         ),
@@ -513,9 +515,10 @@ async def update_team_member(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_ROLE_CHANGED,
         user_id=target_user.id,
-        title=t("notify_team_role_changed_title"),
+        title=t("notify_team_role_changed_title", lang=target_user.locale),
         content=t(
             "notify_team_role_changed_content",
+            lang=target_user.locale,
             team_name=team.name,
             old_role=old_role,
             new_role=member_in.role,
@@ -616,17 +619,17 @@ async def remove_team_member(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         user_id=target_user.id,
-        title=t("notify_team_member_removed_title"),
-        content=t("notify_team_member_removed_content", team_name=team.name),
+        title=t("notify_team_member_removed_title", lang=target_user.locale),
+        content=t("notify_team_member_removed_content", lang=target_user.locale, team_name=team.name),
     )
 
     # 发送团队通知
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         team_id=team.id,
-        title=t("notify_team_member_removed_team_title"),
+        title=t("notify_team_member_removed_team_title", lang="en"),
         content=t(
-            "notify_team_member_removed_team_content", username=target_user.username
+            "notify_team_member_removed_team_content", lang="en", username=target_user.username
         ),
     )
 
@@ -726,9 +729,10 @@ async def transfer_ownership(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=new_owner.id,
-        title=t("notify_team_ownership_received_title"),
+        title=t("notify_team_ownership_received_title", lang=new_owner.locale),
         content=t(
             "notify_team_ownership_received_content",
+            lang=new_owner.locale,
             team_name=team.name,
             old_owner=current_user.username,
         ),
@@ -738,9 +742,10 @@ async def transfer_ownership(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=current_user.id,
-        title=t("notify_team_ownership_transferred_title"),
+        title=t("notify_team_ownership_transferred_title", lang=current_user.locale),
         content=t(
             "notify_team_ownership_transferred_content",
+            lang=current_user.locale,
             team_name=team.name,
             new_owner=new_owner.username,
         ),
