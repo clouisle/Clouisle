@@ -17,9 +17,9 @@ export function DynamicFavicon() {
     if (!mounted) return
 
     // 如果设置了自定义图标，使用自定义图标，否则根据主题切换
-    // 深色模式用浅色图标，浅色模式用深色图标
+    // 深色模式用深色图标，浅色模式用浅色图标（图标文件名表示图标本身的颜色）
     const baseHref = settings.site_icon ||
-      (resolvedTheme === 'dark' ? '/clouisle-light.svg' : '/clouisle-dark.svg')
+      (resolvedTheme === 'dark' ? '/clouisle-dark.svg' : '/clouisle-light.svg')
 
     // 添加时间戳强制浏览器刷新 favicon
     const iconHref = `${baseHref}?v=${Date.now()}`

@@ -83,8 +83,8 @@ export const usersApi = {
   /**
    * 更新当前用户资料
    */
-  updateProfile: async (data: UpdateProfileData): Promise<User> => {
-    return api.put<User>('/users/me', data)
+  updateProfile: async (data: UpdateProfileData, options?: { skipAuthRedirect?: boolean }): Promise<User> => {
+    return api.put<User>('/users/me', data, { skipAuthRedirect: options?.skipAuthRedirect })
   },
 
   /**

@@ -21,6 +21,12 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "Clouisle - Admin Panel",
   description: "Clouisle Admin Dashboard",
+  icons: {
+    icon: [
+      { url: '/clouisle-light.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
+      { url: '/clouisle-dark.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
+    ],
+  },
 };
 
 export default async function RootLayout({

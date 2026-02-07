@@ -148,7 +148,7 @@ async def check_kb_access(
 # ============ Knowledge Base CRUD ============
 
 
-@router.get("/", response_model=Response[PageData[KnowledgeBaseList]])
+@router.get("", response_model=Response[PageData[KnowledgeBaseList]])
 async def list_knowledge_bases(
     team_id: UUID | None = None,
     status: str | None = None,
@@ -214,7 +214,7 @@ async def list_knowledge_bases(
     )
 
 
-@router.post("/", response_model=Response[KnowledgeBaseSchema])
+@router.post("", response_model=Response[KnowledgeBaseSchema])
 async def create_knowledge_base(
     *,
     kb_in: KnowledgeBaseCreate,

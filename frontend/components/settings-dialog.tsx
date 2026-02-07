@@ -83,7 +83,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const loadUser = async () => {
     try {
       setLoading(true)
-      const userData = await authApi.getCurrentUser()
+      const userData = await authApi.getCurrentUser({ skipAuthRedirect: true })
       setUser(userData)
       setProfileData({
         username: userData.username,

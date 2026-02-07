@@ -17,7 +17,7 @@ from app.schemas.response import (
 router = APIRouter()
 
 
-@router.get("/", response_model=Response[PageData[PermissionSchema]])
+@router.get("", response_model=Response[PageData[PermissionSchema]])
 async def read_permissions(
     page: int = 1,
     page_size: int = 50,
@@ -45,7 +45,7 @@ async def read_permissions(
     )
 
 
-@router.post("/", response_model=Response[PermissionSchema])
+@router.post("", response_model=Response[PermissionSchema])
 async def create_permission(
     *,
     permission_in: PermissionCreate,

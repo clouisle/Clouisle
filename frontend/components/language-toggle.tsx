@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { Languages } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useLocale } from 'next-intl'
 
 import {
@@ -12,17 +11,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { locales, localeNames, type Locale } from '@/i18n/config'
+import { useLocaleChange } from '@/hooks/use-locale-change'
 
 export function LanguageToggle() {
   const locale = useLocale()
-  const router = useRouter()
-
-  const handleLocaleChange = React.useCallback((newLocale: Locale) => {
-    // Set cookie
-    document.cookie = `locale=${newLocale};path=/;max-age=31536000`
-    // Refresh to apply new locale
-    router.refresh()
-  }, [router])
+  const { changeLocale } = useLocaleChange()
 
   return (
     <DropdownMenu>
@@ -36,7 +29,7 @@ export function LanguageToggle() {
         {locales.map((l) => (
           <DropdownMenuItem
             key={l}
-            onClick={() => handleLocaleChange(l)}
+            onClick={() => changeLocale(l)}
             className={locale === l ? 'bg-accent' : ''}
           >
             {localeNames[l]}

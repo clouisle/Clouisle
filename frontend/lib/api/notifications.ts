@@ -97,8 +97,11 @@ export const notificationsApi = {
     return api.get('/notifications', { params })
   },
 
-  unreadCount: async (): Promise<NotificationUnreadCount> => {
-    return api.get('/notifications/unread-count')
+  unreadCount: async (options?: { silent?: boolean; skipAuthRedirect?: boolean }): Promise<NotificationUnreadCount> => {
+    return api.get('/notifications/unread-count', {
+      silent: options?.silent,
+      skipAuthRedirect: options?.skipAuthRedirect,
+    })
   },
 
   markRead: async (payload: NotificationReadRequest): Promise<{ updated: number }> => {

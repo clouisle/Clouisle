@@ -107,7 +107,7 @@ async def serialize_user_with_sso(user: User) -> dict:
     return user_dict
 
 
-@router.get("/", response_model=Response[PageData[UserSchema]])
+@router.get("", response_model=Response[PageData[UserSchema]])
 async def read_users(
     page: int = 1,
     page_size: int = 20,
@@ -180,7 +180,7 @@ async def get_user_stats(
     )
 
 
-@router.post("/", response_model=Response[UserSchema])
+@router.post("", response_model=Response[UserSchema])
 async def create_user(
     *,
     request: Request,

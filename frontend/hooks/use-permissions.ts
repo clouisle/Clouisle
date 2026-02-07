@@ -10,7 +10,7 @@ export function usePermissions() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const userData = await authApi.getCurrentUser()
+        const userData = await authApi.getCurrentUser({ skipAuthRedirect: true })
         setUser(userData)
       } catch {
         // Failed to get user info, may not be logged in

@@ -102,7 +102,7 @@ export function PlatformHeader() {
   React.useEffect(() => {
     const fetchUser = async () => {
       try {
-        const userData = await authApi.getCurrentUser()
+        const userData = await authApi.getCurrentUser({ skipAuthRedirect: true })
         setUser(userData)
       } catch {
         // 获取用户信息失败，可能未登录
@@ -111,18 +111,58 @@ export function PlatformHeader() {
     fetchUser()
   }, [])
 
+  const [prevUnreadCount, setPrevUnreadCount] = React.useState(0)
+
   const fetchUnread = React.useCallback(async () => {
     try {
-      const data = await notificationsApi.unreadCount()
+      const data = await notificationsApi.unreadCount({ silent: true, skipAuthRedirect: true })
       setUnreadCount(data.total)
     } catch {
-      // 忽略读取失败
+      // 忽略读取失败，不触发重定向
     }
   }, [])
+
+  // 请求浏览器通知权限（在用户交互时调用）
+  const requestNotificationPermission = React.useCallback(async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission()
+    }
+  }, [])
+
+  // 检测新通知并发送浏览器通知
+  React.useEffect(() => {
+    if (unreadCount > prevUnreadCount && prevUnreadCount > 0) {
+      // 有新通知
+      const newCount = unreadCount - prevUnreadCount
+      if ('Notification' in window && Notification.permission === 'granted') {
+        // 浏览器通知需要完整的 URL
+        const iconUrl = siteSettings.site_icon
+          ? (siteSettings.site_icon.startsWith('http') ? siteSettings.site_icon : `${window.location.origin}${siteSettings.site_icon}`)
+          : `${window.location.origin}/clouisle-dark.svg`
+        const notification = new Notification(siteSettings.site_name || 'Clouisle', {
+          body: t('newNotifications', { count: newCount }),
+          icon: iconUrl,
+        })
+        // 点击通知跳转到通知页面
+        notification.onclick = () => {
+          window.focus()
+          router.push('/app/notifications')
+          notification.close()
+        }
+      }
+    }
+    setPrevUnreadCount(unreadCount)
+  }, [unreadCount, prevUnreadCount, siteSettings.site_name, siteSettings.site_icon, t, router])
 
   React.useEffect(() => {
     fetchUnread()
   }, [fetchUnread, pathname])
+
+  // 轮询未读通知数量（每 30 秒）
+  React.useEffect(() => {
+    const interval = setInterval(fetchUnread, 30000)
+    return () => clearInterval(interval)
+  }, [fetchUnread])
 
   // 获取用户名首字母作为头像占位
   const getInitials = (name: string) => {
@@ -269,12 +309,15 @@ export function PlatformHeader() {
                 {t('profile.title')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <Link href="/app/notifications">
-                <DropdownMenuItem>
-                  <Bell className="mr-2 h-4 w-4" />
-                  {t('nav.notifications')}
-                </DropdownMenuItem>
-              </Link>
+              <DropdownMenuItem
+                onClick={() => {
+                  requestNotificationPermission()
+                  router.push('/app/notifications')
+                }}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                {t('nav.notifications')}
+              </DropdownMenuItem>
               {canAccessDashboard && (
                 <>
                   <DropdownMenuSeparator />

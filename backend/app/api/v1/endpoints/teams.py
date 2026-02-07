@@ -34,7 +34,7 @@ router = APIRouter()
 # ============ Team CRUD ============
 
 
-@router.get("/", response_model=Response[PageData[TeamSchema]])
+@router.get("", response_model=Response[PageData[TeamSchema]])
 async def list_teams(
     page: int = 1,
     page_size: int = 50,
@@ -67,7 +67,7 @@ async def list_teams(
     )
 
 
-@router.post("/", response_model=Response[TeamSchema])
+@router.post("", response_model=Response[TeamSchema])
 async def create_team(
     *,
     request: Request,

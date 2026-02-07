@@ -15,6 +15,7 @@
     "admin": "后台管理",
     "logout": "退出登录",
     "logoutSuccess": "已成功退出登录",
+    "newNotifications": "您有 {count} 条新通知",
     "about": "关于",
     "aboutDescription": "一站式 AI 应用开发平台",
     "aboutVersion": "版本",

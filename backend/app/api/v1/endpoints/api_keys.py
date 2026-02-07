@@ -77,7 +77,7 @@ async def build_api_key_response(
     return response_data
 
 
-@router.get("/", response_model=Response[PageData[APIKeyResponse]])
+@router.get("", response_model=Response[PageData[APIKeyResponse]])
 async def list_api_keys(
     page: int = 1,
     page_size: int = 20,
@@ -177,7 +177,7 @@ async def get_api_key_stats(
     )
 
 
-@router.post("/", response_model=Response[APIKeyCreateResponse])
+@router.post("", response_model=Response[APIKeyCreateResponse])
 async def create_api_key(
     *,
     request: Request,

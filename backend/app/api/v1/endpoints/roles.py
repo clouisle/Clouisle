@@ -27,7 +27,7 @@ class RolePermissionsUpdate(BaseModel):
     permissions: List[str]  # List of permission codes
 
 
-@router.get("/", response_model=Response[PageData[RoleSchema]])
+@router.get("", response_model=Response[PageData[RoleSchema]])
 async def read_roles(
     page: int = 1,
     page_size: int = 50,
@@ -52,7 +52,7 @@ async def read_roles(
     )
 
 
-@router.post("/", response_model=Response[RoleSchema])
+@router.post("", response_model=Response[RoleSchema])
 async def create_role(
     *,
     role_in: RoleCreate,

@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { useTheme } from 'next-themes'
-import { useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import { Check } from 'lucide-react'
 
@@ -19,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { locales, localeNames, type Locale } from '@/i18n/config'
 import { useSettings } from '@/hooks/use-settings'
+import { useLocaleChange } from '@/hooks/use-locale-change'
 
 interface SettingsDrawerProps {
   open: boolean
@@ -32,9 +32,9 @@ interface SettingsDrawerProps {
 export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, showPlatformHeader = false }: SettingsDrawerProps) {
   const { theme, setTheme } = useTheme()
   const locale = useLocale()
-  const router = useRouter()
   const t = useTranslations('settings')
-  
+  const { changeLocale } = useLocaleChange()
+
   const {
     sidebarVariant,
     layoutVariant,
@@ -53,11 +53,6 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
   const effectiveLayoutVariant = mounted ? layoutVariant : 'default'
   const effectiveDirection = mounted ? direction : 'ltr'
   const effectivePlatformHeaderVariant = mounted ? platformHeaderVariant : 'default'
-
-  const handleLocaleChange = React.useCallback((newLocale: Locale) => {
-    document.cookie = `locale=${newLocale};path=/;max-age=31536000`
-    router.refresh()
-  }, [router])
 
   const handleReset = () => {
     setTheme('system')
@@ -208,7 +203,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
               {locales.map((l) => (
                 <button
                   key={l}
-                  onClick={() => handleLocaleChange(l)}
+                  onClick={() => changeLocale(l)}
                   className={cn(
                     'relative flex items-center justify-center rounded-md border-2 px-3 py-2 text-sm transition-colors hover:bg-muted',
                     locale === l ? 'border-primary' : 'border-transparent'
