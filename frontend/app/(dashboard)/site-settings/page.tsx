@@ -162,7 +162,7 @@ export default function SiteSettingsGeneralPage() {
             <p className="text-sm text-muted-foreground">{t('defaultLanguageDescription')}</p>
             <Select
               value={settings.default_language}
-              onValueChange={(value) => updateSetting('default_language', value)}
+              onValueChange={(value) => value && updateSetting('default_language', value)}
               disabled={!canUpdate}
             >
               <SelectTrigger id="defaultLanguage" className="w-48">
