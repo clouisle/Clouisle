@@ -1,5 +1,8 @@
 {
   "roles": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "角色",
     "description": "管理系统角色和权限",
     "createRole": "创建角色",

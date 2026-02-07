@@ -1,5 +1,8 @@
 {
   "apiKeys": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "API Keys",
     "description": "Manage API keys for programmatic access to the system.",
     "createKey": "Create API Key",

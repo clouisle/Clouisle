@@ -63,32 +63,47 @@ export interface ApiResponse<T = unknown> {
 
 /** 字段级验证错误数据 */
 export interface ValidationErrorData {
-  errors: Record<string, string>
+  errors: Record<string, string | string[]>
 }
 
 export class ApiError extends Error {
   code: number
   data?: unknown
-  
+
   constructor(code: number, message: string, data?: unknown) {
     super(message)
     this.code = code
     this.data = data
     this.name = 'ApiError'
   }
-  
+
   /** 是否为字段级验证错误 (code: 1001) */
   isValidationError(): boolean {
     return this.code === 1001
   }
-  
-  /** 获取字段级错误映射 */
-  getFieldErrors(): Record<string, string> {
+
+  /** 获取字段级错误映射（返回字符串数组格式） */
+  getFieldErrorsRaw(): Record<string, string[]> {
     if (this.isValidationError() && this.data) {
       const validationData = this.data as ValidationErrorData
-      return validationData.errors || {}
+      const errors = validationData.errors || {}
+      const result: Record<string, string[]> = {}
+      for (const [field, value] of Object.entries(errors)) {
+        result[field] = Array.isArray(value) ? value : [value]
+      }
+      return result
     }
     return {}
+  }
+
+  /** 获取字段级错误映射（返回字符串格式，多个错误用分号连接） */
+  getFieldErrors(): Record<string, string> {
+    const rawErrors = this.getFieldErrorsRaw()
+    const result: Record<string, string> = {}
+    for (const [field, errors] of Object.entries(rawErrors)) {
+      result[field] = errors.join('; ')
+    }
+    return result
   }
 }
 

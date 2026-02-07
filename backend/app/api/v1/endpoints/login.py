@@ -409,7 +409,8 @@ async def register(
         # Others depend on require_approval setting
         is_active=is_first_user or not require_approval,
         is_superuser=is_first_user,
-        email_verified=is_first_user,  # First user auto-verified
+        # First user auto-verified, or if email verification is disabled
+        email_verified=is_first_user or not email_verification,
         locale=default_language,
     )
 

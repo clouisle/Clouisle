@@ -1,5 +1,8 @@
 {
   "apiKeys": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "API 密钥",
     "description": "管理用于程序化访问系统的 API 密钥。",
     "createKey": "创建密钥",

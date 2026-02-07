@@ -1,5 +1,8 @@
 {
   "models": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "Model Management",
     "description": "Configure and manage AI models",
     "createModel": "Add Model",

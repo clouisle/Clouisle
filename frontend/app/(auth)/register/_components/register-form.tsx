@@ -13,10 +13,28 @@ import { Loader2, Mail, CheckCircle2, ArrowLeft } from 'lucide-react'
 
 type Step = 'form' | 'verification' | 'success'
 
+/**
+ * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }
+ */
+function parseErrorKey(errorKey: string): { key: string; params: Record<string, string> } {
+  const parts = errorKey.split(':')
+  const key = parts[0]
+  const params: Record<string, string> = {}
+  if (parts.length > 1) {
+    // 对于 password_min_length:8，参数名为 length
+    if (key === 'password_min_length') {
+      params.length = parts[1]
+    } else {
+      params.value = parts[1]
+    }
+  }
+  return { key, params }
+}
+
 export function RegisterForm() {
   const t = useTranslations('auth')
   const router = useRouter()
-  
+
   const [step, setStep] = React.useState<Step>('form')
   const [username, setUsername] = React.useState('')
   const [email, setEmail] = React.useState('')
@@ -27,7 +45,7 @@ export function RegisterForm() {
   const [loading, setLoading] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
   const [registeredUser, setRegisteredUser] = React.useState<User | null>(null)
-  
+
   // 倒计时
   React.useEffect(() => {
     if (resendCooldown > 0) {
@@ -35,7 +53,7 @@ export function RegisterForm() {
       return () => clearTimeout(timer)
     }
   }, [resendCooldown])
-  
+
   // 清除单个字段错误
   const clearFieldError = (field: string) => {
     if (fieldErrors[field]) {
@@ -45,6 +63,24 @@ export function RegisterForm() {
         return next
       })
     }
+  }
+
+  // 翻译错误消息
+  const translateErrors = (errors: Record<string, string[]>): Record<string, string> => {
+    const result: Record<string, string> = {}
+    for (const [field, errorKeys] of Object.entries(errors)) {
+      const translatedErrors = errorKeys.map(errorKey => {
+        const { key, params } = parseErrorKey(errorKey)
+        try {
+          return t(key, params)
+        } catch {
+          // 如果翻译不存在，返回原始 key
+          return errorKey
+        }
+      })
+      result[field] = translatedErrors.join('; ')
+    }
+    return result
   }
 
   // 步骤1：提交注册表单
@@ -69,7 +105,7 @@ export function RegisterForm() {
     try {
       const user = await authApi.register({ username, email, password })
       setRegisteredUser(user)
-      
+
       // 如果是第一个用户（超级管理员），直接成功
       if (user.is_superuser) {
         toast.success(t('registerSuccessActive'))
@@ -91,7 +127,8 @@ export function RegisterForm() {
       }
     } catch (err) {
       if (err instanceof ApiError && err.isValidationError()) {
-        setFieldErrors(err.getFieldErrors())
+        const rawErrors = err.getFieldErrorsRaw()
+        setFieldErrors(translateErrors(rawErrors))
       }
     } finally {
       setLoading(false)

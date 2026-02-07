@@ -1,5 +1,8 @@
 {
   "users": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "用户列表",
     "description": "管理您的用户及其角色。",
     "allUsers": "所有用户",
