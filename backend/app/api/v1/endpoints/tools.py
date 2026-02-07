@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 
 from app.api import deps
+from app.core.i18n import t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
     Tool,
@@ -115,10 +116,14 @@ def get_builtin_tools() -> list[ToolOut]:
             for p in tool_info.parameters
         ]
 
+        # Get display name from i18n
+        display_name_key = metadata.get("display_name_key")
+        display_name = t(display_name_key) if display_name_key else tool_info.name
+
         tools.append(
             ToolOut(
                 name=tool_info.name,
-                display_name=metadata.get("display_name", tool_info.name),
+                display_name=display_name,
                 description=tool_info.description,
                 type=ToolType.BUILTIN,
                 category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
@@ -216,14 +221,14 @@ async def list_tools(
     )
 
     custom_tools = []
-    for t in custom_db_tools:
-        creator_name = t.created_by.username if t.created_by else None
-        tool_out = db_tool_to_out(t, creator_name)
+    for tool in custom_db_tools:
+        creator_name = tool.created_by.username if tool.created_by else None
+        tool_out = db_tool_to_out(tool, creator_name)
         # 添加共享信息
         tool_out.is_owned = True
-        tool_out.owner_team_id = t.team_id
+        tool_out.owner_team_id = tool.team_id
         # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=t.id).count()
+        share_count = await ToolShare.filter(tool_id=tool.id).count()
         tool_out.shared_with_count = share_count
         custom_tools.append(tool_out)
 
@@ -238,14 +243,14 @@ async def list_tools(
     )
 
     mcp_tools = []
-    for t in mcp_db_tools:
-        creator_name = t.created_by.username if t.created_by else None
-        tool_out = db_tool_to_out(t, creator_name)
+    for tool in mcp_db_tools:
+        creator_name = tool.created_by.username if tool.created_by else None
+        tool_out = db_tool_to_out(tool, creator_name)
         # 添加共享信息
         tool_out.is_owned = True
-        tool_out.owner_team_id = t.team_id
+        tool_out.owner_team_id = tool.team_id
         # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=t.id).count()
+        share_count = await ToolShare.filter(tool_id=tool.id).count()
         tool_out.shared_with_count = share_count
         mcp_tools.append(tool_out)
 
@@ -324,10 +329,14 @@ async def list_file_parsers(
                 )
                 for p in tool_info.parameters
             ]
+            # Get display name from i18n
+            display_name_key = metadata.get("display_name_key")
+            display_name = t(display_name_key) if display_name_key else tool_info.name
+
             parsers.append(
                 ToolOut(
                     name=tool_info.name,
-                    display_name=metadata.get("display_name", tool_info.name),
+                    display_name=display_name,
                     description=tool_info.description,
                     type=ToolType.BUILTIN,
                     category=ToolCategory(metadata.get("category", ToolCategory.FILE)),
@@ -498,10 +507,14 @@ async def get_tool_by_name(
             for p in tool_info.parameters
         ]
 
+        # Get display name from i18n
+        display_name_key = metadata.get("display_name_key")
+        display_name = t(display_name_key) if display_name_key else tool_info.name
+
         return success(
             data=ToolOut(
                 name=tool_info.name,
-                display_name=metadata.get("display_name", tool_info.name),
+                display_name=display_name,
                 description=tool_info.description,
                 type=ToolType.BUILTIN,
                 category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),

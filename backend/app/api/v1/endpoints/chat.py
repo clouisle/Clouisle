@@ -572,9 +572,13 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
         if tool_type == "builtin":
             tool_name = config.get("name")
             if tool_name:
-                # Get display name from builtin metadata
+                # Get display name from builtin metadata with i18n
                 metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
-                display_names[tool_name] = metadata.get("display_name", tool_name)
+                display_name_key = metadata.get("display_name_key")
+                if display_name_key:
+                    display_names[tool_name] = t(display_name_key)
+                else:
+                    display_names[tool_name] = tool_name
 
         elif tool_type == "custom":
             tool_id = config.get("tool_id")

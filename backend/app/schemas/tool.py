@@ -344,44 +344,44 @@ class ToolShareListOut(BaseModel):
 
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "get_current_time": {
-        "display_name": "获取当前时间",
+        "display_name_key": "builtin_tool_get_current_time",
         "category": ToolCategory.TIME,
         "icon": "🕐",
         "requires_config": False,
     },
     "format_datetime": {
-        "display_name": "格式化日期时间",
+        "display_name_key": "builtin_tool_format_datetime",
         "category": ToolCategory.TIME,
         "icon": "📅",
         "requires_config": False,
     },
     "calculate": {
-        "display_name": "数学计算",
+        "display_name_key": "builtin_tool_calculate",
         "category": ToolCategory.MATH,
         "icon": "🔢",
         "requires_config": False,
     },
     "unit_convert": {
-        "display_name": "单位转换",
+        "display_name_key": "builtin_tool_unit_convert",
         "category": ToolCategory.MATH,
         "icon": "📐",
         "requires_config": False,
     },
     "web_search": {
-        "display_name": "网页搜索",
+        "display_name_key": "builtin_tool_web_search",
         "category": ToolCategory.SEARCH,
         "icon": "🔍",
         "requires_config": True,
         "config_fields": ["TAVILY_API_KEY"],
     },
     "fetch_webpage": {
-        "display_name": "获取网页内容",
+        "display_name_key": "builtin_tool_fetch_webpage",
         "category": ToolCategory.WEB,
         "icon": "🌐",
         "requires_config": False,
     },
     "markitdown": {
-        "display_name": "MarkItDown 文件解析",
+        "display_name_key": "builtin_tool_markitdown",
         "category": ToolCategory.FILE,
         "icon": "📄",
         "requires_config": False,

@@ -1858,6 +1858,35 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "User",
         "zh": "用户",
     },
+    # Builtin tool display names
+    "builtin_tool_get_current_time": {
+        "en": "Get Current Time",
+        "zh": "获取当前时间",
+    },
+    "builtin_tool_format_datetime": {
+        "en": "Format DateTime",
+        "zh": "格式化日期时间",
+    },
+    "builtin_tool_calculate": {
+        "en": "Calculate",
+        "zh": "数学计算",
+    },
+    "builtin_tool_unit_convert": {
+        "en": "Unit Convert",
+        "zh": "单位转换",
+    },
+    "builtin_tool_web_search": {
+        "en": "Web Search",
+        "zh": "网页搜索",
+    },
+    "builtin_tool_fetch_webpage": {
+        "en": "Fetch Webpage",
+        "zh": "获取网页内容",
+    },
+    "builtin_tool_markitdown": {
+        "en": "MarkItDown File Parser",
+        "zh": "MarkItDown 文件解析",
+    },
 }
 
 
