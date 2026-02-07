@@ -114,14 +114,11 @@ export function ChatContainer({
   }
 
   return (
-    <div className="relative flex-1 min-h-0">
+    <div className={cn("relative h-full", className)}>
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={cn(
-          'h-full overflow-y-auto overflow-x-hidden',
-          className
-        )}
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
       >
         <div className="flex flex-col min-w-0">
           {messages.map((message, index) => {
