@@ -33,9 +33,10 @@ async def _send_doc_indexed_notification(
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.KB_DOC_INDEXED,
             team_id=team_id,
-            title=t("notify_kb_doc_indexed_title"),
+            title=t("notify_kb_doc_indexed_title", lang="en"),
             content=t(
                 "notify_kb_doc_indexed_content",
+                lang="en",
                 doc_name=document.name,
                 kb_name=kb_name,
                 chunk_count=chunk_count,
@@ -65,9 +66,10 @@ async def _send_doc_failed_notification(
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.KB_DOC_FAILED,
             team_id=team_id,
-            title=t("notify_kb_doc_failed_title"),
+            title=t("notify_kb_doc_failed_title", lang="en"),
             content=t(
                 "notify_kb_doc_failed_content",
+                lang="en",
                 doc_name=document.name,
                 kb_name=kb_name,
                 error=error[:200],  # Truncate error message
@@ -116,7 +118,7 @@ def process_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found")}
+            return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
 
@@ -320,7 +322,7 @@ def reprocess_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found")}
+            return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
 
@@ -400,7 +402,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found")}
+            return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
 
@@ -594,7 +596,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
         if not document:
             logger.error(f"Document {document_id} not found")
-            return {"status": "error", "message": t("document_not_found")}
+            return {"status": "error", "message": t("document_not_found", lang="en")}
 
         kb = document.knowledge_base
 
@@ -623,7 +625,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 await document.save()
                 return {
                     "status": "success",
-                    "message": t("no_chunks_to_embed"),
+                    "message": t("no_chunks_to_embed", lang="en"),
                     "embedded_count": 0,
                 }
 

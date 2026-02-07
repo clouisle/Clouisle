@@ -98,6 +98,7 @@ class FileParserService:
         content: str,
         max_length: int,
         strategy: str = "end",
+        locale: str | None = None,
     ) -> tuple[str, bool, int]:
         """
         Truncate content according to strategy.
@@ -106,6 +107,7 @@ class FileParserService:
             content: Original content
             max_length: Maximum length
             strategy: 'end' (keep start), 'start' (keep end), 'middle' (keep both)
+            locale: User's locale for i18n markers
 
         Returns:
             Tuple of (truncated_content, was_truncated, original_length)
@@ -117,19 +119,19 @@ class FileParserService:
 
         if strategy == "start":
             # Keep the end
-            truncated = t("truncation_marker") + "\n\n" + content[-max_length:]
+            truncated = t("truncation_marker", lang=locale) + "\n\n" + content[-max_length:]
         elif strategy == "middle":
             # Keep both start and end
             half = max_length // 2
             truncated = (
                 content[:half]
                 + "\n\n"
-                + t("truncation_middle_marker", count=str(original_length - max_length))
+                + t("truncation_middle_marker", lang=locale, count=str(original_length - max_length))
                 + "\n\n"
                 + content[-half:]
             )
         else:  # "end" - default, keep start
-            truncated = content[:max_length] + "\n\n" + t("truncation_marker")
+            truncated = content[:max_length] + "\n\n" + t("truncation_marker", lang=locale)
 
         return truncated, True, original_length
 
@@ -211,6 +213,7 @@ class FileParserService:
         self,
         files: list[ParsedFile],
         separator: str = "\n\n---\n\n",
+        locale: str | None = None,
     ) -> str:
         """
         Format multiple parsed files for injection into prompt.
@@ -218,6 +221,7 @@ class FileParserService:
         Args:
             files: List of parsed files
             separator: Separator between files
+            locale: User's locale for i18n headers
 
         Returns:
             Formatted string for prompt injection
@@ -227,17 +231,17 @@ class FileParserService:
 
         if len(files) == 1:
             file = files[0]
-            header = t("file_header", filename=file.filename)
+            header = t("file_header", lang=locale, filename=file.filename)
             if file.truncated:
-                header += t("file_header_truncated_suffix", length=file.original_length)
+                header += t("file_header_truncated_suffix", lang=locale, length=file.original_length)
             return f"{header}\n\n{file.content}"
 
         # Multiple files
         parts = []
         for i, file in enumerate(files, 1):
-            header = t("file_header_indexed", index=i, filename=file.filename)
+            header = t("file_header_indexed", lang=locale, index=i, filename=file.filename)
             if file.truncated:
-                header += t("file_header_truncated_suffix", length=file.original_length)
+                header += t("file_header_truncated_suffix", lang=locale, length=file.original_length)
             parts.append(f"{header}\n\n{file.content}")
 
         return separator.join(parts)

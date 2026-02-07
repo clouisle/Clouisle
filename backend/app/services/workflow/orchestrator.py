@@ -67,7 +67,7 @@ NODE_TYPE_KEYS = {
 def get_node_type_label(node_type: str) -> str | None:
     """Get translated node type label."""
     key = NODE_TYPE_KEYS.get(node_type)
-    return t(key) if key else None
+    return t(key, lang="en") if key else None
 
 
 class WorkflowOrchestrator:
@@ -558,9 +558,10 @@ class WorkflowOrchestrator:
                 await AutoNotificationService.send_to_team(
                     notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
                     team_id=workflow.team_id,
-                    title=t("notify_workflow_run_success_title"),
+                    title=t("notify_workflow_run_success_title", lang="en"),
                     content=t(
                         "notify_workflow_run_success_content",
+                        lang="en",
                         workflow_name=workflow.name,
                         duration=duration_ms,
                         node_count=run.executed_nodes,
@@ -631,9 +632,10 @@ class WorkflowOrchestrator:
                 await AutoNotificationService.send_to_team(
                     notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
                     team_id=workflow.team_id,
-                    title=t("notify_workflow_run_failed_title"),
+                    title=t("notify_workflow_run_failed_title", lang="en"),
                     content=t(
                         "notify_workflow_run_failed_content",
+                        lang="en",
                         workflow_name=workflow.name,
                         error=error[:200]
                         if error

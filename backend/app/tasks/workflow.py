@@ -70,7 +70,7 @@ def run_workflow_task(
             else:
                 return {
                     "status": "error",
-                    "message": t("workflow_run_not_found_after_execution"),
+                    "message": t("workflow_run_not_found_after_execution", lang="en"),
                 }
 
         except Exception as e:

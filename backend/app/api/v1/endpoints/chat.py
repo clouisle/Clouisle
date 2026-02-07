@@ -1611,7 +1611,7 @@ async def chat_stream(
 
                 if parsed_files:
                     file_content_str = file_parser_service.format_files_for_prompt(
-                        parsed_files
+                        parsed_files, locale=current_user.locale
                     )
 
             # System prompt - always add with language instruction
