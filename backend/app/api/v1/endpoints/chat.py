@@ -586,21 +586,28 @@ Examples of when to search:
     return openai_tools
 
 
-async def get_tool_display_names(agent: Agent) -> dict[str, str]:
+async def get_tool_display_names(
+    agent: Agent, user_locale: str | None = None
+) -> dict[str, str]:
     """
     Get a mapping from tool internal names to display names.
 
+    Args:
+        agent: The agent
+        user_locale: User's locale from database for i18n display names
+
     Returns a dict like:
     {
-        "knowledge_search": "知识库搜索",
-        "get_current_time": "获取当前时间",
-        "custom_my_tool": "我的工具",
-        "mcp_server_tool": "MCP 工具",
+        "knowledge_search": "Knowledge Search",
+        "get_current_time": "Get Current Time",
+        "custom_my_tool": "My Tool",
+        "mcp_server_tool": "MCP Tool",
     }
     """
     from app.models.tool import Tool
     from app.models.agent import RAGMode
     from app.schemas.tool import BUILTIN_TOOLS_METADATA
+    from app.core.i18n import t
 
     display_names: dict[str, str] = {}
     tools_config = list(agent.tools_config or [])
@@ -609,7 +616,7 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
     if agent.rag_mode == RAGMode.AGENTIC:
         kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id).count()
         if kb_associations > 0:
-            display_names["knowledge_search"] = t("tool_knowledge_search")
+            display_names["knowledge_search"] = t("tool_knowledge_search", lang=user_locale)
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -621,7 +628,7 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
                 metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
                 display_name_key = metadata.get("display_name_key")
                 if display_name_key:
-                    display_names[tool_name] = t(display_name_key)
+                    display_names[tool_name] = t(display_name_key, lang=user_locale)
                 else:
                     display_names[tool_name] = tool_name
 
@@ -1783,7 +1790,7 @@ async def chat_stream(
 
             # Get agent tools
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent)
+            tool_display_names = await get_tool_display_names(agent, current_user.locale)
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [
@@ -2526,7 +2533,7 @@ async def regenerate_message(
             # Get model and tools
             model_id = await get_model_identifier(agent)
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent)
+            tool_display_names = await get_tool_display_names(agent, current_user.locale)
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [

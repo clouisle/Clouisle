@@ -98,8 +98,12 @@ async def check_team_access(
     return team
 
 
-def get_builtin_tools() -> list[ToolOut]:
-    """获取所有内置工具"""
+def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
+    """获取所有内置工具
+
+    Args:
+        user_locale: User's locale from database for i18n display names
+    """
     tools = []
     for tool_info in tool_registry.get_all_tools():
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
@@ -116,9 +120,11 @@ def get_builtin_tools() -> list[ToolOut]:
             for p in tool_info.parameters
         ]
 
-        # Get display name from i18n
+        # Get display name from i18n using user's locale
         display_name_key = metadata.get("display_name_key")
-        display_name = t(display_name_key) if display_name_key else tool_info.name
+        display_name = (
+            t(display_name_key, lang=user_locale) if display_name_key else tool_info.name
+        )
 
         tools.append(
             ToolOut(
@@ -208,7 +214,7 @@ async def list_tools(
     await check_team_access(team_id, current_user)
 
     # 获取内置工具
-    builtin_tools = get_builtin_tools()
+    builtin_tools = get_builtin_tools(current_user.locale)
 
     # 获取团队的自定义工具（预加载创建者信息）
     custom_db_tools = (
@@ -293,7 +299,7 @@ async def list_builtin_tools(
 ) -> Any:
     """获取所有内置工具"""
     return success(
-        data=get_builtin_tools(),
+        data=get_builtin_tools(current_user.locale),
         msg_key="success",
     )
 
@@ -329,9 +335,13 @@ async def list_file_parsers(
                 )
                 for p in tool_info.parameters
             ]
-            # Get display name from i18n
+            # Get display name from i18n using user's locale
             display_name_key = metadata.get("display_name_key")
-            display_name = t(display_name_key) if display_name_key else tool_info.name
+            display_name = (
+                t(display_name_key, lang=current_user.locale)
+                if display_name_key
+                else tool_info.name
+            )
 
             parsers.append(
                 ToolOut(
@@ -507,9 +517,13 @@ async def get_tool_by_name(
             for p in tool_info.parameters
         ]
 
-        # Get display name from i18n
+        # Get display name from i18n using user's locale
         display_name_key = metadata.get("display_name_key")
-        display_name = t(display_name_key) if display_name_key else tool_info.name
+        display_name = (
+            t(display_name_key, lang=current_user.locale)
+            if display_name_key
+            else tool_info.name
+        )
 
         return success(
             data=ToolOut(
