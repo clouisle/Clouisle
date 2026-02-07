@@ -1,5 +1,8 @@
 {
   "knowledgeBases": {
+    "common": {
+      "openMenu": "Open menu"
+    },
     "title": "Knowledge Bases",
     "description": "Manage knowledge bases and documents for RAG",
     "createKb": "Create Knowledge Base",
