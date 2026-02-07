@@ -56,9 +56,33 @@ from app.schemas.response import (
 )
 from app.llm.tools import tool_registry
 from app.core.timezone import now_utc
+from app.core.i18n import get_language
 
 if TYPE_CHECKING:
     from app.models.tool import Tool
+
+
+# Language instruction templates
+LANGUAGE_INSTRUCTIONS = {
+    "en": "Please respond in English.",
+    "zh": "请使用中文回复。",
+}
+
+
+def get_language_instruction() -> str:
+    """Get language instruction based on current request language."""
+    lang = get_language()
+    return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
+
+
+def append_language_instruction(system_prompt: str) -> str:
+    """Append language instruction to system prompt if not already present."""
+    instruction = get_language_instruction()
+    # Check if instruction already exists (avoid duplication)
+    if instruction in system_prompt:
+        return system_prompt
+    # Append instruction at the end
+    return f"{system_prompt}\n\n{instruction}"
 
 
 # Local message types to avoid circular import
@@ -302,6 +326,9 @@ async def build_messages(
         else:
             # Remove the placeholder if no file content
             system_prompt = system_prompt.replace("{{fileContent}}", "")
+
+        # Append language instruction
+        system_prompt = append_language_instruction(system_prompt)
 
         messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
@@ -1576,6 +1603,9 @@ async def chat_stream(
                 else:
                     system_prompt = system_prompt.replace("{{fileContent}}", "")
 
+                # Append language instruction
+                system_prompt = append_language_instruction(system_prompt)
+
                 messages_for_llm.append(
                     LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                 )
@@ -2408,6 +2438,8 @@ async def regenerate_message(
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
                 # Inject {{query}} variable - user's current input
                 system_prompt = system_prompt.replace("{{query}}", user_message.content)
+                # Append language instruction
+                system_prompt = append_language_instruction(system_prompt)
                 messages_for_llm.append(
                     LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                 )
