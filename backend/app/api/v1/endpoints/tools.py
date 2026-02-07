@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 
 from app.api import deps
+from app.core.i18n import t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
     Tool,
@@ -97,8 +98,12 @@ async def check_team_access(
     return team
 
 
-def get_builtin_tools() -> list[ToolOut]:
-    """获取所有内置工具"""
+def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
+    """获取所有内置工具
+
+    Args:
+        user_locale: User's locale from database for i18n display names
+    """
     tools = []
     for tool_info in tool_registry.get_all_tools():
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
@@ -115,10 +120,18 @@ def get_builtin_tools() -> list[ToolOut]:
             for p in tool_info.parameters
         ]
 
+        # Get display name from i18n using user's locale
+        display_name_key = metadata.get("display_name_key")
+        display_name = (
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else tool_info.name
+        )
+
         tools.append(
             ToolOut(
                 name=tool_info.name,
-                display_name=metadata.get("display_name", tool_info.name),
+                display_name=display_name,
                 description=tool_info.description,
                 type=ToolType.BUILTIN,
                 category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
@@ -203,7 +216,7 @@ async def list_tools(
     await check_team_access(team_id, current_user)
 
     # 获取内置工具
-    builtin_tools = get_builtin_tools()
+    builtin_tools = get_builtin_tools(current_user.locale)
 
     # 获取团队的自定义工具（预加载创建者信息）
     custom_db_tools = (
@@ -216,14 +229,14 @@ async def list_tools(
     )
 
     custom_tools = []
-    for t in custom_db_tools:
-        creator_name = t.created_by.username if t.created_by else None
-        tool_out = db_tool_to_out(t, creator_name)
+    for tool in custom_db_tools:
+        creator_name = tool.created_by.username if tool.created_by else None
+        tool_out = db_tool_to_out(tool, creator_name)
         # 添加共享信息
         tool_out.is_owned = True
-        tool_out.owner_team_id = t.team_id
+        tool_out.owner_team_id = tool.team_id
         # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=t.id).count()
+        share_count = await ToolShare.filter(tool_id=tool.id).count()
         tool_out.shared_with_count = share_count
         custom_tools.append(tool_out)
 
@@ -238,14 +251,14 @@ async def list_tools(
     )
 
     mcp_tools = []
-    for t in mcp_db_tools:
-        creator_name = t.created_by.username if t.created_by else None
-        tool_out = db_tool_to_out(t, creator_name)
+    for tool in mcp_db_tools:
+        creator_name = tool.created_by.username if tool.created_by else None
+        tool_out = db_tool_to_out(tool, creator_name)
         # 添加共享信息
         tool_out.is_owned = True
-        tool_out.owner_team_id = t.team_id
+        tool_out.owner_team_id = tool.team_id
         # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=t.id).count()
+        share_count = await ToolShare.filter(tool_id=tool.id).count()
         tool_out.shared_with_count = share_count
         mcp_tools.append(tool_out)
 
@@ -288,7 +301,7 @@ async def list_builtin_tools(
 ) -> Any:
     """获取所有内置工具"""
     return success(
-        data=get_builtin_tools(),
+        data=get_builtin_tools(current_user.locale),
         msg_key="success",
     )
 
@@ -324,10 +337,18 @@ async def list_file_parsers(
                 )
                 for p in tool_info.parameters
             ]
+            # Get display name from i18n using user's locale
+            display_name_key = metadata.get("display_name_key")
+            display_name = (
+                t(display_name_key, lang=current_user.locale)
+                if display_name_key
+                else tool_info.name
+            )
+
             parsers.append(
                 ToolOut(
                     name=tool_info.name,
-                    display_name=metadata.get("display_name", tool_info.name),
+                    display_name=display_name,
                     description=tool_info.description,
                     type=ToolType.BUILTIN,
                     category=ToolCategory(metadata.get("category", ToolCategory.FILE)),
@@ -498,10 +519,18 @@ async def get_tool_by_name(
             for p in tool_info.parameters
         ]
 
+        # Get display name from i18n using user's locale
+        display_name_key = metadata.get("display_name_key")
+        display_name = (
+            t(display_name_key, lang=current_user.locale)
+            if display_name_key
+            else tool_info.name
+        )
+
         return success(
             data=ToolOut(
                 name=tool_info.name,
-                display_name=metadata.get("display_name", tool_info.name),
+                display_name=display_name,
                 description=tool_info.description,
                 type=ToolType.BUILTIN,
                 category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),

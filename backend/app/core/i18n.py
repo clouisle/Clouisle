@@ -1841,6 +1841,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "A login to your account was detected from an unusual location or device.\n\n- **IP Address**: {ip_address}\n- **Time**: {login_time}\n- **User Agent**: {user_agent}\n\nIf this was not you, please change your password immediately.",
         "zh": "检测到您的账户从异常位置或设备登录。\n\n- **IP 地址**: {ip_address}\n- **时间**: {login_time}\n- **设备信息**: {user_agent}\n\n如果这不是您本人的操作，请立即修改密码。",
     },
+    # Email notification templates
+    "email_view_details": {
+        "en": "View Details",
+        "zh": "查看详情",
+    },
+    "email_footer": {
+        "en": "This email was sent automatically by {site_name}. Please do not reply.",
+        "zh": "此邮件由 {site_name} 系统自动发送，请勿回复。",
+    },
+    "email_team_prefix": {
+        "en": "Team",
+        "zh": "团队",
+    },
+    "email_user_prefix": {
+        "en": "User",
+        "zh": "用户",
+    },
+    # Builtin tool display names
+    "builtin_tool_get_current_time": {
+        "en": "Get Current Time",
+        "zh": "获取当前时间",
+    },
+    "builtin_tool_format_datetime": {
+        "en": "Format DateTime",
+        "zh": "格式化日期时间",
+    },
+    "builtin_tool_calculate": {
+        "en": "Calculate",
+        "zh": "数学计算",
+    },
+    "builtin_tool_unit_convert": {
+        "en": "Unit Convert",
+        "zh": "单位转换",
+    },
+    "builtin_tool_web_search": {
+        "en": "Web Search",
+        "zh": "网页搜索",
+    },
+    "builtin_tool_fetch_webpage": {
+        "en": "Fetch Webpage",
+        "zh": "获取网页内容",
+    },
+    "builtin_tool_markitdown": {
+        "en": "MarkItDown File Parser",
+        "zh": "MarkItDown 文件解析",
+    },
 }
 
 
@@ -1856,6 +1902,22 @@ def set_language(lang: str) -> None:
     if lang not in [lang_enum.value for lang_enum in Language]:
         lang = Language.EN.value
     current_language.set(lang)
+
+
+async def get_default_language() -> str:
+    """Get default language from site settings.
+
+    This is used for system messages when no specific user locale is available,
+    such as team notifications, webhook-triggered workflows, etc.
+    """
+    from app.models.site_setting import SiteSetting
+
+    lang = await SiteSetting.get_value("default_language", "en")
+    # Normalize language code
+    lang = str(lang).lower().split("-")[0]
+    if lang not in [lang_enum.value for lang_enum in Language]:
+        lang = Language.EN.value
+    return lang
 
 
 def t(key: str, lang: Optional[str] = None, **kwargs) -> str:

@@ -119,6 +119,11 @@ class User(models.Model):
     email_verified = fields.BooleanField(
         default=False, description="Email verification status"
     )
+    locale = fields.CharField(
+        max_length=10,
+        default="en",
+        description="User preferred locale (e.g., en, zh)",
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
     last_login = fields.DatetimeField(null=True)
     failed_login_attempts = fields.IntField(

@@ -2,12 +2,13 @@
 工具相关的 Pydantic Schema
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ToolType(str, Enum):
@@ -199,6 +200,16 @@ class ToolCreateInput(BaseModel):
     credentials: dict[str, str] = Field(default_factory=dict, description="凭证")
     is_enabled: bool = Field(default=True, description="是否启用")
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """验证工具名称格式：只允许字母、数字、下划线，且必须以字母开头"""
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+            )
+        return v
+
 
 class ToolUpdateInput(BaseModel):
     """更新工具输入"""
@@ -215,6 +226,16 @@ class ToolUpdateInput(BaseModel):
     mcp_config: McpConfigSchema | None = None
     credentials: dict[str, str] | None = None
     is_enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        """验证工具名称格式"""
+        if v is not None and not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
+            raise ValueError(
+                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+            )
+        return v
 
 
 # ============ MCP Schemas ============
@@ -323,44 +344,44 @@ class ToolShareListOut(BaseModel):
 
 BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "get_current_time": {
-        "display_name": "获取当前时间",
+        "display_name_key": "builtin_tool_get_current_time",
         "category": ToolCategory.TIME,
         "icon": "🕐",
         "requires_config": False,
     },
     "format_datetime": {
-        "display_name": "格式化日期时间",
+        "display_name_key": "builtin_tool_format_datetime",
         "category": ToolCategory.TIME,
         "icon": "📅",
         "requires_config": False,
     },
     "calculate": {
-        "display_name": "数学计算",
+        "display_name_key": "builtin_tool_calculate",
         "category": ToolCategory.MATH,
         "icon": "🔢",
         "requires_config": False,
     },
     "unit_convert": {
-        "display_name": "单位转换",
+        "display_name_key": "builtin_tool_unit_convert",
         "category": ToolCategory.MATH,
         "icon": "📐",
         "requires_config": False,
     },
     "web_search": {
-        "display_name": "网页搜索",
+        "display_name_key": "builtin_tool_web_search",
         "category": ToolCategory.SEARCH,
         "icon": "🔍",
         "requires_config": True,
         "config_fields": ["TAVILY_API_KEY"],
     },
     "fetch_webpage": {
-        "display_name": "获取网页内容",
+        "display_name_key": "builtin_tool_fetch_webpage",
         "category": ToolCategory.WEB,
         "icon": "🌐",
         "requires_config": False,
     },
     "markitdown": {
-        "display_name": "MarkItDown 文件解析",
+        "display_name_key": "builtin_tool_markitdown",
         "category": ToolCategory.FILE,
         "icon": "📄",
         "requires_config": False,

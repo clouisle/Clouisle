@@ -26,6 +26,7 @@ export interface User {
   is_superuser: boolean
   email_verified: boolean
   avatar_url: string | null
+  locale: string
   created_at: string
   last_login: string | null
   auth_source: string

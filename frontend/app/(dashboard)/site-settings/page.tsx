@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2 } from 'lucide-react'
 import { ImageUpload } from '@/components/ui/image-upload'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { siteSettingsApi, type GeneralSettings } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
@@ -28,6 +29,7 @@ export default function SiteSettingsGeneralPage() {
     site_description: '',
     site_url: '',
     site_icon: '',
+    default_language: 'en',
   })
 
   const loadSettings = React.useCallback(async () => {
@@ -140,7 +142,7 @@ export default function SiteSettingsGeneralPage() {
           <CardTitle>{t('siteBranding')}</CardTitle>
           <CardDescription>{t('siteBrandingDescription')}</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label>{t('siteIcon')}</Label>
             <p className="text-sm text-muted-foreground">{t('siteIconDescription')}</p>
@@ -154,6 +156,25 @@ export default function SiteSettingsGeneralPage() {
               />
               <p className="text-xs text-muted-foreground mt-2">{t('siteIconHint')}</p>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="defaultLanguage">{t('defaultLanguage')}</Label>
+            <p className="text-sm text-muted-foreground">{t('defaultLanguageDescription')}</p>
+            <Select
+              value={settings.default_language}
+              onValueChange={(value) => value && updateSetting('default_language', value)}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger id="defaultLanguage" className="w-48">
+                <SelectValue>
+                  {settings.default_language === 'zh' ? '中文' : 'English'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">English</SelectItem>
+                <SelectItem value="zh">中文</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

@@ -71,12 +71,16 @@ async def _check_api_key_expiration():
         if days_remaining not in [7, 3, 1]:
             continue
 
+        # 获取用户语言偏好
+        user_locale = getattr(api_key.user, "locale", "en")
+
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.APIKEY_EXPIRING,
             user_id=api_key.user.id,
-            title=t("notify_apikey_expiring_title"),
+            title=t("notify_apikey_expiring_title", lang=user_locale),
             content=t(
                 "notify_apikey_expiring_content",
+                lang=user_locale,
                 key_name=api_key.name,
                 key_prefix=api_key.key_prefix,
                 days=days_remaining,
@@ -105,12 +109,16 @@ async def _check_api_key_expiration():
     ).prefetch_related("user")
 
     for api_key in expired_keys:
+        # 获取用户语言偏好
+        user_locale = getattr(api_key.user, "locale", "en")
+
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.APIKEY_EXPIRED,
             user_id=api_key.user.id,
-            title=t("notify_apikey_expired_title"),
+            title=t("notify_apikey_expired_title", lang=user_locale),
             content=t(
                 "notify_apikey_expired_content",
+                lang=user_locale,
                 key_name=api_key.name,
                 key_prefix=api_key.key_prefix,
             ),

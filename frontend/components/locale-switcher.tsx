@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { locales, localeNames, type Locale } from '@/i18n/config'
+import { usersApi } from '@/lib/api'
 
 interface LocaleSwitcherProps {
   showLabel?: boolean
@@ -20,8 +21,20 @@ export function LocaleSwitcher({ showLabel = false }: LocaleSwitcherProps) {
   const locale = useLocale()
   const router = useRouter()
 
-  const handleLocaleChange = React.useCallback((newLocale: Locale) => {
+  const handleLocaleChange = React.useCallback(async (newLocale: Locale) => {
+    // 设置 cookie
     document.cookie = `locale=${newLocale};path=/;max-age=31536000`
+
+    // 如果用户已登录（有 token），同步到后端
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+    if (token) {
+      try {
+        await usersApi.updateProfile({ locale: newLocale })
+      } catch {
+        // 静默失败，不影响前端切换
+      }
+    }
+
     router.refresh()
   }, [router])
 

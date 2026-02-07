@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 class ModelProvider(str, Enum):
     """Supported model providers"""
 
+    # General LLM providers
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
@@ -24,13 +25,23 @@ class ModelProvider(str, Enum):
     QWEN = "qwen"
     BAICHUAN = "baichuan"
     MINIMAX = "minimax"
+    VOLCENGINE = "volcengine"  # 火山引擎 (豆包)
+    XAI = "xai"  # Grok
+
+    # Local deployment
     OLLAMA = "ollama"
+
+    # Video generation
     RUNWAY = "runway"
     PIKA = "pika"
     LUMA = "luma"
     KLING = "kling"
+
+    # Image generation
     STABILITY = "stability"
     MIDJOURNEY = "midjourney"
+
+    # Custom/OpenAI-compatible
     CUSTOM = "custom"
 
 

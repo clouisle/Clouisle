@@ -33,7 +33,7 @@ from app.core.email import (
 )
 from app.core.captcha import generate_captcha, verify_captcha
 from app.core.timezone import now_utc
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -172,9 +172,10 @@ async def login_access_token(
             await AutoNotificationService.send_to_user(
                 notification_type=AutoNotificationType.SECURITY_ACCOUNT_LOCKED,
                 user_id=user.id,
-                title=t("notify_account_locked_title"),
+                title=t("notify_account_locked_title", lang=user.locale),
                 content=t(
                     "notify_account_locked_content",
+                    lang=user.locale,
                     lockout_minutes=(lockout_seconds or 0) // 60,
                 ),
                 level=NotificationLevel.HIGH,
@@ -229,9 +230,10 @@ async def login_access_token(
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
             user_id=user.id,
-            title=t("notify_login_anomaly_title"),
+            title=t("notify_login_anomaly_title", lang=user.locale),
             content=t(
                 "notify_login_anomaly_content",
+                lang=user.locale,
                 ip_address=anomaly_details.get("ip_address", "unknown"),
                 login_time=anomaly_details.get("login_time", ""),
                 user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
@@ -394,6 +396,7 @@ async def register(
     # Get registration settings
     require_approval = await SiteSetting.get_value("require_approval", False)
     email_verification = await SiteSetting.get_value("email_verification", True)
+    default_language = await SiteSetting.get_value("default_language", "en")
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -406,6 +409,7 @@ async def register(
         is_active=is_first_user or not require_approval,
         is_superuser=is_first_user,
         email_verified=is_first_user,  # First user auto-verified
+        locale=default_language,
     )
 
     # If first user, assign Super Admin role
@@ -414,8 +418,10 @@ async def register(
         if super_admin_role:
             await user.roles.add(super_admin_role)
 
-        # Reload user with roles
-        user = await User.get(id=user.id).prefetch_related("roles__permissions")
+        # Reload user with roles and sso_connections
+        user = await User.get(id=user.id).prefetch_related(
+            "roles__permissions", "sso_connections"
+        )
 
         # 记录首个超级管理员注册
         await AuditLogService.log(
@@ -432,8 +438,10 @@ async def register(
 
         return success(data=user, msg_key="registration_successful_superadmin")
 
-    # Reload user with roles (empty but need to be a list)
-    user = await User.get(id=user.id).prefetch_related("roles__permissions")
+    # Reload user with roles and sso_connections (empty but need to be lists)
+    user = await User.get(id=user.id).prefetch_related(
+        "roles__permissions", "sso_connections"
+    )
 
     # 记录普通用户注册
     await AuditLogService.log(
@@ -454,11 +462,13 @@ async def register(
     # Determine response message
     if require_approval:
         # 发送待审批通知给管理员（全局通知）
+        default_lang = await get_default_language()
         await AutoNotificationService.send_global(
             notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
-            title=t("notify_user_pending_approval_title"),
+            title=t("notify_user_pending_approval_title", lang=default_lang),
             content=t(
                 "notify_user_pending_approval_content",
+                lang=default_lang,
                 username=user.username,
                 email=user.email,
             ),

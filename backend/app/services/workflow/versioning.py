@@ -105,8 +105,7 @@ class VersionDiff:
             or self.config_changes
         )
 
-    @property
-    def change_summary(self) -> str:
+    def get_change_summary(self, lang: str = "en") -> str:
         """Get a human-readable change summary."""
         parts = []
         if self.nodes_added:
@@ -121,7 +120,12 @@ class VersionDiff:
             parts.append(f"-{len(self.edges_removed)} edges")
         if self.config_changes:
             parts.append(f"{len(self.config_changes)} config changes")
-        return ", ".join(parts) if parts else t("no_changes")
+        return ", ".join(parts) if parts else t("no_changes", lang=lang)
+
+    @property
+    def change_summary(self) -> str:
+        """Get a human-readable change summary (uses English as default)."""
+        return self.get_change_summary("en")
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""

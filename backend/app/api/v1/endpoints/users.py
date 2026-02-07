@@ -55,6 +55,7 @@ async def serialize_user_with_sso(user: User) -> dict:
         "is_superuser": user.is_superuser,
         "email_verified": user.email_verified,
         "avatar_url": user.avatar_url,
+        "locale": getattr(user, "locale", "en"),
         "created_at": user.created_at,
         "last_login": user.last_login,
         "auth_source": user.auth_source,
@@ -200,6 +201,11 @@ async def create_user(
     password = user_dict.pop("password")
     hashed_password = security.get_password_hash(password)
 
+    # Get default language from site settings if locale not provided
+    if "locale" not in user_dict or not user_dict.get("locale"):
+        default_language = await SiteSetting.get_value("default_language", "en")
+        user_dict["locale"] = default_language
+
     user = await User.create(
         **user_dict,
         hashed_password=hashed_password,
@@ -339,6 +345,7 @@ class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @router.put("/me", response_model=Response[UserSchema])
@@ -451,8 +458,8 @@ async def change_password(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.SECURITY_PASSWORD_CHANGED,
         user_id=current_user.id,
-        title=t("notify_password_changed_title"),
-        content=t("notify_password_changed_content"),
+        title=t("notify_password_changed_title", lang=current_user.locale),
+        content=t("notify_password_changed_content", lang=current_user.locale),
         level=NotificationLevel.HIGH,
     )
 
@@ -578,8 +585,8 @@ async def activate_user(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.USER_ACTIVATED,
         user_id=user.id,
-        title=t("notify_user_activated_title"),
-        content=t("notify_user_activated_content"),
+        title=t("notify_user_activated_title", lang=user.locale),
+        content=t("notify_user_activated_content", lang=user.locale),
     )
 
     return success(
@@ -637,8 +644,8 @@ async def deactivate_user(
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.USER_DEACTIVATED,
         user_id=user.id,
-        title=t("notify_user_deactivated_title"),
-        content=t("notify_user_deactivated_content"),
+        title=t("notify_user_deactivated_title", lang=user.locale),
+        content=t("notify_user_deactivated_content", lang=user.locale),
     )
 
     return success(
@@ -709,8 +716,8 @@ async def update_user(
         await AutoNotificationService.send_to_user(
             notification_type=AutoNotificationType.USER_PASSWORD_RESET,
             user_id=user.id,
-            title=t("notify_user_password_reset_title"),
-            content=t("notify_user_password_reset_content"),
+            title=t("notify_user_password_reset_title", lang=user.locale),
+            content=t("notify_user_password_reset_content", lang=user.locale),
         )
 
     return success(

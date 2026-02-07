@@ -132,9 +132,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         url = str(request.url)
         client_ip = request.client.host if request.client else "unknown"
 
-        # 读取请求体（只对 POST/PUT/PATCH 请求）
+        # 检查是否是流式请求（SSE）
+        is_stream_request = "/stream" in url or "/chat" in url
+
+        # 读取请求体（只对 POST/PUT/PATCH 请求，且非流式请求）
         request_body = None
-        if method in ["POST", "PUT", "PATCH"]:
+        if method in ["POST", "PUT", "PATCH"] and not is_stream_request:
             try:
                 body_bytes = await request.body()
                 if body_bytes:
@@ -153,11 +156,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 request_body = "<parse-error>"
 
         # 打印请求日志
-        logger.info(f">>> {method} {url} | IP: {client_ip}")
-        if request_body:
-            logger.info(
-                f"    Request Body: {json.dumps(request_body, ensure_ascii=False)}"
-            )
+        if not is_stream_request:
+            logger.info(f">>> {method} {url} | IP: {client_ip}")
+            if request_body:
+                logger.info(
+                    f"    Request Body: {json.dumps(request_body, ensure_ascii=False)}"
+                )
 
         # 处理请求
         try:
@@ -165,6 +169,14 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
             # 计算耗时
             duration = time.time() - start_time
+
+            # 对于流式响应，直接返回不做任何处理
+            content_type = response.headers.get("content-type", "")
+            if "text/event-stream" in content_type or is_stream_request:
+                logger.info(
+                    f"<<< {method} {url} | Status: {response.status_code} | Stream started"
+                )
+                return response
 
             # 对于错误响应（4xx, 5xx），读取并打印响应内容
             response_body = None
@@ -281,8 +293,14 @@ async def pre_tortoise_init():
     # Run migrations BEFORE generating schemas
     from app.core.init_data import (
         init_agent_tools_credentials,
+        init_user_locale_field,
         fix_cascade_delete_policies,
     )
+
+    try:
+        await init_user_locale_field()
+    except Exception as e:
+        logger.warning(f"User locale migration failed: {e}")
 
     try:
         await init_agent_tools_credentials()

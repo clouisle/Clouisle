@@ -151,6 +151,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": True,
         "desc": "Site icon URL",
     },
+    "default_language": {
+        "value": "en",
+        "type": "string",
+        "category": "general",
+        "public": True,
+        "desc": "Default language for system messages (en, zh)",
+    },
     # Registration & Security
     "allow_registration": {
         "value": True,

@@ -25,7 +25,7 @@ export function DefaultSiteIcon({ className, width = 32, height = 32 }: DefaultS
   }
 
   // dark 主题使用 dark 图标（白色），light 主题使用 light 图标（黑色）
-  const iconSrc = resolvedTheme === 'dark' ? '/clouise-dark.svg' : '/clouisle-light.svg'
+  const iconSrc = resolvedTheme === 'dark' ? '/clouisle-dark.svg' : '/clouisle-light.svg'
 
   return (
     <Image

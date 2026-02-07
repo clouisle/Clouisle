@@ -61,6 +61,47 @@ if TYPE_CHECKING:
     from app.models.tool import Tool
 
 
+# Language instruction templates - must be strong and explicit
+LANGUAGE_INSTRUCTIONS = {
+    "en": "IMPORTANT: You MUST respond in English only. Do not use any other language.",
+    "zh": "重要：你必须使用中文回复。不要使用其他语言。",
+}
+
+
+def get_language_instruction(user_locale: str | None = None) -> str:
+    """Get language instruction based on user's locale setting.
+
+    Args:
+        user_locale: User's locale from database (e.g., "en", "zh")
+    """
+    lang = user_locale or "en"
+    # Normalize language code (e.g., "zh-CN" -> "zh")
+    lang = lang.lower().split("-")[0]
+    return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
+
+
+def build_system_prompt_with_language(
+    system_prompt: str | None, user_locale: str | None = None
+) -> str:
+    """Build system prompt with language instruction.
+
+    Always returns a system prompt with language instruction,
+    even if the original system prompt is empty.
+
+    Args:
+        system_prompt: The original system prompt (can be None or empty)
+        user_locale: User's locale from database (e.g., "en", "zh")
+    """
+    instruction = get_language_instruction(user_locale)
+    if not system_prompt:
+        return instruction
+    # Check if instruction already exists (avoid duplication)
+    if instruction in system_prompt:
+        return system_prompt
+    # Append instruction at the end
+    return f"{system_prompt}\n\n{instruction}"
+
+
 # Local message types to avoid circular import
 class LLMMessageRole(str, Enum):
     """LLM message role"""
@@ -274,6 +315,7 @@ async def build_messages(
     user_message: str,
     file_content: str | None = None,
     file_urls: list[dict] | None = None,
+    user_locale: str | None = None,
 ) -> list[LLMMessage]:
     """Build message list for LLM call.
 
@@ -283,13 +325,14 @@ async def build_messages(
         user_message: User's message text
         file_content: Legacy file content to inject into {{fileContent}} variable
         file_urls: List of file URLs for tool-based file processing
+        user_locale: User's locale from database for language instruction
     """
     messages: list[LLMMessage] = []
 
-    # System prompt
-    if agent.system_prompt:
+    # System prompt - always add with language instruction
+    system_prompt = agent.system_prompt or ""
+    if system_prompt:
         # Replace variables in system prompt
-        system_prompt = agent.system_prompt
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
 
@@ -303,7 +346,9 @@ async def build_messages(
             # Remove the placeholder if no file content
             system_prompt = system_prompt.replace("{{fileContent}}", "")
 
-        messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
+    # Build system prompt with language instruction (always added)
+    system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
+    messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
     # Load conversation history (only active messages)
     history = await Message.filter(
@@ -541,21 +586,28 @@ Examples of when to search:
     return openai_tools
 
 
-async def get_tool_display_names(agent: Agent) -> dict[str, str]:
+async def get_tool_display_names(
+    agent: Agent, user_locale: str | None = None
+) -> dict[str, str]:
     """
     Get a mapping from tool internal names to display names.
 
+    Args:
+        agent: The agent
+        user_locale: User's locale from database for i18n display names
+
     Returns a dict like:
     {
-        "knowledge_search": "知识库搜索",
-        "get_current_time": "获取当前时间",
-        "custom_my_tool": "我的工具",
-        "mcp_server_tool": "MCP 工具",
+        "knowledge_search": "Knowledge Search",
+        "get_current_time": "Get Current Time",
+        "custom_my_tool": "My Tool",
+        "mcp_server_tool": "MCP Tool",
     }
     """
     from app.models.tool import Tool
     from app.models.agent import RAGMode
     from app.schemas.tool import BUILTIN_TOOLS_METADATA
+    from app.core.i18n import t
 
     display_names: dict[str, str] = {}
     tools_config = list(agent.tools_config or [])
@@ -564,7 +616,9 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
     if agent.rag_mode == RAGMode.AGENTIC:
         kb_associations = await AgentKnowledgeBase.filter(agent_id=agent.id).count()
         if kb_associations > 0:
-            display_names["knowledge_search"] = t("tool_knowledge_search")
+            display_names["knowledge_search"] = t(
+                "tool_knowledge_search", lang=user_locale
+            )
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -572,9 +626,13 @@ async def get_tool_display_names(agent: Agent) -> dict[str, str]:
         if tool_type == "builtin":
             tool_name = config.get("name")
             if tool_name:
-                # Get display name from builtin metadata
+                # Get display name from builtin metadata with i18n
                 metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
-                display_names[tool_name] = metadata.get("display_name", tool_name)
+                display_name_key = metadata.get("display_name_key")
+                if display_name_key:
+                    display_names[tool_name] = t(display_name_key, lang=user_locale)
+                else:
+                    display_names[tool_name] = tool_name
 
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
@@ -1078,7 +1136,9 @@ async def chat(
     await update_message_stats(agent, token_usage=None)
 
     # Build messages for LLM
-    messages = await build_messages(agent, conversation, final_message)
+    messages = await build_messages(
+        agent, conversation, final_message, user_locale=current_user.locale
+    )
 
     # Get model identifier
     model_id = await get_model_identifier(agent)
@@ -1553,11 +1613,12 @@ async def chat_stream(
 
                 if parsed_files:
                     file_content_str = file_parser_service.format_files_for_prompt(
-                        parsed_files
+                        parsed_files, locale=current_user.locale
                     )
 
-            if agent.system_prompt:
-                system_prompt = agent.system_prompt
+            # System prompt - always add with language instruction
+            system_prompt = agent.system_prompt or ""
+            if system_prompt:
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
 
@@ -1572,9 +1633,13 @@ async def chat_stream(
                 else:
                     system_prompt = system_prompt.replace("{{fileContent}}", "")
 
-                messages_for_llm.append(
-                    LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-                )
+            # Build system prompt with language instruction (always added)
+            system_prompt = build_system_prompt_with_language(
+                system_prompt, current_user.locale
+            )
+            messages_for_llm.append(
+                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+            )
 
             # Helper function to build multimodal content for vision
             def build_vision_content(text: str, images: list) -> list[ContentPart]:
@@ -1727,7 +1792,9 @@ async def chat_stream(
 
             # Get agent tools
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent)
+            tool_display_names = await get_tool_display_names(
+                agent, current_user.locale
+            )
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [
@@ -2398,15 +2465,21 @@ async def regenerate_message(
             # Build messages for LLM - only include ACTIVE messages before this one
             messages_for_llm: list[LLMTypeMessage] = []
 
-            if agent.system_prompt:
-                system_prompt = agent.system_prompt
+            # System prompt - always add with language instruction
+            system_prompt = agent.system_prompt or ""
+            if system_prompt:
                 for key, value in conversation.variables.items():
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
                 # Inject {{query}} variable - user's current input
                 system_prompt = system_prompt.replace("{{query}}", user_message.content)
-                messages_for_llm.append(
-                    LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-                )
+
+            # Build system prompt with language instruction (always added)
+            system_prompt = build_system_prompt_with_language(
+                system_prompt, current_user.locale
+            )
+            messages_for_llm.append(
+                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+            )
 
             # Load active history before this message
             history = await Message.filter(
@@ -2464,7 +2537,9 @@ async def regenerate_message(
             # Get model and tools
             model_id = await get_model_identifier(agent)
             tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(agent)
+            tool_display_names = await get_tool_display_names(
+                agent, current_user.locale
+            )
             tools: list[ToolDefinition] | None = None
             if tools_openai:
                 tools = [
