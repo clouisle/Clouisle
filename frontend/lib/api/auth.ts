@@ -114,8 +114,8 @@ export const authApi = {
   /**
    * 获取当前用户信息
    */
-  getCurrentUser: async (): Promise<User> => {
-    return api.get<User>('/users/me')
+  getCurrentUser: async (options?: { skipAuthRedirect?: boolean }): Promise<User> => {
+    return api.get<User>('/users/me', { skipAuthRedirect: options?.skipAuthRedirect })
   },
 
   /**

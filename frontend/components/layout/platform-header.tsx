@@ -115,17 +115,17 @@ export function PlatformHeader() {
 
   const fetchUnread = React.useCallback(async () => {
     try {
-      const data = await notificationsApi.unreadCount()
+      const data = await notificationsApi.unreadCount({ silent: true, skipAuthRedirect: true })
       setUnreadCount(data.total)
     } catch {
-      // 忽略读取失败
+      // 忽略读取失败，不触发重定向
     }
   }, [])
 
-  // 请求浏览器通知权限
-  React.useEffect(() => {
+  // 请求浏览器通知权限（在用户交互时调用）
+  const requestNotificationPermission = React.useCallback(async () => {
     if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
+      await Notification.requestPermission()
     }
   }, [])
 
@@ -139,14 +139,20 @@ export function PlatformHeader() {
         const iconUrl = siteSettings.site_icon
           ? (siteSettings.site_icon.startsWith('http') ? siteSettings.site_icon : `${window.location.origin}${siteSettings.site_icon}`)
           : `${window.location.origin}/clouisle-dark.svg`
-        new Notification(siteSettings.site_name || 'Clouisle', {
+        const notification = new Notification(siteSettings.site_name || 'Clouisle', {
           body: t('newNotifications', { count: newCount }),
           icon: iconUrl,
         })
+        // 点击通知跳转到通知页面
+        notification.onclick = () => {
+          window.focus()
+          router.push('/app/notifications')
+          notification.close()
+        }
       }
     }
     setPrevUnreadCount(unreadCount)
-  }, [unreadCount, prevUnreadCount, siteSettings.site_name, siteSettings.site_icon, t])
+  }, [unreadCount, prevUnreadCount, siteSettings.site_name, siteSettings.site_icon, t, router])
 
   React.useEffect(() => {
     fetchUnread()
@@ -303,12 +309,15 @@ export function PlatformHeader() {
                 {t('profile.title')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <Link href="/app/notifications">
-                <DropdownMenuItem>
-                  <Bell className="mr-2 h-4 w-4" />
-                  {t('nav.notifications')}
-                </DropdownMenuItem>
-              </Link>
+              <DropdownMenuItem
+                onClick={() => {
+                  requestNotificationPermission()
+                  router.push('/app/notifications')
+                }}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                {t('nav.notifications')}
+              </DropdownMenuItem>
               {canAccessDashboard && (
                 <>
                   <DropdownMenuSeparator />

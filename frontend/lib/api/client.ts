@@ -40,12 +40,22 @@ function isAuthErrorCode(code: number): boolean {
   return code >= 2000 && code < 3000
 }
 
+// 防止重复重定向
+let isRedirecting = false
+
 function redirectToLogin(): void {
   if (typeof window === 'undefined') return
+  if (isRedirecting) return
+
   const current = `${window.location.pathname}${window.location.search}`
   if (current.startsWith('/login') || current.startsWith('/register')) return
+
+  isRedirecting = true
   const target = encodeURIComponent(current)
-  window.location.replace(`/login?redirect=${target}`)
+  // 使用 setTimeout 确保在当前调用栈完成后执行重定向
+  setTimeout(() => {
+    window.location.href = `/login?redirect=${target}`
+  }, 0)
 }
 
 function shouldSkipAuthRedirect(config?: InternalAxiosRequestConfig): boolean {
