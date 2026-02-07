@@ -1,5 +1,8 @@
 {
   "knowledgeBases": {
+    "common": {
+      "openMenu": "打开菜单"
+    },
     "title": "知识库",
     "description": "管理知识库和文档，用于 RAG 检索增强生成",
     "createKb": "创建知识库",
