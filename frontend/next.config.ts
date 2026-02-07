@@ -40,8 +40,11 @@ const nextConfig: NextConfig = {
   },
   // 允许开发环境访问本地图片
   allowedDevOrigins: ['http://localhost:8000', 'http://127.0.0.1:8000'],
-  // API 代理转发
+  // API 代理转发 (仅开发环境生效，生产环境由 Nginx 处理)
   async rewrites() {
+    if (process.env.NODE_ENV === 'production') {
+      return [];
+    }
     const backendUrl = process.env.BACKEND_INTERNAL_URL || 'http://localhost:8000';
     return [
       {
