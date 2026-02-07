@@ -101,9 +101,9 @@ export function LoginForm() {
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
       toast.success(t('loginSuccess'))
-      // 跳转到重定向页面或 dashboard
+      // 跳转到重定向页面或 app
       const redirect = searchParams.get('redirect')
-      router.push(redirect || '/dashboard')
+      router.push(redirect || '/app')
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isValidationError()) {

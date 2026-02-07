@@ -98,7 +98,60 @@
 
 ### MCP 工具
 
-通过 Model Context Protocol 接入外部工具服务器（规划中）。
+通过 Model Context Protocol 接入外部工具服务器，支持三种传输协议。
+
+**文件位置：** `backend/app/llm/tools/mcp_client.py`
+
+#### 传输协议
+
+| 协议 | 说明 | 配置示例 |
+|------|------|----------|
+| `stdio` | 启动子进程，通过 stdin/stdout 通信 | `npx -y @modelcontextprotocol/server-filesystem` |
+| `sse` | Server-Sent Events | 连接远程 SSE 端点 |
+| `http` | Streamable HTTP | 连接远程 HTTP 端点 |
+
+#### stdio 配置
+
+```json
+{
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"],
+  "env": {
+    "API_KEY": "xxx"
+  }
+}
+```
+
+**常用 MCP 服务器：**
+
+| 服务器 | 命令 | 功能 |
+|--------|------|------|
+| filesystem | `npx -y @modelcontextprotocol/server-filesystem /path` | 文件系统操作 |
+| sqlite | `uvx mcp-server-sqlite --db-path /path/to/db.sqlite` | SQLite 数据库 |
+| github | `npx -y @modelcontextprotocol/server-github` | GitHub API |
+| slack | `npx -y @modelcontextprotocol/server-slack` | Slack 集成 |
+
+#### sse/http 配置
+
+```json
+{
+  "transport": "sse",
+  "url": "http://localhost:3000/sse",
+  "headers": {
+    "Authorization": "Bearer xxx"
+  }
+}
+```
+
+#### 环境依赖
+
+MCP stdio 模式需要以下运行时环境：
+
+| 依赖 | 用途 | 安装方式 |
+|------|------|----------|
+| Node.js | 运行 `npx` 命令 | Docker 镜像已包含 |
+| uv/uvx | 运行 Python MCP 服务器 | Docker 镜像已包含 |
 
 ## 系统架构
 
@@ -314,6 +367,117 @@ import requests  # 可能不可用
 2. **超时控制**：默认 30 秒，最大 60 秒
 3. **无文件系统访问**：代码在临时环境执行，无持久化能力
 4. **无网络限制**：JavaScript 可使用 fetch，Python 需依赖标准库
+
+### 可用模块
+
+#### Python 标准库
+
+沙箱中可使用所有 Python 标准库模块：
+
+| 模块 | 用途 |
+|------|------|
+| `json` | JSON 解析/序列化 |
+| `re` | 正则表达式 |
+| `math` | 数学运算 |
+| `datetime` | 日期时间处理 |
+| `collections` | 数据结构（Counter, defaultdict 等） |
+| `itertools` | 迭代器工具 |
+| `functools` | 函数工具 |
+| `random` | 随机数 |
+| `string` | 字符串常量和模板 |
+| `base64` | Base64 编解码 |
+| `hashlib` | 哈希算法 |
+| `urllib.parse` | URL 解析 |
+| `csv` | CSV 处理 |
+| `io` | IO 流 |
+| `os.path` | 路径操作 |
+| `statistics` | 统计计算 |
+| `decimal` | 精确小数运算 |
+| `fractions` | 分数运算 |
+| `uuid` | UUID 生成 |
+| `html` | HTML 转义 |
+| `textwrap` | 文本换行 |
+| `difflib` | 差异比较 |
+
+**不可用：** `requests`, `numpy`, `pandas`, `httpx` 等第三方包
+
+#### JavaScript/Node.js
+
+沙箱中可使用 JavaScript 内置对象和 Node.js 核心模块：
+
+**内置对象（无需 require）：**
+
+| 对象 | 用途 |
+|------|------|
+| `JSON` | JSON 解析/序列化 |
+| `Math` | 数学运算 |
+| `Date` | 日期时间 |
+| `Array` | 数组方法 |
+| `Object` | 对象方法 |
+| `String` | 字符串方法 |
+| `Number` | 数字方法 |
+| `RegExp` | 正则表达式 |
+| `Promise` | 异步处理 |
+| `Map/Set` | 集合数据结构 |
+| `Buffer` | 二进制数据 |
+
+**Node.js 核心模块（需 require）：**
+
+| 模块 | 用途 |
+|------|------|
+| `crypto` | 加密算法 |
+| `url` | URL 解析 |
+| `path` | 路径操作 |
+| `querystring` | 查询字符串 |
+| `util` | 工具函数 |
+| `http`/`https` | HTTP 请求（内置） |
+
+**不可用：** `axios`, `lodash`, `moment`, `dayjs` 等 npm 包
+
+### 示例代码
+
+#### Python 示例
+
+```python
+# 数据处理
+import json
+from collections import Counter
+
+data = json.loads(params['json_string'])
+word_counts = Counter(data['text'].split())
+return dict(word_counts.most_common(10))
+```
+
+```python
+# 日期计算
+from datetime import datetime, timedelta
+
+start = datetime.fromisoformat(params['start_date'])
+end = start + timedelta(days=int(params['days']))
+return end.isoformat()
+```
+
+#### JavaScript 示例
+
+```javascript
+// 数据处理
+const data = JSON.parse(params.json_string);
+const words = data.text.split(/\s+/);
+const counts = words.reduce((acc, w) => {
+  acc[w] = (acc[w] || 0) + 1;
+  return acc;
+}, {});
+return Object.entries(counts)
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 10);
+```
+
+```javascript
+// 日期计算
+const start = new Date(params.start_date);
+start.setDate(start.getDate() + parseInt(params.days));
+return start.toISOString();
+```
 
 ## 工具注册表
 

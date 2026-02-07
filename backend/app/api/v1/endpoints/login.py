@@ -414,8 +414,10 @@ async def register(
         if super_admin_role:
             await user.roles.add(super_admin_role)
 
-        # Reload user with roles
-        user = await User.get(id=user.id).prefetch_related("roles__permissions")
+        # Reload user with roles and sso_connections
+        user = await User.get(id=user.id).prefetch_related(
+            "roles__permissions", "sso_connections"
+        )
 
         # 记录首个超级管理员注册
         await AuditLogService.log(
@@ -432,8 +434,10 @@ async def register(
 
         return success(data=user, msg_key="registration_successful_superadmin")
 
-    # Reload user with roles (empty but need to be a list)
-    user = await User.get(id=user.id).prefetch_related("roles__permissions")
+    # Reload user with roles and sso_connections (empty but need to be lists)
+    user = await User.get(id=user.id).prefetch_related(
+        "roles__permissions", "sso_connections"
+    )
 
     # 记录普通用户注册
     await AuditLogService.log(
