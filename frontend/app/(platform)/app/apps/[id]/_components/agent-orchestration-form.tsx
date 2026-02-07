@@ -281,7 +281,7 @@ export function AgentOrchestrationForm({
         onApply={(generatedPrompt) => {
           setSystemPrompt(generatedPrompt)
         }}
-        language={locale}
+        language={locale as 'en' | 'zh'}
       />
 
       {/* Prompt Section - Always expanded, highlighted */}
