@@ -38,6 +38,7 @@ from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, User as UserSchema
+from app.api.v1.endpoints.users import serialize_user_with_sso
 from app.schemas.captcha import CaptchaResponse
 from app.schemas.verification import (
     SendVerificationRequest,
@@ -436,7 +437,10 @@ async def register(
             metadata={"is_first_user": True, "is_superuser": True},
         )
 
-        return success(data=user, msg_key="registration_successful_superadmin")
+        return success(
+            data=await serialize_user_with_sso(user),
+            msg_key="registration_successful_superadmin",
+        )
 
     # Reload user with roles and sso_connections (empty but need to be lists)
     user = await User.get(id=user.id).prefetch_related(
@@ -473,11 +477,19 @@ async def register(
                 email=user.email,
             ),
         )
-        return success(data=user, msg_key="registration_pending_approval")
+        return success(
+            data=await serialize_user_with_sso(user),
+            msg_key="registration_pending_approval",
+        )
     elif email_verification:
-        return success(data=user, msg_key="registration_pending_verification")
+        return success(
+            data=await serialize_user_with_sso(user),
+            msg_key="registration_pending_verification",
+        )
     else:
-        return success(data=user, msg_key="registration_successful")
+        return success(
+            data=await serialize_user_with_sso(user), msg_key="registration_successful"
+        )
 
 
 @router.post("/send-verification", response_model=Response[None])
