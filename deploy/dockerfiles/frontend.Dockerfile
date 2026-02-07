@@ -3,7 +3,7 @@ FROM oven/bun:1-debian AS builder
 
 WORKDIR /app
 COPY frontend/package.json frontend/bun.lock* ./
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY frontend/ ./
 
@@ -20,25 +20,20 @@ ENV NEXT_PUBLIC_BUILD_DATE=${NEXT_PUBLIC_BUILD_DATE}
 RUN bun run build
 
 # ---- Runtime ----
-FROM nginx:stable-alpine
+FROM node:22-alpine
 
-RUN apk add --no-cache nodejs
-
-# Nginx config
-COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
-
-# Next.js standalone app
 WORKDIR /app
+
+# Copy Next.js standalone build
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3001 \
-    HOSTNAME=127.0.0.1
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
 
 EXPOSE 3000
 
-# Start Next.js server on port 3001 (internal), Nginx on port 3000 (external)
-CMD sh -c "node server.js & nginx -g 'daemon off;'"
+CMD ["node", "server.js"]
