@@ -137,6 +137,48 @@ async def init_workflow_tables():
     logger.info("Workflow tables initialization complete")
 
 
+async def init_user_locale_field():
+    """
+    Add locale field to users table if it doesn't exist.
+    This handles the migration for the user language preference feature.
+    """
+    logger.info("Checking user locale field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if users table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Users table does not exist yet, skipping locale migration")
+        return
+
+    # Check if locale column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'locale'
+    """)
+
+    if not rows:
+        logger.info("Adding locale column to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN locale VARCHAR(10) DEFAULT 'en'
+            """)
+            logger.info("Added locale column to users table")
+        except Exception as e:
+            logger.error(f"Could not add locale column: {e}")
+            raise
+    else:
+        logger.info("locale column already exists")
+
+    logger.info("User locale migration complete")
+
+
 async def init_agent_tools_credentials():
     """
     Initialize tools_credentials field for existing agents.
@@ -710,8 +752,13 @@ async def init_db():
     Initialize database with default permissions and roles.
     The first registered user will be promoted to Super Admin automatically.
     """
-    # IMPORTANT: Run agent tools_credentials migration FIRST, before other initializations
-    # This ensures the column exists before Tortoise validates the schema
+    # IMPORTANT: Run schema migrations FIRST, before other initializations
+    # This ensures columns exist before Tortoise validates the schema
+    try:
+        await init_user_locale_field()
+    except Exception as e:
+        logger.warning(f"User locale migration failed (may be first run): {e}")
+
     try:
         await init_agent_tools_credentials()
     except Exception as e:
