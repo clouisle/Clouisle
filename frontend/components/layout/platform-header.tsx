@@ -111,6 +111,8 @@ export function PlatformHeader() {
     fetchUser()
   }, [])
 
+  const [prevUnreadCount, setPrevUnreadCount] = React.useState(0)
+
   const fetchUnread = React.useCallback(async () => {
     try {
       const data = await notificationsApi.unreadCount()
@@ -119,6 +121,28 @@ export function PlatformHeader() {
       // 忽略读取失败
     }
   }, [])
+
+  // 请求浏览器通知权限
+  React.useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  // 检测新通知并发送浏览器通知
+  React.useEffect(() => {
+    if (unreadCount > prevUnreadCount && prevUnreadCount > 0) {
+      // 有新通知
+      const newCount = unreadCount - prevUnreadCount
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(siteSettings.site_name || 'Clouisle', {
+          body: t('newNotifications', { count: newCount }),
+          icon: siteSettings.site_icon || '/clouisle-dark.svg',
+        })
+      }
+    }
+    setPrevUnreadCount(unreadCount)
+  }, [unreadCount, prevUnreadCount, siteSettings.site_name, siteSettings.site_icon, t])
 
   React.useEffect(() => {
     fetchUnread()
