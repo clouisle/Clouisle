@@ -21,7 +21,7 @@ from app.models.workflow import (
 )
 from app.models.notification import AutoNotificationType
 from app.core.redis import get_redis
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.services.auto_notification import AutoNotificationService
 
 from .context import ExecutionContext
@@ -580,13 +580,14 @@ class WorkflowOrchestrator:
                         link_url=f"/app/apps/workflow/{workflow.id}",
                     )
                 else:
+                    default_lang = await get_default_language()
                     await AutoNotificationService.send_to_team(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_SUCCESS,
                         team_id=workflow.team_id,
-                        title=t("notify_workflow_run_success_title", lang="en"),
+                        title=t("notify_workflow_run_success_title", lang=default_lang),
                         content=t(
                             "notify_workflow_run_success_content",
-                            lang="en",
+                            lang=default_lang,
                             workflow_name=workflow.name,
                             duration=duration_ms,
                             node_count=run.executed_nodes,
@@ -680,13 +681,14 @@ class WorkflowOrchestrator:
                         link_url=f"/app/apps/workflow/{workflow.id}",
                     )
                 else:
+                    default_lang = await get_default_language()
                     await AutoNotificationService.send_to_team(
                         notification_type=AutoNotificationType.WORKFLOW_RUN_FAILED,
                         team_id=workflow.team_id,
-                        title=t("notify_workflow_run_failed_title", lang="en"),
+                        title=t("notify_workflow_run_failed_title", lang=default_lang),
                         content=t(
                             "notify_workflow_run_failed_content",
-                            lang="en",
+                            lang=default_lang,
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error

@@ -1904,6 +1904,22 @@ def set_language(lang: str) -> None:
     current_language.set(lang)
 
 
+async def get_default_language() -> str:
+    """Get default language from site settings.
+
+    This is used for system messages when no specific user locale is available,
+    such as team notifications, webhook-triggered workflows, etc.
+    """
+    from app.models.site_setting import SiteSetting
+
+    lang = await SiteSetting.get_value("default_language", "en")
+    # Normalize language code
+    lang = str(lang).lower().split("-")[0]
+    if lang not in [lang_enum.value for lang_enum in Language]:
+        lang = Language.EN.value
+    return lang
+
+
 def t(key: str, lang: Optional[str] = None, **kwargs) -> str:
     """
     Translate a message key to the current language.

@@ -33,7 +33,7 @@ from app.core.email import (
 )
 from app.core.captcha import generate_captcha, verify_captcha
 from app.core.timezone import now_utc
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.token import Token
@@ -460,12 +460,13 @@ async def register(
     # Determine response message
     if require_approval:
         # 发送待审批通知给管理员（全局通知）
+        default_lang = await get_default_language()
         await AutoNotificationService.send_global(
             notification_type=AutoNotificationType.USER_PENDING_APPROVAL,
-            title=t("notify_user_pending_approval_title", lang="en"),
+            title=t("notify_user_pending_approval_title", lang=default_lang),
             content=t(
                 "notify_user_pending_approval_content",
-                lang="en",
+                lang=default_lang,
                 username=user.username,
                 email=user.email,
             ),

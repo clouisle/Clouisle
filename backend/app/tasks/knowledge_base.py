@@ -8,7 +8,7 @@ from uuid import UUID
 
 from celery import shared_task
 
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.models.knowledge_base import (
     Document,
     DocumentStatus,
@@ -55,13 +55,14 @@ async def _send_doc_indexed_notification(
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
         else:
+            default_lang = await get_default_language()
             await AutoNotificationService.send_to_team(
                 notification_type=AutoNotificationType.KB_DOC_INDEXED,
                 team_id=team_id,
-                title=t("notify_kb_doc_indexed_title", lang="en"),
+                title=t("notify_kb_doc_indexed_title", lang=default_lang),
                 content=t(
                     "notify_kb_doc_indexed_content",
-                    lang="en",
+                    lang=default_lang,
                     doc_name=document.name,
                     kb_name=kb_name,
                     chunk_count=chunk_count,
@@ -111,13 +112,14 @@ async def _send_doc_failed_notification(
                 link_url=f"/kb/{document.knowledge_base_id}",
             )
         else:
+            default_lang = await get_default_language()
             await AutoNotificationService.send_to_team(
                 notification_type=AutoNotificationType.KB_DOC_FAILED,
                 team_id=team_id,
-                title=t("notify_kb_doc_failed_title", lang="en"),
+                title=t("notify_kb_doc_failed_title", lang=default_lang),
                 content=t(
                     "notify_kb_doc_failed_content",
-                    lang="en",
+                    lang=default_lang,
                     doc_name=document.name,
                     kb_name=kb_name,
                     error=error[:200],  # Truncate error message

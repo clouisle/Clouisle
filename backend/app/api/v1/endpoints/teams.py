@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
-from app.core.i18n import t
+from app.core.i18n import t, get_default_language
 from app.models.user import Team, TeamMember, User
 from app.models.notification import AutoNotificationType
 from app.schemas.team import (
@@ -419,13 +419,14 @@ async def add_team_member(
     )
 
     # 发送团队通知
+    default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         team_id=team.id,
-        title=t("notify_team_member_added_team_title", lang="en"),
+        title=t("notify_team_member_added_team_title", lang=default_lang),
         content=t(
             "notify_team_member_added_team_content",
-            lang="en",
+            lang=default_lang,
             username=user_to_add.username,
             role=member_in.role,
         ),
@@ -624,12 +625,13 @@ async def remove_team_member(
     )
 
     # 发送团队通知
+    default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         team_id=team.id,
-        title=t("notify_team_member_removed_team_title", lang="en"),
+        title=t("notify_team_member_removed_team_title", lang=default_lang),
         content=t(
-            "notify_team_member_removed_team_content", lang="en", username=target_user.username
+            "notify_team_member_removed_team_content", lang=default_lang, username=target_user.username
         ),
     )
 
