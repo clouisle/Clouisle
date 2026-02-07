@@ -6,48 +6,8 @@
 # IMPORTANT: Before applying, replace base64 placeholder values in the Secret.
 #   echo -n 'your-value' | base64
 #
-# ---------------------------------------------------------------------------
-# YAML Anchors — reusable snippets
-# ---------------------------------------------------------------------------
-x-definitions:
-  # -- common labels --------------------------------------------------------
-  - &ns clouisle
-  # Replace with your ACR address, e.g.:
-  #   registry.cn-hangzhou.aliyuncs.com/clouisle/clouisle-backend:0.1.0
-  - &backend-image clouisle-backend:latest
-  - &frontend-image clouisle-frontend:latest
-  - &pull-policy IfNotPresent
-  - &config-ref
-    configMapRef:
-      name: clouisle-config
-  - &secret-ref
-    secretRef:
-      name: clouisle-secret
-  - &env-from
-    - *config-ref
-    - *secret-ref
-  # -- shared volume: uploads -----------------------------------------------
-  - &uploads-volume
-    name: uploads
-    emptyDir: {}
-  - &uploads-mount
-    name: uploads
-    mountPath: /app/uploads
-  # -- shared probe timing --------------------------------------------------
-  - &probe-readiness-fast
-    initialDelaySeconds: 5
-    periodSeconds: 10
-  - &probe-liveness-slow
-    initialDelaySeconds: 15
-    periodSeconds: 20
-  # -- backend resources ----------------------------------------------------
-  - &backend-resources
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: "2"
-      memory: 2Gi
+# Replace image references with your registry, e.g.:
+#   registry.cn-hangzhou.aliyuncs.com/clouisle/clouisle-backend:0.1.0
 
 # ===========================================================================
 # 1. Namespace
@@ -56,7 +16,7 @@ x-definitions:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: *ns
+  name: clouisle
 
 # ===========================================================================
 # 2. ConfigMap — non-sensitive configuration
@@ -66,7 +26,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: clouisle-config
-  namespace: *ns
+  namespace: clouisle
 data:
   PROJECT_NAME: "Clouisle"
   TIMEZONE: "Asia/Shanghai"
@@ -92,7 +52,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: clouisle-secret
-  namespace: *ns
+  namespace: clouisle
 type: Opaque
 data:
   SECRET_KEY: Y2hhbmdldGhpcy10by1hLXNlY3VyZS1yYW5kb20tc2VjcmV0LWtleQ==   # changethis-to-a-secure-random-secret-key
@@ -108,7 +68,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: *ns
+  namespace: clouisle
 spec:
   selector:
     app: postgres
@@ -121,7 +81,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data
-  namespace: *ns
+  namespace: clouisle
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -132,7 +92,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: *ns
+  namespace: clouisle
 spec:
   serviceName: postgres
   replicas: 1
@@ -171,11 +131,13 @@ spec:
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
-            <<: *probe-readiness-fast
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres"]
-            <<: *probe-liveness-slow
+            initialDelaySeconds: 15
+            periodSeconds: 20
           resources:
             requests:
               cpu: 250m
@@ -196,7 +158,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: *ns
+  namespace: clouisle
 spec:
   selector:
     app: redis
@@ -208,7 +170,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: *ns
+  namespace: clouisle
 spec:
   replicas: 1
   selector:
@@ -242,11 +204,13 @@ spec:
           readinessProbe:
             exec:
               command: ["redis-cli", "ping"]
-            <<: *probe-readiness-fast
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             exec:
               command: ["redis-cli", "ping"]
-            <<: *probe-liveness-slow
+            initialDelaySeconds: 15
+            periodSeconds: 20
           resources:
             requests:
               cpu: 100m
@@ -269,7 +233,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: qdrant
-  namespace: *ns
+  namespace: clouisle
 spec:
   selector:
     app: qdrant
@@ -282,7 +246,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: qdrant-data
-  namespace: *ns
+  namespace: clouisle
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -293,7 +257,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qdrant
-  namespace: *ns
+  namespace: clouisle
 spec:
   serviceName: qdrant
   replicas: 1
@@ -323,12 +287,14 @@ spec:
             httpGet:
               path: /healthz
               port: 6333
-            <<: *probe-readiness-fast
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
               port: 6333
-            <<: *probe-liveness-slow
+            initialDelaySeconds: 15
+            periodSeconds: 20
           resources:
             requests:
               cpu: 250m
@@ -349,7 +315,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backend
-  namespace: *ns
+  namespace: clouisle
 spec:
   selector:
     app: backend
@@ -361,7 +327,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: *ns
+  namespace: clouisle
 spec:
   replicas: 2
   selector:
@@ -374,13 +340,18 @@ spec:
     spec:
       containers:
         - name: backend
-          image: *backend-image
-          imagePullPolicy: *pull-policy
+          image: clouisle-backend:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
-          envFrom: *env-from
+          envFrom:
+            - configMapRef:
+                name: clouisle-config
+            - secretRef:
+                name: clouisle-secret
           volumeMounts:
-            - *uploads-mount
+            - name: uploads
+              mountPath: /app/uploads
           readinessProbe:
             httpGet:
               path: /api/v1/health
@@ -393,9 +364,16 @@ spec:
               port: 8000
             initialDelaySeconds: 20
             periodSeconds: 30
-          resources: *backend-resources
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
       volumes:
-        - *uploads-volume
+        - name: uploads
+          emptyDir: {}
 
 # ===========================================================================
 # 8. Worker — Deployment (no Service)
@@ -405,7 +383,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker
-  namespace: *ns
+  namespace: clouisle
 spec:
   replicas: 2
   selector:
@@ -418,15 +396,27 @@ spec:
     spec:
       containers:
         - name: worker
-          image: *backend-image
-          imagePullPolicy: *pull-policy
+          image: clouisle-backend:latest
+          imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
-          envFrom: *env-from
+          envFrom:
+            - configMapRef:
+                name: clouisle-config
+            - secretRef:
+                name: clouisle-secret
           volumeMounts:
-            - *uploads-mount
-          resources: *backend-resources
+            - name: uploads
+              mountPath: /app/uploads
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
       volumes:
-        - *uploads-volume
+        - name: uploads
+          emptyDir: {}
 
 # ===========================================================================
 # 9. Beat — Deployment (single replica, Recreate)
@@ -436,7 +426,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: beat
-  namespace: *ns
+  namespace: clouisle
 spec:
   replicas: 1
   strategy:
@@ -451,10 +441,14 @@ spec:
     spec:
       containers:
         - name: beat
-          image: *backend-image
-          imagePullPolicy: *pull-policy
+          image: clouisle-backend:latest
+          imagePullPolicy: IfNotPresent
           command: ["python", "main.py", "beat"]
-          envFrom: *env-from
+          envFrom:
+            - configMapRef:
+                name: clouisle-config
+            - secretRef:
+                name: clouisle-secret
           resources:
             requests:
               cpu: 100m
@@ -471,7 +465,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: *ns
+  namespace: clouisle
 spec:
   selector:
     app: frontend
@@ -483,7 +477,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: *ns
+  namespace: clouisle
 spec:
   replicas: 2
   selector:
@@ -496,15 +490,16 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: *frontend-image
-          imagePullPolicy: *pull-policy
+          image: clouisle-frontend:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           readinessProbe:
             httpGet:
               path: /
               port: 3000
-            <<: *probe-readiness-fast
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
@@ -527,7 +522,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: clouisle-ingress
-  namespace: *ns
+  namespace: clouisle
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
