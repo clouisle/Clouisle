@@ -591,6 +591,9 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
 
   const decoder = new TextDecoder()
   let buffer = ''
+  // Track event/data across chunks to handle TCP splitting
+  let currentEvent: SSEEventType | null = null
+  let currentData = ''
 
   while (true) {
     const { done, value } = await reader.read()
@@ -599,9 +602,6 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = lines.pop() || ''
-
-    let currentEvent: SSEEventType | null = null
-    let currentData = ''
 
     for (const line of lines) {
       if (line.startsWith('event: ')) {
