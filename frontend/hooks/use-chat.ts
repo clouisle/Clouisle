@@ -473,11 +473,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (toolGroup) {
                 toolGroup.toolResults = toolGroup.toolResults || []
                 toolGroup.toolResults.push(toolResultPart)
-                
-                // Update corresponding tool call state to done
-                const toolCall = toolGroup.toolCalls?.find(tc => tc.toolCallId === data.tool_call_id)
-                if (toolCall) {
-                  toolCall.state = data.is_error ? 'error' : 'done'
+
+                // Update corresponding tool call state to done (create new object for React to detect change)
+                if (toolGroup.toolCalls) {
+                  toolGroup.toolCalls = toolGroup.toolCalls.map(tc =>
+                    tc.toolCallId === data.tool_call_id
+                      ? { ...tc, state: data.is_error ? 'error' as const : 'done' as const }
+                      : tc
+                  )
                 }
               }
               streamingStateRef.current.segments = segments
@@ -513,6 +516,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               // Mark tool calling as completed if it was running
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
+              }
+              // Safety: ensure all tool calls are marked as done on message end
+              for (const segment of segments) {
+                if (segment.type === 'tool-group' && segment.toolCalls) {
+                  segment.toolCalls = segment.toolCalls.map(tc =>
+                    tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
+                  )
+                }
               }
               const finalDuration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
               setMessages((prev) =>
@@ -1049,9 +1060,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (toolGroup) {
                 toolGroup.toolResults = toolGroup.toolResults || []
                 toolGroup.toolResults.push(toolResultPart)
-                const toolCall = toolGroup.toolCalls?.find(tc => tc.toolCallId === data.tool_call_id)
-                if (toolCall) {
-                  toolCall.state = data.is_error ? 'error' : 'done'
+                // Update corresponding tool call state (create new object for React to detect change)
+                if (toolGroup.toolCalls) {
+                  toolGroup.toolCalls = toolGroup.toolCalls.map(tc =>
+                    tc.toolCallId === data.tool_call_id
+                      ? { ...tc, state: data.is_error ? 'error' as const : 'done' as const }
+                      : tc
+                  )
                 }
               }
               streamingStateRef.current.segments = segments
@@ -1079,6 +1094,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             case 'message_end': {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
+              }
+              // Safety: ensure all tool calls are marked as done on message end
+              for (const segment of segments) {
+                if (segment.type === 'tool-group' && segment.toolCalls) {
+                  segment.toolCalls = segment.toolCalls.map(tc =>
+                    tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
+                  )
+                }
               }
               const finalDuration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
               const newParts = buildMessageParts(segments, currentReasoning, 'done', ragSources, false, finalDuration, taskState)
