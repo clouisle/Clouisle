@@ -1,5 +1,6 @@
 import logging
 
+from app.models.site_setting import SiteSetting
 from app.models.user import Role, TeamMember, User
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,18 @@ TEAM_ROLE_TO_GLOBAL = {
 }
 
 
+async def assign_default_role(user: User) -> None:
+    """
+    Assign the global default role (from site settings) to a user.
+    Used for new user registration (both regular and SSO fallback).
+    """
+    default_role_id = await SiteSetting.get_value("default_role_id", "")
+    if default_role_id:
+        role = await Role.get_or_none(id=default_role_id)
+        if role:
+            await user.roles.add(role)
+
+
 async def sync_user_role_from_teams(user: User) -> None:
     """
     Sync global roles based on the user's highest team role across all teams.
@@ -23,15 +36,9 @@ async def sync_user_role_from_teams(user: User) -> None:
     """
     memberships = await TeamMember.filter(user=user).all()
 
-    has_admin = False
-    has_member = False
-
-    for m in memberships:
-        if m.role in ("owner", "admin"):
-            has_admin = True
-            has_member = True
-        elif m.role == "member":
-            has_member = True
+    roles = {m.role for m in memberships}
+    has_admin = "owner" in roles or "admin" in roles
+    has_member = has_admin or "member" in roles
 
     admin_role = await Role.filter(name="Admin").first()
     member_role = await Role.filter(name="Member").first()

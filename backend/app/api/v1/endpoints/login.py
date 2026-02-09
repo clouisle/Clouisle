@@ -205,6 +205,7 @@ async def login_access_token(
         raise BusinessError(
             code=ResponseCode.EMAIL_NOT_VERIFIED,
             msg_key="email_not_verified",
+            data={"email": user.email},
         )
 
     # Reset failed login attempts on successful login
@@ -444,11 +445,9 @@ async def register(
         )
 
     # Assign default role to new user
-    default_role_id = await SiteSetting.get_value("default_role_id", "")
-    if default_role_id:
-        default_role = await Role.filter(id=default_role_id).first()
-        if default_role:
-            await user.roles.add(default_role)
+    from app.services.team_role_sync import assign_default_role
+
+    await assign_default_role(user)
 
     # Reload user with roles and sso_connections (empty but need to be lists)
     user = await User.get(id=user.id).prefetch_related(
@@ -714,15 +713,33 @@ async def reset_password(
     data: ResetPasswordConfirmRequest,
 ) -> Any:
     """
-    Reset password with verification code
+    Reset password with verification code or token
     """
-    # Verify code
-    is_valid = await verify_code(data.email, data.code, "reset_password")
-    if not is_valid:
-        raise BusinessError(
-            code=ResponseCode.VERIFICATION_CODE_INVALID,
-            msg_key="verification_code_invalid",
-        )
+    # Determine email based on auth method
+    if data.token:
+        # Token-based reset
+        result = await verify_token(data.token)
+        if not result:
+            raise BusinessError(
+                code=ResponseCode.VERIFICATION_CODE_INVALID,
+                msg_key="verification_token_invalid",
+            )
+        email, purpose = result
+        if purpose != "reset_password":
+            raise BusinessError(
+                code=ResponseCode.VERIFICATION_CODE_INVALID,
+                msg_key="verification_token_invalid",
+            )
+    else:
+        # Code-based reset
+        assert data.email is not None and data.code is not None
+        email = data.email
+        is_valid = await verify_code(data.email, data.code, "reset_password")
+        if not is_valid:
+            raise BusinessError(
+                code=ResponseCode.VERIFICATION_CODE_INVALID,
+                msg_key="verification_code_invalid",
+            )
 
     # Validate new password
     password_valid, password_errors = await validate_password(data.new_password)
@@ -734,7 +751,7 @@ async def reset_password(
         )
 
     # Find and update user
-    user = await User.filter(email=data.email).first()
+    user = await User.filter(email=email).first()
     if not user:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,

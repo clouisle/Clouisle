@@ -149,11 +149,9 @@ class SSOService:
                 await new_user.roles.add(role)
         else:
             # Fall back to global default role
-            global_default_role_id = await SiteSetting.get_value("default_role_id", "")
-            if global_default_role_id:
-                role = await Role.get_or_none(id=global_default_role_id)
-                if role:
-                    await new_user.roles.add(role)
+            from app.services.team_role_sync import assign_default_role
+
+            await assign_default_role(new_user)
 
         # Create SSO connection
         await UserSSOConnection.create(
