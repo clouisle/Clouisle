@@ -393,7 +393,6 @@ export function ToolsClient() {
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
-      toast.error(t('error.loadToolDetailFailed'))
     }
   }
 
@@ -414,7 +413,6 @@ export function ToolsClient() {
       loadAllTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error(t('error.saveFailed'))
     }
   }
 
@@ -435,7 +433,6 @@ export function ToolsClient() {
       loadAllTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error(t('error.saveFailed'))
     }
   }
 

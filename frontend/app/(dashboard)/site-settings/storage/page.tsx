@@ -48,7 +48,6 @@ export default function SiteSettingsStoragePage() {
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
-      toast.error(t('loadError'))
     } finally {
       setLoading(false)
     }
@@ -68,7 +67,6 @@ export default function SiteSettingsStoragePage() {
       toast.success(t('saveSuccess'))
     } catch (error) {
       console.error('Failed to save settings:', error)
-      toast.error(t('saveError'))
     } finally {
       setSaving(false)
     }
@@ -82,7 +80,6 @@ export default function SiteSettingsStoragePage() {
       setShowArchiveDialog(false)
     } catch (error) {
       console.error('Failed to archive logs:', error)
-      toast.error(t('archiveError'))
     } finally {
       setArchiving(false)
     }

@@ -212,7 +212,6 @@ export function WorkflowRunsTable() {
       console.error('Failed to load workflow runs:', error)
       const err = error as { response?: { data?: unknown } }
       console.error('Error details:', err.response?.data)
-      toast.error(t('loadRunsFailed'))
     } finally {
       setLoading(false)
     }
@@ -255,7 +254,6 @@ export function WorkflowRunsTable() {
       loadRuns()
     } catch (error) {
       console.error('Failed to delete runs:', error)
-      toast.error(t('deleteRunsFailed'))
     } finally {
       setDeleteDialogOpen(false)
       setDeletingIds([])

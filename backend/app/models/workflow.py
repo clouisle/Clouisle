@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from app.models.user import Team, User
 
 
+class WorkflowVisibility(str, Enum):
+    """Workflow visibility"""
+
+    PRIVATE = "private"  # Only creator can access
+    TEAM = "team"  # Team members can access
+    PUBLIC = "public"  # Public access (future)
+
+
 class WorkflowStatus(str, Enum):
     """Workflow status"""
 
@@ -75,6 +83,11 @@ class Workflow(models.Model):
     name = fields.CharField(max_length=100, description="Workflow name")
     description = fields.TextField(null=True, description="Workflow description")
     icon = fields.CharField(max_length=500, null=True, description="Icon emoji or URL")
+
+    # Visibility
+    visibility = fields.CharEnumField(
+        WorkflowVisibility, default=WorkflowVisibility.PRIVATE, description="Visibility"
+    )
 
     # Workflow definition (ReactFlow format)
     # {

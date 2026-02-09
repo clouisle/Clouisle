@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ImageUpload } from '@/components/ui/image-upload'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { workflowsApi, type Workflow, type TriggerType, type WorkflowVersionListItem } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type TriggerType, type WorkflowVersionListItem, type WorkflowVisibility } from '@/lib/api/workflows'
 
 interface WorkflowSettingsDrawerProps {
   workflow: Workflow | null
@@ -32,6 +32,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [icon, setIcon] = React.useState('')
+  const [visibility, setVisibility] = React.useState<WorkflowVisibility>('private')
   
   // 触发器配置
   const [triggerType, setTriggerType] = React.useState<TriggerType>('manual')
@@ -148,6 +149,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       setName(workflow.name)
       setDescription(workflow.description || '')
       setIcon(workflow.icon || '')
+      setVisibility(workflow.visibility || 'private')
       setTriggerType(workflow.trigger_type)
       setWebhookToken(workflow.webhook_token || '')
       const savedCron = (workflow.trigger_config?.cron_expression as string) || ''
@@ -164,15 +166,16 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
     const currentCron = scheduleType === 'custom' ? cronExpression : generateCronFromConfig()
     const savedCron = (workflow.trigger_config?.cron_expression as string) || ''
     
-    const changed = 
+    const changed =
       name !== workflow.name ||
       description !== (workflow.description || '') ||
       icon !== (workflow.icon || '') ||
+      visibility !== (workflow.visibility || 'private') ||
       triggerType !== workflow.trigger_type ||
       (triggerType === 'cron' && currentCron !== savedCron)
-    
+
     setHasChanges(changed)
-  }, [workflow, name, description, icon, triggerType, scheduleType, intervalMinutes, dailyTime, weeklyDay, weeklyTime, monthlyDay, monthlyTime, cronExpression, generateCronFromConfig])
+  }, [workflow, name, description, icon, visibility, triggerType, scheduleType, intervalMinutes, dailyTime, weeklyDay, weeklyTime, monthlyDay, monthlyTime, cronExpression, generateCronFromConfig])
 
   // 加载版本历史
   const loadVersions = React.useCallback(async () => {
@@ -183,7 +186,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       const result = await workflowsApi.getWorkflowVersions(workflow.id, { pageSize: 50 })
       setVersions(result.items)
     } catch {
-      toast.error(t('settings.loadVersionsFailed'))
+      // toast handled by API interceptor
     } finally {
       setLoadingVersions(false)
     }
@@ -213,7 +216,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       // 重新加载版本历史
       loadVersions()
     } catch {
-      toast.error(t('settings.restoreFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsRestoring(false)
     }
@@ -265,13 +268,14 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
         icon: icon || null,
         trigger_type: triggerType,
         trigger_config: triggerConfig,
+        visibility,
       })
       
       onUpdate(updated)
       setHasChanges(false)
       toast.success(t('settings.settingsSaved'))
     } catch {
-      toast.error(t('settings.settingsSaveFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsSaving(false)
     }
@@ -287,7 +291,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       setWebhookToken(result.webhook_token)
       toast.success(t('settings.webhookTokenRegenerated'))
     } catch {
-      toast.error(t('settings.regenerateFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsRegenerating(false)
     }
@@ -405,6 +409,20 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   className="min-h-20 text-sm resize-none"
                   disabled={readOnly}
                 />
+              </div>
+
+              {/* 可见性 */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">{t('settings.visibility')}</Label>
+                <Select value={visibility} onValueChange={(v) => v && setVisibility(v as WorkflowVisibility)} disabled={readOnly}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <span>{visibility === 'private' ? t('settings.visibilityPrivate') : t('settings.visibilityTeam')}</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="private">{t('settings.visibilityPrivate')}</SelectItem>
+                    <SelectItem value="team">{t('settings.visibilityTeam')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* 状态信息 */}

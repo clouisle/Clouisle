@@ -5,6 +5,7 @@ import { PageData } from './agents'
 
 export type WorkflowStatus = 'draft' | 'published'
 export type TriggerType = 'manual' | 'webhook' | 'cron'
+export type WorkflowVisibility = 'private' | 'team' | 'public'
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'skipped' | 'cancelled'
 
@@ -17,6 +18,7 @@ export interface Workflow {
   definition: WorkflowDefinition
   variables: VariableDefinition[]
   status: WorkflowStatus
+  visibility: WorkflowVisibility
   version: number
   trigger_type: TriggerType
   trigger_config: Record<string, unknown>
@@ -35,6 +37,7 @@ export interface WorkflowListItem {
   description?: string | null
   icon?: string | null
   status: WorkflowStatus
+  visibility: WorkflowVisibility
   trigger_type: TriggerType
   run_count: number
   success_count: number
@@ -218,6 +221,7 @@ export interface WorkflowUpdateInput {
   variables?: VariableDefinition[] | null
   trigger_type?: TriggerType | null
   trigger_config?: Record<string, unknown> | null
+  visibility?: WorkflowVisibility | null
 }
 
 export interface WorkflowQueryParams {
@@ -225,6 +229,7 @@ export interface WorkflowQueryParams {
   pageSize?: number
   teamId?: string
   status?: WorkflowStatus
+  visibility?: WorkflowVisibility
   triggerType?: TriggerType
   keyword?: string
 }
@@ -272,12 +277,13 @@ export const workflowsApi = {
    * 获取工作流列表
    */
   getWorkflows: async (params: WorkflowQueryParams = {}): Promise<PageData<WorkflowListItem>> => {
-    const { page = 1, pageSize = 20, teamId, status, triggerType, keyword } = params
+    const { page = 1, pageSize = 20, teamId, status, visibility, triggerType, keyword } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (teamId) queryParams.append('team_id', teamId)
     if (status) queryParams.append('status', status)
+    if (visibility) queryParams.append('visibility', visibility)
     if (triggerType) queryParams.append('trigger_type', triggerType)
     if (keyword) queryParams.append('keyword', keyword)
     return api.get<PageData<WorkflowListItem>>(`/workflows?${queryParams.toString()}`)

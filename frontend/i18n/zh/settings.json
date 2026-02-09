@@ -76,6 +76,7 @@
     "noApiKeys": "您还没有任何 API 密钥",
     "createFirstKey": "创建您的第一个 API 密钥",
     "created": "创建于",
-    "lastUsed": "最后使用"
+    "lastUsed": "最后使用",
+    "invalidEmail": "请输入有效的邮箱地址"
   }
 }

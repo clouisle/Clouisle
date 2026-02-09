@@ -139,7 +139,6 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
         setNodeExecutions(nodesData)
       } catch (error) {
         console.error('Failed to load run details:', error)
-        toast.error(t('runDetail.loadFailed'))
       } finally {
         setLoading(false)
       }
@@ -156,7 +155,6 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
       onOpenChange(false)
     } catch (error) {
       console.error('Failed to delete run:', error)
-      toast.error(t('runDetail.deleteFailed'))
     } finally {
       setDeleteDialogOpen(false)
     }

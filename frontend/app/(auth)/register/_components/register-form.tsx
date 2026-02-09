@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, ApiError, User } from '@/lib/api'
-import { Loader2, Mail, CheckCircle2, ArrowLeft } from 'lucide-react'
+import { isValidEmail } from '@/lib/utils'
+import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
 
 type Step = 'form' | 'verification' | 'success'
 
@@ -45,6 +46,7 @@ export function RegisterForm() {
   const [loading, setLoading] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
   const [registeredUser, setRegisteredUser] = React.useState<User | null>(null)
+  const [showCodeInput, setShowCodeInput] = React.useState(false)
 
   // 倒计时
   React.useEffect(() => {
@@ -87,6 +89,12 @@ export function RegisterForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFieldErrors({})
+
+    // 验证邮箱格式
+    if (!isValidEmail(email)) {
+      setFieldErrors({ email: t('invalidEmail') })
+      return
+    }
 
     // 验证密码匹配
     if (password !== confirmPassword) {
@@ -274,14 +282,14 @@ export function RegisterForm() {
   if (step === 'verification') {
     return (
       <div className="space-y-6">
-        <button 
+        <button
           onClick={handleBack}
           className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
           {t('backToRegister')}
         </button>
-        
+
         <div className="flex flex-col items-center text-center space-y-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Mail className="h-6 w-6 text-primary" />
@@ -290,42 +298,60 @@ export function RegisterForm() {
           <p className="text-sm text-muted-foreground">
             {t('verificationEmailSentTo')} <span className="font-medium text-foreground">{email}</span>
           </p>
+          <p className="text-sm text-muted-foreground">
+            {t('checkEmailForLink')}
+          </p>
         </div>
-        
+
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t('verificationCode')}</Label>
-            <div className="flex justify-center">
-              <InputOTP 
-                maxLength={6} 
-                value={verificationCode}
-                onChange={setVerificationCode}
-                disabled={loading}
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-            {fieldErrors.code && (
-              <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
-            )}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowCodeInput(!showCodeInput)}
+              className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {t('orEnterCodeManually')}
+              <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${showCodeInput ? 'rotate-180' : ''}`} />
+            </button>
           </div>
-          
-          <Button 
-            onClick={handleVerify} 
-            className="w-full" 
-            disabled={loading || verificationCode.length !== 6}
-          >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('verifyEmail')}
-          </Button>
-          
+
+          {showCodeInput && (
+            <>
+              <div className="space-y-2">
+                <Label>{t('verificationCode')}</Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={setVerificationCode}
+                    disabled={loading}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                {fieldErrors.code && (
+                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
+                )}
+              </div>
+
+              <Button
+                onClick={handleVerify}
+                className="w-full"
+                disabled={loading || verificationCode.length !== 6}
+              >
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('verifyEmail')}
+              </Button>
+            </>
+          )}
+
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
               {t('didntReceiveEmail')}{' '}

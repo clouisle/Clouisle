@@ -32,9 +32,12 @@ interface ProviderDialogProps {
   onClose: (success?: boolean) => void
 }
 
+const PROVIDER_NAME_REGEX = /^[a-z][a-z0-9_-]*$/
+
 export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
   const t = useTranslations('sso')
   const [loading, setLoading] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [formData, setFormData] = useState({
     name: '',
     protocol: 'oidc',
@@ -49,6 +52,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
   })
 
   useEffect(() => {
+    setFieldErrors({})
     if (provider) {
       setFormData({
         name: provider.name,
@@ -128,6 +132,24 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFieldErrors({})
+
+    // Validate provider name format
+    const errors: Record<string, string> = {}
+    if (!provider && !PROVIDER_NAME_REGEX.test(formData.name)) {
+      errors.name = t('invalidProviderName')
+    }
+
+    // Validate icon URL format
+    if (formData.icon_url && !/^https?:\/\//.test(formData.icon_url)) {
+      errors.icon_url = t('invalidIconUrl')
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -173,9 +195,8 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       onClose(true)
-    } catch (error: unknown) {
-      const err = error as { message?: string }
-      toast.error(err.message || t('saveError') || 'Failed to save provider')
+    } catch {
+      // toast handled by API interceptor
     } finally {
       setLoading(false)
     }
@@ -210,16 +231,28 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   <Input
                     id="name"
                     value={formData.name}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setFormData({ ...formData, name: e.target.value })
-                    }
+                      if (fieldErrors.name) {
+                        setFieldErrors((prev) => {
+                          const next = { ...prev }
+                          delete next.name
+                          return next
+                        })
+                      }
+                    }}
                     placeholder="google"
                     required
                     disabled={!!provider}
+                    aria-invalid={!!fieldErrors.name}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {t('providerNameHint')}
-                  </p>
+                  {fieldErrors.name ? (
+                    <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {t('providerNameHint')}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -271,11 +304,22 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <Input
                   id="icon_url"
                   value={formData.icon_url}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({ ...formData, icon_url: e.target.value })
-                  }
+                    if (fieldErrors.icon_url) {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.icon_url
+                        return next
+                      })
+                    }
+                  }}
                   placeholder="https://example.com/icon.png"
+                  aria-invalid={!!fieldErrors.icon_url}
                 />
+                {fieldErrors.icon_url && (
+                  <p className="text-xs text-destructive">{fieldErrors.icon_url}</p>
+                )}
               </div>
 
               <div className="space-y-4">

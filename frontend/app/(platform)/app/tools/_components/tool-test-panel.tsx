@@ -60,7 +60,6 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
       }
     } catch (error) {
       console.error('Failed to load MCP tools:', error)
-      toast.error(t('mcpDialog.fetchToolsFailed'))
     } finally {
       setLoadingMcpTools(false)
     }

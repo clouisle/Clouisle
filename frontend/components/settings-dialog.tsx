@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { User, Shield, Loader2, Link as LinkIcon, Unlink } from 'lucide-react'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, isValidEmail } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -99,6 +99,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const handleSaveProfile = async () => {
     if (!user) return
+
+    if (!isValidEmail(profileData.email)) {
+      toast.error(t('invalidEmail'))
+      return
+    }
 
     try {
       setSavingProfile(true)
@@ -273,6 +278,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   placeholder={t('emailPlaceholder')}
                   value={profileData.email}
                   onChange={(e) => setProfileData((prev) => ({ ...prev, email: e.target.value }))}
+                  required
                 />
               </div>
 

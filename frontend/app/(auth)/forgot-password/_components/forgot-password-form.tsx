@@ -9,14 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, ApiError } from '@/lib/api'
-import { Loader2, Mail, CheckCircle2, ArrowLeft, KeyRound } from 'lucide-react'
+import { isValidEmail } from '@/lib/utils'
+import { Loader2, Mail, CheckCircle2, ArrowLeft, KeyRound, ChevronDown } from 'lucide-react'
 
 type Step = 'email' | 'reset' | 'success'
 
 export function ForgotPasswordForm() {
   const t = useTranslations('auth')
   const router = useRouter()
-  
+
   const [step, setStep] = React.useState<Step>('email')
   const [email, setEmail] = React.useState('')
   const [verificationCode, setVerificationCode] = React.useState('')
@@ -25,6 +26,7 @@ export function ForgotPasswordForm() {
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
+  const [showCodeInput, setShowCodeInput] = React.useState(false)
   
   // 倒计时
   React.useEffect(() => {
@@ -52,6 +54,11 @@ export function ForgotPasswordForm() {
 
     if (!email) {
       setFieldErrors({ email: t('emailRequired') })
+      return
+    }
+
+    if (!isValidEmail(email)) {
+      setFieldErrors({ email: t('invalidEmail') })
       return
     }
 
@@ -187,8 +194,8 @@ export function ForgotPasswordForm() {
   // 步骤2：输入验证码和新密码
   if (step === 'reset') {
     return (
-      <form onSubmit={handleResetPassword} className="space-y-6">
-        <button 
+      <div className="space-y-6">
+        <button
           type="button"
           onClick={handleBack}
           className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -196,7 +203,7 @@ export function ForgotPasswordForm() {
           <ArrowLeft className="mr-1 h-4 w-4" />
           {t('changeEmail')}
         </button>
-        
+
         <div className="flex flex-col items-center text-center space-y-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <Mail className="h-6 w-6 text-primary" />
@@ -205,79 +212,97 @@ export function ForgotPasswordForm() {
           <p className="text-sm text-muted-foreground">
             {t('resetPasswordEmailSentTo')} <span className="font-medium text-foreground">{email}</span>
           </p>
+          <p className="text-sm text-muted-foreground">
+            {t('checkEmailForLink')}
+          </p>
         </div>
-        
+
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t('verificationCode')}</Label>
-            <div className="flex justify-center">
-              <InputOTP 
-                maxLength={6} 
-                value={verificationCode}
-                onChange={(value) => {
-                  setVerificationCode(value)
-                  clearFieldError('code')
-                }}
-                disabled={loading}
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-            {fieldErrors.code && (
-              <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
-            )}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowCodeInput(!showCodeInput)}
+              className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {t('orEnterCodeManually')}
+              <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${showCodeInput ? 'rotate-180' : ''}`} />
+            </button>
           </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="newPassword">{t('newPassword')}</Label>
-            <Input
-              id="newPassword"
-              type="password"
-              value={newPassword}
-              onChange={(e) => {
-                setNewPassword(e.target.value)
-                clearFieldError('newPassword')
-              }}
-              required
-              disabled={loading}
-              aria-invalid={!!fieldErrors.newPassword}
-            />
-            {fieldErrors.newPassword && (
-              <p className="text-sm text-destructive">{fieldErrors.newPassword}</p>
-            )}
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">{t('confirmNewPassword')}</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => {
-                setConfirmPassword(e.target.value)
-                clearFieldError('confirmPassword')
-              }}
-              required
-              disabled={loading}
-              aria-invalid={!!fieldErrors.confirmPassword}
-            />
-            {fieldErrors.confirmPassword && (
-              <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-            )}
-          </div>
-          
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('resetPassword')}
-          </Button>
-          
+
+          {showCodeInput && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t('verificationCode')}</Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(value) => {
+                      setVerificationCode(value)
+                      clearFieldError('code')
+                    }}
+                    disabled={loading}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                {fieldErrors.code && (
+                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">{t('newPassword')}</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value)
+                    clearFieldError('newPassword')
+                  }}
+                  required
+                  disabled={loading}
+                  aria-invalid={!!fieldErrors.newPassword}
+                />
+                {fieldErrors.newPassword && (
+                  <p className="text-sm text-destructive">{fieldErrors.newPassword}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">{t('confirmNewPassword')}</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value)
+                    clearFieldError('confirmPassword')
+                  }}
+                  required
+                  disabled={loading}
+                  aria-invalid={!!fieldErrors.confirmPassword}
+                />
+                {fieldErrors.confirmPassword && (
+                  <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
+                )}
+              </div>
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('resetPassword')}
+              </Button>
+            </form>
+          )}
+
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
               {t('didntReceiveEmail')}{' '}
@@ -297,7 +322,7 @@ export function ForgotPasswordForm() {
             </p>
           </div>
         </div>
-      </form>
+      </div>
     )
   }
 

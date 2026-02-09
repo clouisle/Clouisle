@@ -77,7 +77,6 @@ export function AuditLogsTable() {
       setTotalPages(data.total_pages);
     } catch (error) {
       console.error("Failed to load audit logs:", error);
-      toast.error(t("failedToLoadLogs"));
     } finally {
       setLoading(false);
     }
@@ -116,7 +115,6 @@ export function AuditLogsTable() {
       toast.success(t("exportSuccess"));
     } catch (error) {
       console.error("Failed to export audit logs:", error);
-      toast.error(t("exportFailed"));
     }
   };
 
