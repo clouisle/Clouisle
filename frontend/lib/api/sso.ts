@@ -1,4 +1,5 @@
 import { api } from './client'
+import { API_BASE_URL } from '@/lib/constants'
 
 export interface SSOProvider {
   id: string
@@ -60,11 +61,9 @@ export const ssoApi = {
     return api.get<SSOProvider[]>('/sso/providers')
   },
 
-  initiateLogin: (providerId: string, redirect?: string) => {
+  initiateLogin: (providerName: string, redirect?: string) => {
     const params = redirect ? `?redirect=${encodeURIComponent(redirect)}` : ''
-    // 使用环境变量或默认后端地址
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    window.location.href = `${apiBaseUrl}/api/v1/sso/login/${providerId}${params}`
+    window.location.href = `${API_BASE_URL}/sso/login/${providerName}${params}`
   },
 
   // Admin endpoints
