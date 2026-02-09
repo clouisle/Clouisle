@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { usersApi, ssoApi, rolesApi, ApiError, type User, type UserCreateData, type UserUpdateData, type SSOConnection, type Role } from '@/lib/api'
+import { isValidEmail } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -120,6 +121,12 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
     e.preventDefault()
     setFieldErrors({})
     
+    // 验证邮箱格式
+    if (!isValidEmail(formData.email)) {
+      setFieldErrors({ email: authT('invalidEmail') })
+      return
+    }
+
     // 验证密码
     if (!isEditing && formData.password.length < 6) {
       setFieldErrors({ password: authT('passwordTooShort') })

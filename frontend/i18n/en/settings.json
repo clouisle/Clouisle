@@ -76,6 +76,7 @@
     "noApiKeys": "You don't have any API keys yet",
     "createFirstKey": "Create your first API key to get started",
     "created": "Created",
-    "lastUsed": "Last used"
+    "lastUsed": "Last used",
+    "invalidEmail": "Please enter a valid email address"
   }
 }

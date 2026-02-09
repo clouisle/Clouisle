@@ -3,7 +3,7 @@
 """
 
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 
 
 class SendVerificationRequest(BaseModel):
@@ -40,11 +40,20 @@ class ResetPasswordRequest(BaseModel):
 
 
 class ResetPasswordConfirmRequest(BaseModel):
-    """确认重置密码请求"""
+    """确认重置密码请求 - 支持验证码或 token 两种方式"""
 
-    email: EmailStr
-    code: str
+    email: Optional[EmailStr] = None
+    code: Optional[str] = None
+    token: Optional[str] = None
     new_password: str
+
+    @model_validator(mode="after")
+    def check_auth_method(self) -> "ResetPasswordConfirmRequest":
+        has_code = self.email is not None and self.code is not None
+        has_token = self.token is not None
+        if not has_code and not has_token:
+            raise ValueError("Either (email + code) or token must be provided")
+        return self
 
 
 class VerificationResponse(BaseModel):

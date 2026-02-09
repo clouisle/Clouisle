@@ -142,7 +142,6 @@ export function ConversationsTable() {
       setTotal(data.total)
     } catch (error) {
       console.error('Failed to load conversations:', error)
-      toast.error(t('loadError'))
     } finally {
       setLoading(false)
     }
@@ -190,7 +189,6 @@ export function ConversationsTable() {
       loadConversations()
     } catch (error) {
       console.error('Failed to delete conversations:', error)
-      toast.error(t('deleteError'))
     } finally {
       setDeleteDialogOpen(false)
       setDeletingIds([])
@@ -206,7 +204,6 @@ export function ConversationsTable() {
       setSelectedConversation(data)
     } catch (error) {
       console.error('Failed to load conversation detail:', error)
-      toast.error(t('loadError'))
     } finally {
       setIsLoadingDetail(false)
     }

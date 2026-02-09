@@ -73,7 +73,6 @@ export function ToolShareDialog({
       setShares(response.shares)
     } catch (error) {
       console.error('Failed to load shares:', error)
-      toast.error(t('loadFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -112,7 +111,6 @@ export function ToolShareDialog({
       onSuccess?.()
     } catch (error) {
       console.error('Failed to share tool:', error)
-      toast.error(t('shareFailed'))
     } finally {
       setIsSharing(false)
     }
@@ -135,7 +133,6 @@ export function ToolShareDialog({
       onSuccess?.()
     } catch (error) {
       console.error('Failed to unshare tool:', error)
-      toast.error(t('unshareFailed'))
     } finally {
       setDeleteDialogOpen(false)
       setDeletingShare(null)

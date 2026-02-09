@@ -39,7 +39,6 @@ export default function SiteSettingsGeneralPage() {
       setSettings(data)
     } catch (error) {
       console.error('Failed to load settings:', error)
-      toast.error(t('loadError'))
     } finally {
       setLoading(false)
     }
@@ -58,7 +57,6 @@ export default function SiteSettingsGeneralPage() {
       toast.success(t('saveSuccess'))
     } catch (error) {
       console.error('Failed to save settings:', error)
-      toast.error(t('saveError'))
     } finally {
       setSaving(false)
     }

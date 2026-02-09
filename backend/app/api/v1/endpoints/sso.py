@@ -55,14 +55,14 @@ async def list_public_providers():
     )
 
 
-@router.get("/login/{provider_id}")
+@router.get("/login/{provider_name}")
 async def sso_login(
-    provider_id: UUID,
+    provider_name: str,
     request: Request,
     redirect: Optional[str] = Query(None),
 ):
     """Initiate SSO login flow"""
-    provider = await SSOProvider.get_or_none(id=provider_id, is_enabled=True)
+    provider = await SSOProvider.get_or_none(name=provider_name, is_enabled=True)
     if not provider:
         raise BusinessError(
             code=ResponseCode.SSO_PROVIDER_NOT_FOUND, msg_key="sso_provider_not_found"
@@ -87,13 +87,7 @@ async def sso_login(
         if ":3000" in base_url:
             base_url = base_url.replace(":3000", ":8000")
 
-    callback_url = f"{base_url}/api/v1/sso/callback/{provider_id}"
-
-    # Log for debugging
-    import logging
-
-    logger = logging.getLogger(__name__)
-    logger.info(f"SSO Login - Provider: {provider.name}, Callback URL: {callback_url}")
+    callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
 
     try:
         if provider.protocol in ["oauth2", "oidc"]:
@@ -158,16 +152,16 @@ async def sso_login(
         )
 
 
-@router.get("/callback/{provider_id}")
+@router.get("/callback/{provider_name}")
 async def sso_callback(
-    provider_id: UUID,
+    provider_name: str,
     request: Request,
     code: Optional[str] = Query(None),  # OAuth2/OIDC
     state: Optional[str] = Query(None),  # OAuth2/OIDC
     ticket: Optional[str] = Query(None),  # CAS
 ):
     """Handle SSO callback"""
-    provider = await SSOProvider.get_or_none(id=provider_id)
+    provider = await SSOProvider.get_or_none(name=provider_name)
     if not provider:
         raise BusinessError(
             code=ResponseCode.SSO_PROVIDER_NOT_FOUND, msg_key="sso_provider_not_found"
@@ -210,7 +204,7 @@ async def sso_callback(
             if ":3000" in base_url:
                 base_url = base_url.replace(":3000", ":8000")
 
-        callback_url = f"{base_url}/api/v1/sso/callback/{provider_id}"
+        callback_url = f"{base_url}/api/v1/sso/callback/{provider.name}"
 
         # Prepare callback data based on protocol
         if provider.protocol in ["oauth2", "oidc"]:

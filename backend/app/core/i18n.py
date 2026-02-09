@@ -1591,6 +1591,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "SSO provider name already exists",
         "zh": "SSO 提供商名称已存在",
     },
+    "sso_invalid_provider_name": {
+        "en": "Provider name must start with a lowercase letter and contain only lowercase letters, numbers, hyphens, and underscores",
+        "zh": "提供商名称必须以小写字母开头，且只能包含小写字母、数字、连字符和下划线",
+    },
+    "sso_invalid_icon_url": {
+        "en": "Icon URL must start with http:// or https://",
+        "zh": "图标 URL 必须以 http:// 或 https:// 开头",
+    },
     "require_superadmin_sso": {
         "en": "At least one super admin must have an SSO connection before disabling password login.",
         "zh": "关闭密码登录前，至少需要一个超级管理员已绑定 SSO。",

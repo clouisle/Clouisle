@@ -159,4 +159,11 @@ export const authApi = {
   resetPassword: async (email: string, code: string, newPassword: string): Promise<void> => {
     await api.post<null>('/reset-password', { email, code, new_password: newPassword })
   },
+
+  /**
+   * 通过 token 重置密码
+   */
+  resetPasswordByToken: async (token: string, newPassword: string): Promise<void> => {
+    await api.post<null>('/reset-password', { token, new_password: newPassword })
+  },
 }

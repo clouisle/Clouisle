@@ -103,7 +103,6 @@ export default function ToolsPage() {
       setTools(allTools)
     } catch (error) {
       console.error('Failed to load tools:', error)
-      toast.error(t('tools.error.loadToolsFailed'))
     } finally {
       setLoading(false)
     }
@@ -168,7 +167,6 @@ export default function ToolsPage() {
       }
     } catch (error) {
       console.error('Failed to load tool detail:', error)
-      toast.error(t('tools.error.loadToolDetailFailed'))
     }
   }
 
@@ -206,7 +204,6 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error(t('tools.error.saveFailed'))
     }
   }
 
@@ -227,7 +224,6 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
-      toast.error(t('tools.error.saveFailed'))
     }
   }
 
@@ -260,7 +256,6 @@ export default function ToolsPage() {
       setConfigDialogOpen(false)
     } catch (error) {
       console.error('Failed to save config:', error)
-      toast.error(t('tools.configSaveFailed'))
     }
   }
 
@@ -286,7 +281,6 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to delete tool:', error)
-      toast.error(t('tools.error.deleteFailed'))
     } finally {
       setDeleteLoading(false)
     }

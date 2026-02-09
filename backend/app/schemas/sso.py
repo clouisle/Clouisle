@@ -1,8 +1,25 @@
+import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Provider name: lowercase letters, numbers, hyphens, underscores; must start with a letter
+PROVIDER_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]*$")
+
+
+def _validate_provider_name(v: str) -> str:
+    if not PROVIDER_NAME_PATTERN.match(v):
+        raise ValueError("sso_invalid_provider_name")
+    return v
+
+
+def _validate_icon_url(v: Optional[str]) -> Optional[str]:
+    if v is not None and v != "":
+        if not re.match(r"^https?://", v):
+            raise ValueError("sso_invalid_icon_url")
+    return v
 
 
 # SSO Provider Schemas
@@ -21,6 +38,16 @@ class SSOProviderBase(BaseModel):
     require_approval: bool = Field(default=False)
     default_role_id: Optional[UUID] = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return _validate_provider_name(v)
+
+    @field_validator("icon_url")
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_icon_url(v)
+
 
 class SSOProviderCreate(SSOProviderBase):
     pass
@@ -38,6 +65,18 @@ class SSOProviderUpdate(BaseModel):
     allow_signup: Optional[bool] = None
     require_approval: Optional[bool] = None
     default_role_id: Optional[UUID] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            return _validate_provider_name(v)
+        return v
+
+    @field_validator("icon_url")
+    @classmethod
+    def validate_icon_url(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_icon_url(v)
 
 
 class SSOProviderPublic(BaseModel):

@@ -217,6 +217,11 @@ async def send_verification_email(
     """
     发送验证码邮件
     """
+    from app.core.email_templates import (
+        render_reset_password_email,
+        render_verification_email,
+    )
+
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
     site_url = await SiteSetting.get_value("site_url", "")
 
@@ -224,100 +229,12 @@ async def send_verification_email(
     if purpose == "register":
         subject = f"【{site_name}】邮箱验证"
         verify_url = f"{site_url}/verify?token={token}" if site_url else None
-
-        body_text = f"""您好，
-
-您正在注册 {site_name}，验证码为：
-
-    {code}
-
-验证码 10 分钟内有效。
-
-"""
-        if verify_url:
-            body_text += f"""或点击链接完成验证：
-{verify_url}
-
-"""
-        body_text += """如非本人操作，请忽略此邮件。"""
-
-        body_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2 style="color: #333;">邮箱验证</h2>
-    <p>您好，</p>
-    <p>您正在注册 <strong>{site_name}</strong>，验证码为：</p>
-    <div style="background: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
-        <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #333;">{code}</span>
-    </div>
-    <p style="color: #666;">验证码 10 分钟内有效。</p>
-"""
-        if verify_url:
-            body_html += f"""
-    <p>或点击下方按钮完成验证：</p>
-    <p style="text-align: center; margin: 20px 0;">
-        <a href="{verify_url}" style="display: inline-block; background: #0066ff; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px;">验证邮箱</a>
-    </p>
-"""
-        body_html += """
-    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px;">如非本人操作，请忽略此邮件。</p>
-</body>
-</html>
-"""
+        body_text, body_html = render_verification_email(site_name, code, verify_url)
 
     elif purpose == "reset_password":
         subject = f"【{site_name}】重置密码"
         verify_url = f"{site_url}/reset-password?token={token}" if site_url else None
-
-        body_text = f"""您好，
-
-您正在重置 {site_name} 的密码，验证码为：
-
-    {code}
-
-验证码 10 分钟内有效。
-
-"""
-        if verify_url:
-            body_text += f"""或点击链接重置密码：
-{verify_url}
-
-"""
-        body_text += """如非本人操作，请忽略此邮件并立即修改密码。"""
-
-        body_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2 style="color: #333;">重置密码</h2>
-    <p>您好，</p>
-    <p>您正在重置 <strong>{site_name}</strong> 的密码，验证码为：</p>
-    <div style="background: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
-        <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #333;">{code}</span>
-    </div>
-    <p style="color: #666;">验证码 10 分钟内有效。</p>
-"""
-        if verify_url:
-            body_html += f"""
-    <p>或点击下方按钮重置密码：</p>
-    <p style="text-align: center; margin: 20px 0;">
-        <a href="{verify_url}" style="display: inline-block; background: #0066ff; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px;">重置密码</a>
-    </p>
-"""
-        body_html += """
-    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-    <p style="color: #999; font-size: 12px;">如非本人操作，请忽略此邮件并立即修改密码。</p>
-</body>
-</html>
-"""
+        body_text, body_html = render_reset_password_email(site_name, code, verify_url)
     else:
         # 通用模板
         subject = f"【{site_name}】验证码"

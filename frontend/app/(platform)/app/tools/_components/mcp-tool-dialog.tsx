@@ -201,7 +201,6 @@ export function McpToolDialog({
       }
     } catch (error) {
       console.error('Failed to fetch MCP tools:', error)
-      toast.error(t('mcpDialog.fetchToolsFailed'))
       setMcpTools([])
       setToolsLoaded(false)
     } finally {

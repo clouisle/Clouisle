@@ -6,7 +6,6 @@ import { Activity, AlertCircle, CheckCircle, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuditLogsTable } from "./audit-logs-table";
 import { auditLogsApi, AuditLogStats } from "@/lib/api/audit-logs";
-import { toast } from "sonner";
 
 export function AuditLogsClient() {
   const t = useTranslations("auditLogs");
@@ -23,7 +22,6 @@ export function AuditLogsClient() {
       setStats(data);
     } catch (error) {
       console.error("Failed to load audit log stats:", error);
-      toast.error(t("failedToLoadStats"));
     } finally {
       setLoading(false);
     }

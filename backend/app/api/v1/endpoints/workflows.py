@@ -23,6 +23,7 @@ from app.models.workflow import (
     WorkflowVersion,
     NodeExecution,
     WorkflowStatus,
+    WorkflowVisibility,
     TriggerType,
     RunStatus,
 )
@@ -104,8 +105,26 @@ async def check_workflow_access(
             status_code=404,
         )
 
-    # Check team membership
-    await check_team_access(workflow.team.id, user, require_admin=require_write)
+    # Check visibility and team access
+    if workflow.visibility == WorkflowVisibility.PRIVATE:
+        # Only creator (or superuser) can access private workflows
+        # If creator is deleted, fall back to team-level access
+        if (
+            workflow.created_by
+            and workflow.created_by.id != user.id
+            and not user.is_superuser
+        ):
+            raise BusinessError(
+                code=ResponseCode.FORBIDDEN,
+                msg_key="workflow_access_denied",
+                status_code=403,
+            )
+        elif not workflow.created_by and not user.is_superuser:
+            # Creator deleted, check team access
+            await check_team_access(workflow.team.id, user, require_admin=require_write)
+    else:
+        # Team/public visibility - check team membership
+        await check_team_access(workflow.team.id, user, require_admin=require_write)
 
     return workflow
 
@@ -317,6 +336,7 @@ async def list_workflows(
     team_id: UUID | None = None,
     status: WorkflowStatus | None = None,
     trigger_type: TriggerType | None = None,
+    visibility: str | None = None,
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
@@ -332,18 +352,48 @@ async def list_workflows(
     if team_id:
         await check_team_access(team_id, current_user)
         query = query.filter(team_id=team_id)
+        # Apply visibility filtering for non-superusers
+        if not current_user.is_superuser:
+            query = query.filter(
+                Q(
+                    visibility__in=[
+                        WorkflowVisibility.TEAM,
+                        WorkflowVisibility.PUBLIC,
+                    ],
+                )
+                | Q(
+                    created_by=current_user,
+                    visibility=WorkflowVisibility.PRIVATE,
+                )
+            )
     elif not current_user.is_superuser:
         # Get teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
             "team_id", flat=True
         )
-        query = query.filter(team_id__in=memberships)
+        # Show team/public workflows + own private workflows
+        query = query.filter(
+            Q(
+                team_id__in=memberships,
+                visibility__in=[
+                    WorkflowVisibility.TEAM,
+                    WorkflowVisibility.PUBLIC,
+                ],
+            )
+            | Q(
+                created_by=current_user,
+                visibility=WorkflowVisibility.PRIVATE,
+            )
+        )
 
     if status:
         query = query.filter(status=status)
 
     if trigger_type:
         query = query.filter(trigger_type=trigger_type)
+
+    if visibility:
+        query = query.filter(visibility=visibility)
 
     if keyword:
         query = query.filter(
@@ -417,6 +467,7 @@ async def create_workflow(
         name=workflow_in.name,
         description=workflow_in.description,
         icon=workflow_in.icon,
+        visibility=workflow_in.visibility,
         team=team,
         definition=default_definition,
         variables=[],
@@ -632,6 +683,8 @@ async def update_workflow(
         workflow.trigger_type = workflow_in.trigger_type
     if workflow_in.trigger_config is not None:
         workflow.trigger_config = workflow_in.trigger_config
+    if workflow_in.visibility is not None:
+        workflow.visibility = WorkflowVisibility(workflow_in.visibility)
 
     await workflow.save()
 
@@ -735,6 +788,7 @@ async def duplicate_workflow(
         status=WorkflowStatus.DRAFT,
         trigger_type=workflow.trigger_type,
         trigger_config=workflow.trigger_config,
+        visibility=WorkflowVisibility.PRIVATE,  # Copy is always private
         created_by=current_user,
     )
 

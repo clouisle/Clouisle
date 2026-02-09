@@ -175,7 +175,9 @@ export default function SiteSettingsSecurityPage() {
               onValueChange={(value) => updateSetting('default_role_id', value ?? '')}
             >
               <SelectTrigger className="w-48">
-                <SelectValue />
+                <SelectValue>
+                  {roles.find((r) => r.id === settings.default_role_id)?.name}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false}>
                 {roles.map((role) => (

@@ -8,16 +8,20 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
+
+type LoginStep = 'login' | 'verification'
 
 export function LoginForm() {
   const t = useTranslations('auth')
   const locale = useLocale()
   const router = useRouter()
   const searchParams = useSearchParams()
-  
+
+  const [step, setStep] = React.useState<LoginStep>('login')
   const [username, setUsername] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [captchaAnswer, setCaptchaAnswer] = React.useState('')
@@ -29,7 +33,19 @@ export function LoginForm() {
   const [ssoProviders, setSsoProviders] = React.useState<SSOProvider[]>([])
   const [ssoEnabled, setSsoEnabled] = React.useState(false)
   const [passwordLoginAllowed, setPasswordLoginAllowed] = React.useState(true)
-  
+  const [unverifiedEmail, setUnverifiedEmail] = React.useState('')
+  const [verificationCode, setVerificationCode] = React.useState('')
+  const [showCodeInput, setShowCodeInput] = React.useState(false)
+  const [resendCooldown, setResendCooldown] = React.useState(0)
+
+  // 倒计时
+  React.useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [resendCooldown])
+
   // 加载验证码
   const loadCaptcha = React.useCallback(async () => {
     setCaptchaLoading(true)
@@ -130,6 +146,20 @@ export function LoginForm() {
             loadCaptcha()
           }
         }
+        // 邮箱未验证 (EMAIL_NOT_VERIFIED = 5004)
+        const errData = err.data as Record<string, unknown> | undefined
+        if (err.code === 5004 && errData?.email) {
+          const emailAddr = errData.email as string
+          setUnverifiedEmail(emailAddr)
+          try {
+            await authApi.sendVerification(emailAddr, 'register')
+            setResendCooldown(60)
+            toast.success(t('verificationEmailSent'))
+          } catch {
+            // SMTP 未配置等情况，仍进入验证步骤
+          }
+          setStep('verification')
+        }
       }
       // 其他错误已由 axios 拦截器统一处理显示 toast
     } finally {
@@ -137,9 +167,149 @@ export function LoginForm() {
     }
   }
 
-  const handleSSOLogin = (providerId: string) => {
+  const handleSSOLogin = (providerName: string) => {
     const redirect = searchParams.get('redirect')
-    ssoApi.initiateLogin(providerId, redirect || undefined)
+    ssoApi.initiateLogin(providerName, redirect || undefined)
+  }
+
+  // 验证邮箱验证码
+  const handleVerify = async () => {
+    if (verificationCode.length !== 6) return
+
+    setLoading(true)
+    setFieldErrors({})
+
+    try {
+      await authApi.verifyEmail(unverifiedEmail, verificationCode, 'register')
+      toast.success(t('emailVerified'))
+      setStep('login')
+      setVerificationCode('')
+      setShowCodeInput(false)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setFieldErrors({ code: t('verificationCodeInvalid') })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 重新发送验证邮件
+  const handleResend = async () => {
+    if (resendCooldown > 0) return
+
+    try {
+      await authApi.sendVerification(unverifiedEmail, 'register')
+      setResendCooldown(60)
+      toast.success(t('verificationEmailSent'))
+    } catch {
+      // 错误已由拦截器处理
+    }
+  }
+
+  // 返回登录
+  const handleBackToLogin = () => {
+    setStep('login')
+    setVerificationCode('')
+    setFieldErrors({})
+    setShowCodeInput(false)
+  }
+
+  // 邮箱验证步骤
+  if (step === 'verification') {
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={handleBackToLogin}
+          className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          {t('backToLogin')}
+        </button>
+
+        <div className="flex flex-col items-center text-center space-y-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <Mail className="h-6 w-6 text-primary" />
+          </div>
+          <h3 className="font-semibold">{t('verifyYourEmail')}</h3>
+          <p className="text-sm text-muted-foreground">
+            {t('verificationEmailSentTo')} <span className="font-medium text-foreground">{unverifiedEmail}</span>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {t('checkEmailForLink')}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => setShowCodeInput(!showCodeInput)}
+              className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {t('orEnterCodeManually')}
+              <ChevronDown className={`ml-1 h-4 w-4 transition-transform ${showCodeInput ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          {showCodeInput && (
+            <>
+              <div className="space-y-2">
+                <Label>{t('verificationCode')}</Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={setVerificationCode}
+                    disabled={loading}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                {fieldErrors.code && (
+                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
+                )}
+              </div>
+
+              <Button
+                onClick={handleVerify}
+                className="w-full"
+                disabled={loading || verificationCode.length !== 6}
+              >
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('verifyEmail')}
+              </Button>
+            </>
+          )}
+
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">
+              {t('didntReceiveEmail')}{' '}
+              {resendCooldown > 0 ? (
+                <span className="text-muted-foreground">
+                  {t('resendIn', { seconds: resendCooldown })}
+                </span>
+              ) : (
+                <button
+                  onClick={handleResend}
+                  className="text-primary hover:underline"
+                  type="button"
+                >
+                  {t('resendEmail')}
+                </button>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -265,7 +435,7 @@ export function LoginForm() {
               type="button"
               variant="outline"
               className="w-full"
-              onClick={() => handleSSOLogin(provider.id)}
+              onClick={() => handleSSOLogin(provider.name)}
             >
               {provider.icon_url && (
                 <img

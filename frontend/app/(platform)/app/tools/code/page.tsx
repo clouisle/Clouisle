@@ -163,7 +163,7 @@ export default function CodeToolPage() {
         isCodeModified.current = loadedCode.trim() !== DEFAULT_CODE[tool.code_config.language as CodeLanguage].trim()
       }
     } catch {
-      toast.error(t('error.loadFailed'))
+      // toast handled by API interceptor
       router.push('/app/tools')
     } finally {
       setIsLoading(false)
@@ -282,9 +282,8 @@ export default function CodeToolPage() {
         toast.success(t('successMessages.created'))
         router.push('/app/tools')
       }
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : t('error.saveFailed')
-      toast.error(message)
+    } catch {
+      // toast handled by API interceptor
     } finally {
       setIsSaving(false)
     }

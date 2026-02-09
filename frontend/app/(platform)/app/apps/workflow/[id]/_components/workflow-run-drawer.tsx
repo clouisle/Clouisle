@@ -41,6 +41,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { ApiError } from '@/lib/api/client'
 import {
   workflowsApi,
   Workflow,
@@ -514,7 +515,10 @@ export function WorkflowRunDrawer({
       })
     } catch (error) {
       console.error('Run error:', error)
-      toast.error(isDebug ? t('runDrawer.debugFailed') : t('runDrawer.runFailed'))
+      // ApiError already shows toast via interceptor, only show toast for non-API errors
+      if (!(error instanceof ApiError)) {
+        toast.error(isDebug ? t('runDrawer.debugFailed') : t('runDrawer.runFailed'))
+      }
       setIsRunning(false)
       setRunStatus('failed')
       setErrorMessage(error instanceof Error ? error.message : t('runDrawer.runFailed'))
@@ -534,7 +538,7 @@ export function WorkflowRunDrawer({
         toast.info(t('runDrawer.cannotCancelRun'))
       }
     } catch {
-      toast.error(t('runDrawer.cancelFailed'))
+      // toast handled by API interceptor
     }
 
     if (closeStreamRef.current) {

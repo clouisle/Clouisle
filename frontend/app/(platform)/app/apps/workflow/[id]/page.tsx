@@ -387,7 +387,7 @@ function WorkflowEditorContent() {
           setShowStartSelector(true)
         }
       } catch {
-        toast.error(t('loadFailed'))
+        // toast handled by API interceptor
         router.push('/app/apps')
       } finally {
         setIsLoading(false)
@@ -890,7 +890,7 @@ function WorkflowEditorContent() {
       setLastSavedAt(new Date())
       toast.success(t('saved'))
     } catch {
-      toast.error(t('saveFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsSaving(false)
     }
@@ -931,7 +931,7 @@ function WorkflowEditorContent() {
         toast.success(t('published'))
       }
     } catch {
-      toast.error(t('publishFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsPublishing(false)
     }

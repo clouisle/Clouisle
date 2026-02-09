@@ -3,7 +3,6 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Activity, MessageSquare, Workflow } from 'lucide-react'
-import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { conversationsApi, workflowsApi, type ConversationStats } from '@/lib/api'
@@ -40,7 +39,6 @@ export function ActivitiesClient() {
         setWorkflowStats(wfStats)
       } catch (error) {
         console.error('Failed to load statistics:', error)
-        toast.error(t('loadStatsFailed'))
       } finally {
         setLoading(false)
       }

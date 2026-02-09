@@ -23,6 +23,14 @@ from app.models.workflow import (
 # ============================================================================
 
 
+class WorkflowVisibilityConst:
+    """Workflow visibility constants"""
+
+    PRIVATE = "private"
+    TEAM = "team"
+    PUBLIC = "public"
+
+
 class WorkflowCreate(BaseModel):
     """Schema for creating a workflow"""
 
@@ -30,6 +38,7 @@ class WorkflowCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     icon: str | None = None
+    visibility: str = Field(default=WorkflowVisibilityConst.PRIVATE)
 
 
 class WorkflowUpdate(BaseModel):
@@ -42,6 +51,7 @@ class WorkflowUpdate(BaseModel):
     variables: list[dict] | None = None
     trigger_type: TriggerType | None = None
     trigger_config: dict | None = None
+    visibility: str | None = None
 
 
 class WorkflowOut(BaseModel):
@@ -55,6 +65,7 @@ class WorkflowOut(BaseModel):
     definition: dict
     variables: list[dict]
     status: WorkflowStatus
+    visibility: str
     version: int
     trigger_type: TriggerType
     trigger_config: dict
@@ -78,6 +89,7 @@ class WorkflowListItem(BaseModel):
     description: str | None
     icon: str | None
     status: WorkflowStatus
+    visibility: str
     trigger_type: TriggerType
     run_count: int
     success_count: int

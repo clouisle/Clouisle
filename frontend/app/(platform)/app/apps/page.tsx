@@ -154,7 +154,7 @@ export default function AppsPage() {
       
       setApps(allApps)
     } catch {
-      toast.error(t('loadFailed'))
+      // toast handled by API interceptor
     } finally {
       setIsLoading(false)
     }
@@ -184,7 +184,7 @@ export default function AppsPage() {
       setDeletingApp(null)
       fetchApps()
     } catch {
-      toast.error(t('deleteFailed'))
+      // toast handled by API interceptor
     }
   }
 
@@ -199,7 +199,7 @@ export default function AppsPage() {
       toast.success(t('appDuplicated'))
       fetchApps()
     } catch {
-      toast.error(t('duplicateFailed'))
+      // toast handled by API interceptor
     }
   }
 
@@ -222,7 +222,7 @@ export default function AppsPage() {
       toast.success(app.status === 'published' ? t('appUnpublished') : t('appPublished'))
       fetchApps()
     } catch {
-      toast.error(t('publishFailed'))
+      // toast handled by API interceptor
     }
   }
 

@@ -295,6 +295,7 @@ async def pre_tortoise_init():
         init_agent_tools_credentials,
         init_user_locale_field,
         fix_cascade_delete_policies,
+        init_workflow_visibility_field,
     )
 
     try:
@@ -311,6 +312,11 @@ async def pre_tortoise_init():
         await fix_cascade_delete_policies()
     except Exception as e:
         logger.warning(f"CASCADE delete policies migration failed: {e}")
+
+    try:
+        await init_workflow_visibility_field()
+    except Exception as e:
+        logger.warning(f"Workflow visibility migration failed: {e}")
 
     # Now generate schemas (this will validate against the updated database)
     await Tortoise.generate_schemas()
