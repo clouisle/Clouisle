@@ -252,8 +252,11 @@ async def sso_callback(
         )
 
         from app.core.config import settings
+        from app.models.site_setting import SiteSetting
 
-        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        # Use public site_url for browser redirect, fall back to FRONTEND_URL
+        site_url = await SiteSetting.get_value("site_url", "")
+        frontend_url = (site_url or settings.FRONTEND_URL).rstrip("/")
         final_redirect = session.redirect_url or "/dashboard"
         if final_redirect.startswith("http"):
             final_redirect = "/dashboard"
