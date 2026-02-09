@@ -273,6 +273,8 @@
     "emailVerificationDescription": "要求用户验证邮箱地址",
     "allowAccountDeletion": "允许删除账户",
     "allowAccountDeletionDescription": "允许用户自行删除自己的账户",
+    "defaultRole": "默认角色",
+    "defaultRoleDescription": "新用户注册时自动分配的角色",
     "passwordPolicy": "密码策略",
     "passwordPolicyDescription": "配置密码强度要求",
     "minPasswordLength": "最小密码长度",

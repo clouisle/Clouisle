@@ -443,6 +443,13 @@ async def register(
             msg_key="registration_successful_superadmin",
         )
 
+    # Assign default role to new user
+    default_role_id = await SiteSetting.get_value("default_role_id", "")
+    if default_role_id:
+        default_role = await Role.filter(id=default_role_id).first()
+        if default_role:
+            await user.roles.add(default_role)
+
     # Reload user with roles and sso_connections (empty but need to be lists)
     user = await User.get(id=user.id).prefetch_related(
         "roles__permissions", "sso_connections"

@@ -273,6 +273,8 @@
     "requireApprovalDescription": "New users require admin approval before they can use the system",
     "emailVerification": "Email Verification",
     "emailVerificationDescription": "Require users to verify their email address",
+    "defaultRole": "Default Role",
+    "defaultRoleDescription": "The role automatically assigned to new users upon registration",
     "passwordPolicy": "Password Policy",
     "passwordPolicyDescription": "Configure password strength requirements",
     "minPasswordLength": "Minimum Password Length",

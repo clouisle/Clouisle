@@ -235,6 +235,49 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_workflow_visibility_field():
+    """
+    Add visibility field to workflows table if it doesn't exist.
+    This handles the migration for the workflow visibility feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking workflow visibility field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if workflows table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'workflows' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Workflows table does not exist yet, skipping visibility migration")
+        return
+
+    # Check if visibility column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'workflows' AND column_name = 'visibility'
+    """)
+
+    if not rows:
+        logger.info("Adding visibility column to workflows table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE workflows
+                ADD COLUMN visibility VARCHAR(10) NOT NULL DEFAULT 'private'
+            """)
+            logger.info("Added visibility column to workflows table")
+        except Exception as e:
+            logger.error(f"Could not add visibility column: {e}")
+            raise
+    else:
+        logger.info("visibility column already exists")
+
+    logger.info("Workflow visibility migration complete")
+
+
 async def init_tool_shares_table():
     """
     Initialize tool_shares table for cross-team tool sharing feature.
@@ -1312,6 +1355,21 @@ async def init_db():
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")
     await init_default_settings()
+
+    # 3.0. Set default_role_id to Viewer if not yet configured
+    from app.models.site_setting import SiteSetting
+
+    current_default_role_id = await SiteSetting.get_value("default_role_id", "")
+    if not current_default_role_id:
+        await SiteSetting.set_value(
+            key="default_role_id",
+            value=str(viewer_role.id),
+            value_type="string",
+            category="security",
+            description="Default role ID for new users",
+            is_public=False,
+        )
+        logger.info(f"Set default_role_id to Viewer role: {viewer_role.id}")
 
     # 3.1. Migrate registration settings category
     await migrate_registration_settings_category()

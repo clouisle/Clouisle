@@ -3,26 +3,28 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { ApiError } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
-import { siteSettingsApi, type SecuritySettings } from '@/lib/api'
+import { siteSettingsApi, rolesApi, type SecuritySettings, type Role } from '@/lib/api'
 
 export default function SiteSettingsSecurityPage() {
   const t = useTranslations('siteSettings')
   
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [roles, setRoles] = React.useState<Role[]>([])
   const [settings, setSettings] = React.useState<SecuritySettings>({
     allow_registration: true,
     require_approval: false,
     email_verification: true,
     allow_account_deletion: true,
+    default_role_id: '',
     min_password_length: 8,
     require_uppercase: true,
     require_number: true,
@@ -42,13 +44,18 @@ export default function SiteSettingsSecurityPage() {
   const loadSettings = React.useCallback(async () => {
     try {
       setLoading(true)
-      const data = await siteSettingsApi.getSecurity()
+      const [data, rolesData] = await Promise.all([
+        siteSettingsApi.getSecurity(),
+        rolesApi.getRoles(),
+      ])
+      setRoles(rolesData)
       // 确保所有布尔值字段都有明确的值
       setSettings({
         allow_registration: data.allow_registration ?? true,
         require_approval: data.require_approval ?? false,
         email_verification: data.email_verification ?? true,
         allow_account_deletion: data.allow_account_deletion ?? true,
+        default_role_id: data.default_role_id ?? '',
         min_password_length: data.min_password_length ?? 8,
         require_uppercase: data.require_uppercase ?? true,
         require_number: data.require_number ?? true,
@@ -66,7 +73,6 @@ export default function SiteSettingsSecurityPage() {
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
-      toast.error(t('loadError'))
     } finally {
       setLoading(false)
     }
@@ -83,11 +89,6 @@ export default function SiteSettingsSecurityPage() {
       toast.success(t('saveSuccess'))
     } catch (error) {
       console.error('Failed to save settings:', error)
-      if (error instanceof ApiError) {
-        toast.error(error.message)
-      } else {
-        toast.error(t('saveError'))
-      }
     } finally {
       setSaving(false)
     }
@@ -163,6 +164,27 @@ export default function SiteSettingsSecurityPage() {
               checked={settings.allow_account_deletion}
               onCheckedChange={(checked) => updateSetting('allow_account_deletion', checked)}
             />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('defaultRole')}</Label>
+              <p className="text-sm text-muted-foreground">{t('defaultRoleDescription')}</p>
+            </div>
+            <Select
+              value={settings.default_role_id}
+              onValueChange={(value) => updateSetting('default_role_id', value)}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                {roles.map((role) => (
+                  <SelectItem key={role.id} value={role.id}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

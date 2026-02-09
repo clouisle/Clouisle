@@ -27,6 +27,7 @@ from app.schemas.response import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
+from app.services.team_role_sync import sync_user_role_from_teams
 
 router = APIRouter()
 
@@ -432,6 +433,9 @@ async def add_team_member(
         ),
     )
 
+    # Sync global role based on team membership
+    await sync_user_role_from_teams(user_to_add)
+
     return success(
         data={
             "id": new_member.id,
@@ -525,6 +529,9 @@ async def update_team_member(
             new_role=member_in.role,
         ),
     )
+
+    # Sync global role based on team membership
+    await sync_user_role_from_teams(target_user)
 
     return success(
         data={
@@ -642,6 +649,10 @@ async def remove_team_member(
     )
 
     await membership.delete()
+
+    # Sync global role based on remaining team memberships
+    await sync_user_role_from_teams(target_user)
+
     return success(data={"user_id": str(user_id)}, msg_key="team_member_removed")
 
 
@@ -676,6 +687,10 @@ async def leave_team(
         )
 
     await membership.delete()
+
+    # Sync global role based on remaining team memberships
+    await sync_user_role_from_teams(current_user)
+
     return success(data={"team_id": str(team_id)}, msg_key="team_left")
 
 
@@ -758,5 +773,9 @@ async def transfer_ownership(
             new_owner=new_owner.username,
         ),
     )
+
+    # Sync global roles for both users after ownership transfer
+    await sync_user_role_from_teams(current_user)
+    await sync_user_role_from_teams(new_owner)
 
     return success(data=team, msg_key="ownership_transferred")
