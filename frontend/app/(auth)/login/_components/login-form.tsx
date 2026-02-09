@@ -147,8 +147,9 @@ export function LoginForm() {
           }
         }
         // 邮箱未验证 (EMAIL_NOT_VERIFIED = 5004)
-        if (err.code === 5004 && err.data?.email) {
-          const emailAddr = err.data.email as string
+        const errData = err.data as Record<string, unknown> | undefined
+        if (err.code === 5004 && errData?.email) {
+          const emailAddr = errData.email as string
           setUnverifiedEmail(emailAddr)
           try {
             await authApi.sendVerification(emailAddr, 'register')
