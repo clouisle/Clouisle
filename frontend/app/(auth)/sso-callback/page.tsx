@@ -14,7 +14,7 @@ export default function SSOCallbackPage() {
 
   useEffect(() => {
     const token = searchParams.get('token')
-    const redirect = searchParams.get('redirect') || '/dashboard'
+    const redirect = searchParams.get('redirect') || '/app'
 
     if (error) {
       return
