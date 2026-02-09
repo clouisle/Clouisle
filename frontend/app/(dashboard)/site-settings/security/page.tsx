@@ -48,7 +48,7 @@ export default function SiteSettingsSecurityPage() {
         siteSettingsApi.getSecurity(),
         rolesApi.getRoles(),
       ])
-      setRoles(rolesData)
+      setRoles(rolesData.items)
       // 确保所有布尔值字段都有明确的值
       setSettings({
         allow_registration: data.allow_registration ?? true,
@@ -172,7 +172,7 @@ export default function SiteSettingsSecurityPage() {
             </div>
             <Select
               value={settings.default_role_id}
-              onValueChange={(value) => updateSetting('default_role_id', value)}
+              onValueChange={(value) => updateSetting('default_role_id', value ?? '')}
             >
               <SelectTrigger className="w-48">
                 <SelectValue />
