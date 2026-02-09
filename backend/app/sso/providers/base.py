@@ -65,15 +65,28 @@ class BaseSSOProvider(ABC):
 
     def _get_nested_value(self, data: Dict, path: str) -> Any:
         """
-        Get nested dictionary value using dot notation
+        Get nested dictionary value using dot notation or JSONPath
 
         Args:
             data: Dictionary to search
             path: Dot-separated path (e.g., "user.profile.email")
+                  or JSONPath expression starting with $ (e.g., "$.emails[0].value")
 
         Returns:
             Value at path or None
         """
+        if path.startswith("$"):
+            from jsonpath_ng import parse as jsonpath_parse
+
+            try:
+                expr = jsonpath_parse(path)
+                matches = expr.find(data)
+                if matches:
+                    return matches[0].value
+                return None
+            except Exception:
+                return None
+
         keys = path.split(".")
         value = data
         for key in keys:
