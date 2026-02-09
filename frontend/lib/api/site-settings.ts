@@ -42,6 +42,7 @@ export interface SecuritySettings {
   require_approval: boolean
   email_verification: boolean
   allow_account_deletion: boolean
+  default_role_id: string
   min_password_length: number
   require_uppercase: boolean
   require_number: boolean
@@ -201,6 +202,7 @@ export const siteSettingsApi = {
       require_approval: settings.require_approval ?? false,
       email_verification: settings.email_verification ?? true,
       allow_account_deletion: settings.allow_account_deletion ?? true,
+      default_role_id: settings.default_role_id ?? '',
       min_password_length: settings.min_password_length ?? 8,
       require_uppercase: settings.require_uppercase ?? true,
       require_number: settings.require_number ?? true,

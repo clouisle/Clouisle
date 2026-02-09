@@ -47,19 +47,20 @@ async def get_current_user_or_api_key(
         )
 
     # 检查是否是 API Key (以 clou_ 开头)
+    user: User
+    api_key: Optional[APIKey] = None
+
     if auth_token.startswith("clou_"):
         user, api_key = await _authenticate_api_key(auth_token)
-        # Set language from user's locale preference
-        if hasattr(user, "locale") and user.locale:
-            set_language(user.locale)
-        return user, api_key
+    else:
+        # 否则尝试 JWT 认证
+        user = await _authenticate_jwt(auth_token)
 
-    # 否则尝试 JWT 认证
-    user = await _authenticate_jwt(auth_token)
     # Set language from user's locale preference
     if hasattr(user, "locale") and user.locale:
         set_language(user.locale)
-    return user, None
+
+    return user, api_key
 
 
 async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:

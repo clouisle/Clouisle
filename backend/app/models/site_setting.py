@@ -187,6 +187,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": True,
         "desc": "Allow users to delete their own account",
     },
+    "default_role_id": {
+        "value": "",
+        "type": "string",
+        "category": "security",
+        "public": False,
+        "desc": "Default role ID for new users",
+    },
     # Security
     "min_password_length": {
         "value": 8,
