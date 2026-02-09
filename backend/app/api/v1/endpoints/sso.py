@@ -74,12 +74,14 @@ async def sso_login(
 
     provider_instance = SSOService.get_provider_instance(provider)
 
-    # Build callback URL - use configured backend URL or request base_url
-    # For development, hardcode to avoid proxy issues
+    # Build callback URL - use site_url or configured backend URL
     from app.core.config import settings
 
+    site_url = await SiteSetting.get_value("site_url", "")
     backend_url = getattr(settings, "BACKEND_URL", None)
-    if backend_url:
+    if site_url:
+        base_url = site_url.rstrip("/")
+    elif backend_url:
         base_url = backend_url.rstrip("/")
     else:
         base_url = str(request.base_url).rstrip("/")
@@ -192,11 +194,14 @@ async def sso_callback(
     provider_instance = SSOService.get_provider_instance(provider)
 
     try:
-        # Build callback URL - use configured backend URL or request base_url
+        # Build callback URL - use site_url or configured backend URL
         from app.core.config import settings
 
+        site_url = await SiteSetting.get_value("site_url", "")
         backend_url = getattr(settings, "BACKEND_URL", None)
-        if backend_url:
+        if site_url:
+            base_url = site_url.rstrip("/")
+        elif backend_url:
             base_url = backend_url.rstrip("/")
         else:
             base_url = str(request.base_url).rstrip("/")
@@ -253,7 +258,9 @@ async def sso_callback(
 
         from app.core.config import settings
 
-        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        # Use public site_url for browser redirect, fall back to FRONTEND_URL
+        site_url = await SiteSetting.get_value("site_url", "")
+        frontend_url = (site_url or settings.FRONTEND_URL).rstrip("/")
         final_redirect = session.redirect_url or "/dashboard"
         if final_redirect.startswith("http"):
             final_redirect = "/dashboard"
