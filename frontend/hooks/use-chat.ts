@@ -706,10 +706,17 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     const state = streamingStateRef.current
     if (state.assistantMessageId) {
       // Mark all reasoning blocks as done
-      state.reasoningBlocks.forEach(block => {
+      state.reasoningBlocks.forEach((block, index) => {
         if (block.state === 'streaming') {
           block.duration = Date.now() - block.startTime
           block.state = 'done'
+
+          // Update corresponding reasoning segment
+          const reasoningSegments = state.segments.filter(s => s.type === 'reasoning')
+          if (reasoningSegments[index]) {
+            reasoningSegments[index].reasoningState = 'done'
+            reasoningSegments[index].reasoningDuration = block.duration
+          }
         }
       })
 
@@ -1002,6 +1009,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 reasoningStartTime: Date.now(),
               }
               segments.push(reasoningSegment)
+
+              // Update streamingStateRef for stop() to work correctly
+              streamingStateRef.current.segments = segments
+              streamingStateRef.current.reasoningBlocks = reasoningBlocks
+              streamingStateRef.current.currentReasoningIndex = currentReasoningIndex
               break
             }
 
@@ -1022,6 +1034,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 if (lastReasoningSegmentIndex >= 0) {
                   segments[lastReasoningSegmentIndex].reasoningText = reasoningBlocks[currentReasoningIndex].text
                 }
+
+                // Update streamingStateRef for stop() to work correctly
+                streamingStateRef.current.segments = segments
+                streamingStateRef.current.reasoningBlocks = reasoningBlocks
               }
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -1055,6 +1071,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   segments[lastReasoningSegmentIndex].reasoningState = 'done'
                   segments[lastReasoningSegmentIndex].reasoningDuration = block.duration
                 }
+
+                // Update streamingStateRef for stop() to work correctly
+                streamingStateRef.current.segments = segments
+                streamingStateRef.current.reasoningBlocks = reasoningBlocks
               }
               setMessages((prev) =>
                 prev.map((msg) =>
