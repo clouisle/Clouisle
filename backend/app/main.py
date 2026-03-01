@@ -296,6 +296,7 @@ async def pre_tortoise_init():
         init_user_locale_field,
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
+        init_agent_streaming_config,
     )
 
     try:
@@ -317,6 +318,11 @@ async def pre_tortoise_init():
         await init_workflow_visibility_field()
     except Exception as e:
         logger.warning(f"Workflow visibility migration failed: {e}")
+
+    try:
+        await init_agent_streaming_config()
+    except Exception as e:
+        logger.warning(f"Agent streaming_config migration failed: {e}")
 
     # Now generate schemas (this will validate against the updated database)
     await Tortoise.generate_schemas()

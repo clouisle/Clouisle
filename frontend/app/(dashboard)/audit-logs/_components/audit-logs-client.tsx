@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { Activity, AlertCircle, CheckCircle, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuditLogsTable } from "./audit-logs-table";
-import { auditLogsApi, AuditLogStats } from "@/lib/api/audit-logs";
+import { auditLogsApi, AuditLogStats } from "@/lib/api/admin/audit-logs";
 
 export function AuditLogsClient() {
   const t = useTranslations("auditLogs");

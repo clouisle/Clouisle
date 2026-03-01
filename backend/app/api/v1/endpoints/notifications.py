@@ -30,7 +30,7 @@ from app.services.notification import create_notification_audit, create_notifica
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-admin_router = APIRouter()
+admin_router = APIRouter()  # kept for backward compatibility; mounted via admin router
 
 
 async def check_team_admin_permission(team_id: UUID, user: User) -> Team:

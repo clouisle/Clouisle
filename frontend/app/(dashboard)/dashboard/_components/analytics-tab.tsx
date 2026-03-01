@@ -8,7 +8,7 @@ import { WorkflowStatusChart } from '@/components/dashboard/workflow-status-char
 import { WorkflowTriggerChart } from '@/components/dashboard/workflow-trigger-chart'
 import { TopWorkflowsCard } from '@/components/dashboard/top-workflows-card'
 import { AgentPerformanceChart } from '@/components/dashboard/agent-performance-chart'
-import type { DashboardStats, WorkflowSummary, TopAgent } from '@/lib/api'
+import type { DashboardStats, WorkflowSummary, TopAgent } from '@/lib/api/admin/dashboard'
 
 interface AnalyticsTabProps {
   stats: DashboardStats

@@ -6,15 +6,15 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Mail, MessageSquare, Globe, Hash, Bell } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  siteSettingsApi,
-  type EmailSettings,
-  type DingTalkSettings,
-  type WeChatSettings,
-  type FeishuSettings,
-  type WebhookSettings,
-  type SlackSettings,
-} from '@/lib/api'
+import { siteSettingsApi } from '@/lib/api/admin/site-settings'
+import type {
+  EmailSettings,
+  DingTalkSettings,
+  WeChatSettings,
+  FeishuSettings,
+  WebhookSettings,
+  SlackSettings,
+} from '@/lib/api/site-settings'
 import {
   EmailSettingsTab,
   DingTalkSettingsTab,

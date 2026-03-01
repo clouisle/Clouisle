@@ -278,6 +278,49 @@ async def init_workflow_visibility_field():
     logger.info("Workflow visibility migration complete")
 
 
+async def init_agent_streaming_config():
+    """
+    Add streaming_config field to agents table if it doesn't exist.
+    This handles the migration for the streaming configuration feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent streaming_config field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agents table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Agents table does not exist yet, skipping streaming_config migration")
+        return
+
+    # Check if streaming_config column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'streaming_config'
+    """)
+
+    if not rows:
+        logger.info("Adding streaming_config column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN streaming_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """)
+            logger.info("Added streaming_config column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add streaming_config column: {e}")
+            raise
+    else:
+        logger.info("streaming_config column already exists")
+
+    logger.info("Agent streaming_config migration complete")
+
+
 async def init_tool_shares_table():
     """
     Initialize tool_shares table for cross-team tool sharing feature.

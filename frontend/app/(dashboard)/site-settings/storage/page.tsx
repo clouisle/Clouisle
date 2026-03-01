@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, Archive, Database } from 'lucide-react'
-import { siteSettingsApi } from '@/lib/api'
+import { siteSettingsApi } from '@/lib/api/admin/site-settings'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,8 +43,8 @@ export default function SiteSettingsStoragePage() {
       setLoading(true)
       const data = await siteSettingsApi.getAll('storage')
       setSettings({
-        audit_log_retention_days: data.audit_log_retention_days ?? 365,
-        audit_log_archive_path: data.audit_log_archive_path ?? '/var/log/clouisle/audit_archives',
+        audit_log_retention_days: (data.audit_log_retention_days as number) ?? 365,
+        audit_log_archive_path: (data.audit_log_archive_path as string) ?? '/var/log/clouisle/audit_archives',
       })
     } catch (error) {
       console.error('Failed to load settings:', error)

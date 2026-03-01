@@ -1,33 +1,21 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
 export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
-export { usersApi, type PageData, type UserCreateData, type UserUpdateData, type UserStats, type UserQueryParams } from './users'
-export { rolesApi, permissionsApi, type Role, type Permission, type RoleCreateInput, type RoleUpdateInput, type PermissionCreateInput, type PermissionUpdateInput } from './roles'
+export { usersApi, type PageData, type UserQueryParams } from './users'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
 export {
   siteSettingsApi,
-  type SiteSetting,
-  type SiteSettings,
   type PublicSiteSettings,
-  type GeneralSettings,
-  type SecuritySettings,
-  type EmailSettings,
-  type DingTalkSettings,
-  type WeChatSettings,
-  type FeishuSettings,
-  type WebhookSettings,
-  type SlackSettings,
-  type AutoNotificationConfig,
 } from './site-settings'
 export { uploadApi, type UploadResult, type ParsedFileResult, type FileParseOptions } from './upload'
-export { 
-  modelsApi, 
+export {
+  modelsApi,
   teamModelsApi,
-  type Model, 
-  type ModelBrief, 
-  type ModelCreateInput, 
-  type ModelUpdateInput, 
-  type ModelQueryParams, 
-  type ProviderInfo, 
+  type Model,
+  type ModelBrief,
+  type ModelCreateInput,
+  type ModelUpdateInput,
+  type ModelQueryParams,
+  type ProviderInfo,
   type ModelTypeInfo,
   type TeamModel,
   type TeamModelCreateInput,
@@ -35,11 +23,11 @@ export {
   type TeamModelBatchCreateInput,
   type TeamModelQuotaStatus,
 } from './models'
-export { 
-  knowledgeBasesApi, 
-  type KnowledgeBase, 
+export {
+  knowledgeBasesApi,
+  type KnowledgeBase,
   type KnowledgeBaseStats,
-  type KnowledgeBaseCreateInput, 
+  type KnowledgeBaseCreateInput,
   type KnowledgeBaseUpdateInput,
   type KnowledgeBaseQueryParams,
   type Document,
@@ -61,7 +49,6 @@ export {
 export {
   agentsApi,
   agentStatsApi,
-  conversationsApi,
   publicAgentsApi,
   parseSSEStream,
   type Agent,
@@ -189,21 +176,8 @@ export {
 } from './workflows'
 
 export {
-  dashboardApi,
-  type DashboardStats,
-  type DashboardTrends,
-  type TopAgent,
-  type TeamTokenUsage,
-  type WorkflowSummary,
-  type ModelDistribution,
-} from './dashboard'
-
-export {
   ssoApi,
   type SSOProvider,
-  type SSOProviderAdmin,
-  type SSOProviderCreate,
-  type SSOProviderUpdate,
 } from './sso'
 
 export {
@@ -216,8 +190,6 @@ export {
   type NotificationChannel,
   type NotificationDelivery,
   type NotificationListParams,
-  type NotificationAdminListParams,
-  type NotificationAdminCreateInput,
   type NotificationReadRequest,
   type NotificationUnreadCount,
 } from './notifications'

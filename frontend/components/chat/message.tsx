@@ -133,66 +133,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
-      if (isToolCallPart(part)) {
-        const toolPart = part as ToolCallPart
-        // Find matching result
-        const result = message.parts.find(
-          (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
-        )
-        const state = toolPart.state === 'error' ? 'output-error'
-          : toolPart.state === 'done' ? 'output-available'
-          : toolPart.state === 'running' ? 'input-available'
-          : 'input-streaming'
-
-        return (
-          <Tool key={index} defaultOpen={false}>
-            <ToolHeader
-              title={toolPart.toolDisplayName || toolPart.toolName}
-              type="tool-call"
-              state={state}
-            />
-            <AIToolContent>
-              <ToolInput input={toolPart.input} />
-              {result && isToolResultPart(result) && (
-                <ToolOutput
-                  output={result.output}
-                  errorText={result.isError ? String(result.output) : undefined}
-                />
-              )}
-            </AIToolContent>
-          </Tool>
-        )
-      }
-
-      if (isMcpToolCallPart(part)) {
-        const mcpPart = part as McpToolCallPart
-        // Find matching result
-        const result = message.parts.find(
-          (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
-        )
-        const state = mcpPart.state === 'error' ? 'output-error'
-          : mcpPart.state === 'done' ? 'output-available'
-          : mcpPart.state === 'running' ? 'input-available'
-          : 'input-streaming'
-
-        return (
-          <Tool key={index} defaultOpen={false}>
-            <ToolHeader
-              title={`${mcpPart.serverName}/${mcpPart.toolName}`}
-              type="tool-call"
-              state={state}
-            />
-            <AIToolContent>
-              <ToolInput input={mcpPart.input} />
-              {result && isMcpToolResultPart(result) && (
-                <ToolOutput
-                  output={result.output}
-                  errorText={result.isError ? String(result.output) : undefined}
-                />
-              )}
-            </AIToolContent>
-          </Tool>
-        )
+      // Tool calls are now rendered in ChainOfThought, skip here
+      if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+        return null
       }
 
       if (isFilePart(part)) {
@@ -213,8 +156,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isImagePart(part)) {
         const imagePart = part as ImagePart
         return (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
@@ -296,11 +239,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       return ''
     }
 
-    // Build chain of thought steps in order: RAG -> tools -> reasoning -> generating
+    // Build chain of thought steps in order: maintain original order from parts
     const buildChainOfThoughtSteps = () => {
       const steps: React.ReactNode[] = []
 
-      // 1. RAG steps first
+      // 1. RAG steps first (always at the beginning)
       taskParts.filter(t => t.taskType === 'rag').forEach((taskPart, index) => {
         steps.push(
           <ChainOfThoughtStep
@@ -312,24 +255,81 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       })
 
-      // 2. Tool calls (before reasoning)
-      otherParts.forEach((part) => {
+      // 2. Process other parts in their original order (tool calls and reasoning interleaved)
+      otherParts.forEach((part, index) => {
         if (isToolCallPart(part)) {
           const toolPart = part as ToolCallPart
+          // Find matching result
+          const result = message.parts.find(
+            (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
+          )
+          const state = toolPart.state === 'error' ? 'output-error'
+            : toolPart.state === 'done' ? 'output-available'
+            : toolPart.state === 'running' ? 'input-available'
+            : 'input-streaming'
+
           steps.push(
             <ChainOfThoughtStep
               key={`tool-${toolPart.toolCallId}`}
               icon={Wrench}
               label={toolPart.toolDisplayName || toolPart.toolName}
               status={getToolCallStepStatus(toolPart.state)}
-            />
+            >
+              <Tool defaultOpen={false} className="mt-2">
+                <ToolHeader
+                  title={toolPart.toolDisplayName || toolPart.toolName}
+                  type="tool-call"
+                  state={state}
+                />
+                <AIToolContent>
+                  <ToolInput input={toolPart.input} />
+                  {result && isToolResultPart(result) && (
+                    <ToolOutput
+                      output={result.output}
+                      errorText={result.isError ? String(result.output) : undefined}
+                    />
+                  )}
+                </AIToolContent>
+              </Tool>
+            </ChainOfThoughtStep>
           )
-        }
-      })
+        } else if (isMcpToolCallPart(part)) {
+          const mcpPart = part as McpToolCallPart
+          // Find matching result
+          const result = message.parts.find(
+            (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
+          )
+          const state = mcpPart.state === 'error' ? 'output-error'
+            : mcpPart.state === 'done' ? 'output-available'
+            : mcpPart.state === 'running' ? 'input-available'
+            : 'input-streaming'
 
-      // 3. Reasoning (after tool calls)
-      otherParts.forEach((part, index) => {
-        if (isReasoningPart(part)) {
+          steps.push(
+            <ChainOfThoughtStep
+              key={`mcp-tool-${mcpPart.toolCallId}`}
+              icon={Wrench}
+              label={`${mcpPart.serverName}/${mcpPart.toolName}`}
+              status={getToolCallStepStatus(mcpPart.state)}
+            >
+              <Tool defaultOpen={false} className="mt-2">
+                <ToolHeader
+                  title={`${mcpPart.serverName}/${mcpPart.toolName}`}
+                  type="tool-call"
+                  state={state}
+                />
+                <AIToolContent>
+                  <ToolInput input={mcpPart.input} />
+                  {result && isMcpToolResultPart(result) && (
+                    <ToolOutput
+                      output={result.output}
+                      errorText={result.isError ? String(result.output) : undefined}
+                    />
+                  )}
+                </AIToolContent>
+              </Tool>
+            </ChainOfThoughtStep>
+          )
+        } else if (isReasoningPart(part)) {
           const reasoningPart = part as ReasoningPart
           steps.push(
             <ChainOfThoughtStep
@@ -350,7 +350,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         }
       })
 
-      // 4. Generating steps last
+      // 3. Generating steps last
       taskParts.filter(t => t.taskType === 'generating').forEach((taskPart, index) => {
         steps.push(
           <ChainOfThoughtStep

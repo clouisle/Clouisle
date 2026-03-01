@@ -115,15 +115,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const streamingStateRef = useRef<{
     assistantMessageId: string | null
     segments: ContentSegment[]
-    currentReasoning: string
-    reasoningStartTime: number
+    reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+    currentReasoningIndex: number
     ragSources: SourceDocumentPart[]
     taskState: TaskState
   }>({
     assistantMessageId: null,
     segments: [],
-    currentReasoning: '',
-    reasoningStartTime: 0,
+    reasoningBlocks: [],
+    currentReasoningIndex: -1,
     ragSources: [],
     taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
   })
@@ -212,9 +212,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // Content segments - tracks text and tool calls in order
         let segments: ContentSegment[] = []
-        // Current reasoning content being built
-        let currentReasoning = ''
-        let reasoningStartTime = 0
+        // Reasoning blocks - each tool call iteration creates a new block
+        let reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
+        let currentReasoningIndex = -1
         // RAG sources
         let ragSources: SourceDocumentPart[] = []
         // Task state for showing progress
@@ -263,8 +263,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         streamingStateRef.current = {
           assistantMessageId,
           segments,
-          currentReasoning,
-          reasoningStartTime,
+          reasoningBlocks,
+          currentReasoningIndex,
           ragSources,
           taskState,
         }
@@ -304,7 +304,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -313,24 +313,58 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'reasoning_start': {
-              // Start tracking reasoning time
-              reasoningStartTime = Date.now()
-              streamingStateRef.current.reasoningStartTime = reasoningStartTime
+              // Start a new reasoning block and add it as a segment
+              const newBlock = {
+                text: '',
+                startTime: Date.now(),
+                state: 'streaming' as const,
+              }
+              reasoningBlocks.push(newBlock)
+              currentReasoningIndex = reasoningBlocks.length - 1
+
+              // Add reasoning segment to maintain order
+              const reasoningSegment: ContentSegment = {
+                type: 'reasoning',
+                reasoningText: '',
+                reasoningState: 'streaming',
+                reasoningStartTime: Date.now(),
+              }
+              segments.push(reasoningSegment)
+
+              streamingStateRef.current.segments = segments
+              streamingStateRef.current.reasoningBlocks = reasoningBlocks
+              streamingStateRef.current.currentReasoningIndex = currentReasoningIndex
               break
             }
 
             case 'reasoning_delta': {
               const data = event.data as { delta: string }
-              currentReasoning += data.delta
-              streamingStateRef.current.currentReasoning = currentReasoning
+              // Add to current reasoning block
+              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
+                reasoningBlocks[currentReasoningIndex].text += data.delta
+                streamingStateRef.current.reasoningBlocks = reasoningBlocks
 
-              // Update assistant message with current reasoning
+                // Update the corresponding reasoning segment (find last reasoning segment)
+                let lastReasoningSegmentIndex = -1
+                for (let i = segments.length - 1; i >= 0; i--) {
+                  if (segments[i].type === 'reasoning') {
+                    lastReasoningSegmentIndex = i
+                    break
+                  }
+                }
+                if (lastReasoningSegmentIndex >= 0) {
+                  segments[lastReasoningSegmentIndex].reasoningText = reasoningBlocks[currentReasoningIndex].text
+                  streamingStateRef.current.segments = segments
+                }
+              }
+
+              // Update assistant message with current reasoning blocks
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'streaming', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -339,14 +373,34 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'reasoning_end': {
-              // Mark reasoning as done
-              const duration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
+              // Mark current reasoning block as done
+              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
+                const block = reasoningBlocks[currentReasoningIndex]
+                block.duration = Date.now() - block.startTime
+                block.state = 'done'
+                streamingStateRef.current.reasoningBlocks = reasoningBlocks
+
+                // Update the corresponding reasoning segment (find last reasoning segment)
+                let lastReasoningSegmentIndex = -1
+                for (let i = segments.length - 1; i >= 0; i--) {
+                  if (segments[i].type === 'reasoning') {
+                    lastReasoningSegmentIndex = i
+                    break
+                  }
+                }
+                if (lastReasoningSegmentIndex >= 0) {
+                  segments[lastReasoningSegmentIndex].reasoningState = 'done'
+                  segments[lastReasoningSegmentIndex].reasoningDuration = block.duration
+                  streamingStateRef.current.segments = segments
+                }
+              }
+
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, duration, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -377,7 +431,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -412,7 +466,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -449,7 +503,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -501,7 +555,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -525,13 +579,19 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   )
                 }
               }
-              const finalDuration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
+              // Mark all reasoning blocks as done
+              reasoningBlocks.forEach(block => {
+                if (block.state === 'streaming') {
+                  block.duration = Date.now() - block.startTime
+                  block.state = 'done'
+                }
+              })
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, false, finalDuration, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
                         versionNumber: endData.version_number ?? 1,
                         versionCount: endData.version_count ?? 1,
                       }
@@ -565,7 +625,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, '', 'done', [], false, undefined, undefined),
+                        parts: buildMessageParts(segments, [], [], false, undefined),
                         metadata: { ...msg.metadata, isError: true },
                       }
                     : msg
@@ -600,7 +660,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             msg.id === assistantMessageId
               ? {
                   ...msg,
-                  parts: buildMessageParts([errorSegment], '', 'done', [], false, undefined, undefined),
+                  parts: buildMessageParts([errorSegment], [], [], false, undefined),
                   metadata: { ...msg.metadata, isError: true },
                 }
               : msg
@@ -614,8 +674,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         streamingStateRef.current = {
           assistantMessageId: null,
           segments: [],
-          currentReasoning: '',
-          reasoningStartTime: 0,
+          reasoningBlocks: [],
+          currentReasoningIndex: -1,
           ragSources: [],
           taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
         }
@@ -645,7 +705,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     // Finalize the current message state when stopped
     const state = streamingStateRef.current
     if (state.assistantMessageId) {
-      const duration = state.reasoningStartTime ? Date.now() - state.reasoningStartTime : undefined
+      // Mark all reasoning blocks as done
+      state.reasoningBlocks.forEach(block => {
+        if (block.state === 'streaming') {
+          block.duration = Date.now() - block.startTime
+          block.state = 'done'
+        }
+      })
+
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === state.assistantMessageId
@@ -654,11 +721,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 metadata: { ...msg.metadata, isLoading: false },
                 parts: buildMessageParts(
                   state.segments,
-                  state.currentReasoning,
-                  'done', // Mark reasoning as done
+                  state.reasoningBlocks,
                   state.ragSources,
                   false, // Not streaming anymore
-                  duration,
                   state.taskState
                 ),
               }
@@ -669,8 +734,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       streamingStateRef.current = {
         assistantMessageId: null,
         segments: [],
-        currentReasoning: '',
-        reasoningStartTime: 0,
+        reasoningBlocks: [],
+        currentReasoningIndex: -1,
         ragSources: [],
         taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
       }
@@ -834,8 +899,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // Content segments
         const segments: ContentSegment[] = []
-        let currentReasoning = ''
-        let reasoningStartTime = 0
+        let reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
+        let currentReasoningIndex = -1
         let ragSources: SourceDocumentPart[] = []
         const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
         let newMessageId = messageId  // May be updated by message_start
@@ -877,8 +942,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         streamingStateRef.current = {
           assistantMessageId: messageId,
           segments,
-          currentReasoning,
-          reasoningStartTime,
+          reasoningBlocks,
+          currentReasoningIndex,
           ragSources,
           taskState,
         }
@@ -911,7 +976,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -920,21 +985,50 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'reasoning_start': {
-              reasoningStartTime = Date.now()
-              streamingStateRef.current.reasoningStartTime = reasoningStartTime
+              // Start a new reasoning block and add it as a segment
+              const newBlock = {
+                text: '',
+                startTime: Date.now(),
+                state: 'streaming' as const,
+              }
+              reasoningBlocks.push(newBlock)
+              currentReasoningIndex = reasoningBlocks.length - 1
+
+              // Add reasoning segment to maintain order
+              const reasoningSegment: ContentSegment = {
+                type: 'reasoning',
+                reasoningText: '',
+                reasoningState: 'streaming',
+                reasoningStartTime: Date.now(),
+              }
+              segments.push(reasoningSegment)
               break
             }
 
             case 'reasoning_delta': {
               const data = event.data as { delta: string }
-              currentReasoning += data.delta
-              streamingStateRef.current.currentReasoning = currentReasoning
+              // Add to current reasoning block
+              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
+                reasoningBlocks[currentReasoningIndex].text += data.delta
+
+                // Update the corresponding reasoning segment (find last reasoning segment)
+                let lastReasoningSegmentIndex = -1
+                for (let i = segments.length - 1; i >= 0; i--) {
+                  if (segments[i].type === 'reasoning') {
+                    lastReasoningSegmentIndex = i
+                    break
+                  }
+                }
+                if (lastReasoningSegmentIndex >= 0) {
+                  segments[lastReasoningSegmentIndex].reasoningText = reasoningBlocks[currentReasoningIndex].text
+                }
+              }
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'streaming', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -943,13 +1037,31 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'reasoning_end': {
-              const duration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
+              // Mark current reasoning block as done
+              if (currentReasoningIndex >= 0 && reasoningBlocks[currentReasoningIndex]) {
+                const block = reasoningBlocks[currentReasoningIndex]
+                block.duration = Date.now() - block.startTime
+                block.state = 'done'
+
+                // Update the corresponding reasoning segment (find last reasoning segment)
+                let lastReasoningSegmentIndex = -1
+                for (let i = segments.length - 1; i >= 0; i--) {
+                  if (segments[i].type === 'reasoning') {
+                    lastReasoningSegmentIndex = i
+                    break
+                  }
+                }
+                if (lastReasoningSegmentIndex >= 0) {
+                  segments[lastReasoningSegmentIndex].reasoningState = 'done'
+                  segments[lastReasoningSegmentIndex].reasoningDuration = block.duration
+                }
+              }
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, duration, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -976,7 +1088,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -1007,7 +1119,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -1038,7 +1150,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -1083,7 +1195,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   msg.id === messageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, currentReasoning, 'done', ragSources, true, undefined, taskState),
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
                       }
                     : msg
                 )
@@ -1103,15 +1215,21 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   )
                 }
               }
-              const finalDuration = reasoningStartTime ? Date.now() - reasoningStartTime : undefined
-              const newParts = buildMessageParts(segments, currentReasoning, 'done', ragSources, false, finalDuration, taskState)
-              
+              // Mark all reasoning blocks as done
+              reasoningBlocks.forEach(block => {
+                if (block.state === 'streaming') {
+                  block.duration = Date.now() - block.startTime
+                  block.state = 'done'
+                }
+              })
+              const newParts = buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState)
+
               // Get version info from event data if available (for regenerate)
               // Priority: message_end > message_start > existing values
               const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
               const finalVersionNumber = endData.version_number ?? newVersionNumber
               const finalVersionCount = endData.version_count ?? newVersionCount
-              
+
               // Update message with new content and new ID from backend
               // Backend handles version management, frontend just updates display
               setMessages((prev) =>
@@ -1141,7 +1259,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
               const errorText = getErrorMessage(chatError)
               const errorSegment: ContentSegment = { type: 'text', text: errorText }
-              const errorParts = buildMessageParts([errorSegment], '', 'done', [], false, undefined, undefined)
+              const errorParts = buildMessageParts([errorSegment], [], [], false, undefined)
 
               // Show error as message content
               setMessages((prev) =>
@@ -1174,7 +1292,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         const errorText = getErrorMessage(chatError)
         const errorSegment: ContentSegment = { type: 'text', text: errorText }
-        const errorParts = buildMessageParts([errorSegment], '', 'done', [], false, undefined, undefined)
+        const errorParts = buildMessageParts([errorSegment], [], [], false, undefined)
 
         // Show error as message content
         setMessages((prev) =>
@@ -1194,8 +1312,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         streamingStateRef.current = {
           assistantMessageId: null,
           segments: [],
-          currentReasoning: '',
-          reasoningStartTime: 0,
+          reasoningBlocks: [],
+          currentReasoningIndex: -1,
           ragSources: [],
           taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
         }
@@ -1242,29 +1360,32 @@ interface TaskState {
 }
 
 /**
- * A segment represents either text content or a tool call group
- * This allows tool calls to appear inline with text, at the position they were triggered
+ * A segment represents either text content, a tool call group, or a reasoning block
+ * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group'
+  type: 'text' | 'tool-group' | 'reasoning'
   // For text type
   text?: string
   // For tool-group type
   toolCalls?: ToolCallPart[]
   toolResults?: ToolResultPart[]
+  // For reasoning type
+  reasoningText?: string
+  reasoningState?: 'streaming' | 'done'
+  reasoningStartTime?: number
+  reasoningDuration?: number
 }
 
 /**
- * Build message parts from text segments, reasoning, sources, and task state
+ * Build message parts from text segments, reasoning blocks, sources, and task state
  * Text and tool calls are interleaved based on when they appear in the stream
  */
 function buildMessageParts(
   segments: ContentSegment[],
-  reasoning: string,
-  reasoningState: 'streaming' | 'done',
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
   sources: SourceDocumentPart[],
   isStreaming: boolean,
-  reasoningDuration?: number,
   taskState?: TaskState
 ): MessagePart[] {
   const parts: MessagePart[] = []
@@ -1299,18 +1420,7 @@ function buildMessageParts(
     }
   }
 
-  // Add reasoning part if there's reasoning content (before content segments)
-  if (reasoning) {
-    const reasoningPart: ReasoningPart = {
-      type: 'reasoning',
-      text: reasoning,
-      state: reasoningState,
-      duration: reasoningDuration,
-    }
-    parts.push(reasoningPart)
-  }
-
-  // Add content segments in order (text and tool calls interleaved)
+  // Add content segments in order (text, reasoning, and tool calls interleaved)
   for (const segment of segments) {
     if (segment.type === 'text' && segment.text && segment.text.length > 0) {
       const textPart: TextPart = {
@@ -1319,6 +1429,14 @@ function buildMessageParts(
         state: isStreaming ? 'streaming' : 'done',
       }
       parts.push(textPart)
+    } else if (segment.type === 'reasoning' && segment.reasoningText) {
+      const reasoningPart: ReasoningPart = {
+        type: 'reasoning',
+        text: segment.reasoningText,
+        state: segment.reasoningState || 'streaming',
+        duration: segment.reasoningDuration,
+      }
+      parts.push(reasoningPart)
     } else if (segment.type === 'tool-group' && segment.toolCalls && segment.toolCalls.length > 0) {
       // Add tool calls and their results
       for (const toolCall of segment.toolCalls) {

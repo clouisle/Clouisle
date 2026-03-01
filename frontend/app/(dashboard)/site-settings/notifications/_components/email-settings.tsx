@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { siteSettingsApi, type EmailSettings } from '@/lib/api'
+import { siteSettingsApi, type EmailSettings } from '@/lib/api/admin/site-settings'
 
 interface EmailSettingsTabProps {
   settings: EmailSettings

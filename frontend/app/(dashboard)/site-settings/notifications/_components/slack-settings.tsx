@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Loader2, ExternalLink } from 'lucide-react'
-import { siteSettingsApi, type SlackSettings } from '@/lib/api'
+import { siteSettingsApi, type SlackSettings } from '@/lib/api/admin/site-settings'
 
 interface SlackSettingsTabProps {
   settings: SlackSettings

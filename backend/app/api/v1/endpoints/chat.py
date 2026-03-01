@@ -129,6 +129,60 @@ logger = logging.getLogger(__name__)
 # ============ Helper Functions ============
 
 
+def get_streaming_config(agent: Agent) -> dict:
+    """
+    Get streaming configuration from agent or use defaults.
+
+    Returns:
+        dict with keys: global_timeout, heartbeat_interval, tool_timeouts
+    """
+    from app.core.config import settings
+
+    # Start with defaults from settings
+    config = {
+        "global_timeout": settings.STREAM_GLOBAL_TIMEOUT,
+        "heartbeat_interval": settings.STREAM_HEARTBEAT_INTERVAL,
+        "tool_timeouts": {
+            "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
+            "code": settings.STREAM_TOOL_TIMEOUT_CODE,
+            "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
+            "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
+        }
+    }
+
+    # Override with agent-specific config if present
+    if agent.streaming_config:
+        if "global_timeout" in agent.streaming_config:
+            config["global_timeout"] = agent.streaming_config["global_timeout"]
+        if "heartbeat_interval" in agent.streaming_config:
+            config["heartbeat_interval"] = agent.streaming_config["heartbeat_interval"]
+        if "tool_timeouts" in agent.streaming_config:
+            config["tool_timeouts"].update(agent.streaming_config["tool_timeouts"])
+
+    return config
+
+
+async def send_heartbeat_if_needed(
+    last_event_time: float,
+    heartbeat_interval: float,
+    request: Request
+) -> tuple[bool, float]:
+    """
+    Send heartbeat if needed and check client connection.
+
+    Returns:
+        (should_continue, new_last_event_time)
+    """
+    current_time = time.time()
+    if current_time - last_event_time >= heartbeat_interval:
+        # Check if client is still connected
+        if await request.is_disconnected():
+            logger.info("Client disconnected during heartbeat check")
+            return False, last_event_time
+        return True, current_time
+    return True, last_event_time
+
+
 async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
     """Check if user can chat with the agent."""
     agent = (
@@ -667,7 +721,7 @@ async def get_tool_display_names(
 
 
 async def execute_tool_call(
-    tool_name: str, arguments: dict, agent: Agent | None = None
+    tool_name: str, arguments: dict, agent: Agent | None = None, tool_timeouts: dict | None = None
 ) -> str:
     """
     Execute a tool and return the result as string.
@@ -676,8 +730,18 @@ async def execute_tool_call(
         tool_name: Tool name (for builtin) or custom_<name> (for custom) or mcp_<tool_id>_<tool_name> (for MCP)
         arguments: Tool arguments
         agent: Agent instance (required for knowledge_search)
+        tool_timeouts: Tool timeout configuration dict
     """
     from app.models.tool import Tool, CustomToolType
+
+    # Initialize default timeouts if not provided
+    if tool_timeouts is None:
+        tool_timeouts = {
+            "http": 30,
+            "code": 60,
+            "mcp": 60,
+            "download": 60,
+        }
 
     try:
         if not tool_name:
@@ -757,7 +821,7 @@ async def execute_tool_call(
 
             # Execute MCP tool
             mcp_result = await execute_mcp_tool(
-                mcp_tool.mcp_config, actual_tool_name, arguments
+                mcp_tool.mcp_config, actual_tool_name, arguments, timeout=tool_timeouts.get("mcp", 60)
             )
 
             if mcp_result.success:
@@ -784,10 +848,10 @@ async def execute_tool_call(
 
             # Execute based on custom_type
             if custom_tool.custom_type == CustomToolType.HTTP:
-                http_result = await execute_http_tool(custom_tool, arguments)
+                http_result = await execute_http_tool(custom_tool, arguments, timeout=tool_timeouts.get("http", 30))
                 return http_result
             elif custom_tool.custom_type == CustomToolType.CODE:
-                code_result = await execute_code_tool(custom_tool, arguments)
+                code_result = await execute_code_tool(custom_tool, arguments, timeout=tool_timeouts.get("code", 60))
                 return code_result
             else:
                 return json.dumps(
@@ -829,7 +893,7 @@ async def execute_tool_call(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-async def execute_http_tool(tool: "Tool", arguments: dict) -> str:
+async def execute_http_tool(tool: "Tool", arguments: dict, timeout: float = 30.0) -> str:
     """
     Execute an HTTP-based custom tool.
     """
@@ -842,17 +906,19 @@ async def execute_http_tool(tool: "Tool", arguments: dict) -> str:
         http_config=tool.http_config,
         arguments=arguments,
         credentials=tool.credentials,
+        timeout=timeout,
     )
     return format_http_result_for_llm(result)
 
 
-async def execute_code_tool(tool: "Tool", arguments: dict) -> str:
+async def execute_code_tool(tool: "Tool", arguments: dict, timeout: float = 60.0) -> str:
     """
     Execute a code-based custom tool.
 
     Args:
         tool: The Tool model instance
         arguments: Tool arguments passed from LLM
+        timeout: Execution timeout in seconds
 
     Returns:
         JSON string with execution result
@@ -873,7 +939,7 @@ async def execute_code_tool(tool: "Tool", arguments: dict) -> str:
             language=language,
             code=code,
             params=arguments,
-            timeout=30.0,
+            timeout=timeout,
         )
 
         if exec_result.success:
@@ -1434,686 +1500,776 @@ async def chat_stream(
             ImageContent,
         )
 
+        # Get streaming configuration
+        streaming_config = get_streaming_config(agent)
+        global_timeout = streaming_config["global_timeout"]
+        heartbeat_interval = streaming_config["heartbeat_interval"]
+        tool_timeouts = streaming_config["tool_timeouts"]
+
+        # Record start time and last event time
         start_time = time.time()
+        last_event_time = start_time
         full_content = ""
+        full_reasoning = ""
         message_id = None
 
+        logger.info(
+            f"Starting stream for conversation {conversation.id}, "
+            f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
+        )
+
         try:
-            from app.models.agent import RAGMode
+            # Use asyncio.timeout to wrap entire streaming logic
+            import asyncio
+            async with asyncio.timeout(global_timeout):
+                try:
+                    from app.models.agent import RAGMode
 
-            # Check if model supports vision when images are provided (before creating messages)
-            model_supports_vision = False
-            if chat_in.images and agent.enable_vision:
-                model_capabilities = await get_model_capabilities(agent)
-                model_supports_vision = model_capabilities.get("vision", False)
-                if not model_supports_vision:
-                    # Model doesn't support vision - send error event with i18n key
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': 'model_vision_not_supported'})}\n\n"
-                    return
+                    # Check if model supports vision when images are provided (before creating messages)
+                    model_supports_vision = False
+                    if chat_in.images and agent.enable_vision:
+                        model_capabilities = await get_model_capabilities(agent)
+                        model_supports_vision = model_capabilities.get("vision", False)
+                        if not model_supports_vision:
+                            # Model doesn't support vision - send error event with i18n key
+                            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': 'model_vision_not_supported'})}\n\n"
+                            return
 
-            # Handle RAG based on mode
-            rag_contexts: list[dict] = []
-            final_message = chat_in.message
+                    # Handle RAG based on mode
+                    rag_contexts: list[dict] = []
+                    final_message = chat_in.message
 
-            if agent.rag_mode == RAGMode.AUTO:
-                # Traditional RAG: automatically retrieve on every message
-                has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
-                if has_knowledge_bases:
-                    yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
-                    rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
-                    if rag_contexts:
-                        rag_contexts = aggregate_rag_contexts(rag_contexts)
-                        yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
-                    final_message = build_rag_prompt(rag_contexts, chat_in.message)
+                    if agent.rag_mode == RAGMode.AUTO:
+                        # Traditional RAG: automatically retrieve on every message
+                        has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
+                        if has_knowledge_bases:
+                            yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
+                            last_event_time = time.time()
+                            rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
+                            if rag_contexts:
+                                rag_contexts = aggregate_rag_contexts(rag_contexts)
+                                yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
+                                last_event_time = time.time()
+                            final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
-            # Save user message with images and file_urls
-            user_msg = await Message.create(
-                conversation=conversation,
-                role=MessageRole.USER,
-                content=chat_in.message,
-                images=[img.model_dump() for img in chat_in.images]
-                if chat_in.images
-                else None,
-                file_urls=[f.model_dump() for f in chat_in.file_urls]
-                if chat_in.file_urls
-                else None,
-                rag_context=rag_contexts if rag_contexts else None,
-            )
+                    # Save user message with images and file_urls
+                    user_msg = await Message.create(
+                        conversation=conversation,
+                        role=MessageRole.USER,
+                        content=chat_in.message,
+                        images=[img.model_dump() for img in chat_in.images]
+                        if chat_in.images
+                        else None,
+                        file_urls=[f.model_dump() for f in chat_in.file_urls]
+                        if chat_in.file_urls
+                        else None,
+                        rag_context=rag_contexts if rag_contexts else None,
+                    )
 
-            # Create placeholder for assistant message
-            assistant_msg = await Message.create(
-                conversation=conversation,
-                role=MessageRole.ASSISTANT,
-                content="",  # Will be updated
-            )
-            message_id = str(assistant_msg.id)
+                    # Create placeholder for assistant message
+                    assistant_msg = await Message.create(
+                        conversation=conversation,
+                        role=MessageRole.ASSISTANT,
+                        content="",  # Will be updated
+                    )
+                    message_id = str(assistant_msg.id)
 
-            # Send message_start event
-            yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
+                    # Send message_start event
+                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
+                    last_event_time = time.time()
 
-            # Build messages for LLM using proper types
-            messages_for_llm: list[LLMTypeMessage] = []
+                    # Build messages for LLM using proper types
+                    messages_for_llm: list[LLMTypeMessage] = []
 
-            # Build file content string for injection into {{fileContent}}
-            file_content_str = ""
-            if agent.enable_file_upload:
-                from app.services.file_parser import (
-                    file_parser_service,
-                    ParsedFile,
-                    FileParseConfig,
-                )
+                    # Build file content string for injection into {{fileContent}}
+                    file_content_str = ""
+                    if agent.enable_file_upload:
+                        from app.services.file_parser import (
+                            file_parser_service,
+                            ParsedFile,
+                            FileParseConfig,
+                        )
 
-                parsed_files: list[ParsedFile] = []
+                        parsed_files: list[ParsedFile] = []
 
-                # Get file upload config
-                file_config = agent.file_upload_config or {}
-                parser_config = file_config.get("parser")
-                parse_config = FileParseConfig(
-                    max_content_length=file_config.get("max_content_length", 100000),
-                    truncate_strategy=file_config.get("truncate_strategy", "end"),
-                )
+                        # Get file upload config
+                        file_config = agent.file_upload_config or {}
+                        parser_config = file_config.get("parser")
+                        parse_config = FileParseConfig(
+                            max_content_length=file_config.get("max_content_length", 100000),
+                            truncate_strategy=file_config.get("truncate_strategy", "end"),
+                        )
 
-                # Handle file_urls: download and parse files
-                if chat_in.file_urls and parser_config:
-                    import httpx
+                        # Handle file_urls: download and parse files
+                        if chat_in.file_urls and parser_config:
+                            import httpx
 
-                    # Check parser type
-                    parser_type = parser_config.get("type", "builtin")
-                    parser_name = parser_config.get("name", "markitdown")
-                    parser_tool_id = parser_config.get("tool_id")
+                            # Check parser type
+                            parser_type = parser_config.get("type", "builtin")
+                            parser_name = parser_config.get("name", "markitdown")
+                            parser_tool_id = parser_config.get("tool_id")
 
-                    if parser_type == "builtin" and parser_name == "markitdown":
-                        # Use built-in file_parser_service
-                        async with httpx.AsyncClient(
-                            timeout=60, follow_redirects=True
-                        ) as client:
-                            for f in chat_in.file_urls:
-                                try:
-                                    url = f.url
-                                    # Handle internal URLs - prepend API_BASE_URL
-                                    if url.startswith("/"):
-                                        base_url = settings.API_BASE_URL.rstrip("/")
-                                        url = f"{base_url}{url}"
+                            if parser_type == "builtin" and parser_name == "markitdown":
+                                # Use built-in file_parser_service with configurable timeout
+                                download_timeout = tool_timeouts.get("download", 60)
+                                async with httpx.AsyncClient(
+                                    timeout=download_timeout, follow_redirects=True
+                                ) as client:
+                                    for f in chat_in.file_urls:
+                                        try:
+                                            url = f.url
+                                            # Handle internal URLs - prepend API_BASE_URL
+                                            if url.startswith("/"):
+                                                base_url = settings.API_BASE_URL.rstrip("/")
+                                                url = f"{base_url}{url}"
 
-                                    response = await client.get(url)
-                                    response.raise_for_status()
-                                    file_content = response.content
+                                            response = await client.get(url)
+                                            response.raise_for_status()
+                                            file_content = response.content
 
-                                    # Parse file
-                                    parsed = await file_parser_service.parse_file(
-                                        file_content,
-                                        f.filename,
-                                        parse_config,
-                                    )
-                                    parsed_files.append(parsed)
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to parse file {f.filename}: {e}"
-                                    )
-                                    # Add error placeholder
+                                            # Parse file
+                                            parsed = await file_parser_service.parse_file(
+                                                file_content,
+                                                f.filename,
+                                                parse_config,
+                                            )
+                                            parsed_files.append(parsed)
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"Failed to parse file {f.filename}: {e}"
+                                            )
+                                            # Add error placeholder
+                                            parsed_files.append(
+                                                ParsedFile(
+                                                    filename=f.filename,
+                                                    content=f"[文件解析失败: {str(e)}]",
+                                                    mime_type=f.mime_type,
+                                                    size=f.size,
+                                                )
+                                            )
+
+                            elif parser_type == "custom" and parser_tool_id:
+                                # Use custom tool for parsing
+                                from app.models.tool import Tool
+
+                                custom_tool = await Tool.filter(
+                                    id=parser_tool_id, is_enabled=True
+                                ).first()
+                                if custom_tool:
+                                    try:
+                                        # Call custom tool with files_url parameter
+                                        urls = [f.url for f in chat_in.file_urls]
+                                        result = await execute_tool_call(
+                                            f"custom_{custom_tool.name}",
+                                            {"files_url": urls},
+                                            agent,
+                                        )
+                                        # Custom tool returns parsed content as string
+                                        if result:
+                                            parsed_files.append(
+                                                ParsedFile(
+                                                    filename="自定义解析结果",
+                                                    content=result,
+                                                    mime_type="text/plain",
+                                                    size=len(result),
+                                                )
+                                            )
+                                    except Exception as e:
+                                        logger.warning(f"Custom parser failed: {e}")
+                                        parsed_files.append(
+                                            ParsedFile(
+                                                filename="解析错误",
+                                                content=f"[自定义解析器失败: {str(e)}]",
+                                                mime_type="text/plain",
+                                                size=0,
+                                            )
+                                        )
+
+                            # Handle legacy files field (deprecated, frontend sends parsed content)
+                            elif chat_in.files:
+                                for f in chat_in.files:
                                     parsed_files.append(
                                         ParsedFile(
                                             filename=f.filename,
-                                            content=f"[文件解析失败: {str(e)}]",
+                                            content=f.content,
                                             mime_type=f.mime_type,
                                             size=f.size,
+                                            truncated=f.truncated,
+                                            original_length=f.original_length,
                                         )
                                     )
 
-                    elif parser_type == "custom" and parser_tool_id:
-                        # Use custom tool for parsing
-                        from app.models.tool import Tool
-
-                        custom_tool = await Tool.filter(
-                            id=parser_tool_id, is_enabled=True
-                        ).first()
-                        if custom_tool:
-                            try:
-                                # Call custom tool with files_url parameter
-                                urls = [f.url for f in chat_in.file_urls]
-                                result = await execute_tool_call(
-                                    f"custom_{custom_tool.name}",
-                                    {"files_url": urls},
-                                    agent,
-                                )
-                                # Custom tool returns parsed content as string
-                                if result:
-                                    parsed_files.append(
-                                        ParsedFile(
-                                            filename="自定义解析结果",
-                                            content=result,
-                                            mime_type="text/plain",
-                                            size=len(result),
-                                        )
-                                    )
-                            except Exception as e:
-                                logger.warning(f"Custom parser failed: {e}")
-                                parsed_files.append(
-                                    ParsedFile(
-                                        filename="解析错误",
-                                        content=f"[自定义解析器失败: {str(e)}]",
-                                        mime_type="text/plain",
-                                        size=0,
-                                    )
+                            if parsed_files:
+                                file_content_str = file_parser_service.format_files_for_prompt(
+                                    parsed_files, locale=current_user.locale
                                 )
 
-                # Handle legacy files field (deprecated, frontend sends parsed content)
-                elif chat_in.files:
-                    for f in chat_in.files:
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=f.filename,
-                                content=f.content,
-                                mime_type=f.mime_type,
-                                size=f.size,
-                                truncated=f.truncated,
-                                original_length=f.original_length,
+                    # System prompt - always add with language instruction
+                    system_prompt = agent.system_prompt or ""
+                    if system_prompt:
+                        for key, value in conversation.variables.items():
+                            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+
+                        # Inject {{query}} variable - user's current input
+                        system_prompt = system_prompt.replace("{{query}}", chat_in.message)
+
+                        # Inject file content into {{fileContent}} variable
+                        if file_content_str:
+                            system_prompt = system_prompt.replace(
+                                "{{fileContent}}", file_content_str
                             )
-                        )
-
-                if parsed_files:
-                    file_content_str = file_parser_service.format_files_for_prompt(
-                        parsed_files, locale=current_user.locale
-                    )
-
-            # System prompt - always add with language instruction
-            system_prompt = agent.system_prompt or ""
-            if system_prompt:
-                for key, value in conversation.variables.items():
-                    system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-
-                # Inject {{query}} variable - user's current input
-                system_prompt = system_prompt.replace("{{query}}", chat_in.message)
-
-                # Inject file content into {{fileContent}} variable
-                if file_content_str:
-                    system_prompt = system_prompt.replace(
-                        "{{fileContent}}", file_content_str
-                    )
-                else:
-                    system_prompt = system_prompt.replace("{{fileContent}}", "")
-
-            # Build system prompt with language instruction (always added)
-            system_prompt = build_system_prompt_with_language(
-                system_prompt, current_user.locale
-            )
-            messages_for_llm.append(
-                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-            )
-
-            # Helper function to build multimodal content for vision
-            def build_vision_content(text: str, images: list) -> list[ContentPart]:
-                """Build multimodal content array for vision-enabled messages."""
-                content_parts: list[ContentPart] = [
-                    ContentPart(type=ContentType.TEXT, text=text)
-                ]
-                for img in images:
-                    # Parse the image URL - could be data URL or remote URL
-                    img_url = img.url
-                    if img_url.startswith("data:"):
-                        # Extract base64 from data URL: data:image/png;base64,xxxxx
-                        # Format: data:<mediatype>;base64,<data>
-                        try:
-                            _, data_part = img_url.split(",", 1)
-                            content_parts.append(
-                                ContentPart(
-                                    type=ContentType.IMAGE,
-                                    image=ImageContent(base64=data_part),
-                                )
-                            )
-                        except ValueError:
-                            # Fallback: treat as URL
-                            content_parts.append(
-                                ContentPart(
-                                    type=ContentType.IMAGE,
-                                    image=ImageContent(url=img_url),
-                                )
-                            )
-                    else:
-                        # Remote URL
-                        content_parts.append(
-                            ContentPart(
-                                type=ContentType.IMAGE, image=ImageContent(url=img_url)
-                            )
-                        )
-                return content_parts
-
-            # Track which tool_call_ids have been seen from assistant messages
-            valid_tool_call_ids: set[str] = set()
-
-            # Check if history_override is provided (for version switching / regeneration)
-            if chat_in.history_override is not None:
-                # Use history from frontend instead of database
-                for hist_msg in chat_in.history_override:
-                    if hist_msg.role == "user":
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.USER, content=hist_msg.content
-                            )
-                        )
-                    elif hist_msg.role == "assistant":
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.ASSISTANT,
-                                content=hist_msg.content,
-                                reasoning_content=getattr(
-                                    hist_msg, "reasoning_content", None
-                                ),
-                            )
-                        )
-
-                # Add current user message with RAG and vision support
-                current_content: str | list = final_message
-                if chat_in.images and model_supports_vision:
-                    current_content = build_vision_content(
-                        final_message, chat_in.images
-                    )
-                messages_for_llm.append(
-                    LLMTypeMessage(role=LLMTypeRole.USER, content=current_content)
-                )
-            else:
-                # Load history from database including the user message we just saved (only active messages)
-                history = (
-                    await Message.filter(
-                        conversation_id=conversation.id,
-                        is_active=True,
-                    )
-                    .exclude(id=assistant_msg.id)
-                    .order_by("created_at")
-                )
-
-                for msg in history:
-                    if msg.role == MessageRole.USER:
-                        # Use RAG-enhanced message for the current user message (auto mode)
-                        text_content = (
-                            final_message if msg.id == user_msg.id else msg.content
-                        )
-
-                        # Check if this is the current message with images and vision is enabled
-                        if (
-                            msg.id == user_msg.id
-                            and chat_in.images
-                            and model_supports_vision
-                        ):
-                            # Build multimodal content for vision
-                            content = build_vision_content(text_content, chat_in.images)
                         else:
-                            content = text_content
+                            system_prompt = system_prompt.replace("{{fileContent}}", "")
 
-                        messages_for_llm.append(
-                            LLMTypeMessage(role=LLMTypeRole.USER, content=content)
-                        )
-                    elif msg.role == MessageRole.ASSISTANT:
-                        # Include tool_calls if present
-                        llm_tool_calls = None
-                        if msg.tool_calls:
-                            llm_tool_calls = []
-                            for tc in msg.tool_calls:
-                                tc_id = tc.get("id", "")
-                                valid_tool_call_ids.add(tc_id)
-                                llm_tool_calls.append(
-                                    LLMToolCall(
-                                        id=tc_id,
-                                        type="function",
-                                        function=LLMFunctionCall(
-                                            name=tc.get("name", ""),
-                                            arguments=json.dumps(
-                                                tc.get("arguments", {})
-                                            ),
+                    # Build system prompt with language instruction (always added)
+                    system_prompt = build_system_prompt_with_language(
+                        system_prompt, current_user.locale
+                    )
+                    messages_for_llm.append(
+                        LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+                    )
+
+                    # Helper function to build multimodal content for vision
+                    def build_vision_content(text: str, images: list) -> list[ContentPart]:
+                        """Build multimodal content array for vision-enabled messages."""
+                        content_parts: list[ContentPart] = [
+                            ContentPart(type=ContentType.TEXT, text=text)
+                        ]
+                        for img in images:
+                            # Parse the image URL - could be data URL or remote URL
+                            img_url = img.url
+                            if img_url.startswith("data:"):
+                                # Extract base64 from data URL: data:image/png;base64,xxxxx
+                                # Format: data:<mediatype>;base64,<data>
+                                try:
+                                    _, data_part = img_url.split(",", 1)
+                                    content_parts.append(
+                                        ContentPart(
+                                            type=ContentType.IMAGE,
+                                            image=ImageContent(base64=data_part),
+                                        )
+                                    )
+                                except ValueError:
+                                    # Fallback: treat as URL
+                                    content_parts.append(
+                                        ContentPart(
+                                            type=ContentType.IMAGE,
+                                            image=ImageContent(url=img_url),
+                                        )
+                                    )
+                            else:
+                                # Remote URL
+                                content_parts.append(
+                                    ContentPart(
+                                        type=ContentType.IMAGE, image=ImageContent(url=img_url)
+                                    )
+                                )
+                        return content_parts
+
+                    # Track which tool_call_ids have been seen from assistant messages
+                    valid_tool_call_ids: set[str] = set()
+
+                    # Check if history_override is provided (for version switching / regeneration)
+                    if chat_in.history_override is not None:
+                        # Use history from frontend instead of database
+                        for hist_msg in chat_in.history_override:
+                            if hist_msg.role == "user":
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.USER, content=hist_msg.content
+                                    )
+                                )
+                            elif hist_msg.role == "assistant":
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.ASSISTANT,
+                                        content=hist_msg.content,
+                                        reasoning_content=getattr(
+                                            hist_msg, "reasoning_content", None
                                         ),
                                     )
                                 )
+
+                        # Add current user message with RAG and vision support
+                        current_content: str | list = final_message
+                        if chat_in.images and model_supports_vision:
+                            current_content = build_vision_content(
+                                final_message, chat_in.images
+                            )
                         messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.ASSISTANT,
-                                content=msg.content,
-                                reasoning_content=msg.reasoning_content,
-                                tool_calls=llm_tool_calls if llm_tool_calls else None,
-                            )
+                            LLMTypeMessage(role=LLMTypeRole.USER, content=current_content)
                         )
-                    elif msg.role == MessageRole.TOOL:
-                        # Only include tool messages that have a corresponding tool_call
-                        if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
-                            messages_for_llm.append(
-                                LLMTypeMessage(
-                                    role=LLMTypeRole.TOOL,
-                                    content=msg.content,
-                                    tool_call_id=msg.tool_call_id,
+                    else:
+                        # Load history from database including the user message we just saved (only active messages)
+                        history = (
+                            await Message.filter(
+                                conversation_id=conversation.id,
+                                is_active=True,
+                            )
+                            .exclude(id=assistant_msg.id)
+                            .order_by("created_at")
+                        )
+
+                        for msg in history:
+                            if msg.role == MessageRole.USER:
+                                # Use RAG-enhanced message for the current user message (auto mode)
+                                text_content = (
+                                    final_message if msg.id == user_msg.id else msg.content
                                 )
-                            )
-                        else:
-                            # Skip orphaned tool messages
-                            logger.warning(
-                                f"Skipping orphaned tool message with tool_call_id={msg.tool_call_id}"
-                            )
 
-            # Get model identifier
-            model_id = await get_model_identifier(agent)
+                                # Check if this is the current message with images and vision is enabled
+                                if (
+                                    msg.id == user_msg.id
+                                    and chat_in.images
+                                    and model_supports_vision
+                                ):
+                                    # Build multimodal content for vision
+                                    content = build_vision_content(text_content, chat_in.images)
+                                else:
+                                    content = text_content
 
-            # Get agent tools
-            tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(
-                agent, current_user.locale
-            )
-            tools: list[ToolDefinition] | None = None
-            if tools_openai:
-                tools = [
-                    ToolDefinition(
-                        type="function",
-                        function=FunctionDefinition(
-                            name=t["function"]["name"],
-                            description=t["function"]["description"],
-                            parameters=t["function"]["parameters"],
-                        ),
+                                messages_for_llm.append(
+                                    LLMTypeMessage(role=LLMTypeRole.USER, content=content)
+                                )
+                            elif msg.role == MessageRole.ASSISTANT:
+                                # Include tool_calls if present
+                                llm_tool_calls = None
+                                if msg.tool_calls:
+                                    llm_tool_calls = []
+                                    for tc in msg.tool_calls:
+                                        tc_id = tc.get("id", "")
+                                        valid_tool_call_ids.add(tc_id)
+                                        llm_tool_calls.append(
+                                            LLMToolCall(
+                                                id=tc_id,
+                                                type="function",
+                                                function=LLMFunctionCall(
+                                                    name=tc.get("name", ""),
+                                                    arguments=json.dumps(
+                                                        tc.get("arguments", {})
+                                                    ),
+                                                ),
+                                            )
+                                        )
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.ASSISTANT,
+                                        content=msg.content,
+                                        reasoning_content=msg.reasoning_content,
+                                        tool_calls=llm_tool_calls if llm_tool_calls else None,
+                                    )
+                                )
+                            elif msg.role == MessageRole.TOOL:
+                                # Only include tool messages that have a corresponding tool_call
+                                if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+                                    messages_for_llm.append(
+                                        LLMTypeMessage(
+                                            role=LLMTypeRole.TOOL,
+                                            content=msg.content,
+                                            tool_call_id=msg.tool_call_id,
+                                        )
+                                    )
+                                else:
+                                    # Skip orphaned tool messages
+                                    logger.warning(
+                                        f"Skipping orphaned tool message with tool_call_id={msg.tool_call_id}"
+                                    )
+
+                    # Get model identifier
+                    model_id = await get_model_identifier(agent)
+
+                    # Get agent tools
+                    tools_openai = await get_agent_tools(agent)
+                    tool_display_names = await get_tool_display_names(
+                        agent, current_user.locale
                     )
-                    for t in tools_openai
-                ]
+                    tools: list[ToolDefinition] | None = None
+                    if tools_openai:
+                        tools = [
+                            ToolDefinition(
+                                type="function",
+                                function=FunctionDefinition(
+                                    name=t["function"]["name"],
+                                    description=t["function"]["description"],
+                                    parameters=t["function"]["parameters"],
+                                ),
+                            )
+                            for t in tools_openai
+                        ]
 
-            # Tool call loop
-            max_iterations = agent.max_iterations or 5
-            iteration = 0
+                    # Tool call loop
+                    max_iterations = agent.max_iterations or 5
+                    iteration = 0
 
-            while iteration < max_iterations:
-                iteration += 1
+                    while iteration < max_iterations:
+                        iteration += 1
 
-                # Track reasoning state for this iteration
-                reasoning_started = False
-                full_reasoning = ""
-                iteration_content = ""
-                iteration_reasoning = ""
-                pending_tool_calls = []
-                collected_tool_calls = []  # For collecting tool calls from stream
-
-                # Calculate input chars for this iteration
-                iteration_input_chars = sum(
-                    len(m.content or "") if isinstance(m.content, str) else 0
-                    for m in messages_for_llm
-                )
-
-                # Use streaming call - works for both with and without tools
-                emitted_any = False
-                client_disconnected = False
-                async for chunk in model_manager.team_chat_stream(
-                    team_id=str(agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=model_id,
-                    tools=tools,
-                ):
-                    # Check if client disconnected - stop LLM generation to save tokens
-                    if await request.is_disconnected():
-                        client_disconnected = True
-                        logger.info(
-                            f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
+                        # Heartbeat check and send
+                        should_continue, new_last_event_time = await send_heartbeat_if_needed(
+                            last_event_time, heartbeat_interval, request
                         )
-                        break
+                        if not should_continue:
+                            # Client disconnected, save partial content and exit
+                            if full_content or full_reasoning:
+                                assistant_msg.content = full_content
+                                assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                assistant_msg.model_used = model_id
+                                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                await assistant_msg.save()
+                            return
 
-                    # Handle reasoning content (思维链)
-                    if chunk.delta.reasoning_content:
-                        if not reasoning_started:
-                            reasoning_started = True
-                            yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        full_reasoning += chunk.delta.reasoning_content
-                        iteration_reasoning += chunk.delta.reasoning_content
-                        yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-                        emitted_any = True
+                        # If we need to send heartbeat
+                        if new_last_event_time > last_event_time:
+                            yield ": heartbeat\n\n"
+                            last_event_time = new_last_event_time
 
-                    # Handle content - stream it immediately
-                    if chunk.delta.content:
-                        if reasoning_started and not full_content:
-                            yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        full_content += chunk.delta.content
-                        iteration_content += chunk.delta.content
-                        yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                        emitted_any = True
+                        # Track reasoning state for this iteration
+                        reasoning_started = False
+                        full_reasoning = ""
+                        iteration_content = ""
+                        iteration_reasoning = ""
+                        pending_tool_calls = []
+                        collected_tool_calls = []  # For collecting tool calls from stream
 
-                    # Collect tool calls when they arrive
-                    if chunk.delta.tool_calls:
-                        collected_tool_calls = chunk.delta.tool_calls
-                        emitted_any = True
+                        # Calculate input chars for this iteration
+                        iteration_input_chars = sum(
+                            len(m.content or "") if isinstance(m.content, str) else 0
+                            for m in messages_for_llm
+                        )
 
-                    # Handle finish
-                    if chunk.finish_reason:
-                        if reasoning_started and not full_content:
-                            yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        break
+                        # Use streaming call - works for both with and without tools
+                        emitted_any = False
+                        client_disconnected = False
+                        async for chunk in model_manager.team_chat_stream(
+                            team_id=str(agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=model_id,
+                            tools=tools,
+                        ):
+                            # Check if client disconnected - stop LLM generation to save tokens
+                            if await request.is_disconnected():
+                                client_disconnected = True
+                                logger.info(
+                                    f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
+                                )
+                                break
 
-                # Fallback: if stream yields nothing and no tool calls, do a non-stream call
-                if (
-                    not emitted_any
-                    and not collected_tool_calls
-                    and not client_disconnected
-                ):
-                    response = await model_manager.team_chat(
-                        team_id=str(agent.team_id),
-                        messages=messages_for_llm,
-                        model_id=model_id,
-                        tools=tools,
-                    )
-                    if response.reasoning_content:
-                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        full_reasoning += response.reasoning_content
-                        iteration_reasoning += response.reasoning_content
-                        yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
-                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                    if response.content:
-                        full_content += response.content
-                        iteration_content += response.content
-                        yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
+                            # Handle reasoning content (思维链)
+                            if chunk.delta.reasoning_content:
+                                if not reasoning_started:
+                                    reasoning_started = True
+                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += chunk.delta.reasoning_content
+                                iteration_reasoning += chunk.delta.reasoning_content
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                last_event_time = time.time()
+                                emitted_any = True
 
-                # If client disconnected, save partial content and exit
-                if client_disconnected:
-                    # Record usage for partial generation
-                    iteration_output_chars = len(iteration_content) + len(
-                        iteration_reasoning
-                    )
-                    if iteration_output_chars > 0:
+                            # Handle content - stream it immediately
+                            if chunk.delta.content:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                full_content += chunk.delta.content
+                                iteration_content += chunk.delta.content
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                last_event_time = time.time()
+                                emitted_any = True
+
+                            # Collect tool calls when they arrive
+                            if chunk.delta.tool_calls:
+                                collected_tool_calls = chunk.delta.tool_calls
+                                emitted_any = True
+
+                            # Handle finish
+                            if chunk.finish_reason:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                break
+
+                        # Fallback: if stream yields nothing and no tool calls, do a non-stream call
+                        if (
+                            not emitted_any
+                            and not collected_tool_calls
+                            and not client_disconnected
+                        ):
+                            response = await model_manager.team_chat(
+                                team_id=str(agent.team_id),
+                                messages=messages_for_llm,
+                                model_id=model_id,
+                                tools=tools,
+                            )
+                            if response.reasoning_content:
+                                yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += response.reasoning_content
+                                iteration_reasoning += response.reasoning_content
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
+                                yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                            if response.content:
+                                full_content += response.content
+                                iteration_content += response.content
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
+
+                        # If client disconnected, save partial content and exit
+                        if client_disconnected:
+                            # Record usage for partial generation
+                            iteration_output_chars = len(iteration_content) + len(
+                                iteration_reasoning
+                            )
+                            if iteration_output_chars > 0:
+                                await model_manager.record_stream_usage(
+                                    team_id=str(agent.team_id),
+                                    model_id=model_id,
+                                    input_text_length=iteration_input_chars,
+                                    output_text_length=iteration_output_chars,
+                                )
+                            # Save partial content if any was generated
+                            if full_content or full_reasoning:
+                                assistant_msg.content = full_content
+                                assistant_msg.reasoning_content = (
+                                    full_reasoning if full_reasoning else None
+                                )
+                                assistant_msg.model_used = model_id
+                                assistant_msg.duration_ms = int(
+                                    (time.time() - start_time) * 1000
+                                )
+                                await assistant_msg.save()
+                            return  # Exit generator - client is gone
+
+                        # Record usage for this iteration (important: do this after each stream ends)
+                        iteration_output_chars = len(iteration_content) + len(
+                            iteration_reasoning
+                        )
                         await model_manager.record_stream_usage(
                             team_id=str(agent.team_id),
                             model_id=model_id,
                             input_text_length=iteration_input_chars,
                             output_text_length=iteration_output_chars,
                         )
-                    # Save partial content if any was generated
-                    if full_content or full_reasoning:
-                        assistant_msg.content = full_content
-                        assistant_msg.reasoning_content = (
-                            full_reasoning if full_reasoning else None
-                        )
-                        assistant_msg.model_used = model_id
-                        assistant_msg.duration_ms = int(
-                            (time.time() - start_time) * 1000
-                        )
-                        await assistant_msg.save()
-                    return  # Exit generator - client is gone
 
-                # Record usage for this iteration (important: do this after each stream ends)
-                iteration_output_chars = len(iteration_content) + len(
-                    iteration_reasoning
-                )
-                await model_manager.record_stream_usage(
-                    team_id=str(agent.team_id),
-                    model_id=model_id,
-                    input_text_length=iteration_input_chars,
-                    output_text_length=iteration_output_chars,
-                )
+                        # Check if there are tool calls to execute
+                        if collected_tool_calls:
+                            # Process each tool call
+                            for tc in collected_tool_calls:
+                                # Check if client disconnected before tool execution
+                                if await request.is_disconnected():
+                                    logger.info("Client disconnected before tool execution")
+                                    if full_content or full_reasoning:
+                                        assistant_msg.content = full_content
+                                        assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                        assistant_msg.model_used = model_id
+                                        assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                        await assistant_msg.save()
+                                    return
 
-                # Check if there are tool calls to execute
-                if collected_tool_calls:
-                    # Process each tool call
-                    for tc in collected_tool_calls:
-                        tool_name = tc.function.name
-                        if not tool_name:
-                            logger.warning("Skipping tool call with empty name")
-                            continue
-                        try:
-                            arguments = json.loads(tc.function.arguments)
-                        except json.JSONDecodeError:
-                            arguments = {}
+                                tool_name = tc.function.name
+                                if not tool_name:
+                                    logger.warning("Skipping tool call with empty name")
+                                    continue
+                                try:
+                                    arguments = json.loads(tc.function.arguments)
+                                except json.JSONDecodeError:
+                                    arguments = {}
 
-                        # Send tool_call event
-                        tool_display_name = tool_display_names.get(tool_name, tool_name)
-                        yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
+                                # Send tool_call event
+                                tool_display_name = tool_display_names.get(tool_name, tool_name)
+                                yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
+                                last_event_time = time.time()
 
-                        # Execute the tool (pass agent for knowledge_search)
-                        result = await execute_tool_call(
-                            tool_name, arguments, agent=agent
-                        )
+                                # Execute the tool (pass agent and tool_timeouts)
+                                result = await execute_tool_call(
+                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts
+                                )
 
-                        # Send tool_result event
-                        yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                # Check if client disconnected after tool execution
+                                if await request.is_disconnected():
+                                    logger.info("Client disconnected after tool execution")
+                                    if full_content or full_reasoning:
+                                        assistant_msg.content = full_content
+                                        assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                        assistant_msg.model_used = model_id
+                                        assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                        await assistant_msg.save()
+                                    return
 
-                        # Add to pending tool calls for message building
-                        pending_tool_calls.append(
-                            {
-                                "id": tc.id,
-                                "name": tool_name,
-                                "arguments": arguments,
-                                "result": result,
-                            }
-                        )
+                                # Send tool_result event
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                last_event_time = time.time()
 
-                    # Helper to safely parse arguments
-                    def safe_parse_arguments(args):
-                        if not args:
-                            return {}
-                        if isinstance(args, dict):
-                            return args
-                        try:
-                            return json.loads(args)
-                        except (json.JSONDecodeError, TypeError):
-                            return {}
+                                # Add to pending tool calls for message building
+                                pending_tool_calls.append(
+                                    {
+                                        "id": tc.id,
+                                        "name": tool_name,
+                                        "arguments": arguments,
+                                        "result": result,
+                                    }
+                                )
 
-                    # Save intermediate assistant message with tool_calls to database
-                    intermediate_tool_calls = [
-                        {
-                            "id": tc.id,
-                            "name": tc.function.name,
-                            "display_name": tool_display_names.get(
-                                tc.function.name, tc.function.name
-                            ),
-                            "arguments": safe_parse_arguments(tc.function.arguments),
-                        }
-                        for tc in collected_tool_calls
-                    ]
-                    await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.ASSISTANT,
-                        content=iteration_content,
-                        tool_calls=intermediate_tool_calls,
-                    )
+                            # Helper to safely parse arguments
+                            def safe_parse_arguments(args):
+                                if not args:
+                                    return {}
+                                if isinstance(args, dict):
+                                    return args
+                                try:
+                                    return json.loads(args)
+                                except (json.JSONDecodeError, TypeError):
+                                    return {}
 
-                    # Save tool response messages to database
-                    for tc_data in pending_tool_calls:
-                        await Message.create(
-                            conversation=conversation,
-                            role=MessageRole.TOOL,
-                            content=tc_data["result"],
-                            tool_call_id=tc_data["id"],
-                            tool_name=tc_data["name"],
-                        )
-
-                    # Add assistant message with tool calls to message history for LLM
-                    assistant_tool_calls = [
-                        LLMToolCall(
-                            id=tc.id,
-                            type="function",
-                            function=LLMFunctionCall(
-                                name=tc.function.name,
-                                arguments=tc.function.arguments,
-                            ),
-                        )
-                        for tc in collected_tool_calls
-                    ]
-                    messages_for_llm.append(
-                        LLMTypeMessage(
-                            role=LLMTypeRole.ASSISTANT,
-                            content=iteration_content,
-                            reasoning_content=iteration_reasoning or None,
-                            tool_calls=assistant_tool_calls,
-                        )
-                    )
-
-                    # Add tool results to message history
-                    for tc_data in pending_tool_calls:
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.TOOL,
-                                content=tc_data["result"],
-                                tool_call_id=tc_data["id"],
+                            # Save intermediate assistant message with tool_calls to database
+                            intermediate_tool_calls = [
+                                {
+                                    "id": tc.id,
+                                    "name": tc.function.name,
+                                    "display_name": tool_display_names.get(
+                                        tc.function.name, tc.function.name
+                                    ),
+                                    "arguments": safe_parse_arguments(tc.function.arguments),
+                                }
+                                for tc in collected_tool_calls
+                            ]
+                            await Message.create(
+                                conversation=conversation,
+                                role=MessageRole.ASSISTANT,
+                                content=iteration_content,
+                                tool_calls=intermediate_tool_calls,
                             )
+
+                            # Save tool response messages to database
+                            for tc_data in pending_tool_calls:
+                                await Message.create(
+                                    conversation=conversation,
+                                    role=MessageRole.TOOL,
+                                    content=tc_data["result"],
+                                    tool_call_id=tc_data["id"],
+                                    tool_name=tc_data["name"],
+                                )
+
+                            # Add assistant message with tool calls to message history for LLM
+                            assistant_tool_calls = [
+                                LLMToolCall(
+                                    id=tc.id,
+                                    type="function",
+                                    function=LLMFunctionCall(
+                                        name=tc.function.name,
+                                        arguments=tc.function.arguments,
+                                    ),
+                                )
+                                for tc in collected_tool_calls
+                            ]
+                            messages_for_llm.append(
+                                LLMTypeMessage(
+                                    role=LLMTypeRole.ASSISTANT,
+                                    content=iteration_content,
+                                    reasoning_content=iteration_reasoning or None,
+                                    tool_calls=assistant_tool_calls,
+                                )
+                            )
+
+                            # Add tool results to message history
+                            for tc_data in pending_tool_calls:
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.TOOL,
+                                        content=tc_data["result"],
+                                        tool_call_id=tc_data["id"],
+                                    )
+                                )
+
+                            # Continue the loop to get the final response
+                            pending_tool_calls = []
+                            collected_tool_calls = []
+                            continue
+                        else:
+                            # No tool calls, we're done
+                            break
+
+                    duration_ms = int((time.time() - start_time) * 1000)
+
+                    # Update assistant message (final response, no tool_calls)
+                    assistant_msg.content = full_content
+                    assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                    assistant_msg.model_used = model_id
+                    assistant_msg.duration_ms = duration_ms
+                    # Ensure assistant message appears after tool calls/results in history
+                    assistant_msg.created_at = now_utc()
+                    # Estimate token usage
+                    input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
+                    output_tokens = len(full_content) // 4
+                    assistant_msg.token_usage = {
+                        "prompt": input_tokens,
+                        "completion": output_tokens,
+                    }
+                    await assistant_msg.save()
+
+                    # Update conversation stats atomically
+                    title_update = {}
+                    if not conversation.title:
+                        title_update["title"] = chat_in.message[:50] + (
+                            "..." if len(chat_in.message) > 50 else ""
                         )
 
-                    # Continue the loop to get the final response
-                    pending_tool_calls = []
-                    collected_tool_calls = []
-                    continue
-                else:
-                    # No tool calls, we're done
-                    break
+                    await Conversation.filter(id=conversation.id).update(
+                        message_count=F("message_count") + 2,
+                        token_usage=F("token_usage") + (input_tokens + output_tokens),
+                        **title_update,
+                    )
 
-            duration_ms = int((time.time() - start_time) * 1000)
+                    # Update agent stats atomically
+                    await Agent.filter(id=agent.id).update(
+                        message_count=F("message_count") + 2,
+                        total_tokens=F("total_tokens") + (input_tokens + output_tokens),
+                    )
 
-            # Update assistant message (final response, no tool_calls)
-            assistant_msg.content = full_content
-            assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
-            assistant_msg.model_used = model_id
-            assistant_msg.duration_ms = duration_ms
-            # Ensure assistant message appears after tool calls/results in history
-            assistant_msg.created_at = now_utc()
-            # Estimate token usage
-            input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
-            output_tokens = len(full_content) // 4
-            assistant_msg.token_usage = {
-                "prompt": input_tokens,
-                "completion": output_tokens,
-            }
-            await assistant_msg.save()
+                    # Update team stats atomically
+                    await Team.filter(id=agent.team.id).update(
+                        total_messages=F("total_messages") + 2,
+                        total_tokens=F("total_tokens") + (input_tokens + output_tokens),
+                    )
 
-            # Update conversation stats atomically
-            title_update = {}
-            if not conversation.title:
-                title_update["title"] = chat_in.message[:50] + (
-                    "..." if len(chat_in.message) > 50 else ""
-                )
+                    # Send message_end event with version info
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"
 
-            await Conversation.filter(id=conversation.id).update(
-                message_count=F("message_count") + 2,
-                token_usage=F("token_usage") + (input_tokens + output_tokens),
-                **title_update,
+                except QuotaExceededError as e:
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
+                except ModelNotFoundError as e:
+                    logger.error(f"Model not found error: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': str(e)})}\n\n"
+                except AuthenticationError as e:
+                    logger.error(f"Authentication error: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': str(e)})}\n\n"
+                except RateLimitError as e:
+                    logger.warning(f"Rate limit error: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                except LLMError as e:
+                    logger.exception(f"LLM error during stream: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                except Exception as e:
+                    logger.exception(f"Unexpected error during stream: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+
+        except TimeoutError:
+            # Global timeout
+            logger.warning(
+                f"Stream global timeout ({global_timeout}s) for conversation {conversation.id}"
             )
+            # Save partial content
+            if full_content or full_reasoning:
+                assistant_msg.content = full_content
+                assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                assistant_msg.model_used = model_id
+                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                await assistant_msg.save()
+            # Send timeout error event
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': 'Stream timeout exceeded', 'timeout': global_timeout})}\n\n"
 
-            # Update agent stats atomically
-            await Agent.filter(id=agent.id).update(
-                message_count=F("message_count") + 2,
-                total_tokens=F("total_tokens") + (input_tokens + output_tokens),
+        finally:
+            # Resource cleanup and logging
+            duration = time.time() - start_time
+            logger.info(
+                f"Stream ended for conversation {conversation.id}, "
+                f"duration={duration:.2f}s"
             )
-
-            # Update team stats atomically
-            await Team.filter(id=agent.team.id).update(
-                total_messages=F("total_messages") + 2,
-                total_tokens=F("total_tokens") + (input_tokens + output_tokens),
-            )
-
-            # Send message_end event with version info
-            yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"
-
-        except QuotaExceededError as e:
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
-        except ModelNotFoundError as e:
-            logger.error(f"Model not found error: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': str(e)})}\n\n"
-        except AuthenticationError as e:
-            logger.error(f"Authentication error: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': str(e)})}\n\n"
-        except RateLimitError as e:
-            logger.warning(f"Rate limit error: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
-        except LLMError as e:
-            logger.exception(f"LLM error during stream: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
-        except Exception as e:
-            logger.exception(f"Unexpected error during stream: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -2414,296 +2570,391 @@ async def regenerate_message(
             FunctionCall as LLMFunctionCall,
         )
 
+        # Get streaming configuration
+        streaming_config = get_streaming_config(agent)
+        global_timeout = streaming_config["global_timeout"]
+        heartbeat_interval = streaming_config["heartbeat_interval"]
+        tool_timeouts = streaming_config["tool_timeouts"]
+
+        # Record start time and last event time
         start_time = time.time()
+        last_event_time = start_time
         full_content = ""
+        full_reasoning = ""
         new_message_id = None
 
+        logger.info(
+            f"Starting regenerate stream for message {message_id}, "
+            f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
+        )
+
         try:
-            from app.models.agent import RAGMode
+            # Use asyncio.timeout to wrap entire streaming logic
+            import asyncio
+            async with asyncio.timeout(global_timeout):
+                try:
+                    from app.models.agent import RAGMode
 
-            # Determine the root message ID for versioning
-            root_id = message.parent_id or message.id
+                    # Determine the root message ID for versioning
+                    root_id = message.parent_id or message.id
 
-            # Get current version count
-            current_version_count = await Message.filter(parent_id=root_id).count() + 1
-            new_version_number = current_version_count + 1
+                    # Get current version count
+                    current_version_count = await Message.filter(parent_id=root_id).count() + 1
+                    new_version_number = current_version_count + 1
 
-            # Deactivate all versions in this group
-            await Message.filter(id=root_id).update(is_active=False)
-            await Message.filter(parent_id=root_id).update(is_active=False)
+                    # Deactivate all versions in this group
+                    await Message.filter(id=root_id).update(is_active=False)
+                    await Message.filter(parent_id=root_id).update(is_active=False)
 
-            # Create new version message
-            new_message = await Message.create(
-                conversation=conversation,
-                role=MessageRole.ASSISTANT,
-                content="",
-                parent_id=root_id,
-                is_active=True,
-                version_number=new_version_number,
-            )
-            new_message_id = str(new_message.id)
-
-            # Send message_start event with version info
-            yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': new_version_number, 'version_count': new_version_number, 'parent_id': str(root_id)})}\n\n"
-
-            # Handle RAG
-            rag_contexts: list[dict] = []
-            final_message = user_message.content
-
-            if agent.rag_mode == RAGMode.AUTO:
-                has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
-                if has_knowledge_bases:
-                    yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
-                    rag_contexts = await perform_rag_retrieval(
-                        agent, user_message.content
+                    # Create new version message
+                    new_message = await Message.create(
+                        conversation=conversation,
+                        role=MessageRole.ASSISTANT,
+                        content="",
+                        parent_id=root_id,
+                        is_active=True,
+                        version_number=new_version_number,
                     )
-                    if rag_contexts:
-                        rag_contexts = aggregate_rag_contexts(rag_contexts)
-                        yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
-                    final_message = build_rag_prompt(rag_contexts, user_message.content)
+                    new_message_id = str(new_message.id)
 
-            # Build messages for LLM - only include ACTIVE messages before this one
-            messages_for_llm: list[LLMTypeMessage] = []
+                    # Send message_start event with version info
+                    yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': new_message_id, 'version_number': new_version_number, 'version_count': new_version_number, 'parent_id': str(root_id)})}\n\n"
+                    last_event_time = time.time()
 
-            # System prompt - always add with language instruction
-            system_prompt = agent.system_prompt or ""
-            if system_prompt:
-                for key, value in conversation.variables.items():
-                    system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-                # Inject {{query}} variable - user's current input
-                system_prompt = system_prompt.replace("{{query}}", user_message.content)
+                    # Handle RAG
+                    rag_contexts: list[dict] = []
+                    final_message = user_message.content
 
-            # Build system prompt with language instruction (always added)
-            system_prompt = build_system_prompt_with_language(
-                system_prompt, current_user.locale
-            )
-            messages_for_llm.append(
-                LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-            )
+                    if agent.rag_mode == RAGMode.AUTO:
+                        has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
+                        if has_knowledge_bases:
+                            yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
+                            last_event_time = time.time()
+                            rag_contexts = await perform_rag_retrieval(
+                                agent, user_message.content
+                            )
+                            if rag_contexts:
+                                rag_contexts = aggregate_rag_contexts(rag_contexts)
+                                yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
+                                last_event_time = time.time()
+                            final_message = build_rag_prompt(rag_contexts, user_message.content)
 
-            # Load active history before this message
-            history = await Message.filter(
-                conversation_id=conversation.id,
-                created_at__lt=message.created_at,
-                is_active=True,
-            ).order_by("created_at")
+                    # Build messages for LLM - only include ACTIVE messages before this one
+                    messages_for_llm: list[LLMTypeMessage] = []
 
-            valid_tool_call_ids: set[str] = set()
+                    # System prompt - always add with language instruction
+                    system_prompt = agent.system_prompt or ""
+                    if system_prompt:
+                        for key, value in conversation.variables.items():
+                            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                        # Inject {{query}} variable - user's current input
+                        system_prompt = system_prompt.replace("{{query}}", user_message.content)
 
-            for msg in history:
-                if msg.role == MessageRole.USER:
-                    # Use RAG-enhanced message for the trigger user message
-                    text_content = (
-                        final_message if msg.id == user_message.id else msg.content
+                    # Build system prompt with language instruction (always added)
+                    system_prompt = build_system_prompt_with_language(
+                        system_prompt, current_user.locale
                     )
                     messages_for_llm.append(
-                        LLMTypeMessage(role=LLMTypeRole.USER, content=text_content)
+                        LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                     )
-                elif msg.role == MessageRole.ASSISTANT:
-                    llm_tool_calls = None
-                    if msg.tool_calls:
-                        llm_tool_calls = []
-                        for tc in msg.tool_calls:
-                            tc_id = tc.get("id", "")
-                            valid_tool_call_ids.add(tc_id)
-                            llm_tool_calls.append(
-                                LLMToolCall(
-                                    id=tc_id,
-                                    type="function",
-                                    function=LLMFunctionCall(
-                                        name=tc.get("name", ""),
-                                        arguments=json.dumps(tc.get("arguments", {})),
-                                    ),
+
+                    # Load active history before this message
+                    history = await Message.filter(
+                        conversation_id=conversation.id,
+                        created_at__lt=message.created_at,
+                        is_active=True,
+                    ).order_by("created_at")
+
+                    valid_tool_call_ids: set[str] = set()
+
+                    for msg in history:
+                        if msg.role == MessageRole.USER:
+                            # Use RAG-enhanced message for the trigger user message
+                            text_content = (
+                                final_message if msg.id == user_message.id else msg.content
+                            )
+                            messages_for_llm.append(
+                                LLMTypeMessage(role=LLMTypeRole.USER, content=text_content)
+                            )
+                        elif msg.role == MessageRole.ASSISTANT:
+                            llm_tool_calls = None
+                            if msg.tool_calls:
+                                llm_tool_calls = []
+                                for tc in msg.tool_calls:
+                                    tc_id = tc.get("id", "")
+                                    valid_tool_call_ids.add(tc_id)
+                                    llm_tool_calls.append(
+                                        LLMToolCall(
+                                            id=tc_id,
+                                            type="function",
+                                            function=LLMFunctionCall(
+                                                name=tc.get("name", ""),
+                                                arguments=json.dumps(tc.get("arguments", {})),
+                                            ),
+                                        )
+                                    )
+                            messages_for_llm.append(
+                                LLMTypeMessage(
+                                    role=LLMTypeRole.ASSISTANT,
+                                    content=msg.content,
+                                    reasoning_content=msg.reasoning_content,
+                                    tool_calls=llm_tool_calls if llm_tool_calls else None,
                                 )
                             )
-                    messages_for_llm.append(
-                        LLMTypeMessage(
-                            role=LLMTypeRole.ASSISTANT,
-                            content=msg.content,
-                            reasoning_content=msg.reasoning_content,
-                            tool_calls=llm_tool_calls if llm_tool_calls else None,
-                        )
-                    )
-                elif msg.role == MessageRole.TOOL:
-                    if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.TOOL,
-                                content=msg.content,
-                                tool_call_id=msg.tool_call_id,
-                            )
-                        )
-
-            # Get model and tools
-            model_id = await get_model_identifier(agent)
-            tools_openai = await get_agent_tools(agent)
-            tool_display_names = await get_tool_display_names(
-                agent, current_user.locale
-            )
-            tools: list[ToolDefinition] | None = None
-            if tools_openai:
-                tools = [
-                    ToolDefinition(
-                        type="function",
-                        function=FunctionDefinition(
-                            name=t["function"]["name"],
-                            description=t["function"]["description"],
-                            parameters=t["function"]["parameters"],
-                        ),
-                    )
-                    for t in tools_openai
-                ]
-
-            # Streaming generation (simplified - same as main chat)
-            max_iterations = agent.max_iterations or 5
-            iteration = 0
-
-            while iteration < max_iterations:
-                iteration += 1
-                reasoning_started = False
-                collected_tool_calls = []
-                client_disconnected = False
-
-                async for chunk in model_manager.team_chat_stream(
-                    team_id=str(agent.team_id),
-                    messages=messages_for_llm,
-                    model_id=model_id,
-                    tools=tools,
-                ):
-                    # Check if client disconnected - stop LLM generation to save tokens
-                    if await request.is_disconnected():
-                        client_disconnected = True
-                        logger.info(
-                            f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
-                        )
-                        break
-
-                    if chunk.delta.reasoning_content:
-                        if not reasoning_started:
-                            reasoning_started = True
-                            yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                        yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
-
-                    if chunk.delta.content:
-                        if reasoning_started and not full_content:
-                            yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        full_content += chunk.delta.content
-                        yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-
-                    if chunk.delta.tool_calls:
-                        collected_tool_calls = chunk.delta.tool_calls
-
-                    if chunk.finish_reason:
-                        if reasoning_started and not full_content:
-                            yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                        break
-
-                # If client disconnected, save partial content and exit
-                if client_disconnected:
-                    if full_content:
-                        new_message.content = full_content
-                        new_message.model_used = model_id
-                        new_message.duration_ms = int((time.time() - start_time) * 1000)
-                        await new_message.save()
-                    return  # Exit generator - client is gone
-
-                if collected_tool_calls:
-                    # Handle tool calls (simplified)
-                    for tc in collected_tool_calls:
-                        tool_name = tc.function.name
-                        try:
-                            arguments = json.loads(tc.function.arguments)
-                        except json.JSONDecodeError:
-                            arguments = {}
-
-                        tool_display_name = tool_display_names.get(tool_name, tool_name)
-                        yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
-                        result = await execute_tool_call(
-                            tool_name, arguments, agent=agent
-                        )
-                        yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
-
-                        # Add to message history for next iteration
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.ASSISTANT,
-                                content="",
-                                reasoning_content="",
-                                tool_calls=[
-                                    LLMToolCall(
-                                        id=tc.id,
-                                        type="function",
-                                        function=LLMFunctionCall(
-                                            name=tool_name,
-                                            arguments=tc.function.arguments,
-                                        ),
+                        elif msg.role == MessageRole.TOOL:
+                            if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.TOOL,
+                                        content=msg.content,
+                                        tool_call_id=msg.tool_call_id,
                                     )
-                                ],
+                                )
+
+                    # Get model and tools
+                    model_id = await get_model_identifier(agent)
+                    tools_openai = await get_agent_tools(agent)
+                    tool_display_names = await get_tool_display_names(
+                        agent, current_user.locale
+                    )
+                    tools: list[ToolDefinition] | None = None
+                    if tools_openai:
+                        tools = [
+                            ToolDefinition(
+                                type="function",
+                                function=FunctionDefinition(
+                                    name=t["function"]["name"],
+                                    description=t["function"]["description"],
+                                    parameters=t["function"]["parameters"],
+                                ),
                             )
+                            for t in tools_openai
+                        ]
+
+                    # Streaming generation (simplified - same as main chat)
+                    max_iterations = agent.max_iterations or 5
+                    iteration = 0
+
+                    while iteration < max_iterations:
+                        iteration += 1
+
+                        # Heartbeat check and send
+                        should_continue, new_last_event_time = await send_heartbeat_if_needed(
+                            last_event_time, heartbeat_interval, request
                         )
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.TOOL,
-                                content=result,
-                                tool_call_id=tc.id,
-                            )
-                        )
-                    continue
-                else:
-                    break
+                        if not should_continue:
+                            # Client disconnected, save partial content and exit
+                            if full_content or full_reasoning:
+                                new_message.content = full_content
+                                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                new_message.model_used = model_id
+                                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                await new_message.save()
+                            return
 
-            duration_ms = int((time.time() - start_time) * 1000)
+                        # If we need to send heartbeat
+                        if new_last_event_time > last_event_time:
+                            yield ": heartbeat\n\n"
+                            last_event_time = new_last_event_time
 
-            # Update new message
-            new_message.content = full_content
-            new_message.model_used = model_id
-            new_message.duration_ms = duration_ms
-            # Ensure regenerated message appears after tool calls/results in history
-            new_message.created_at = now_utc()
-            input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
-            output_tokens = len(full_content) // 4
-            new_message.token_usage = {
-                "prompt": input_tokens,
-                "completion": output_tokens,
-            }
-            await new_message.save()
+                        reasoning_started = False
+                        collected_tool_calls = []
+                        client_disconnected = False
 
-            # Update agent and team stats for regenerated message
-            total_tokens = input_tokens + output_tokens
-            await Agent.filter(id=agent.id).update(
-                message_count=F("message_count") + 1,
-                total_tokens=F("total_tokens") + total_tokens,
+                        async for chunk in model_manager.team_chat_stream(
+                            team_id=str(agent.team_id),
+                            messages=messages_for_llm,
+                            model_id=model_id,
+                            tools=tools,
+                        ):
+                            # Check if client disconnected - stop LLM generation to save tokens
+                            if await request.is_disconnected():
+                                client_disconnected = True
+                                logger.info(
+                                    f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
+                                )
+                                break
+
+                            if chunk.delta.reasoning_content:
+                                if not reasoning_started:
+                                    reasoning_started = True
+                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                full_reasoning += chunk.delta.reasoning_content
+                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                last_event_time = time.time()
+
+                            if chunk.delta.content:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                full_content += chunk.delta.content
+                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                last_event_time = time.time()
+
+                            if chunk.delta.tool_calls:
+                                collected_tool_calls = chunk.delta.tool_calls
+
+                            if chunk.finish_reason:
+                                if reasoning_started and not full_content:
+                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                break
+
+                        # If client disconnected, save partial content and exit
+                        if client_disconnected:
+                            if full_content or full_reasoning:
+                                new_message.content = full_content
+                                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                new_message.model_used = model_id
+                                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                await new_message.save()
+                            return  # Exit generator - client is gone
+
+                        if collected_tool_calls:
+                            # Handle tool calls (simplified)
+                            for tc in collected_tool_calls:
+                                # Check if client disconnected before tool execution
+                                if await request.is_disconnected():
+                                    logger.info("Client disconnected before tool execution in regenerate")
+                                    if full_content or full_reasoning:
+                                        new_message.content = full_content
+                                        new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                        new_message.model_used = model_id
+                                        new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                        await new_message.save()
+                                    return
+
+                                tool_name = tc.function.name
+                                try:
+                                    arguments = json.loads(tc.function.arguments)
+                                except json.JSONDecodeError:
+                                    arguments = {}
+
+                                tool_display_name = tool_display_names.get(tool_name, tool_name)
+                                yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
+                                last_event_time = time.time()
+
+                                result = await execute_tool_call(
+                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts
+                                )
+
+                                # Check if client disconnected after tool execution
+                                if await request.is_disconnected():
+                                    logger.info("Client disconnected after tool execution in regenerate")
+                                    if full_content or full_reasoning:
+                                        new_message.content = full_content
+                                        new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                        new_message.model_used = model_id
+                                        new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                        await new_message.save()
+                                    return
+
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                last_event_time = time.time()
+
+                                # Add to message history for next iteration
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.ASSISTANT,
+                                        content="",
+                                        reasoning_content="",
+                                        tool_calls=[
+                                            LLMToolCall(
+                                                id=tc.id,
+                                                type="function",
+                                                function=LLMFunctionCall(
+                                                    name=tool_name,
+                                                    arguments=tc.function.arguments,
+                                                ),
+                                            )
+                                        ],
+                                    )
+                                )
+                                messages_for_llm.append(
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.TOOL,
+                                        content=result,
+                                        tool_call_id=tc.id,
+                                    )
+                                )
+                            continue
+                        else:
+                            break
+
+                    duration_ms = int((time.time() - start_time) * 1000)
+
+                    # Update new message
+                    new_message.content = full_content
+                    new_message.reasoning_content = full_reasoning if full_reasoning else None
+                    new_message.model_used = model_id
+                    new_message.duration_ms = duration_ms
+                    # Ensure regenerated message appears after tool calls/results in history
+                    new_message.created_at = now_utc()
+                    input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
+                    output_tokens = len(full_content) // 4
+                    new_message.token_usage = {
+                        "prompt": input_tokens,
+                        "completion": output_tokens,
+                    }
+                    await new_message.save()
+
+                    # Update agent and team stats for regenerated message
+                    total_tokens = input_tokens + output_tokens
+                    await Agent.filter(id=agent.id).update(
+                        message_count=F("message_count") + 1,
+                        total_tokens=F("total_tokens") + total_tokens,
+                    )
+                    await Team.filter(id=agent.team.id).update(
+                        total_messages=F("total_messages") + 1,
+                        total_tokens=F("total_tokens") + total_tokens,
+                    )
+
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
+
+                except QuotaExceededError as e:
+                    # Rollback: delete new message and restore original
+                    if new_message_id:
+                        await Message.filter(id=new_message_id).delete()
+                        # Restore original message as active
+                        await Message.filter(id=message.id).update(is_active=True)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
+                except LLMError as e:
+                    # Rollback: delete new message and restore original
+                    if new_message_id:
+                        await Message.filter(id=new_message_id).delete()
+                        # Restore original message as active
+                        await Message.filter(id=message.id).update(is_active=True)
+                    logger.exception(f"LLM error during regenerate: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                except Exception as e:
+                    # Rollback: delete new message and restore original
+                    if new_message_id:
+                        await Message.filter(id=new_message_id).delete()
+                        # Restore original message as active
+                        await Message.filter(id=message.id).update(is_active=True)
+                    logger.exception(f"Unexpected error during regenerate: {e}")
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+
+        except TimeoutError:
+            # Global timeout
+            logger.warning(
+                f"Regenerate stream global timeout ({global_timeout}s) for message {message_id}"
             )
-            await Team.filter(id=agent.team.id).update(
-                total_messages=F("total_messages") + 1,
-                total_tokens=F("total_tokens") + total_tokens,
+            # Save partial content
+            if full_content or full_reasoning:
+                new_message.content = full_content
+                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                new_message.model_used = model_id
+                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                await new_message.save()
+            # Send timeout error event
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': 'Stream timeout exceeded', 'timeout': global_timeout})}\n\n"
+
+        finally:
+            # Resource cleanup and logging
+            duration = time.time() - start_time
+            logger.info(
+                f"Regenerate stream ended for message {message_id}, "
+                f"duration={duration:.2f}s"
             )
-
-            yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
-
-        except QuotaExceededError as e:
-            # Rollback: delete new message and restore original
-            if new_message_id:
-                await Message.filter(id=new_message_id).delete()
-                # Restore original message as active
-                await Message.filter(id=message.id).update(is_active=True)
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
-        except LLMError as e:
-            # Rollback: delete new message and restore original
-            if new_message_id:
-                await Message.filter(id=new_message_id).delete()
-                # Restore original message as active
-                await Message.filter(id=message.id).update(is_active=True)
-            logger.exception(f"LLM error during regenerate: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
-        except Exception as e:
-            # Rollback: delete new message and restore original
-            if new_message_id:
-                await Message.filter(id=new_message_id).delete()
-                # Restore original message as active
-                await Message.filter(id=message.id).update(is_active=True)
-            logger.exception(f"Unexpected error during regenerate: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
 
     return StreamingResponse(
         event_generator(),

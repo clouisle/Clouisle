@@ -2,7 +2,10 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { notificationsApi, teamsApi, usersApi, type NotificationChannel, type NotificationLevel, type NotificationScope } from '@/lib/api'
+import { notificationsApi } from '@/lib/api/admin/notifications'
+import type { NotificationChannel, NotificationLevel, NotificationScope } from '@/lib/api/notifications'
+import { usersApi } from '@/lib/api/admin/users'
+import { teamsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'

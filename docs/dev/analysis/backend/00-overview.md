@@ -11,26 +11,42 @@
 
 ## API 端点文件
 
+API 分为两个路由组，均挂载在 `/api/v1/` 下。
+
+### 平台侧 (`app/api/v1/endpoints/`) — 普通用户可访问
+
 | 文件 | 路径前缀 | 说明 |
 |------|----------|------|
 | `login.py` | `/api/v1/login` | 登录认证 |
-| `users.py` | `/api/v1/users` | 用户管理 |
-| `teams.py` | `/api/v1/teams` | 团队管理 |
-| `roles.py` | `/api/v1/roles` | 角色管理 |
-| `permissions.py` | `/api/v1/permissions` | 权限管理 |
+| `users.py` | `/api/v1/users` | 当前用户自身操作（`/me`、改密码、注销账号） |
+| `teams.py` | `/api/v1/teams` | 我的团队、团队详情、成员管理、离开、转让 |
 | `agents.py` | `/api/v1/agents` | Agent 管理 |
-| `models.py` | `/api/v1/models` | 模型管理 |
+| `models.py` | `/api/v1/models` | 公开模型接口（providers、types、available、default） |
 | `knowledge_bases.py` | `/api/v1/knowledge-bases` | 知识库管理 |
 | `tools.py` | `/api/v1/tools` | 工具管理 |
 | `workflows.py` | `/api/v1/workflows` | 工作流管理 |
 | `api_keys.py` | `/api/v1/api-keys` | API Key 管理 |
-| `chat.py` | `/api/v1/chat` | 聊天接口 |
-| `notifications.py` | `/api/v1/notifications` | 通知管理 |
-| `sso.py` | `/api/v1/sso` | SSO 单点登录 |
-| `site_settings.py` | `/api/v1/site-settings` | 站点设置 |
-| `dashboard.py` | `/api/v1/dashboard` | 仪表盘统计 |
-| `audit_logs.py` | `/api/v1/audit-logs` | 审计日志 |
-| `prompt_generator.py` | `/api/v1/prompt-generator` | 提示词生成 |
+| `chat.py` | `/api/v1/agents` | 聊天接口 |
+| `notifications.py` | `/api/v1/notifications` | 用户通知（读取、标记已读） |
+| `sso.py` | `/api/v1/sso` | 公开 SSO 接口（providers、login、callback、用户断开连接） |
+| `site_settings.py` | `/api/v1/site-settings` | 公开站点设置（`/public`） |
+| `prompt_generator.py` | `/api/v1/prompts` | 提示词生成 |
+
+### 管理侧 (`app/api/v1/admin/endpoints/`) — 路径前缀 `/api/v1/admin/`，需要管理员权限
+
+| 文件 | 路径前缀 | 说明 |
+|------|----------|------|
+| `dashboard.py` | `/api/v1/admin/dashboard` | 仪表盘统计 |
+| `audit_logs.py` | `/api/v1/admin/audit-logs` | 审计日志 |
+| `conversations.py` | `/api/v1/admin/conversations` | 全局对话管理 |
+| `users.py` | `/api/v1/admin/users` | 用户 CRUD、激活/停用、发邮件 |
+| `roles.py` | `/api/v1/admin/roles` | 角色管理 |
+| `permissions.py` | `/api/v1/admin/permissions` | 权限管理 |
+| `site_settings.py` | `/api/v1/admin/site-settings` | 站点配置（全量读写） |
+| `models.py` | `/api/v1/admin/models` | 模型 CRUD、测试、设为默认 |
+| `teams.py` | `/api/v1/admin/teams` | 全量团队列表、创建、删除 |
+| `sso.py` | `/api/v1/admin/sso` | SSO 提供商 CRUD、断开任意用户连接 |
+| `notifications.py` | `/api/v1/admin/notifications` | 创建、删除、全量通知列表 |
 
 ## 认证模式
 
@@ -74,14 +90,16 @@ async def create_item(
 
 ### 4. 超级管理员
 
-使用 `deps.get_current_active_superuser` 依赖：
+使用 `deps.get_current_active_superuser` 依赖（主要用于 admin 路由组中的 SSO 管理接口）：
 ```python
-@router.get("/admin")
-async def admin_only(
+@router.get("/providers")
+async def list_providers(
     current_user: User = Depends(deps.get_current_active_superuser)
 ):
     ...
 ```
+
+> **注意**：大多数管理侧接口使用 `PermissionChecker` 而非直接要求 superuser，以便通过角色权限灵活控制访问。
 
 ## 响应格式
 

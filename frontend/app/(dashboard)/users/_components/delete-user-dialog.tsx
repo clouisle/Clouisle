@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { usersApi, type User } from '@/lib/api'
+import { usersApi, type User } from '@/lib/api/admin/users'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,

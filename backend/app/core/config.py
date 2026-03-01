@@ -69,6 +69,16 @@ class Settings(BaseSettings):
         data = info.data
         return f"postgres://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_SERVER')}:{data.get('POSTGRES_PORT')}/{data.get('POSTGRES_DB')}"
 
+    # Streaming timeouts (seconds)
+    STREAM_GLOBAL_TIMEOUT: int = 300  # 5 minutes
+    STREAM_HEARTBEAT_INTERVAL: int = 15  # 15 seconds
+
+    # Tool execution timeouts (seconds)
+    STREAM_TOOL_TIMEOUT_HTTP: int = 30
+    STREAM_TOOL_TIMEOUT_CODE: int = 60
+    STREAM_TOOL_TIMEOUT_MCP: int = 60
+    STREAM_TOOL_TIMEOUT_DOWNLOAD: int = 60
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=(".env", "../.env"),

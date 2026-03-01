@@ -40,7 +40,7 @@ import {
   FileText,
   FileJson,
 } from "lucide-react";
-import { auditLogsApi, AuditLog } from "@/lib/api/audit-logs";
+import { auditLogsApi, AuditLog } from "@/lib/api/admin/audit-logs";
 import { toast } from "sonner";
 import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
 import { AuditLogDrawer } from "./audit-log-drawer";

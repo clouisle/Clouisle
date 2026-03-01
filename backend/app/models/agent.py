@@ -106,6 +106,12 @@ class Agent(models.Model):
         default=dict, description="File upload configuration"
     )  # type: ignore[assignment]
 
+    # Streaming and tool timeout configuration
+    streaming_config: dict = fields.JSONField(
+        default=dict,
+        description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)"
+    )  # type: ignore[assignment]
+
     # RAG configuration
     rag_mode = fields.CharEnumField(
         RAGMode,

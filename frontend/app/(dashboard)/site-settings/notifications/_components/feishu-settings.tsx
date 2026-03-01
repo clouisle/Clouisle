@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { siteSettingsApi, type FeishuSettings } from '@/lib/api'
+import { siteSettingsApi, type FeishuSettings } from '@/lib/api/admin/site-settings'
 
 interface FeishuSettingsTabProps {
   settings: FeishuSettings

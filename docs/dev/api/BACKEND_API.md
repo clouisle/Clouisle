@@ -223,6 +223,9 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ## 用户接口 (Users)
 
+> **注意**：用户管理接口（CRUD、激活/停用等）已迁移至管理侧路径 `/api/v1/admin/users/`。
+> 以下自身操作接口保留在平台侧 `/api/v1/users/`。
+
 ### 获取当前用户信息
 
 - **URL**: `GET /api/v1/users/me`
@@ -257,7 +260,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 获取用户列表
 
-- **URL**: `GET /api/v1/users/`
+- **URL**: `GET /api/v1/admin/users/`
 - **认证**: 需要
 - **权限**: `user:read`
 
@@ -286,7 +289,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 获取指定用户
 
-- **URL**: `GET /api/v1/users/{user_id}`
+- **URL**: `GET /api/v1/admin/users/{user_id}`
 - **认证**: 需要
 - **权限**: `user:read`
 
@@ -294,7 +297,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 创建用户
 
-- **URL**: `POST /api/v1/users/`
+- **URL**: `POST /api/v1/admin/users/`
 - **认证**: 需要
 - **权限**: `user:create`
 
@@ -312,7 +315,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 更新用户
 
-- **URL**: `PUT /api/v1/users/{user_id}`
+- **URL**: `PUT /api/v1/admin/users/{user_id}`
 - **认证**: 需要
 - **权限**: `user:update`
 
@@ -331,7 +334,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 管理员审核通过新注册用户，激活账户。
 
-- **URL**: `POST /api/v1/users/{user_id}/activate`
+- **URL**: `POST /api/v1/admin/users/{user_id}/activate`
 - **认证**: 需要
 - **权限**: `user:update`
 
@@ -361,7 +364,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 禁用用户账户，禁用后用户无法登录。
 
-- **URL**: `POST /api/v1/users/{user_id}/deactivate`
+- **URL**: `POST /api/v1/admin/users/{user_id}/deactivate`
 - **认证**: 需要
 - **权限**: `user:update`
 
@@ -390,7 +393,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 删除用户
 
-- **URL**: `DELETE /api/v1/users/{user_id}`
+- **URL**: `DELETE /api/v1/admin/users/{user_id}`
 - **认证**: 需要
 - **权限**: `user:delete`
 
@@ -400,9 +403,11 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ## 角色接口 (Roles)
 
+> 角色管理接口已迁移至管理侧路径 `/api/v1/admin/roles/`。
+
 ### 获取角色列表
 
-- **URL**: `GET /api/v1/roles/`
+- **URL**: `GET /api/v1/admin/roles/`
 - **认证**: 需要
 
 **查询参数**:
@@ -416,14 +421,14 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 获取指定角色
 
-- **URL**: `GET /api/v1/roles/{role_id}`
+- **URL**: `GET /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
 
 ---
 
 ### 创建角色
 
-- **URL**: `POST /api/v1/roles/`
+- **URL**: `POST /api/v1/admin/roles/`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -448,7 +453,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 更新角色
 
-- **URL**: `PUT /api/v1/roles/{role_id}`
+- **URL**: `PUT /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -465,7 +470,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 更新角色权限
 
-- **URL**: `PUT /api/v1/roles/{role_id}/permissions`
+- **URL**: `PUT /api/v1/admin/roles/{role_id}/permissions`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -488,7 +493,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 删除角色
 
-- **URL**: `DELETE /api/v1/roles/{role_id}`
+- **URL**: `DELETE /api/v1/admin/roles/{role_id}`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -500,9 +505,11 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ## 权限接口 (Permissions)
 
+> 权限管理接口已迁移至管理侧路径 `/api/v1/admin/permissions/`。
+
 ### 获取权限列表
 
-- **URL**: `GET /api/v1/permissions/`
+- **URL**: `GET /api/v1/admin/permissions/`
 - **认证**: 需要
 
 **查询参数**:
@@ -517,14 +524,14 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 获取指定权限
 
-- **URL**: `GET /api/v1/permissions/{permission_id}`
+- **URL**: `GET /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
 
 ---
 
 ### 创建权限
 
-- **URL**: `POST /api/v1/permissions/`
+- **URL**: `POST /api/v1/admin/permissions/`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -549,7 +556,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 更新权限
 
-- **URL**: `PUT /api/v1/permissions/{permission_id}`
+- **URL**: `PUT /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -557,7 +564,7 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ### 删除权限
 
-- **URL**: `DELETE /api/v1/permissions/{permission_id}`
+- **URL**: `DELETE /api/v1/admin/permissions/{permission_id}`
 - **认证**: 需要
 - **权限**: `user:manage`
 
@@ -568,6 +575,10 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 ## 团队接口 (Teams)
 
 团队是资源隔离和协作的基本单位。每个团队有独立的成员和角色体系。
+
+> **路由说明**：
+> - 全量列表、创建、删除团队 → 管理侧 `/api/v1/admin/teams/`
+> - 我的团队、团队详情、成员管理、离开、转让 → 平台侧 `/api/v1/teams/`
 
 ### 成员角色
 
@@ -580,19 +591,33 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 
 ---
 
-### 获取团队列表
+### 获取所有团队（管理员）
 
-- **URL**: `GET /api/v1/teams/`
+- **URL**: `GET /api/v1/admin/teams/`
 - **认证**: 需要
+- **权限**: `team:read`
 
-返回当前用户所属的团队列表。超级管理员可查看所有团队。
+返回系统中所有团队（不限成员关系）。
 
-**查询参数**:
+---
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| page | int | 1 | 页码 |
-| page_size | int | 50 | 每页数量 |
+### 创建团队（管理员）
+
+- **URL**: `POST /api/v1/admin/teams/`
+- **认证**: 需要
+- **权限**: `team:create`
+
+创建者自动成为团队 `owner`。
+
+---
+
+### 删除团队（管理员）
+
+- **URL**: `DELETE /api/v1/admin/teams/{team_id}`
+- **认证**: 需要
+- **权限**: `team:delete`
+
+**限制**: 默认团队不可删除
 
 ---
 
@@ -629,6 +654,8 @@ curl -X POST "http://localhost:8000/api/v1/login/access-token" \
 - **认证**: 需要
 
 创建者自动成为团队 `owner`。
+
+> **注意**：此接口为平台侧，创建者成为 owner。管理员批量管理请使用 `/api/v1/admin/teams/`。
 
 **请求参数**:
 

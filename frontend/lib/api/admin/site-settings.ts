@@ -1,0 +1,232 @@
+import { api } from '../client'
+import type {
+  SiteSetting,
+  SiteSettings,
+  GeneralSettings,
+  SecuritySettings,
+  EmailSettings,
+  DingTalkSettings,
+  WeChatSettings,
+  FeishuSettings,
+  WebhookSettings,
+  SlackSettings,
+  AutoNotificationConfig,
+} from '../site-settings'
+
+export type {
+  SiteSetting,
+  SiteSettings,
+  GeneralSettings,
+  SecuritySettings,
+  EmailSettings,
+  DingTalkSettings,
+  WeChatSettings,
+  FeishuSettings,
+  WebhookSettings,
+  SlackSettings,
+  AutoNotificationConfig,
+}
+
+export const siteSettingsApi = {
+  async getAll(category?: string): Promise<Record<string, unknown>> {
+    const params = category ? `?category=${category}` : ''
+    const res = await api.get<SiteSettings>(`/admin/site-settings${params}`)
+    return res.settings
+  },
+
+  async get(key: string): Promise<SiteSetting> {
+    return api.get<SiteSetting>(`/admin/site-settings/${key}`)
+  },
+
+  async update(key: string, value: unknown): Promise<SiteSetting> {
+    return api.put<SiteSetting>(`/admin/site-settings/${key}`, { value })
+  },
+
+  async bulkUpdate(settings: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const res = await api.put<SiteSettings>('/admin/site-settings', { settings })
+    return res.settings
+  },
+
+  async reset(category?: string): Promise<Record<string, unknown>> {
+    const params = category ? `?category=${category}` : ''
+    const res = await api.post<SiteSettings>(`/admin/site-settings/reset${params}`, null)
+    return res.settings
+  },
+
+  async getGeneral(): Promise<GeneralSettings> {
+    const settings = await this.getAll('general')
+    return {
+      site_name: (settings.site_name as string) ?? 'Clouisle',
+      site_description: (settings.site_description as string) ?? '',
+      site_url: (settings.site_url as string) ?? '',
+      site_icon: (settings.site_icon as string) ?? '',
+      default_language: (settings.default_language as string) ?? 'en',
+    }
+  },
+
+  async updateGeneral(data: Partial<GeneralSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async getSecurity(): Promise<SecuritySettings> {
+    const settings = await this.getAll('security')
+    const ssoSettings = await this.getAll('sso')
+    return {
+      allow_registration: (settings.allow_registration as boolean) ?? true,
+      require_approval: (settings.require_approval as boolean) ?? false,
+      email_verification: (settings.email_verification as boolean) ?? true,
+      allow_account_deletion: (settings.allow_account_deletion as boolean) ?? true,
+      default_role_id: (settings.default_role_id as string) ?? '',
+      min_password_length: (settings.min_password_length as number) ?? 8,
+      require_uppercase: (settings.require_uppercase as boolean) ?? true,
+      require_number: (settings.require_number as boolean) ?? true,
+      require_special_char: (settings.require_special_char as boolean) ?? false,
+      session_timeout_days: (settings.session_timeout_days as number) ?? 30,
+      single_session: (settings.single_session as boolean) ?? false,
+      max_login_attempts: (settings.max_login_attempts as number) ?? 5,
+      lockout_duration_minutes: (settings.lockout_duration_minutes as number) ?? 15,
+      enable_captcha: (settings.enable_captcha as boolean) ?? false,
+      sso_enabled: (ssoSettings.sso_enabled as boolean) ?? false,
+      sso_allow_password_login: (ssoSettings.sso_allow_password_login as boolean) ?? true,
+      sso_auto_create_users: (ssoSettings.sso_auto_create_users as boolean) ?? true,
+      sso_require_approval: (ssoSettings.sso_require_approval as boolean) ?? false,
+      sso_match_by_email: (ssoSettings.sso_match_by_email as boolean) ?? true,
+    }
+  },
+
+  async updateSecurity(data: Partial<SecuritySettings>): Promise<Record<string, unknown>> {
+    const res = await api.put<SiteSettings>('/admin/site-settings', { settings: data }, { silent: true })
+    return res.settings
+  },
+
+  async getEmail(): Promise<EmailSettings> {
+    const settings = await this.getAll('email')
+    return {
+      smtp_enabled: (settings.smtp_enabled as boolean) ?? false,
+      smtp_host: (settings.smtp_host as string) ?? '',
+      smtp_port: (settings.smtp_port as number) ?? 587,
+      smtp_encryption: (settings.smtp_encryption as 'none' | 'ssl' | 'tls') ?? 'tls',
+      smtp_username: (settings.smtp_username as string) ?? '',
+      smtp_password: (settings.smtp_password as string) ?? '',
+      email_from_name: (settings.email_from_name as string) ?? 'Clouisle',
+      email_from_address: (settings.email_from_address as string) ?? '',
+    }
+  },
+
+  async updateEmail(data: Partial<EmailSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestEmail(email: string): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-email', { email })
+  },
+
+  async getDingTalk(): Promise<DingTalkSettings> {
+    const settings = await this.getAll('dingtalk')
+    return {
+      dingtalk_enabled: (settings.dingtalk_enabled as boolean) ?? false,
+      dingtalk_notification_type: (settings.dingtalk_notification_type as 'webhook' | 'app') ?? 'webhook',
+      dingtalk_webhook_url: (settings.dingtalk_webhook_url as string) ?? '',
+      dingtalk_secret: (settings.dingtalk_secret as string) ?? '',
+      dingtalk_app_key: (settings.dingtalk_app_key as string) ?? '',
+      dingtalk_app_secret: (settings.dingtalk_app_secret as string) ?? '',
+      dingtalk_agent_id: (settings.dingtalk_agent_id as string) ?? '',
+    }
+  },
+
+  async updateDingTalk(data: Partial<DingTalkSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestDingTalk(): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-dingtalk', null)
+  },
+
+  async getWeChat(): Promise<WeChatSettings> {
+    const settings = await this.getAll('wechat')
+    return {
+      wechat_enabled: (settings.wechat_enabled as boolean) ?? false,
+      wechat_notification_type: (settings.wechat_notification_type as 'webhook' | 'app') ?? 'webhook',
+      wechat_webhook_url: (settings.wechat_webhook_url as string) ?? '',
+      wechat_corp_id: (settings.wechat_corp_id as string) ?? '',
+      wechat_agent_id: (settings.wechat_agent_id as string) ?? '',
+      wechat_secret: (settings.wechat_secret as string) ?? '',
+    }
+  },
+
+  async updateWeChat(data: Partial<WeChatSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestWeChat(): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-wechat', null)
+  },
+
+  async getFeishu(): Promise<FeishuSettings> {
+    const settings = await this.getAll('feishu')
+    return {
+      feishu_enabled: (settings.feishu_enabled as boolean) ?? false,
+      feishu_notification_type: (settings.feishu_notification_type as 'webhook' | 'app') ?? 'webhook',
+      feishu_webhook_url: (settings.feishu_webhook_url as string) ?? '',
+      feishu_secret: (settings.feishu_secret as string) ?? '',
+      feishu_app_id: (settings.feishu_app_id as string) ?? '',
+      feishu_app_secret: (settings.feishu_app_secret as string) ?? '',
+    }
+  },
+
+  async updateFeishu(data: Partial<FeishuSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestFeishu(): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-feishu', null)
+  },
+
+  async getWebhook(): Promise<WebhookSettings> {
+    const settings = await this.getAll('webhook')
+    return {
+      webhook_enabled: (settings.webhook_enabled as boolean) ?? false,
+      webhook_url: (settings.webhook_url as string) ?? '',
+      webhook_method: (settings.webhook_method as 'POST' | 'GET') ?? 'POST',
+      webhook_headers: (settings.webhook_headers as Record<string, string>) ?? {},
+      webhook_body_template: (settings.webhook_body_template as string) ?? '{"title": "{{title}}", "content": "{{content}}", "link_url": "{{link_url}}"}',
+      webhook_secret: (settings.webhook_secret as string) ?? '',
+    }
+  },
+
+  async updateWebhook(data: Partial<WebhookSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestWebhook(): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-webhook', null)
+  },
+
+  async getSlack(): Promise<SlackSettings> {
+    const settings = await this.getAll('slack')
+    return {
+      slack_enabled: (settings.slack_enabled as boolean) ?? false,
+      slack_webhook_url: (settings.slack_webhook_url as string) ?? '',
+    }
+  },
+
+  async updateSlack(data: Partial<SlackSettings>): Promise<Record<string, unknown>> {
+    return this.bulkUpdate(data)
+  },
+
+  async sendTestSlack(): Promise<void> {
+    await api.post<null>('/admin/site-settings/test-slack', null)
+  },
+
+  async archiveAuditLogs(): Promise<{ task_id: string; status: string }> {
+    return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)
+  },
+
+  async getAutoNotifications(): Promise<AutoNotificationConfig> {
+    return api.get<AutoNotificationConfig>('/admin/site-settings/auto-notifications')
+  },
+
+  async updateAutoNotifications(config: AutoNotificationConfig): Promise<AutoNotificationConfig> {
+    return api.put<AutoNotificationConfig>('/admin/site-settings/auto-notifications', config)
+  },
+}
