@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles } from 'lucide-react'
+import { Bot, GitBranch, Workflow, Wrench, Code, X, RefreshCw, Infinity, LogOut, FileText, Combine, Variable, Braces, Link, Tags, MessageSquareText, Sparkles, Database } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface AddNodePopoverProps {
@@ -33,6 +33,7 @@ const nodeDefinitions: Record<string, { icon: React.ElementType; color: string }
   sub_workflow: { icon: Workflow, color: 'bg-purple-500' },
   agent: { icon: Sparkles, color: 'bg-indigo-500' },
   tool: { icon: Wrench, color: 'bg-emerald-500' },
+  knowledge_retrieval: { icon: Database, color: 'bg-purple-500' },
   answer: { icon: MessageSquareText, color: 'bg-emerald-500' },
 }
 
@@ -43,21 +44,21 @@ const normalCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm'] },
   { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration', 'loop'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
-  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'answer'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
 
 const iterationCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm'] },
   { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'iteration_exit'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
-  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
 
 const loopCategories: CategoryDef[] = [
   { labelKey: 'model', nodeTypes: ['llm'] },
   { labelKey: 'logic', nodeTypes: ['condition', 'question_classifier', 'loop_exit'] },
   { labelKey: 'transform', nodeTypes: ['code', 'template', 'file_to_url', 'variable_aggregator', 'variable_assignment', 'parameter_extractor'] },
-  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool'] },
+  { labelKey: 'extension', nodeTypes: ['sub_workflow', 'agent', 'tool', 'knowledge_retrieval', 'answer'] },
 ]
 
 export function AddNodePopover({ position, sourceNodeId, sourceHandleId, isInsideIteration, isInsideLoop, onSelect, onClose }: AddNodePopoverProps) {

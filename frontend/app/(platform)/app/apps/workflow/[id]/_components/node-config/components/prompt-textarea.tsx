@@ -42,7 +42,7 @@ function escapeHtml(text: string): string {
 function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): string {
   if (!text) return ''
   
-  const regex = /(\{\{[\w.]+\}\})/g
+  const regex = /(\{\{[\w.\-]+\}\})/g
   let result = ''
   let lastIndex = 0
   let match
@@ -61,18 +61,16 @@ function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): 
       ? 'bg-primary/15 text-primary border-primary/20' 
       : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
     
-    // 显示格式: @节点名 {x}变量名
-    const displayLabel = variable 
-      ? `@${variable.groupLabel}` 
-      : ''
+    // 显示格式: {x}变量名 节点名
+    const displayLabel = variable?.groupLabel
     const displayName = variable?.name || varId
-    
-    result += `<span class="variable-tag inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${varId}">`
-    if (displayLabel) {
-      result += `<span class="opacity-70">${displayLabel}</span>`
-    }
+
+    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${varId}">`
     result += `<span class="opacity-60 text-[10px]">{x}</span>`
     result += `<span>${displayName}</span>`
+    if (displayLabel) {
+      result += `<span class="opacity-70 text-[10px]">${displayLabel}</span>`
+    }
     result += `</span>`
 
     lastIndex = match.index + match[0].length

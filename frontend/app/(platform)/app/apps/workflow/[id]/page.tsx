@@ -78,6 +78,7 @@ import { ConditionNode } from './_components/nodes/condition-node'
 import { SubWorkflowNode } from './_components/nodes/sub-workflow-node'
 import { AgentNode } from './_components/nodes/agent-node'
 import { ToolNode } from './_components/nodes/tool-node'
+import { KnowledgeRetrievalNode } from './_components/nodes/knowledge-retrieval-node'
 import { IterationNode, IterationStartNode, IterationExitNode } from './_components/nodes/iteration-node'
 import { LoopNode, LoopStartNode, LoopExitNode } from './_components/nodes/loop-node'
 // 转换节点
@@ -127,6 +128,7 @@ const nodeTypes = {
   sub_workflow: SubWorkflowNode,
   agent: AgentNode,
   tool: ToolNode,
+  knowledge_retrieval: KnowledgeRetrievalNode,
   iteration: IterationNode,
   iteration_start: IterationStartNode,
   iteration_exit: IterationExitNode,
@@ -754,6 +756,11 @@ function WorkflowEditorContent() {
   // Handle node drag stop - check for parent assignment
   const onNodeDragStop = React.useCallback(
     (_: React.MouseEvent, draggedNode: WorkflowNode) => {
+      // 检查 draggedNode 是否存在
+      if (!draggedNode) {
+        return
+      }
+
       // 已经有父节点的子节点不允许脱离（extent: 'parent' 会限制拖拽范围）
       if (draggedNode.parentId) {
         return

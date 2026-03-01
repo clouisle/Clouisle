@@ -3,9 +3,9 @@ export * from './constants'
 export * from './utils'
 export { VariableSelector } from './variable-selector'
 export { CodeEditor } from './components'
-export { 
-  StartNodeConfig, 
-  CodeNodeConfig, 
+export {
+  StartNodeConfig,
+  CodeNodeConfig,
   LLMNodeConfig,
   type LLMNodeConfigData,
   defaultLLMNodeConfig,
@@ -28,5 +28,8 @@ export {
   AgentNodeConfig,
   type AgentNodeConfigType,
   defaultAgentNodeConfig,
+  KnowledgeRetrievalNodeConfig,
+  type KnowledgeRetrievalNodeConfigType,
+  defaultKnowledgeRetrievalNodeConfig,
 } from './configs'
 export { ParameterEditDialog, CodeInputDialog } from './dialogs'

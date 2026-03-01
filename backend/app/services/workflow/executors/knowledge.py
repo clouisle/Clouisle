@@ -26,14 +26,14 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
     Node Config:
         {
             "knowledgeBaseId": "uuid",
-            "queryVariable": "{{start.query}}",
+            "knowledgeBaseName": "My Knowledge Base",
+            "query": "{{start.query}}",
+            "searchMode": "hybrid" | "vector" | "fulltext",
             "topK": 5,
-            "scoreThreshold": 0.5,
-            "filters": {
-                "metadata.type": "faq"
-            },
-            "rerankEnabled": false,
-            "rerankModel": "reranker-model-id"
+            "threshold": 0.0,
+            "outputVariables": {
+                "results": "results"
+            }
         }
 
     Outputs:
@@ -59,24 +59,29 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute knowledge retrieval node."""
         from app.models.knowledge_base import KnowledgeBase
-        from app.services.knowledge_base import KnowledgeBaseService
+        from app.services.vector_store import VectorStore
 
         node_data = node.get("data", {})
-        config = node_data.get("config", {})
+        # Get knowledgeRetrievalConfig from node data
+        kr_config = node_data.get("knowledgeRetrievalConfig", {})
 
-        kb_id = config.get("knowledgeBaseId")
-        query_var = config.get("queryVariable", "")
-        top_k = config.get("topK", 5)
-        score_threshold = config.get("scoreThreshold", 0.5)
-        filters = config.get("filters", {})
-        rerank_enabled = config.get("rerankEnabled", False)
-        rerank_model = config.get("rerankModel")
+        kb_id = kr_config.get("knowledgeBaseId")
+        query_source = kr_config.get("querySource", "variable")
+        search_mode = kr_config.get("searchMode", "hybrid")
+        top_k = kr_config.get("topK", 5)
+        threshold = kr_config.get("threshold", 0.0)
+        output_var = kr_config.get("outputVariable", "results")
 
         if not kb_id:
             return ExecutionResult(error="Knowledge base ID not configured")
 
-        # Get query
-        query = await context.resolve_variable_ref(query_var)
+        # Resolve query based on source
+        if query_source == "variable":
+            query_ref = kr_config.get("queryVariableRef", "")
+            query = await context.resolve_variable_ref(query_ref)
+        else:  # constant
+            query = kr_config.get("queryConstantValue", "")
+
         if not query:
             return ExecutionResult(error="Query is empty")
 
@@ -86,36 +91,45 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             return ExecutionResult(error=f"Knowledge base not found: {kb_id}")
 
         try:
-            kb_service = KnowledgeBaseService()
+            # Get embedding model and team ID from KB for usage tracking
+            embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+            team_id = str(kb.team_id) if kb.team_id else None
 
-            # Perform retrieval
-            results = await kb_service.search(
-                knowledge_base=kb,
-                query=str(query),
-                top_k=top_k,
-                score_threshold=score_threshold,
-                filters=filters,
+            vector_store = VectorStore(
+                embedding_model_id=embedding_model_id,
+                team_id=team_id,
             )
 
-            # Rerank if enabled
-            if rerank_enabled and rerank_model and results:
-                results = await kb_service.rerank(
-                    results=results,
-                    query=str(query),
-                    model_id=rerank_model,
-                )
+            # Perform retrieval based on search mode
+            results = await vector_store.search(
+                kb_id=kb_id,
+                query=str(query),
+                search_mode=search_mode,  # vector, fulltext, or hybrid
+                top_k=top_k,
+                score_threshold=threshold,
+            )
 
             # Format results
             formatted_results = []
             context_parts = []
 
             for result in results:
+                # Convert UUID to string if present
+                doc_id = result.get("document_id")
+                if doc_id is not None:
+                    doc_id = str(doc_id)
+
+                chunk_id = result.get("chunk_id")
+                if chunk_id is not None:
+                    chunk_id = str(chunk_id)
+
                 formatted_results.append(
                     {
                         "content": result.get("content", ""),
                         "score": result.get("score", 0),
                         "metadata": result.get("metadata", {}),
-                        "documentId": result.get("document_id"),
+                        "documentId": doc_id,
+                        "chunkId": chunk_id,
                     }
                 )
                 context_parts.append(result.get("content", ""))
@@ -123,9 +137,10 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             # Combine context
             combined_context = "\n\n---\n\n".join(context_parts)
 
+            # Use custom output variable name
             return ExecutionResult(
                 outputs={
-                    "results": formatted_results,
+                    output_var: formatted_results,
                     "context": combined_context,
                     "totalFound": len(formatted_results),
                 }

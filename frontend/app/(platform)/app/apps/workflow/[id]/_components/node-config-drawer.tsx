@@ -56,6 +56,9 @@ import {
   AgentNodeConfig,
   type AgentNodeConfigType,
   defaultAgentNodeConfig,
+  KnowledgeRetrievalNodeConfig,
+  type KnowledgeRetrievalNodeConfigType,
+  defaultKnowledgeRetrievalNodeConfig,
 } from './node-config'
 
 interface NodeConfigDrawerProps {
@@ -123,7 +126,10 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   
   // Agent 节点配置状态
   const [agentConfig, setAgentConfig] = React.useState<AgentNodeConfigType>(defaultAgentNodeConfig)
-  
+
+  // 知识库检索节点配置状态
+  const [knowledgeRetrievalConfig, setKnowledgeRetrievalConfig] = React.useState<KnowledgeRetrievalNodeConfigType>(defaultKnowledgeRetrievalNodeConfig)
+
   // 注释节点配置状态
   const [commentColor, setCommentColor] = React.useState<CommentColor>('amber')
   const [commentContent, setCommentContent] = React.useState('')
@@ -236,7 +242,12 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         const existingConfig = (node.data as { agentConfig?: AgentNodeConfigType })?.agentConfig
         setAgentConfig(existingConfig || defaultAgentNodeConfig)
       }
-      
+
+      if (nodeType === 'knowledge_retrieval') {
+        const existingConfig = (node.data as { knowledgeRetrievalConfig?: KnowledgeRetrievalNodeConfigType })?.knowledgeRetrievalConfig
+        setKnowledgeRetrievalConfig(existingConfig || defaultKnowledgeRetrievalNodeConfig)
+      }
+
       if (nodeType === 'comment') {
         const existingColor = (node.data as { color?: CommentColor })?.color
         const existingContent = (node.data as { content?: string })?.content
@@ -276,6 +287,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         if (nodeType === 'tool') updateData.toolConfig = toolConfig
         if (nodeType === 'sub_workflow') updateData.subWorkflowConfig = subWorkflowConfig
         if (nodeType === 'agent') updateData.agentConfig = agentConfig
+        if (nodeType === 'knowledge_retrieval') updateData.knowledgeRetrievalConfig = knowledgeRetrievalConfig
         if (nodeType === 'comment') {
           updateData.color = commentColor
           updateData.content = commentContent
@@ -285,7 +297,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       }, 300)
       return () => clearTimeout(timer)
     }
-  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, commentColor, commentContent, node, onUpdate, readOnly])
+  }, [label, description, parameters, branches, iterationConfig, loopConfig, llmConfig, codeConfig, templateConfig, fileToUrlConfig, variableAggregatorConfig, variableAssignmentConfig, parameterExtractorConfig, questionClassifierConfig, answerConfig, toolConfig, subWorkflowConfig, agentConfig, knowledgeRetrievalConfig, commentColor, commentContent, node, onUpdate, readOnly])
 
   // 获取上游节点 ID 集合（当前节点可以引用的节点）
   const getUpstreamNodeIds = React.useCallback((): Set<string> => {
@@ -830,13 +842,57 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
       if (nodeType === 'agent') {
         const aConfig = (n.data as { agentConfig?: AgentNodeConfigType })?.agentConfig || defaultAgentNodeConfig
         const outputVar = aConfig.outputVariable || 'response'
-        
+
         // String 类型，因为 Agent 输出是回复字符串
         if (filterType !== 'iterable') {
           variables.push({
             id: `${n.id}.${outputVar}`,
             name: outputVar,
             type: 'String',
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray: false,
+            isIterable: false,
+          })
+        }
+      }
+
+      // 知识库检索节点输出变量
+      if (nodeType === 'knowledge_retrieval') {
+        const krConfig = (n.data as { knowledgeRetrievalConfig?: KnowledgeRetrievalNodeConfigType })?.knowledgeRetrievalConfig || defaultKnowledgeRetrievalNodeConfig
+        const outputVar = krConfig.outputVariable || 'results'
+
+        // results 是数组类型
+        variables.push({
+          id: `${n.id}.${outputVar}`,
+          name: outputVar,
+          type: 'Array',
+          group: n.id,
+          groupLabel: nodeLabel,
+          isSystem: false,
+          isArray: true,
+          isIterable: true,
+        })
+
+        // context 是字符串类型（合并的上下文）
+        if (filterType !== 'iterable') {
+          variables.push({
+            id: `${n.id}.context`,
+            name: 'context',
+            type: 'String',
+            group: n.id,
+            groupLabel: nodeLabel,
+            isSystem: false,
+            isArray: false,
+            isIterable: false,
+          })
+
+          // totalFound 是数字类型（结果总数）
+          variables.push({
+            id: `${n.id}.totalFound`,
+            name: 'totalFound',
+            type: 'Number',
             group: n.id,
             groupLabel: nodeLabel,
             isSystem: false,
@@ -1147,7 +1203,20 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
             onOpenVariablePopoverChange={setOpenVariablePopover}
           />
         )
-      
+
+      case 'knowledge_retrieval':
+        return (
+          <KnowledgeRetrievalNodeConfig
+            config={knowledgeRetrievalConfig}
+            variables={getAvailableVariables()}
+            variableSearch={variableSearch}
+            openVariablePopover={openVariablePopover}
+            onConfigChange={setKnowledgeRetrievalConfig}
+            onVariableSearchChange={setVariableSearch}
+            onOpenVariablePopoverChange={setOpenVariablePopover}
+          />
+        )
+
       case 'answer':
         return (
           <AnswerNodeConfig
