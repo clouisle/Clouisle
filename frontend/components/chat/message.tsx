@@ -33,7 +33,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart } from './types'
+import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -46,8 +46,10 @@ import {
   isFilePart,
   isImagePart,
   isTaskPart,
+  isUserInputRequestPart,
 } from './types'
 import { SourceContent } from './message-parts'
+import { UserInputRequestCard } from './user-input-request-card'
 
 export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
@@ -65,6 +67,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onFeedback?: (type: 'positive' | 'negative') => void
   /** Callback for switching version */
   onSwitchVersion?: (versionIndex: number) => void
+  /** Callback when user selects an option from user input request */
+  onSelectOption?: (option: string) => void
 }
 
 export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
@@ -78,6 +82,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onRegenerate,
       onFeedback,
       onSwitchVersion,
+      onSelectOption,
       className,
       ...props
     },
@@ -180,6 +185,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         return null
       }
 
+      // User input request
+      if (isUserInputRequestPart(part)) {
+        const userInputPart = part as UserInputRequestPart
+        return (
+          <UserInputRequestCard
+            key={index}
+            question={userInputPart.question}
+            options={userInputPart.options}
+            state={userInputPart.state}
+            selectedOption={userInputPart.selectedOption}
+            onSelectOption={onSelectOption}
+          />
+        )
+      }
+
       return null
     }
 
@@ -221,6 +241,17 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         case 'done': return 'complete' as const
         case 'error': return 'error' as const
         default: return 'pending' as const
+      }
+    }
+
+    // Get tool call label with state
+    const getToolCallLabel = (toolPart: ToolCallPart) => {
+      const name = toolPart.toolDisplayName || toolPart.toolName
+      switch (toolPart.state) {
+        case 'running': return `${name} 执行中`
+        case 'done': return `${name} 已完成`
+        case 'error': return `${name} 执行失败`
+        default: return name
       }
     }
 
@@ -272,7 +303,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <ChainOfThoughtStep
               key={`tool-${toolPart.toolCallId}`}
               icon={Wrench}
-              label={toolPart.toolDisplayName || toolPart.toolName}
+              label={getToolCallLabel(toolPart)}
               status={getToolCallStepStatus(toolPart.state)}
             >
               <Tool defaultOpen={false} className="mt-2">
@@ -341,9 +372,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
             >
               {reasoningPart.text && (
-                <div className="text-xs text-muted-foreground/70 mt-1">
-                  <Streamdown>{reasoningPart.text}</Streamdown>
-                </div>
+                <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
+                  {reasoningPart.text}
+                </pre>
               )}
             </ChainOfThoughtStep>
           )

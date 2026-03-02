@@ -436,9 +436,11 @@ export function KnowledgeRetrievalNodeConfig({
               <Label className="text-xs">{t('configKnowledgeRetrieval.searchMode')}</Label>
               <Select
                 value={safeConfig.searchMode}
-                onValueChange={(value: 'vector' | 'fulltext' | 'hybrid') =>
-                  onConfigChange({ ...safeConfig, searchMode: value })
-                }
+                onValueChange={(value) => {
+                  if (value === 'vector' || value === 'fulltext' || value === 'hybrid') {
+                    onConfigChange({ ...safeConfig, searchMode: value })
+                  }
+                }}
               >
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
@@ -459,7 +461,10 @@ export function KnowledgeRetrievalNodeConfig({
               </div>
               <Slider
                 value={[safeConfig.topK]}
-                onValueChange={([value]) => onConfigChange({ ...safeConfig, topK: value })}
+                onValueChange={(value) => {
+                  const newValue = Array.isArray(value) ? value[0] : value
+                  onConfigChange({ ...safeConfig, topK: newValue })
+                }}
                 min={1}
                 max={20}
                 step={1}
@@ -475,7 +480,10 @@ export function KnowledgeRetrievalNodeConfig({
               </div>
               <Slider
                 value={[safeConfig.threshold]}
-                onValueChange={([value]) => onConfigChange({ ...safeConfig, threshold: value })}
+                onValueChange={(value) => {
+                  const newValue = Array.isArray(value) ? value[0] : value
+                  onConfigChange({ ...safeConfig, threshold: newValue })
+                }}
                 min={0}
                 max={1}
                 step={0.1}

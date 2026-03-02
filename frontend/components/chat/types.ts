@@ -25,6 +25,8 @@ export interface ReasoningPart {
   state?: MessagePartState
   /** Duration in milliseconds */
   duration?: number
+  /** Optional metadata for additional context */
+  metadata?: Record<string, unknown>
 }
 
 /**
@@ -143,6 +145,17 @@ export interface TaskPart {
 }
 
 /**
+ * User input request part - for interactive option selection
+ */
+export interface UserInputRequestPart {
+  type: 'user-input-request'
+  question: string
+  options: string[]
+  state?: 'pending' | 'answered'
+  selectedOption?: string
+}
+
+/**
  * All possible message parts
  */
 export type MessagePart =
@@ -158,6 +171,7 @@ export type MessagePart =
   | ImagePart
   | StepStartPart
   | TaskPart
+  | UserInputRequestPart
 
 /**
  * Chat message
@@ -250,6 +264,10 @@ export function isTaskPart(part: MessagePart): part is TaskPart {
   return part.type === 'task'
 }
 
+export function isUserInputRequestPart(part: MessagePart): part is UserInputRequestPart {
+  return part.type === 'user-input-request'
+}
+
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {
   return part.type === 'source-url' || part.type === 'source-document'
 }
@@ -260,4 +278,58 @@ export function isToolPart(part: MessagePart): part is ToolCallPart | ToolResult
 
 export function isMcpPart(part: MessagePart): part is McpToolCallPart | McpToolResultPart {
   return part.type === 'mcp-tool-call' || part.type === 'mcp-tool-result'
+}
+
+/**
+ * Unified execution types for Agent and Workflow runs
+ */
+
+export type NodeStatus = 'pending' | 'running' | 'completed' | 'error' | 'skipped'
+
+/**
+ * Unified execution node representation
+ * Used to visualize both Agent steps (RAG, reasoning, tool calls) and Workflow nodes
+ */
+export interface ExecutionNode {
+  id: string
+  type: string  // 'rag' | 'reasoning' | 'tool' | 'llm' | 'condition' | etc.
+  label: string
+  status: NodeStatus
+  startTime?: Date
+  endTime?: Date
+  duration?: number
+  input?: unknown
+  output?: unknown
+  error?: string
+  metadata?: Record<string, unknown>
+}
+
+/**
+ * Unified execution state
+ */
+export interface ExecutionState {
+  nodes: Map<string, ExecutionNode>
+  currentNodeId?: string
+  progress: { current: number; total: number }
+}
+
+/**
+ * Unified event types from SSE streams
+ */
+export type UnifiedEvent =
+  | { type: 'node_start'; node: ExecutionNode }
+  | { type: 'node_complete'; nodeId: string; output: unknown; duration: number }
+  | { type: 'node_error'; nodeId: string; error: string }
+  | { type: 'token'; nodeId: string; token: string }
+  | { type: 'message'; message: ChatMessage }
+  | { type: 'complete'; outputs: unknown }
+
+/**
+ * Adapter interface for unified run execution
+ */
+export interface RunAdapter {
+  start(inputs: Record<string, unknown>): Promise<void>
+  stop(): void
+  streamEvents(): AsyncGenerator<UnifiedEvent>
+  transformEvent(event: unknown): ChatMessage | ExecutionNode | null
 }

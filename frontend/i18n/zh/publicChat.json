@@ -29,6 +29,7 @@
     "conversationTitle": "标题",
     "conversationTitlePlaceholder": "输入对话标题...",
     "cancel": "取消",
-    "save": "保存"
+    "save": "保存",
+    "configureAgent": "配置应用"
   }
 }

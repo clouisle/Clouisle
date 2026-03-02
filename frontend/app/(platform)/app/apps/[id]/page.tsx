@@ -44,6 +44,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [ragMode, setRagMode] = React.useState<RAGMode>('agentic')
   const [enableVision, setEnableVision] = React.useState(false)
   const [enableFileUpload, setEnableFileUpload] = React.useState(false)
+  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(false)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
 
   // Unwrap params
@@ -81,6 +82,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setRagMode(data.rag_mode || 'agentic')
       setEnableVision(data.enable_vision || false)
       setEnableFileUpload(data.enable_file_upload || false)
+      setEnableUserInputRequest(data.enable_user_input_request || false)
       setFileUploadConfig(data.file_upload_config || null)
     } catch {
       router.push('/app/apps')
@@ -115,6 +117,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         rag_mode: ragMode,
         enable_vision: enableVision,
         enable_file_upload: enableFileUpload,
+        enable_user_input_request: enableUserInputRequest,
         file_upload_config: enableFileUpload ? fileUploadConfig : null,
       })
       setAgent(updated)
@@ -148,6 +151,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     ragMode,
     enableVision,
     enableFileUpload,
+    enableUserInputRequest,
     fileUploadConfig,
     t,
   ])
@@ -193,6 +197,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     }
     if (data.enable_file_upload !== undefined) {
       setEnableFileUpload(data.enable_file_upload)
+    }
+    if (data.enable_user_input_request !== undefined) {
+      setEnableUserInputRequest(data.enable_user_input_request)
     }
     if (data.file_upload_config !== undefined) {
       setFileUploadConfig(data.file_upload_config || null)

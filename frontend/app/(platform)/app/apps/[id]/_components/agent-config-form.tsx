@@ -7,6 +7,7 @@ import { teamModelsApi, knowledgeBasesApi, type Agent, type TeamModel, type Know
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -36,6 +37,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [openingMessage, setOpeningMessage] = React.useState(agent.opening_message || '')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>(agent.suggested_questions || [])
   const [visibility, setVisibility] = React.useState(agent.visibility)
+  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
   
   // Data loading
   const [teamChatModels, setTeamChatModels] = React.useState<TeamModel[]>([])
@@ -86,6 +88,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
       opening_message: openingMessage || null,
       suggested_questions: suggestedQuestions.filter(q => q.trim()),
       visibility,
+      enable_user_input_request: enableUserInputRequest,
     })
   }
   
@@ -190,18 +193,36 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
               <CardTitle>{t('systemPrompt')}</CardTitle>
               <CardDescription>{t('settings.promptDesc')}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Textarea
-                id="systemPrompt"
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder={t('systemPromptPlaceholder')}
-                rows={15}
-                className="font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('settings.variableHint')}
-              </p>
+            <CardContent className="space-y-6">
+              <div>
+                <Textarea
+                  id="systemPrompt"
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder={t('systemPromptPlaceholder')}
+                  rows={15}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  {t('settings.variableHint')}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="enableUserInputRequest" className="text-base">
+                    {t('settings.enableUserInputRequest')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.enableUserInputRequestDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="enableUserInputRequest"
+                  checked={enableUserInputRequest}
+                  onCheckedChange={setEnableUserInputRequest}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

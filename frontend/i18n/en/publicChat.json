@@ -29,6 +29,7 @@
     "conversationTitle": "Title",
     "conversationTitlePlaceholder": "Enter conversation title...",
     "cancel": "Cancel",
-    "save": "Save"
+    "save": "Save",
+    "configureAgent": "Configure Agent"
   }
 }

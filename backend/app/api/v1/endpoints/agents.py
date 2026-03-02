@@ -205,6 +205,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "file_upload_config": agent.file_upload_config
         if agent.file_upload_config
         else None,
+        "enable_user_input_request": agent.enable_user_input_request,
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -427,6 +428,9 @@ async def create_agent(
         max_iterations=agent_in.max_iterations,
         tools_config=[t.model_dump() for t in agent_in.tools_config],
         enable_vision=agent_in.enable_vision,
+        enable_file_upload=agent_in.enable_file_upload,
+        file_upload_config=agent_in.file_upload_config.model_dump() if agent_in.file_upload_config else None,
+        enable_user_input_request=agent_in.enable_user_input_request,
         rag_mode=agent_in.rag_mode,
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
@@ -575,6 +579,11 @@ async def update_agent(
             else agent_in.file_upload_config
         )
         updated_fields.append("file_upload_config")
+
+    # Update enable_user_input_request
+    if agent_in.enable_user_input_request is not None:
+        agent.enable_user_input_request = agent_in.enable_user_input_request
+        updated_fields.append("enable_user_input_request")
 
     # Update rag_mode
     if agent_in.rag_mode is not None:
@@ -758,6 +767,9 @@ async def duplicate_agent(
         max_iterations=agent.max_iterations,
         tools_config=agent.tools_config,
         enable_vision=agent.enable_vision,
+        enable_file_upload=agent.enable_file_upload,
+        file_upload_config=agent.file_upload_config,
+        enable_user_input_request=agent.enable_user_input_request,
         rag_mode=agent.rag_mode,
         variables=agent.variables,
         opening_message=agent.opening_message,

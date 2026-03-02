@@ -46,7 +46,7 @@ export interface ToolConfig {
   config?: Record<string, unknown> | null
 }
 
-export type VariableType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox'
+export type VariableType = 'text' | 'paragraph' | 'select' | 'number' | 'checkbox' | 'array' | 'object' | 'file' | 'image' | 'files' | 'images'
 
 export interface VariableDefinition {
   name: string
@@ -60,6 +60,13 @@ export interface VariableDefinition {
   min?: number | null
   max?: number | null
   maxLength?: number | null
+  fileConfig?: FileParameterConfig | null
+}
+
+export interface FileParameterConfig {
+  maxSize?: number        // 最大文件大小 (MB)
+  accept?: string[]       // 允许的文件类型 (MIME types 或扩展名)
+  maxFiles?: number       // 最大文件数量 (仅 files 类型)
 }
 
 export interface AgentKnowledgeBaseConfig {
@@ -116,6 +123,7 @@ export interface Agent {
   enable_vision: boolean
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
+  enable_user_input_request: boolean
   rag_mode: RAGMode
   status: AgentStatus
   visibility: AgentVisibility
@@ -160,6 +168,7 @@ export interface AgentCreateInput {
   enable_vision?: boolean
   enable_file_upload?: boolean
   file_upload_config?: FileUploadConfig | null
+  enable_user_input_request?: boolean
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -180,6 +189,7 @@ export interface AgentUpdateInput {
   enable_vision?: boolean
   enable_file_upload?: boolean
   file_upload_config?: FileUploadConfig | null
+  enable_user_input_request?: boolean
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -316,7 +326,7 @@ export interface ChatResponse {
 }
 
 // SSE Event Types
-export type SSEEventType = 
+export type SSEEventType =
   | 'message_start'
   | 'content_delta'
   | 'reasoning_start'
@@ -326,6 +336,7 @@ export type SSEEventType =
   | 'tool_result'
   | 'rag_start'
   | 'rag_context'
+  | 'user_input_request'
   | 'message_end'
   | 'error'
 
@@ -336,6 +347,11 @@ export interface SSEMessageStart {
 
 export interface SSEContentDelta {
   delta: string
+}
+
+export interface SSEUserInputRequest {
+  question: string
+  options: string[]
 }
 
 export interface SSERagContext {

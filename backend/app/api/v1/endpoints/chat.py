@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from enum import Enum
 from typing import Any
 from uuid import UUID
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree as ET
 
 if TYPE_CHECKING:
     from app.models.api_key import APIKey
@@ -295,6 +297,130 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
                 )
 
     return agent
+
+
+def parse_user_input_request(content: str) -> tuple[dict | None, str]:
+    """
+    Parse user_input_request XML from content.
+
+    Returns:
+        Tuple of (parsed_data, remaining_content)
+        - parsed_data is None if no valid user_input_request found
+        - remaining_content is content with user_input_request removed
+
+    Example parsed_data:
+    {
+        "question": "What would you like to do?",
+        "options": ["Option 1", "Option 2", "Option 3"]
+    }
+    """
+    pattern = r'<user_input_request>(.*?)</user_input_request>'
+    match = re.search(pattern, content, re.DOTALL)
+
+    if not match:
+        return None, content
+
+    xml_block = match.group(0)
+    xml_content = match.group(1)
+
+    try:
+        logger.info(f"Parsing user_input_request XML: {xml_content[:200]}")
+        root = ET.fromstring(f"<root>{xml_content}</root>")
+
+        # Extract question
+        question_elem = root.find('question')
+        if question_elem is None or not question_elem.text:
+            return None, content
+        question = question_elem.text.strip()
+
+        # Extract options
+        options_elem = root.find('options')
+        if options_elem is None:
+            return None, content
+
+        option_elems = options_elem.findall('option')
+        if len(option_elems) < 2:
+            return None, content
+
+        options = []
+        for opt in option_elems:
+            if opt.text:
+                option_text = opt.text.strip()
+                if option_text and len(option_text) <= 200:
+                    options.append(option_text)
+
+        if len(options) < 2:
+            return None, content
+
+        parsed_data = {
+            "question": question[:500],
+            "options": options  # 不限制选项数量，全部渲染
+        }
+
+        remaining_content = content.replace(xml_block, '').strip()
+        logger.info(f"Successfully parsed user_input_request: question={question[:50]}, options_count={len(options)}")
+        return parsed_data, remaining_content
+
+    except ET.ParseError as e:
+        logger.error(f"Failed to parse user_input_request XML: {e}")
+        return None, content
+
+
+def get_user_input_request_instruction(locale: str = "en") -> str:
+    """Get user input request instruction for system prompt."""
+    if locale == "zh":
+        return """## 用户输入请求功能
+
+当你需要用户从预定义选项中选择时，可以使用以下 XML 格式：
+
+<user_input_request>
+<question>你的问题文本</question>
+<options>
+<option>选项 1</option>
+<option>选项 2</option>
+<option>选项 3</option>
+</options>
+</user_input_request>
+
+**使用规则：**
+- 问题应该清晰简洁
+- 提供 2-6 个选项（超过 6 个也会显示，但建议控制数量以保持界面简洁）
+- 每个选项应该简短（建议不超过 50 字符）
+- 用户可以点击选项或输入自定义文本
+- 在一条消息中只使用一次
+- 不要在 user_input_request 标签外添加其他内容
+
+**使用场景：**
+- 需要用户做出选择时
+- 提供快捷操作选项时
+- 引导对话流程时"""
+    else:
+        return """## User Input Request Feature
+
+When you need the user to choose from predefined options, use this XML format:
+
+<user_input_request>
+<question>Your question text</question>
+<options>
+<option>Option 1</option>
+<option>Option 2</option>
+<option>Option 3</option>
+</options>
+</user_input_request>
+
+**Rules:**
+- Keep questions clear and concise
+- Provide 2-6 options
+- Keep each option short (recommended max 50 characters)
+- Users can click an option or type custom text
+- Use only once per message
+- Don't add other content outside the user_input_request tags
+
+**Use cases:**
+- When user needs to make a choice
+- Providing quick action options
+- Guiding conversation flow"""
+
 
 
 async def get_or_create_conversation(
@@ -1725,6 +1851,12 @@ async def chat_stream(
                     system_prompt = build_system_prompt_with_language(
                         system_prompt, current_user.locale
                     )
+
+                    # Add user input request instructions if enabled
+                    if agent.enable_user_input_request:
+                        user_input_instruction = get_user_input_request_instruction(current_user.locale)
+                        system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
+
                     messages_for_llm.append(
                         LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                     )
@@ -1971,6 +2103,8 @@ async def chat_stream(
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                 full_content += chunk.delta.content
                                 iteration_content += chunk.delta.content
+
+                                # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
                                 emitted_any = True
@@ -2654,6 +2788,12 @@ async def regenerate_message(
                     system_prompt = build_system_prompt_with_language(
                         system_prompt, current_user.locale
                     )
+
+                    # Add user input request instructions if enabled
+                    if agent.enable_user_input_request:
+                        user_input_instruction = get_user_input_request_instruction(current_user.locale)
+                        system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
+
                     messages_for_llm.append(
                         LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
                     )
@@ -2787,6 +2927,8 @@ async def regenerate_message(
                                 if reasoning_started and not full_content:
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                 full_content += chunk.delta.content
+
+                                # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
 

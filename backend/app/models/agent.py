@@ -106,6 +106,11 @@ class Agent(models.Model):
         default=dict, description="File upload configuration"
     )  # type: ignore[assignment]
 
+    # User input request configuration
+    enable_user_input_request = fields.BooleanField(
+        default=False, description="Enable user input request with predefined options"
+    )
+
     # Streaming and tool timeout configuration
     streaming_config: dict = fields.JSONField(
         default=dict,

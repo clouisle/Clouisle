@@ -323,7 +323,7 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
     }
 
     case 'knowledge_retrieval': {
-      const config = node.data.knowledgeRetrievalConfig
+      const config = node.data.knowledgeRetrievalConfig as { outputVariable?: string } | undefined
       const outputVar = config?.outputVariable || 'results'
       variables.push(`${node.id}.${outputVar}`)
       // 知识库检索还输出 context 和 totalFound
@@ -882,7 +882,14 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
 
       // ========== 知识库检索节点 ==========
       case 'knowledge_retrieval': {
-        const config = node.data.knowledgeRetrievalConfig
+        const config = node.data.knowledgeRetrievalConfig as {
+          knowledgeBaseId?: string
+          querySource?: string
+          queryVariableRef?: string
+          queryText?: string
+          queryConstantValue?: string
+          outputVariable?: string
+        } | undefined
 
         // 检查是否选择了知识库
         if (!config?.knowledgeBaseId) {

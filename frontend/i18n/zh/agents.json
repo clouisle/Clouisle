@@ -34,6 +34,8 @@
       "suggestedQuestionsPlaceholder": "每行一个问题",
       "promptDesc": "定义 Agent 的角色和行为",
       "variableHint": "支持使用 {{变量名}} 格式插入变量",
+      "enableUserInputRequest": "启用用户输入请求",
+      "enableUserInputRequestDesc": "允许 Agent 在对话中向用户请求输入并提供预定义选项",
       "documents": "{count} 文档",
       "kbComingSoon": "知识库关联功能即将推出",
       "tabs": {
@@ -139,6 +141,8 @@
         "variableNotFound": "未找到变量 \"{query}\"",
         "createVariable": "创建变量 \"{name}\"",
         "undefinedVariablesHint": "以下变量未定义，点击添加到变量列表：",
+        "enableUserInputRequest": "启用用户输入请求",
+        "enableUserInputRequestDesc": "允许 Agent 在对话中向用户请求输入并提供预定义选项",
         "systemVars": {
           "query": "用户输入",
           "queryDesc": "用户当前的提问内容",
@@ -275,6 +279,11 @@
         "truncateMiddle": "保留首尾（截断中间）",
         "variableHint": "在提示词中使用以下变量来注入文件内容：",
         "supportedFormats": "支持的格式：PDF、Word (.docx/.doc)、Excel (.xlsx/.xls)、PowerPoint (.pptx/.ppt)、文本文件 (.txt/.md/.csv/.json/.html/.xml)"
+      },
+      "userInputRequest": {
+        "title": "用户输入请求",
+        "tooltip": "允许 Agent 在对话中向用户请求输入",
+        "description": "启用后，Agent 可以在对话过程中主动向用户提问，并提供预定义的选项供用户选择。"
       },
       "preview": {
         "title": "调试与预览",

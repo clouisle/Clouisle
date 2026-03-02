@@ -18,6 +18,8 @@ interface ChatContainerProps {
   onRegenerate?: (messageId: string) => void;
   /** Callback when version is switched for a message */
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
+  /** Callback when user selects an option from user input request */
+  onSelectOption?: (option: string) => void;
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
 }
@@ -31,6 +33,7 @@ export function ChatContainer({
   emptyState,
   onRegenerate,
   onSwitchVersion,
+  onSelectOption,
   showScrollToBottom = true,
 }: ChatContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,6 +136,7 @@ export function ChatContainer({
                 renderPart={renderPart}
                 onRegenerate={message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined}
                 onSwitchVersion={message.role === 'assistant' && onSwitchVersion ? (versionIndex) => onSwitchVersion(message.id, versionIndex) : undefined}
+                onSelectOption={onSelectOption}
               />
             );
           })}

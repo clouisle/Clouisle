@@ -1,0 +1,28 @@
+{
+  "run": {
+    "title": "Run",
+    "error": "Error",
+    "notFound": "Resource not found",
+    "backToHome": "Back to Home",
+    "executionFlow": "Execution Flow",
+    "hideFlow": "Hide Flow",
+    "showFlow": "Show Flow",
+    "welcomeMessage": "How can I help you today?",
+    "configureWorkflow": "Configure Workflow",
+    "configureAgent": "Configure Agent",
+    "fillParameters": "Fill in the required parameters to start",
+    "startRun": "Start Run",
+    "running": "Running...",
+    "starting": "Starting...",
+    "typePlaceholder": "Type your message...",
+    "workflowInputPlaceholder": "Enter your query to run the workflow...",
+    "poweredBy": "Powered by {name}",
+    "nodeStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "skipped": "Skipped"
+    }
+  }
+}

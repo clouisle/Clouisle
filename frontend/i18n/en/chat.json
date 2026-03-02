@@ -47,7 +47,16 @@
       "description": "Please fill in the following information to start chatting",
       "startChat": "Start Chat",
       "selectPlaceholder": "Select...",
-      "fillRequired": "Please fill in required fields first"
+      "fillRequired": "Please fill in required fields first",
+      "fileInputNotSupported": "File input is not supported in chat interface",
+      "arrayPlaceholder": "Enter JSON array, e.g., [\"item1\", \"item2\"]",
+      "objectPlaceholder": "Enter JSON object, e.g., {\"key\": \"value\"}",
+      "selectFile": "Select File",
+      "selectFiles": "Select Files",
+      "uploading": "Uploading...",
+      "fileUploadFailed": "File upload failed, please try again",
+      "fileTooLarge": "File size exceeds the limit of {maxSize}MB",
+      "tooManyFiles": "Maximum {maxFiles} files allowed"
     },
     "input": {
       "placeholder": "Type a message...",
@@ -68,6 +77,10 @@
       "notHelpful": "Not helpful",
       "regenerate": "Regenerate",
       "thinking": "Thinking..."
+    },
+    "userInputRequest": {
+      "pending": "Please select an option:",
+      "answered": "You selected:"
     },
     "lightbox": {
       "zoomOut": "Zoom out (-)",

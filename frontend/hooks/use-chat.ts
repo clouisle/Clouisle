@@ -17,6 +17,7 @@ import {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type SSEUserInputRequest,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -27,6 +28,7 @@ import type {
   TaskPart,
   ToolCallPart,
   ToolResultPart,
+  UserInputRequestPart,
 } from '@/components/chat'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -413,6 +415,75 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               // Add to current text segment
               const textSegment = getCurrentTextSegment()
               textSegment.text = (textSegment.text || '') + data.delta
+
+              // Collect all text from all text segments to check for complete XML
+              const allText = segments
+                .filter(s => s.type === 'text')
+                .map(s => s.text || '')
+                .join('')
+
+              const hasStartTag = allText.includes('<user_input_request>')
+              const hasEndTag = allText.includes('</user_input_request>')
+
+              console.log('[XML Debug] hasStartTag:', hasStartTag, 'hasEndTag:', hasEndTag, 'allTextLength:', allText.length)
+
+              if (hasStartTag && hasEndTag) {
+                // Complete XML detected - parse it
+                console.log('[XML Debug] Complete XML detected, parsing...')
+                const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+                if (xmlMatch) {
+                  console.log('[XML Debug] XML matched:', xmlMatch[0].substring(0, 100))
+                  const xmlContent = xmlMatch[1]
+                  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
+                  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
+
+                  console.log('[XML Debug] questionMatch:', !!questionMatch, 'optionsMatch:', !!optionsMatch)
+
+                  if (questionMatch && optionsMatch) {
+                    const question = questionMatch[1].trim()
+                    const options: string[] = []
+                    const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
+                    for (const match of optionMatches) {
+                      options.push(match[1].trim())
+                    }
+
+                    console.log('[XML Debug] Parsed - question:', question, 'options count:', options.length)
+
+                    if (question && options.length >= 2) {
+                      // Remove XML from all text segments
+                      const textBeforeXML = allText.substring(0, allText.indexOf('<user_input_request>'))
+                      const textAfterXML = allText.substring(allText.indexOf('</user_input_request>') + '</user_input_request>'.length)
+                      const cleanedText = (textBeforeXML + textAfterXML).trim()
+
+                      console.log('[XML Debug] Text before XML:', textBeforeXML.length, 'after XML:', textAfterXML.length)
+
+                      // Replace all text segments with a single cleaned one
+                      segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
+                      if (cleanedText) {
+                        segments.push({
+                          type: 'text',
+                          text: cleanedText
+                        })
+                      }
+
+                      // Add user input request segment
+                      const userInputSegment: ContentSegment = {
+                        type: 'user-input-request',
+                        userInputRequest: {
+                          type: 'user-input-request',
+                          question,
+                          options,
+                          state: 'pending',
+                        }
+                      }
+                      segments.push(userInputSegment)
+
+                      console.log('[XML Debug] Segments after processing:', segments.length)
+                    }
+                  }
+                }
+              }
+
               streamingStateRef.current.segments = segments
 
               // Mark generating as running when first content arrives
@@ -905,7 +976,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         onStreamStart?.()
 
         // Content segments
-        const segments: ContentSegment[] = []
+        let segments: ContentSegment[] = []
         let reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
         let currentReasoningIndex = -1
         let ragSources: SourceDocumentPart[] = []
@@ -1093,6 +1164,63 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               const data = event.data as SSEContentDelta
               const textSegment = getCurrentTextSegment()
               textSegment.text = (textSegment.text || '') + data.delta
+
+              // Collect all text from all text segments to check for complete XML
+              const allText = segments
+                .filter(s => s.type === 'text')
+                .map(s => s.text || '')
+                .join('')
+
+              const hasStartTag = allText.includes('<user_input_request>')
+              const hasEndTag = allText.includes('</user_input_request>')
+
+              if (hasStartTag && hasEndTag) {
+                // Complete XML detected - parse it
+                const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+                if (xmlMatch) {
+                  const xmlContent = xmlMatch[1]
+                  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
+                  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
+
+                  if (questionMatch && optionsMatch) {
+                    const question = questionMatch[1].trim()
+                    const options: string[] = []
+                    const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
+                    for (const match of optionMatches) {
+                      options.push(match[1].trim())
+                    }
+
+                    if (question && options.length >= 2) {
+                      // Remove XML from all text segments
+                      const textBeforeXML = allText.substring(0, allText.indexOf('<user_input_request>'))
+                      const textAfterXML = allText.substring(allText.indexOf('</user_input_request>') + '</user_input_request>'.length)
+                      const cleanedText = (textBeforeXML + textAfterXML).trim()
+
+                      // Replace all text segments with a single cleaned one
+                      segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
+                      if (cleanedText) {
+                        segments.push({
+                          type: 'text',
+                          text: cleanedText
+                        })
+                      }
+
+                      // Add user input request segment
+                      const userInputSegment: ContentSegment = {
+                        type: 'user-input-request',
+                        userInputRequest: {
+                          type: 'user-input-request',
+                          question,
+                          options,
+                          state: 'pending',
+                        }
+                      }
+                      segments.push(userInputSegment)
+                    }
+                  }
+                }
+              }
+
               streamingStateRef.current.segments = segments
 
               if (taskState.generating === 'pending') {
@@ -1384,7 +1512,7 @@ interface TaskState {
  * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning'
+  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request'
   // For text type
   text?: string
   // For tool-group type
@@ -1395,6 +1523,8 @@ interface ContentSegment {
   reasoningState?: 'streaming' | 'done'
   reasoningStartTime?: number
   reasoningDuration?: number
+  // For user-input-request type
+  userInputRequest?: UserInputRequestPart
 }
 
 /**
@@ -1467,6 +1597,9 @@ function buildMessageParts(
           parts.push(result)
         }
       }
+    } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
+      // Add user input request
+      parts.push(segment.userInputRequest)
     }
   }
 

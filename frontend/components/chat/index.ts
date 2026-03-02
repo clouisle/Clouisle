@@ -8,6 +8,9 @@ export { ChatInput, type ChatInputFile, type FileUploadConfig } from './chat-inp
 export { Message } from './message';
 export { VariableForm, useVariableForm } from './variable-form';
 export { ImageLightbox, useLightbox } from './image-lightbox';
+export { ExecutionTimeline } from './execution-timeline';
+export { NodeCard } from './node-card';
+export { UserInputRequestCard, type UserInputRequestCardProps } from './user-input-request-card';
 
 // Message Parts
 export { TextContent } from './message-parts/text-content';

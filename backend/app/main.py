@@ -297,6 +297,7 @@ async def pre_tortoise_init():
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
         init_agent_streaming_config,
+        init_agent_user_input_request,
     )
 
     try:
@@ -323,6 +324,11 @@ async def pre_tortoise_init():
         await init_agent_streaming_config()
     except Exception as e:
         logger.warning(f"Agent streaming_config migration failed: {e}")
+
+    try:
+        await init_agent_user_input_request()
+    except Exception as e:
+        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
 
     # Now generate schemas (this will validate against the updated database)
     await Tortoise.generate_schemas()

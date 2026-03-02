@@ -224,6 +224,9 @@ class AgentCreate(AgentBase):
     file_upload_config: FileUploadConfig | None = Field(
         default=None, description="File upload configuration"
     )
+    enable_user_input_request: bool = Field(
+        default=False, description="Enable user input request with predefined options"
+    )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"
     )
@@ -251,6 +254,7 @@ class AgentUpdate(BaseModel):
     enable_vision: bool | None = None
     enable_file_upload: bool | None = None
     file_upload_config: FileUploadConfig | None = None
+    enable_user_input_request: bool | None = None
     rag_mode: str | None = Field(None, description="RAG mode: off, auto, or agentic")
     knowledge_base_configs: list[AgentKnowledgeBaseConfig] | None = None
     variables: list[VariableDefinition] | None = None
@@ -286,6 +290,7 @@ class AgentOut(AgentBase):
     enable_vision: bool = False
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None
+    enable_user_input_request: bool = False
     rag_mode: str = RAGMode.AGENTIC
     variables: list[dict[str, Any]] = []
     opening_message: str | None = None
@@ -558,5 +563,6 @@ class SSEEventType:
     TOOL_RESULT = "tool_result"
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"
+    USER_INPUT_REQUEST = "user_input_request"  # 用户输入请求
     MESSAGE_END = "message_end"
     ERROR = "error"

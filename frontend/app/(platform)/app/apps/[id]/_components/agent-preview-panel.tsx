@@ -233,6 +233,9 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           className="h-full"
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}
+          onSelectOption={(option) => {
+            sendMessage(option, [])
+          }}
           emptyState={
             <div className="text-center text-muted-foreground py-8 px-4">
               <div className="flex justify-center mb-4">
@@ -265,40 +268,38 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         {/* Variable Panel - Collapsible above input */}
         {hasVisibleVariables && (
           <div className="mx-auto max-w-3xl px-4">
-            <div className="mx-5">
-              <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-                <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden max-w-90 mx-auto">
-                  <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
-                    <span className="text-muted-foreground">
-                      {tVars('title')}
-                      {requiredCount > 0 && (
-                        <span className={cn(
-                          "ml-1.5",
-                          filledRequiredCount === requiredCount ? "text-green-600" : "text-orange-500"
-                        )}>
-                          {filledRequiredCount}/{requiredCount}
-                        </span>
-                      )}
-                    </span>
-                    {variablesOpen ? (
-                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                    ) : (
-                      <ChevronUp className="h-3 w-3 text-muted-foreground" />
+            <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
+              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+                <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
+                  <span className="text-muted-foreground">
+                    {tVars('title')}
+                    {requiredCount > 0 && (
+                      <span className={cn(
+                        "ml-1.5",
+                        filledRequiredCount === requiredCount ? "text-green-600" : "text-orange-500"
+                      )}>
+                        {filledRequiredCount}/{requiredCount}
+                      </span>
                     )}
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="px-2.5 pb-2.5 pt-0.5">
-                      <VariableForm
-                        variables={agent.variables || []}
-                        values={variableValues}
-                        onChange={setVariableValues}
-                        className="space-y-2"
-                      />
-                    </div>
-                  </CollapsibleContent>
-                </div>
-              </Collapsible>
-            </div>
+                  </span>
+                  {variablesOpen ? (
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  ) : (
+                    <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                  )}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="px-2.5 pb-2.5 pt-0.5">
+                    <VariableForm
+                      variables={agent.variables || []}
+                      values={variableValues}
+                      onChange={setVariableValues}
+                      className="space-y-2"
+                    />
+                  </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           </div>
         )}
 

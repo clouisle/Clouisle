@@ -12,6 +12,7 @@ import {
   Eye,
   Variable,
   FileUp,
+  MessageSquare,
 } from 'lucide-react'
 import {
   knowledgeBasesApi,
@@ -149,6 +150,7 @@ export function AgentOrchestrationForm({
   )
   const [enableVision, setEnableVision] = React.useState(agent.enable_vision || false)
   const [enableFileUpload, setEnableFileUpload] = React.useState(agent.enable_file_upload || false)
+  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig>(
     agent.file_upload_config || {
       parser: { type: 'builtin', name: 'markitdown' },  // default parser
@@ -175,6 +177,7 @@ export function AgentOrchestrationForm({
     setToolsConfig(agent.tools_config || [])
     setEnableVision(agent.enable_vision || false)
     setEnableFileUpload(agent.enable_file_upload || false)
+    setEnableUserInputRequest(agent.enable_user_input_request || false)
     setFileUploadConfig(
       agent.file_upload_config || {
         parser: { type: 'builtin', name: 'markitdown' },
@@ -194,6 +197,7 @@ export function AgentOrchestrationForm({
   const [toolsCollapsed, setToolsCollapsed] = React.useState(true)
   const [visionCollapsed, setVisionCollapsed] = React.useState(true)
   const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
+  const [userInputRequestCollapsed, setUserInputRequestCollapsed] = React.useState(true)
 
   // Prompt generate dialog state
   const [showPromptGenerator, setShowPromptGenerator] = React.useState(false)
@@ -233,10 +237,11 @@ export function AgentOrchestrationForm({
       knowledge_base_configs: knowledgeBaseConfigs,
       enable_vision: enableVision,
       enable_file_upload: enableFileUpload,
+      enable_user_input_request: enableUserInputRequest,
       file_upload_config: enableFileUpload ? fileUploadConfig : null,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, fileUploadConfig, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, fileUploadConfig, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -686,6 +691,28 @@ export function AgentOrchestrationForm({
               </div>
             </div>
           )}
+        </div>
+      </ConfigCard>
+
+      {/* User Input Request Section */}
+      <ConfigCard
+        icon={MessageSquare}
+        iconColor="text-purple-500"
+        title={t('userInputRequest.title')}
+        tooltip={t('userInputRequest.tooltip')}
+        action={
+          <Switch
+            checked={enableUserInputRequest}
+            onCheckedChange={setEnableUserInputRequest}
+          />
+        }
+        collapsed={userInputRequestCollapsed}
+        onToggle={() => setUserInputRequestCollapsed(!userInputRequestCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('userInputRequest.description')}
+          </p>
         </div>
       </ConfigCard>
     </div>
