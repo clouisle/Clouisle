@@ -111,6 +111,14 @@ class Agent(models.Model):
         default=False, description="Enable user input request with predefined options"
     )
 
+    # Memory configuration
+    enable_memory = fields.BooleanField(
+        default=False, description="Enable user memory for personalized conversations"
+    )
+    memory_config: dict = fields.JSONField(
+        default=dict, description="Memory configuration (max_memories_per_retrieval, auto_extract, importance_threshold)"
+    )  # type: ignore[assignment]
+
     # Streaming and tool timeout configuration
     streaming_config: dict = fields.JSONField(
         default=dict,

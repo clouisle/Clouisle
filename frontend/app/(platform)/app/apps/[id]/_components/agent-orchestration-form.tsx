@@ -13,6 +13,7 @@ import {
   Variable,
   FileUp,
   MessageSquare,
+  Brain,
 } from 'lucide-react'
 import {
   knowledgeBasesApi,
@@ -151,6 +152,14 @@ export function AgentOrchestrationForm({
   const [enableVision, setEnableVision] = React.useState(agent.enable_vision || false)
   const [enableFileUpload, setEnableFileUpload] = React.useState(agent.enable_file_upload || false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
+  const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
+  const [memoryConfig, setMemoryConfig] = React.useState(
+    agent.memory_config || {
+      max_memories_per_retrieval: 10,
+      auto_extract: true,
+      importance_threshold: 'medium' as const,
+    }
+  )
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig>(
     agent.file_upload_config || {
       parser: { type: 'builtin', name: 'markitdown' },  // default parser
@@ -178,6 +187,14 @@ export function AgentOrchestrationForm({
     setEnableVision(agent.enable_vision || false)
     setEnableFileUpload(agent.enable_file_upload || false)
     setEnableUserInputRequest(agent.enable_user_input_request || false)
+    setEnableMemory(agent.enable_memory || false)
+    setMemoryConfig(
+      agent.memory_config || {
+        max_memories_per_retrieval: 10,
+        auto_extract: true,
+        importance_threshold: 'medium' as const,
+      }
+    )
     setFileUploadConfig(
       agent.file_upload_config || {
         parser: { type: 'builtin', name: 'markitdown' },
@@ -198,6 +215,7 @@ export function AgentOrchestrationForm({
   const [visionCollapsed, setVisionCollapsed] = React.useState(true)
   const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
   const [userInputRequestCollapsed, setUserInputRequestCollapsed] = React.useState(true)
+  const [memoryCollapsed, setMemoryCollapsed] = React.useState(true)
 
   // Prompt generate dialog state
   const [showPromptGenerator, setShowPromptGenerator] = React.useState(false)
@@ -238,10 +256,12 @@ export function AgentOrchestrationForm({
       enable_vision: enableVision,
       enable_file_upload: enableFileUpload,
       enable_user_input_request: enableUserInputRequest,
+      enable_memory: enableMemory,
+      memory_config: enableMemory ? memoryConfig : null,
       file_upload_config: enableFileUpload ? fileUploadConfig : null,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, fileUploadConfig, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, enableMemory, memoryConfig, fileUploadConfig, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -713,6 +733,77 @@ export function AgentOrchestrationForm({
           <p className="text-xs text-muted-foreground">
             {t('userInputRequest.description')}
           </p>
+        </div>
+      </ConfigCard>
+
+      {/* Memory Section */}
+      <ConfigCard
+        icon={Brain}
+        iconColor="text-pink-500"
+        title={t('memory.title')}
+        tooltip={t('memory.tooltip')}
+        action={
+          <Switch
+            checked={enableMemory}
+            onCheckedChange={setEnableMemory}
+          />
+        }
+        collapsed={memoryCollapsed}
+        onToggle={() => setMemoryCollapsed(!memoryCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('memory.description')}
+          </p>
+
+          {enableMemory && (
+            <div className="space-y-4 pt-2 border-t">
+              {/* Max Memories Per Retrieval */}
+              <div className="space-y-2">
+                <Label className="text-xs">{t('memory.maxMemoriesPerRetrieval')}</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={memoryConfig.max_memories_per_retrieval}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 10
+                      setMemoryConfig({
+                        ...memoryConfig,
+                        max_memories_per_retrieval: Math.min(Math.max(val, 1), 50),
+                      })
+                    }}
+                    className="w-28 h-8 text-sm bg-background"
+                    min={1}
+                    max={50}
+                    step={1}
+                  />
+                  <span className="text-xs text-muted-foreground">{t('memory.memories')}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('memory.maxMemoriesPerRetrievalHint')}
+                </p>
+              </div>
+
+              {/* Auto Extract */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-background border">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">{t('memory.autoExtract')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('memory.autoExtractHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={memoryConfig.auto_extract}
+                  onCheckedChange={(checked) => {
+                    setMemoryConfig({
+                      ...memoryConfig,
+                      auto_extract: checked,
+                    })
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </ConfigCard>
     </div>

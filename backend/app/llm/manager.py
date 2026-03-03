@@ -11,6 +11,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import UUID
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -493,6 +494,34 @@ class ModelManager:
         """
         model_config = await self._get_model_config(model_id, ModelType.EMBEDDING)
         return create_embedding_model(model_config)
+
+    async def get_embedding(
+        self, text: str, user_id: UUID | None = None, model_id: str | None = None
+    ) -> dict:
+        """
+        Generate embedding vector for text.
+
+        Args:
+            text: Text to embed
+            user_id: User ID (for team model lookup)
+            model_id: Optional model ID override
+
+        Returns:
+            Dict with 'embedding' (list of floats) and 'model_id' (UUID)
+        """
+        # Get embedding model
+        embedding_model = await self.get_embedding_model(model_id)
+
+        # Generate embedding
+        embedding_vector = await embedding_model.aembed_query(text)
+
+        # Get model config to return model_id
+        model_config = await self._get_model_config(model_id, ModelType.EMBEDDING)
+
+        return {
+            "embedding": embedding_vector,
+            "model_id": model_config.model_id if hasattr(model_config, 'model_id') else None,
+        }
 
     # ==================== Image 方法 ====================
 

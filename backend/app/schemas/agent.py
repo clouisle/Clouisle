@@ -3,10 +3,10 @@ Agent schemas for API request/response.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ============ Enums ============
@@ -45,6 +45,25 @@ class MessageRole:
 
 
 # ============ Shared Schemas ============
+
+
+class MemoryConfig(BaseModel):
+    """Memory configuration schema with validation"""
+
+    max_memories_per_retrieval: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum number of memories to retrieve per query (1-50)"
+    )
+    auto_extract: bool = Field(
+        default=True,
+        description="Automatically extract and save memories from conversations"
+    )
+    importance_threshold: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description="Minimum importance level for auto-extracted memories"
+    )
 
 
 class CreatorInfo(BaseModel):
@@ -227,6 +246,12 @@ class AgentCreate(AgentBase):
     enable_user_input_request: bool = Field(
         default=False, description="Enable user input request with predefined options"
     )
+    enable_memory: bool = Field(
+        default=False, description="Enable memory to remember user information across conversations"
+    )
+    memory_config: MemoryConfig | None = Field(
+        default=None, description="Memory configuration (max_memories_per_retrieval, auto_extract)"
+    )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"
     )
@@ -255,6 +280,8 @@ class AgentUpdate(BaseModel):
     enable_file_upload: bool | None = None
     file_upload_config: FileUploadConfig | None = None
     enable_user_input_request: bool | None = None
+    enable_memory: bool | None = None
+    memory_config: MemoryConfig | None = None
     rag_mode: str | None = Field(None, description="RAG mode: off, auto, or agentic")
     knowledge_base_configs: list[AgentKnowledgeBaseConfig] | None = None
     variables: list[VariableDefinition] | None = None
@@ -285,14 +312,16 @@ class AgentOut(AgentBase):
     model: ModelInfo | None = None
     system_prompt: str | None = None
     max_iterations: int = 5
-    tools_config: list[dict[str, Any]] = []
+    tools_config: list[ToolConfig] = []
     tools_credentials: dict[str, str] = {}
     enable_vision: bool = False
     enable_file_upload: bool = False
-    file_upload_config: dict[str, Any] | None = None
+    file_upload_config: FileUploadConfig | None = None
     enable_user_input_request: bool = False
+    enable_memory: bool = False
+    memory_config: MemoryConfig | None = None
     rag_mode: str = RAGMode.AGENTIC
-    variables: list[dict[str, Any]] = []
+    variables: list[VariableDefinition] = []
     opening_message: str | None = None
     suggested_questions: list[str] = []
     knowledge_bases: list[AgentKnowledgeBaseOut] = []

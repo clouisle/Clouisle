@@ -45,6 +45,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [enableVision, setEnableVision] = React.useState(false)
   const [enableFileUpload, setEnableFileUpload] = React.useState(false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(false)
+  const [enableMemory, setEnableMemory] = React.useState(false)
+  const [memoryConfig, setMemoryConfig] = React.useState<import('@/lib/api').MemoryConfig | null>(null)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
 
   // Unwrap params
@@ -83,6 +85,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setEnableVision(data.enable_vision || false)
       setEnableFileUpload(data.enable_file_upload || false)
       setEnableUserInputRequest(data.enable_user_input_request || false)
+      setEnableMemory(data.enable_memory || false)
+      setMemoryConfig(data.memory_config || null)
       setFileUploadConfig(data.file_upload_config || null)
     } catch {
       router.push('/app/apps')
@@ -118,6 +122,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         enable_vision: enableVision,
         enable_file_upload: enableFileUpload,
         enable_user_input_request: enableUserInputRequest,
+        enable_memory: enableMemory,
+        memory_config: enableMemory ? memoryConfig : null,
         file_upload_config: enableFileUpload ? fileUploadConfig : null,
       })
       setAgent(updated)
@@ -152,6 +158,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     enableVision,
     enableFileUpload,
     enableUserInputRequest,
+    enableMemory,
+    memoryConfig,
     fileUploadConfig,
     t,
   ])
@@ -200,6 +208,12 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     }
     if (data.enable_user_input_request !== undefined) {
       setEnableUserInputRequest(data.enable_user_input_request)
+    }
+    if (data.enable_memory !== undefined) {
+      setEnableMemory(data.enable_memory)
+    }
+    if (data.memory_config !== undefined) {
+      setMemoryConfig(data.memory_config || null)
     }
     if (data.file_upload_config !== undefined) {
       setFileUploadConfig(data.file_upload_config || null)

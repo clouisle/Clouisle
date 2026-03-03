@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     workflows,
     notifications,
     sso,
+    memories,
 )
 from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
@@ -54,4 +55,5 @@ api_router.include_router(
     notifications.router, prefix="/notifications", tags=["notifications"]
 )
 api_router.include_router(sso.router, prefix="/sso", tags=["sso"])
+api_router.include_router(memories.router, prefix="/memories", tags=["memories"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

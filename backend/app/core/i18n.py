@@ -1224,6 +1224,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Knowledge Search",
         "zh": "知识库搜索",
     },
+    "tool_create_memory_entity": {
+        "en": "Create Memory Entity",
+        "zh": "创建记忆实体",
+    },
+    "tool_create_memory_relation": {
+        "en": "Create Memory Relation",
+        "zh": "创建记忆关系",
+    },
+    "tool_update_memory_entity": {
+        "en": "Update Memory Entity",
+        "zh": "更新记忆实体",
+    },
+    "tool_search_memory": {
+        "en": "Search Memory",
+        "zh": "搜索记忆",
+    },
     "kb_no_results": {
         "en": "No relevant information found in the knowledge base.",
         "zh": "知识库中未找到相关信息。",
@@ -1894,6 +1910,76 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "builtin_tool_markitdown": {
         "en": "MarkItDown File Parser",
         "zh": "MarkItDown 文件解析",
+    },
+    # Memory messages
+    "memory_entity_created": {
+        "en": "Memory entity created successfully",
+        "zh": "记忆实体创建成功",
+    },
+    "memory_entity_updated": {
+        "en": "Memory entity updated successfully",
+        "zh": "记忆实体更新成功",
+    },
+    "memory_entity_deleted": {
+        "en": "Memory entity deleted successfully",
+        "zh": "记忆实体删除成功",
+    },
+    "memory_entity_not_found": {
+        "en": "Memory entity not found",
+        "zh": "记忆实体不存在",
+    },
+    "memory_entity_create_failed": {
+        "en": "Failed to create memory entity",
+        "zh": "创建记忆实体失败",
+    },
+    "memory_entity_update_failed": {
+        "en": "Failed to update memory entity",
+        "zh": "更新记忆实体失败",
+    },
+    "memory_entity_delete_failed": {
+        "en": "Failed to delete memory entity",
+        "zh": "删除记忆实体失败",
+    },
+    "memory_relation_created": {
+        "en": "Memory relation created successfully",
+        "zh": "记忆关系创建成功",
+    },
+    "memory_relation_deleted": {
+        "en": "Memory relation deleted successfully",
+        "zh": "记忆关系删除成功",
+    },
+    "memory_relation_not_found": {
+        "en": "Memory relation not found",
+        "zh": "记忆关系不存在",
+    },
+    "memory_relation_create_failed": {
+        "en": "Failed to create memory relation",
+        "zh": "创建记忆关系失败",
+    },
+    "memory_relation_delete_failed": {
+        "en": "Failed to delete memory relation",
+        "zh": "删除记忆关系失败",
+    },
+    # Audit log - Memory operations
+    "audit_log_create_memory_entity": {
+        "en": "Create memory entity",
+        "zh": "创建记忆实体",
+    },
+    "audit_log_update_memory_entity": {
+        "en": "Update memory entity",
+        "zh": "更新记忆实体",
+    },
+    "audit_log_delete_memory_entity": {
+        "en": "Delete memory entity",
+        "zh": "删除记忆实体",
+    },
+    "audit_log_create_memory_relation": {
+        "en": "Create memory relation",
+        "zh": "创建记忆关系",
+    },
+    "audit_log_delete_memory_relation": {
+        "en": "Delete memory relation",
+        "zh": "删除记忆关系",
     },
 }
 

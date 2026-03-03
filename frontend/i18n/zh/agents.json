@@ -42,8 +42,17 @@
         "basic": "基础设置",
         "prompt": "提示词",
         "model": "模型配置",
+        "memory": "记忆",
         "kb": "知识库"
-      }
+      },
+      "memoryConfig": "记忆配置",
+      "memoryConfigDesc": "通过记住用户信息实现个性化对话",
+      "enableMemory": "启用记忆",
+      "enableMemoryDesc": "允许 Agent 跨对话记住用户偏好、上下文和信息",
+      "maxMemoriesPerRetrieval": "每次检索的最大记忆数",
+      "maxMemoriesPerRetrievalDesc": "每次对话中检索并注入的最大记忆数量（1-50）",
+      "autoExtract": "自动提取记忆",
+      "autoExtractDesc": "自动从对话中提取并保存重要信息"
     },
     "agentCreated": "Agent 创建成功",
     "agentUpdated": "Agent 更新成功",
@@ -284,6 +293,16 @@
         "title": "用户输入请求",
         "tooltip": "允许 Agent 在对话中向用户请求输入",
         "description": "启用后，Agent 可以在对话过程中主动向用户提问，并提供预定义的选项供用户选择。"
+      },
+      "memory": {
+        "title": "记忆",
+        "tooltip": "通过记住用户信息实现个性化对话",
+        "description": "启用后，Agent 可以跨对话记住用户偏好、上下文和信息，从而提供个性化的回复。",
+        "maxMemoriesPerRetrieval": "每次检索的最大记忆数",
+        "maxMemoriesPerRetrievalHint": "每次对话中检索并注入的最大记忆数量（1-50）",
+        "memories": "条记忆",
+        "autoExtract": "自动提取记忆",
+        "autoExtractHint": "自动从对话中提取并保存重要信息"
       },
       "preview": {
         "title": "调试与预览",

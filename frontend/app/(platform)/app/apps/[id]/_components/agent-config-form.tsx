@@ -38,7 +38,14 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>(agent.suggested_questions || [])
   const [visibility, setVisibility] = React.useState(agent.visibility)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(agent.enable_user_input_request || false)
-  
+  const [enableMemory, setEnableMemory] = React.useState(agent.enable_memory || false)
+  const [maxMemoriesPerRetrieval, setMaxMemoriesPerRetrieval] = React.useState(
+    agent.memory_config?.max_memories_per_retrieval || 10
+  )
+  const [autoExtract, setAutoExtract] = React.useState(
+    agent.memory_config?.auto_extract !== false
+  )
+
   // Data loading
   const [teamChatModels, setTeamChatModels] = React.useState<TeamModel[]>([])
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
@@ -89,6 +96,11 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
       suggested_questions: suggestedQuestions.filter(q => q.trim()),
       visibility,
       enable_user_input_request: enableUserInputRequest,
+      enable_memory: enableMemory,
+      memory_config: enableMemory ? {
+        max_memories_per_retrieval: maxMemoriesPerRetrieval,
+        auto_extract: autoExtract,
+      } : null,
     })
   }
   
@@ -104,6 +116,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
           <TabsTrigger value="basic">{t('settings.tabs.basic')}</TabsTrigger>
           <TabsTrigger value="prompt">{t('settings.tabs.prompt')}</TabsTrigger>
           <TabsTrigger value="model">{t('settings.tabs.model')}</TabsTrigger>
+          <TabsTrigger value="memory">{t('settings.tabs.memory')}</TabsTrigger>
           <TabsTrigger value="kb">{t('settings.tabs.kb')}</TabsTrigger>
         </TabsList>
         
@@ -266,7 +279,69 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
             </CardContent>
           </Card>
         </TabsContent>
-        
+
+        {/* Memory Settings */}
+        <TabsContent value="memory">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('settings.memoryConfig')}</CardTitle>
+              <CardDescription>{t('settings.memoryConfigDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="enableMemory" className="text-base">
+                    {t('settings.enableMemory')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.enableMemoryDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="enableMemory"
+                  checked={enableMemory}
+                  onCheckedChange={setEnableMemory}
+                />
+              </div>
+
+              {enableMemory && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxMemoriesPerRetrieval">{t('settings.maxMemoriesPerRetrieval')}</Label>
+                    <Input
+                      id="maxMemoriesPerRetrieval"
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={maxMemoriesPerRetrieval}
+                      onChange={(e) => setMaxMemoriesPerRetrieval(Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('settings.maxMemoriesPerRetrievalDesc')}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between space-x-2 rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="autoExtract" className="text-base">
+                        {t('settings.autoExtract')}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        {t('settings.autoExtractDesc')}
+                      </p>
+                    </div>
+                    <Switch
+                      id="autoExtract"
+                      checked={autoExtract}
+                      onCheckedChange={setAutoExtract}
+                    />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Knowledge Base Settings */}
         <TabsContent value="kb">
           <Card>

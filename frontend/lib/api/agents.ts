@@ -104,6 +104,12 @@ export interface AgentKnowledgeBaseOut {
   score_threshold: number
 }
 
+export interface MemoryConfig {
+  max_memories_per_retrieval: number
+  auto_extract: boolean
+  importance_threshold: 'low' | 'medium' | 'high'
+}
+
 export interface Agent {
   id: string
   team: TeamInfo
@@ -124,6 +130,8 @@ export interface Agent {
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
   enable_user_input_request: boolean
+  enable_memory: boolean
+  memory_config?: MemoryConfig | null
   rag_mode: RAGMode
   status: AgentStatus
   visibility: AgentVisibility
@@ -169,6 +177,8 @@ export interface AgentCreateInput {
   enable_file_upload?: boolean
   file_upload_config?: FileUploadConfig | null
   enable_user_input_request?: boolean
+  enable_memory?: boolean
+  memory_config?: MemoryConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -190,6 +200,8 @@ export interface AgentUpdateInput {
   enable_file_upload?: boolean
   file_upload_config?: FileUploadConfig | null
   enable_user_input_request?: boolean
+  enable_memory?: boolean
+  memory_config?: MemoryConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }

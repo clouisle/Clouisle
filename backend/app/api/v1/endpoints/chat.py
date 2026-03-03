@@ -526,6 +526,54 @@ async def build_messages(
             # Remove the placeholder if no file content
             system_prompt = system_prompt.replace("{{fileContent}}", "")
 
+    # Add memory instructions if enabled
+    if agent.enable_memory:
+        memory_instruction = """
+
+# Memory System
+You have access to a memory system with these tools:
+- search_memory(query): Search what you know about the user
+- create_memory_entity(name, entity_type, description): Save new information
+- update_memory_entity(entity_name, description): Update existing information
+- create_memory_relation(source, target, relation_type): Connect related information
+
+**CRITICAL MEMORY RULES - YOU MUST FOLLOW THESE STEPS:**
+
+RULE 1: Before ANY create_memory_entity() call, you MUST call search_memory() first!
+RULE 2: When user shares ANY information (name, preference, skill, etc.):
+   STEP 1: Call search_memory(query="keywords about the information")
+   STEP 2: Read the search results carefully
+   STEP 3: Decide based on results:
+      - Found similar entity? → Use update_memory_entity(entity_name="existing name", ...)
+      - Nothing found? → Use create_memory_entity(name="new name", ...)
+
+RULE 3: NEVER skip search_memory() - even if you think it's new information!
+RULE 4: NEVER say "I don't have access to memory" - you DO have these tools!
+
+WRONG Example (DO NOT DO THIS):
+User: "I'm Alice"
+❌ Assistant directly calls create_memory_entity(name="Alice", ...) ← WRONG! No search first!
+
+CORRECT Example (ALWAYS DO THIS):
+User: "I'm Alice"
+✓ Step 1: Assistant calls search_memory(query="user name")
+✓ Step 2: Check results → No "Alice" found
+✓ Step 3: Assistant calls create_memory_entity(name="Alice", entity_type="person", description="User's name")
+Assistant: "Nice to meet you, Alice! I've saved your name."
+
+User: "Actually, I'm Alice Smith"
+✓ Step 1: Assistant calls search_memory(query="user name Alice")
+✓ Step 2: Check results → Found entity "Alice"
+✓ Step 3: Assistant calls update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")
+Assistant: "Got it! I've updated your name to Alice Smith."
+
+User: "What's my name?"
+Assistant: [calls search_memory(query="user name")]
+Assistant: "Your name is Alice."
+"""
+        system_prompt += memory_instruction
+        logger.info(f"Added memory instructions to system prompt for agent {agent.id}")
+
     # Build system prompt with language instruction (always added)
     system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
     messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
@@ -625,14 +673,40 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
 
     Returns OpenAI-compatible tool definitions.
     Automatically includes knowledge_search tool if agent has knowledge bases and rag_mode is 'agentic'.
+    Automatically includes memory tools if agent has enable_memory=True.
     """
     from app.models.tool import Tool
     from app.models.agent import RAGMode
+    from app.llm.tools.memory_tools import get_memory_tools
 
     tools_config = list(
         agent.tools_config or []
     )  # Make a copy to avoid modifying original
     openai_tools: list[dict] = []
+
+    # Add memory tools if enabled
+    if agent.enable_memory:
+        memory_tools = get_memory_tools()
+        memory_config = agent.memory_config or {}
+        auto_extract = memory_config.get("auto_extract", True)
+
+        for tool in memory_tools:
+            # If auto_extract is disabled, only provide search_memory tool
+            if not auto_extract and tool["name"] != "search_memory":
+                continue
+
+            # Convert Claude format (input_schema) to OpenAI format (parameters)
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                },
+            })
+            logger.debug(f"Added memory tool: {tool['name']}")
+
+        logger.info(f"Memory tools enabled: auto_extract={auto_extract}, tools_count={len([t for t in openai_tools if 'memory' in t['function']['name']])}")
 
     # Add knowledge_search tool only for agentic RAG mode
     if agent.rag_mode == RAGMode.AGENTIC:
@@ -800,6 +874,21 @@ async def get_tool_display_names(
                 "tool_knowledge_search", lang=user_locale
             )
 
+    # Add memory tool display names if memory is enabled
+    if agent.enable_memory:
+        display_names["create_memory_entity"] = t(
+            "tool_create_memory_entity", lang=user_locale
+        )
+        display_names["create_memory_relation"] = t(
+            "tool_create_memory_relation", lang=user_locale
+        )
+        display_names["update_memory_entity"] = t(
+            "tool_update_memory_entity", lang=user_locale
+        )
+        display_names["search_memory"] = t(
+            "tool_search_memory", lang=user_locale
+        )
+
     for config in tools_config:
         tool_type = config.get("type")
 
@@ -847,7 +936,7 @@ async def get_tool_display_names(
 
 
 async def execute_tool_call(
-    tool_name: str, arguments: dict, agent: Agent | None = None, tool_timeouts: dict | None = None
+    tool_name: str, arguments: dict, agent: Agent | None = None, tool_timeouts: dict | None = None, user: User | None = None
 ) -> str:
     """
     Execute a tool and return the result as string.
@@ -857,6 +946,7 @@ async def execute_tool_call(
         arguments: Tool arguments
         agent: Agent instance (required for knowledge_search)
         tool_timeouts: Tool timeout configuration dict
+        user: User instance (required for memory tools)
     """
     from app.models.tool import Tool, CustomToolType
 
@@ -907,6 +997,55 @@ async def execute_tool_call(
                 )
 
             return json.dumps({"results": results}, ensure_ascii=False)
+
+        # Handle memory tools
+        if tool_name in ["create_memory_entity", "create_memory_relation", "update_memory_entity", "search_memory"]:
+            from app.services.memory import MemoryService
+
+            if not user:
+                return json.dumps(
+                    {"error": "User context required for memory tools"},
+                    ensure_ascii=False,
+                )
+
+            try:
+                if tool_name == "create_memory_entity":
+                    result = await MemoryService.handle_create_entity(
+                        user_id=user.id,
+                        name=arguments.get("name"),
+                        entity_type=arguments.get("entity_type"),
+                        description=arguments.get("description"),
+                        properties=arguments.get("properties", {}),
+                    )
+                elif tool_name == "create_memory_relation":
+                    result = await MemoryService.handle_create_relation(
+                        user_id=user.id,
+                        source_entity_name=arguments.get("source_entity_name"),
+                        target_entity_name=arguments.get("target_entity_name"),
+                        relation_type=arguments.get("relation_type"),
+                        description=arguments.get("description"),
+                    )
+                elif tool_name == "update_memory_entity":
+                    result = await MemoryService.handle_update_entity(
+                        user_id=user.id,
+                        entity_name=arguments.get("entity_name"),
+                        description=arguments.get("description"),
+                        properties=arguments.get("properties"),
+                    )
+                elif tool_name == "search_memory":
+                    result = await MemoryService.handle_search_memory(
+                        user_id=user.id,
+                        query=arguments.get("query"),
+                        top_k=arguments.get("top_k", 5),
+                    )
+
+                return json.dumps(result, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"Memory tool execution failed: {e}")
+                return json.dumps(
+                    {"success": False, "error": str(e)},
+                    ensure_ascii=False,
+                )
 
         # Check if it's an MCP tool (format: mcp_<server_name>_<tool_name>)
         if tool_name.startswith("mcp_"):
@@ -1436,7 +1575,7 @@ async def chat(
                     except json.JSONDecodeError:
                         arguments = {}
 
-                    result = await execute_tool_call(tool_name, arguments, agent=agent)
+                    result = await execute_tool_call(tool_name, arguments, agent=agent, user=current_user)
 
                     await Message.create(
                         conversation=conversation,
@@ -1789,6 +1928,7 @@ async def chat_stream(
                                             f"custom_{custom_tool.name}",
                                             {"files_url": urls},
                                             agent,
+                                            user=current_user,
                                         )
                                         # Custom tool returns parsed content as string
                                         if result:
@@ -2211,7 +2351,7 @@ async def chat_stream(
 
                                 # Execute the tool (pass agent and tool_timeouts)
                                 result = await execute_tool_call(
-                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts
+                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts, user=current_user
                                 )
 
                                 # Check if client disconnected after tool execution
@@ -2975,7 +3115,7 @@ async def regenerate_message(
                                 last_event_time = time.time()
 
                                 result = await execute_tool_call(
-                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts
+                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts, user=current_user
                                 )
 
                                 # Check if client disconnected after tool execution

@@ -206,6 +206,8 @@ async def build_agent_out(agent: Agent) -> dict:
         if agent.file_upload_config
         else None,
         "enable_user_input_request": agent.enable_user_input_request,
+        "enable_memory": agent.enable_memory,
+        "memory_config": agent.memory_config if agent.memory_config else None,
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -431,6 +433,8 @@ async def create_agent(
         enable_file_upload=agent_in.enable_file_upload,
         file_upload_config=agent_in.file_upload_config.model_dump() if agent_in.file_upload_config else None,
         enable_user_input_request=agent_in.enable_user_input_request,
+        enable_memory=agent_in.enable_memory,
+        memory_config=agent_in.memory_config,
         rag_mode=agent_in.rag_mode,
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
@@ -584,6 +588,14 @@ async def update_agent(
     if agent_in.enable_user_input_request is not None:
         agent.enable_user_input_request = agent_in.enable_user_input_request
         updated_fields.append("enable_user_input_request")
+
+    # Update enable_memory and memory_config
+    if agent_in.enable_memory is not None:
+        agent.enable_memory = agent_in.enable_memory
+        updated_fields.append("enable_memory")
+    if agent_in.memory_config is not None:
+        agent.memory_config = agent_in.memory_config
+        updated_fields.append("memory_config")
 
     # Update rag_mode
     if agent_in.rag_mode is not None:
