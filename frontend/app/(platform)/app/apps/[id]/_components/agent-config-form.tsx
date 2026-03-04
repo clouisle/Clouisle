@@ -45,6 +45,9 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [autoExtract, setAutoExtract] = React.useState(
     agent.memory_config?.auto_extract !== false
   )
+  const [importanceThreshold, setImportanceThreshold] = React.useState<'low' | 'medium' | 'high'>(
+    agent.memory_config?.importance_threshold || 'medium'
+  )
 
   // Data loading
   const [teamChatModels, setTeamChatModels] = React.useState<TeamModel[]>([])
@@ -100,6 +103,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
       memory_config: enableMemory ? {
         max_memories_per_retrieval: maxMemoriesPerRetrieval,
         auto_extract: autoExtract,
+        importance_threshold: importanceThreshold,
       } : null,
     })
   }

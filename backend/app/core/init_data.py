@@ -1259,6 +1259,27 @@ async def init_db():
             "scope": "conversation",
             "description": "Delete conversations",
         },
+        # Memory permissions
+        {
+            "code": "memory:read",
+            "scope": "memory",
+            "description": "Read user memories",
+        },
+        {
+            "code": "memory:create",
+            "scope": "memory",
+            "description": "Create user memories",
+        },
+        {
+            "code": "memory:update",
+            "scope": "memory",
+            "description": "Update user memories",
+        },
+        {
+            "code": "memory:delete",
+            "scope": "memory",
+            "description": "Delete user memories",
+        },
         # System wildcard permission
         {"code": "*", "scope": "system", "description": "All permissions (superuser)"},
     ]

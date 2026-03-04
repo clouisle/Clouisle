@@ -22,6 +22,7 @@
     "helpCenter": "Help Center",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",
-    "auditLogs": "Audit Logs"
+    "auditLogs": "Audit Logs",
+    "memories": "Memories"
   }
 }

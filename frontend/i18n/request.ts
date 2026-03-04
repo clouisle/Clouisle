@@ -33,6 +33,7 @@ async function loadMessages(locale: Locale) {
     'sso',
     'notifications',
     'run',
+    'memories',
   ]
 
   const messages: Record<string, unknown> = {}

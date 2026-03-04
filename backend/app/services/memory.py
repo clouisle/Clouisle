@@ -11,6 +11,7 @@ from uuid import UUID
 from app.models.memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from app.models.user import User
 from app.core.config import settings
+from app.services.audit_log import AuditLogService
 
 try:
     from qdrant_client import AsyncQdrantClient
@@ -532,7 +533,12 @@ class MemoryService:
         Returns:
             Result dict for LLM
         """
+        user = None
+        entity = None
         try:
+            # Get user for audit log
+            user = await User.get(id=user_id)
+
             # Search for similar entities with same type
             similar_entities = await MemoryEntity.filter(
                 user_id=user_id,
@@ -557,6 +563,22 @@ class MemoryService:
                 properties=properties,
             )
 
+            # Log audit
+            await AuditLogService.log(
+                user=user,
+                action="agent_create_memory_entity",
+                resource_type="memory_entity",
+                resource_id=entity.id,
+                resource_name=entity.name,
+                operation="create",
+                status="success",
+                metadata={
+                    "entity_type": entity_type,
+                    "description": description,
+                    "source": "agent_tool",
+                },
+            )
+
             # Add warning if similar entities found
             message = f"Created memory entity: {entity.name}"
             if similar_names:
@@ -570,6 +592,24 @@ class MemoryService:
             }
         except Exception as e:
             logger.error(f"Failed to create entity: {e}")
+
+            # Log failed audit
+            if user:
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_create_memory_entity",
+                    resource_type="memory_entity",
+                    resource_id=entity.id if entity else None,
+                    resource_name=name,
+                    operation="create",
+                    status="failed",
+                    error_message=str(e),
+                    metadata={
+                        "entity_type": entity_type,
+                        "source": "agent_tool",
+                    },
+                )
+
             return {
                 "success": False,
                 "error": str(e),
@@ -589,18 +629,53 @@ class MemoryService:
         Returns:
             Result dict for LLM
         """
+        user = None
+        relation = None
         try:
+            # Get user for audit log
+            user = await User.get(id=user_id)
+
             # Find entities by name
             source = await MemoryEntity.filter(user_id=user_id, name=source_entity_name).first()
             target = await MemoryEntity.filter(user_id=user_id, name=target_entity_name).first()
 
             if not source:
+                # Log failed audit
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_create_memory_relation",
+                    resource_type="memory_relation",
+                    resource_id=None,
+                    resource_name=f"{source_entity_name} -> {target_entity_name}",
+                    operation="create",
+                    status="failed",
+                    error_message=f"Source entity '{source_entity_name}' not found",
+                    metadata={
+                        "relation_type": relation_type,
+                        "source": "agent_tool",
+                    },
+                )
                 return {
                     "success": False,
                     "error": f"Source entity '{source_entity_name}' not found",
                 }
 
             if not target:
+                # Log failed audit
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_create_memory_relation",
+                    resource_type="memory_relation",
+                    resource_id=None,
+                    resource_name=f"{source_entity_name} -> {target_entity_name}",
+                    operation="create",
+                    status="failed",
+                    error_message=f"Target entity '{target_entity_name}' not found",
+                    metadata={
+                        "relation_type": relation_type,
+                        "source": "agent_tool",
+                    },
+                )
                 return {
                     "success": False,
                     "error": f"Target entity '{target_entity_name}' not found",
@@ -614,6 +689,24 @@ class MemoryService:
                 description=description,
             )
 
+            # Log audit
+            await AuditLogService.log(
+                user=user,
+                action="agent_create_memory_relation",
+                resource_type="memory_relation",
+                resource_id=relation.id,
+                resource_name=f"{source.name} -> {target.name}",
+                operation="create",
+                status="success",
+                metadata={
+                    "relation_type": relation_type,
+                    "source_entity": source.name,
+                    "target_entity": target.name,
+                    "description": description,
+                    "source": "agent_tool",
+                },
+            )
+
             return {
                 "success": True,
                 "relation_id": str(relation.id),
@@ -621,6 +714,24 @@ class MemoryService:
             }
         except Exception as e:
             logger.error(f"Failed to create relation: {e}")
+
+            # Log failed audit
+            if user:
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_create_memory_relation",
+                    resource_type="memory_relation",
+                    resource_id=relation.id if relation else None,
+                    resource_name=f"{source_entity_name} -> {target_entity_name}",
+                    operation="create",
+                    status="failed",
+                    error_message=str(e),
+                    metadata={
+                        "relation_type": relation_type,
+                        "source": "agent_tool",
+                    },
+                )
+
             return {
                 "success": False,
                 "error": str(e),
@@ -639,21 +750,72 @@ class MemoryService:
         Returns:
             Result dict for LLM
         """
+        user = None
+        entity = None
         try:
+            # Get user for audit log
+            user = await User.get(id=user_id)
+
             # Find entity by name
             entity = await MemoryEntity.filter(user_id=user_id, name=entity_name).first()
 
             if not entity:
+                # Log failed audit
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_update_memory_entity",
+                    resource_type="memory_entity",
+                    resource_id=None,
+                    resource_name=entity_name,
+                    operation="update",
+                    status="failed",
+                    error_message=f"Entity '{entity_name}' not found",
+                    metadata={
+                        "source": "agent_tool",
+                    },
+                )
                 return {
                     "success": False,
                     "error": f"Entity '{entity_name}' not found",
                 }
+
+            # Store old values for audit
+            old_description = entity.description
+            old_properties = entity.properties
 
             entity = await MemoryService.update_entity(
                 user_id=user_id,
                 entity_id=entity.id,
                 description=description,
                 properties=properties,
+            )
+
+            # Log audit
+            changes = {}
+            if description is not None and description != old_description:
+                changes["description"] = {
+                    "before": old_description,
+                    "after": description,
+                }
+            if properties is not None and properties != old_properties:
+                changes["properties"] = {
+                    "before": old_properties,
+                    "after": properties,
+                }
+
+            await AuditLogService.log(
+                user=user,
+                action="agent_update_memory_entity",
+                resource_type="memory_entity",
+                resource_id=entity.id,
+                resource_name=entity.name,
+                operation="update",
+                status="success",
+                changes=changes if changes else None,
+                metadata={
+                    "entity_type": entity.entity_type,
+                    "source": "agent_tool",
+                },
             )
 
             return {
@@ -663,6 +825,23 @@ class MemoryService:
             }
         except Exception as e:
             logger.error(f"Failed to update entity: {e}")
+
+            # Log failed audit
+            if user:
+                await AuditLogService.log(
+                    user=user,
+                    action="agent_update_memory_entity",
+                    resource_type="memory_entity",
+                    resource_id=entity.id if entity else None,
+                    resource_name=entity_name,
+                    operation="update",
+                    status="failed",
+                    error_message=str(e),
+                    metadata={
+                        "source": "agent_tool",
+                    },
+                )
+
             return {
                 "success": False,
                 "error": str(e),

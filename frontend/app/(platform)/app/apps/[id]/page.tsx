@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig } from '@/lib/api'
+import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig, type MemoryConfig } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -46,7 +46,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [enableFileUpload, setEnableFileUpload] = React.useState(false)
   const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(false)
   const [enableMemory, setEnableMemory] = React.useState(false)
-  const [memoryConfig, setMemoryConfig] = React.useState<import('@/lib/api').MemoryConfig | null>(null)
+  const [memoryConfig, setMemoryConfig] = React.useState<MemoryConfig | null>(null)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
 
   // Unwrap params

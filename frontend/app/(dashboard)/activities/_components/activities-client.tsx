@@ -46,7 +46,7 @@ export function ActivitiesClient() {
     }
 
     loadStats()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   return (

@@ -272,7 +272,8 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         // For answer nodes, add output as text content
         if (isAnswerNode && outputs) {
           // Extract text from outputs (usually has an 'answer' or 'output' field)
-          const answerText = outputs.answer || outputs.output || outputs.text || JSON.stringify(outputs)
+          const outputsObj = outputs as Record<string, unknown>
+          const answerText = String(outputsObj.answer || outputsObj.output || outputsObj.text || JSON.stringify(outputs))
 
           if (!currentMessageRef.current) {
             const newMessage: ChatMessage = {
@@ -316,11 +317,12 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
             })
 
             // Add tool-result part
+            const toolCallPart = parts.find(p => p.type === 'tool-call' && (p as { toolCallId?: string }).toolCallId === nodeId) as { toolName?: string; toolDisplayName?: string } | undefined
             parts.push({
               type: 'tool-result',
               toolCallId: nodeId,
-              toolName: parts.find(p => p.type === 'tool-call' && p.toolCallId === nodeId)?.toolName || '',
-              toolDisplayName: parts.find(p => p.type === 'tool-call' && p.toolCallId === nodeId)?.toolDisplayName,
+              toolName: toolCallPart?.toolName || '',
+              toolDisplayName: toolCallPart?.toolDisplayName,
               output: outputs,
               isError: false,
             })
@@ -367,11 +369,12 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
             })
 
             // Add tool-result part with error
+            const toolCallPart = parts.find(p => p.type === 'tool-call' && (p as { toolCallId?: string }).toolCallId === nodeId) as { toolName?: string; toolDisplayName?: string } | undefined
             parts.push({
               type: 'tool-result',
               toolCallId: nodeId,
-              toolName: parts.find(p => p.type === 'tool-call' && p.toolCallId === nodeId)?.toolName || '',
-              toolDisplayName: parts.find(p => p.type === 'tool-call' && p.toolCallId === nodeId)?.toolDisplayName,
+              toolName: toolCallPart?.toolName || '',
+              toolDisplayName: toolCallPart?.toolDisplayName,
               output: errorMessage,
               isError: true,
             })

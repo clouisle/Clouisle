@@ -25,6 +25,7 @@ import {
   FileText,
   Bell,
   User,
+  Brain,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
@@ -178,6 +179,12 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       url: '/notifications',
       icon: Bell,
       permission: 'dashboard:access',
+    },
+    {
+      title: t('memories'),
+      url: '/memories',
+      icon: Brain,
+      permission: 'memory:read',
     },
     {
       title: t('auditLogs'),

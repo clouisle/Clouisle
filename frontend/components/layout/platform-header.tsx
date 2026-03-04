@@ -18,6 +18,7 @@ import {
   Info,
   Settings,
   Bell,
+  Brain,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
@@ -293,6 +294,7 @@ export function PlatformHeader() {
               )}
             />
             <DropdownMenuContent align="end" className="w-56">
+              {/* User Info */}
               <div className="flex items-center justify-start gap-2 p-2">
                 <div className="flex flex-col space-y-1 leading-none">
                   {user?.username && <p className="font-medium">{user.username}</p>}
@@ -304,11 +306,15 @@ export function PlatformHeader() {
                 </div>
               </div>
               <DropdownMenuSeparator />
+
+              {/* Account Settings */}
               <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                 <Settings className="mr-2 h-4 w-4" />
                 {t('profile.title')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+
+              {/* Features */}
               <DropdownMenuItem
                 onClick={() => {
                   requestNotificationPermission()
@@ -318,6 +324,12 @@ export function PlatformHeader() {
                 <Bell className="mr-2 h-4 w-4" />
                 {t('nav.notifications')}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/app/memories')}>
+                <Brain className="mr-2 h-4 w-4" />
+                {t('nav.memories')}
+              </DropdownMenuItem>
+
+              {/* Admin Access */}
               {canAccessDashboard && (
                 <>
                   <DropdownMenuSeparator />
@@ -329,12 +341,13 @@ export function PlatformHeader() {
                   </Link>
                 </>
               )}
+
+              {/* System */}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setAboutOpen(true)}>
                 <Info className="mr-2 h-4 w-4" />
                 {t('about')}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
                 {t('logout')}

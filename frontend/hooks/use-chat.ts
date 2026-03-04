@@ -215,7 +215,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         // Content segments - tracks text and tool calls in order
         let segments: ContentSegment[] = []
         // Reasoning blocks - each tool call iteration creates a new block
-        let reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
+        const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
         let currentReasoningIndex = -1
         // RAG sources
         let ragSources: SourceDocumentPart[] = []
@@ -977,7 +977,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         // Content segments
         let segments: ContentSegment[] = []
-        let reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
+        const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
         let currentReasoningIndex = -1
         let ragSources: SourceDocumentPart[] = []
         const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }

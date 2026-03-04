@@ -121,6 +121,12 @@
     "actionupdate_sso_provider": "更新 SSO 提供商",
     "actiondelete_sso_provider": "删除 SSO 提供商",
     "actionupdate_auto_notification_config": "更新自动通知配置",
+    "actionupdate_memory_entity": "更新记忆实体",
+    "actiondelete_memory_entity": "删除记忆实体",
+    "actiondelete_memory_relation": "删除记忆关系",
+    "actionagent_create_memory_entity": "Agent 创建记忆实体",
+    "actionagent_create_memory_relation": "Agent 创建记忆关系",
+    "actionagent_update_memory_entity": "Agent 更新记忆实体",
     "rowsPerPage": "每页显示",
     "pageInfo": "第 {page} 页，共 {total} 页"
   }

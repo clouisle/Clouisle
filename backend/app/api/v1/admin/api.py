@@ -12,6 +12,7 @@ from app.api.v1.admin.endpoints import (
     sso,
     notifications,
     teams,
+    memories,
 )
 
 admin_router = APIRouter()
@@ -27,3 +28,4 @@ admin_router.include_router(models.router, prefix="/models", tags=["admin-models
 admin_router.include_router(sso.router, prefix="/sso", tags=["admin-sso"])
 admin_router.include_router(notifications.router, prefix="/notifications", tags=["admin-notifications"])
 admin_router.include_router(teams.router, prefix="/teams", tags=["admin-teams"])
+admin_router.include_router(memories.router, prefix="/memories", tags=["admin-memories"])

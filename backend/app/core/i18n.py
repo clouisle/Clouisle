@@ -1574,6 +1574,51 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Delete workflow",
         "zh": "删除工作流",
     },
+    # Memory
+    "memory_entity_not_found": {
+        "en": "Memory entity not found",
+        "zh": "记忆实体未找到",
+    },
+    "memory_relation_not_found": {
+        "en": "Memory relation not found",
+        "zh": "记忆关系未找到",
+    },
+    "memory_entity_updated": {
+        "en": "Memory entity updated successfully",
+        "zh": "记忆实体更新成功",
+    },
+    "memory_entity_deleted": {
+        "en": "Memory entity deleted successfully",
+        "zh": "记忆实体删除成功",
+    },
+    "memory_relation_deleted": {
+        "en": "Memory relation deleted successfully",
+        "zh": "记忆关系删除成功",
+    },
+    "audit_log_update_memory_entity": {
+        "en": "Update memory entity",
+        "zh": "更新记忆实体",
+    },
+    "audit_log_delete_memory_entity": {
+        "en": "Delete memory entity",
+        "zh": "删除记忆实体",
+    },
+    "audit_log_delete_memory_relation": {
+        "en": "Delete memory relation",
+        "zh": "删除记忆关系",
+    },
+    "audit_log_agent_create_memory_entity": {
+        "en": "Agent created memory entity",
+        "zh": "Agent 创建记忆实体",
+    },
+    "audit_log_agent_create_memory_relation": {
+        "en": "Agent created memory relation",
+        "zh": "Agent 创建记忆关系",
+    },
+    "audit_log_agent_update_memory_entity": {
+        "en": "Agent updated memory entity",
+        "zh": "Agent 更新记忆实体",
+    },
     # SSO
     "sso_provider_not_found": {
         "en": "SSO provider not found",
