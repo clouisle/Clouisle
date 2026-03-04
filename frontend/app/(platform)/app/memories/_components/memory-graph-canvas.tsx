@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import * as d3 from 'd3-force'
 import { select } from 'd3-selection'
-import { zoom as d3Zoom, zoomIdentity } from 'd3-zoom'
+import { zoom as d3Zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom'
 import { drag as d3Drag } from 'd3-drag'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
@@ -35,7 +35,7 @@ export function MemoryGraphCanvas() {
   const t = useTranslations('memories')
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+  const zoomBehaviorRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 
   const [entities, setEntities] = useState<MemoryEntity[]>([])
   const [relations, setRelations] = useState<MemoryRelation[]>([])
