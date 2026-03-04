@@ -1,6 +1,7 @@
 {
   "memories": {
     "title": "我的记忆",
+    "detailTitle": "实体详情",
     "description": "探索 AI 对你的了解",
     "searchPlaceholder": "搜索记忆...",
     "entities": "实体",

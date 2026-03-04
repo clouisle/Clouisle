@@ -19,6 +19,8 @@ import {
   Settings,
   Bell,
   Brain,
+  Menu,
+  X,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
@@ -89,6 +91,7 @@ export function PlatformHeader() {
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [aboutOpen, setAboutOpen] = React.useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
   const { canAccessDashboard } = usePermissions()
@@ -195,11 +198,11 @@ export function PlatformHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-8">
+      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-8">
         {/* Left Side - Logo and Team Switcher */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
-          <Link href="/app" className="flex items-center space-x-2">
+          <Link href="/app" className="flex items-center space-x-2 shrink-0">
             <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
               {siteSettings.site_icon ? (
                 <Image
@@ -219,16 +222,18 @@ export function PlatformHeader() {
           {/* Separator and Team Switcher - 没有团队时隐藏 */}
           {!hideNav && (
             <>
-              <span className="text-muted-foreground/40 text-xl font-light select-none">/</span>
-              <TeamSwitcher />
+              <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
+              <div className="min-w-0 flex-1 sm:flex-initial">
+                <TeamSwitcher />
+              </div>
             </>
           )}
         </div>
 
-        {/* Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
+        {/* Desktop Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
         {!hideNav && (
           <nav className={cn(
-            'flex items-center gap-1',
+            'hidden md:flex items-center gap-1',
             effectiveHeaderVariant === 'centered' && 'absolute left-1/2 -translate-x-1/2',
             effectiveHeaderVariant === 'default' && 'ml-6'
           )}>
@@ -244,7 +249,7 @@ export function PlatformHeader() {
                     <Icon className="size-4" />
                     {/* 极简模式只显示图标 */}
                     {effectiveHeaderVariant !== 'minimal' && (
-                      <span className="hidden sm:inline">{t(`nav.${item.key}`)}</span>
+                      <span>{t(`nav.${item.key}`)}</span>
                     )}
                     {item.key === 'notifications' && unreadCount > 0 && (
                       <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
@@ -259,10 +264,23 @@ export function PlatformHeader() {
         )}
 
         {/* Spacer for default layout */}
-        {effectiveHeaderVariant === 'default' && <div className="flex-1" />}
+        {effectiveHeaderVariant === 'default' && <div className="flex-1 hidden md:block" />}
 
         {/* Right Side Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Mobile Menu Toggle - 没有团队时隐藏 */}
+          {!hideNav && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 cursor-pointer md:hidden"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              <span className="sr-only">{mobileMenuOpen ? tCommon('close') : tCommon('menu')}</span>
+            </Button>
+          )}
+
           {/* Settings Drawer Toggle */}
           <Button
             variant="ghost"
@@ -356,6 +374,34 @@ export function PlatformHeader() {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Mobile Navigation Menu */}
+      {!hideNav && mobileMenuOpen && (
+        <div className="md:hidden border-t bg-background">
+          <nav className="container max-w-screen-2xl px-4 py-2 space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <Link key={item.key} href={item.href} onClick={() => setMobileMenuOpen(false)}>
+                  <Button
+                    variant={isActive(item.href, 'exact' in item ? item.exact : false) ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="w-full justify-start gap-2 cursor-pointer relative"
+                  >
+                    <Icon className="size-4" />
+                    <span>{t(`nav.${item.key}`)}</span>
+                    {item.key === 'notifications' && unreadCount > 0 && (
+                      <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
+      )}
 
       {/* Settings Drawer */}
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} showSidebarStyle={false} showPlatformHeader={true} />

@@ -49,20 +49,19 @@ export function EntityDetailSheet({
 
   return (
     <Sheet open={!!entity} onOpenChange={() => onClose()}>
-      <SheetContent className="w-[400px] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{entity.name}</SheetTitle>
-          <SheetDescription>
-            <Badge>{t(`entityTypes.${entity.entity_type}`)}</Badge>
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent className="w-[400px] sm:w-[500px] flex flex-col px-6">
+        <div className="flex-1 overflow-y-auto space-y-6 mt-6 pb-6 -mx-6 px-6">
+          {/* Entity Name */}
+          <div className="space-y-3">
+            <h2 className="text-xl font-semibold">{entity.name}</h2>
+            <Badge variant="secondary">{t(`entityTypes.${entity.entity_type}`)}</Badge>
+          </div>
 
-        <div className="space-y-4 mt-4">
           {/* Description */}
           {entity.description && (
-            <div>
-              <h4 className="text-sm font-medium mb-1">{t('description')}</h4>
-              <p className="text-sm text-muted-foreground">
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold">{t('description')}</h4>
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 {entity.description}
               </p>
             </div>
@@ -71,15 +70,15 @@ export function EntityDetailSheet({
           {/* Properties */}
           {entity.properties &&
             Object.keys(entity.properties).length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-1">
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold">
                   {t('properties')}
                 </h4>
-                <div className="space-y-1">
+                <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
                   {Object.entries(entity.properties).map(([key, value]) => (
-                    <div key={key} className="text-sm">
-                      <span className="font-medium">{key}:</span>{' '}
-                      {String(value)}
+                    <div key={key} className="text-sm flex gap-2">
+                      <span className="font-medium text-foreground min-w-[80px]">{key}:</span>
+                      <span className="text-muted-foreground flex-1">{String(value)}</span>
                     </div>
                   ))}
                 </div>
@@ -88,25 +87,27 @@ export function EntityDetailSheet({
 
           {/* Outgoing Relations */}
           {outgoingRelations.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2">
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold">
                 {t('outgoingRelations')}
               </h4>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {outgoingRelations.map((rel) => (
                   <Button
                     key={rel.id}
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="w-full justify-start text-left h-auto py-2"
+                    className="w-full justify-start text-left h-auto py-3 px-3"
                     onClick={() => onNavigateToEntity(rel.target_entity_id)}
                   >
-                    <span className="text-xs">
-                      {getEntityName(rel.source_entity_id)} →{' '}
-                      <span className="font-medium">
+                    <span className="text-xs leading-relaxed">
+                      <span className="text-muted-foreground">{getEntityName(rel.source_entity_id)}</span>
+                      {' → '}
+                      <span className="font-semibold text-primary">
                         {t(`relationTypes.${rel.relation_type}`)}
-                      </span>{' '}
-                      → {getEntityName(rel.target_entity_id)}
+                      </span>
+                      {' → '}
+                      <span className="font-medium">{getEntityName(rel.target_entity_id)}</span>
                     </span>
                   </Button>
                 ))}
@@ -116,44 +117,51 @@ export function EntityDetailSheet({
 
           {/* Incoming Relations */}
           {incomingRelations.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2">
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold">
                 {t('incomingRelations')}
               </h4>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {incomingRelations.map((rel) => (
                   <Button
                     key={rel.id}
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="w-full justify-start text-left h-auto py-2"
+                    className="w-full justify-start text-left h-auto py-3 px-3"
                     onClick={() => onNavigateToEntity(rel.source_entity_id)}
                   >
-                    <span className="text-xs">
-                      {getEntityName(rel.source_entity_id)} →{' '}
-                      <span className="font-medium">
+                    <span className="text-xs leading-relaxed">
+                      <span className="font-medium">{getEntityName(rel.source_entity_id)}</span>
+                      {' → '}
+                      <span className="font-semibold text-primary">
                         {t(`relationTypes.${rel.relation_type}`)}
-                      </span>{' '}
-                      → {getEntityName(rel.target_entity_id)}
+                      </span>
+                      {' → '}
+                      <span className="text-muted-foreground">{getEntityName(rel.target_entity_id)}</span>
                     </span>
                   </Button>
                 ))}
               </div>
             </div>
           )}
+        </div>
 
-          {/* Metadata */}
-          <div className="text-xs text-muted-foreground space-y-1 pt-4 border-t">
-            <div>
-              {t('accessCount')}: {entity.access_count}
+        {/* Metadata - Fixed at bottom */}
+        <div className="pt-4 mt-4 bg-background">
+          <div className="text-xs text-muted-foreground space-y-2">
+            <div className="flex justify-between">
+              <span>{t('accessCount')}:</span>
+              <span className="font-medium">{entity.access_count}</span>
             </div>
             {entity.last_accessed_at && (
-              <div>
-                {t('lastAccessed')}: {formatDateTime(entity.last_accessed_at)}
+              <div className="flex justify-between">
+                <span>{t('lastAccessed')}:</span>
+                <span className="font-medium">{formatDateTime(entity.last_accessed_at)}</span>
               </div>
             )}
-            <div>
-              {t('createdAt')}: {formatDateTime(entity.created_at)}
+            <div className="flex justify-between">
+              <span>{t('createdAt')}:</span>
+              <span className="font-medium">{formatDateTime(entity.created_at)}</span>
             </div>
           </div>
         </div>

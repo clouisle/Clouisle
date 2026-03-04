@@ -1,6 +1,7 @@
 {
   "memories": {
     "title": "My Memories",
+    "detailTitle": "Entity Details",
     "description": "Explore what the AI has learned about you",
     "searchPlaceholder": "Search memories...",
     "entities": "Entities",

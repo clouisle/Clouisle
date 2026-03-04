@@ -78,8 +78,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = React.useState<boolean | null>(null)
   
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = React.useState(true)
+  // Sidebar state - collapsed by default on mobile
+  const [sidebarOpen, setSidebarOpen] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768 // md breakpoint
+    }
+    return true
+  })
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([])
   const [loadingConversations, setLoadingConversations] = React.useState(false)
   const [conversationPage, setConversationPage] = React.useState(1)
