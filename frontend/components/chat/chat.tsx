@@ -21,6 +21,8 @@ interface ChatProps {
   placeholder?: string;
   allowAttachments?: boolean;
   inputDisabled?: boolean;
+  // Callbacks
+  onSelectOption?: (option: string) => void;
   // Layout
   inputPosition?: 'bottom' | 'sticky';
   containerClassName?: string;
@@ -43,6 +45,8 @@ export function Chat({
   placeholder,
   allowAttachments = true,
   inputDisabled = false,
+  // Callbacks
+  onSelectOption,
   // Layout
   inputPosition = 'bottom',
   containerClassName,
@@ -57,6 +61,7 @@ export function Chat({
         autoScroll={autoScroll}
         renderPart={renderPart}
         emptyState={emptyState}
+        onSelectOption={onSelectOption}
         className={containerClassName}
       />
 

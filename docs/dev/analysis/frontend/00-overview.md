@@ -20,27 +20,41 @@
 
 ## API 客户端模块
 
-位于 `frontend/lib/api/` 目录：
+### 平台侧 `frontend/lib/api/` — `(platform)/` 和通用组件使用
 
 | 模块 | 说明 |
 |------|------|
 | `agents.ts` | Agent 管理、对话、消息、统计 |
 | `knowledge-bases.ts` | 知识库、文档、分块、搜索 |
 | `workflows.ts` | 工作流管理、运行、节点执行、版本 |
-| `teams.ts` | 团队管理、成员、角色 |
-| `users.ts` | 用户 CRUD、个人资料、密码管理 |
-| `roles.ts` | 角色和权限管理 |
-| `models.ts` | 模型管理、团队模型授权 |
+| `teams.ts` | 我的团队、团队详情、成员管理、离开、转让 |
+| `users.ts` | 当前用户自身操作（`/me`） |
+| `models.ts` | 公开模型接口（providers、types、available、default）、团队模型授权 |
 | `tools.ts` | 工具管理（内置、自定义、MCP）、工具共享 |
 | `api-keys.ts` | API Key 管理 |
 | `auth.ts` | 认证、注册、SSO 连接 |
-| `sso.ts` | SSO 提供商管理 |
-| `site-settings.ts` | 站点配置（通用、安全、邮件、通知） |
-| `audit-logs.ts` | 审计日志查看和导出 |
-| `notifications.ts` | 用户和管理员通知 |
-| `dashboard.ts` | 仪表盘统计和趋势 |
+| `sso.ts` | 公开 SSO 接口（providers、login、callback、用户断开连接） |
+| `site-settings.ts` | 公开站点设置（`/public`） |
+| `notifications.ts` | 用户通知（读取、标记已读、未读数） |
 | `upload.ts` | 文件上传和解析 |
 | `prompts.ts` | 提示词生成和优化 |
+
+### 管理侧 `frontend/lib/api/admin/` — `(dashboard)/` 页面使用，路径含 `/admin/` 前缀
+
+| 模块 | 对应后端路径 | 说明 |
+|------|-------------|------|
+| `dashboard.ts` | `/admin/dashboard` | 仪表盘统计和趋势 |
+| `audit-logs.ts` | `/admin/audit-logs` | 审计日志查看和导出 |
+| `conversations.ts` | `/admin/conversations` | 全局对话管理 |
+| `users.ts` | `/admin/users` | 用户 CRUD、激活/停用、发邮件 |
+| `roles.ts` | `/admin/roles` | 角色管理 |
+| `roles.ts` (permissionsApi) | `/admin/permissions` | 权限管理 |
+| `site-settings.ts` | `/admin/site-settings` | 站点配置全量读写 |
+| `models.ts` | `/admin/models` | 模型 CRUD、测试、设为默认 |
+| `teams.ts` | `/admin/teams` | 全量团队列表、创建、删除 |
+| `sso.ts` | `/admin/sso` | SSO 提供商 CRUD、断开任意用户连接 |
+| `notifications.ts` | `/admin/notifications` | 创建、删除、全量通知列表 |
+| `index.ts` | — | 统一 re-export |
 
 ## API 客户端使用
 

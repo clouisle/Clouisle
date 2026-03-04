@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
-import { ssoApi, type SSOProviderAdmin } from '@/lib/api'
+import { ssoApi, type SSOProviderAdmin } from '@/lib/api/admin/sso'
 import { ProviderDialog } from './_components/provider-dialog'
 
 export default function SSOSettingsPage() {

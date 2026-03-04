@@ -17,7 +17,8 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { apiKeysApi, usersApi, type APIKey, type PageData } from '@/lib/api'
+import { apiKeysApi, type APIKey, type PageData } from '@/lib/api'
+import { usersApi } from '@/lib/api/admin/users'
 import type { User } from '@/lib/api/auth'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'

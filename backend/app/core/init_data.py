@@ -278,6 +278,96 @@ async def init_workflow_visibility_field():
     logger.info("Workflow visibility migration complete")
 
 
+async def init_agent_streaming_config():
+    """
+    Add streaming_config field to agents table if it doesn't exist.
+    This handles the migration for the streaming configuration feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent streaming_config field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agents table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping streaming_config migration"
+        )
+        return
+
+    # Check if streaming_config column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'streaming_config'
+    """)
+
+    if not rows:
+        logger.info("Adding streaming_config column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN streaming_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """)
+            logger.info("Added streaming_config column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add streaming_config column: {e}")
+            raise
+    else:
+        logger.info("streaming_config column already exists")
+
+    logger.info("Agent streaming_config migration complete")
+
+
+async def init_agent_user_input_request():
+    """
+    Add enable_user_input_request field to agents table if it doesn't exist.
+    This handles the migration for the user input request feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent enable_user_input_request field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agents table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping enable_user_input_request migration"
+        )
+        return
+
+    # Check if enable_user_input_request column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'enable_user_input_request'
+    """)
+
+    if not rows:
+        logger.info("Adding enable_user_input_request column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN enable_user_input_request BOOLEAN NOT NULL DEFAULT FALSE
+            """)
+            logger.info("Added enable_user_input_request column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add enable_user_input_request column: {e}")
+            raise
+    else:
+        logger.info("enable_user_input_request column already exists")
+
+    logger.info("Agent enable_user_input_request migration complete")
+
+
 async def init_tool_shares_table():
     """
     Initialize tool_shares table for cross-team tool sharing feature.
@@ -790,6 +880,152 @@ async def migrate_storage_settings_category():
         logger.info("Storage settings already in correct category")
 
 
+async def init_memory_tables():
+    """
+    Initialize memory-related tables for user memory graph.
+    This handles the migration for the memory feature.
+    """
+    logger.info("Initializing memory tables...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if memory_entities table exists
+    _, rows = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'memory_entities'
+    """)
+
+    if rows:
+        logger.info("Memory tables already exist, checking for schema updates...")
+
+        # Migrate embedding_model_id from UUID to VARCHAR(255)
+        try:
+            # Check current column type
+            _, col_info = await conn.execute_query("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'memory_entities' AND column_name = 'embedding_model_id'
+            """)
+
+            if col_info and col_info[0]["data_type"] == "uuid":
+                logger.info("Migrating embedding_model_id from UUID to VARCHAR(255)...")
+                await conn.execute_query("""
+                    ALTER TABLE memory_entities
+                    ALTER COLUMN embedding_model_id TYPE VARCHAR(255)
+                    USING embedding_model_id::text
+                """)
+                logger.info("Successfully migrated embedding_model_id to VARCHAR(255)")
+        except Exception as e:
+            logger.error(f"Failed to migrate embedding_model_id: {e}")
+
+        return
+
+    logger.info("Creating memory tables...")
+
+    # Create memory_entities table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS memory_entities (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(255) NOT NULL,
+            entity_type VARCHAR(20) NOT NULL,
+            description TEXT,
+            properties JSONB NOT NULL DEFAULT '{}',
+            source_conversation_id UUID,
+            source_message_id UUID,
+            embedding_id VARCHAR(100),
+            embedding_model_id VARCHAR(255),
+            access_count INT NOT NULL DEFAULT 0,
+            last_accessed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, name, entity_type)
+        )
+    """)
+    logger.info("Created memory_entities table")
+
+    # Create indexes for memory_entities
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_memory_entities_user_type
+        ON memory_entities(user_id, entity_type)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_memory_entities_user_name
+        ON memory_entities(user_id, name)
+    """)
+    logger.info("Created indexes for memory_entities")
+
+    # Create memory_relations table
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS memory_relations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            source_entity_id UUID NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+            target_entity_id UUID NOT NULL REFERENCES memory_entities(id) ON DELETE CASCADE,
+            relation_type VARCHAR(20) NOT NULL,
+            description TEXT,
+            properties JSONB NOT NULL DEFAULT '{}',
+            source_conversation_id UUID,
+            source_message_id UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, source_entity_id, target_entity_id, relation_type)
+        )
+    """)
+    logger.info("Created memory_relations table")
+
+    # Create indexes for memory_relations
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_memory_relations_user_source
+        ON memory_relations(user_id, source_entity_id)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_memory_relations_user_target
+        ON memory_relations(user_id, target_entity_id)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_memory_relations_user_type
+        ON memory_relations(user_id, relation_type)
+    """)
+    logger.info("Created indexes for memory_relations")
+
+    logger.info("Memory tables initialization complete")
+
+
+async def init_agent_memory_fields():
+    """
+    Add enable_memory and memory_config fields to agents table.
+    """
+    logger.info("Initializing agent memory fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if enable_memory column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'enable_memory'
+    """)
+
+    if rows:
+        logger.info("Agent memory fields already exist, skipping")
+        return
+
+    logger.info("Adding enable_memory and memory_config fields to agents table...")
+
+    # Add enable_memory field
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_memory BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+
+    # Add memory_config field
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS memory_config JSONB NOT NULL DEFAULT '{}'
+    """)
+
+    logger.info("Agent memory fields added successfully")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -1026,6 +1262,27 @@ async def init_db():
             "code": "conversation:delete",
             "scope": "conversation",
             "description": "Delete conversations",
+        },
+        # Memory permissions
+        {
+            "code": "memory:read",
+            "scope": "memory",
+            "description": "Read user memories",
+        },
+        {
+            "code": "memory:create",
+            "scope": "memory",
+            "description": "Create user memories",
+        },
+        {
+            "code": "memory:update",
+            "scope": "memory",
+            "description": "Update user memories",
+        },
+        {
+            "code": "memory:delete",
+            "scope": "memory",
+            "description": "Delete user memories",
         },
         # System wildcard permission
         {"code": "*", "scope": "system", "description": "All permissions (superuser)"},
@@ -1394,5 +1651,11 @@ async def init_db():
 
     # 9. Initialize SSO tables
     await init_sso_tables()
+
+    # 10. Initialize memory tables
+    await init_memory_tables()
+
+    # 11. Initialize agent memory fields
+    await init_agent_memory_fields()
 
     logger.info("Database initialization complete.")

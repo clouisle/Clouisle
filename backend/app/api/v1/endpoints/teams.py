@@ -1,3 +1,8 @@
+"""
+Platform-side team endpoints.
+Admin endpoints (full list, create, delete) are in app/api/v1/admin/endpoints/teams.py
+"""
+
 from typing import Any, List
 from uuid import UUID
 
@@ -9,7 +14,6 @@ from app.models.user import Team, TeamMember, User
 from app.models.notification import AutoNotificationType
 from app.schemas.team import (
     Team as TeamSchema,
-    TeamCreate,
     TeamUpdate,
     TeamWithMembers,
     TeamMemberAdd,
@@ -20,7 +24,6 @@ from app.schemas.team import (
 )
 from app.schemas.response import (
     Response,
-    PageData,
     ResponseCode,
     BusinessError,
     success,
@@ -32,99 +35,11 @@ from app.services.team_role_sync import sync_user_role_from_teams
 router = APIRouter()
 
 
-# ============ Team CRUD ============
-
-
-@router.get("", response_model=Response[PageData[TeamSchema]])
-async def list_teams(
-    page: int = 1,
-    page_size: int = 50,
-    current_user: User = Depends(deps.PermissionChecker("team:read")),
-) -> Any:
-    """
-    List all teams the current user belongs to.
-    Superuser can see all teams.
-    """
-    if current_user.is_superuser:
-        total = await Team.all().count()
-        skip = (page - 1) * page_size
-        teams = await Team.all().offset(skip).limit(page_size).prefetch_related("owner")
-    else:
-        # Only teams where user is a member
-        memberships = await TeamMember.filter(user=current_user).prefetch_related(
-            "team", "team__owner"
-        )
-        total = len(memberships)
-        skip = (page - 1) * page_size
-        teams = [m.team for m in memberships[skip : skip + page_size]]
-
-    return success(
-        data={
-            "items": teams,
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-        }
-    )
-
-
-@router.post("", response_model=Response[TeamSchema])
-async def create_team(
-    *,
-    request: Request,
-    team_in: TeamCreate,
-    current_user: User = Depends(deps.PermissionChecker("team:create")),
-) -> Any:
-    """
-    Create a new team. The creator becomes the owner.
-    """
-    # Check if team name already exists
-    existing = await Team.filter(name=team_in.name).first()
-    if existing:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NAME_EXISTS,
-            msg_key="team_name_exists",
-        )
-
-    team = await Team.create(
-        name=team_in.name,
-        description=team_in.description,
-        avatar_url=team_in.avatar_url,
-        owner=current_user,
-    )
-
-    # Add creator as owner member
-    await TeamMember.create(
-        team=team,
-        user=current_user,
-        role=TeamMemberRole.OWNER,
-    )
-
-    # Reload with owner
-    team = await Team.get(id=team.id).prefetch_related("owner")
-
-    # 记录审计日志
-    await AuditLogService.log(
-        user=current_user,
-        action="create_team",
-        resource_type="team",
-        resource_id=team.id,
-        resource_name=team.name,
-        operation="create",
-        status="success",
-        request=request,
-    )
-
-    return success(data=team, msg_key="team_created")
-
-
 @router.get("/my", response_model=Response[List[UserTeamInfo]])
 async def get_my_teams(
     current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
-    """
-    Get all teams the current user belongs to with their role.
-    """
+    """Get all teams the current user belongs to with their role."""
     memberships = await TeamMember.filter(user=current_user).prefetch_related("team")
 
     result = []
@@ -148,9 +63,7 @@ async def get_team(
     team_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
-    """
-    Get team by ID with members list.
-    """
+    """Get team by ID with members list."""
     team = await Team.filter(id=team_id).prefetch_related("owner").first()
     if not team:
         raise BusinessError(
@@ -159,7 +72,6 @@ async def get_team(
             status_code=404,
         )
 
-    # Check access permission
     if not current_user.is_superuser:
         membership = await TeamMember.filter(team=team, user=current_user).first()
         if not membership:
@@ -169,7 +81,6 @@ async def get_team(
                 status_code=403,
             )
 
-    # Get members
     memberships = await TeamMember.filter(team=team).prefetch_related("user")
     members = []
     for m in memberships:
@@ -208,9 +119,7 @@ async def update_team(
     team_in: TeamUpdate,
     current_user: User = Depends(deps.PermissionChecker("team:update")),
 ) -> Any:
-    """
-    Update team info. Only owner or admin can update.
-    """
+    """Update team info. Only owner or admin can update."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -219,7 +128,6 @@ async def update_team(
             status_code=404,
         )
 
-    # Check permission
     if not current_user.is_superuser:
         membership = await TeamMember.filter(team=team, user=current_user).first()
         if not membership or membership.role not in [
@@ -232,10 +140,8 @@ async def update_team(
                 status_code=403,
             )
 
-    # Update fields
     updated_fields = []
     if team_in.name is not None:
-        # Check name uniqueness
         existing = await Team.filter(name=team_in.name).exclude(id=team_id).first()
         if existing:
             raise BusinessError(
@@ -254,10 +160,8 @@ async def update_team(
         updated_fields.append("avatar_url")
 
     await team.save()
-
     team = await Team.get(id=team_id).prefetch_related("owner")
 
-    # 记录审计日志
     await AuditLogService.log(
         user=current_user,
         action="update_team",
@@ -273,58 +177,6 @@ async def update_team(
     return success(data=team, msg_key="team_updated")
 
 
-@router.delete("/{team_id}", response_model=Response[TeamSchema])
-async def delete_team(
-    request: Request,
-    team_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:delete")),
-) -> Any:
-    """
-    Delete a team. Only owner or superuser can delete.
-    """
-    team = await Team.filter(id=team_id).prefetch_related("owner").first()
-    if not team:
-        raise BusinessError(
-            code=ResponseCode.TEAM_NOT_FOUND,
-            msg_key="team_not_found",
-            status_code=404,
-        )
-
-    if team.is_default:
-        raise BusinessError(
-            code=ResponseCode.CANNOT_DELETE_DEFAULT_TEAM,
-            msg_key="cannot_delete_default_team",
-        )
-
-    # Check permission
-    if not current_user.is_superuser:
-        membership = await TeamMember.filter(team=team, user=current_user).first()
-        if not membership or membership.role != TeamMemberRole.OWNER:
-            raise BusinessError(
-                code=ResponseCode.TEAM_OWNER_REQUIRED,
-                msg_key="team_owner_required",
-                status_code=403,
-            )
-
-    # 记录审计日志（在删除前）
-    await AuditLogService.log(
-        user=current_user,
-        action="delete_team",
-        resource_type="team",
-        resource_id=team.id,
-        resource_name=team.name,
-        operation="delete",
-        status="success",
-        request=request,
-    )
-
-    await team.delete()
-    return success(data=team, msg_key="team_deleted")
-
-
-# ============ Team Members ============
-
-
 @router.post("/{team_id}/members", response_model=Response[TeamMemberInfo])
 async def add_team_member(
     *,
@@ -333,9 +185,7 @@ async def add_team_member(
     member_in: TeamMemberAdd,
     current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
-    """
-    Add a member to the team. Only owner or admin can add members.
-    """
+    """Add a member to the team. Only owner or admin can add members."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -344,7 +194,6 @@ async def add_team_member(
             status_code=404,
         )
 
-    # Check permission
     if not current_user.is_superuser:
         membership = await TeamMember.filter(team=team, user=current_user).first()
         if not membership or membership.role not in [
@@ -357,7 +206,6 @@ async def add_team_member(
                 status_code=403,
             )
 
-    # Get user to add
     user_to_add = await User.filter(id=member_in.user_id).first()
     if not user_to_add:
         raise BusinessError(
@@ -366,7 +214,6 @@ async def add_team_member(
             status_code=404,
         )
 
-    # Check if already member
     existing = await TeamMember.filter(team=team, user=user_to_add).first()
     if existing:
         raise BusinessError(
@@ -374,21 +221,18 @@ async def add_team_member(
             msg_key="already_team_member",
         )
 
-    # Cannot add as owner
     if member_in.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.CANNOT_ADD_AS_OWNER,
             msg_key="cannot_add_as_owner",
         )
 
-    # Create membership
     new_member = await TeamMember.create(
         team=team,
         user=user_to_add,
         role=member_in.role,
     )
 
-    # 记录审计日志
     await AuditLogService.log(
         user=current_user,
         action="add_team_member",
@@ -405,7 +249,6 @@ async def add_team_member(
         },
     )
 
-    # 发送自动通知给被添加的用户
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
         user_id=user_to_add.id,
@@ -419,7 +262,6 @@ async def add_team_member(
         ),
     )
 
-    # 发送团队通知
     default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_ADDED,
@@ -433,7 +275,6 @@ async def add_team_member(
         ),
     )
 
-    # Sync global role based on team membership
     await sync_user_role_from_teams(user_to_add)
 
     return success(
@@ -458,9 +299,7 @@ async def update_team_member(
     member_in: TeamMemberUpdate,
     current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
-    """
-    Update member role. Only owner can change roles.
-    """
+    """Update member role. Only owner can change roles."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -469,7 +308,6 @@ async def update_team_member(
             status_code=404,
         )
 
-    # Check permission - only owner can change roles
     if not current_user.is_superuser:
         current_membership = await TeamMember.filter(
             team=team, user=current_user
@@ -481,7 +319,6 @@ async def update_team_member(
                 status_code=403,
             )
 
-    # Get target membership
     target_user = await User.filter(id=user_id).first()
     if not target_user:
         raise BusinessError(
@@ -498,14 +335,12 @@ async def update_team_member(
             status_code=404,
         )
 
-    # Cannot change owner role
     if membership.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.CANNOT_CHANGE_OWNER_ROLE,
             msg_key="cannot_change_owner_role",
         )
 
-    # Cannot promote to owner
     if member_in.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.CANNOT_PROMOTE_TO_OWNER,
@@ -516,7 +351,6 @@ async def update_team_member(
     membership.role = member_in.role
     await membership.save()
 
-    # 发送自动通知给角色变更的用户
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_ROLE_CHANGED,
         user_id=target_user.id,
@@ -530,7 +364,6 @@ async def update_team_member(
         ),
     )
 
-    # Sync global role based on team membership
     await sync_user_role_from_teams(target_user)
 
     return success(
@@ -554,10 +387,7 @@ async def remove_team_member(
     user_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
-    """
-    Remove a member from the team.
-    Owner/admin can remove others. Members can remove themselves.
-    """
+    """Remove a member from the team."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -566,7 +396,6 @@ async def remove_team_member(
             status_code=404,
         )
 
-    # Get target user
     target_user = await User.filter(id=user_id).first()
     if not target_user:
         raise BusinessError(
@@ -583,14 +412,12 @@ async def remove_team_member(
             status_code=404,
         )
 
-    # Owner cannot be removed
     if membership.role == TeamMemberRole.OWNER:
         raise BusinessError(
             code=ResponseCode.CANNOT_REMOVE_OWNER,
             msg_key="cannot_remove_owner",
         )
 
-    # Check permission
     is_self = str(target_user.id) == str(current_user.id)
     if not is_self and not current_user.is_superuser:
         current_membership = await TeamMember.filter(
@@ -606,7 +433,6 @@ async def remove_team_member(
                 status_code=403,
             )
 
-    # 记录审计日志（在删除前）
     await AuditLogService.log(
         user=current_user,
         action="remove_team_member",
@@ -623,7 +449,6 @@ async def remove_team_member(
         },
     )
 
-    # 发送自动通知给被移除的用户
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
         user_id=target_user.id,
@@ -635,7 +460,6 @@ async def remove_team_member(
         ),
     )
 
-    # 发送团队通知
     default_lang = await get_default_language()
     await AutoNotificationService.send_to_team(
         notification_type=AutoNotificationType.TEAM_MEMBER_REMOVED,
@@ -649,8 +473,6 @@ async def remove_team_member(
     )
 
     await membership.delete()
-
-    # Sync global role based on remaining team memberships
     await sync_user_role_from_teams(target_user)
 
     return success(data={"user_id": str(user_id)}, msg_key="team_member_removed")
@@ -661,9 +483,7 @@ async def leave_team(
     team_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("team:read")),
 ) -> Any:
-    """
-    Leave a team. Owner cannot leave (must transfer ownership first or delete team).
-    """
+    """Leave a team. Owner cannot leave without transferring ownership first."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -687,8 +507,6 @@ async def leave_team(
         )
 
     await membership.delete()
-
-    # Sync global role based on remaining team memberships
     await sync_user_role_from_teams(current_user)
 
     return success(data={"team_id": str(team_id)}, msg_key="team_left")
@@ -701,9 +519,7 @@ async def transfer_ownership(
     new_owner_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
-    """
-    Transfer team ownership to another member. Only current owner can do this.
-    """
+    """Transfer team ownership to another member. Only current owner can do this."""
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -712,7 +528,6 @@ async def transfer_ownership(
             status_code=404,
         )
 
-    # Check current user is owner
     current_membership = await TeamMember.filter(team=team, user=current_user).first()
     if not current_membership or current_membership.role != TeamMemberRole.OWNER:
         raise BusinessError(
@@ -721,7 +536,6 @@ async def transfer_ownership(
             status_code=403,
         )
 
-    # Get new owner (must be a member)
     new_owner = await User.filter(id=new_owner_id).first()
     new_owner_membership = (
         await TeamMember.filter(team=team, user=new_owner).first()
@@ -735,7 +549,6 @@ async def transfer_ownership(
             status_code=404,
         )
 
-    # Transfer ownership
     current_membership.role = TeamMemberRole.ADMIN
     await current_membership.save()
 
@@ -747,8 +560,7 @@ async def transfer_ownership(
 
     team = await Team.get(id=team_id).prefetch_related("owner")
 
-    # 发送自动通知给新所有者 (new_owner 已在上面验证不为 None)
-    assert new_owner is not None  # for type checker
+    assert new_owner is not None
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=new_owner.id,
@@ -761,7 +573,6 @@ async def transfer_ownership(
         ),
     )
 
-    # 发送自动通知给原所有者
     await AutoNotificationService.send_to_user(
         notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
         user_id=current_user.id,
@@ -774,7 +585,6 @@ async def transfer_ownership(
         ),
     )
 
-    # Sync global roles for both users after ownership transfer
     await sync_user_role_from_teams(current_user)
     await sync_user_role_from_teams(new_owner)
 

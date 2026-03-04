@@ -34,14 +34,25 @@
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",
       "variableHint": "Use {{variableName}} format to insert variables",
+      "enableUserInputRequest": "Enable User Input Request",
+      "enableUserInputRequestDesc": "Allow the agent to request user input with predefined options during conversation",
       "documents": "{count} documents",
       "kbComingSoon": "Knowledge base linking feature coming soon",
       "tabs": {
         "basic": "Basic Settings",
         "prompt": "Prompt",
         "model": "Model Config",
+        "memory": "Memory",
         "kb": "Knowledge Base"
-      }
+      },
+      "memoryConfig": "Memory Configuration",
+      "memoryConfigDesc": "Enable personalized conversations by remembering user information",
+      "enableMemory": "Enable Memory",
+      "enableMemoryDesc": "Allow the agent to remember user preferences, context, and information across conversations",
+      "maxMemoriesPerRetrieval": "Max Memories Per Retrieval",
+      "maxMemoriesPerRetrievalDesc": "Maximum number of memories to retrieve and inject into each conversation (1-50)",
+      "autoExtract": "Auto Extract Memories",
+      "autoExtractDesc": "Automatically extract and save important information from conversations"
     },
     "agentCreated": "Agent created successfully",
     "agentUpdated": "Agent updated successfully",
@@ -139,6 +150,8 @@
         "variableNotFound": "Variable \"{query}\" not found",
         "createVariable": "Create variable \"{name}\"",
         "undefinedVariablesHint": "The following variables are undefined. Click to add to variable list:",
+        "enableUserInputRequest": "Enable User Input Request",
+        "enableUserInputRequestDesc": "Allow the agent to request user input with predefined options during conversation",
         "systemVars": {
           "query": "User Input",
           "queryDesc": "The user's current question",
@@ -275,6 +288,21 @@
         "truncateMiddle": "Keep both ends (truncate middle)",
         "variableHint": "Use the following variable in your prompt to inject file content:",
         "supportedFormats": "Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html/.xml)"
+      },
+      "userInputRequest": {
+        "title": "User Input Request",
+        "tooltip": "Allow the agent to request user input during conversation",
+        "description": "When enabled, the agent can proactively ask users questions and provide predefined options for selection during conversation."
+      },
+      "memory": {
+        "title": "Memory",
+        "tooltip": "Enable personalized conversations by remembering user information",
+        "description": "When enabled, the agent can remember user preferences, context, and information across conversations to provide personalized responses.",
+        "maxMemoriesPerRetrieval": "Max Memories Per Retrieval",
+        "maxMemoriesPerRetrievalHint": "Maximum number of memories to retrieve and inject into each conversation (1-50)",
+        "memories": "memories",
+        "autoExtract": "Auto Extract Memories",
+        "autoExtractHint": "Automatically extract and save important information from conversations"
       },
       "preview": {
         "title": "Debug & Preview",

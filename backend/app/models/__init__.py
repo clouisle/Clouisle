@@ -56,6 +56,7 @@ from .notification import (
 from .sso_provider import SSOProvider
 from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
+from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 
 __all__ = [
     "User",
@@ -116,4 +117,8 @@ __all__ = [
     "SSOProvider",
     "UserSSOConnection",
     "SSOSession",
+    "MemoryEntity",
+    "MemoryRelation",
+    "EntityType",
+    "RelationType",
 ]

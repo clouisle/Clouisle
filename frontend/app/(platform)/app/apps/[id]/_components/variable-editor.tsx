@@ -53,6 +53,12 @@ const typeToDataType: Record<VariableType, string> = {
   select: 'string',
   number: 'number',
   checkbox: 'boolean',
+  array: 'array',
+  object: 'object',
+  file: 'file',
+  image: 'image',
+  files: 'files',
+  images: 'images',
 }
 
 function getTypeIcon(type: VariableType) {

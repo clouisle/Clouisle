@@ -16,7 +16,8 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { permissionsApi, type Permission, type PageData } from '@/lib/api'
+import { permissionsApi, type Permission } from '@/lib/api/admin/roles'
+import type { PageData } from '@/lib/api/users'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'

@@ -19,7 +19,9 @@ import {
   TestTube,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { modelsApi, type Model, type PageData, type ProviderInfo, type ModelTypeInfo } from '@/lib/api'
+import { modelsApi, type Model } from '@/lib/api/admin/models'
+import { modelsApi as platformModelsApi } from '@/lib/api/models'
+import type { PageData, ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -100,8 +102,8 @@ export function ModelsClient() {
     const loadMetadata = async () => {
       try {
         const [providersData, typesData] = await Promise.all([
-          modelsApi.getProviders(),
-          modelsApi.getModelTypes(),
+          platformModelsApi.getProviders(),
+          platformModelsApi.getModelTypes(),
         ])
         setProviders(providersData)
         setModelTypes(typesData)

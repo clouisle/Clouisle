@@ -49,6 +49,7 @@
     "failed": "failed",
     "configure": "Configure",
     "chat": "Chat",
+    "run": "Run",
     "openPublicChat": "Open Public Page",
     "publish": "Publish",
     "unpublish": "Unpublish",

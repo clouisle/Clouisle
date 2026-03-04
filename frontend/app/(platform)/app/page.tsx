@@ -20,7 +20,8 @@ import {
   Coins,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
-import { knowledgeBasesApi, teamModelsApi, agentsApi, workflowsApi, conversationsApi, type TeamModel } from '@/lib/api'
+import { knowledgeBasesApi, teamModelsApi, agentsApi, workflowsApi, type TeamModel } from '@/lib/api'
+import { conversationsApi } from '@/lib/api/admin/conversations'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -234,7 +235,7 @@ export default function PlatformHomePage() {
         teamModelsApi.getTeamModels(currentTeam.id),
         agentsApi.getAgents({ pageSize: 8, teamId: currentTeam.id }),
         workflowsApi.getWorkflows({ pageSize: 8, teamId: currentTeam.id }),
-        conversationsApi.getTrends(currentTeam.id, '7d'),
+        conversationsApi.getTrends({ team_id: currentTeam.id, period: '7d' }),
       ])
 
       // 计算总的对话数和消息数

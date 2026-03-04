@@ -409,6 +409,14 @@ export default function AppsPage() {
                           </DropdownMenuItem>
                         </Link>
                       )}
+                      {app.type === 'workflow' && (
+                        <Link href={`/run/${app.id}?type=workflow`} target="_blank">
+                          <DropdownMenuItem>
+                            <MessageSquare className="mr-2 h-4 w-4" />
+                            {t('run')}
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
                       {((app.type === 'agent' && canPerform('agent:publish')) ||
                         (app.type === 'workflow' && canPerform('workflow:publish'))) && (
                         <>

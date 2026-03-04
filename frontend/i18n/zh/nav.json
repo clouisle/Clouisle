@@ -22,6 +22,7 @@
     "helpCenter": "帮助中心",
     "logout": "退出登录",
     "logoutSuccess": "已成功退出登录",
-    "auditLogs": "审计日志"
+    "auditLogs": "审计日志",
+    "memories": "记忆"
   }
 }

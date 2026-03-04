@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/sheet'
 import { Message as ChatMessageItem, type ChatMessage } from '@/components/chat'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
-import type { AdminConversationWithMessages } from '@/lib/api'
+import type { AdminConversationWithMessages } from '@/lib/api/admin/conversations'
 import { useCanPerform } from '@/components/permission-guard'
 
 interface ConversationDrawerProps {

@@ -17,6 +17,7 @@
     "next": "Next",
     "submit": "Submit",
     "close": "Close",
+    "menu": "Menu",
     "yes": "Yes",
     "no": "No",
     "or": "or",
@@ -31,6 +32,16 @@
     "createdBy": "Created By",
     "noResults": "No results found",
     "openMenu": "Open menu",
-    "copiedToClipboard": "Copied to clipboard"
+    "copiedToClipboard": "Copied to clipboard",
+    "confirmBulkDelete": "Are you sure you want to delete {count} selected items? This action cannot be undone.",
+    "rowsPerPage": "Rows per page",
+    "deleteSuccess": "Deleted successfully",
+    "selected": "selected",
+    "noData": "No data available",
+    "page": "Page",
+    "of": "of",
+    "confirmDelete": "Confirm Delete",
+    "deleteWarning": "This action cannot be undone. Are you sure you want to continue?",
+    "invalidJSON": "Invalid JSON format"
   }
 }

@@ -23,7 +23,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import type { DashboardStats } from '@/lib/api'
+import type { DashboardStats } from '@/lib/api/admin/dashboard'
 
 interface TrendData {
   date: string

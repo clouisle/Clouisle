@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ssoApi, type SSOProviderAdmin, type SSOProviderCreate } from '@/lib/api'
+import { ssoApi, type SSOProviderAdmin, type SSOProviderCreate } from '@/lib/api/admin/sso'
 
 interface ProviderDialogProps {
   open: boolean

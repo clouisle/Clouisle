@@ -22,7 +22,8 @@ import {
   Link as LinkIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { usersApi, rolesApi, type User, type PageData, type UserStats } from '@/lib/api'
+import { usersApi, type User, type PageData, type UserStats } from '@/lib/api/admin/users'
+import { rolesApi } from '@/lib/api/admin/roles'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

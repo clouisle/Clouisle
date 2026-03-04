@@ -17,6 +17,7 @@ async def execute_http_tool(
     http_config: dict,
     arguments: dict[str, Any],
     credentials: dict[str, str] | None = None,
+    timeout: float = 30.0,
 ) -> dict:
     """
     执行 HTTP 工具
@@ -25,6 +26,7 @@ async def execute_http_tool(
         http_config: HTTP 配置（url, method, headers, etc.）
         arguments: 工具参数
         credentials: 凭证信息（可选）
+        timeout: Request timeout in seconds
 
     Returns:
         dict: 执行结果，包含 success, status_code, result/error 字段
@@ -43,7 +45,6 @@ async def execute_http_tool(
 
     url = replace_vars(http_config.get("url", ""), all_vars)
     method = http_config.get("method", "GET").upper()
-    timeout = http_config.get("timeout", 30)
 
     headers = {
         k: replace_vars(v, all_vars) for k, v in http_config.get("headers", {}).items()

@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { MoreHorizontal, Pencil, Trash2, UserCheck, UserX, Link as LinkIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { usersApi, type User } from '@/lib/api'
+import { usersApi, type User } from '@/lib/api/admin/users'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,

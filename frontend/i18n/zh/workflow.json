@@ -215,6 +215,7 @@
       "question_classifier": "问题分类",
       "answer": "输出",
       "file_to_url": "文件转URL",
+      "knowledge_retrieval": "知识库检索",
       "iteration_start": "迭代开始",
       "iteration_exit": "迭代结束",
       "loop_start": "循环开始",
@@ -248,6 +249,7 @@
       "sub_workflow": "调用其他工作流",
       "agent": "调用已发布的智能体",
       "tool": "调用外部工具",
+      "knowledge_retrieval": "从知识库检索内容",
       "answer": "定义工作流输出"
     },
     "nodePanel": {
@@ -306,6 +308,8 @@
       "suggestInputVariables": "建议配置输入变量",
       "triggerTypeNotSelected": "未选择触发类型",
       "agentNotSelected": "未选择 Agent",
+      "knowledgeBaseNotSelected": "未选择知识库",
+      "queryEmpty": "查询内容为空",
       "containerNodeNoInput": "容器内节点没有输入连接",
       "nodeNoInput": "节点没有输入连接",
       "noOutputNode": "工作流没有输出节点"
@@ -673,9 +677,9 @@
     },
     "configLlm": {
       "systemPrompt": "系统提示词",
-      "systemPromptPlaceholder": "输入系统提示词，定义 AI 的角色和行为...\n输入 {{ 触发变量补全",
+      "systemPromptPlaceholder": "输入系统提示词，定义 AI 的角色和行为...\n输入 '{{' 触发变量补全",
       "userPrompt": "用户提示词",
-      "userPromptPlaceholder": "输入用户提示词模板...\n输入 {{ 触发变量补全",
+      "userPromptPlaceholder": "输入用户提示词模板...\n输入 '{{' 触发变量补全",
       "memoryContext": "记忆（上下文）",
       "enabled": "已启用",
       "enableMemory": "启用记忆",
@@ -1051,6 +1055,35 @@
         "save": "保存",
         "add": "添加"
       }
+    },
+    "configKnowledgeRetrieval": {
+      "title": "知识库检索配置",
+      "knowledgeBase": "知识库",
+      "selectKnowledgeBase": "选择知识库...",
+      "searchKnowledgeBase": "搜索知识库...",
+      "noKnowledgeBase": "没有可用的知识库",
+      "noMatchingKnowledgeBases": "没有匹配的知识库",
+      "loadingKnowledgeBases": "加载知识库中...",
+      "query": "查询内容",
+      "queryDescription": "输入搜索查询以从知识库中检索相关内容",
+      "queryPlaceholder": "输入查询内容...",
+      "searchMode": "检索模式",
+      "searchModeVector": "向量检索",
+      "searchModeFulltext": "全文检索",
+      "searchModeHybrid": "混合检索",
+      "retrievalSettings": "检索设置",
+      "topK": "返回结果数",
+      "topKDescription": "检索返回的结果数量",
+      "threshold": "相似度阈值",
+      "thresholdDescription": "最小相似度分数 (0-1)",
+      "outputVariables": "输出变量",
+      "results": "检索结果",
+      "resultsDescription": "检索到的文档片段数组",
+      "resultsPlaceholder": "results"
+    },
+    "nodesKnowledgeRetrieval": {
+      "label": "知识库检索",
+      "clickToConfigure": "点击配置知识库检索"
     }
   }
 }

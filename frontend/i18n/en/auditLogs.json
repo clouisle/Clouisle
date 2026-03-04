@@ -118,6 +118,12 @@
     "actionupdate_sso_provider": "Update SSO Provider",
     "actiondelete_sso_provider": "Delete SSO Provider",
     "actionupdate_auto_notification_config": "Update Auto Notification Config",
+    "actionupdate_memory_entity": "Update Memory Entity",
+    "actiondelete_memory_entity": "Delete Memory Entity",
+    "actiondelete_memory_relation": "Delete Memory Relation",
+    "actionagent_create_memory_entity": "Agent Created Memory Entity",
+    "actionagent_create_memory_relation": "Agent Created Memory Relation",
+    "actionagent_update_memory_entity": "Agent Updated Memory Entity",
     "rowsPerPage": "rows per page",
     "pageInfo": "Page {page} of {total}"
   }

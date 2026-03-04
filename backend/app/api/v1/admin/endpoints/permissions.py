@@ -1,0 +1,150 @@
+from typing import Any, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+
+from app.api import deps
+from app.models.user import Permission, User
+from app.schemas.user import Permission as PermissionSchema, PermissionCreate
+from app.schemas.response import (
+    Response,
+    PageData,
+    ResponseCode,
+    BusinessError,
+    success,
+)
+
+router = APIRouter()
+
+
+@router.get("", response_model=Response[PageData[PermissionSchema]])
+async def read_permissions(
+    page: int = 1,
+    page_size: int = 50,
+    scope: Optional[str] = None,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Retrieve permissions.
+    """
+    query = Permission.all()
+    if scope:
+        query = query.filter(scope=scope)
+
+    total = await query.count()
+    skip = (page - 1) * page_size
+    permissions = await query.offset(skip).limit(page_size)
+
+    return success(
+        data={
+            "items": permissions,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
+
+
+@router.post("", response_model=Response[PermissionSchema])
+async def create_permission(
+    *,
+    permission_in: PermissionCreate,
+    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+) -> Any:
+    """
+    Create new permission.
+    """
+    # Check if permission code already exists
+    existing = await Permission.filter(code=permission_in.code).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_CODE_EXISTS,
+            msg_key="permission_with_code_exists",
+        )
+
+    permission = await Permission.create(
+        scope=permission_in.scope,
+        code=permission_in.code,
+        description=permission_in.description,
+    )
+    return success(data=permission, msg_key="permission_created")
+
+
+@router.get("/{permission_id}", response_model=Response[PermissionSchema])
+async def read_permission(
+    permission_id: UUID,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get permission by ID.
+    """
+    permission = await Permission.filter(id=permission_id).first()
+    if not permission:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_NOT_FOUND,
+            msg_key="permission_not_found",
+            status_code=404,
+        )
+    return success(data=permission)
+
+
+@router.put("/{permission_id}", response_model=Response[PermissionSchema])
+async def update_permission(
+    *,
+    permission_id: UUID,
+    permission_in: PermissionCreate,
+    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+) -> Any:
+    """
+    Update a permission.
+    """
+    permission = await Permission.filter(id=permission_id).first()
+    if not permission:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_NOT_FOUND,
+            msg_key="permission_not_found",
+            status_code=404,
+        )
+
+    # Check if code is being changed and if it conflicts
+    if permission_in.code != permission.code:
+        existing = await Permission.filter(code=permission_in.code).first()
+        if existing:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_CODE_EXISTS,
+                msg_key="permission_with_code_exists",
+            )
+
+    permission.scope = permission_in.scope
+    permission.code = permission_in.code
+    permission.description = permission_in.description  # type: ignore[assignment]
+    await permission.save()
+
+    return success(data=permission, msg_key="permission_updated")
+
+
+@router.delete("/{permission_id}", response_model=Response[PermissionSchema])
+async def delete_permission(
+    permission_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+) -> Any:
+    """
+    Delete a permission.
+    """
+    permission = await Permission.filter(id=permission_id).first()
+    if not permission:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_NOT_FOUND,
+            msg_key="permission_not_found",
+            status_code=404,
+        )
+
+    # Prevent deleting the wildcard permission
+    if permission.code == "*":
+        raise BusinessError(
+            code=ResponseCode.CANNOT_DELETE_WILDCARD_PERMISSION,
+            msg_key="cannot_delete_wildcard_permission",
+        )
+
+    await permission.delete()
+    return success(data=permission, msg_key="permission_deleted")

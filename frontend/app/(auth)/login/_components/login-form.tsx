@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
 import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
@@ -118,15 +118,15 @@ export function LoginForm() {
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
 
-      // 获取用户信息并同步语言设置
+      // 同步当前浏览器语言设置到后端用户数据
       try {
         const user = await authApi.getCurrentUser({ skipAuthRedirect: true })
-        if (user.locale && user.locale !== locale) {
-          // 用户数据库中的语言与当前页面不同，同步到浏览器
-          document.cookie = `locale=${user.locale};path=/;max-age=31536000`
+        if (!user.locale || user.locale !== locale) {
+          // 用户数据库中没有语言设置或与当前浏览器语言不同，同步到后端
+          await usersApi.updateProfile({ locale }, { skipAuthRedirect: true })
         }
       } catch {
-        // 获取用户信息失败，不影响登录流程
+        // 同步语言设置失败，不影响登录流程
       }
 
       toast.success(t('loginSuccess'))

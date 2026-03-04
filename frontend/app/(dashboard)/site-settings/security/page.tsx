@@ -11,7 +11,8 @@ import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
-import { siteSettingsApi, rolesApi, type SecuritySettings, type Role } from '@/lib/api'
+import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
+import { rolesApi, type Role } from '@/lib/api/admin/roles'
 
 export default function SiteSettingsSecurityPage() {
   const t = useTranslations('siteSettings')

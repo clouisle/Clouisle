@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { siteSettingsApi, type DingTalkSettings } from '@/lib/api'
+import { siteSettingsApi, type DingTalkSettings } from '@/lib/api/admin/site-settings'
 
 interface DingTalkSettingsTabProps {
   settings: DingTalkSettings

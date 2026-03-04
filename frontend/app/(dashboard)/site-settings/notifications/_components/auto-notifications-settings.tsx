@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
-import { siteSettingsApi, type AutoNotificationConfig } from '@/lib/api'
+import { siteSettingsApi, type AutoNotificationConfig } from '@/lib/api/admin/site-settings'
 
 // All notification types grouped by category
 const NOTIFICATION_CATEGORIES = {

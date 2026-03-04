@@ -19,7 +19,8 @@ import {
   Users,
   Cpu,
 } from 'lucide-react'
-import { teamsApi, type TeamWithMembers, type TeamMember, usersApi, type User as UserType } from '@/lib/api'
+import { teamsApi, type TeamWithMembers, type TeamMember } from '@/lib/api'
+import { usersApi, type User as UserType } from '@/lib/api/admin/users'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'

@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2 } from 'lucide-react'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { siteSettingsApi, type GeneralSettings } from '@/lib/api'
+import { siteSettingsApi, type GeneralSettings } from '@/lib/api/admin/site-settings'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 

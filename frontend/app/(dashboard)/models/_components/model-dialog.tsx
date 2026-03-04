@@ -42,7 +42,8 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-import { modelsApi, type Model, type ModelCreateInput, type ProviderInfo, type ModelTypeInfo } from '@/lib/api/models'
+import { modelsApi, type Model, type ModelCreateInput } from '@/lib/api/admin/models'
+import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {

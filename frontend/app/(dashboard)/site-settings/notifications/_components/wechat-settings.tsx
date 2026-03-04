@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { siteSettingsApi, type WeChatSettings } from '@/lib/api'
+import { siteSettingsApi, type WeChatSettings } from '@/lib/api/admin/site-settings'
 
 interface WeChatSettingsTabProps {
   settings: WeChatSettings

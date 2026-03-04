@@ -215,6 +215,7 @@
       "question_classifier": "Question Classifier",
       "answer": "Output",
       "file_to_url": "File to URL",
+      "knowledge_retrieval": "Knowledge Retrieval",
       "iteration_start": "Iteration Start",
       "iteration_exit": "Iteration End",
       "loop_start": "Loop Start",
@@ -248,6 +249,7 @@
       "sub_workflow": "Call another workflow",
       "agent": "Call a published agent",
       "tool": "Call external tool",
+      "knowledge_retrieval": "Retrieve from knowledge base",
       "answer": "Define workflow output"
     },
     "nodePanel": {
@@ -306,6 +308,8 @@
       "suggestInputVariables": "Suggest configuring input variables",
       "triggerTypeNotSelected": "Trigger type not selected",
       "agentNotSelected": "Agent not selected",
+      "knowledgeBaseNotSelected": "Knowledge base not selected",
+      "queryEmpty": "Query is empty",
       "containerNodeNoInput": "Container node has no input connection",
       "nodeNoInput": "Node has no input connection",
       "noOutputNode": "Workflow has no output node"
@@ -673,9 +677,9 @@
     },
     "configLlm": {
       "systemPrompt": "System Prompt",
-      "systemPromptPlaceholder": "Enter system prompt to define AI role and behavior...\nType {{ to trigger variable completion",
+      "systemPromptPlaceholder": "Enter system prompt to define AI role and behavior...\nType '{{' to trigger variable completion",
       "userPrompt": "User Prompt",
-      "userPromptPlaceholder": "Enter user prompt template...\nType {{ to trigger variable completion",
+      "userPromptPlaceholder": "Enter user prompt template...\nType '{{' to trigger variable completion",
       "memoryContext": "Memory (Context)",
       "enabled": "Enabled",
       "enableMemory": "Enable memory",
@@ -1051,6 +1055,35 @@
         "save": "Save",
         "add": "Add"
       }
+    },
+    "configKnowledgeRetrieval": {
+      "title": "Knowledge Retrieval Configuration",
+      "knowledgeBase": "Knowledge Base",
+      "selectKnowledgeBase": "Select knowledge base...",
+      "searchKnowledgeBase": "Search knowledge bases...",
+      "noKnowledgeBase": "No knowledge base available",
+      "noMatchingKnowledgeBases": "No matching knowledge bases",
+      "loadingKnowledgeBases": "Loading knowledge bases...",
+      "query": "Query",
+      "queryDescription": "Enter the search query to retrieve relevant content from the knowledge base",
+      "queryPlaceholder": "Enter query content...",
+      "searchMode": "Search Mode",
+      "searchModeVector": "Vector Search",
+      "searchModeFulltext": "Full-text Search",
+      "searchModeHybrid": "Hybrid Search",
+      "retrievalSettings": "Retrieval Settings",
+      "topK": "Top K Results",
+      "topKDescription": "Number of results to retrieve",
+      "threshold": "Similarity Threshold",
+      "thresholdDescription": "Minimum similarity score (0-1)",
+      "outputVariables": "Output Variables",
+      "results": "Results",
+      "resultsDescription": "Array of retrieved document chunks",
+      "resultsPlaceholder": "results"
+    },
+    "nodesKnowledgeRetrieval": {
+      "label": "Knowledge Retrieval",
+      "clickToConfigure": "Click to configure knowledge retrieval"
     }
   }
 }

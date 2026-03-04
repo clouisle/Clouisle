@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig } from '@/lib/api'
+import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig, type MemoryConfig } from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -44,6 +44,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [ragMode, setRagMode] = React.useState<RAGMode>('agentic')
   const [enableVision, setEnableVision] = React.useState(false)
   const [enableFileUpload, setEnableFileUpload] = React.useState(false)
+  const [enableUserInputRequest, setEnableUserInputRequest] = React.useState(false)
+  const [enableMemory, setEnableMemory] = React.useState(false)
+  const [memoryConfig, setMemoryConfig] = React.useState<MemoryConfig | null>(null)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
 
   // Unwrap params
@@ -81,6 +84,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setRagMode(data.rag_mode || 'agentic')
       setEnableVision(data.enable_vision || false)
       setEnableFileUpload(data.enable_file_upload || false)
+      setEnableUserInputRequest(data.enable_user_input_request || false)
+      setEnableMemory(data.enable_memory || false)
+      setMemoryConfig(data.memory_config || null)
       setFileUploadConfig(data.file_upload_config || null)
     } catch {
       router.push('/app/apps')
@@ -115,6 +121,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         rag_mode: ragMode,
         enable_vision: enableVision,
         enable_file_upload: enableFileUpload,
+        enable_user_input_request: enableUserInputRequest,
+        enable_memory: enableMemory,
+        memory_config: enableMemory ? memoryConfig : null,
         file_upload_config: enableFileUpload ? fileUploadConfig : null,
       })
       setAgent(updated)
@@ -148,6 +157,9 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     ragMode,
     enableVision,
     enableFileUpload,
+    enableUserInputRequest,
+    enableMemory,
+    memoryConfig,
     fileUploadConfig,
     t,
   ])
@@ -193,6 +205,15 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     }
     if (data.enable_file_upload !== undefined) {
       setEnableFileUpload(data.enable_file_upload)
+    }
+    if (data.enable_user_input_request !== undefined) {
+      setEnableUserInputRequest(data.enable_user_input_request)
+    }
+    if (data.enable_memory !== undefined) {
+      setEnableMemory(data.enable_memory)
+    }
+    if (data.memory_config !== undefined) {
+      setMemoryConfig(data.memory_config || null)
     }
     if (data.file_upload_config !== undefined) {
       setFileUploadConfig(data.file_upload_config || null)

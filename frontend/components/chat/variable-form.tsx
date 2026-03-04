@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { VariableDefinition } from '@/lib/api'
+import { Upload, X, FileIcon, ImageIcon } from 'lucide-react'
+import { uploadApi } from '@/lib/api/upload'
 
 interface VariableFormProps {
   variables: VariableDefinition[]
@@ -45,6 +47,43 @@ export function VariableForm({
         const value = values[v.name]
         if (v.type === 'checkbox') {
           return true // Checkbox is always valid
+        }
+        if (v.type === 'array') {
+          // Array is valid if it's a non-empty array or valid JSON string
+          if (Array.isArray(value)) {
+            return value.length > 0
+          }
+          if (typeof value === 'string' && value.trim()) {
+            try {
+              const parsed = JSON.parse(value)
+              return Array.isArray(parsed) && parsed.length > 0
+            } catch {
+              return false
+            }
+          }
+          return false
+        }
+        if (v.type === 'object') {
+          // Object is valid if it's a non-empty object or valid JSON string
+          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            return Object.keys(value).length > 0
+          }
+          if (typeof value === 'string' && value.trim()) {
+            try {
+              const parsed = JSON.parse(value)
+              return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            } catch {
+              return false
+            }
+          }
+          return false
+        }
+        // File types validation
+        if (v.type === 'file' || v.type === 'image') {
+          return typeof value === 'string' && value.length > 0
+        }
+        if (v.type === 'files' || v.type === 'images') {
+          return Array.isArray(value) && value.length > 0
         }
         return value !== undefined && value !== null && value !== ''
       })
@@ -196,6 +235,67 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
           </div>
         )
 
+      case 'array':
+        return (
+          <Textarea
+            value={Array.isArray(value) ? JSON.stringify(value, null, 2) : (value as string) ?? ''}
+            onChange={(e) => {
+              const text = e.target.value
+              try {
+                // Try to parse as JSON array
+                const parsed = JSON.parse(text)
+                if (Array.isArray(parsed)) {
+                  onChange(parsed)
+                } else {
+                  // If not an array, store as string for now
+                  onChange(text)
+                }
+              } catch {
+                // If invalid JSON, store as string
+                onChange(text)
+              }
+            }}
+            placeholder={variable.description || `${label} (JSON array format: ["item1", "item2"])`}
+            rows={compact ? 3 : 4}
+            className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
+          />
+        )
+
+      case 'object':
+        return (
+          <Textarea
+            value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : (value as string) ?? ''}
+            onChange={(e) => {
+              const text = e.target.value
+              try {
+                // Try to parse as JSON object
+                const parsed = JSON.parse(text)
+                if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                  onChange(parsed)
+                } else {
+                  // If not an object, store as string for now
+                  onChange(text)
+                }
+              } catch {
+                // If invalid JSON, store as string
+                onChange(text)
+              }
+            }}
+            placeholder={variable.description || `${label} (JSON object format: {"key": "value"})`}
+            rows={compact ? 3 : 4}
+            className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
+          />
+        )
+
+      // File upload types
+      case 'file':
+      case 'image':
+        return <FileUploadInput variable={variable} value={value} onChange={onChange} compact={compact} />
+
+      case 'files':
+      case 'images':
+        return <MultiFileUploadInput variable={variable} value={value} onChange={onChange} compact={compact} />
+
       default:
         return null
     }
@@ -252,6 +352,43 @@ export function useVariableForm(variables: VariableDefinition[]) {
         if (v.type === 'checkbox') {
           return true
         }
+        if (v.type === 'array') {
+          // Array is valid if it's a non-empty array or valid JSON string
+          if (Array.isArray(value)) {
+            return value.length > 0
+          }
+          if (typeof value === 'string' && value.trim()) {
+            try {
+              const parsed = JSON.parse(value)
+              return Array.isArray(parsed) && parsed.length > 0
+            } catch {
+              return false
+            }
+          }
+          return false
+        }
+        if (v.type === 'object') {
+          // Object is valid if it's a non-empty object or valid JSON string
+          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+            return Object.keys(value).length > 0
+          }
+          if (typeof value === 'string' && value.trim()) {
+            try {
+              const parsed = JSON.parse(value)
+              return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            } catch {
+              return false
+            }
+          }
+          return false
+        }
+        // File types validation
+        if (v.type === 'file' || v.type === 'image') {
+          return typeof value === 'string' && value.length > 0
+        }
+        if (v.type === 'files' || v.type === 'images') {
+          return Array.isArray(value) && value.length > 0
+        }
         return value !== undefined && value !== null && value !== ''
       })
   }, [variables, values])
@@ -279,4 +416,251 @@ export function useVariableForm(variables: VariableDefinition[]) {
     isValid,
     reset,
   }
+}
+
+/**
+ * Single file upload input component
+ */
+interface FileUploadInputProps {
+  variable: VariableDefinition
+  value: unknown
+  onChange: (value: unknown) => void
+  compact?: boolean
+}
+
+function FileUploadInput({ variable, value, onChange, compact }: FileUploadInputProps) {
+  const t = useTranslations('chat.variables')
+  const [uploading, setUploading] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const isImage = variable.type === 'image'
+
+  // Get accept attribute from fileConfig or use defaults
+  const accept = React.useMemo(() => {
+    if (variable.fileConfig?.accept && variable.fileConfig.accept.length > 0) {
+      return variable.fileConfig.accept.join(',')
+    }
+    return isImage ? 'image/*' : '*'
+  }, [variable.fileConfig, isImage])
+
+  // Get max file size in bytes (fileConfig is in MB)
+  const maxSizeBytes = (variable.fileConfig?.maxSize || (isImage ? 10 : 50)) * 1024 * 1024
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file size
+    if (file.size > maxSizeBytes) {
+      const maxSizeMB = maxSizeBytes / (1024 * 1024)
+      alert(t('fileTooLarge', { maxSize: maxSizeMB }))
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    setUploading(true)
+    try {
+      const result = await uploadApi.uploadFile(file, 'workflow-input')
+      onChange(result.url)
+    } catch (error) {
+      console.error('File upload failed:', error)
+      alert(t('fileUploadFailed'))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleRemove = () => {
+    onChange(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const fileUrl = typeof value === 'string' ? value : null
+
+  return (
+    <div className={cn("space-y-1.5", compact && "space-y-1")}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        onChange={handleFileSelect}
+        className="hidden"
+        disabled={uploading}
+      />
+
+      {!fileUrl ? (
+        <Button
+          type="button"
+          variant="outline"
+          size={compact ? "sm" : "default"}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="w-full"
+        >
+          <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
+          {uploading ? t('uploading') : t('selectFile')}
+        </Button>
+      ) : (
+        <div className={cn(
+          "flex items-center gap-2 p-2 border rounded-md bg-muted/30",
+          compact && "p-1.5 text-xs"
+        )}>
+          {isImage ? (
+            <ImageIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          ) : (
+            <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          )}
+          <span className="flex-1 truncate text-sm">{fileUrl.split('/').pop()}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleRemove}
+            className={compact ? "h-5 w-5" : "h-6 w-6"}
+          >
+            <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Multiple files upload input component
+ */
+interface MultiFileUploadInputProps {
+  variable: VariableDefinition
+  value: unknown
+  onChange: (value: unknown) => void
+  compact?: boolean
+}
+
+function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileUploadInputProps) {
+  const t = useTranslations('chat.variables')
+  const [uploading, setUploading] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const isImages = variable.type === 'images'
+
+  // Get accept attribute from fileConfig or use defaults
+  const accept = React.useMemo(() => {
+    if (variable.fileConfig?.accept && variable.fileConfig.accept.length > 0) {
+      return variable.fileConfig.accept.join(',')
+    }
+    return isImages ? 'image/*' : '*'
+  }, [variable.fileConfig, isImages])
+
+  // Get max file size in bytes (fileConfig is in MB)
+  const maxSizeBytes = (variable.fileConfig?.maxSize || 50) * 1024 * 1024
+  const maxFiles = variable.fileConfig?.maxFiles || 5
+
+  const fileUrls = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    // Check max files limit
+    if (fileUrls.length + files.length > maxFiles) {
+      alert(t('tooManyFiles', { maxFiles }))
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    // Validate file sizes
+    const oversizedFiles = files.filter(f => f.size > maxSizeBytes)
+    if (oversizedFiles.length > 0) {
+      const maxSizeMB = maxSizeBytes / (1024 * 1024)
+      alert(t('fileTooLarge', { maxSize: maxSizeMB }))
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    setUploading(true)
+    try {
+      const uploadPromises = files.map(file => uploadApi.uploadFile(file, 'workflow-input'))
+      const results = await Promise.all(uploadPromises)
+      const newUrls = results.map(r => r.url)
+      onChange([...fileUrls, ...newUrls])
+    } catch (error) {
+      console.error('File upload failed:', error)
+      alert(t('fileUploadFailed'))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleRemove = (index: number) => {
+    const newUrls = fileUrls.filter((_, i) => i !== index)
+    onChange(newUrls.length > 0 ? newUrls : null)
+  }
+
+  return (
+    <div className={cn("space-y-1.5", compact && "space-y-1")}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={accept}
+        multiple
+        onChange={handleFileSelect}
+        className="hidden"
+        disabled={uploading}
+      />
+
+      <Button
+        type="button"
+        variant="outline"
+        size={compact ? "sm" : "default"}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading || fileUrls.length >= maxFiles}
+        className="w-full"
+      >
+        <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
+        {uploading ? t('uploading') : t('selectFiles')}
+        {fileUrls.length > 0 && ` (${fileUrls.length}/${maxFiles})`}
+      </Button>
+
+      {fileUrls.length > 0 && (
+        <div className={cn("space-y-1", compact && "space-y-0.5")}>
+          {fileUrls.map((url, index) => (
+            <div
+              key={index}
+              className={cn(
+                "flex items-center gap-2 p-2 border rounded-md bg-muted/30",
+                compact && "p-1.5 text-xs"
+              )}
+            >
+              {isImages ? (
+                <ImageIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+              ) : (
+                <FileIcon className={compact ? "h-3 w-3" : "h-4 w-4"} />
+              )}
+              <span className="flex-1 truncate text-sm">{url.split('/').pop()}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => handleRemove(index)}
+                className={compact ? "h-5 w-5" : "h-6 w-6"}
+              >
+                <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

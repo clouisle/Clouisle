@@ -8,7 +8,7 @@ import { TeamTokenUsageChart } from '@/components/dashboard/team-token-usage-cha
 import { TokenTrendChart } from '@/components/dashboard/token-trend-chart'
 import { ModelDetailsCard } from '@/components/dashboard/model-details-card'
 import { TopAgentsChart } from '@/components/dashboard/top-agents-chart'
-import type { DashboardStats, ModelDistribution, TeamTokenUsage, TopAgent } from '@/lib/api'
+import type { DashboardStats, ModelDistribution, TeamTokenUsage, TopAgent } from '@/lib/api/admin/dashboard'
 
 interface ModelsTabProps {
   stats: DashboardStats

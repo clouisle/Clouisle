@@ -1,0 +1,28 @@
+{
+  "run": {
+    "title": "运行",
+    "error": "错误",
+    "notFound": "资源未找到",
+    "backToHome": "返回首页",
+    "executionFlow": "执行流程",
+    "hideFlow": "隐藏流程",
+    "showFlow": "显示流程",
+    "welcomeMessage": "有什么可以帮您的吗？",
+    "configureWorkflow": "配置工作流",
+    "configureAgent": "配置智能体",
+    "fillParameters": "填写必需参数以开始",
+    "startRun": "开始运行",
+    "running": "运行中...",
+    "starting": "启动中...",
+    "typePlaceholder": "输入您的消息...",
+    "workflowInputPlaceholder": "输入您的查询以运行工作流...",
+    "poweredBy": "由 {name} 提供支持",
+    "nodeStatus": {
+      "pending": "等待中",
+      "running": "运行中",
+      "completed": "已完成",
+      "error": "错误",
+      "skipped": "已跳过"
+    }
+  }
+}

@@ -5,7 +5,8 @@ import { useTranslations } from 'next-intl'
 import { Activity, MessageSquare, Workflow } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { conversationsApi, workflowsApi, type ConversationStats } from '@/lib/api'
+import { conversationsApi, type ConversationStats } from '@/lib/api/admin/conversations'
+import { workflowsApi } from '@/lib/api'
 import { type WorkflowRunStats } from '@/lib/api/workflows'
 import { ConversationsTable } from './conversations-table'
 import { WorkflowRunsTable } from './workflow-runs-table'
@@ -45,7 +46,7 @@ export function ActivitiesClient() {
     }
 
     loadStats()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   return (

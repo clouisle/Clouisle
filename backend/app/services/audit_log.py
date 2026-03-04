@@ -33,7 +33,7 @@ class AuditLogService:
         resource_name: Optional[str],
         operation: str,
         status: str,
-        request: Request,
+        request: Optional[Request] = None,
         changes: Optional[dict] = None,
         metadata: Optional[dict] = None,
         error_message: Optional[str] = None,
@@ -50,7 +50,7 @@ class AuditLogService:
             resource_name: 资源名称
             operation: CRUD操作（create, read, update, delete）
             status: 状态（success, failed）
-            request: FastAPI请求对象
+            request: FastAPI请求对象（可选，用于获取IP和User-Agent）
             changes: 变更详情（before/after）
             metadata: 额外元数据
             error_message: 错误信息
@@ -60,10 +60,10 @@ class AuditLogService:
             创建的审计日志对象
         """
         # 获取客户端IP
-        ip_address = AuditLogService.get_client_ip(request)
+        ip_address = AuditLogService.get_client_ip(request) if request else "system"
 
         # 获取User-Agent
-        user_agent = request.headers.get("user-agent")
+        user_agent = request.headers.get("user-agent") if request else "system"
 
         # 脱敏变更数据
         if changes:

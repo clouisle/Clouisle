@@ -1,4 +1,5 @@
 import type { Node, Edge } from '@xyflow/react'
+import { isValidVariableName } from './node-config/utils'
 
 // 校验问题类型
 export interface ValidationIssue {
@@ -320,7 +321,17 @@ function getNodeOutputVariables(node: WorkflowNode): string[] {
       variables.push(`${node.id}.${outputVar}`)
       break
     }
-    
+
+    case 'knowledge_retrieval': {
+      const config = node.data.knowledgeRetrievalConfig as { outputVariable?: string } | undefined
+      const outputVar = config?.outputVariable || 'results'
+      variables.push(`${node.id}.${outputVar}`)
+      // 知识库检索还输出 context 和 totalFound
+      variables.push(`${node.id}.context`)
+      variables.push(`${node.id}.totalFound`)
+      break
+    }
+
     case 'file_to_url': {
       const config = node.data.fileToUrlConfig
       const inputs = config?.inputs || []
@@ -865,6 +876,42 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         // 检查输入变量是否存在
         if (config?.inputVariable && !isVariableAvailable(config.inputVariable, availableVars)) {
           issues.push(createIssue(node, 'error', 'variableNotAvailable', 'inputVariable', { name: extractVariableName(config.inputVariable) }))
+        }
+        break
+      }
+
+      // ========== 知识库检索节点 ==========
+      case 'knowledge_retrieval': {
+        const config = node.data.knowledgeRetrievalConfig as {
+          knowledgeBaseId?: string
+          querySource?: string
+          queryVariableRef?: string
+          queryText?: string
+          queryConstantValue?: string
+          outputVariable?: string
+        } | undefined
+
+        // 检查是否选择了知识库
+        if (!config?.knowledgeBaseId) {
+          issues.push(createIssue(node, 'error', 'knowledgeBaseNotSelected', 'knowledgeBaseId'))
+        }
+
+        // 检查查询内容
+        if (config?.querySource === 'variable') {
+          // 变量引用模式：检查变量是否存在
+          if (config.queryVariableRef && !isVariableAvailable(config.queryVariableRef, availableVars)) {
+            issues.push(createIssue(node, 'error', 'variableNotAvailable', 'queryVariableRef', { name: extractVariableName(config.queryVariableRef) }))
+          }
+        } else {
+          // 常量模式：检查是否为空
+          if (!config?.queryConstantValue) {
+            issues.push(createIssue(node, 'error', 'queryEmpty', 'queryConstantValue'))
+          }
+        }
+
+        // 检查输出变量名是否有效
+        if (config?.outputVariable && !isValidVariableName(config.outputVariable)) {
+          issues.push(createIssue(node, 'error', 'invalidVariableName', 'outputVariable', { name: config.outputVariable }))
         }
         break
       }

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { AuditLog } from "@/lib/api/audit-logs";
+import { AuditLog } from "@/lib/api/admin/audit-logs";
 
 interface AuditLogDrawerProps {
   log: AuditLog | null;

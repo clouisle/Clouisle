@@ -1,7 +1,7 @@
 import {
   Home, Zap, Bot, GitBranch, Workflow, Wrench, Code,
   Type, AlignLeft, ListChecks, Hash, CheckSquare, RefreshCw, Infinity,
-  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles
+  Brackets, Braces, FileText, Combine, Variable, Image, File, Files, Images, Link, Tags, MessageSquareText, StickyNote, Sparkles, Database
 } from 'lucide-react'
 import type { ParameterType, SystemParameter, Parameter } from './types'
 
@@ -48,6 +48,7 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
   variable_aggregator: { icon: Combine, color: 'bg-blue-500', titleKey: 'variable_aggregator' },
   variable_assignment: { icon: Variable, color: 'bg-blue-500', titleKey: 'variable_assignment' },
   parameter_extractor: { icon: Braces, color: 'bg-blue-500', titleKey: 'parameter_extractor' },
+  knowledge_retrieval: { icon: Database, color: 'bg-purple-500', titleKey: 'knowledge_retrieval' },
   comment: { icon: StickyNote, color: 'bg-amber-400', titleKey: 'comment' },
 }
 

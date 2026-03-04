@@ -15,15 +15,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  conversationsApi,
   teamsApi,
   agentsApi,
-  usersApi,
-  type AdminConversationListItem,
-  type AdminConversationWithMessages,
   type Team,
   type AgentListItem,
 } from '@/lib/api'
+import { conversationsApi, type AdminConversationListItem, type AdminConversationWithMessages } from '@/lib/api/admin/conversations'
+import { usersApi } from '@/lib/api/admin/users'
 import type { User } from '@/lib/api/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'

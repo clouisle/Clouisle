@@ -296,6 +296,9 @@ async def pre_tortoise_init():
         init_user_locale_field,
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
+        init_agent_streaming_config,
+        init_agent_user_input_request,
+        init_agent_memory_fields,
     )
 
     try:
@@ -317,6 +320,21 @@ async def pre_tortoise_init():
         await init_workflow_visibility_field()
     except Exception as e:
         logger.warning(f"Workflow visibility migration failed: {e}")
+
+    try:
+        await init_agent_streaming_config()
+    except Exception as e:
+        logger.warning(f"Agent streaming_config migration failed: {e}")
+
+    try:
+        await init_agent_user_input_request()
+    except Exception as e:
+        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+
+    try:
+        await init_agent_memory_fields()
+    except Exception as e:
+        logger.warning(f"Agent memory fields migration failed: {e}")
 
     # Now generate schemas (this will validate against the updated database)
     await Tortoise.generate_schemas()

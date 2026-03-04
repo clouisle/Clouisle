@@ -47,7 +47,16 @@
       "description": "请填写以下信息开始对话",
       "startChat": "开始对话",
       "selectPlaceholder": "请选择...",
-      "fillRequired": "请先填写必填项"
+      "fillRequired": "请先填写必填项",
+      "fileInputNotSupported": "聊天界面不支持文件输入",
+      "arrayPlaceholder": "输入 JSON 数组，例如：[\"项目1\", \"项目2\"]",
+      "objectPlaceholder": "输入 JSON 对象，例如：{\"键\": \"值\"}",
+      "selectFile": "选择文件",
+      "selectFiles": "选择文件",
+      "uploading": "上传中...",
+      "fileUploadFailed": "文件上传失败，请重试",
+      "fileTooLarge": "文件大小超过限制 {maxSize}MB",
+      "tooManyFiles": "最多允许 {maxFiles} 个文件"
     },
     "input": {
       "placeholder": "输入消息...",
@@ -68,6 +77,10 @@
       "notHelpful": "没帮助",
       "regenerate": "重新生成",
       "thinking": "思考中..."
+    },
+    "userInputRequest": {
+      "pending": "请选择一个选项：",
+      "answered": "您选择了："
     },
     "lightbox": {
       "zoomOut": "缩小 (-)",

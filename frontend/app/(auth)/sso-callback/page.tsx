@@ -2,14 +2,16 @@
 
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { authApi, usersApi } from '@/lib/api'
 
 export default function SSOCallbackPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const t = useTranslations('auth')
+  const locale = useLocale()
   const error = searchParams.get('error')
 
   useEffect(() => {
@@ -22,13 +24,27 @@ export default function SSOCallbackPage() {
 
     if (token) {
       localStorage.setItem('access_token', token)
+
+      // 同步当前浏览器语言设置到后端用户数据
+      const syncLocale = async () => {
+        try {
+          const user = await authApi.getCurrentUser({ skipAuthRedirect: true })
+          if (!user.locale || user.locale !== locale) {
+            await usersApi.updateProfile({ locale }, { skipAuthRedirect: true })
+          }
+        } catch {
+          // 同步语言设置失败，不影响登录流程
+        }
+      }
+
+      syncLocale()
       toast.success(t('loginSuccess'))
       router.push(redirect)
     } else {
       toast.error(t('loginFailed'))
       router.push('/login')
     }
-  }, [router, searchParams])
+  }, [router, searchParams, locale, t])
 
   return (
     <div className="flex min-h-screen items-center justify-center">
