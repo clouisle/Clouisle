@@ -66,6 +66,7 @@ async def sso_login(
 
     provider_instance = SSOService.get_provider_instance(provider)
 
+    # Build callback URL - use site_url or configured backend URL
     from app.core.config import settings
 
     site_url = await SiteSetting.get_value("site_url", "")
@@ -176,6 +177,7 @@ async def sso_callback(
     provider_instance = SSOService.get_provider_instance(provider)
 
     try:
+        # Build callback URL - use site_url or configured backend URL
         from app.core.config import settings
 
         site_url = await SiteSetting.get_value("site_url", "")
@@ -232,6 +234,7 @@ async def sso_callback(
 
         from app.core.config import settings
 
+        # Use public site_url for browser redirect, fall back to FRONTEND_URL
         site_url = await SiteSetting.get_value("site_url", "")
         frontend_url = (site_url or settings.FRONTEND_URL).rstrip("/")
         final_redirect = session.redirect_url or "/dashboard"
