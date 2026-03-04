@@ -520,7 +520,9 @@ class ModelManager:
 
         return {
             "embedding": embedding_vector,
-            "model_id": model_config.model_id if hasattr(model_config, 'model_id') else None,
+            "model_id": model_config.model_id
+            if hasattr(model_config, "model_id")
+            else None,
         }
 
     # ==================== Image 方法 ====================

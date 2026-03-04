@@ -26,9 +26,11 @@ async def build_messages(
         messages.append(LLMMessage(role="system", content=system_prompt))
 
     # Add conversation history
-    history_messages = await Message.filter(
-        conversation_id=conversation.id, is_active=True
-    ).order_by("created_at").all()
+    history_messages = (
+        await Message.filter(conversation_id=conversation.id, is_active=True)
+        .order_by("created_at")
+        .all()
+    )
 
     for msg in history_messages:
         messages.append(

@@ -65,9 +65,7 @@ class MemoryEntity(models.Model):
         max_length=255, description="Entity name (e.g., 'Python', 'E-commerce Project')"
     )
     entity_type = fields.CharEnumField(EntityType, default=EntityType.CUSTOM)
-    description = fields.TextField(
-        null=True, description="Detailed description"
-    )
+    description = fields.TextField(null=True, description="Detailed description")
 
     # Metadata
     properties: dict = fields.JSONField(
@@ -81,7 +79,11 @@ class MemoryEntity(models.Model):
 
     # Vector embedding (stored in Qdrant)
     embedding_id = fields.CharField(max_length=100, null=True)
-    embedding_model_id = fields.CharField(max_length=255, null=True, description="Embedding model identifier (e.g., 'bce-embedding-base_v1')")
+    embedding_model_id = fields.CharField(
+        max_length=255,
+        null=True,
+        description="Embedding model identifier (e.g., 'bce-embedding-base_v1')",
+    )
 
     # Usage tracking
     access_count = fields.IntField(default=0)

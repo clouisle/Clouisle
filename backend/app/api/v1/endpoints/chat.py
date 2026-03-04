@@ -149,7 +149,7 @@ def get_streaming_config(agent: Agent) -> dict:
             "code": settings.STREAM_TOOL_TIMEOUT_CODE,
             "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
             "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
-        }
+        },
     }
 
     # Override with agent-specific config if present
@@ -165,9 +165,7 @@ def get_streaming_config(agent: Agent) -> dict:
 
 
 async def send_heartbeat_if_needed(
-    last_event_time: float,
-    heartbeat_interval: float,
-    request: Request
+    last_event_time: float, heartbeat_interval: float, request: Request
 ) -> tuple[bool, float]:
     """
     Send heartbeat if needed and check client connection.
@@ -314,7 +312,7 @@ def parse_user_input_request(content: str) -> tuple[dict | None, str]:
         "options": ["Option 1", "Option 2", "Option 3"]
     }
     """
-    pattern = r'<user_input_request>(.*?)</user_input_request>'
+    pattern = r"<user_input_request>(.*?)</user_input_request>"
     match = re.search(pattern, content, re.DOTALL)
 
     if not match:
@@ -328,17 +326,17 @@ def parse_user_input_request(content: str) -> tuple[dict | None, str]:
         root = ET.fromstring(f"<root>{xml_content}</root>")
 
         # Extract question
-        question_elem = root.find('question')
+        question_elem = root.find("question")
         if question_elem is None or not question_elem.text:
             return None, content
         question = question_elem.text.strip()
 
         # Extract options
-        options_elem = root.find('options')
+        options_elem = root.find("options")
         if options_elem is None:
             return None, content
 
-        option_elems = options_elem.findall('option')
+        option_elems = options_elem.findall("option")
         if len(option_elems) < 2:
             return None, content
 
@@ -354,11 +352,13 @@ def parse_user_input_request(content: str) -> tuple[dict | None, str]:
 
         parsed_data = {
             "question": question[:500],
-            "options": options  # 不限制选项数量，全部渲染
+            "options": options,  # 不限制选项数量，全部渲染
         }
 
-        remaining_content = content.replace(xml_block, '').strip()
-        logger.info(f"Successfully parsed user_input_request: question={question[:50]}, options_count={len(options)}")
+        remaining_content = content.replace(xml_block, "").strip()
+        logger.info(
+            f"Successfully parsed user_input_request: question={question[:50]}, options_count={len(options)}"
+        )
         return parsed_data, remaining_content
 
     except ET.ParseError as e:
@@ -420,7 +420,6 @@ When you need the user to choose from predefined options, use this XML format:
 - When user needs to make a choice
 - Providing quick action options
 - Guiding conversation flow"""
-
 
 
 async def get_or_create_conversation(
@@ -696,17 +695,21 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
                 continue
 
             # Convert Claude format (input_schema) to OpenAI format (parameters)
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["input_schema"],
-                },
-            })
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["input_schema"],
+                    },
+                }
+            )
             logger.debug(f"Added memory tool: {tool['name']}")
 
-        logger.info(f"Memory tools enabled: auto_extract={auto_extract}, tools_count={len([t for t in openai_tools if 'memory' in t['function']['name']])}")
+        logger.info(
+            f"Memory tools enabled: auto_extract={auto_extract}, tools_count={len([t for t in openai_tools if 'memory' in t['function']['name']])}"
+        )
 
     # Add knowledge_search tool only for agentic RAG mode
     if agent.rag_mode == RAGMode.AGENTIC:
@@ -885,9 +888,7 @@ async def get_tool_display_names(
         display_names["update_memory_entity"] = t(
             "tool_update_memory_entity", lang=user_locale
         )
-        display_names["search_memory"] = t(
-            "tool_search_memory", lang=user_locale
-        )
+        display_names["search_memory"] = t("tool_search_memory", lang=user_locale)
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -936,7 +937,11 @@ async def get_tool_display_names(
 
 
 async def execute_tool_call(
-    tool_name: str, arguments: dict, agent: Agent | None = None, tool_timeouts: dict | None = None, user: User | None = None
+    tool_name: str,
+    arguments: dict,
+    agent: Agent | None = None,
+    tool_timeouts: dict | None = None,
+    user: User | None = None,
 ) -> str:
     """
     Execute a tool and return the result as string.
@@ -999,7 +1004,12 @@ async def execute_tool_call(
             return json.dumps({"results": results}, ensure_ascii=False)
 
         # Handle memory tools
-        if tool_name in ["create_memory_entity", "create_memory_relation", "update_memory_entity", "search_memory"]:
+        if tool_name in [
+            "create_memory_entity",
+            "create_memory_relation",
+            "update_memory_entity",
+            "search_memory",
+        ]:
             from app.services.memory import MemoryService
 
             if not user:
@@ -1086,7 +1096,10 @@ async def execute_tool_call(
 
             # Execute MCP tool
             mcp_result = await execute_mcp_tool(
-                mcp_tool.mcp_config, actual_tool_name, arguments, timeout=tool_timeouts.get("mcp", 60)
+                mcp_tool.mcp_config,
+                actual_tool_name,
+                arguments,
+                timeout=tool_timeouts.get("mcp", 60),
             )
 
             if mcp_result.success:
@@ -1113,10 +1126,14 @@ async def execute_tool_call(
 
             # Execute based on custom_type
             if custom_tool.custom_type == CustomToolType.HTTP:
-                http_result = await execute_http_tool(custom_tool, arguments, timeout=tool_timeouts.get("http", 30))
+                http_result = await execute_http_tool(
+                    custom_tool, arguments, timeout=tool_timeouts.get("http", 30)
+                )
                 return http_result
             elif custom_tool.custom_type == CustomToolType.CODE:
-                code_result = await execute_code_tool(custom_tool, arguments, timeout=tool_timeouts.get("code", 60))
+                code_result = await execute_code_tool(
+                    custom_tool, arguments, timeout=tool_timeouts.get("code", 60)
+                )
                 return code_result
             else:
                 return json.dumps(
@@ -1158,7 +1175,9 @@ async def execute_tool_call(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-async def execute_http_tool(tool: "Tool", arguments: dict, timeout: float = 30.0) -> str:
+async def execute_http_tool(
+    tool: "Tool", arguments: dict, timeout: float = 30.0
+) -> str:
     """
     Execute an HTTP-based custom tool.
     """
@@ -1176,7 +1195,9 @@ async def execute_http_tool(tool: "Tool", arguments: dict, timeout: float = 30.0
     return format_http_result_for_llm(result)
 
 
-async def execute_code_tool(tool: "Tool", arguments: dict, timeout: float = 60.0) -> str:
+async def execute_code_tool(
+    tool: "Tool", arguments: dict, timeout: float = 60.0
+) -> str:
     """
     Execute a code-based custom tool.
 
@@ -1575,7 +1596,9 @@ async def chat(
                     except json.JSONDecodeError:
                         arguments = {}
 
-                    result = await execute_tool_call(tool_name, arguments, agent=agent, user=current_user)
+                    result = await execute_tool_call(
+                        tool_name, arguments, agent=agent, user=current_user
+                    )
 
                     await Message.create(
                         conversation=conversation,
@@ -1786,6 +1809,7 @@ async def chat_stream(
         try:
             # Use asyncio.timeout to wrap entire streaming logic
             import asyncio
+
             async with asyncio.timeout(global_timeout):
                 try:
                     from app.models.agent import RAGMode
@@ -1806,16 +1830,22 @@ async def chat_stream(
 
                     if agent.rag_mode == RAGMode.AUTO:
                         # Traditional RAG: automatically retrieve on every message
-                        has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
+                        has_knowledge_bases = await AgentKnowledgeBase.exists(
+                            agent_id=agent.id
+                        )
                         if has_knowledge_bases:
                             yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                             last_event_time = time.time()
-                            rag_contexts = await perform_rag_retrieval(agent, chat_in.message)
+                            rag_contexts = await perform_rag_retrieval(
+                                agent, chat_in.message
+                            )
                             if rag_contexts:
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
                                 yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
                                 last_event_time = time.time()
-                            final_message = build_rag_prompt(rag_contexts, chat_in.message)
+                            final_message = build_rag_prompt(
+                                rag_contexts, chat_in.message
+                            )
 
                     # Save user message with images and file_urls
                     user_msg = await Message.create(
@@ -1861,8 +1891,12 @@ async def chat_stream(
                         file_config = agent.file_upload_config or {}
                         parser_config = file_config.get("parser")
                         parse_config = FileParseConfig(
-                            max_content_length=file_config.get("max_content_length", 100000),
-                            truncate_strategy=file_config.get("truncate_strategy", "end"),
+                            max_content_length=file_config.get(
+                                "max_content_length", 100000
+                            ),
+                            truncate_strategy=file_config.get(
+                                "truncate_strategy", "end"
+                            ),
                         )
 
                         # Handle file_urls: download and parse files
@@ -1885,7 +1919,9 @@ async def chat_stream(
                                             url = f.url
                                             # Handle internal URLs - prepend API_BASE_URL
                                             if url.startswith("/"):
-                                                base_url = settings.API_BASE_URL.rstrip("/")
+                                                base_url = settings.API_BASE_URL.rstrip(
+                                                    "/"
+                                                )
                                                 url = f"{base_url}{url}"
 
                                             response = await client.get(url)
@@ -1893,10 +1929,12 @@ async def chat_stream(
                                             file_content = response.content
 
                                             # Parse file
-                                            parsed = await file_parser_service.parse_file(
-                                                file_content,
-                                                f.filename,
-                                                parse_config,
+                                            parsed = (
+                                                await file_parser_service.parse_file(
+                                                    file_content,
+                                                    f.filename,
+                                                    parse_config,
+                                                )
                                             )
                                             parsed_files.append(parsed)
                                         except Exception as e:
@@ -1966,18 +2004,24 @@ async def chat_stream(
                                     )
 
                             if parsed_files:
-                                file_content_str = file_parser_service.format_files_for_prompt(
-                                    parsed_files, locale=current_user.locale
+                                file_content_str = (
+                                    file_parser_service.format_files_for_prompt(
+                                        parsed_files, locale=current_user.locale
+                                    )
                                 )
 
                     # System prompt - always add with language instruction
                     system_prompt = agent.system_prompt or ""
                     if system_prompt:
                         for key, value in conversation.variables.items():
-                            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                            system_prompt = system_prompt.replace(
+                                f"{{{{{key}}}}}", str(value)
+                            )
 
                         # Inject {{query}} variable - user's current input
-                        system_prompt = system_prompt.replace("{{query}}", chat_in.message)
+                        system_prompt = system_prompt.replace(
+                            "{{query}}", chat_in.message
+                        )
 
                         # Inject file content into {{fileContent}} variable
                         if file_content_str:
@@ -1994,7 +2038,9 @@ async def chat_stream(
 
                     # Add user input request instructions if enabled
                     if agent.enable_user_input_request:
-                        user_input_instruction = get_user_input_request_instruction(current_user.locale)
+                        user_input_instruction = get_user_input_request_instruction(
+                            current_user.locale
+                        )
                         system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
 
                     messages_for_llm.append(
@@ -2002,7 +2048,9 @@ async def chat_stream(
                     )
 
                     # Helper function to build multimodal content for vision
-                    def build_vision_content(text: str, images: list) -> list[ContentPart]:
+                    def build_vision_content(
+                        text: str, images: list
+                    ) -> list[ContentPart]:
                         """Build multimodal content array for vision-enabled messages."""
                         content_parts: list[ContentPart] = [
                             ContentPart(type=ContentType.TEXT, text=text)
@@ -2033,7 +2081,8 @@ async def chat_stream(
                                 # Remote URL
                                 content_parts.append(
                                     ContentPart(
-                                        type=ContentType.IMAGE, image=ImageContent(url=img_url)
+                                        type=ContentType.IMAGE,
+                                        image=ImageContent(url=img_url),
                                     )
                                 )
                         return content_parts
@@ -2069,7 +2118,9 @@ async def chat_stream(
                                 final_message, chat_in.images
                             )
                         messages_for_llm.append(
-                            LLMTypeMessage(role=LLMTypeRole.USER, content=current_content)
+                            LLMTypeMessage(
+                                role=LLMTypeRole.USER, content=current_content
+                            )
                         )
                     else:
                         # Load history from database including the user message we just saved (only active messages)
@@ -2086,7 +2137,9 @@ async def chat_stream(
                             if msg.role == MessageRole.USER:
                                 # Use RAG-enhanced message for the current user message (auto mode)
                                 text_content = (
-                                    final_message if msg.id == user_msg.id else msg.content
+                                    final_message
+                                    if msg.id == user_msg.id
+                                    else msg.content
                                 )
 
                                 # Check if this is the current message with images and vision is enabled
@@ -2096,12 +2149,16 @@ async def chat_stream(
                                     and model_supports_vision
                                 ):
                                     # Build multimodal content for vision
-                                    content = build_vision_content(text_content, chat_in.images)
+                                    content = build_vision_content(
+                                        text_content, chat_in.images
+                                    )
                                 else:
                                     content = text_content
 
                                 messages_for_llm.append(
-                                    LLMTypeMessage(role=LLMTypeRole.USER, content=content)
+                                    LLMTypeMessage(
+                                        role=LLMTypeRole.USER, content=content
+                                    )
                                 )
                             elif msg.role == MessageRole.ASSISTANT:
                                 # Include tool_calls if present
@@ -2128,12 +2185,17 @@ async def chat_stream(
                                         role=LLMTypeRole.ASSISTANT,
                                         content=msg.content,
                                         reasoning_content=msg.reasoning_content,
-                                        tool_calls=llm_tool_calls if llm_tool_calls else None,
+                                        tool_calls=llm_tool_calls
+                                        if llm_tool_calls
+                                        else None,
                                     )
                                 )
                             elif msg.role == MessageRole.TOOL:
                                 # Only include tool messages that have a corresponding tool_call
-                                if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+                                if (
+                                    msg.tool_call_id
+                                    and msg.tool_call_id in valid_tool_call_ids
+                                ):
                                     messages_for_llm.append(
                                         LLMTypeMessage(
                                             role=LLMTypeRole.TOOL,
@@ -2177,16 +2239,23 @@ async def chat_stream(
                         iteration += 1
 
                         # Heartbeat check and send
-                        should_continue, new_last_event_time = await send_heartbeat_if_needed(
+                        (
+                            should_continue,
+                            new_last_event_time,
+                        ) = await send_heartbeat_if_needed(
                             last_event_time, heartbeat_interval, request
                         )
                         if not should_continue:
                             # Client disconnected, save partial content and exit
                             if full_content or full_reasoning:
                                 assistant_msg.content = full_content
-                                assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                assistant_msg.reasoning_content = (
+                                    full_reasoning if full_reasoning else None
+                                )
                                 assistant_msg.model_used = model_id
-                                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                assistant_msg.duration_ms = int(
+                                    (time.time() - start_time) * 1000
+                                )
                                 await assistant_msg.save()
                             return
 
@@ -2326,12 +2395,18 @@ async def chat_stream(
                             for tc in collected_tool_calls:
                                 # Check if client disconnected before tool execution
                                 if await request.is_disconnected():
-                                    logger.info("Client disconnected before tool execution")
+                                    logger.info(
+                                        "Client disconnected before tool execution"
+                                    )
                                     if full_content or full_reasoning:
                                         assistant_msg.content = full_content
-                                        assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                        assistant_msg.reasoning_content = (
+                                            full_reasoning if full_reasoning else None
+                                        )
                                         assistant_msg.model_used = model_id
-                                        assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                        assistant_msg.duration_ms = int(
+                                            (time.time() - start_time) * 1000
+                                        )
                                         await assistant_msg.save()
                                     return
 
@@ -2345,23 +2420,35 @@ async def chat_stream(
                                     arguments = {}
 
                                 # Send tool_call event
-                                tool_display_name = tool_display_names.get(tool_name, tool_name)
+                                tool_display_name = tool_display_names.get(
+                                    tool_name, tool_name
+                                )
                                 yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
                                 last_event_time = time.time()
 
                                 # Execute the tool (pass agent and tool_timeouts)
                                 result = await execute_tool_call(
-                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts, user=current_user
+                                    tool_name,
+                                    arguments,
+                                    agent=agent,
+                                    tool_timeouts=tool_timeouts,
+                                    user=current_user,
                                 )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
-                                    logger.info("Client disconnected after tool execution")
+                                    logger.info(
+                                        "Client disconnected after tool execution"
+                                    )
                                     if full_content or full_reasoning:
                                         assistant_msg.content = full_content
-                                        assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                                        assistant_msg.reasoning_content = (
+                                            full_reasoning if full_reasoning else None
+                                        )
                                         assistant_msg.model_used = model_id
-                                        assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                                        assistant_msg.duration_ms = int(
+                                            (time.time() - start_time) * 1000
+                                        )
                                         await assistant_msg.save()
                                     return
 
@@ -2398,7 +2485,9 @@ async def chat_stream(
                                     "display_name": tool_display_names.get(
                                         tc.function.name, tc.function.name
                                     ),
-                                    "arguments": safe_parse_arguments(tc.function.arguments),
+                                    "arguments": safe_parse_arguments(
+                                        tc.function.arguments
+                                    ),
                                 }
                                 for tc in collected_tool_calls
                             ]
@@ -2462,13 +2551,17 @@ async def chat_stream(
 
                     # Update assistant message (final response, no tool_calls)
                     assistant_msg.content = full_content
-                    assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                    assistant_msg.reasoning_content = (
+                        full_reasoning if full_reasoning else None
+                    )
                     assistant_msg.model_used = model_id
                     assistant_msg.duration_ms = duration_ms
                     # Ensure assistant message appears after tool calls/results in history
                     assistant_msg.created_at = now_utc()
                     # Estimate token usage
-                    input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
+                    input_tokens = sum(
+                        len(m.content or "") // 4 for m in messages_for_llm
+                    )
                     output_tokens = len(full_content) // 4
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
@@ -2530,7 +2623,9 @@ async def chat_stream(
             # Save partial content
             if full_content or full_reasoning:
                 assistant_msg.content = full_content
-                assistant_msg.reasoning_content = full_reasoning if full_reasoning else None
+                assistant_msg.reasoning_content = (
+                    full_reasoning if full_reasoning else None
+                )
                 assistant_msg.model_used = model_id
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 await assistant_msg.save()
@@ -2865,6 +2960,7 @@ async def regenerate_message(
         try:
             # Use asyncio.timeout to wrap entire streaming logic
             import asyncio
+
             async with asyncio.timeout(global_timeout):
                 try:
                     from app.models.agent import RAGMode
@@ -2873,7 +2969,9 @@ async def regenerate_message(
                     root_id = message.parent_id or message.id
 
                     # Get current version count
-                    current_version_count = await Message.filter(parent_id=root_id).count() + 1
+                    current_version_count = (
+                        await Message.filter(parent_id=root_id).count() + 1
+                    )
                     new_version_number = current_version_count + 1
 
                     # Deactivate all versions in this group
@@ -2900,7 +2998,9 @@ async def regenerate_message(
                     final_message = user_message.content
 
                     if agent.rag_mode == RAGMode.AUTO:
-                        has_knowledge_bases = await AgentKnowledgeBase.exists(agent_id=agent.id)
+                        has_knowledge_bases = await AgentKnowledgeBase.exists(
+                            agent_id=agent.id
+                        )
                         if has_knowledge_bases:
                             yield f"event: {SSEEventType.RAG_START}\ndata: {json.dumps({})}\n\n"
                             last_event_time = time.time()
@@ -2911,7 +3011,9 @@ async def regenerate_message(
                                 rag_contexts = aggregate_rag_contexts(rag_contexts)
                                 yield f"event: {SSEEventType.RAG_CONTEXT}\ndata: {json.dumps({'contexts': rag_contexts})}\n\n"
                                 last_event_time = time.time()
-                            final_message = build_rag_prompt(rag_contexts, user_message.content)
+                            final_message = build_rag_prompt(
+                                rag_contexts, user_message.content
+                            )
 
                     # Build messages for LLM - only include ACTIVE messages before this one
                     messages_for_llm: list[LLMTypeMessage] = []
@@ -2920,9 +3022,13 @@ async def regenerate_message(
                     system_prompt = agent.system_prompt or ""
                     if system_prompt:
                         for key, value in conversation.variables.items():
-                            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
+                            system_prompt = system_prompt.replace(
+                                f"{{{{{key}}}}}", str(value)
+                            )
                         # Inject {{query}} variable - user's current input
-                        system_prompt = system_prompt.replace("{{query}}", user_message.content)
+                        system_prompt = system_prompt.replace(
+                            "{{query}}", user_message.content
+                        )
 
                     # Build system prompt with language instruction (always added)
                     system_prompt = build_system_prompt_with_language(
@@ -2931,7 +3037,9 @@ async def regenerate_message(
 
                     # Add user input request instructions if enabled
                     if agent.enable_user_input_request:
-                        user_input_instruction = get_user_input_request_instruction(current_user.locale)
+                        user_input_instruction = get_user_input_request_instruction(
+                            current_user.locale
+                        )
                         system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
 
                     messages_for_llm.append(
@@ -2951,10 +3059,14 @@ async def regenerate_message(
                         if msg.role == MessageRole.USER:
                             # Use RAG-enhanced message for the trigger user message
                             text_content = (
-                                final_message if msg.id == user_message.id else msg.content
+                                final_message
+                                if msg.id == user_message.id
+                                else msg.content
                             )
                             messages_for_llm.append(
-                                LLMTypeMessage(role=LLMTypeRole.USER, content=text_content)
+                                LLMTypeMessage(
+                                    role=LLMTypeRole.USER, content=text_content
+                                )
                             )
                         elif msg.role == MessageRole.ASSISTANT:
                             llm_tool_calls = None
@@ -2969,7 +3081,9 @@ async def regenerate_message(
                                             type="function",
                                             function=LLMFunctionCall(
                                                 name=tc.get("name", ""),
-                                                arguments=json.dumps(tc.get("arguments", {})),
+                                                arguments=json.dumps(
+                                                    tc.get("arguments", {})
+                                                ),
                                             ),
                                         )
                                     )
@@ -2978,11 +3092,16 @@ async def regenerate_message(
                                     role=LLMTypeRole.ASSISTANT,
                                     content=msg.content,
                                     reasoning_content=msg.reasoning_content,
-                                    tool_calls=llm_tool_calls if llm_tool_calls else None,
+                                    tool_calls=llm_tool_calls
+                                    if llm_tool_calls
+                                    else None,
                                 )
                             )
                         elif msg.role == MessageRole.TOOL:
-                            if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+                            if (
+                                msg.tool_call_id
+                                and msg.tool_call_id in valid_tool_call_ids
+                            ):
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
@@ -3019,16 +3138,23 @@ async def regenerate_message(
                         iteration += 1
 
                         # Heartbeat check and send
-                        should_continue, new_last_event_time = await send_heartbeat_if_needed(
+                        (
+                            should_continue,
+                            new_last_event_time,
+                        ) = await send_heartbeat_if_needed(
                             last_event_time, heartbeat_interval, request
                         )
                         if not should_continue:
                             # Client disconnected, save partial content and exit
                             if full_content or full_reasoning:
                                 new_message.content = full_content
-                                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                new_message.reasoning_content = (
+                                    full_reasoning if full_reasoning else None
+                                )
                                 new_message.model_used = model_id
-                                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                new_message.duration_ms = int(
+                                    (time.time() - start_time) * 1000
+                                )
                                 await new_message.save()
                             return
 
@@ -3084,9 +3210,13 @@ async def regenerate_message(
                         if client_disconnected:
                             if full_content or full_reasoning:
                                 new_message.content = full_content
-                                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                new_message.reasoning_content = (
+                                    full_reasoning if full_reasoning else None
+                                )
                                 new_message.model_used = model_id
-                                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                new_message.duration_ms = int(
+                                    (time.time() - start_time) * 1000
+                                )
                                 await new_message.save()
                             return  # Exit generator - client is gone
 
@@ -3095,12 +3225,18 @@ async def regenerate_message(
                             for tc in collected_tool_calls:
                                 # Check if client disconnected before tool execution
                                 if await request.is_disconnected():
-                                    logger.info("Client disconnected before tool execution in regenerate")
+                                    logger.info(
+                                        "Client disconnected before tool execution in regenerate"
+                                    )
                                     if full_content or full_reasoning:
                                         new_message.content = full_content
-                                        new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                        new_message.reasoning_content = (
+                                            full_reasoning if full_reasoning else None
+                                        )
                                         new_message.model_used = model_id
-                                        new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                        new_message.duration_ms = int(
+                                            (time.time() - start_time) * 1000
+                                        )
                                         await new_message.save()
                                     return
 
@@ -3110,22 +3246,34 @@ async def regenerate_message(
                                 except json.JSONDecodeError:
                                     arguments = {}
 
-                                tool_display_name = tool_display_names.get(tool_name, tool_name)
+                                tool_display_name = tool_display_names.get(
+                                    tool_name, tool_name
+                                )
                                 yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
                                 last_event_time = time.time()
 
                                 result = await execute_tool_call(
-                                    tool_name, arguments, agent=agent, tool_timeouts=tool_timeouts, user=current_user
+                                    tool_name,
+                                    arguments,
+                                    agent=agent,
+                                    tool_timeouts=tool_timeouts,
+                                    user=current_user,
                                 )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
-                                    logger.info("Client disconnected after tool execution in regenerate")
+                                    logger.info(
+                                        "Client disconnected after tool execution in regenerate"
+                                    )
                                     if full_content or full_reasoning:
                                         new_message.content = full_content
-                                        new_message.reasoning_content = full_reasoning if full_reasoning else None
+                                        new_message.reasoning_content = (
+                                            full_reasoning if full_reasoning else None
+                                        )
                                         new_message.model_used = model_id
-                                        new_message.duration_ms = int((time.time() - start_time) * 1000)
+                                        new_message.duration_ms = int(
+                                            (time.time() - start_time) * 1000
+                                        )
                                         await new_message.save()
                                     return
 
@@ -3165,12 +3313,16 @@ async def regenerate_message(
 
                     # Update new message
                     new_message.content = full_content
-                    new_message.reasoning_content = full_reasoning if full_reasoning else None
+                    new_message.reasoning_content = (
+                        full_reasoning if full_reasoning else None
+                    )
                     new_message.model_used = model_id
                     new_message.duration_ms = duration_ms
                     # Ensure regenerated message appears after tool calls/results in history
                     new_message.created_at = now_utc()
-                    input_tokens = sum(len(m.content or "") // 4 for m in messages_for_llm)
+                    input_tokens = sum(
+                        len(m.content or "") // 4 for m in messages_for_llm
+                    )
                     output_tokens = len(full_content) // 4
                     new_message.token_usage = {
                         "prompt": input_tokens,
@@ -3223,7 +3375,9 @@ async def regenerate_message(
             # Save partial content
             if full_content or full_reasoning:
                 new_message.content = full_content
-                new_message.reasoning_content = full_reasoning if full_reasoning else None
+                new_message.reasoning_content = (
+                    full_reasoning if full_reasoning else None
+                )
                 new_message.model_used = model_id
                 new_message.duration_ms = int((time.time() - start_time) * 1000)
                 await new_message.save()

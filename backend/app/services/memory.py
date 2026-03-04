@@ -143,7 +143,9 @@ class MemoryService:
         # Generate and store embedding
         await MemoryService._add_entity_embedding(entity)
 
-        logger.info(f"Created memory entity: {entity.name} ({entity.entity_type}) for user {user_id}")
+        logger.info(
+            f"Created memory entity: {entity.name} ({entity.entity_type}) for user {user_id}"
+        )
         return entity
 
     @staticmethod
@@ -204,7 +206,9 @@ class MemoryService:
 
         # Delete embedding from Qdrant
         if entity.embedding_id:
-            await MemoryService._delete_entity_embedding(entity.embedding_id, entity.embedding_model_id)
+            await MemoryService._delete_entity_embedding(
+                entity.embedding_id, entity.embedding_model_id
+            )
 
         # Delete entity (relations will be cascade deleted)
         await entity.delete()
@@ -272,7 +276,9 @@ class MemoryService:
             source_message_id=source_message_id,
         )
 
-        logger.info(f"Created memory relation: {source.name} --[{relation_type}]--> {target.name} for user {user_id}")
+        logger.info(
+            f"Created memory relation: {source.name} --[{relation_type}]--> {target.name} for user {user_id}"
+        )
         return relation
 
     @staticmethod
@@ -310,7 +316,9 @@ class MemoryService:
         Returns:
             List of matching entities
         """
-        logger.info(f"Searching memory for user {user_id}, query: '{query}', top_k: {top_k}")
+        logger.info(
+            f"Searching memory for user {user_id}, query: '{query}', top_k: {top_k}"
+        )
 
         # Get embedding for query
         from app.llm import model_manager
@@ -320,7 +328,9 @@ class MemoryService:
             query_embedding = embedding_result["embedding"]
             dimension = len(query_embedding)
             model_id = embedding_result.get("model_id")
-            logger.info(f"Generated query embedding: dimension={dimension}, model_id={model_id}")
+            logger.info(
+                f"Generated query embedding: dimension={dimension}, model_id={model_id}"
+            )
         except Exception as e:
             logger.error(f"Failed to get embedding for query: {e}")
             return []
@@ -362,7 +372,9 @@ class MemoryService:
             results = response.points
             logger.info(f"Qdrant search returned {len(results)} results")
             for i, result in enumerate(results):
-                logger.info(f"  Result {i+1}: id={result.id}, score={result.score}, payload={result.payload}")
+                logger.info(
+                    f"  Result {i + 1}: id={result.id}, score={result.score}, payload={result.payload}"
+                )
         except Exception as e:
             logger.error(f"Qdrant search failed: {e}")
             return []
@@ -408,10 +420,14 @@ class MemoryService:
         ).all()
 
         # Fetch outgoing relations (1-hop)
-        relations = await MemoryRelation.filter(
-            user_id=user_id,
-            source_entity_id__in=entity_ids,
-        ).prefetch_related("source_entity", "target_entity").all()
+        relations = (
+            await MemoryRelation.filter(
+                user_id=user_id,
+                source_entity_id__in=entity_ids,
+            )
+            .prefetch_related("source_entity", "target_entity")
+            .all()
+        )
 
         # Collect neighbor entity IDs
         neighbor_ids = [r.target_entity_id for r in relations]
@@ -434,17 +450,25 @@ class MemoryService:
 
         # Generate embedding content
         content = f"{entity.name}: {entity.description or ''}"
-        logger.info(f"Generating embedding for entity {entity.id} ({entity.name}), content: '{content}'")
+        logger.info(
+            f"Generating embedding for entity {entity.id} ({entity.name}), content: '{content}'"
+        )
 
         try:
-            embedding_result = await model_manager.get_embedding(content, user_id=entity.user_id)
+            embedding_result = await model_manager.get_embedding(
+                content, user_id=entity.user_id
+            )
             embedding = embedding_result["embedding"]
             dimension = len(embedding)
             model_id = embedding_result.get("model_id")
-            logger.info(f"Generated embedding: dimension={dimension}, model_id={model_id}")
+            logger.info(
+                f"Generated embedding: dimension={dimension}, model_id={model_id}"
+            )
         except Exception as e:
             logger.error(f"Failed to generate embedding for entity {entity.id}: {e}")
-            raise RuntimeError(f"Failed to generate embedding: {str(e)}. Please configure a default embedding model in settings.")
+            raise RuntimeError(
+                f"Failed to generate embedding: {str(e)}. Please configure a default embedding model in settings."
+            )
 
         # Ensure collection exists
         collection = await _ensure_memory_collection(dimension)
@@ -489,13 +513,17 @@ class MemoryService:
         """Update entity embedding in Qdrant."""
         if entity.embedding_id:
             # Delete old embedding
-            await MemoryService._delete_entity_embedding(entity.embedding_id, entity.embedding_model_id)
+            await MemoryService._delete_entity_embedding(
+                entity.embedding_id, entity.embedding_model_id
+            )
 
         # Add new embedding
         await MemoryService._add_entity_embedding(entity)
 
     @staticmethod
-    async def _delete_entity_embedding(embedding_id: str, model_id: UUID | None) -> None:
+    async def _delete_entity_embedding(
+        embedding_id: str, model_id: UUID | None
+    ) -> None:
         """Delete entity embedding from Qdrant."""
         if not model_id:
             return
@@ -503,6 +531,7 @@ class MemoryService:
         try:
             # Get model dimension
             from app.llm import model_manager
+
             model_info = await model_manager.get_model_info(model_id)
             if not model_info:
                 return
@@ -549,9 +578,11 @@ class MemoryService:
             similar_names = []
             for entity in similar_entities:
                 # Exact match or one contains the other
-                if (entity.name.lower() == name.lower() or
-                    name.lower() in entity.name.lower() or
-                    entity.name.lower() in name.lower()):
+                if (
+                    entity.name.lower() == name.lower()
+                    or name.lower() in entity.name.lower()
+                    or entity.name.lower() in name.lower()
+                ):
                     similar_names.append(entity.name)
 
             # Create entity (will auto-update if exact match exists)
@@ -636,8 +667,12 @@ class MemoryService:
             user = await User.get(id=user_id)
 
             # Find entities by name
-            source = await MemoryEntity.filter(user_id=user_id, name=source_entity_name).first()
-            target = await MemoryEntity.filter(user_id=user_id, name=target_entity_name).first()
+            source = await MemoryEntity.filter(
+                user_id=user_id, name=source_entity_name
+            ).first()
+            target = await MemoryEntity.filter(
+                user_id=user_id, name=target_entity_name
+            ).first()
 
             if not source:
                 # Log failed audit
@@ -757,7 +792,9 @@ class MemoryService:
             user = await User.get(id=user_id)
 
             # Find entity by name
-            entity = await MemoryEntity.filter(user_id=user_id, name=entity_name).first()
+            entity = await MemoryEntity.filter(
+                user_id=user_id, name=entity_name
+            ).first()
 
             if not entity:
                 # Log failed audit

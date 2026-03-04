@@ -50,7 +50,9 @@ async def serialize_entity_with_user(entity: MemoryEntity) -> dict:
         "description": entity.description,
         "properties": entity.properties,
         "access_count": entity.access_count,
-        "last_accessed_at": entity.last_accessed_at.isoformat() if entity.last_accessed_at else None,
+        "last_accessed_at": entity.last_accessed_at.isoformat()
+        if entity.last_accessed_at
+        else None,
         "created_at": entity.created_at.isoformat(),
         "updated_at": entity.updated_at.isoformat(),
         "outgoing_relations_count": outgoing_count,
@@ -61,12 +63,18 @@ async def serialize_entity_with_user(entity: MemoryEntity) -> dict:
 async def serialize_relation_with_entities(relation: MemoryRelation) -> dict:
     """Serialize relation with entity names"""
     # Fetch entities if not prefetched
-    if hasattr(relation, "_fetched_relations") and "source_entity" in relation._fetched_relations:
+    if (
+        hasattr(relation, "_fetched_relations")
+        and "source_entity" in relation._fetched_relations
+    ):
         source_entity = relation.source_entity
     else:
         source_entity = await relation.source_entity
 
-    if hasattr(relation, "_fetched_relations") and "target_entity" in relation._fetched_relations:
+    if (
+        hasattr(relation, "_fetched_relations")
+        and "target_entity" in relation._fetched_relations
+    ):
         target_entity = relation.target_entity
     else:
         target_entity = await relation.target_entity
@@ -152,16 +160,18 @@ async def get_stats(
 
     # By type
     by_type: dict[str, int] = {}
-    type_results = await MemoryEntity.all().group_by("entity_type").values("entity_type", count="id")
+    type_results = (
+        await MemoryEntity.all()
+        .group_by("entity_type")
+        .values("entity_type", count="id")
+    )
     for result in type_results:
         by_type[result["entity_type"]] = result["count"]
 
     # By user (top 10)
     by_user: dict[str, int] = {}
     user_results = (
-        await MemoryEntity.all()
-        .group_by("user_id")
-        .values("user_id", count="id")
+        await MemoryEntity.all().group_by("user_id").values("user_id", count="id")
     )
     # Sort by count and limit to 10
     sorted_results = sorted(user_results, key=lambda x: x["count"], reverse=True)[:10]
@@ -195,8 +205,12 @@ async def get_entity(
         )
 
     # Get relations
-    outgoing_relations = await entity.outgoing_relations.all().prefetch_related("target_entity")
-    incoming_relations = await entity.incoming_relations.all().prefetch_related("source_entity")
+    outgoing_relations = await entity.outgoing_relations.all().prefetch_related(
+        "target_entity"
+    )
+    incoming_relations = await entity.incoming_relations.all().prefetch_related(
+        "source_entity"
+    )
 
     # Serialize
     entity_data = await serialize_entity_with_user(entity)
@@ -370,7 +384,11 @@ async def delete_relation(
     """
     Delete memory relation (admin only).
     """
-    relation = await MemoryRelation.filter(id=relation_id).prefetch_related("source_entity", "target_entity").first()
+    relation = (
+        await MemoryRelation.filter(id=relation_id)
+        .prefetch_related("source_entity", "target_entity")
+        .first()
+    )
     if not relation:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,

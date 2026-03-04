@@ -295,7 +295,9 @@ async def init_agent_streaming_config():
     """)
 
     if not tables:
-        logger.info("Agents table does not exist yet, skipping streaming_config migration")
+        logger.info(
+            "Agents table does not exist yet, skipping streaming_config migration"
+        )
         return
 
     # Check if streaming_config column exists
@@ -338,7 +340,9 @@ async def init_agent_user_input_request():
     """)
 
     if not tables:
-        logger.info("Agents table does not exist yet, skipping enable_user_input_request migration")
+        logger.info(
+            "Agents table does not exist yet, skipping enable_user_input_request migration"
+        )
         return
 
     # Check if enable_user_input_request column exists
@@ -902,7 +906,7 @@ async def init_memory_tables():
                 WHERE table_name = 'memory_entities' AND column_name = 'embedding_model_id'
             """)
 
-            if col_info and col_info[0]['data_type'] == 'uuid':
+            if col_info and col_info[0]["data_type"] == "uuid":
                 logger.info("Migrating embedding_model_id from UUID to VARCHAR(255)...")
                 await conn.execute_query("""
                     ALTER TABLE memory_entities

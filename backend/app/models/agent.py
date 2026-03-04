@@ -116,13 +116,14 @@ class Agent(models.Model):
         default=False, description="Enable user memory for personalized conversations"
     )
     memory_config: dict = fields.JSONField(
-        default=dict, description="Memory configuration (max_memories_per_retrieval, auto_extract, importance_threshold)"
+        default=dict,
+        description="Memory configuration (max_memories_per_retrieval, auto_extract, importance_threshold)",
     )  # type: ignore[assignment]
 
     # Streaming and tool timeout configuration
     streaming_config: dict = fields.JSONField(
         default=dict,
-        description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)"
+        description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)",
     )  # type: ignore[assignment]
 
     # RAG configuration

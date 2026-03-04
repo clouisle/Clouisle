@@ -54,15 +54,15 @@ class MemoryConfig(BaseModel):
         default=10,
         ge=1,
         le=50,
-        description="Maximum number of memories to retrieve per query (1-50)"
+        description="Maximum number of memories to retrieve per query (1-50)",
     )
     auto_extract: bool = Field(
         default=True,
-        description="Automatically extract and save memories from conversations"
+        description="Automatically extract and save memories from conversations",
     )
     importance_threshold: Literal["low", "medium", "high"] = Field(
         default="medium",
-        description="Minimum importance level for auto-extracted memories"
+        description="Minimum importance level for auto-extracted memories",
     )
 
 
@@ -247,10 +247,12 @@ class AgentCreate(AgentBase):
         default=False, description="Enable user input request with predefined options"
     )
     enable_memory: bool = Field(
-        default=False, description="Enable memory to remember user information across conversations"
+        default=False,
+        description="Enable memory to remember user information across conversations",
     )
     memory_config: MemoryConfig | None = Field(
-        default=None, description="Memory configuration (max_memories_per_retrieval, auto_extract)"
+        default=None,
+        description="Memory configuration (max_memories_per_retrieval, auto_extract)",
     )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"

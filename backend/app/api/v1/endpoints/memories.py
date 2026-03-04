@@ -109,11 +109,17 @@ async def get_entity(
         user_id=current_user.id,
     ).all()
 
-    return success({
-        "entity": EntityResponse.model_validate(entity),
-        "outgoing_relations": [RelationResponse.model_validate(r) for r in outgoing],
-        "incoming_relations": [RelationResponse.model_validate(r) for r in incoming],
-    })
+    return success(
+        {
+            "entity": EntityResponse.model_validate(entity),
+            "outgoing_relations": [
+                RelationResponse.model_validate(r) for r in outgoing
+            ],
+            "incoming_relations": [
+                RelationResponse.model_validate(r) for r in incoming
+            ],
+        }
+    )
 
 
 @router.put("/entities/{entity_id}", summary="Update entity")
@@ -190,8 +196,12 @@ async def delete_entity(
 @router.get("/relations", summary="List user's memory relations")
 async def list_relations(
     current_user: User = Depends(get_current_user),
-    entity_id: UUID | None = Query(None, description="Filter by entity ID (source or target)"),
-    relation_type: RelationType | None = Query(None, description="Filter by relation type"),
+    entity_id: UUID | None = Query(
+        None, description="Filter by entity ID (source or target)"
+    ),
+    relation_type: RelationType | None = Query(
+        None, description="Filter by relation type"
+    ),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
 ):
@@ -201,6 +211,7 @@ async def list_relations(
     if entity_id:
         # Find relations where entity is source or target
         from tortoise.expressions import Q
+
         query = query.filter(
             Q(source_entity_id=entity_id) | Q(target_entity_id=entity_id)
         )
@@ -214,12 +225,14 @@ async def list_relations(
     # Get paginated results
     relations = await query.offset((page - 1) * page_size).limit(page_size).all()
 
-    return success({
-        "items": [RelationResponse.model_validate(r) for r in relations],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    })
+    return success(
+        {
+            "items": [RelationResponse.model_validate(r) for r in relations],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    )
 
 
 @router.post("/relations", summary="Create a memory relation")

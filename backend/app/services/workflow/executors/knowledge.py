@@ -92,7 +92,9 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
 
         try:
             # Get embedding model and team ID from KB for usage tracking
-            embedding_model_id = str(kb.embedding_model_id) if kb.embedding_model_id else None
+            embedding_model_id = (
+                str(kb.embedding_model_id) if kb.embedding_model_id else None
+            )
             team_id = str(kb.team_id) if kb.team_id else None
 
             vector_store = VectorStore(
