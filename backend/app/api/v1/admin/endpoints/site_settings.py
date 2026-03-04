@@ -542,7 +542,26 @@ async def trigger_archive_audit_logs(
     request: Request,
     current_user: User = Depends(PermissionChecker("audit:export")),
 ):
-    result = await archive_old_audit_logs()
+    try:
+        # Use Celery task to avoid blocking the server
+        task = archive_old_audit_logs.delay()
+        task_id = task.id
+    except Exception:
+        # Log error without exposing stack trace to user
+        await AuditLogService.log(
+            user=current_user,
+            action="trigger_audit_log_archive",
+            resource_type="system",
+            resource_id=None,
+            resource_name="audit_log_archive",
+            operation="execute",
+            status="failed",
+            request=request,
+        )
+        raise BusinessError(
+            code=ResponseCode.INTERNAL_ERROR,
+            msg_key="archive_failed",
+        )
 
     await AuditLogService.log(
         user=current_user,
@@ -551,22 +570,12 @@ async def trigger_archive_audit_logs(
         resource_id=None,
         resource_name="audit_log_archive",
         operation="execute",
-        status="success" if result.get("status") == "success" else "failed",
+        status="pending",
         request=request,
-        metadata=result,
+        metadata={"task_id": task_id},
     )
 
-    if result.get("status") == "failed":
-        raise BusinessError(
-            code=ResponseCode.INTERNAL_ERROR,
-            msg_key="archive_failed",
-        )
-
     return success(
-        data={
-            "archived_count": result.get("archived_count", 0),
-            "retention_days": result.get("retention_days", 0),
-            "cutoff_date": result.get("cutoff_date", ""),
-        },
-        msg_key="archive_task_completed",
+        data={"task_id": task_id, "status": "pending"},
+        msg_key="archive_task_started",
     )

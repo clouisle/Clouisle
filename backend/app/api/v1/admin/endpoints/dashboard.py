@@ -441,25 +441,41 @@ async def get_workflow_summary(
 
     # Get workflow details and success counts for top workflows
     top_workflows = []
-    for stat in workflow_run_stats:
-        wf_id = stat["workflow_id"]
-        run_count = stat["run_count"]
-        workflow = await Workflow.filter(id=wf_id).first()
-        if workflow:
-            wf_success_count = await runs_query.filter(
-                workflow_id=wf_id, status="success"
-            ).count()
-            success_rate_wf = (
-                (wf_success_count / run_count * 100) if run_count > 0 else 0
-            )
-            top_workflows.append(
-                {
-                    "workflow_id": str(wf_id),
-                    "name": workflow.name,
-                    "run_count": run_count,
-                    "success_rate": round(success_rate_wf, 2),
-                }
-            )
+    if workflow_run_stats:
+        workflow_ids = [stat["workflow_id"] for stat in workflow_run_stats]
+
+        # Fetch all workflows in one query
+        workflows = await Workflow.filter(id__in=workflow_ids).all()
+        workflow_map = {wf.id: wf for wf in workflows}
+
+        # Fetch success counts for all workflows in one query
+        success_counts = (
+            await runs_query.filter(workflow_id__in=workflow_ids, status="success")
+            .annotate(success_count=Count("id"))
+            .group_by("workflow_id")
+            .values("workflow_id", "success_count")
+        )
+        success_map = {
+            item["workflow_id"]: item["success_count"] for item in success_counts
+        }
+
+        for stat in workflow_run_stats:
+            wf_id = stat["workflow_id"]
+            run_count = stat["run_count"]
+            workflow = workflow_map.get(wf_id)
+            if workflow:
+                wf_success_count = success_map.get(wf_id, 0)
+                success_rate_wf = (
+                    (wf_success_count / run_count * 100) if run_count > 0 else 0
+                )
+                top_workflows.append(
+                    {
+                        "workflow_id": str(wf_id),
+                        "name": workflow.name,
+                        "run_count": run_count,
+                        "success_rate": round(success_rate_wf, 2),
+                    }
+                )
 
     return success(
         data={

@@ -29,12 +29,14 @@ function getVariableContext(text: string, cursorPos: number): { isInVariable: bo
   return { isInVariable: false, query: '', startPos: -1 }
 }
 
-// HTML 转义
+// HTML 转义（包括属性安全）
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
     .replace(/\n/g, '<br>')
 }
 

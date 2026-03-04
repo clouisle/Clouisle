@@ -175,9 +175,16 @@ async def get_stats(
     )
     # Sort by count and limit to 10
     sorted_results = sorted(user_results, key=lambda x: x["count"], reverse=True)[:10]
+
+    # Fetch all users in one query
+    user_ids = [result["user_id"] for result in sorted_results]
+    users = await User.filter(id__in=user_ids).all()
+    user_map = {user.id: user.username for user in users}
+
     for result in sorted_results:
-        user = await User.get(id=result["user_id"])
-        by_user[user.username] = result["count"]
+        username = user_map.get(result["user_id"])
+        if username:
+            by_user[username] = result["count"]
 
     return success(
         data={

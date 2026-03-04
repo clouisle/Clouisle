@@ -2,6 +2,8 @@
 RAG (Retrieval-Augmented Generation) utilities for chat.
 """
 
+import asyncio
+
 from app.models.agent import Agent, KnowledgeBase
 from app.services.vector_store import vector_store_service
 
@@ -11,26 +13,40 @@ async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
     if not agent.knowledge_base_ids:
         return []
 
+    # Fetch all knowledge bases concurrently
+    kb_tasks = [
+        KnowledgeBase.get_or_none(id=kb_id) for kb_id in agent.knowledge_base_ids
+    ]
+    knowledge_bases = await asyncio.gather(*kb_tasks)
+
+    # Filter active knowledge bases and prepare search tasks
+    search_tasks = []
+    kb_info = []
+    for kb in knowledge_bases:
+        if kb and kb.is_active:
+            task = vector_store_service.search(
+                collection_name=kb.collection_name,
+                query=query,
+                top_k=kb.top_k or 5,
+                score_threshold=kb.score_threshold or 0.7,
+            )
+            search_tasks.append(task)
+            kb_info.append({"id": kb.id, "name": kb.name})
+
+    # Run all searches concurrently
+    if not search_tasks:
+        return []
+
+    search_results_list = await asyncio.gather(*search_tasks)
+
+    # Aggregate results
     all_contexts = []
-
-    for kb_id in agent.knowledge_base_ids:
-        kb = await KnowledgeBase.get_or_none(id=kb_id)
-        if not kb or not kb.is_active:
-            continue
-
-        # Retrieve relevant documents from vector store
-        results = await vector_store_service.search(
-            collection_name=kb.collection_name,
-            query=query,
-            top_k=kb.top_k or 5,
-            score_threshold=kb.score_threshold or 0.7,
-        )
-
+    for kb_data, results in zip(kb_info, search_results_list):
         for result in results:
             all_contexts.append(
                 {
-                    "knowledge_base_id": kb_id,
-                    "knowledge_base_name": kb.name,
+                    "knowledge_base_id": kb_data["id"],
+                    "knowledge_base_name": kb_data["name"],
                     "content": result["content"],
                     "metadata": result.get("metadata", {}),
                     "score": result["score"],
