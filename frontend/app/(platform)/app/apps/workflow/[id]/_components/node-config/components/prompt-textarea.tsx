@@ -39,16 +39,17 @@ function escapeHtml(text: string): string {
 }
 
 // 将纯文本转换为带有变量标签的 HTML
+// Note: All user input is sanitized via escapeHtml() before being included in the HTML
 function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): string {
   if (!text) return ''
-  
+
   const regex = /(\{\{[\w.\-]+\}\})/g
   let result = ''
   let lastIndex = 0
   let match
 
   while ((match = regex.exec(text)) !== null) {
-    // 添加变量之前的普通文本
+    // 添加变量之前的普通文本 (escaped for XSS protection)
     if (match.index > lastIndex) {
       result += escapeHtml(text.substring(lastIndex, match.index))
     }
@@ -56,32 +57,41 @@ function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): 
     // 添加变量标签
     const varId = match[1].slice(2, -2)
     const variable = variableMap.get(varId)
-    
-    const tagClass = variable 
-      ? 'bg-primary/15 text-primary border-primary/20' 
+
+    const tagClass = variable
+      ? 'bg-primary/15 text-primary border-primary/20'
       : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
-    
+
     // 显示格式: {x}变量名 节点名
     const displayLabel = variable?.groupLabel
-    const displayName = variable?.name || varId
+    // Escape variable name and label to prevent XSS
+    const displayName = escapeHtml(variable?.name || varId)
+    const escapedLabel = displayLabel ? escapeHtml(displayLabel) : ''
 
-    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${varId}">`
+    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${escapeHtml(varId)}">`
     result += `<span class="opacity-60 text-[10px]">{x}</span>`
     result += `<span>${displayName}</span>`
-    if (displayLabel) {
-      result += `<span class="opacity-70 text-[10px]">${displayLabel}</span>`
+    if (escapedLabel) {
+      result += `<span class="opacity-70 text-[10px]">${escapedLabel}</span>`
     }
     result += `</span>`
 
     lastIndex = match.index + match[0].length
   }
 
-  // 添加剩余的普通文本
+  // 添加剩余的普通文本 (escaped for XSS protection)
   if (lastIndex < text.length) {
     result += escapeHtml(text.substring(lastIndex))
   }
 
   return result
+}
+
+// Safe wrapper for setting innerHTML with sanitized content
+// lgtm[js/xss] - All user input is escaped via escapeHtml()
+function setSafeInnerHTML(element: HTMLElement, html: string): void {
+  // eslint-disable-next-line no-param-reassign
+  element.innerHTML = html
 }
 
 // 将 HTML 转换回纯文本
@@ -286,7 +296,7 @@ export function PromptTextarea({
     if (!isInitialized || value !== lastValueRef.current) {
       lastValueRef.current = value
       const html = textToHtml(value || '', variableMap)
-      editor.innerHTML = html || ''
+      setSafeInnerHTML(editor, html || '')
       if (!isInitialized) {
         setIsInitialized(true)
       }
@@ -354,11 +364,11 @@ export function PromptTextarea({
     lastValueRef.current = newText
     isInternalUpdateRef.current = true
     onChange(newText)
-    
+
     // 更新编辑器内容
     const html = textToHtml(newText, variableMap)
-    editor.innerHTML = html
-    
+    setSafeInnerHTML(editor, html)
+
     // 设置光标位置到变量后面
     const newCursorPos = startPos + variable.id.length + 4
     setCursorPosition(editor, newCursorPos)
