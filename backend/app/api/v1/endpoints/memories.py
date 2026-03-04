@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.memory import MemoryEntity, MemoryRelation, EntityType, RelationType
-from app.schemas.response import success, error, ResponseCode, BusinessError
+from app.schemas.response import success, ResponseCode, BusinessError
 from app.schemas.memory import (
     CreateEntityRequest,
     UpdateEntityRequest,
@@ -239,7 +239,7 @@ async def create_relation(
         )
 
         return success(RelationResponse.model_validate(relation))
-    except ValueError as e:
+    except ValueError:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="memory_relation_create_failed",

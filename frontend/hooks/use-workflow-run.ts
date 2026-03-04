@@ -38,6 +38,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
 
   const closeConnectionRef = useRef<(() => void) | null>(null)
   const currentMessageRef = useRef<ChatMessage | null>(null)
+  const handleWorkflowEventRef = useRef<((event: WorkflowEvent) => void) | null>(null)
 
   const stop = useCallback(() => {
     if (closeConnectionRef.current) {
@@ -93,7 +94,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         // Connect to SSE stream
         const closeConnection = workflowsApi.streamWorkflowRun(run_id, {
           onEvent: (event: WorkflowEvent) => {
-            handleWorkflowEvent(event)
+            handleWorkflowEventRef.current?.(event)
           },
           onError: (error: Error) => {
             console.error('Workflow SSE error:', error)
@@ -431,6 +432,9 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
       }
     }
   }, [])
+
+  // Store the handler in ref so it can be accessed in start callback
+  handleWorkflowEventRef.current = handleWorkflowEvent
 
   return {
     messages,

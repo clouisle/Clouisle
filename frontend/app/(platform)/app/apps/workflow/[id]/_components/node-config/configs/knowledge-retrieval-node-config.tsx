@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
-import { knowledgeBasesApi } from '@/lib/api/knowledge-bases'
+import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api/knowledge-bases'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
@@ -69,7 +69,7 @@ export function KnowledgeRetrievalNodeConfig({
   const [settingsOpen, setSettingsOpen] = React.useState(true)
 
   // 知识库数据
-  const [knowledgeBases, setKnowledgeBases] = React.useState<any[]>([])
+  const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [isLoadingKbs, setIsLoadingKbs] = React.useState(false)
 
   // 知识库选择弹窗
@@ -119,7 +119,7 @@ export function KnowledgeRetrievalNodeConfig({
   }, [knowledgeBases, kbSearch])
 
   // 选择知识库
-  const handleSelectKb = (kb: any) => {
+  const handleSelectKb = (kb: KnowledgeBase) => {
     onConfigChange({
       ...safeConfig,
       knowledgeBaseId: kb.id,
