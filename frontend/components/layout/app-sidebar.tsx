@@ -137,7 +137,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
     },
   ]
 
-  const adminItems = [
+  const systemItems = [
     {
       title: t('users'),
       url: '/users',
@@ -156,12 +156,9 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       icon: Key,
       permission: 'permission:read',
     },
-    {
-      title: t('apiKeys'),
-      url: '/api-keys',
-      icon: KeyRound,
-      permission: 'apikey:read',
-    },
+  ]
+
+  const resourceItems = [
     {
       title: t('models'),
       url: '/models',
@@ -175,16 +172,25 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       permission: 'tool:read',
     },
     {
-      title: t('notifications'),
-      url: '/notifications',
-      icon: Bell,
-      permission: 'dashboard:access',
+      title: t('apiKeys'),
+      url: '/api-keys',
+      icon: KeyRound,
+      permission: 'apikey:read',
     },
     {
       title: t('memories'),
       url: '/memories',
       icon: Brain,
       permission: 'memory:read',
+    },
+  ]
+
+  const monitoringItems = [
+    {
+      title: t('notifications'),
+      url: '/notifications',
+      icon: Bell,
+      permission: 'dashboard:access',
     },
     {
       title: t('auditLogs'),
@@ -194,7 +200,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
     },
   ]
 
-  const otherItems = [
+  const settingsItems = [
     {
       title: t('siteSettings'),
       url: '/site-settings',
@@ -213,10 +219,16 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   const filteredGeneralItems = generalItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
-  const filteredAdminItems = adminItems.filter(
+  const filteredSystemItems = systemItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
-  const filteredOtherItems = otherItems.filter(
+  const filteredResourceItems = resourceItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredMonitoringItems = monitoringItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredSettingsItems = settingsItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
 
@@ -275,13 +287,13 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           </SidebarGroup>
         )}
 
-        {/* Admin - only show if user has dashboard access and there are visible items */}
-        {canAccessDashboard && filteredAdminItems.length > 0 && (
+        {/* System - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredSystemItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>{t('admin')}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('system')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {filteredAdminItems.map((item) => (
+                {filteredSystemItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <Link href={item.url}>
                       <SidebarMenuButton isActive={isActive(item.url)}>
@@ -296,13 +308,55 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           </SidebarGroup>
         )}
 
-        {/* Other */}
-        {filteredOtherItems.length > 0 && (
+        {/* Resources - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredResourceItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>{t('other')}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('resources')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {filteredOtherItems.map((item) => (
+                {filteredResourceItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Monitoring - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredMonitoringItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('monitoring')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredMonitoringItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Settings */}
+        {filteredSettingsItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('settings')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredSettingsItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <Link href={item.url}>
                       <SidebarMenuButton isActive={isActive(item.url)}>

@@ -167,42 +167,42 @@ function RecentItemCard({ item }: { item: RecentItem }) {
   )
 }
 
-// Chart 配置
-const usageTrendChartConfig = {
-  conversations: {
-    label: 'Conversations',
-    color: 'var(--chart-1)',
-  },
-  tokens: {
-    label: 'Token',
-    color: 'var(--chart-2)',
-  },
-} satisfies ChartConfig
-
-const resourceChartConfig = {
-  value: {
-    label: 'Count',
-  },
-  agents: {
-    label: 'Agents',
-    color: 'var(--chart-1)',
-  },
-  workflows: {
-    label: 'Workflows',
-    color: 'var(--chart-2)',
-  },
-  knowledgeBases: {
-    label: 'Knowledge Bases',
-    color: 'var(--chart-3)',
-  },
-  models: {
-    label: 'Models',
-    color: 'var(--chart-4)',
-  },
-} satisfies ChartConfig
-
 export default function PlatformHomePage() {
   const t = useTranslations('platform.home')
+
+  // Chart 配置 - 使用 i18n
+  const usageTrendChartConfig = {
+    conversations: {
+      label: t('stats.conversations'),
+      color: 'var(--chart-1)',
+    },
+    tokens: {
+      label: t('stats.tokens'),
+      color: 'var(--chart-2)',
+    },
+  } satisfies ChartConfig
+
+  const resourceChartConfig = {
+    value: {
+      label: t('charts.count'),
+    },
+    agents: {
+      label: t('stats.agents'),
+      color: 'var(--chart-1)',
+    },
+    workflows: {
+      label: t('stats.workflows'),
+      color: 'var(--chart-2)',
+    },
+    knowledgeBases: {
+      label: t('stats.knowledgeBases'),
+      color: 'var(--chart-3)',
+    },
+    models: {
+      label: t('stats.models'),
+      color: 'var(--chart-4)',
+    },
+  } satisfies ChartConfig
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const [stats, setStats] = React.useState<StatsData>({
     knowledgeBases: 0,

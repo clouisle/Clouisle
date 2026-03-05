@@ -436,7 +436,9 @@ async def create_agent(
         else {},
         enable_user_input_request=agent_in.enable_user_input_request,
         enable_memory=agent_in.enable_memory,
-        memory_config=agent_in.memory_config,
+        memory_config=agent_in.memory_config.model_dump()
+        if agent_in.memory_config
+        else {},
         rag_mode=agent_in.rag_mode,
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
@@ -596,7 +598,7 @@ async def update_agent(
         agent.enable_memory = agent_in.enable_memory
         updated_fields.append("enable_memory")
     if agent_in.memory_config is not None:
-        agent.memory_config = agent_in.memory_config
+        agent.memory_config = agent_in.memory_config.model_dump()
         updated_fields.append("memory_config")
 
     # Update rag_mode
