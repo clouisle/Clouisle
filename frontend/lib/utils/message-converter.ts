@@ -186,24 +186,26 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
 
     // Parse user input request from content (if exists)
     let contentToAdd = message.content
+    let userInputRequestPart: UserInputRequestPart | null = null
+
     if (message.content) {
       const { userInputRequest, cleanContent } = parseUserInputRequest(message.content)
-
-      // Add user input request part if found
-      if (userInputRequest) {
-        parts.push(userInputRequest)
-      }
-
+      userInputRequestPart = userInputRequest
       contentToAdd = cleanContent
     }
 
-    // Add text content (after removing XML)
+    // Add text content first (after removing XML)
     if (contentToAdd) {
       parts.push({
         type: 'text',
         text: contentToAdd,
         state: 'done',
       } as TextPart)
+    }
+
+    // Add user input request part after text content
+    if (userInputRequestPart) {
+      parts.push(userInputRequestPart)
     }
 
     // Add tool calls

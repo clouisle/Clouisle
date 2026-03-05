@@ -159,10 +159,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       console.log('New conversation created:', newConversationId)
       refreshConversations()
     },
-    onStreamEnd: () => {
-      // Refresh conversation list when message completes (to update title)
-      refreshConversations()
-    },
+    // Don't refresh on every message end - only on conversation creation
+    // This prevents unnecessary sidebar refreshes during chat
   })
   
   // Fetch agent and conversations when logged in

@@ -138,9 +138,46 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
-      // Tool calls are now rendered in ChainOfThought, skip here
+      // Tool calls: only skip if there's reasoning (they'll be in ChainOfThought)
+      // If no reasoning, render them normally in message content
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-        return null
+        if (hasReasoning) {
+          return null // Skip, will be rendered in ChainOfThought
+        }
+        // No reasoning - render tool call in message content
+        const toolPart = part as ToolCallPart | McpToolCallPart
+        const toolName = isToolCallPart(part)
+          ? (part.toolDisplayName || part.toolName)
+          : `${part.serverName}/${part.toolName}`
+
+        // Find matching result
+        const result = message.parts.find(
+          (p) => (isToolResultPart(p) || isMcpToolResultPart(p)) && p.toolCallId === toolPart.toolCallId
+        )
+
+        const state = toolPart.state === 'error' ? 'output-error'
+          : toolPart.state === 'done' ? 'output-available'
+          : toolPart.state === 'running' ? 'input-available'
+          : 'input-streaming'
+
+        return (
+          <Tool key={index} defaultOpen={false} className="my-2">
+            <ToolHeader
+              title={toolName}
+              type="tool-call"
+              state={state}
+            />
+            <AIToolContent>
+              <ToolInput input={toolPart.input} />
+              {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                <ToolOutput
+                  output={result.output}
+                  errorText={result.isError ? String(result.output) : undefined}
+                />
+              )}
+            </AIToolContent>
+          </Tool>
+        )
       }
 
       if (isFilePart(part)) {
@@ -180,7 +217,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         return null
       }
 
-      // Task parts and reasoning are rendered in ChainOfThought
+      // Task parts and reasoning are always rendered in ChainOfThought
       if (isTaskPart(part) || isReasoningPart(part)) {
         return null
       }
@@ -196,6 +233,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             state={userInputPart.state}
             selectedOption={userInputPart.selectedOption}
             onSelectOption={onSelectOption}
+            isStreaming={isStreaming}
           />
         )
       }
@@ -207,9 +245,14 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
     const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
+    const mcpToolCallParts = otherParts.filter(isMcpToolCallPart) as McpToolCallPart[]
 
-    // Check if we should show ChainOfThought (has tasks, reasoning, or tool calls)
-    const hasChainOfThought = taskParts.length > 0 || reasoningParts.length > 0 || toolCallParts.length > 0
+    // Check if we should show ChainOfThought
+    // Only show if there are reasoning parts OR tasks (RAG/generating)
+    // Tool calls should only be in ChainOfThought if there's reasoning
+    const hasReasoning = reasoningParts.length > 0
+    const hasTasks = taskParts.length > 0
+    const hasChainOfThought = hasReasoning || hasTasks
 
     // Get text parts to check if content has started
     const textParts = otherParts.filter(isTextPart) as TextPart[]
@@ -217,10 +260,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
     // Check if any step is still active (streaming)
     // Chain of thought is streaming until content starts appearing
+    // Only consider tool calls if there's reasoning (otherwise they're in message content)
     const isChainOfThoughtStreaming = !hasTextContent && (
       taskParts.some(t => t.state === 'running') ||
       reasoningParts.some(r => r.state === 'streaming') ||
-      toolCallParts.some(tc => tc.state === 'running') ||
+      (hasReasoning && toolCallParts.some(tc => tc.state === 'running')) ||
       isStreaming  // Still streaming but no text yet
     )
 
@@ -286,100 +330,103 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       })
 
-      // 2. Process other parts in their original order (tool calls and reasoning interleaved)
-      otherParts.forEach((part, index) => {
-        if (isToolCallPart(part)) {
-          const toolPart = part as ToolCallPart
-          // Find matching result
-          const result = message.parts.find(
-            (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
-          )
-          const state = toolPart.state === 'error' ? 'output-error'
-            : toolPart.state === 'done' ? 'output-available'
-            : toolPart.state === 'running' ? 'input-available'
-            : 'input-streaming'
+      // 2. Process other parts in their original order
+      // Only include tool calls and reasoning if there's reasoning content
+      if (hasReasoning) {
+        otherParts.forEach((part, index) => {
+          if (isToolCallPart(part)) {
+            const toolPart = part as ToolCallPart
+            // Find matching result
+            const result = message.parts.find(
+              (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
+            )
+            const state = toolPart.state === 'error' ? 'output-error'
+              : toolPart.state === 'done' ? 'output-available'
+              : toolPart.state === 'running' ? 'input-available'
+              : 'input-streaming'
 
-          steps.push(
-            <ChainOfThoughtStep
-              key={`tool-${toolPart.toolCallId}`}
-              icon={Wrench}
-              label={getToolCallLabel(toolPart)}
-              status={getToolCallStepStatus(toolPart.state)}
-            >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={toolPart.toolDisplayName || toolPart.toolName}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={toolPart.input} />
-                  {result && isToolResultPart(result) && (
-                    <ToolOutput
-                      output={result.output}
-                      errorText={result.isError ? String(result.output) : undefined}
-                    />
-                  )}
-                </AIToolContent>
-              </Tool>
-            </ChainOfThoughtStep>
-          )
-        } else if (isMcpToolCallPart(part)) {
-          const mcpPart = part as McpToolCallPart
-          // Find matching result
-          const result = message.parts.find(
-            (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
-          )
-          const state = mcpPart.state === 'error' ? 'output-error'
-            : mcpPart.state === 'done' ? 'output-available'
-            : mcpPart.state === 'running' ? 'input-available'
-            : 'input-streaming'
+            steps.push(
+              <ChainOfThoughtStep
+                key={`tool-${toolPart.toolCallId}`}
+                icon={Wrench}
+                label={getToolCallLabel(toolPart)}
+                status={getToolCallStepStatus(toolPart.state)}
+              >
+                <Tool defaultOpen={false} className="mt-2">
+                  <ToolHeader
+                    title={toolPart.toolDisplayName || toolPart.toolName}
+                    type="tool-call"
+                    state={state}
+                  />
+                  <AIToolContent>
+                    <ToolInput input={toolPart.input} />
+                    {result && isToolResultPart(result) && (
+                      <ToolOutput
+                        output={result.output}
+                        errorText={result.isError ? String(result.output) : undefined}
+                      />
+                    )}
+                  </AIToolContent>
+                </Tool>
+              </ChainOfThoughtStep>
+            )
+          } else if (isMcpToolCallPart(part)) {
+            const mcpPart = part as McpToolCallPart
+            // Find matching result
+            const result = message.parts.find(
+              (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
+            )
+            const state = mcpPart.state === 'error' ? 'output-error'
+              : mcpPart.state === 'done' ? 'output-available'
+              : mcpPart.state === 'running' ? 'input-available'
+              : 'input-streaming'
 
-          steps.push(
-            <ChainOfThoughtStep
-              key={`mcp-tool-${mcpPart.toolCallId}`}
-              icon={Wrench}
-              label={`${mcpPart.serverName}/${mcpPart.toolName}`}
-              status={getToolCallStepStatus(mcpPart.state)}
-            >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={`${mcpPart.serverName}/${mcpPart.toolName}`}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={mcpPart.input} />
-                  {result && isMcpToolResultPart(result) && (
-                    <ToolOutput
-                      output={result.output}
-                      errorText={result.isError ? String(result.output) : undefined}
-                    />
-                  )}
-                </AIToolContent>
-              </Tool>
-            </ChainOfThoughtStep>
-          )
-        } else if (isReasoningPart(part)) {
-          const reasoningPart = part as ReasoningPart
-          steps.push(
-            <ChainOfThoughtStep
-              key={`reasoning-${index}`}
-              label={reasoningPart.state === 'streaming'
-                ? tReasoning('processing')
-                : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
-              }
-              status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
-            >
-              {reasoningPart.text && (
-                <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
-                  {reasoningPart.text}
-                </pre>
-              )}
-            </ChainOfThoughtStep>
-          )
-        }
-      })
+            steps.push(
+              <ChainOfThoughtStep
+                key={`mcp-tool-${mcpPart.toolCallId}`}
+                icon={Wrench}
+                label={`${mcpPart.serverName}/${mcpPart.toolName}`}
+                status={getToolCallStepStatus(mcpPart.state)}
+              >
+                <Tool defaultOpen={false} className="mt-2">
+                  <ToolHeader
+                    title={`${mcpPart.serverName}/${mcpPart.toolName}`}
+                    type="tool-call"
+                    state={state}
+                  />
+                  <AIToolContent>
+                    <ToolInput input={mcpPart.input} />
+                    {result && isMcpToolResultPart(result) && (
+                      <ToolOutput
+                        output={result.output}
+                        errorText={result.isError ? String(result.output) : undefined}
+                      />
+                    )}
+                  </AIToolContent>
+                </Tool>
+              </ChainOfThoughtStep>
+            )
+          } else if (isReasoningPart(part)) {
+            const reasoningPart = part as ReasoningPart
+            steps.push(
+              <ChainOfThoughtStep
+                key={`reasoning-${index}`}
+                label={reasoningPart.state === 'streaming'
+                  ? tReasoning('processing')
+                  : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
+                }
+                status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
+              >
+                {reasoningPart.text && (
+                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
+                    {reasoningPart.text}
+                  </pre>
+                )}
+              </ChainOfThoughtStep>
+            )
+          }
+        })
+      }
 
       // 3. Generating steps last
       taskParts.filter(t => t.taskType === 'generating').forEach((taskPart, index) => {
