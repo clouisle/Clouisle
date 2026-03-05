@@ -433,7 +433,7 @@ async def create_agent(
         enable_file_upload=agent_in.enable_file_upload,
         file_upload_config=agent_in.file_upload_config.model_dump()
         if agent_in.file_upload_config
-        else None,
+        else {},
         enable_user_input_request=agent_in.enable_user_input_request,
         enable_memory=agent_in.enable_memory,
         memory_config=agent_in.memory_config,
