@@ -268,25 +268,6 @@ export function MemoriesClient() {
           )}
         </div>
 
-        {/* Bulk actions toolbar */}
-        {selectedEntities.size > 0 && (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
-            <span className="text-sm text-muted-foreground">
-              {selectedEntities.size} {commonT('selected')}
-            </span>
-            <PermissionGuard permission="admin:memory:delete">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBulkDelete}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t('deleteSelected')}
-              </Button>
-            </PermissionGuard>
-          </div>
-        )}
-
         {/* Table */}
         <div className="rounded-md border">
           <Table>
@@ -483,6 +464,42 @@ export function MemoriesClient() {
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 批量操作浮动工具栏 */}
+        {selectedEntities.size > 0 && canPerform('admin:memory:delete') && (
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+            <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSelectedEntities(new Set())}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+
+              <Badge variant="secondary" className="px-2 py-1">
+                {selectedEntities.size} {t('entitiesSelected')}
+              </Badge>
+
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkDelete}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         )}

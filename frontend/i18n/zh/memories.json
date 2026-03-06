@@ -27,6 +27,7 @@
     "noDescription": "暂无描述",
     "neverAccessed": "从未访问",
     "deleteSelected": "删除选中",
+    "entitiesSelected": "个实体已选中",
     "deleteEntity": "删除实体",
     "deleteConfirm": "确定要删除此实体吗？此操作无法撤销。",
     "edit": "编辑",
