@@ -612,9 +612,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Superusers cannot be deleted",
         "zh": "超级管理员不能被删除",
     },
-    "cannot_delete_wildcard_permission": {
-        "en": "Cannot delete the system wildcard permission",
-        "zh": "不能删除系统通配符权限",
+    "cannot_delete_system_permission": {
+        "en": "System permissions cannot be deleted",
+        "zh": "系统权限不能被删除",
+    },
+    "cannot_update_system_permission": {
+        "en": "System permissions cannot be updated",
+        "zh": "系统权限不能被修改",
     },
     "cannot_modify_system_role": {
         "en": "System roles cannot be modified",
@@ -2059,7 +2063,8 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         ResponseCode.PERMISSION_CODE_EXISTS: "permission_code_exists",
         ResponseCode.CANNOT_DELETE_SYSTEM_ROLE: "cannot_delete_system_role",
         ResponseCode.CANNOT_DELETE_SUPERUSER: "cannot_delete_superuser",
-        ResponseCode.CANNOT_DELETE_WILDCARD_PERMISSION: "cannot_delete_wildcard_permission",
+        ResponseCode.CANNOT_DELETE_SYSTEM_PERMISSION: "cannot_delete_system_permission",
+        ResponseCode.CANNOT_UPDATE_SYSTEM_PERMISSION: "cannot_update_system_permission",
         ResponseCode.CANNOT_MODIFY_SYSTEM_ROLE: "cannot_modify_system_role",
         ResponseCode.ROLE_IN_USE: "role_in_use",
         ResponseCode.ACCOUNT_LOCKED: "account_locked",

@@ -6,6 +6,7 @@ export interface Permission {
   scope: string
   code: string
   description: string | null
+  is_system: boolean
 }
 
 export interface Role {

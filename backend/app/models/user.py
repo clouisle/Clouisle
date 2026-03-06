@@ -12,6 +12,10 @@ class Permission(models.Model):
         description="Unique permission code (e.g., user:create)",
     )
     description = fields.CharField(max_length=255, null=True)
+    is_system = fields.BooleanField(
+        default=True,
+        description="System permission (defined in code, cannot be deleted)",
+    )
 
     class Meta:
         table = "permissions"

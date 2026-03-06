@@ -68,7 +68,8 @@ import { DeletePermissionDialog } from './delete-permission-dialog'
 export function PermissionsClient() {
   const t = useTranslations('permissions')
   const commonT = useTranslations('common')
-  
+  const { canPerform } = usePermissions()
+
   // 数据状态
   const [permissions, setPermissions] = React.useState<Permission[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -230,8 +231,8 @@ export function PermissionsClient() {
     setSelectedPermissions(new Set())
   }
   
-  // 判断是否为系统权限（通配符）
-  const isSystemPermission = (permission: Permission) => permission.code === '*'
+  // 判断是否为系统权限
+  const isSystemPermission = (permission: Permission) => permission.is_system
   
   return (
     <div className="flex flex-col gap-6">

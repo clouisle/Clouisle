@@ -4,6 +4,7 @@ from tortoise import Tortoise
 
 from app.models.user import Role, Permission
 from app.models.site_setting import init_default_settings
+from app.core.permissions import SystemPermissions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -321,6 +322,51 @@ async def init_agent_streaming_config():
         logger.info("streaming_config column already exists")
 
     logger.info("Agent streaming_config migration complete")
+
+
+async def init_permission_is_system_field():
+    """
+    Add is_system field to permissions table if it doesn't exist.
+    This handles the migration for the system permission protection feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking permission is_system field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if permissions table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'permissions' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Permissions table does not exist yet, skipping is_system migration"
+        )
+        return
+
+    # Check if is_system column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'permissions' AND column_name = 'is_system'
+    """)
+
+    if not rows:
+        logger.info("Adding is_system column to permissions table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE permissions
+                ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT TRUE
+            """)
+            logger.info("Added is_system column to permissions table")
+        except Exception as e:
+            logger.error(f"Could not add is_system column: {e}")
+            raise
+    else:
+        logger.info("is_system column already exists")
+
+    logger.info("Permission is_system migration complete")
 
 
 async def init_agent_user_input_request():
@@ -1045,326 +1091,16 @@ async def init_db():
             f"Agent tools_credentials migration failed (may be first run): {e}"
         )
 
+    try:
+        await init_permission_is_system_field()
+    except Exception as e:
+        logger.warning(
+            f"Permission is_system migration failed (may be first run): {e}"
+        )
+
     # 1. Initialize Permissions
-    permissions_data = [
-        # ===== ADMIN PERMISSIONS (System-wide management) =====
-        # Admin dashboard
-        {
-            "code": "admin:dashboard:access",
-            "scope": "admin",
-            "description": "Access admin dashboard",
-        },
-        # Admin user management
-        {
-            "code": "admin:user:read",
-            "scope": "admin",
-            "description": "View all users across system",
-        },
-        {
-            "code": "admin:user:create",
-            "scope": "admin",
-            "description": "Create users in system",
-        },
-        {
-            "code": "admin:user:update",
-            "scope": "admin",
-            "description": "Update any user in system",
-        },
-        {
-            "code": "admin:user:delete",
-            "scope": "admin",
-            "description": "Delete users from system",
-        },
-        # Admin role management
-        {
-            "code": "admin:role:read",
-            "scope": "admin",
-            "description": "View all roles in system",
-        },
-        {
-            "code": "admin:role:create",
-            "scope": "admin",
-            "description": "Create roles in system",
-        },
-        {
-            "code": "admin:role:update",
-            "scope": "admin",
-            "description": "Update roles in system",
-        },
-        {
-            "code": "admin:role:delete",
-            "scope": "admin",
-            "description": "Delete roles from system",
-        },
-        # Admin permission management
-        {
-            "code": "admin:permission:read",
-            "scope": "admin",
-            "description": "View all permissions in system",
-        },
-        {
-            "code": "admin:permission:create",
-            "scope": "admin",
-            "description": "Create permissions in system",
-        },
-        {
-            "code": "admin:permission:update",
-            "scope": "admin",
-            "description": "Update permissions in system",
-        },
-        {
-            "code": "admin:permission:delete",
-            "scope": "admin",
-            "description": "Delete permissions from system",
-        },
-        # Admin team management
-        {
-            "code": "admin:team:read",
-            "scope": "admin",
-            "description": "View all teams in system",
-        },
-        {
-            "code": "admin:team:create",
-            "scope": "admin",
-            "description": "Create teams in system",
-        },
-        {
-            "code": "admin:team:update",
-            "scope": "admin",
-            "description": "Update any team in system",
-        },
-        {
-            "code": "admin:team:delete",
-            "scope": "admin",
-            "description": "Delete teams from system",
-        },
-        # Admin model management
-        {
-            "code": "admin:model:read",
-            "scope": "admin",
-            "description": "View model configurations",
-        },
-        {
-            "code": "admin:model:create",
-            "scope": "admin",
-            "description": "Create model configurations",
-        },
-        {
-            "code": "admin:model:update",
-            "scope": "admin",
-            "description": "Update model configurations",
-        },
-        {
-            "code": "admin:model:delete",
-            "scope": "admin",
-            "description": "Delete model configurations",
-        },
-        # Admin site settings
-        {
-            "code": "admin:settings:read",
-            "scope": "admin",
-            "description": "View site settings",
-        },
-        {
-            "code": "admin:settings:update",
-            "scope": "admin",
-            "description": "Update site settings",
-        },
-        # Admin audit logs
-        {
-            "code": "admin:audit:read",
-            "scope": "admin",
-            "description": "View audit logs",
-        },
-        {
-            "code": "admin:audit:export",
-            "scope": "admin",
-            "description": "Export audit logs",
-        },
-        # Admin conversation monitoring
-        {
-            "code": "admin:conversation:read",
-            "scope": "admin",
-            "description": "View all conversations in system",
-        },
-        {
-            "code": "admin:conversation:delete",
-            "scope": "admin",
-            "description": "Delete any conversation in system",
-        },
-        # Admin notification management
-        {
-            "code": "admin:notification:create",
-            "scope": "admin",
-            "description": "Create system notifications",
-        },
-        {
-            "code": "admin:notification:delete",
-            "scope": "admin",
-            "description": "Delete system notifications",
-        },
-        # Admin memory viewing
-        {
-            "code": "admin:memory:read",
-            "scope": "admin",
-            "description": "View all user memories in system",
-        },
-        # ===== PLATFORM PERMISSIONS (Team-scoped operations) =====
-        # Team permissions
-        {"code": "team:read", "scope": "team", "description": "Read teams"},
-        {"code": "team:create", "scope": "team", "description": "Create teams"},
-        {"code": "team:update", "scope": "team", "description": "Update teams"},
-        {"code": "team:delete", "scope": "team", "description": "Delete teams"},
-        {"code": "team:manage", "scope": "team", "description": "Manage team members"},
-        # Agent permissions
-        {
-            "code": "agent:read",
-            "scope": "agent",
-            "description": "Read agents",
-        },
-        {
-            "code": "agent:create",
-            "scope": "agent",
-            "description": "Create agents",
-        },
-        {
-            "code": "agent:update",
-            "scope": "agent",
-            "description": "Update agents",
-        },
-        {
-            "code": "agent:delete",
-            "scope": "agent",
-            "description": "Delete agents",
-        },
-        {
-            "code": "agent:publish",
-            "scope": "agent",
-            "description": "Publish/unpublish agents",
-        },
-        {
-            "code": "agent:chat",
-            "scope": "agent",
-            "description": "Chat with agents",
-        },
-        # Workflow permissions
-        {
-            "code": "workflow:read",
-            "scope": "workflow",
-            "description": "Read workflows",
-        },
-        {
-            "code": "workflow:create",
-            "scope": "workflow",
-            "description": "Create workflows",
-        },
-        {
-            "code": "workflow:update",
-            "scope": "workflow",
-            "description": "Update workflows",
-        },
-        {
-            "code": "workflow:delete",
-            "scope": "workflow",
-            "description": "Delete workflows",
-        },
-        {
-            "code": "workflow:publish",
-            "scope": "workflow",
-            "description": "Publish/unpublish workflows",
-        },
-        {
-            "code": "workflow:run",
-            "scope": "workflow",
-            "description": "Run workflows",
-        },
-        # Knowledge Base permissions
-        {
-            "code": "kb:read",
-            "scope": "kb",
-            "description": "Read knowledge bases",
-        },
-        {
-            "code": "kb:create",
-            "scope": "kb",
-            "description": "Create knowledge bases",
-        },
-        {
-            "code": "kb:update",
-            "scope": "kb",
-            "description": "Update knowledge bases",
-        },
-        {
-            "code": "kb:delete",
-            "scope": "kb",
-            "description": "Delete knowledge bases",
-        },
-        # Tool permissions
-        {
-            "code": "tool:read",
-            "scope": "tool",
-            "description": "Read tools",
-        },
-        {
-            "code": "tool:create",
-            "scope": "tool",
-            "description": "Create custom tools",
-        },
-        {
-            "code": "tool:update",
-            "scope": "tool",
-            "description": "Update custom tools",
-        },
-        {
-            "code": "tool:delete",
-            "scope": "tool",
-            "description": "Delete custom tools",
-        },
-        {
-            "code": "tool:execute",
-            "scope": "tool",
-            "description": "Execute tools",
-        },
-        # API Key permissions
-        {"code": "apikey:read", "scope": "apikey", "description": "Read API keys"},
-        {"code": "apikey:create", "scope": "apikey", "description": "Create API keys"},
-        {"code": "apikey:update", "scope": "apikey", "description": "Update API keys"},
-        {"code": "apikey:delete", "scope": "apikey", "description": "Delete API keys"},
-        # Conversation permissions
-        {
-            "code": "conversation:read",
-            "scope": "conversation",
-            "description": "Read conversations",
-        },
-        {
-            "code": "conversation:delete",
-            "scope": "conversation",
-            "description": "Delete conversations",
-        },
-        # Memory permissions
-        {
-            "code": "memory:read",
-            "scope": "memory",
-            "description": "Read user memories",
-        },
-        {
-            "code": "memory:create",
-            "scope": "memory",
-            "description": "Create user memories",
-        },
-        {
-            "code": "memory:update",
-            "scope": "memory",
-            "description": "Update user memories",
-        },
-        {
-            "code": "memory:delete",
-            "scope": "memory",
-            "description": "Delete user memories",
-        },
-        # System wildcard permission
-        {"code": "*", "scope": "system", "description": "All permissions (superuser)"},
-    ]
+    logger.info("Initializing permissions from SystemPermissions...")
+    permissions_data = SystemPermissions.get_all_definitions()
 
     logger.info("Initializing permissions...")
     for perm_data in permissions_data:
@@ -1373,6 +1109,7 @@ async def init_db():
             defaults={
                 "scope": perm_data["scope"],
                 "description": perm_data["description"],
+                "is_system": True,
             },
         )
 

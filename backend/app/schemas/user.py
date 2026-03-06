@@ -20,6 +20,7 @@ class PermissionCreate(PermissionBase):
 
 class Permission(PermissionBase):
     id: UUID
+    is_system: bool = True
 
     class Config:
         from_attributes = True
