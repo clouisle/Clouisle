@@ -223,7 +223,7 @@ export function MemoriesClient() {
   }
 
   return (
-    <PermissionGuard permission="memory:read">
+    <PermissionGuard permission="admin:memory:read">
       <div className="space-y-4">
         {/* Header */}
         <div>
@@ -274,7 +274,7 @@ export function MemoriesClient() {
             <span className="text-sm text-muted-foreground">
               {selectedEntities.size} {commonT('selected')}
             </span>
-            <PermissionGuard permission="memory:delete">
+            <PermissionGuard permission="admin:memory:delete">
               <Button
                 variant="destructive"
                 size="sm"
@@ -390,13 +390,13 @@ export function MemoriesClient() {
                           )}
                         />
                         <DropdownMenuContent align="end">
-                          {canPerform('memory:update') && (
+                          {canPerform('admin:memory:update') && (
                             <DropdownMenuItem onClick={() => handleEdit(entity)}>
                               <Pencil className="mr-2 h-4 w-4" />
                               {t('edit')}
                             </DropdownMenuItem>
                           )}
-                          {canPerform('memory:delete') && (
+                          {canPerform('admin:memory:delete') && (
                             <DropdownMenuItem
                               onClick={() => handleDelete(entity)}
                               className="text-destructive"

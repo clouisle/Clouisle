@@ -181,7 +181,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('memories'),
       url: '/memories',
       icon: Brain,
-      permission: 'memory:read',
+      permission: 'admin:memory:read',
     },
   ]
 
