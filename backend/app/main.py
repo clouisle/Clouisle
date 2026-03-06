@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
         init_agent_streaming_config,
         init_agent_user_input_request,
         init_agent_memory_fields,
+        init_permission_is_system_field,
     )
 
     try:
@@ -96,6 +97,11 @@ async def lifespan(app: FastAPI):
         await init_agent_memory_fields()
     except Exception as e:
         logger.warning(f"Agent memory fields migration failed: {e}")
+
+    try:
+        await init_permission_is_system_field()
+    except Exception as e:
+        logger.warning(f"Permission is_system field migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()
