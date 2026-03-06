@@ -21,6 +21,7 @@ import {
   Brain,
   Menu,
   X,
+  Key,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
@@ -329,6 +330,12 @@ export function PlatformHeader() {
               <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                 <Settings className="mr-2 h-4 w-4" />
                 {t('profile.title')}
+              </DropdownMenuItem>
+
+              {/* API Keys */}
+              <DropdownMenuItem onClick={() => router.push('/app/api-keys')}>
+                <Key className="mr-2 h-4 w-4" />
+                {t('apiKeys')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
 

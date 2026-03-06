@@ -93,6 +93,7 @@ def init_tortoise(**kwargs):
             db_url=settings.DATABASE_URL
             or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
             modules={"models": ["app.models"]},
+            _enable_global_fallback=True,  # Enable global state for compatibility
         )
 
     loop = asyncio.new_event_loop()

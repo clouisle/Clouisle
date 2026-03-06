@@ -209,6 +209,10 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
             if openai_tools:
                 request_params["tools"] = openai_tools
 
+            # Add response_format if provided in kwargs
+            if "response_format" in kwargs and kwargs["response_format"] is not None:
+                request_params["response_format"] = kwargs["response_format"]
+
             response = await client.chat.completions.create(**request_params)
 
             choice = response.choices[0]
@@ -302,6 +306,10 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                 request_params["max_completion_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+
+            # Add response_format if provided in kwargs
+            if "response_format" in kwargs and kwargs["response_format"] is not None:
+                request_params["response_format"] = kwargs["response_format"]
 
             stream = await client.chat.completions.create(**request_params)
 

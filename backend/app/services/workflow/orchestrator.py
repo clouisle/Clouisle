@@ -5,7 +5,7 @@ Main entry point for workflow execution. Coordinates execution plan,
 node executors, and stream events.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 import logging
@@ -325,7 +325,7 @@ class WorkflowOrchestrator:
 
         # Update run status to running
         run.status = RunStatus.RUNNING
-        run.started_at = datetime.utcnow()
+        run.started_at = datetime.now(timezone.utc)
         await run.save()
 
         # Record metrics - workflow start
@@ -530,7 +530,7 @@ class WorkflowOrchestrator:
         run.status = "success"
         run.outputs = outputs
         run.total_duration_ms = duration_ms
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
         logger.info(f"Completed workflow run {run.id}")
 
@@ -634,7 +634,7 @@ class WorkflowOrchestrator:
         run.status = "failed"
         run.error_message = error
         run.total_duration_ms = duration_ms
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
         logger.error(f"Failed workflow run {run.id}: {error}")
 
@@ -1025,7 +1025,7 @@ class WorkflowOrchestrator:
             node_name=node_label,
             execution_order=execution_order,
             status=NodeStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             config_snapshot=node_inner_data.get("config"),
         )
 
@@ -1088,7 +1088,7 @@ class WorkflowOrchestrator:
 
             # Update NodeExecution record - success
             node_execution.status = NodeStatus.SUCCESS
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.outputs = serializable_outputs
             await node_execution.save()
@@ -1115,7 +1115,7 @@ class WorkflowOrchestrator:
             # Update NodeExecution record - failed
             duration_ms = int((time.time() - start_time) * 1000)
             node_execution.status = NodeStatus.FAILED
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.error_message = str(e)
             node_execution.error_type = type(e).__name__
@@ -1125,7 +1125,7 @@ class WorkflowOrchestrator:
             # Update NodeExecution record - failed
             duration_ms = int((time.time() - start_time) * 1000)
             node_execution.status = NodeStatus.FAILED
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.error_message = str(e)
             node_execution.error_type = type(e).__name__
@@ -1161,7 +1161,7 @@ class WorkflowOrchestrator:
             return False
 
         run.status = "cancelled"
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
 
         # Set cancelled status in context

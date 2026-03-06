@@ -204,8 +204,8 @@ export default function KnowledgeBasePage() {
           <Card key={kb.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
             <Link href={`/app/kb/${kb.id}`} className="flex flex-col justify-between px-2.5 py-4 h-full">
               <div className="flex items-center gap-2">
-                <div className="rounded bg-primary/10 p-1 shrink-0">
-                  <Database className="h-3.5 w-3.5 text-primary" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Database className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{kb.name}</div>

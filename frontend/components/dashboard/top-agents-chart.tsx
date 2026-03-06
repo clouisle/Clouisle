@@ -120,11 +120,16 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const data = payload[0].payload as TopAgent
+                  const isIconUrl = data.icon?.startsWith('http://') || data.icon?.startsWith('https://')
                   return (
                     <div className="rounded-lg border bg-background p-3 shadow-md">
                       <div className="flex items-center gap-2 mb-2">
                         {data.icon ? (
-                          <span className="text-xl">{data.icon}</span>
+                          isIconUrl ? (
+                            <img src={data.icon} alt="" className="h-5 w-5 rounded object-cover" />
+                          ) : (
+                            <span className="text-xl">{data.icon}</span>
+                          )
                         ) : (
                           <Bot className="h-4 w-4" />
                         )}

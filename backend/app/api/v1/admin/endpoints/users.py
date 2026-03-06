@@ -109,7 +109,7 @@ async def read_users(
         None, description="Filter by status: active, inactive, pending"
     ),
     search: Optional[str] = Query(None, description="Search by username or email"),
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     skip = (page - 1) * page_size
     query = User.all()
@@ -146,7 +146,7 @@ async def read_users(
 
 @router.get("/stats", response_model=Response[dict])
 async def get_user_stats(
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     total = await User.all().count()
     active = await User.filter(is_active=True).count()
@@ -168,7 +168,7 @@ async def create_user(
     *,
     request: Request,
     user_in: UserCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:create")),
 ) -> Any:
     existing_user = await User.filter(username=user_in.username).first()
     if existing_user:
@@ -223,7 +223,7 @@ async def send_email_to_users(
     *,
     data: SendEmailRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
     if not smtp_enabled:
@@ -300,7 +300,7 @@ async def send_email_to_users(
 @router.get("/{user_id}", response_model=Response[UserSchema])
 async def read_user_by_id(
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     user = await User.filter(id=user_id).prefetch_related("roles__permissions").first()
     if not user:
@@ -316,7 +316,7 @@ async def read_user_by_id(
 async def activate_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -364,7 +364,7 @@ async def activate_user(
 async def deactivate_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -420,7 +420,7 @@ async def update_user(
     request: Request,
     user_id: UUID,
     user_in: UserUpdate,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -484,7 +484,7 @@ async def update_user(
 async def delete_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:delete")),
 ) -> Any:
     user = await User.filter(id=user_id).prefetch_related("roles__permissions").first()
     if not user:

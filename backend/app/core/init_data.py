@@ -1047,97 +1047,175 @@ async def init_db():
 
     # 1. Initialize Permissions
     permissions_data = [
-        # Dashboard access permission
+        # ===== ADMIN PERMISSIONS (System-wide management) =====
+        # Admin dashboard
         {
-            "code": "dashboard:access",
-            "scope": "dashboard",
+            "code": "admin:dashboard:access",
+            "scope": "admin",
             "description": "Access admin dashboard",
         },
-        # User permissions
-        {"code": "user:read", "scope": "user", "description": "Read users"},
-        {"code": "user:create", "scope": "user", "description": "Create users"},
-        {"code": "user:update", "scope": "user", "description": "Update users"},
-        {"code": "user:delete", "scope": "user", "description": "Delete users"},
+        # Admin user management
         {
-            "code": "user:manage",
-            "scope": "user",
-            "description": "Manage users, roles, permissions",
-        },
-        # Role permissions
-        {"code": "role:read", "scope": "role", "description": "Read roles"},
-        {"code": "role:create", "scope": "role", "description": "Create roles"},
-        {"code": "role:update", "scope": "role", "description": "Update roles"},
-        {"code": "role:delete", "scope": "role", "description": "Delete roles"},
-        # Permission permissions
-        {
-            "code": "permission:read",
-            "scope": "permission",
-            "description": "Read permissions",
+            "code": "admin:user:read",
+            "scope": "admin",
+            "description": "View all users across system",
         },
         {
-            "code": "permission:create",
-            "scope": "permission",
-            "description": "Create permissions",
+            "code": "admin:user:create",
+            "scope": "admin",
+            "description": "Create users in system",
         },
         {
-            "code": "permission:update",
-            "scope": "permission",
-            "description": "Update permissions",
+            "code": "admin:user:update",
+            "scope": "admin",
+            "description": "Update any user in system",
         },
         {
-            "code": "permission:delete",
-            "scope": "permission",
-            "description": "Delete permissions",
+            "code": "admin:user:delete",
+            "scope": "admin",
+            "description": "Delete users from system",
         },
+        # Admin role management
+        {
+            "code": "admin:role:read",
+            "scope": "admin",
+            "description": "View all roles in system",
+        },
+        {
+            "code": "admin:role:create",
+            "scope": "admin",
+            "description": "Create roles in system",
+        },
+        {
+            "code": "admin:role:update",
+            "scope": "admin",
+            "description": "Update roles in system",
+        },
+        {
+            "code": "admin:role:delete",
+            "scope": "admin",
+            "description": "Delete roles from system",
+        },
+        # Admin permission management
+        {
+            "code": "admin:permission:read",
+            "scope": "admin",
+            "description": "View all permissions in system",
+        },
+        {
+            "code": "admin:permission:create",
+            "scope": "admin",
+            "description": "Create permissions in system",
+        },
+        {
+            "code": "admin:permission:update",
+            "scope": "admin",
+            "description": "Update permissions in system",
+        },
+        {
+            "code": "admin:permission:delete",
+            "scope": "admin",
+            "description": "Delete permissions from system",
+        },
+        # Admin team management
+        {
+            "code": "admin:team:read",
+            "scope": "admin",
+            "description": "View all teams in system",
+        },
+        {
+            "code": "admin:team:create",
+            "scope": "admin",
+            "description": "Create teams in system",
+        },
+        {
+            "code": "admin:team:update",
+            "scope": "admin",
+            "description": "Update any team in system",
+        },
+        {
+            "code": "admin:team:delete",
+            "scope": "admin",
+            "description": "Delete teams from system",
+        },
+        # Admin model management
+        {
+            "code": "admin:model:read",
+            "scope": "admin",
+            "description": "View model configurations",
+        },
+        {
+            "code": "admin:model:create",
+            "scope": "admin",
+            "description": "Create model configurations",
+        },
+        {
+            "code": "admin:model:update",
+            "scope": "admin",
+            "description": "Update model configurations",
+        },
+        {
+            "code": "admin:model:delete",
+            "scope": "admin",
+            "description": "Delete model configurations",
+        },
+        # Admin site settings
+        {
+            "code": "admin:settings:read",
+            "scope": "admin",
+            "description": "View site settings",
+        },
+        {
+            "code": "admin:settings:update",
+            "scope": "admin",
+            "description": "Update site settings",
+        },
+        # Admin audit logs
+        {
+            "code": "admin:audit:read",
+            "scope": "admin",
+            "description": "View audit logs",
+        },
+        {
+            "code": "admin:audit:export",
+            "scope": "admin",
+            "description": "Export audit logs",
+        },
+        # Admin conversation monitoring
+        {
+            "code": "admin:conversation:read",
+            "scope": "admin",
+            "description": "View all conversations in system",
+        },
+        {
+            "code": "admin:conversation:delete",
+            "scope": "admin",
+            "description": "Delete any conversation in system",
+        },
+        # Admin notification management
+        {
+            "code": "admin:notification:create",
+            "scope": "admin",
+            "description": "Create system notifications",
+        },
+        {
+            "code": "admin:notification:delete",
+            "scope": "admin",
+            "description": "Delete system notifications",
+        },
+        # Admin memory viewing
+        {
+            "code": "admin:memory:read",
+            "scope": "admin",
+            "description": "View all user memories in system",
+        },
+        # ===== PLATFORM PERMISSIONS (Team-scoped operations) =====
         # Team permissions
         {"code": "team:read", "scope": "team", "description": "Read teams"},
         {"code": "team:create", "scope": "team", "description": "Create teams"},
         {"code": "team:update", "scope": "team", "description": "Update teams"},
         {"code": "team:delete", "scope": "team", "description": "Delete teams"},
         {"code": "team:manage", "scope": "team", "description": "Manage team members"},
-        # Site settings permissions
-        {
-            "code": "settings:read",
-            "scope": "settings",
-            "description": "Read site settings",
-        },
-        {
-            "code": "settings:update",
-            "scope": "settings",
-            "description": "Update site settings",
-        },
-        # Audit log permissions
-        {
-            "code": "audit:read",
-            "scope": "audit",
-            "description": "Read audit logs",
-        },
-        {
-            "code": "audit:export",
-            "scope": "audit",
-            "description": "Export audit logs",
-        },
-        # Model permissions
-        {
-            "code": "model:read",
-            "scope": "model",
-            "description": "Read model configurations",
-        },
-        {
-            "code": "model:create",
-            "scope": "model",
-            "description": "Create model configurations",
-        },
-        {
-            "code": "model:update",
-            "scope": "model",
-            "description": "Update model configurations",
-        },
-        {
-            "code": "model:delete",
-            "scope": "model",
-            "description": "Delete model configurations",
-        },
         # Agent permissions
         {
             "code": "agent:read",
@@ -1324,67 +1402,68 @@ async def init_db():
     )
     if created:
         admin_permissions = [
-            # Dashboard access
-            "dashboard:access",
-            # User management
-            "user:read",
-            "user:create",
-            "user:update",
-            "user:delete",
-            # Role management
-            "role:read",
-            "role:create",
-            "role:update",
-            "role:delete",
-            # Permission read
-            "permission:read",
-            # Model management
-            "model:read",
-            "model:create",
-            "model:update",
-            "model:delete",
-            # Site settings (read only)
-            "settings:read",
-            # Audit logs
-            "audit:read",
-            "audit:export",
-            # Team permissions (with data isolation)
+            # Admin permissions (system-wide)
+            "admin:dashboard:access",
+            "admin:user:read",
+            "admin:user:create",
+            "admin:user:update",
+            "admin:user:delete",
+            "admin:role:read",
+            "admin:role:create",
+            "admin:role:update",
+            "admin:role:delete",
+            "admin:permission:read",
+            "admin:permission:create",
+            "admin:permission:update",
+            "admin:permission:delete",
+            "admin:team:read",
+            "admin:team:create",
+            "admin:team:update",
+            "admin:team:delete",
+            "admin:model:read",
+            "admin:model:create",
+            "admin:model:update",
+            "admin:model:delete",
+            "admin:settings:read",
+            "admin:settings:update",
+            "admin:audit:read",
+            "admin:audit:export",
+            "admin:conversation:read",
+            "admin:conversation:delete",
+            "admin:notification:create",
+            "admin:notification:delete",
+            "admin:memory:read",
+            # Platform permissions (team-scoped)
             "team:read",
             "team:create",
             "team:update",
             "team:delete",
             "team:manage",
-            # Agent permissions (with data isolation)
             "agent:read",
             "agent:create",
             "agent:update",
             "agent:delete",
             "agent:publish",
             "agent:chat",
-            # Workflow permissions (with data isolation)
             "workflow:read",
             "workflow:create",
             "workflow:update",
             "workflow:delete",
             "workflow:publish",
             "workflow:run",
-            # Knowledge Base permissions (with data isolation)
             "kb:read",
             "kb:create",
             "kb:update",
             "kb:delete",
-            # Tool permissions (with data isolation)
             "tool:read",
             "tool:create",
             "tool:update",
             "tool:delete",
             "tool:execute",
-            # API Key permissions (with data isolation)
             "apikey:read",
             "apikey:create",
             "apikey:update",
             "apikey:delete",
-            # Conversation permissions (with data isolation)
             "conversation:read",
             "conversation:delete",
         ]
@@ -1396,23 +1475,38 @@ async def init_db():
     else:
         # Ensure existing Admin role has all required permissions
         admin_permissions = [
-            "dashboard:access",
-            "user:read",
-            "user:create",
-            "user:update",
-            "user:delete",
-            "role:read",
-            "role:create",
-            "role:update",
-            "role:delete",
-            "permission:read",
-            "model:read",
-            "model:create",
-            "model:update",
-            "model:delete",
-            "settings:read",
-            "audit:read",
-            "audit:export",
+            # Admin permissions (system-wide)
+            "admin:dashboard:access",
+            "admin:user:read",
+            "admin:user:create",
+            "admin:user:update",
+            "admin:user:delete",
+            "admin:role:read",
+            "admin:role:create",
+            "admin:role:update",
+            "admin:role:delete",
+            "admin:permission:read",
+            "admin:permission:create",
+            "admin:permission:update",
+            "admin:permission:delete",
+            "admin:team:read",
+            "admin:team:create",
+            "admin:team:update",
+            "admin:team:delete",
+            "admin:model:read",
+            "admin:model:create",
+            "admin:model:update",
+            "admin:model:delete",
+            "admin:settings:read",
+            "admin:settings:update",
+            "admin:audit:read",
+            "admin:audit:export",
+            "admin:conversation:read",
+            "admin:conversation:delete",
+            "admin:notification:create",
+            "admin:notification:delete",
+            "admin:memory:read",
+            # Platform permissions (team-scoped)
             "team:read",
             "team:create",
             "team:update",

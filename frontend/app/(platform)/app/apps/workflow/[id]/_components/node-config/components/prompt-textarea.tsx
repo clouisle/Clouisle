@@ -92,7 +92,7 @@ function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): 
 // Safe wrapper for setting innerHTML with sanitized content
 // lgtm[js/xss] - All user input is escaped via escapeHtml()
 function setSafeInnerHTML(element: HTMLElement, html: string): void {
-  // eslint-disable-next-line no-param-reassign
+   
   element.innerHTML = html
 }
 

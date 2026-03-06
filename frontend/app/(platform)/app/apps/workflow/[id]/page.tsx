@@ -431,6 +431,7 @@ function WorkflowEditorContent() {
   const onNodeClick = React.useCallback((event: React.MouseEvent, node: WorkflowNode) => {
     setSelectedNode(node)
     setSettingsDrawerOpen(false)
+    setTestRunDrawerOpen(false)
     setConfigDrawerOpen(true)
   }, [])
 

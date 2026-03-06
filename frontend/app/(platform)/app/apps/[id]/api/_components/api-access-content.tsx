@@ -92,6 +92,8 @@ export function ApiAccessContent({ agent }: ApiAccessContentProps) {
     message: "Hello, how can you help me?",
     conversation_id: null,
     variables: {},
+    images: [],
+    file_urls: [],
   }, null, 2)
 
   // Sample cURL command
@@ -103,6 +105,8 @@ export function ApiAccessContent({ agent }: ApiAccessContentProps) {
     message: "Hello, how can you help me?",
     conversation_id: null,
     variables: {},
+    images: [],
+    file_urls: [],
   })}'`
 
   // Sample Python code
@@ -121,6 +125,8 @@ data = {
     "message": "Hello, how can you help me?",
     "conversation_id": None,
     "variables": {},
+    "images": [],
+    "file_urls": [],
 }
 
 response = requests.post(url, headers=headers, json=data, stream=True)
@@ -148,6 +154,8 @@ const response = await fetch(
       message: "Hello, how can you help me?",
       conversation_id: null,
       variables: {},
+      images: [],
+      file_urls: [],
     }),
   }
 );
@@ -158,10 +166,10 @@ const decoder = new TextDecoder();
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
-  
+
   const text = decoder.decode(value);
   const lines = text.split("\\n");
-  
+
   for (const line of lines) {
     if (line.startsWith("data: ")) {
       const data = JSON.parse(line.slice(6));
@@ -181,6 +189,7 @@ while (true) {
     { event: 'content_delta', description: t('events.contentDelta') },
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
+    { event: 'user_input_request', description: t('events.userInputRequest') },
     { event: 'message_end', description: t('events.messageEnd') },
     { event: 'error', description: t('events.error') },
   ]
@@ -194,9 +203,9 @@ while (true) {
             <h1 className="text-xl font-semibold">{t('title')}</h1>
             <p className="text-sm text-muted-foreground mt-1">{t('description')}</p>
           </div>
-          <a 
-            href="/settings/api-keys" 
-            target="_blank" 
+          <a
+            href="/app/api-keys"
+            target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
           >
@@ -268,6 +277,18 @@ while (true) {
                       <td className="px-4 py-2">object</td>
                       <td className="px-4 py-2">{t('no')}</td>
                       <td className="px-4 py-2 text-muted-foreground">{t('params.variables')}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td className="px-4 py-2"><code>images</code></td>
+                      <td className="px-4 py-2">array</td>
+                      <td className="px-4 py-2">{t('no')}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{t('params.images')}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td className="px-4 py-2"><code>file_urls</code></td>
+                      <td className="px-4 py-2">array</td>
+                      <td className="px-4 py-2">{t('no')}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{t('params.fileUrls')}</td>
                     </tr>
                   </tbody>
                 </table>

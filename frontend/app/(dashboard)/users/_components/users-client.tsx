@@ -95,8 +95,21 @@ export function UsersClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [roleFilter, setRoleFilter] = React.useState<Set<string>>(new Set())
+
+  // 防抖搜索
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+      if (searchQuery !== debouncedSearchQuery) {
+        setPage(1) // 搜索时重置到第一页
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
   
   // 选择状态
   const [selectedUsers, setSelectedUsers] = React.useState<Set<string>>(new Set())
@@ -135,7 +148,11 @@ export function UsersClient() {
   const loadUsers = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await usersApi.getUsers({ page, pageSize })
+      const data = await usersApi.getUsers({
+        page,
+        pageSize,
+        search: debouncedSearchQuery || undefined,
+      })
       setUsers(data.items)
       setPageData(data)
     } catch {
@@ -143,25 +160,16 @@ export function UsersClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
-  
+  }, [page, pageSize, debouncedSearchQuery])
+
   React.useEffect(() => {
     loadUsers()
     loadStats()
   }, [loadUsers, loadStats])
-  
-  // 筛选用户
+
+  // 本地筛选（仅状态和角色）
   const filteredUsers = React.useMemo(() => {
     return users.filter(user => {
-      // 搜索筛选
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        if (!user.username.toLowerCase().includes(query) &&
-            !user.email.toLowerCase().includes(query)) {
-          return false
-        }
-      }
-      
       // 状态筛选
       if (statusFilter.size > 0) {
         const isActive = user.is_active
@@ -169,16 +177,16 @@ export function UsersClient() {
           return false
         }
       }
-      
+
       // 角色筛选
       if (roleFilter.size > 0) {
         const hasMatchingRole = user.roles.some(role => roleFilter.has(role.name))
         if (!hasMatchingRole) return false
       }
-      
+
       return true
     })
-  }, [users, searchQuery, statusFilter, roleFilter])
+  }, [users, statusFilter, roleFilter])
   
   // 检查是否有筛选条件
   const isFiltered = searchQuery || statusFilter.size > 0 || roleFilter.size > 0
@@ -376,7 +384,7 @@ export function UsersClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="user:create">
+          <PermissionGuard permission="admin:user:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createUser')}
@@ -527,14 +535,14 @@ export function UsersClient() {
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {canPerform('user:update') && (
+                        {canPerform('admin:user:update') && (
                           <DropdownMenuItem onClick={() => handleEdit(user)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {commonT('edit')}
                           </DropdownMenuItem>
                         )}
 
-                        {canPerform('user:update') && (
+                        {canPerform('admin:user:update') && (
                           <DropdownMenuItem onClick={() => handleToggleStatus(user)}>
                             {user.is_active ? (
                               <>
@@ -550,7 +558,7 @@ export function UsersClient() {
                           </DropdownMenuItem>
                         )}
 
-                        {canPerform('user:delete') && (
+                        {canPerform('admin:user:delete') && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -694,7 +702,7 @@ export function UsersClient() {
               <TooltipContent>{t('sendEmail')}</TooltipContent>
             </Tooltip>
 
-            {canPerform('user:update') && (
+            {canPerform('admin:user:update') && (
               <>
                 <Tooltip>
                   <TooltipTrigger
@@ -730,7 +738,7 @@ export function UsersClient() {
               </>
             )}
 
-            {canPerform('user:delete') && (
+            {canPerform('admin:user:delete') && (
               <Tooltip>
                 <TooltipTrigger
                   onClick={handleBulkDelete}

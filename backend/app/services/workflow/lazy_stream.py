@@ -31,10 +31,11 @@ class LazyStreamResult:
     temperature: float
     max_tokens: int | None
     top_p: float
+    response_format: dict[str, Any] | None = None
 
     # Context for execution
-    context: "ExecutionContext"
-    source_node_id: str
+    context: "ExecutionContext" = None  # type: ignore
+    source_node_id: str = ""
 
     # State
     _executed: bool = False
@@ -72,6 +73,7 @@ class LazyStreamResult:
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             top_p=self.top_p,
+            response_format=self.response_format,
         ):
             # ChatStreamChunk has delta with content
             if chunk.delta and chunk.delta.content:

@@ -13,9 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2 } from 'lucide-react'
 import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export default function SiteSettingsSecurityPage() {
   const t = useTranslations('siteSettings')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:settings:update')
   
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -134,6 +137,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.allow_registration}
               onCheckedChange={(checked) => updateSetting('allow_registration', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -144,6 +148,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.require_approval}
               onCheckedChange={(checked) => updateSetting('require_approval', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -154,6 +159,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.email_verification}
               onCheckedChange={(checked) => updateSetting('email_verification', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -164,6 +170,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.allow_account_deletion}
               onCheckedChange={(checked) => updateSetting('allow_account_deletion', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -174,6 +181,7 @@ export default function SiteSettingsSecurityPage() {
             <Select
               value={settings.default_role_id}
               onValueChange={(value) => updateSetting('default_role_id', value ?? '')}
+              disabled={!canUpdate}
             >
               <SelectTrigger className="w-48">
                 <SelectValue>
@@ -200,14 +208,15 @@ export default function SiteSettingsSecurityPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="minLength">{t('minPasswordLength')}</Label>
-            <Input 
-              id="minLength" 
-              type="number" 
+            <Input
+              id="minLength"
+              type="number"
               value={settings.min_password_length}
               onChange={(e) => updateSetting('min_password_length', parseInt(e.target.value) || 8)}
-              min={6} 
-              max={32} 
-              className="w-32" 
+              min={6}
+              max={32}
+              className="w-32"
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -215,9 +224,10 @@ export default function SiteSettingsSecurityPage() {
               <Label>{t('requireUppercase')}</Label>
               <p className="text-sm text-muted-foreground">{t('requireUppercaseDescription')}</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.require_uppercase}
               onCheckedChange={(checked) => updateSetting('require_uppercase', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -225,9 +235,10 @@ export default function SiteSettingsSecurityPage() {
               <Label>{t('requireNumber')}</Label>
               <p className="text-sm text-muted-foreground">{t('requireNumberDescription')}</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.require_number}
               onCheckedChange={(checked) => updateSetting('require_number', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -235,9 +246,10 @@ export default function SiteSettingsSecurityPage() {
               <Label>{t('requireSpecialChar')}</Label>
               <p className="text-sm text-muted-foreground">{t('requireSpecialCharDescription')}</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.require_special_char}
               onCheckedChange={(checked) => updateSetting('require_special_char', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -252,13 +264,14 @@ export default function SiteSettingsSecurityPage() {
           <div className="space-y-2">
             <Label htmlFor="sessionTimeout">{t('sessionTimeout')}</Label>
             <div className="flex items-center gap-2">
-              <Input 
-                id="sessionTimeout" 
-                type="number" 
+              <Input
+                id="sessionTimeout"
+                type="number"
                 value={settings.session_timeout_days}
                 onChange={(e) => updateSetting('session_timeout_days', parseInt(e.target.value) || 30)}
-                min={1} 
-                className="w-32" 
+                min={1}
+                className="w-32"
+                disabled={!canUpdate}
               />
               <span className="text-sm text-muted-foreground">{t('days')}</span>
             </div>
@@ -268,9 +281,10 @@ export default function SiteSettingsSecurityPage() {
               <Label>{t('singleSession')}</Label>
               <p className="text-sm text-muted-foreground">{t('singleSessionDescription')}</p>
             </div>
-            <Switch 
+            <Switch
               checked={settings.single_session}
               onCheckedChange={(checked) => updateSetting('single_session', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -292,6 +306,7 @@ export default function SiteSettingsSecurityPage() {
               min={3}
               max={10}
               className="w-32"
+              disabled={!canUpdate}
             />
           </div>
           <div className="space-y-2">
@@ -304,6 +319,7 @@ export default function SiteSettingsSecurityPage() {
                 onChange={(e) => updateSetting('lockout_duration_minutes', parseInt(e.target.value) || 15)}
                 min={1}
                 className="w-32"
+                disabled={!canUpdate}
               />
               <span className="text-sm text-muted-foreground">{t('minutes')}</span>
             </div>
@@ -316,6 +332,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.enable_captcha}
               onCheckedChange={(checked) => updateSetting('enable_captcha', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -335,6 +352,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.sso_enabled}
               onCheckedChange={(checked) => updateSetting('sso_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -345,7 +363,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.sso_allow_password_login}
               onCheckedChange={(checked) => updateSetting('sso_allow_password_login', checked)}
-              disabled={!settings.sso_enabled}
+              disabled={!settings.sso_enabled || !canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -356,7 +374,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.sso_auto_create_users}
               onCheckedChange={(checked) => updateSetting('sso_auto_create_users', checked)}
-              disabled={!settings.sso_enabled}
+              disabled={!settings.sso_enabled || !canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -367,7 +385,7 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.sso_require_approval}
               onCheckedChange={(checked) => updateSetting('sso_require_approval', checked)}
-              disabled={!settings.sso_enabled}
+              disabled={!settings.sso_enabled || !canUpdate}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -378,18 +396,20 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.sso_match_by_email}
               onCheckedChange={(checked) => updateSetting('sso_match_by_email', checked)}
-              disabled={!settings.sso_enabled}
+              disabled={!settings.sso_enabled || !canUpdate}
             />
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('saveChanges')}
-        </Button>
-      </div>
+      <PermissionGuard permission="admin:settings:update">
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('saveChanges')}
+          </Button>
+        </div>
+      </PermissionGuard>
     </div>
   )
 }

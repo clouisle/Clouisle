@@ -395,7 +395,9 @@
       "params": {
         "message": "用户输入的消息内容",
         "conversationId": "多轮对话的会话 ID。首次发送消息时留空（null），响应的 message_start 事件中会返回 conversation_id。后续请求中使用该 ID 即可带上下文继续对话。",
-        "variables": "Agent 变量的值（如果定义了变量）"
+        "variables": "Agent 变量的值（如果定义了变量）",
+        "images": "图片对象数组，用于支持视觉的 Agent。每个对象应包含 url 字段，值为 data URL（data:image/png;base64,...）或远程 URL。",
+        "fileUrls": "文件 URL 对象数组，用于文件上传。后端会下载、解析并将内容注入到 fileContent 变量中。每个对象应包含 url、filename、mime_type 和 size 字段。"
       },
       "responseFormat": "响应格式",
       "sseDescription": "响应使用 Server-Sent Events (SSE) 格式进行流式传输。以下是可能接收到的事件类型：",
@@ -411,6 +413,7 @@
         "contentDelta": "回复内容增量",
         "toolCall": "工具调用，包含工具名称和参数",
         "toolResult": "工具执行结果",
+        "userInputRequest": "Agent 请求用户输入，包含预定义选项",
         "messageEnd": "消息结束，包含 token 用量统计",
         "error": "错误信息"
       },

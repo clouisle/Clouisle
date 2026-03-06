@@ -395,7 +395,9 @@
       "params": {
         "message": "The user's message content",
         "conversationId": "Conversation ID for multi-turn dialogue. Leave empty (null) for first message, the response will return a conversation_id in the message_start event. Use this ID in subsequent requests to continue the conversation with context.",
-        "variables": "Values for Agent variables (if defined)"
+        "variables": "Values for Agent variables (if defined)",
+        "images": "Array of image objects for vision-enabled agents. Each object should contain a url field with either a data URL (data:image/png;base64,...) or remote URL.",
+        "fileUrls": "Array of file URL objects for file upload. Backend will download, parse and inject content into the fileContent variable. Each object should contain url, filename, mime_type, and size fields."
       },
       "responseFormat": "Response Format",
       "sseDescription": "Responses are streamed using Server-Sent Events (SSE) format. Here are the possible event types:",
@@ -411,6 +413,7 @@
         "contentDelta": "Response content delta",
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
+        "userInputRequest": "Agent requests user input with predefined options",
         "messageEnd": "Message ended with token usage statistics",
         "error": "Error message"
       },

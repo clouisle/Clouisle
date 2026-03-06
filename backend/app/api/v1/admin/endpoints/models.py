@@ -43,7 +43,7 @@ async def list_models(
     model_type: Optional[str] = Query(None),
     is_enabled: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.PermissionChecker("model:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:read")),
 ) -> Any:
     skip = (page - 1) * page_size
     query = Model.all()
@@ -76,7 +76,7 @@ async def list_models(
 async def create_model(
     *,
     model_in: ModelCreate,
-    current_user: User = Depends(deps.PermissionChecker("model:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
     existing = await Model.filter(
         provider=model_in.provider.value, model_id=model_in.model_id
@@ -103,7 +103,7 @@ async def create_model(
 @router.get("/{model_id}", response_model=Response[ModelResponse])
 async def get_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:read")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -119,7 +119,7 @@ async def get_model(
 async def update_model(
     model_id: UUID,
     model_in: ModelUpdate,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -152,7 +152,7 @@ async def update_model(
 @router.delete("/{model_id}", response_model=Response[ModelResponse])
 async def delete_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:delete")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -170,7 +170,7 @@ async def delete_model(
 @router.post("/{model_id}/test", response_model=Response[ModelTestResponse])
 async def test_model_connection(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -257,7 +257,7 @@ async def test_model_connection(
 @router.post("/{model_id}/set-default", response_model=Response[ModelResponse])
 async def set_default_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -284,7 +284,7 @@ async def set_default_model(
 @router.post("/test", response_model=Response[ModelTestResponse])
 async def test_model_config(
     test_request: ModelTestRequest,
-    current_user: User = Depends(deps.PermissionChecker("model:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
     provider = test_request.provider
     model_id = test_request.model_id

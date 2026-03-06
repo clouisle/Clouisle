@@ -6,7 +6,6 @@ import { useTranslations } from 'next-intl'
 import { ArrowLeft, Loader2, ExternalLink, FileText, Activity, LayoutGrid, GitBranch } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,11 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { workflowsApi, type Workflow } from '@/lib/api/workflows'
-import { API_BASE_URL } from '@/lib/constants'
-import { ApiOverview } from './_components/api-overview'
-import { CodeExamples } from './_components/code-examples'
-import { ApiPlayground } from './_components/api-playground'
-import { ResponseSchema } from './_components/response-schema'
+import { WorkflowApiContent } from './_components/workflow-api-content'
 
 export default function WorkflowApiPage() {
   const params = useParams()
@@ -69,17 +64,6 @@ export default function WorkflowApiPage() {
       </div>
     )
   }
-
-  // 用于测试的相对路径（通过 Next.js 代理）
-  const webhookUrl = workflow.webhook_token
-    ? `/api/v1/workflows/webhook/${workflow.webhook_token}`
-    : ''
-
-  // 用于显示和外部调用的完整 URL
-  const apiBaseUrl = API_BASE_URL.replace('/api/v1', '')
-  const fullWebhookUrl = workflow.webhook_token
-    ? `${apiBaseUrl}/api/v1/workflows/webhook/${workflow.webhook_token}`
-    : ''
 
   return (
     <div className="flex h-screen flex-col">
@@ -150,32 +134,7 @@ export default function WorkflowApiPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto pt-20">
-        <div className="mx-auto max-w-5xl px-6 pb-20">
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="overview">{t('overview')}</TabsTrigger>
-              <TabsTrigger value="examples">{t('examples')}</TabsTrigger>
-              <TabsTrigger value="playground">{t('playground')}</TabsTrigger>
-              <TabsTrigger value="response">{t('response')}</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="overview" className="mt-6">
-              <ApiOverview workflow={workflow} webhookUrl={fullWebhookUrl} />
-            </TabsContent>
-
-            <TabsContent value="examples" className="mt-6">
-              <CodeExamples webhookUrl={fullWebhookUrl} variables={workflow.variables} />
-            </TabsContent>
-
-            <TabsContent value="playground" className="mt-6">
-              <ApiPlayground webhookUrl={webhookUrl} variables={workflow.variables} />
-            </TabsContent>
-
-            <TabsContent value="response" className="mt-6">
-              <ResponseSchema />
-            </TabsContent>
-          </Tabs>
-        </div>
+        <WorkflowApiContent workflow={workflow} />
       </div>
     </div>
   )

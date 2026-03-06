@@ -342,7 +342,7 @@ export function ModelsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="model:create">
+          <PermissionGuard permission="admin:model:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createModel')}
@@ -471,14 +471,14 @@ export function ModelsClient() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {(canPerform('model:update') || canPerform('model:delete')) && (
+                    {(canPerform('admin:model:update') || canPerform('admin:model:delete')) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {canPerform('model:update') && (
+                          {canPerform('admin:model:update') && (
                             <>
                               <DropdownMenuItem onClick={() => handleEdit(model)}>
                                 <Pencil className="mr-2 h-4 w-4" />
@@ -515,7 +515,7 @@ export function ModelsClient() {
                             </>
                           )}
 
-                          {canPerform('model:delete') && (
+                          {canPerform('admin:model:delete') && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -622,7 +622,7 @@ export function ModelsClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedModels.size > 0 && canPerform('model:delete') && (
+      {selectedModels.size > 0 && canPerform('admin:model:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

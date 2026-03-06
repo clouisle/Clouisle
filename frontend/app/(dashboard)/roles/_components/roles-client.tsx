@@ -78,7 +78,20 @@ export function RolesClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
-  
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+
+  // 防抖搜索
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+      if (searchQuery !== debouncedSearchQuery) {
+        setPage(1) // 搜索时重置到第一页
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   // 选择状态
   const [selectedRoles, setSelectedRoles] = React.useState<Set<string>>(new Set())
   
@@ -92,7 +105,7 @@ export function RolesClient() {
   const loadRoles = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await rolesApi.getRoles(page, pageSize)
+      const data = await rolesApi.getRoles(page, pageSize, debouncedSearchQuery || undefined)
       setRoles(data.items)
       setPageData(data)
     } catch {
@@ -100,29 +113,16 @@ export function RolesClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
-  
+  }, [page, pageSize, debouncedSearchQuery])
+
   React.useEffect(() => {
     loadRoles()
   }, [loadRoles])
-  
-  // 过滤角色
-  const filteredRoles = React.useMemo(() => {
-    return roles.filter(role => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const matchName = role.name.toLowerCase().includes(query)
-        const matchDesc = role.description?.toLowerCase().includes(query) ?? false
-        if (!matchName && !matchDesc) return false
-      }
-      return true
-    })
-  }, [roles, searchQuery])
-  
+
   // 可选择的角色（非系统角色）
   const selectableRoles = React.useMemo(() => {
-    return filteredRoles.filter(role => !role.is_system_role)
-  }, [filteredRoles])
+    return roles.filter(role => !role.is_system_role)
+  }, [roles])
   
   // 分页计算
   const totalPages = pageData ? Math.ceil(pageData.total / pageSize) : 1
@@ -207,7 +207,7 @@ export function RolesClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="role:create">
+          <PermissionGuard permission="admin:role:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createRole')}
@@ -268,14 +268,14 @@ export function RolesClient() {
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
-            ) : filteredRoles.length === 0 ? (
+            ) : roles.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   {t('noRoles')}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredRoles.map((role) => (
+              roles.map((role) => (
                 <TableRow key={role.id} data-state={selectedRoles.has(role.id) ? 'selected' : undefined}>
                   <TableCell>
                     <Checkbox
@@ -313,23 +313,23 @@ export function RolesClient() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {(canPerform('role:update') || canPerform('role:delete')) && (
+                    {(canPerform('admin:role:update') || canPerform('admin:role:delete')) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {canPerform('role:update') && (
+                          {canPerform('admin:role:update') && (
                             <DropdownMenuItem onClick={() => handleEdit(role)}>
                               <Pencil className="mr-2 h-4 w-4" />
                               {commonT('edit')}
                             </DropdownMenuItem>
                           )}
 
-                          {!role.is_system_role && canPerform('role:delete') && (
+                          {!role.is_system_role && canPerform('admin:role:delete') && (
                             <>
-                              {canPerform('role:update') && <DropdownMenuSeparator />}
+                              {canPerform('admin:role:update') && <DropdownMenuSeparator />}
                               <DropdownMenuItem
                                 onClick={() => handleDelete(role)}
                                 className="text-destructive focus:text-destructive"
@@ -432,7 +432,7 @@ export function RolesClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedRoles.size > 0 && canPerform('role:delete') && (
+      {selectedRoles.size > 0 && canPerform('admin:role:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

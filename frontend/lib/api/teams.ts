@@ -65,13 +65,6 @@ export interface TeamMemberUpdateInput {
 
 export const teamsApi = {
   /**
-   * 获取团队列表
-   */
-  getTeams: async (page: number = 1, pageSize: number = 50): Promise<PageData<Team>> => {
-    return api.get<PageData<Team>>(`/teams?page=${page}&page_size=${pageSize}`)
-  },
-
-  /**
    * 获取当前用户的团队
    */
   getMyTeams: async (options?: { skipAuthRedirect?: boolean }): Promise<UserTeamInfo[]> => {
@@ -86,24 +79,10 @@ export const teamsApi = {
   },
 
   /**
-   * 创建团队
-   */
-  createTeam: async (data: TeamCreateInput): Promise<Team> => {
-    return api.post<Team>('/teams', data)
-  },
-
-  /**
    * 更新团队
    */
   updateTeam: async (id: string, data: TeamUpdateInput): Promise<Team> => {
     return api.put<Team>(`/teams/${id}`, data)
-  },
-
-  /**
-   * 删除团队
-   */
-  deleteTeam: async (id: string): Promise<Team> => {
-    return api.delete<Team>(`/teams/${id}`)
   },
 
   /**

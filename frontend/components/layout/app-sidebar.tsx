@@ -115,7 +115,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('dashboard'),
       url: '/dashboard',
       icon: LayoutDashboard,
-      permission: 'dashboard:access',
+      permission: 'admin:dashboard:access',
     },
     {
       title: t('teams'),
@@ -142,19 +142,19 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('users'),
       url: '/users',
       icon: Users,
-      permission: 'user:read',
+      permission: 'admin:user:read',
     },
     {
       title: t('roles'),
       url: '/roles',
       icon: Shield,
-      permission: 'role:read',
+      permission: 'admin:role:read',
     },
     {
       title: t('permissions'),
       url: '/permissions',
       icon: Key,
-      permission: 'permission:read',
+      permission: 'admin:permission:read',
     },
   ]
 
@@ -163,7 +163,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('models'),
       url: '/models',
       icon: Bot,
-      permission: 'model:read',
+      permission: 'admin:model:read',
     },
     {
       title: t('tools'),
@@ -190,13 +190,13 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('notifications'),
       url: '/notifications',
       icon: Bell,
-      permission: 'dashboard:access',
+      permission: 'admin:dashboard:access',
     },
     {
       title: t('auditLogs'),
       url: '/audit-logs',
       icon: FileText,
-      permission: 'audit:read',
+      permission: 'admin:audit:read',
     },
   ]
 
@@ -205,7 +205,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('siteSettings'),
       url: '/site-settings',
       icon: Settings,
-      permission: 'settings:read',
+      permission: 'admin:settings:read',
     },
     {
       title: t('helpCenter'),

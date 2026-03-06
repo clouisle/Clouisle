@@ -13,6 +13,7 @@
       "title": "Profile",
       "teamsDescription": "You have joined {count} teams"
     },
+    "apiKeys": "API Keys",
     "admin": "Admin Panel",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",

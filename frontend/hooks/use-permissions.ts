@@ -55,7 +55,7 @@ export function usePermissions() {
     return perms.every((p) => hasPermission(p))
   }
 
-  const canAccessDashboard = hasPermission('dashboard:access')
+  const canAccessDashboard = hasPermission('admin:dashboard:access')
 
   return {
     user,
@@ -74,24 +74,24 @@ export function usePermissions() {
  * Maps URL paths to required permissions
  */
 export const MENU_PERMISSION_MAP: Record<string, string> = {
-  // Dashboard requires dashboard:access
-  '/dashboard': 'dashboard:access',
-  // User management
-  '/users': 'user:read',
-  '/roles': 'role:read',
-  '/permissions': 'permission:read',
-  // Model management
-  '/models': 'model:read',
-  // Audit logs
-  '/audit-logs': 'audit:read',
-  // Site settings
-  '/site-settings': 'settings:read',
+  // Dashboard requires admin:dashboard:access
+  '/dashboard': 'admin:dashboard:access',
+  // User management (admin)
+  '/users': 'admin:user:read',
+  '/roles': 'admin:role:read',
+  '/permissions': 'admin:permission:read',
+  // Model management (admin)
+  '/models': 'admin:model:read',
+  // Audit logs (admin)
+  '/audit-logs': 'admin:audit:read',
+  // Site settings (admin)
+  '/site-settings': 'admin:settings:read',
   // API Keys (team-isolated, all users with apikey:read can access)
   '/api-keys': 'apikey:read',
   // Tools (team-isolated)
   '/tools': 'tool:read',
-  // Notifications
-  '/notifications': 'dashboard:access',
+  // Notifications (admin)
+  '/notifications': 'admin:dashboard:access',
 }
 
 /**

@@ -34,9 +34,90 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Custom lifespan to run migrations before Tortoise generates schemas
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for database initialization and cleanup"""
+    from tortoise import Tortoise
+
+    # Initialize Tortoise connection with global fallback enabled
+    await Tortoise.init(
+        db_url=settings.DATABASE_URL
+        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
+        modules={"models": ["app.models"]},
+        _enable_global_fallback=True,  # Enable global state for compatibility
+    )
+
+    # Run migrations BEFORE generating schemas
+    from app.core.init_data import (
+        init_agent_tools_credentials,
+        init_user_locale_field,
+        fix_cascade_delete_policies,
+        init_workflow_visibility_field,
+        init_agent_streaming_config,
+        init_agent_user_input_request,
+        init_agent_memory_fields,
+    )
+
+    try:
+        await init_user_locale_field()
+    except Exception as e:
+        logger.warning(f"User locale migration failed: {e}")
+
+    try:
+        await init_agent_tools_credentials()
+    except Exception as e:
+        logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await fix_cascade_delete_policies()
+    except Exception as e:
+        logger.warning(f"CASCADE delete policies migration failed: {e}")
+
+    try:
+        await init_workflow_visibility_field()
+    except Exception as e:
+        logger.warning(f"Workflow visibility migration failed: {e}")
+
+    try:
+        await init_agent_streaming_config()
+    except Exception as e:
+        logger.warning(f"Agent streaming_config migration failed: {e}")
+
+    try:
+        await init_agent_user_input_request()
+    except Exception as e:
+        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+
+    try:
+        await init_agent_memory_fields()
+    except Exception as e:
+        logger.warning(f"Agent memory fields migration failed: {e}")
+
+    # Generate schemas
+    await Tortoise.generate_schemas()
+
+    # Initialize default data
+    try:
+        await init_db()
+    except Exception as e:
+        logger.error(f"Error seeding data: {e}")
+
+    yield
+
+    # Cleanup
+    await Tortoise.close_connections()
+    await close_redis()
+
+
+# Update app to use custom lifespan
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,
 )
 
 
@@ -275,90 +356,3 @@ async def root():
 @app.get(f"{settings.API_V1_STR}/health")
 async def health():
     return success(data={"status": "healthy"})
-
-
-# Pre-register hook to run migrations before Tortoise generates schemas
-@app.on_event("startup")
-async def pre_tortoise_init():
-    """Run database migrations before Tortoise initializes schemas"""
-    from tortoise import Tortoise
-
-    # Initialize Tortoise connection (without generating schemas yet)
-    await Tortoise.init(
-        db_url=settings.DATABASE_URL
-        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
-        modules={"models": ["app.models"]},
-    )
-
-    # Run migrations BEFORE generating schemas
-    from app.core.init_data import (
-        init_agent_tools_credentials,
-        init_user_locale_field,
-        fix_cascade_delete_policies,
-        init_workflow_visibility_field,
-        init_agent_streaming_config,
-        init_agent_user_input_request,
-        init_agent_memory_fields,
-    )
-
-    try:
-        await init_user_locale_field()
-    except Exception as e:
-        logger.warning(f"User locale migration failed: {e}")
-
-    try:
-        await init_agent_tools_credentials()
-    except Exception as e:
-        logger.warning(f"Agent tools_credentials migration failed: {e}")
-
-    try:
-        await fix_cascade_delete_policies()
-    except Exception as e:
-        logger.warning(f"CASCADE delete policies migration failed: {e}")
-
-    try:
-        await init_workflow_visibility_field()
-    except Exception as e:
-        logger.warning(f"Workflow visibility migration failed: {e}")
-
-    try:
-        await init_agent_streaming_config()
-    except Exception as e:
-        logger.warning(f"Agent streaming_config migration failed: {e}")
-
-    try:
-        await init_agent_user_input_request()
-    except Exception as e:
-        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
-
-    try:
-        await init_agent_memory_fields()
-    except Exception as e:
-        logger.warning(f"Agent memory fields migration failed: {e}")
-
-    # Now generate schemas (this will validate against the updated database)
-    await Tortoise.generate_schemas()
-
-
-# Register Tortoise (but skip generate_schemas since we did it manually above)
-register_tortoise(
-    app,
-    db_url=settings.DATABASE_URL
-    or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
-    modules={"models": ["app.models"]},
-    generate_schemas=False,  # Changed to False - we handle it manually in pre_tortoise_init
-    add_exception_handlers=True,
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    try:
-        await init_db()
-    except Exception as e:
-        print(f"Error seeding data: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_redis()

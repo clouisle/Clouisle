@@ -66,39 +66,8 @@ export const ssoApi = {
     window.location.href = `${API_BASE_URL}/sso/login/${providerName}${params}`
   },
 
-  // Admin endpoints
-  listProviders: async (): Promise<SSOProviderAdmin[]> => {
-    return api.get<SSOProviderAdmin[]>('/sso/admin/providers')
-  },
-
-  createProvider: async (data: SSOProviderCreate): Promise<SSOProviderAdmin> => {
-    return api.post<SSOProviderAdmin>('/sso/admin/providers', data)
-  },
-
-  updateProvider: async (
-    id: string,
-    data: SSOProviderUpdate
-  ): Promise<SSOProviderAdmin> => {
-    return api.put<SSOProviderAdmin>(`/sso/admin/providers/${id}`, data)
-  },
-
-  deleteProvider: async (id: string): Promise<void> => {
-    return api.delete(`/sso/admin/providers/${id}`)
-  },
-
-  testConnection: async (id: string): Promise<{ status: string; message: string }> => {
-    return api.post<{ status: string; message: string }>(
-      `/sso/admin/providers/${id}/test`
-    )
-  },
-
   // User endpoints
   disconnectConnection: async (connectionId: string): Promise<void> => {
     return api.delete(`/sso/connections/${connectionId}`)
-  },
-
-  // Admin endpoints
-  adminDisconnectConnection: async (connectionId: string): Promise<void> => {
-    return api.delete(`/sso/admin/connections/${connectionId}`)
   },
 }

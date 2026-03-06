@@ -1,7 +1,8 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from tortoise.expressions import Q
 
 from app.api import deps
 from app.models.user import Permission, User
@@ -22,6 +23,7 @@ async def read_permissions(
     page: int = 1,
     page_size: int = 50,
     scope: Optional[str] = None,
+    search: Optional[str] = Query(None, description="Search by permission code or description"),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
@@ -30,6 +32,8 @@ async def read_permissions(
     query = Permission.all()
     if scope:
         query = query.filter(scope=scope)
+    if search:
+        query = query.filter(Q(code__icontains=search) | Q(description__icontains=search))
 
     total = await query.count()
     skip = (page - 1) * page_size
@@ -49,7 +53,7 @@ async def read_permissions(
 async def create_permission(
     *,
     permission_in: PermissionCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:create")),
 ) -> Any:
     """
     Create new permission.
@@ -93,7 +97,7 @@ async def update_permission(
     *,
     permission_id: UUID,
     permission_in: PermissionCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:update")),
 ) -> Any:
     """
     Update a permission.
@@ -126,7 +130,7 @@ async def update_permission(
 @router.delete("/{permission_id}", response_model=Response[PermissionSchema])
 async def delete_permission(
     permission_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:delete")),
 ) -> Any:
     """
     Delete a permission.
