@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import re
+from pathlib import Path
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -80,8 +81,22 @@ class DocumentProcessor:
             )
             upload_dir = os.path.join(base_dir, "uploads", "documents")
 
-        self.upload_dir = upload_dir
-        os.makedirs(upload_dir, exist_ok=True)
+        self.upload_dir = str(Path(upload_dir).resolve())
+        os.makedirs(self.upload_dir, exist_ok=True)
+
+    def _resolve_storage_path(self, *parts: str) -> Path:
+        """Resolve a path under the document upload directory."""
+        root = Path(self.upload_dir).resolve()
+        candidate = root.joinpath(*parts).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise ValueError("Invalid document storage path")
+        return candidate
+
+    def _sanitize_filename(self, filename: str) -> str:
+        safe_name = os.path.basename(filename).strip()
+        if not safe_name or safe_name in {".", ".."}:
+            raise ValueError("Invalid document filename")
+        return safe_name
 
     def get_document_type(
         self, filename: str, content_type: str | None = None
@@ -115,22 +130,26 @@ class DocumentProcessor:
         Returns:
             Full path for storing the document
         """
+        safe_filename = self._sanitize_filename(filename)
+
         # Organize by KB ID and date
         date_path = datetime.now().strftime("%Y/%m")
 
         # Generate unique filename
         file_hash = hashlib.md5(
-            f"{kb_id}{filename}{datetime.now().isoformat()}".encode()
+            f"{kb_id}{safe_filename}{datetime.now().isoformat()}".encode()
         ).hexdigest()[:8]
-        ext = os.path.splitext(filename)[1]
+        ext = os.path.splitext(safe_filename)[1]
         unique_name = (
-            f"{file_hash}_{filename}" if len(filename) < 50 else f"{file_hash}{ext}"
+            f"{file_hash}_{safe_filename}" if len(safe_filename) < 50 else f"{file_hash}{ext}"
         )
 
-        dir_path = os.path.join(self.upload_dir, str(kb_id), date_path)
+        dir_path = self._resolve_storage_path(str(kb_id), *date_path.split("/"))
         os.makedirs(dir_path, exist_ok=True)
 
-        return os.path.join(dir_path, unique_name)
+        return str(
+            self._resolve_storage_path(str(kb_id), *date_path.split("/"), unique_name)
+        )
 
     async def save_file(self, content: bytes, path: str) -> int:
         """
@@ -143,8 +162,9 @@ class DocumentProcessor:
         Returns:
             File size in bytes
         """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        async with aiofiles.open(path, "wb") as f:
+        resolved_path = self._resolve_storage_path(path)
+        os.makedirs(resolved_path.parent, exist_ok=True)
+        async with aiofiles.open(resolved_path, "wb") as f:
             await f.write(content)
         return len(content)
 
@@ -158,7 +178,8 @@ class DocumentProcessor:
         Returns:
             File content bytes
         """
-        async with aiofiles.open(path, "rb") as f:
+        resolved_path = self._resolve_storage_path(path)
+        async with aiofiles.open(resolved_path, "rb") as f:
             return await f.read()
 
     def delete_file(self, path: str) -> bool:
@@ -171,8 +192,9 @@ class DocumentProcessor:
         Returns:
             True if deleted, False if not found
         """
-        if os.path.exists(path):
-            os.remove(path)
+        resolved_path = self._resolve_storage_path(path)
+        if os.path.exists(resolved_path):
+            os.remove(resolved_path)
             return True
         return False
 
@@ -190,7 +212,8 @@ class DocumentProcessor:
         Returns:
             Tuple of (extracted_text, metadata)
         """
-        content = await self.read_file(path)
+        resolved_path = str(self._resolve_storage_path(path))
+        content = await self.read_file(resolved_path)
         metadata: dict[str, Any] = {
             "file_size": len(content),
             "doc_type": doc_type,
@@ -216,14 +239,14 @@ class DocumentProcessor:
                 "pptx",
             ]:
                 # Use MarkItDown for PDF, Office documents, Excel, and HTML
-                text, doc_meta = self._extract_with_markitdown(path, doc_type)
+                text, doc_meta = self._extract_with_markitdown(resolved_path, doc_type)
                 metadata.update(doc_meta)
             else:
                 # Try to decode as text
                 text = content.decode("utf-8", errors="ignore")
 
         except Exception as e:
-            logger.error(f"Error extracting text from {path}: {e}")
+            logger.error(f"Error extracting text from {resolved_path}: {e}")
             raise ValueError(f"Failed to extract text: {e}")
 
         # Clean up text

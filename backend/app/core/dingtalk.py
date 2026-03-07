@@ -78,7 +78,10 @@ async def send_dingtalk_webhook(
 
     # 调试日志
     logger.info(
-        f"DingTalk config - enabled: {config['enabled']}, webhook_url: {config['webhook_url'][:50] if config['webhook_url'] else 'empty'}..., secret: {'***' + config['secret'][-4:] if config['secret'] and len(config['secret']) > 4 else 'empty or short'}"
+        "DingTalk config loaded: enabled=%s webhook_configured=%s secret_configured=%s",
+        config["enabled"],
+        bool(config["webhook_url"]),
+        bool(config["secret"]),
     )
 
     if not config["enabled"]:

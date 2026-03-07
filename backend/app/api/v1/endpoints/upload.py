@@ -6,6 +6,7 @@ import os
 import uuid
 import hashlib
 import aiofiles
+from pathlib import Path
 from datetime import datetime
 from typing import Any
 
@@ -74,6 +75,27 @@ MIME_TO_EXT = {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
 }
 
+UPLOAD_ROOT = Path(UPLOAD_DIR).resolve()
+
+
+def _validate_path_segment(value: str, field_name: str) -> str:
+    """Allow only simple path segments to prevent traversal."""
+    if not value or value in {".", ".."}:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+
+    if any(sep in value for sep in (os.sep, os.altsep) if sep):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+
+    return value
+
+
+def _resolve_upload_path(*parts: str) -> Path:
+    """Resolve a path under the upload root and reject traversal."""
+    candidate = UPLOAD_ROOT.joinpath(*parts).resolve()
+    if candidate != UPLOAD_ROOT and UPLOAD_ROOT not in candidate.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return candidate
+
 
 def get_file_hash(content: bytes) -> str:
     """计算文件 MD5 哈希"""
@@ -83,7 +105,12 @@ def get_file_hash(content: bytes) -> str:
 def get_upload_path(category: str, filename: str) -> str:
     """获取上传路径，按日期和类别组织"""
     date_path = datetime.now().strftime("%Y/%m")
-    return os.path.join(UPLOAD_DIR, category, date_path, filename)
+    resolved = _resolve_upload_path(
+        _validate_path_segment(category, "category"),
+        *date_path.split("/"),
+        _validate_path_segment(filename, "filename"),
+    )
+    return str(resolved)
 
 
 def get_file_url(category: str, date_path: str, filename: str) -> str:
@@ -104,6 +131,8 @@ async def upload_image(
     - 最大大小：10MB
     - 返回文件 URL
     """
+    category = _validate_path_segment(category, "category")
+
     # 验证文件类型
     content_type = file.content_type
     if content_type not in ALLOWED_IMAGE_TYPES:
@@ -133,8 +162,8 @@ async def upload_image(
 
     # 获取保存路径
     date_path = datetime.now().strftime("%Y/%m")
-    save_dir = os.path.join(UPLOAD_DIR, category, date_path)
-    save_path = os.path.join(save_dir, unique_filename)
+    save_dir = _resolve_upload_path(category, *date_path.split("/"))
+    save_path = save_dir / unique_filename
 
     # 确保目录存在
     os.makedirs(save_dir, exist_ok=True)
@@ -170,6 +199,8 @@ async def upload_file(
     - 支持格式：图片、PDF、文本文档
     - 最大大小：10MB
     """
+    category = _validate_path_segment(category, "category")
+
     content_type = file.content_type
     allowed_types = ALLOWED_IMAGE_TYPES | ALLOWED_DOCUMENT_TYPES
 
@@ -201,8 +232,8 @@ async def upload_file(
     unique_filename = f"{uuid.uuid4().hex[:12]}_{file_hash}{ext}"
 
     date_path = datetime.now().strftime("%Y/%m")
-    save_dir = os.path.join(UPLOAD_DIR, category, date_path)
-    save_path = os.path.join(save_dir, unique_filename)
+    save_dir = _resolve_upload_path(category, *date_path.split("/"))
+    save_path = save_dir / unique_filename
 
     os.makedirs(save_dir, exist_ok=True)
 
@@ -233,16 +264,15 @@ async def get_file(
     """
     获取上传的文件（公开访问）
     """
-    file_path = os.path.join(UPLOAD_DIR, category, year, month, filename)
+    file_path = _resolve_upload_path(
+        _validate_path_segment(category, "category"),
+        _validate_path_segment(year, "year"),
+        _validate_path_segment(month, "month"),
+        _validate_path_segment(filename, "filename"),
+    )
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
-
-    # 安全检查：确保路径在 UPLOAD_DIR 内
-    real_path = os.path.realpath(file_path)
-    real_upload_dir = os.path.realpath(UPLOAD_DIR)
-    if not real_path.startswith(real_upload_dir):
-        raise HTTPException(status_code=403, detail="Access denied")
 
     return FileResponse(file_path)
 
@@ -260,13 +290,12 @@ async def delete_file(
     """
     删除上传的文件（仅管理员）
     """
-    file_path = os.path.join(UPLOAD_DIR, category, year, month, filename)
-
-    # 安全检查
-    real_path = os.path.realpath(file_path)
-    real_upload_dir = os.path.realpath(UPLOAD_DIR)
-    if not real_path.startswith(real_upload_dir):
-        raise HTTPException(status_code=403, detail="Access denied")
+    file_path = _resolve_upload_path(
+        _validate_path_segment(category, "category"),
+        _validate_path_segment(year, "year"),
+        _validate_path_segment(month, "month"),
+        _validate_path_segment(filename, "filename"),
+    )
 
     if not os.path.exists(file_path):
         raise BusinessError(

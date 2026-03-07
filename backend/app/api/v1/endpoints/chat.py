@@ -126,6 +126,7 @@ class LLMMessage(BaseModel):
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
 
 
 # ============ Helper Functions ============
@@ -2610,10 +2611,10 @@ async def chat_stream(
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
                 except LLMError as e:
                     logger.exception(f"LLM error during stream: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     logger.exception(f"Unexpected error during stream: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
             # Global timeout
@@ -3357,7 +3358,7 @@ async def regenerate_message(
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception(f"LLM error during regenerate: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     # Rollback: delete new message and restore original
                     if new_message_id:
@@ -3365,7 +3366,7 @@ async def regenerate_message(
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception(f"Unexpected error during regenerate: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
             # Global timeout

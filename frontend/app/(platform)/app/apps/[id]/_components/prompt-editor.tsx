@@ -54,15 +54,6 @@ function getVariableContext(text: string, cursorPos: number): { isInVariable: bo
   return { isInVariable: false, query: '', startPos: -1 }
 }
 
-// HTML 转义
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>')
-}
-
 // 变量信息类型
 interface VariableInfo {
   name: string
@@ -71,51 +62,76 @@ interface VariableInfo {
   icon?: React.ElementType
 }
 
-// 将纯文本转换为带有变量标签的 HTML
-function textToHtml(text: string, variableMap: Map<string, VariableInfo>): string {
-  if (!text) return ''
-  
+function appendTextWithBreaks(parent: Node, text: string): void {
+  const lines = text.split('\n')
+  lines.forEach((line, index) => {
+    if (index > 0) {
+      parent.appendChild(document.createElement('br'))
+    }
+    if (line) {
+      parent.appendChild(document.createTextNode(line))
+    }
+  })
+}
+
+function createVariableTag(variable: VariableInfo | undefined, varName: string): HTMLSpanElement {
+  const tag = document.createElement('span')
+  const tagClass = variable
+    ? 'bg-primary/15 text-primary border-primary/20'
+    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
+  const displayLabel = variable?.label ?? ''
+
+  tag.className = `variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}`
+  tag.contentEditable = 'false'
+  tag.dataset.variable = varName
+
+  const marker = document.createElement('span')
+  marker.className = 'opacity-60 text-[10px]'
+  marker.textContent = '{x}'
+  tag.appendChild(marker)
+
+  const name = document.createElement('span')
+  name.textContent = varName
+  tag.appendChild(name)
+
+  if (displayLabel) {
+    const label = document.createElement('span')
+    label.className = 'opacity-70 text-[10px]'
+    label.textContent = displayLabel
+    tag.appendChild(label)
+  }
+
+  return tag
+}
+
+function renderEditorContent(editor: HTMLElement, text: string, variableMap: Map<string, VariableInfo>): void {
+  if (!text) {
+    editor.replaceChildren()
+    return
+  }
+
+  const fragment = document.createDocumentFragment()
   const regex = /(\{\{\w+\}\})/g
-  let result = ''
   let lastIndex = 0
-  let match
+  let match: RegExpExecArray | null
 
   while ((match = regex.exec(text)) !== null) {
-    // 添加变量之前的普通文本
     if (match.index > lastIndex) {
-      result += escapeHtml(text.substring(lastIndex, match.index))
+      appendTextWithBreaks(fragment, text.substring(lastIndex, match.index))
     }
 
-    // 添加变量标签
     const varName = match[1].slice(2, -2)
     const variable = variableMap.get(varName)
-    
-    const tagClass = variable 
-      ? 'bg-primary/15 text-primary border-primary/20' 
-      : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
-    
-    // 显示格式: 系统变量显示图标类型，用户变量显示标签
-    const displayLabel = variable?.isSystem 
-      ? (variable.label ? `${variable.label}` : '')
-      : (variable?.label ? `${variable.label}` : '')
-    
-    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${varName}">`
-    result += `<span class="opacity-60 text-[10px]">{x}</span>`
-    result += `<span>${varName}</span>`
-    if (displayLabel) {
-      result += `<span class="opacity-70 text-[10px]">${displayLabel}</span>`
-    }
-    result += `</span>`
+    fragment.appendChild(createVariableTag(variable, varName))
 
     lastIndex = match.index + match[0].length
   }
 
-  // 添加剩余的普通文本
   if (lastIndex < text.length) {
-    result += escapeHtml(text.substring(lastIndex))
+    appendTextWithBreaks(fragment, text.substring(lastIndex))
   }
 
-  return result
+  editor.replaceChildren(fragment)
 }
 
 // 将 HTML 转换回纯文本
@@ -353,8 +369,7 @@ export function PromptEditor({
     if (!isMountedRef.current || value !== lastValueRef.current) {
       isMountedRef.current = true
       lastValueRef.current = value
-      const html = textToHtml(value || '', variableMap)
-      editor.innerHTML = html || ''
+      renderEditorContent(editor, value || '', variableMap)
     }
   }, [value, variableMap])
 
@@ -421,8 +436,7 @@ export function PromptEditor({
     onChange(newText)
     
     // 更新编辑器内容
-    const html = textToHtml(newText, variableMap)
-    editor.innerHTML = html
+    renderEditorContent(editor, newText, variableMap)
     
     // 设置光标位置到变量后面
     const newCursorPos = startPos + varName.length + 4
