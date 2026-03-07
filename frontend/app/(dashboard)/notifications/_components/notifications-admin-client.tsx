@@ -2,19 +2,22 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X, Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search, X, Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock, Eye, MoreHorizontal } from 'lucide-react'
 import { notificationsApi, type NotificationItem } from '@/lib/api/admin/notifications'
 import type { NotificationLevel, NotificationScope, NotificationDelivery } from '@/lib/api/notifications'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { CreateNotificationDialog } from './create-notification-dialog'
+import { NotificationDetailDialog } from './notification-detail-dialog'
 import { formatDateTime } from '@/lib/utils'
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
@@ -73,6 +76,12 @@ export function NotificationsAdminClient() {
   const [pageSize, setPageSize] = React.useState(10)
   const [total, setTotal] = React.useState(0)
   const [createOpen, setCreateOpen] = React.useState(false)
+  const [detailOpen, setDetailOpen] = React.useState(false)
+  const [selectedNotification, setSelectedNotification] = React.useState<NotificationItem | null>(null)
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+  const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   // Filter states
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -150,20 +159,86 @@ export function NotificationsAdminClient() {
   // Calculate total pages based on server total
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
+    setDeletingId(id)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!deletingId) return
+
     try {
-      await notificationsApi.adminDelete(id)
+      await notificationsApi.adminDelete(deletingId)
       toast.success(t('toast.deleted'))
       await fetchList()
     } catch (error) {
       console.error('Failed to delete notification:', error)
+    } finally {
+      setDeleteDialogOpen(false)
+      setDeletingId(null)
     }
+  }
+
+  const handleBulkDelete = async () => {
+    setBulkDeleteDialogOpen(true)
+  }
+
+  const confirmBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id => notificationsApi.adminDelete(id))
+      )
+      toast.success(t('toast.bulkDeleted', { count: selectedIds.size }))
+      setSelectedIds(new Set())
+      await fetchList()
+    } catch (error) {
+      console.error('Failed to bulk delete notifications:', error)
+    } finally {
+      setBulkDeleteDialogOpen(false)
+    }
+  }
+
+  const handleViewDetail = (notification: NotificationItem) => {
+    setSelectedNotification(notification)
+    setDetailOpen(true)
+  }
+
+  const handleRowClick = (notification: NotificationItem, e: React.MouseEvent) => {
+    // 如果点击的是复选框或操作按钮，不触发行点击
+    const target = e.target as HTMLElement
+    if (target.closest('input[type="checkbox"]') || target.closest('button') || target.closest('[role="button"]')) {
+      return
+    }
+    handleViewDetail(notification)
   }
 
   const handleCreateSuccess = () => {
     setCreateOpen(false)
     fetchList()
   }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(filteredItems.map(item => item.id)))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    const newSelected = new Set(selectedIds)
+    if (checked) {
+      newSelected.add(id)
+    } else {
+      newSelected.delete(id)
+    }
+    setSelectedIds(newSelected)
+  }
+
+  const isAllSelected = filteredItems.length > 0 && selectedIds.size === filteredItems.length
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < filteredItems.length
 
   return (
     <div className="flex flex-col gap-6">
@@ -226,32 +301,52 @@ export function NotificationsAdminClient() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={isAllSelected}
+                  indeterminate={isSomeSelected}
+                  onCheckedChange={handleSelectAll}
+                />
+              </TableHead>
               <TableHead>{t('admin.createTitle')}</TableHead>
               <TableHead>{t('admin.createScope')}</TableHead>
               <TableHead>{t('admin.createLevel')}</TableHead>
               <TableHead>{t('deliveryStatus.title')}</TableHead>
               <TableHead>{t('createdAt')}</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   {tCommon('loading')}
                 </TableCell>
               </TableRow>
             ) : filteredItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                   {t('empty')}
                 </TableCell>
               </TableRow>
             ) : (
               filteredItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="max-w-[280px] truncate font-medium">
-                    {item.title}
+                <TableRow
+                  key={item.id}
+                  data-state={selectedIds.has(item.id) ? 'selected' : undefined}
+                  onClick={(e) => handleRowClick(item, e)}
+                  className="cursor-pointer"
+                >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(item.id)}
+                      onCheckedChange={(checked) => handleSelectOne(item.id, checked as boolean)}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <div className="max-w-[280px] truncate">
+                      {item.title}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{t(`scopeOptions.${item.scope}`)}</Badge>
@@ -273,24 +368,25 @@ export function NotificationsAdminClient() {
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(item.created_at)}
                   </TableCell>
-                  <TableCell>
-                    <AlertDialog>
-                      <AlertDialogTrigger render={<Button variant="ghost" size="icon" />}>
-                        <Trash2 className="h-4 w-4" />
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t('admin.confirmDeleteTitle')}</AlertDialogTitle>
-                          <AlertDialogDescription>{t('admin.confirmDeleteDesc')}</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(item.id)}>
-                            {t('admin.delete')}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewDetail(item)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          {t('admin.detail')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(item.id)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          {tCommon('delete')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))
@@ -368,6 +464,85 @@ export function NotificationsAdminClient() {
         onOpenChange={setCreateOpen}
         onSuccess={handleCreateSuccess}
       />
+
+      {/* Detail Dialog */}
+      <NotificationDetailDialog
+        notification={selectedNotification}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
+
+      {/* Bulk Actions Floating Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+
+            <Badge variant="secondary" className="px-2 py-1">
+              {t('admin.selectedCount', { count: selectedIds.size })}
+            </Badge>
+
+            <Tooltip>
+              <TooltipTrigger
+                onClick={handleBulkDelete}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{tCommon('delete')}</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tCommon('confirmDelete')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('admin.confirmDeleteDesc')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {tCommon('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('admin.confirmBulkDeleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('admin.confirmBulkDeleteDesc', { count: selectedIds.size })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {t('admin.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

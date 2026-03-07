@@ -304,7 +304,7 @@ export function MemoriesClient() {
                 </TableRow>
               ) : (
                 entities.map((entity) => (
-                  <TableRow key={entity.id}>
+                  <TableRow key={entity.id} data-state={selectedEntities.has(entity.id) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox
                         checked={selectedEntities.has(entity.id)}
@@ -324,9 +324,9 @@ export function MemoriesClient() {
                       {entity.description ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <span className="line-clamp-1 max-w-[200px] text-sm text-muted-foreground">
+                            <div className="line-clamp-1 max-w-[200px] text-sm text-muted-foreground">
                               {entity.description}
-                            </span>
+                            </div>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-[400px]">
                             {entity.description}

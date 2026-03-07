@@ -18,8 +18,7 @@ import {
 import { toast } from 'sonner'
 import { permissionsApi, type Permission } from '@/lib/api/admin/roles'
 import type { PageData } from '@/lib/api/users'
-import { usePermissions } from '@/hooks/use-permissions'
-import { PermissionGuard } from '@/components/permission-guard'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -68,7 +67,7 @@ import { DeletePermissionDialog } from './delete-permission-dialog'
 export function PermissionsClient() {
   const t = useTranslations('permissions')
   const commonT = useTranslations('common')
-  const { canPerform } = usePermissions()
+  const { canPerform } = useCanPerform()
 
   // 数据状态
   const [permissions, setPermissions] = React.useState<Permission[]>([])
@@ -159,9 +158,9 @@ export function PermissionsClient() {
       }))
   }, [permissions])
   
-  // 可选择的权限（排除通配符权限）
+  // 可选择的权限（排除系统权限和通配符权限）
   const selectablePermissions = React.useMemo(() => {
-    return filteredPermissions.filter(p => p.code !== '*')
+    return filteredPermissions.filter(p => !p.is_system && p.code !== '*')
   }, [filteredPermissions])
   
   // 分页计算
@@ -344,8 +343,10 @@ export function PermissionsClient() {
                       {permission.scope}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground max-w-[300px] truncate">
-                    {permission.description || '-'}
+                  <TableCell className="text-muted-foreground">
+                    <div className="max-w-[300px] truncate">
+                      {permission.description || '-'}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {!isSystemPermission(permission) && (canPerform('admin:permission:update') || canPerform('admin:permission:delete')) && (
