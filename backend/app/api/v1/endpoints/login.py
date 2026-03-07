@@ -209,25 +209,17 @@ async def login_access_token(
             data={"email": user.email},
         )
 
-    # Check password expiration
+    # Check password expiration and force password change
+    is_exempt = await PasswordExpirationService.is_user_exempt(user)
     is_expired = await PasswordExpirationService.is_password_expired(user)
-    if is_expired:
+    force_change_required = user.force_password_change and not is_exempt
+
+    if is_expired and not is_exempt:
         # Set force_password_change flag if not already set
         if not user.force_password_change:
             user.force_password_change = True
             await user.save()
-
-        raise BusinessError(
-            code=ResponseCode.PASSWORD_EXPIRED,
-            msg_key="password_expired",
-        )
-
-    # Check if force password change is required
-    if user.force_password_change:
-        raise BusinessError(
-            code=ResponseCode.FORCE_PASSWORD_CHANGE_REQUIRED,
-            msg_key="force_password_change_required",
-        )
+        force_change_required = True
 
     # Reset failed login attempts on successful login
     await reset_login_attempts(user)
@@ -310,6 +302,15 @@ async def login_access_token(
         "access_token": access_token,
         "token_type": "bearer",
     }
+
+    # Add force password change flag if needed
+    if force_change_required:
+        token_data["force_password_change"] = True
+        token_data["reason"] = "expired" if is_expired else "force"
+        return success(
+            data=token_data,
+            msg_key="login_successful_change_password_required",
+        )
 
     # Add password expiration warning to response metadata if needed
     if should_warn and days_remaining is not None:

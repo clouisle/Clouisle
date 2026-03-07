@@ -34,6 +34,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Login successful",
         "zh": "登录成功",
     },
+    "login_successful_change_password_required": {
+        "en": "Login successful. You must change your password before continuing.",
+        "zh": "登录成功。您必须先修改密码才能继续。",
+    },
     "logout_successful": {
         "en": "Logout successful",
         "zh": "登出成功",
@@ -196,6 +200,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Notification created successfully",
         "zh": "通知创建成功",
     },
+    "notifications_created": {
+        "en": "Notifications created successfully",
+        "zh": "通知批量创建成功",
+    },
     "notification_deleted": {
         "en": "Notification deleted successfully",
         "zh": "通知删除成功",
@@ -203,6 +211,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "notification_read_updated": {
         "en": "Notification read status updated",
         "zh": "通知已读状态已更新",
+    },
+    "some_users_not_found": {
+        "en": "Some users not found",
+        "zh": "部分用户不存在",
     },
     # Error messages - General
     "unknown_error": {

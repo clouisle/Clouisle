@@ -69,6 +69,10 @@ class SystemPermissions:
     ADMIN_MEMORY_UPDATE = "admin:memory:update"
     ADMIN_MEMORY_DELETE = "admin:memory:delete"
 
+    # ============ Admin Notification Management ============
+    ADMIN_NOTIFICATION_CREATE = "admin:notification:create"
+    ADMIN_NOTIFICATION_DELETE = "admin:notification:delete"
+
     # ============ Audit Log Management ============
     AUDIT_READ = "audit:read"
     AUDIT_EXPORT = "audit:export"
@@ -262,6 +266,17 @@ class SystemPermissions:
                 "code": cls.ADMIN_MEMORY_DELETE,
                 "scope": "admin",
                 "description": "Delete user memories",
+            },
+            # Admin Notification Management
+            {
+                "code": cls.ADMIN_NOTIFICATION_CREATE,
+                "scope": "admin",
+                "description": "Create and send notifications to users",
+            },
+            {
+                "code": cls.ADMIN_NOTIFICATION_DELETE,
+                "scope": "admin",
+                "description": "Delete notifications",
             },
             # Audit Log Management
             {

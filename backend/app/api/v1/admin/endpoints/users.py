@@ -9,6 +9,7 @@ from tortoise.expressions import Q
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
+from app.core.password import validate_password
 from app.core.email import (
     send_email,
     check_bulk_email_rate,
@@ -63,6 +64,8 @@ async def serialize_user_with_sso(user: User) -> dict:
         "last_login": user.last_login,
         "auth_source": user.auth_source,
         "external_id": user.external_id,
+        "force_password_change": getattr(user, "force_password_change", False),
+        "password_expiration_exempt": getattr(user, "password_expiration_exempt", False),
         "roles": [
             {
                 "id": role.id,
@@ -437,6 +440,16 @@ async def update_user(
     password_changed = False
     if "password" in user_data:
         password = user_data.pop("password")
+
+        # 验证密码强度（管理员编辑时不检查密码历史）
+        is_valid, errors = await validate_password(password, user=None)
+        if not is_valid:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="password_validation_failed",
+                data={"errors": errors},
+            )
+
         user_data["hashed_password"] = security.get_password_hash(password)
         password_changed = True
 
@@ -574,7 +587,6 @@ async def reset_password_expiration(
     """
     Reset password expiration date (set password_changed_at to now).
     """
-    from datetime import datetime
 
     user = await User.filter(id=user_id).first()
     if not user:
@@ -639,6 +651,11 @@ async def exempt_password_expiration(
 
     # Update exemption status
     user.password_expiration_exempt = data.exempt
+
+    # If granting exemption, clear force_password_change flag
+    if data.exempt and user.force_password_change:
+        user.force_password_change = False
+
     await user.save()
 
     # Audit log
@@ -731,7 +748,6 @@ async def get_password_expiration_stats(
     """
     Get password expiration statistics for dashboard widget.
     """
-    from datetime import datetime, timedelta
 
     # Check if policy is enabled
     enabled = await SiteSetting.get_value("password_expiration_enabled", False)
@@ -821,7 +837,6 @@ async def get_expiring_passwords(
     - expiring: Users with passwords expiring soon
     - force_change: Users required to change password
     """
-    from datetime import datetime, timedelta
 
     now = datetime.now(timezone.utc)
     warning_days = await SiteSetting.get_value("password_expiration_warning_days", 7)

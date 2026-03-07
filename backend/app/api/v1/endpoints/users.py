@@ -216,6 +216,11 @@ async def change_password(
         current_user, new_hashed_password
     )
 
+    # Clear force_password_change flag after successful password change
+    if current_user.force_password_change:
+        current_user.force_password_change = False
+        await current_user.save()
+
     await AuditLogService.log(
         user=current_user,
         action="change_password",
