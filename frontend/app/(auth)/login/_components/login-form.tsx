@@ -146,6 +146,16 @@ export function LoginForm() {
             loadCaptcha()
           }
         }
+        // 密码过期 (PASSWORD_EXPIRED = 5304)
+        if (err.code === 5304) {
+          router.push('/change-password?reason=expired')
+          return
+        }
+        // 强制修改密码 (FORCE_PASSWORD_CHANGE_REQUIRED = 5305)
+        if (err.code === 5305) {
+          router.push('/change-password?reason=force')
+          return
+        }
         // 邮箱未验证 (EMAIL_NOT_VERIFIED = 5004)
         const errData = err.data as Record<string, unknown> | undefined
         if (err.code === 5004 && errData?.email) {

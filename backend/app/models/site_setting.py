@@ -258,6 +258,49 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": True,
         "desc": "Enable captcha on login",
     },
+    # Password Expiration
+    "password_expiration_enabled": {
+        "value": False,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Enable password expiration policy",
+    },
+    "password_expiration_days": {
+        "value": 90,
+        "type": "int",
+        "category": "security",
+        "public": False,
+        "desc": "Password expiration period in days",
+    },
+    "password_expiration_warning_days": {
+        "value": 7,
+        "type": "int",
+        "category": "security",
+        "public": False,
+        "desc": "Warning period before expiration in days",
+    },
+    "password_history_count": {
+        "value": 5,
+        "type": "int",
+        "category": "security",
+        "public": False,
+        "desc": "Number of previous passwords to check",
+    },
+    "password_min_age_days": {
+        "value": 0,
+        "type": "int",
+        "category": "security",
+        "public": False,
+        "desc": "Minimum password age in days before change allowed",
+    },
+    "force_password_change_first_login": {
+        "value": False,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Force password change on first login",
+    },
     # Email
     "smtp_enabled": {
         "value": False,

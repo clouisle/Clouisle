@@ -98,6 +98,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Password changed successfully",
         "zh": "密码修改成功",
     },
+    # Password expiration messages
+    "password_expired": {
+        "en": "Your password has expired. Please change your password to continue.",
+        "zh": "您的密码已过期，请修改密码后继续。",
+    },
+    "password_expiring_soon": {
+        "en": "Your password will expire in {days} days. Please change it soon.",
+        "zh": "您的密码将在 {days} 天后过期，请尽快修改。",
+    },
+    "password_recently_used": {
+        "en": "This password was recently used. Please choose a different password.",
+        "zh": "此密码最近已使用过，请选择其他密码。",
+    },
+    "password_min_age_not_met": {
+        "en": "Password was changed recently. You can change it again in {days} days.",
+        "zh": "密码最近已修改，您可以在 {days} 天后再次修改。",
+    },
+    "force_password_change_required": {
+        "en": "You are required to change your password before continuing.",
+        "zh": "您需要先修改密码才能继续。",
+    },
+    # Password expiration notification messages
+    "notify_password_expiring_title": {
+        "en": "Password Expiring Soon",
+        "zh": "密码即将过期",
+    },
+    "notify_password_expiring_content": {
+        "en": "Your password will expire in {days} days. Please change it to avoid account lockout.",
+        "zh": "您的密码将在 {days} 天后过期，请及时修改以避免账户锁定。",
+    },
+    "notify_password_expired_title": {
+        "en": "Password Expired",
+        "zh": "密码已过期",
+    },
+    "notify_password_expired_content": {
+        "en": "Your password has expired. You must change it before you can log in again.",
+        "zh": "您的密码已过期，您必须修改密码才能再次登录。",
+    },
+    "notify_password_force_change_title": {
+        "en": "Password Change Required",
+        "zh": "需要修改密码",
+    },
+    "notify_password_force_change_content": {
+        "en": "You are required to change your password. Please log in and update your password.",
+        "zh": "您需要修改密码，请登录并更新您的密码。",
+    },
     "current_password_incorrect": {
         "en": "Current password is incorrect",
         "zh": "当前密码不正确",
@@ -1461,6 +1507,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_reset_password": {
         "en": "Reset password",
         "zh": "重置密码",
+    },
+    "audit_log_force_password_change": {
+        "en": "Force password change",
+        "zh": "强制修改密码",
+    },
+    "audit_log_reset_password_expiration": {
+        "en": "Reset password expiration",
+        "zh": "重置密码过期时间",
+    },
+    "audit_log_exempt_password_expiration": {
+        "en": "Exempt from password expiration",
+        "zh": "豁免密码过期",
+    },
+    "audit_log_bulk_force_password_change": {
+        "en": "Bulk force password change",
+        "zh": "批量强制修改密码",
     },
     "audit_log_create_role": {
         "en": "Create role",

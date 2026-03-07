@@ -45,6 +45,15 @@ export interface ChangePasswordData {
   new_password: string
 }
 
+export interface PasswordStatus {
+  is_exempt: boolean
+  password_changed_at: string | null
+  password_expires_at: string | null
+  is_expired: boolean
+  days_until_expiration: number | null
+  force_change_required: boolean
+}
+
 export interface UserQueryParams {
   page?: number
   pageSize?: number
@@ -72,6 +81,13 @@ export const usersApi = {
    */
   changePassword: async (data: ChangePasswordData): Promise<void> => {
     await api.post<null>('/users/me/change-password', data)
+  },
+
+  /**
+   * 获取密码过期状态
+   */
+  getPasswordStatus: async (): Promise<PasswordStatus> => {
+    return api.get<PasswordStatus>('/users/me/password-status')
   },
 
   /**

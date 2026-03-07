@@ -11,6 +11,7 @@ import {
   Activity,
   Coins,
   UserPlus,
+  ShieldAlert,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -310,6 +311,55 @@ export function OverviewTab({ stats, trendsData, isLoading }: OverviewTabProps) 
 
         {/* Sidebar - 1/3 width */}
         <div className="space-y-6">
+          {/* Password Expiration Stats */}
+          {stats.password_expiration && (
+            <Card className="border-yellow-500/50">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-yellow-600" />
+                  {t('passwordExpiration.title')}
+                </CardTitle>
+                <CardDescription>{t('passwordExpiration.description')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {stats.password_expiration.expired_count > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                    <div>
+                      <p className="text-sm font-medium text-destructive">{t('passwordExpiration.expired')}</p>
+                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiredDesc')}</p>
+                    </div>
+                    <p className="text-2xl font-bold text-destructive">{stats.password_expiration.expired_count}</p>
+                  </div>
+                )}
+                {stats.password_expiration.expiring_soon_count > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                    <div>
+                      <p className="text-sm font-medium text-yellow-700 dark:text-yellow-500">{t('passwordExpiration.expiringSoon')}</p>
+                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiringSoonDesc')}</p>
+                    </div>
+                    <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-500">{stats.password_expiration.expiring_soon_count}</p>
+                  </div>
+                )}
+                {stats.password_expiration.force_change_count > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                    <div>
+                      <p className="text-sm font-medium text-orange-700 dark:text-orange-500">{t('passwordExpiration.forceChange')}</p>
+                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.forceChangeDesc')}</p>
+                    </div>
+                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-500">{stats.password_expiration.force_change_count}</p>
+                  </div>
+                )}
+                {stats.password_expiration.expired_count === 0 &&
+                  stats.password_expiration.expiring_soon_count === 0 &&
+                  stats.password_expiration.force_change_count === 0 && (
+                    <div className="text-center p-4 rounded-lg bg-muted/50">
+                      <p className="text-sm text-muted-foreground">{t('passwordExpiration.allGood')}</p>
+                    </div>
+                  )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Active Users Card */}
           <Card>
             <CardHeader>

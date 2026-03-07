@@ -20,6 +20,11 @@ export interface DashboardStats {
     new_users_30d: number
     new_conversations_30d: number
   }
+  password_expiration?: {
+    expired_count: number
+    expiring_soon_count: number
+    force_change_count: number
+  }
 }
 
 export interface DashboardTrends {

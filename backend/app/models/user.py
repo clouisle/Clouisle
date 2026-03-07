@@ -148,6 +148,23 @@ class User(models.Model):
     )
     avatar_url = fields.CharField(max_length=512, null=True)
 
+    # Password expiration fields
+    password_changed_at = fields.DatetimeField(
+        null=True, description="When password was last changed"
+    )
+    password_expires_at = fields.DatetimeField(
+        null=True, description="Calculated expiration date"
+    )
+    force_password_change = fields.BooleanField(
+        default=False, description="Force change on next login"
+    )
+    password_expiration_exempt = fields.BooleanField(
+        default=False, description="Exempt from password expiration policy"
+    )
+    password_expiration_notified_at = fields.DatetimeField(
+        null=True, description="Last notification timestamp"
+    )
+
     roles = fields.ManyToManyField(
         "models.Role", related_name="users", through="user_roles"
     )

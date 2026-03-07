@@ -1072,6 +1072,91 @@ async def init_agent_memory_fields():
     logger.info("Agent memory fields added successfully")
 
 
+async def init_password_expiration():
+    """
+    Add password expiration fields to users table and create password_history table.
+    This handles the migration for the password expiration feature.
+    """
+    logger.info("Initializing password expiration...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if users table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Users table does not exist yet, skipping password expiration migration")
+        return
+
+    # Check if password_changed_at column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'password_changed_at'
+    """)
+
+    if not rows:
+        logger.info("Adding password expiration fields to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN password_changed_at TIMESTAMPTZ NULL,
+                ADD COLUMN password_expires_at TIMESTAMPTZ NULL,
+                ADD COLUMN force_password_change BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN password_expiration_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN password_expiration_notified_at TIMESTAMPTZ NULL
+            """)
+            logger.info("Added password expiration fields to users table")
+
+            # Initialize password_changed_at = created_at for existing users
+            await conn.execute_query("""
+                UPDATE users
+                SET password_changed_at = created_at
+                WHERE password_changed_at IS NULL AND auth_source = 'local'
+            """)
+            logger.info("Initialized password_changed_at for existing users")
+        except Exception as e:
+            logger.error(f"Could not add password expiration fields: {e}")
+            raise
+    else:
+        logger.info("Password expiration fields already exist")
+
+    # Check if password_history table exists
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'password_history' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Creating password_history table...")
+        try:
+            await conn.execute_query("""
+                CREATE TABLE IF NOT EXISTS password_history (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    hashed_password VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            logger.info("Created password_history table")
+
+            # Create index for better query performance
+            await conn.execute_query("""
+                CREATE INDEX IF NOT EXISTS idx_password_history_user_id
+                ON password_history(user_id, created_at DESC)
+            """)
+            logger.info("Created password_history index")
+        except Exception as e:
+            logger.error(f"Could not create password_history table: {e}")
+            raise
+    else:
+        logger.info("password_history table already exists")
+
+    logger.info("Password expiration migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.

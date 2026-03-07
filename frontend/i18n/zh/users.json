@@ -59,6 +59,24 @@
     "emailSubjectRequired": "请输入邮件主题",
     "emailContentRequired": "请输入邮件内容",
     "emailSent": "成功发送 {count} 封邮件",
-    "emailSentPartial": "成功发送 {sent} 封邮件，{skipped} 封因频率限制被跳过"
+    "emailSentPartial": "成功发送 {sent} 封邮件，{skipped} 封因频率限制被跳过",
+    "passwordStatus": "密码状态",
+    "forcePasswordChange": "强制修改密码",
+    "resetPasswordExpiration": "重置密码过期时间",
+    "grantPasswordExemption": "授予密码豁免",
+    "removePasswordExemption": "移除密码豁免",
+    "forcePasswordChangeSuccess": "用户下次登录时将被要求修改密码",
+    "resetPasswordExpirationSuccess": "密码过期时间已重置",
+    "passwordExemptionGranted": "已授予密码过期豁免",
+    "passwordExemptionRemoved": "已移除密码过期豁免",
+    "bulkForcePasswordChange": "已成功强制 {count} 个用户修改密码",
+    "exempt": "豁免",
+    "forceChange": "强制修改",
+    "expired": "已过期",
+    "expiringSoon": "剩 {days} 天",
+    "passwordExpirationExempt": "豁免密码过期策略",
+    "forcePasswordChangeRequired": "下次登录时必须修改密码",
+    "passwordExpired": "密码已过期",
+    "passwordExpiringSoon": "密码将在 {days} 天后过期"
   }
 }

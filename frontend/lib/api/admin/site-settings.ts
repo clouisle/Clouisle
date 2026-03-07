@@ -91,6 +91,13 @@ export const siteSettingsApi = {
       sso_auto_create_users: (ssoSettings.sso_auto_create_users as boolean) ?? true,
       sso_require_approval: (ssoSettings.sso_require_approval as boolean) ?? false,
       sso_match_by_email: (ssoSettings.sso_match_by_email as boolean) ?? true,
+      // Password expiration
+      password_expiration_enabled: (settings.password_expiration_enabled as boolean) ?? false,
+      password_expiration_days: (settings.password_expiration_days as number) ?? 90,
+      password_expiration_warning_days: (settings.password_expiration_warning_days as number) ?? 7,
+      password_history_count: (settings.password_history_count as number) ?? 5,
+      password_min_age_days: (settings.password_min_age_days as number) ?? 0,
+      force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
     }
   },
 

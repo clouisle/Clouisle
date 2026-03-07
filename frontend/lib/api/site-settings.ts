@@ -57,6 +57,13 @@ export interface SecuritySettings {
   sso_auto_create_users: boolean
   sso_require_approval: boolean
   sso_match_by_email: boolean
+  // Password expiration
+  password_expiration_enabled: boolean
+  password_expiration_days: number
+  password_expiration_warning_days: number
+  password_history_count: number
+  password_min_age_days: number
+  force_password_change_first_login: boolean
 }
 
 export interface EmailSettings {

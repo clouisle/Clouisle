@@ -26,6 +26,7 @@ celery_app = Celery(
         "app.tasks.audit_log",
         "app.tasks.notification",
         "app.tasks.api_key",
+        "app.tasks.password_expiration",
     ],
 )
 
@@ -57,6 +58,7 @@ celery_app.conf.task_routes = {
     "app.tasks.notification.*": {"queue": "default"},
     "app.tasks.audit_log.*": {"queue": "default"},
     "app.tasks.api_key.*": {"queue": "default"},
+    "app.tasks.password_expiration.*": {"queue": "default"},
     "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
 }
@@ -77,6 +79,11 @@ celery_app.conf.beat_schedule = {
     "check-api-key-expiration": {
         "task": "tasks.check_api_key_expiration",
         "schedule": crontab(hour=9, minute=0),
+    },
+    # Check password expiration every day at 08:00
+    "check-password-expiration": {
+        "task": "tasks.check_password_expiration",
+        "schedule": crontab(hour=8, minute=0),
     },
 }
 

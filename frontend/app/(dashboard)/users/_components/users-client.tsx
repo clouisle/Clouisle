@@ -20,6 +20,10 @@ import {
   UserPlus,
   UserMinus,
   Link as LinkIcon,
+  KeyRound,
+  Clock,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usersApi, type User, type PageData, type UserStats } from '@/lib/api/admin/users'
@@ -324,6 +328,55 @@ export function UsersClient() {
   const handleBulkDelete = () => {
     setBulkDeleteDialogOpen(true)
   }
+
+  // 批量强制修改密码
+  const handleBulkForcePasswordChange = async () => {
+    try {
+      await usersApi.bulkForcePasswordChange(Array.from(selectedUsers))
+      toast.success(t('bulkForcePasswordChange', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 强制修改密码
+  const handleForcePasswordChange = async (userId: string) => {
+    try {
+      await usersApi.forcePasswordChange(userId)
+      toast.success(t('forcePasswordChangeSuccess'))
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 重置密码过期时间
+  const handleResetPasswordExpiration = async (userId: string) => {
+    try {
+      await usersApi.resetPasswordExpiration(userId)
+      toast.success(t('resetPasswordExpirationSuccess'))
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 切换密码过期豁免
+  const handleTogglePasswordExemption = async (user: User) => {
+    try {
+      await usersApi.exemptPasswordExpiration(user.id, !user.password_expiration_exempt)
+      toast.success(
+        user.password_expiration_exempt
+          ? t('passwordExemptionRemoved')
+          : t('passwordExemptionGranted')
+      )
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
   
   // 确认批量删除
   const confirmBulkDelete = async () => {
@@ -353,6 +406,77 @@ export function UsersClient() {
   const getPrimaryRole = (user: User) => {
     if (user.roles.length > 0) return user.roles[0].name
     return '-'
+  }
+
+  // 获取密码过期状态
+  const getPasswordExpirationBadge = (user: User) => {
+    // SSO 用户不显示
+    if (user.auth_source !== 'local') return null
+
+    // 豁免用户
+    if (user.password_expiration_exempt) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="outline" className="gap-1">
+              <ShieldCheck className="h-3 w-3" />
+              {t('exempt')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('passwordExpirationExempt')}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    // 强制修改
+    if (user.force_password_change) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="destructive" className="gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              {t('forceChange')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('forcePasswordChangeRequired')}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    // 计算剩余天数
+    if (user.password_expires_at) {
+      const expiresAt = new Date(user.password_expires_at)
+      const now = new Date()
+      const daysRemaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysRemaining < 0) {
+        return (
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="destructive" className="gap-1">
+                <Clock className="h-3 w-3" />
+                {t('expired')}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{t('passwordExpired')}</TooltipContent>
+          </Tooltip>
+        )
+      } else if (daysRemaining <= 7) {
+        return (
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="outline" className="gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-500">
+                <Clock className="h-3 w-3" />
+                {t('expiringSoon', { days: daysRemaining })}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{t('passwordExpiringSoon', { days: daysRemaining })}</TooltipContent>
+          </Tooltip>
+        )
+      }
+    }
+
+    return null
   }
   
   return (
@@ -452,6 +576,7 @@ export function UsersClient() {
               <TableHead>SSO</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('role')}</TableHead>
+              <TableHead>{t('passwordStatus')}</TableHead>
               <TableHead>{t('createdAt')}</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -459,13 +584,13 @@ export function UsersClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
             ) : filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   {t('noUsers')}
                 </TableCell>
               </TableRow>
@@ -525,6 +650,7 @@ export function UsersClient() {
                       <span>{getPrimaryRole(user)}</span>
                     </div>
                   </TableCell>
+                  <TableCell>{getPasswordExpirationBadge(user)}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(user.created_at)}
                   </TableCell>
@@ -534,7 +660,7 @@ export function UsersClient() {
                         <MoreHorizontal className="h-4 w-4" />
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-56">
                         {canPerform('admin:user:update') && (
                           <DropdownMenuItem onClick={() => handleEdit(user)}>
                             <Pencil className="mr-2 h-4 w-4" />
@@ -556,6 +682,34 @@ export function UsersClient() {
                               </>
                             )}
                           </DropdownMenuItem>
+                        )}
+
+                        {/* Password expiration actions for local auth users */}
+                        {canPerform('admin:user:update') && user.auth_source === 'local' && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleForcePasswordChange(user.id)}>
+                              <KeyRound className="mr-2 h-4 w-4" />
+                              {t('forcePasswordChange')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleResetPasswordExpiration(user.id)}>
+                              <Clock className="mr-2 h-4 w-4" />
+                              {t('resetPasswordExpiration')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleTogglePasswordExemption(user)}>
+                              {user.password_expiration_exempt ? (
+                                <>
+                                  <ShieldAlert className="mr-2 h-4 w-4" />
+                                  {t('removePasswordExemption')}
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldCheck className="mr-2 h-4 w-4" />
+                                  {t('grantPasswordExemption')}
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                          </>
                         )}
 
                         {canPerform('admin:user:delete') && (
@@ -753,6 +907,24 @@ export function UsersClient() {
                   }
                 />
                 <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
+            )}
+
+            {canPerform('admin:user:update') && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkForcePasswordChange}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('forcePasswordChange')}</TooltipContent>
               </Tooltip>
             )}
           </div>

@@ -43,6 +43,12 @@ export default function SiteSettingsSecurityPage() {
     sso_auto_create_users: true,
     sso_require_approval: false,
     sso_match_by_email: true,
+    password_expiration_enabled: false,
+    password_expiration_days: 90,
+    password_expiration_warning_days: 7,
+    password_history_count: 5,
+    password_min_age_days: 0,
+    force_password_change_first_login: false,
   })
 
   const loadSettings = React.useCallback(async () => {
@@ -74,6 +80,12 @@ export default function SiteSettingsSecurityPage() {
         sso_auto_create_users: data.sso_auto_create_users ?? true,
         sso_require_approval: data.sso_require_approval ?? false,
         sso_match_by_email: data.sso_match_by_email ?? true,
+        password_expiration_enabled: data.password_expiration_enabled ?? false,
+        password_expiration_days: data.password_expiration_days ?? 90,
+        password_expiration_warning_days: data.password_expiration_warning_days ?? 7,
+        password_history_count: data.password_history_count ?? 5,
+        password_min_age_days: data.password_min_age_days ?? 0,
+        force_password_change_first_login: data.force_password_change_first_login ?? false,
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -252,6 +264,106 @@ export default function SiteSettingsSecurityPage() {
               disabled={!canUpdate}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('passwordExpiration')}</CardTitle>
+          <CardDescription>{t('passwordExpirationDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('passwordExpirationEnabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('passwordExpirationEnabledDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.password_expiration_enabled}
+              onCheckedChange={(checked) => updateSetting('password_expiration_enabled', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+          {settings.password_expiration_enabled && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="expirationDays">{t('passwordExpirationDays')}</Label>
+                <p className="text-sm text-muted-foreground">{t('passwordExpirationDaysDescription')}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="expirationDays"
+                    type="number"
+                    value={settings.password_expiration_days}
+                    onChange={(e) => updateSetting('password_expiration_days', parseInt(e.target.value) || 90)}
+                    min={1}
+                    max={365}
+                    className="w-32"
+                    disabled={!canUpdate}
+                  />
+                  <span className="text-sm text-muted-foreground">{t('days')}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="warningDays">{t('passwordExpirationWarningDays')}</Label>
+                <p className="text-sm text-muted-foreground">{t('passwordExpirationWarningDaysDescription')}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="warningDays"
+                    type="number"
+                    value={settings.password_expiration_warning_days}
+                    onChange={(e) => updateSetting('password_expiration_warning_days', parseInt(e.target.value) || 7)}
+                    min={1}
+                    max={30}
+                    className="w-32"
+                    disabled={!canUpdate}
+                  />
+                  <span className="text-sm text-muted-foreground">{t('days')}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="historyCount">{t('passwordHistoryCount')}</Label>
+                <p className="text-sm text-muted-foreground">{t('passwordHistoryCountDescription')}</p>
+                <Input
+                  id="historyCount"
+                  type="number"
+                  value={settings.password_history_count}
+                  onChange={(e) => updateSetting('password_history_count', parseInt(e.target.value) || 5)}
+                  min={0}
+                  max={24}
+                  className="w-32"
+                  disabled={!canUpdate}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="minAgeDays">{t('passwordMinAgeDays')}</Label>
+                <p className="text-sm text-muted-foreground">{t('passwordMinAgeDaysDescription')}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="minAgeDays"
+                    type="number"
+                    value={settings.password_min_age_days}
+                    onChange={(e) => updateSetting('password_min_age_days', parseInt(e.target.value) || 0)}
+                    min={0}
+                    max={30}
+                    className="w-32"
+                    disabled={!canUpdate}
+                  />
+                  <span className="text-sm text-muted-foreground">{t('days')}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>{t('forcePasswordChangeFirstLogin')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('forcePasswordChangeFirstLoginDescription')}</p>
+                </div>
+                <Switch
+                  checked={settings.force_password_change_first_login}
+                  onCheckedChange={(checked) => updateSetting('force_password_change_first_login', checked)}
+                  disabled={!canUpdate}
+                />
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

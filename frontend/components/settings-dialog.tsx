@@ -31,8 +31,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { usersApi, authApi, ssoApi, type User as UserType, type SSOConnection } from '@/lib/api'
+import { usersApi, authApi, ssoApi, type User as UserType, type SSOConnection, type PasswordStatus } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AlertCircle, Clock } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
 
 interface SettingsDialogProps {
   open: boolean
@@ -43,11 +46,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const t = useTranslations('settings')
   const tCommon = useTranslations('common')
   const tSSO = useTranslations('sso')
+  const tAuth = useTranslations('auth')
   const router = useRouter()
   const { settings: siteSettings } = useSiteSettings()
 
   const [loading, setLoading] = React.useState(true)
   const [user, setUser] = React.useState<UserType | null>(null)
+  const [passwordStatus, setPasswordStatus] = React.useState<PasswordStatus | null>(null)
 
   // Profile form
   const [savingProfile, setSavingProfile] = React.useState(false)
@@ -90,6 +95,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         email: userData.email,
         avatar_url: userData.avatar_url || '',
       })
+
+      // Load password status for local auth users
+      if (userData.auth_source === 'local') {
+        try {
+          const status = await usersApi.getPasswordStatus()
+          setPasswordStatus(status)
+        } catch {
+          // Password status not available
+        }
+      }
     } catch {
       // Error handled by API client
     } finally {
@@ -380,6 +395,45 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Password Status */}
+                  {passwordStatus && !passwordStatus.is_exempt && (
+                    <div className="space-y-3">
+                      {passwordStatus.is_expired && (
+                        <Alert className="border-destructive bg-destructive/10">
+                          <AlertCircle className="h-4 w-4 text-destructive" />
+                          <AlertDescription className="text-destructive">
+                            {tAuth('passwordExpired')}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {!passwordStatus.is_expired &&
+                        passwordStatus.days_until_expiration !== null &&
+                        passwordStatus.days_until_expiration <= 7 && (
+                          <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                            <Clock className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                            <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                              {tAuth('passwordExpiringSoon', {
+                                days: passwordStatus.days_until_expiration,
+                              })}
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      {passwordStatus.password_expires_at && (
+                        <div className="rounded-lg border bg-muted/50 p-3">
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">
+                              {tAuth('passwordExpiresAt')}:{' '}
+                              <span className="font-medium text-foreground">
+                                {formatDate(passwordStatus.password_expires_at)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(user?.auth_source === 'local' ||
                     (user?.sso_connections && user.sso_connections.length === 0)) && (
                     <div className="space-y-2">

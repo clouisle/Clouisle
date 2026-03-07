@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
         init_agent_user_input_request,
         init_agent_memory_fields,
         init_permission_is_system_field,
+        init_password_expiration,
     )
 
     try:
@@ -97,6 +98,11 @@ async def lifespan(app: FastAPI):
         await init_agent_memory_fields()
     except Exception as e:
         logger.warning(f"Agent memory fields migration failed: {e}")
+
+    try:
+        await init_password_expiration()
+    except Exception as e:
+        logger.warning(f"Password expiration migration failed: {e}")
 
     try:
         await init_permission_is_system_field()

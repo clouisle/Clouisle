@@ -51,6 +51,7 @@ from app.schemas.verification import (
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
+from app.services.password_expiration import PasswordExpirationService
 from app.models.notification import AutoNotificationType, NotificationLevel
 
 router = APIRouter()
@@ -208,6 +209,26 @@ async def login_access_token(
             data={"email": user.email},
         )
 
+    # Check password expiration
+    is_expired = await PasswordExpirationService.is_password_expired(user)
+    if is_expired:
+        # Set force_password_change flag if not already set
+        if not user.force_password_change:
+            user.force_password_change = True
+            await user.save()
+
+        raise BusinessError(
+            code=ResponseCode.PASSWORD_EXPIRED,
+            msg_key="password_expired",
+        )
+
+    # Check if force password change is required
+    if user.force_password_change:
+        raise BusinessError(
+            code=ResponseCode.FORCE_PASSWORD_CHANGE_REQUIRED,
+            msg_key="force_password_change_required",
+        )
+
     # Reset failed login attempts on successful login
     await reset_login_attempts(user)
 
@@ -281,11 +302,23 @@ async def login_access_token(
         request=request,
     )
 
+    # Check if password is expiring soon
+    should_warn = await PasswordExpirationService.should_warn_user(user)
+    days_remaining = await PasswordExpirationService.days_until_expiration(user)
+
     token_data = {
         "access_token": access_token,
         "token_type": "bearer",
     }
-    return success(data=token_data, msg_key="login_successful")
+
+    # Add password expiration warning to response metadata if needed
+    if should_warn and days_remaining is not None:
+        return success(
+            data=token_data,
+            msg_key="login_successful",
+        )
+    else:
+        return success(data=token_data, msg_key="login_successful")
 
 
 @router.post("/logout", response_model=Response[None])
@@ -399,6 +432,9 @@ async def register(
     require_approval = await SiteSetting.get_value("require_approval", False)
     email_verification = await SiteSetting.get_value("email_verification", True)
     default_language = await SiteSetting.get_value("default_language", "en")
+    force_first_login = await SiteSetting.get_value(
+        "force_password_change_first_login", False
+    )
 
     # Create user
     hashed_password = security.get_password_hash(user_in.password)
@@ -413,7 +449,16 @@ async def register(
         # First user auto-verified, or if email verification is disabled
         email_verified=is_first_user or not email_verification,
         locale=default_language,
+        # Initialize password expiration fields
+        password_changed_at=now_utc(),
+        force_password_change=force_first_login and not is_first_user,
     )
+
+    # Calculate and set password expiration date
+    user.password_expires_at = (
+        await PasswordExpirationService.calculate_expiration_date(user)
+    )
+    await user.save()
 
     # If first user, assign Super Admin role
     if is_first_user:
@@ -758,11 +803,17 @@ async def reset_password(
             msg_key="user_not_found",
         )
 
-    # Update password
-    user.hashed_password = security.get_password_hash(data.new_password)
+    # Update password with expiration logic
+    new_hashed_password = security.get_password_hash(data.new_password)
+    await PasswordExpirationService.update_password_with_expiration(
+        user, new_hashed_password
+    )
+
     # Reset login attempts
     user.failed_login_attempts = 0
     user.locked_until = None  # type: ignore[assignment]
+    # Force password change after admin reset
+    user.force_password_change = True
     await user.save()
 
     # 记录密码重置
