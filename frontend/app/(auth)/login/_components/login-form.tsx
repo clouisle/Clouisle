@@ -118,6 +118,13 @@ export function LoginForm() {
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
 
+      // 检查是否需要强制修改密码
+      if (token.force_password_change) {
+        toast.success(t('loginSuccess'))
+        router.push(`/change-password?reason=${token.reason || 'force'}`)
+        return
+      }
+
       // 同步当前浏览器语言设置到后端用户数据
       try {
         const user = await authApi.getCurrentUser({ skipAuthRedirect: true })
@@ -145,16 +152,6 @@ export function LoginForm() {
           if (captchaEnabled) {
             loadCaptcha()
           }
-        }
-        // 密码过期 (PASSWORD_EXPIRED = 5304)
-        if (err.code === 5304) {
-          router.push('/change-password?reason=expired')
-          return
-        }
-        // 强制修改密码 (FORCE_PASSWORD_CHANGE_REQUIRED = 5305)
-        if (err.code === 5305) {
-          router.push('/change-password?reason=force')
-          return
         }
         // 邮箱未验证 (EMAIL_NOT_VERIFIED = 5004)
         const errData = err.data as Record<string, unknown> | undefined

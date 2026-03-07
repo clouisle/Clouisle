@@ -77,6 +77,27 @@
     "passwordExpirationExempt": "豁免密码过期策略",
     "forcePasswordChangeRequired": "下次登录时必须修改密码",
     "passwordExpired": "密码已过期",
-    "passwordExpiringSoon": "密码将在 {days} 天后过期"
+    "passwordExpiringSoon": "密码将在 {days} 天后过期",
+    "passwordExempt": "豁免",
+    "normal": "正常",
+    "sso": "SSO",
+    "unverified": "未验证",
+    "emailNotVerifiedDesc": "邮箱地址尚未验证",
+    "sendNotification": "发送通知",
+    "sendNotificationTitle": "发送通知",
+    "sendNotificationDescription": "向选中的 {count} 个用户发送通知",
+    "notificationTitle": "标题",
+    "notificationTitlePlaceholder": "输入通知标题",
+    "notificationContent": "内容",
+    "notificationContentPlaceholder": "输入通知内容...",
+    "notificationLevel": "优先级",
+    "levelLow": "低",
+    "levelMedium": "中",
+    "levelHigh": "高",
+    "notificationTitleRequired": "请输入通知标题",
+    "notificationContentRequired": "请输入通知内容",
+    "notificationSent": "成功向 {count} 个用户发送通知",
+    "bulkPasswordExemptionGranted": "已成功授予 {count} 个用户密码豁免",
+    "bulkPasswordExemptionRevoked": "已成功移除 {count} 个用户的密码豁免"
   }
 }

@@ -38,6 +38,7 @@ export function UserTable({ users, onEdit, onDelete, onStatusChange }: UserTable
             <th className="h-12 px-4 text-left align-middle font-medium">{t('allUsers')}</th>
             <th className="h-12 px-4 text-left align-middle font-medium">Email</th>
             <th className="h-12 px-4 text-left align-middle font-medium">{t('status')}</th>
+            <th className="h-12 px-4 text-left align-middle font-medium">{t('passwordStatus')}</th>
             <th className="h-12 px-4 text-left align-middle font-medium">{t('createdAt')}</th>
             <th className="h-12 px-4 text-right align-middle font-medium w-[70px]"></th>
           </tr>
@@ -54,7 +55,7 @@ export function UserTable({ users, onEdit, onDelete, onStatusChange }: UserTable
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={5} className="h-24 text-center text-muted-foreground">
+              <td colSpan={6} className="h-24 text-center text-muted-foreground">
                 {t('noUsers')}
               </td>
             </tr>
@@ -167,6 +168,25 @@ function UserTableRow({ user, onEdit, onDelete, onStatusChange }: UserTableRowPr
         <Badge variant={user.is_active ? 'default' : 'outline'}>
           {t(user.is_active ? 'active' : 'inactive')}
         </Badge>
+      </td>
+      <td className="p-4">
+        <div className="flex flex-wrap gap-1">
+          {user.force_password_change && (
+            <Badge variant="destructive" className="text-xs">
+              {t('forcePasswordChange')}
+            </Badge>
+          )}
+          {user.password_expiration_exempt && (
+            <Badge variant="secondary" className="text-xs">
+              {t('passwordExempt')}
+            </Badge>
+          )}
+          {!user.force_password_change && !user.password_expiration_exempt && (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              {t('normal')}
+            </Badge>
+          )}
+        </div>
       </td>
       <td className="p-4 text-muted-foreground">{formatDate(user.created_at)}</td>
       <td className="p-4 text-right">

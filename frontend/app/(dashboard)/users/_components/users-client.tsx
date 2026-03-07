@@ -16,7 +16,7 @@ import {
   ChevronsRight,
   Shield,
   X,
-  Mail,
+  Bell,
   UserPlus,
   UserMinus,
   Link as LinkIcon,
@@ -24,9 +24,12 @@ import {
   Clock,
   ShieldAlert,
   ShieldCheck,
+  ShieldOff,
+  AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usersApi, type User, type PageData, type UserStats } from '@/lib/api/admin/users'
+import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { rolesApi } from '@/lib/api/admin/roles'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -73,7 +76,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { UserDialog } from './user-dialog'
 import { DeleteUserDialog } from './delete-user-dialog'
-import { SendEmailDialog } from './send-email-dialog'
+import { SendNotificationDialog } from './send-notification-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type Role = {
@@ -87,7 +90,10 @@ export function UsersClient() {
   const t = useTranslations('users')
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
-  
+
+  // 系统设置
+  const [siteSettings, setSiteSettings] = React.useState<PublicSiteSettings | null>(null)
+
   // 数据状态
   const [users, setUsers] = React.useState<User[]>([])
   const [roles, setRoles] = React.useState<Role[]>([])
@@ -122,7 +128,7 @@ export function UsersClient() {
   const [userDialogOpen, setUserDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
-  const [emailDialogOpen, setEmailDialogOpen] = React.useState(false)
+  const [notificationDialogOpen, setNotificationDialogOpen] = React.useState(false)
   const [selectedUser, setSelectedUser] = React.useState<User | null>(null)
   
   // 加载角色列表
@@ -136,6 +142,19 @@ export function UsersClient() {
       }
     }
     loadRoles()
+  }, [])
+
+  // 加载系统设置
+  React.useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await siteSettingsApi.getPublic()
+        setSiteSettings(data)
+      } catch {
+        // 忽略错误
+      }
+    }
+    loadSettings()
   }, [])
 
   // 加载用户统计
@@ -291,9 +310,9 @@ export function UsersClient() {
     setSelectedUsers(new Set())
   }
   
-  // 批量发送邮件
-  const handleBulkEmail = () => {
-    setEmailDialogOpen(true)
+  // 批量发送通知
+  const handleBulkNotification = () => {
+    setNotificationDialogOpen(true)
   }
 
   // 批量激活
@@ -334,6 +353,36 @@ export function UsersClient() {
     try {
       await usersApi.bulkForcePasswordChange(Array.from(selectedUsers))
       toast.success(t('bulkForcePasswordChange', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 批量授予密码豁免
+  const handleBulkGrantExemption = async () => {
+    try {
+      const promises = Array.from(selectedUsers).map(id =>
+        usersApi.exemptPasswordExpiration(id, true)
+      )
+      await Promise.all(promises)
+      toast.success(t('bulkPasswordExemptionGranted', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 批量移除密码豁免
+  const handleBulkRevokeExemption = async () => {
+    try {
+      const promises = Array.from(selectedUsers).map(id =>
+        usersApi.exemptPasswordExpiration(id, false)
+      )
+      await Promise.all(promises)
+      toast.success(t('bulkPasswordExemptionRevoked', { count: selectedUsers.size }))
       setSelectedUsers(new Set())
       loadUsers()
     } catch {
@@ -410,8 +459,29 @@ export function UsersClient() {
 
   // 获取密码过期状态
   const getPasswordExpirationBadge = (user: User) => {
-    // SSO 用户不显示
-    if (user.auth_source !== 'local') return null
+    // SSO 用户显示 SSO 标识
+    if (user.auth_source !== 'local') {
+      return (
+        <Badge variant="secondary" className="gap-1">
+          {t('sso')}
+        </Badge>
+      )
+    }
+
+    // 邮箱未验证（仅在系统开启邮箱校验时显示）
+    if (siteSettings?.email_verification && !user.email_verified) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="outline" className="gap-1 border-amber-500 text-amber-700 dark:text-amber-500">
+              <AlertCircle className="h-3 w-3" />
+              {t('unverified')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('emailNotVerifiedDesc')}</TooltipContent>
+        </Tooltip>
+      )
+    }
 
     // 豁免用户
     if (user.password_expiration_exempt) {
@@ -476,7 +546,12 @@ export function UsersClient() {
       }
     }
 
-    return null
+    // 正常状态
+    return (
+      <Badge variant="outline" className="gap-1 text-muted-foreground">
+        {t('normal')}
+      </Badge>
+    )
   }
   
   return (
@@ -699,7 +774,7 @@ export function UsersClient() {
                             <DropdownMenuItem onClick={() => handleTogglePasswordExemption(user)}>
                               {user.password_expiration_exempt ? (
                                 <>
-                                  <ShieldAlert className="mr-2 h-4 w-4" />
+                                  <ShieldOff className="mr-2 h-4 w-4" />
                                   {t('removePasswordExemption')}
                                 </>
                               ) : (
@@ -816,11 +891,11 @@ export function UsersClient() {
       />
       
       {/* 发送邮件 Dialog */}
-      <SendEmailDialog
-        open={emailDialogOpen}
-        onOpenChange={setEmailDialogOpen}
-        users={users.filter(u => selectedUsers.has(u.id))}
-        onSuccess={() => setSelectedUsers(new Set())}
+      <SendNotificationDialog
+        open={notificationDialogOpen}
+        onOpenChange={setNotificationDialogOpen}
+        userIds={Array.from(selectedUsers)}
+        users={users}
       />
       
       {/* 批量操作浮动工具栏 */}
@@ -842,18 +917,18 @@ export function UsersClient() {
 
             <Tooltip>
               <TooltipTrigger
-                onClick={handleBulkEmail}
+                onClick={handleBulkNotification}
                 render={
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
                   >
-                    <Mail className="h-4 w-4" />
+                    <Bell className="h-4 w-4" />
                   </Button>
                 }
               />
-              <TooltipContent>{t('sendEmail')}</TooltipContent>
+              <TooltipContent>{t('sendNotification')}</TooltipContent>
             </Tooltip>
 
             {canPerform('admin:user:update') && (
@@ -911,21 +986,55 @@ export function UsersClient() {
             )}
 
             {canPerform('admin:user:update') && (
-              <Tooltip>
-                <TooltipTrigger
-                  onClick={handleBulkForcePasswordChange}
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <TooltipContent>{t('forcePasswordChange')}</TooltipContent>
-              </Tooltip>
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkForcePasswordChange}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('forcePasswordChange')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkGrantExemption}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('grantPasswordExemption')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkRevokeExemption}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <ShieldOff className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('removePasswordExemption')}</TooltipContent>
+                </Tooltip>
+              </>
             )}
           </div>
         </div>

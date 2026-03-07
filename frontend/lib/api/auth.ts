@@ -3,6 +3,8 @@ import { api } from './client'
 export interface Token {
   access_token: string
   token_type: string
+  force_password_change?: boolean
+  reason?: 'expired' | 'force'
 }
 
 export interface SSOConnection {
@@ -31,6 +33,8 @@ export interface User {
   last_login: string | null
   auth_source: string
   external_id: string | null
+  force_password_change: boolean
+  password_expiration_exempt: boolean
   roles: Role[]
   sso_connections: SSOConnection[]
 }

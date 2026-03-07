@@ -77,6 +77,27 @@
     "passwordExpirationExempt": "Exempt from password expiration policy",
     "forcePasswordChangeRequired": "Must change password on next login",
     "passwordExpired": "Password has expired",
-    "passwordExpiringSoon": "Password expires in {days} days"
+    "passwordExpiringSoon": "Password expires in {days} days",
+    "passwordExempt": "Exempt",
+    "normal": "Normal",
+    "sso": "SSO",
+    "unverified": "Unverified",
+    "emailNotVerifiedDesc": "Email address has not been verified",
+    "sendNotification": "Send Notification",
+    "sendNotificationTitle": "Send Notification",
+    "sendNotificationDescription": "Send notification to {count} selected user(s)",
+    "notificationTitle": "Title",
+    "notificationTitlePlaceholder": "Enter notification title",
+    "notificationContent": "Content",
+    "notificationContentPlaceholder": "Enter notification content...",
+    "notificationLevel": "Priority Level",
+    "levelLow": "Low",
+    "levelMedium": "Medium",
+    "levelHigh": "High",
+    "notificationTitleRequired": "Please enter notification title",
+    "notificationContentRequired": "Please enter notification content",
+    "notificationSent": "Successfully sent notification to {count} user(s)",
+    "bulkPasswordExemptionGranted": "Successfully granted password exemption to {count} user(s)",
+    "bulkPasswordExemptionRevoked": "Successfully revoked password exemption from {count} user(s)"
   }
 }

@@ -175,7 +175,33 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       onOpenChange(false)
     } catch (error) {
       if (error instanceof ApiError && error.isValidationError()) {
-        setFieldErrors(error.getFieldErrors())
+        const errors = error.getFieldErrors()
+        // 处理密码验证错误（后端返回的是数组格式）
+        if (error.data && typeof error.data === 'object' && 'errors' in error.data) {
+          const errorData = error.data as { errors: string[] }
+          if (Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+            // 将密码错误数组转换为可读的错误消息
+            const passwordErrors = errorData.errors.map(err => {
+              // 处理带参数的错误消息，如 "password_min_length:8"
+              const [key, param] = err.split(':')
+              if (key === 'password_min_length') {
+                return authT('passwordMinLength', { length: param })
+              } else if (key === 'password_require_uppercase') {
+                return authT('passwordRequireUppercase')
+              } else if (key === 'password_require_number') {
+                return authT('passwordRequireNumber')
+              } else if (key === 'password_require_special') {
+                return authT('passwordRequireSpecial')
+              } else if (key === 'password_recently_used') {
+                return authT('passwordRecentlyUsed')
+              }
+              return err
+            }).join('; ')
+            setFieldErrors({ password: passwordErrors })
+            return
+          }
+        }
+        setFieldErrors(errors)
       }
     } finally {
       setIsSubmitting(false)
