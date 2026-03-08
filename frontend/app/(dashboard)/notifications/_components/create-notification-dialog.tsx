@@ -49,7 +49,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
   const [userSearch, setUserSearch] = React.useState('')
   const [debouncedUserSearch, setDebouncedUserSearch] = React.useState('')
   const [selectedUserOption, setSelectedUserOption] = React.useState<{ value: string; label: string } | null>(null)
-  const [formType, setFormType] = React.useState('system.announcement')
+  const [formType, setFormType] = React.useState('system_announcement')
   const [formTitle, setFormTitle] = React.useState('')
   const [formContent, setFormContent] = React.useState('')
   const [formLevel, setFormLevel] = React.useState<NotificationLevel>('medium')
@@ -140,7 +140,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
       setFormTeamId(null)
       setFormUserId('')
       setSelectedUserOption(null)
-      setFormType('system.announcement')
+      setFormType('system_announcement')
       setFormTitle('')
       setFormContent('')
       setFormLevel('medium')
@@ -248,28 +248,45 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
               <Select value={formType} onValueChange={(value) => value && setFormType(value)}>
                 <SelectTrigger>
                   <span>
-                    {t(`admin.typeOptions.${formType.replace(/\./g, '_')}`)}
+                    {t(`admin.typeOptions.${formType}`)}
                   </span>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   {[
-                    'system.announcement',
-                    'team.invite',
-                    'team.role_changed',
-                    'kb.doc_indexed',
-                    'kb.doc_failed',
-                    'workflow.run_failed',
-                    'app.publish',
-                    'app.unpublish',
-                    'model.test_failed',
-                    'quota.near_limit',
-                    'quota.exceeded',
-                    'security.login_anomaly',
-                    'user.mention',
-                    'user.assigned',
+                    'system_announcement',
+                    'team_invite',
+                    'team_member_added',
+                    'team_member_removed',
+                    'team_role_changed',
+                    'team_ownership_transferred',
+                    'team_model_granted',
+                    'team_model_revoked',
+                    'user_activated',
+                    'user_deactivated',
+                    'user_password_reset',
+                    'user_pending_approval',
+                    'user_mention',
+                    'user_assigned',
+                    'kb_doc_indexed',
+                    'kb_doc_failed',
+                    'workflow_run_success',
+                    'workflow_run_failed',
+                    'agent_published',
+                    'agent_unpublished',
+                    'apikey_expiring',
+                    'apikey_expired',
+                    'security_login_anomaly',
+                    'security_account_locked',
+                    'security_password_changed',
+                    'password_expiring',
+                    'password_expired',
+                    'password_force_change',
+                    'model_test_failed',
+                    'quota_near_limit',
+                    'quota_exceeded',
                   ].map((type) => (
                     <SelectItem key={type} value={type}>
-                      {t(`admin.typeOptions.${type.replace(/\./g, '_')}`)}
+                      {t(`admin.typeOptions.${type}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
