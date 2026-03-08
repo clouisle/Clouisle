@@ -54,6 +54,18 @@ export interface PasswordStatus {
   force_change_required: boolean
 }
 
+export interface TOTPSetupResponse {
+  secret: string
+  qr_code: string
+  backup_codes: string[]
+}
+
+export interface TOTPStatusResponse {
+  enabled: boolean
+  enabled_at: string | null
+  remaining_backup_codes: number
+}
+
 export interface UserQueryParams {
   page?: number
   pageSize?: number
@@ -95,5 +107,45 @@ export const usersApi = {
    */
   deleteAccount: async (password: string): Promise<void> => {
     await api.delete<null>('/users/me', { password })
+  },
+}
+
+/**
+ * TOTP (Two-Factor Authentication) API
+ */
+export const totpApi = {
+  /**
+   * 生成 TOTP 密钥和二维码
+   */
+  setup: async (): Promise<TOTPSetupResponse> => {
+    return api.post<TOTPSetupResponse>('/totp/setup')
+  },
+
+  /**
+   * 启用 TOTP 2FA
+   */
+  enable: async (code: string): Promise<void> => {
+    await api.post<null>('/totp/enable', { code })
+  },
+
+  /**
+   * 禁用 TOTP 2FA
+   */
+  disable: async (password: string, code: string, isBackupCode: boolean = false): Promise<void> => {
+    await api.post<null>('/totp/disable', { password, code, is_backup_code: isBackupCode })
+  },
+
+  /**
+   * 重新生成备份码
+   */
+  regenerateBackupCodes: async (code: string): Promise<{ codes: string[] }> => {
+    return api.post<{ codes: string[] }>('/totp/regenerate-backup-codes', { code })
+  },
+
+  /**
+   * 获取 TOTP 状态
+   */
+  getStatus: async (): Promise<TOTPStatusResponse> => {
+    return api.get<TOTPStatusResponse>('/totp/status')
   },
 }

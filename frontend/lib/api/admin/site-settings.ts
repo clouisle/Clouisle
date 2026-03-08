@@ -98,6 +98,8 @@ export const siteSettingsApi = {
       password_history_count: (settings.password_history_count as number) ?? 5,
       password_min_age_days: (settings.password_min_age_days as number) ?? 0,
       force_password_change_first_login: (settings.force_password_change_first_login as boolean) ?? false,
+      // TOTP
+      require_totp: (settings.require_totp as boolean) ?? false,
     }
   },
 

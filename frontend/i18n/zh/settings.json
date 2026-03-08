@@ -77,6 +77,23 @@
     "createFirstKey": "创建您的第一个 API 密钥",
     "created": "创建于",
     "lastUsed": "最后使用",
-    "invalidEmail": "请输入有效的邮箱地址"
+    "invalidEmail": "请输入有效的邮箱地址",
+    "twoFactorAuth": "双因素认证",
+    "twoFactorAuthDescription": "为您的账户添加额外的安全保护",
+    "twoFactorEnabled": "双因素认证已启用",
+    "twoFactorDisabled": "双因素认证未启用",
+    "enableTwoFactor": "启用双因素认证",
+    "disableTwoFactor": "禁用双因素认证",
+    "regenerateBackupCodes": "重新生成备份码",
+    "twoFactorEnabledAt": "启用于",
+    "backupCodesRemaining": "剩余 {count} 个备份码",
+    "setupTwoFactor": "设置双因素认证",
+    "setupTwoFactorDescription": "使用基于 TOTP 的双因素认证保护您的账户",
+    "disableTwoFactorConfirm": "确定要禁用双因素认证吗？这将降低您账户的安全性。",
+    "disableTwoFactorTitle": "禁用双因素认证",
+    "disableTwoFactorPasswordLabel": "输入您的密码以确认",
+    "disableTwoFactorCodeLabel": "输入您当前的 6 位验证码",
+    "twoFactorDisabledSuccess": "双因素认证已禁用",
+    "backupCodesRegeneratedSuccess": "备份码已重新生成"
   }
 }

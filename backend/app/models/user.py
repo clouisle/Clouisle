@@ -165,6 +165,20 @@ class User(models.Model):
         null=True, description="Last notification timestamp"
     )
 
+    # TOTP (Two-Factor Authentication) fields
+    totp_secret = fields.CharField(
+        max_length=255, null=True, description="Encrypted TOTP secret"
+    )
+    totp_enabled = fields.BooleanField(
+        default=False, description="TOTP 2FA enabled"
+    )
+    totp_enabled_at = fields.DatetimeField(
+        null=True, description="When TOTP was enabled"
+    )
+    totp_backup_codes_hash = fields.TextField(
+        null=True, description="Hashed backup codes (JSON array)"
+    )
+
     roles = fields.ManyToManyField(
         "models.Role", related_name="users", through="user_roles"
     )

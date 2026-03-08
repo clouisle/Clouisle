@@ -53,6 +53,8 @@ from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.services.password_expiration import PasswordExpirationService
 from app.models.notification import AutoNotificationType, NotificationLevel
+from app.core import totp_security
+from app.services import totp as totp_service
 
 router = APIRouter()
 
@@ -200,6 +202,35 @@ async def login_access_token(
             msg_key="inactive_user",
         )
 
+    # Check if TOTP is enabled for this user
+    if user.totp_enabled:
+        # Create temporary token (5-minute expiration) for TOTP verification
+        temp_token = security.create_access_token(
+            user.id, expires_delta=timedelta(minutes=5)
+        )
+        return success(
+            data={
+                "requires_totp": True,
+                "temp_token": temp_token,
+            },
+            msg_key="totp_required",
+        )
+
+    # Check if TOTP is required by system settings
+    require_totp = await SiteSetting.get_value("require_totp", False)
+    if require_totp and not user.totp_enabled:
+        # Create temporary token for TOTP setup
+        temp_token = security.create_access_token(
+            user.id, expires_delta=timedelta(minutes=30)
+        )
+        return success(
+            data={
+                "requires_totp_setup": True,
+                "temp_token": temp_token,
+            },
+            msg_key="totp_setup_required",
+        )
+
     # Check email verification if required
     email_verification = await SiteSetting.get_value("email_verification", True)
     if email_verification and not user.email_verified and not user.is_superuser:
@@ -320,6 +351,235 @@ async def login_access_token(
         )
     else:
         return success(data=token_data, msg_key="login_successful")
+
+
+@router.post("/login/verify-totp", response_model=Response[Token])
+async def verify_totp(
+    request: Request,
+    temp_token: str = Form(...),
+    code: str = Form(...),
+    is_backup_code: bool = Form(False),
+) -> Any:
+    """
+    Verify TOTP code or backup code and exchange temp token for full access token
+    """
+    # Verify temp token
+    try:
+        payload = jwt.decode(
+            temp_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise BusinessError(
+                code=ResponseCode.INVALID_TOKEN,
+                msg_key="invalid_token",
+            )
+    except jwt.ExpiredSignatureError:
+        raise BusinessError(
+            code=ResponseCode.TOKEN_EXPIRED,
+            msg_key="totp_setup_expired",
+        )
+    except jwt.PyJWTError:
+        raise BusinessError(
+            code=ResponseCode.INVALID_TOKEN,
+            msg_key="invalid_token",
+        )
+
+    # Get user
+    user = await User.get_or_none(id=user_id)
+    if not user or not user.totp_enabled:
+        raise BusinessError(
+            code=ResponseCode.TOTP_NOT_ENABLED,
+            msg_key="totp_not_enabled",
+        )
+
+    # Check rate limiting
+    is_locked, remaining_seconds = await totp_security.check_totp_rate_limit(str(user.id))
+    if is_locked:
+        raise BusinessError(
+            code=ResponseCode.TOTP_RATE_LIMITED,
+            msg_key="totp_rate_limited",
+            data={"seconds": remaining_seconds},
+        )
+
+    # Verify code
+    is_valid = False
+    remaining_codes = 0
+
+    if is_backup_code:
+        # Verify backup code
+        is_valid, remaining_codes = totp_service.verify_backup_code(user, code)
+        if is_valid:
+            await user.save()  # Save updated backup codes
+            # Log backup code usage
+            await AuditLogService.log(
+                user=user,
+                action="use_backup_code",
+                resource_type="user",
+                resource_id=user.id,
+                resource_name=user.username,
+                operation="read",
+                status="success",
+                request=request,
+                metadata={"remaining_codes": remaining_codes},
+            )
+    else:
+        # Verify TOTP code
+        secret = totp_service.decrypt_secret(user.totp_secret)
+        is_valid = totp_service.verify_totp_code(secret, code)
+
+    if not is_valid:
+        # Record failed attempt
+        locked, remaining_attempts, lockout_seconds = await totp_security.record_totp_failure(str(user.id))
+
+        # Log failed verification
+        await AuditLogService.log(
+            user=user,
+            action="verify_totp_failed",
+            resource_type="user",
+            resource_id=user.id,
+            resource_name=user.username,
+            operation="read",
+            status="failed",
+            request=request,
+            metadata={"remaining_attempts": remaining_attempts},
+        )
+
+        if locked:
+            raise BusinessError(
+                code=ResponseCode.TOTP_RATE_LIMITED,
+                msg_key="totp_rate_limited",
+                data={"seconds": lockout_seconds},
+            )
+
+        raise BusinessError(
+            code=ResponseCode.TOTP_INVALID,
+            msg_key="totp_invalid",
+        )
+
+    # Reset TOTP attempts on success
+    await totp_security.reset_totp_attempts(str(user.id))
+
+    # Reset login attempts
+    await reset_login_attempts(user)
+
+    # Check password expiration and force password change
+    is_exempt = await PasswordExpirationService.is_user_exempt(user)
+    is_expired = await PasswordExpirationService.is_password_expired(user)
+    force_change_required = user.force_password_change and not is_exempt
+
+    if is_expired and not is_exempt:
+        if not user.force_password_change:
+            user.force_password_change = True
+            await user.save()
+        force_change_required = True
+
+    # Check for login anomaly
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    is_anomaly, anomaly_details = await check_login_anomaly(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Record this login
+    await record_login(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Send anomaly notification if detected
+    if is_anomaly:
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.SECURITY_LOGIN_ANOMALY,
+            user_id=user.id,
+            title=t("notify_login_anomaly_title", lang=user.locale),
+            content=t(
+                "notify_login_anomaly_content",
+                lang=user.locale,
+                ip_address=anomaly_details.get("ip_address", "unknown"),
+                login_time=anomaly_details.get("login_time", ""),
+                user_agent=anomaly_details.get("user_agent", "Unknown")[:100],
+            ),
+            level=NotificationLevel.HIGH,
+            data=anomaly_details,
+        )
+
+    # Update last login time
+    user.last_login = now_utc()
+    await user.save()
+
+    # Get session timeout from settings
+    session_timeout_days = await SiteSetting.get_value("session_timeout_days", 7)
+    access_token_expires = timedelta(days=session_timeout_days)
+    expires_in_seconds = int(access_token_expires.total_seconds())
+
+    # Check single session mode
+    single_session = await SiteSetting.get_value("single_session", False)
+    if single_session:
+        await invalidate_user_session(str(user.id), token_expires_in=5)
+
+    # Create new token
+    access_token = security.create_access_token(
+        user.id, expires_delta=access_token_expires
+    )
+
+    # Store session if single session mode is enabled
+    if single_session:
+        await set_user_session(str(user.id), access_token, expires_in_seconds)
+
+    # Log successful TOTP verification
+    await AuditLogService.log(
+        user=user,
+        action="verify_totp_success",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="read",
+        status="success",
+        request=request,
+    )
+
+    # Log successful login
+    await AuditLogService.log(
+        user=user,
+        action="login_success",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="read",
+        status="success",
+        request=request,
+    )
+
+    # Check if password is expiring soon
+    should_warn = await PasswordExpirationService.should_warn_user(user)
+    days_remaining = await PasswordExpirationService.days_until_expiration(user)
+
+    token_data = {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+    # Add force password change flag if needed
+    if force_change_required:
+        token_data["force_password_change"] = True
+        token_data["reason"] = "expired" if is_expired else "force"
+        return success(
+            data=token_data,
+            msg_key="login_successful_change_password_required",
+        )
+
+    # Add password expiration warning to response metadata if needed
+    if should_warn and days_remaining is not None:
+        return success(
+            data=token_data,
+            msg_key="login_successful",
+        )
+    else:
+        return success(data=token_data, msg_key="totp_verification_success")
 
 
 @router.post("/logout", response_model=Response[None])

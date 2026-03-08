@@ -64,6 +64,8 @@ export interface SecuritySettings {
   password_history_count: number
   password_min_age_days: number
   force_password_change_first_login: boolean
+  // TOTP
+  require_totp: boolean
 }
 
 export interface EmailSettings {

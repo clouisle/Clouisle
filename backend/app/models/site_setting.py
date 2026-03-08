@@ -301,6 +301,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Force password change on first login",
     },
+    "require_totp": {
+        "value": False,
+        "type": "bool",
+        "category": "security",
+        "public": False,
+        "desc": "Require all users to enable TOTP two-factor authentication",
+    },
     # Email
     "smtp_enabled": {
         "value": False,

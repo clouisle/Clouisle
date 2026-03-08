@@ -49,6 +49,7 @@ export default function SiteSettingsSecurityPage() {
     password_history_count: 5,
     password_min_age_days: 0,
     force_password_change_first_login: false,
+    require_totp: false,
   })
 
   const loadSettings = React.useCallback(async () => {
@@ -86,6 +87,7 @@ export default function SiteSettingsSecurityPage() {
         password_history_count: data.password_history_count ?? 5,
         password_min_age_days: data.password_min_age_days ?? 0,
         force_password_change_first_login: data.force_password_change_first_login ?? false,
+        require_totp: data.require_totp ?? false,
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -444,6 +446,26 @@ export default function SiteSettingsSecurityPage() {
             <Switch
               checked={settings.enable_captcha}
               onCheckedChange={(checked) => updateSetting('enable_captcha', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('twoFactorAuthentication')}</CardTitle>
+          <CardDescription>{t('twoFactorAuthenticationDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('requireTOTP')}</Label>
+              <p className="text-sm text-muted-foreground">{t('requireTOTPDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.require_totp}
+              onCheckedChange={(checked) => updateSetting('require_totp', checked)}
               disabled={!canUpdate}
             />
           </div>

@@ -1536,6 +1536,84 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Bulk force password change",
         "zh": "批量强制修改密码",
     },
+    # TOTP messages
+    "totp_required": {
+        "en": "Two-factor authentication required",
+        "zh": "需要双因素认证",
+    },
+    "totp_setup_required": {
+        "en": "Two-factor authentication setup required by administrator",
+        "zh": "管理员要求设置双因素认证",
+    },
+    "totp_enabled": {
+        "en": "Two-factor authentication enabled successfully",
+        "zh": "双因素认证已启用",
+    },
+    "totp_disabled": {
+        "en": "Two-factor authentication disabled successfully",
+        "zh": "双因素认证已禁用",
+    },
+    "totp_invalid": {
+        "en": "Invalid authentication code",
+        "zh": "验证码无效",
+    },
+    "totp_rate_limited": {
+        "en": "Too many failed attempts. Please try again in {seconds} seconds.",
+        "zh": "尝试次数过多，请在 {seconds} 秒后重试。",
+    },
+    "totp_not_enabled": {
+        "en": "Two-factor authentication is not enabled",
+        "zh": "双因素认证未启用",
+    },
+    "totp_already_enabled": {
+        "en": "Two-factor authentication is already enabled",
+        "zh": "双因素认证已经启用",
+    },
+    "totp_setup_expired": {
+        "en": "TOTP setup session expired. Please start again.",
+        "zh": "TOTP 设置会话已过期，请重新开始。",
+    },
+    "backup_codes_regenerated": {
+        "en": "Backup codes regenerated successfully",
+        "zh": "备份码已重新生成",
+    },
+    "backup_code_used": {
+        "en": "Backup code used. {remaining} codes remaining.",
+        "zh": "备份码已使用，剩余 {remaining} 个。",
+    },
+    "totp_verification_success": {
+        "en": "Two-factor authentication verified successfully",
+        "zh": "双因素认证验证成功",
+    },
+    # TOTP audit log actions
+    "audit_log_enable_totp": {
+        "en": "Enable two-factor authentication",
+        "zh": "启用双因素认证",
+    },
+    "audit_log_disable_totp": {
+        "en": "Disable two-factor authentication",
+        "zh": "禁用双因素认证",
+    },
+    "audit_log_verify_totp_success": {
+        "en": "Verify TOTP code (success)",
+        "zh": "验证 TOTP 码（成功）",
+    },
+    "audit_log_verify_totp_failed": {
+        "en": "Verify TOTP code (failed)",
+        "zh": "验证 TOTP 码（失败）",
+    },
+    "audit_log_use_backup_code": {
+        "en": "Use backup code",
+        "zh": "使用备份码",
+    },
+    "audit_log_regenerate_backup_codes": {
+        "en": "Regenerate backup codes",
+        "zh": "重新生成备份码",
+    },
+    "audit_log_admin_disable_totp": {
+        "en": "Admin disable user 2FA",
+        "zh": "管理员禁用用户双因素认证",
+    },
     "audit_log_create_role": {
         "en": "Create role",
         "zh": "创建角色",

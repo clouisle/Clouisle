@@ -13,7 +13,7 @@ import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaRespo
 import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
-type LoginStep = 'login' | 'verification'
+type LoginStep = 'login' | 'verification' | 'totp'
 
 export function LoginForm() {
   const t = useTranslations('auth')
@@ -37,6 +37,12 @@ export function LoginForm() {
   const [verificationCode, setVerificationCode] = React.useState('')
   const [showCodeInput, setShowCodeInput] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
+
+  // TOTP
+  const [tempToken, setTempToken] = React.useState('')
+  const [totpCode, setTotpCode] = React.useState('')
+  const [useBackupCode, setUseBackupCode] = React.useState(false)
+  const [backupCode, setBackupCode] = React.useState('')
 
   // 倒计时
   React.useEffect(() => {
@@ -115,6 +121,24 @@ export function LoginForm() {
         captcha_id: captcha?.captcha_id,
         captcha_answer: captchaAnswer || undefined,
       })
+
+      // 检查是否需要 TOTP 验证
+      if (token.requires_totp && token.temp_token) {
+        setTempToken(token.temp_token)
+        setStep('totp')
+        return
+      }
+
+      // 检查是否需要设置 TOTP（管理员要求）
+      if (token.requires_totp_setup && token.temp_token) {
+        setTempToken(token.temp_token)
+        toast.info(t('totpSetupRequiredByAdmin'))
+        // 保存临时 token 并跳转到设置页面
+        localStorage.setItem('temp_token', token.temp_token)
+        router.push('/totp-setup')
+        return
+      }
+
       // 保存 token
       localStorage.setItem('access_token', token.access_token)
 
@@ -214,12 +238,168 @@ export function LoginForm() {
     }
   }
 
+  // 验证 TOTP 码
+  const handleVerifyTOTP = async () => {
+    const code = useBackupCode ? backupCode.replace('-', '') : totpCode
+    if (!code || (useBackupCode && code.length !== 8) || (!useBackupCode && code.length !== 6)) {
+      return
+    }
+
+    setLoading(true)
+    setFieldErrors({})
+
+    try {
+      const token = await authApi.verifyTOTP(tempToken, code, useBackupCode)
+
+      // 保存 token
+      localStorage.setItem('access_token', token.access_token)
+
+      // 检查是否需要强制修改密码
+      if (token.force_password_change) {
+        toast.success(t('loginSuccess'))
+        router.push(`/change-password?reason=${token.reason || 'force'}`)
+        return
+      }
+
+      // 同步当前浏览器语言设置到后端用户数据
+      try {
+        const user = await authApi.getCurrentUser({ skipAuthRedirect: true })
+        if (!user.locale || user.locale !== locale) {
+          await usersApi.updateProfile({ locale }, { skipAuthRedirect: true })
+        }
+      } catch {
+        // 同步语言设置失败，不影响登录流程
+      }
+
+      toast.success(t('loginSuccess'))
+      const redirect = searchParams.get('redirect')
+      router.push(redirect || '/app')
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // TOTP_RATE_LIMITED = 5312
+        if (err.code === 5312) {
+          const errData = err.data as Record<string, unknown> | undefined
+          const seconds = errData?.seconds as number | undefined
+          setFieldErrors({ totp: t('twoFactorRateLimited', { seconds: seconds || 0 }) })
+        } else {
+          setFieldErrors({ totp: t('twoFactorInvalid') })
+        }
+        setTotpCode('')
+        setBackupCode('')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 返回登录
   const handleBackToLogin = () => {
     setStep('login')
     setVerificationCode('')
     setFieldErrors({})
     setShowCodeInput(false)
+    setTotpCode('')
+    setBackupCode('')
+    setUseBackupCode(false)
+  }
+
+  // TOTP 验证步骤
+  if (step === 'totp') {
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={handleBackToLogin}
+          className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          {t('backToLogin')}
+        </button>
+
+        <div className="space-y-2 text-center">
+          <h3 className="text-lg font-semibold">{t('twoFactorRequired')}</h3>
+          <p className="text-sm text-muted-foreground">
+            {useBackupCode ? t('backupCodeLabel') : t('twoFactorDescription')}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {useBackupCode ? (
+            <div className="space-y-2">
+              <Label>{t('backupCodeLabel')}</Label>
+              <Input
+                type="text"
+                placeholder={t('backupCodePlaceholder')}
+                value={backupCode}
+                onChange={(e) => {
+                  clearFieldError('totp')
+                  setBackupCode(e.target.value)
+                }}
+                maxLength={9}
+                disabled={loading}
+              />
+              {fieldErrors.totp && (
+                <p className="text-sm text-destructive">{fieldErrors.totp}</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>{t('verificationCode6Digit')}</Label>
+              <div className="flex justify-center">
+                <InputOTP
+                  maxLength={6}
+                  value={totpCode}
+                  onChange={(code) => {
+                    clearFieldError('totp')
+                    setTotpCode(code)
+                  }}
+                  disabled={loading}
+                  onComplete={handleVerifyTOTP}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+              {fieldErrors.totp && (
+                <p className="text-sm text-destructive text-center">{fieldErrors.totp}</p>
+              )}
+            </div>
+          )}
+
+          <Button
+            onClick={handleVerifyTOTP}
+            className="w-full"
+            disabled={
+              loading ||
+              (useBackupCode ? backupCode.length < 8 : totpCode.length !== 6)
+            }
+          >
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('verifyCode')}
+          </Button>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setUseBackupCode(!useBackupCode)
+                setTotpCode('')
+                setBackupCode('')
+                clearFieldError('totp')
+              }}
+              className="text-sm text-primary hover:underline"
+            >
+              {useBackupCode ? t('useTOTPCode') : t('useBackupCode')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // 邮箱验证步骤

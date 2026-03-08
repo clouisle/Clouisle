@@ -12,6 +12,7 @@ import {
   Coins,
   UserPlus,
   ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -25,6 +26,7 @@ import {
   Legend,
 } from 'recharts'
 import type { DashboardStats } from '@/lib/api/admin/dashboard'
+import type { TOTPStatsResponse } from '@/lib/api/admin/users'
 
 interface TrendData {
   date: string
@@ -39,6 +41,7 @@ interface OverviewTabProps {
   stats: DashboardStats
   trendsData: TrendData[]
   isLoading: boolean
+  totpStats: TOTPStatsResponse | null
 }
 
 const COLORS = [
@@ -142,7 +145,7 @@ function StatCard({
   )
 }
 
-export function OverviewTab({ stats, trendsData, isLoading }: OverviewTabProps) {
+export function OverviewTab({ stats, trendsData, isLoading, totpStats }: OverviewTabProps) {
   const t = useTranslations('dashboard.home')
 
   return (
@@ -178,6 +181,29 @@ export function OverviewTab({ stats, trendsData, isLoading }: OverviewTabProps) 
           color="orange"
         />
       </div>
+
+      {/* 2FA Stats */}
+      {totpStats && (
+        <Card className="border-green-200 dark:border-green-900">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">{t('stats.twoFactorAuth')}</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-3xl font-bold tracking-tight">{totpStats.totp_enabled}</p>
+                  <p className="text-sm text-muted-foreground">/ {totpStats.total_users} {t('stats.users')}</p>
+                </div>
+                <p className="text-sm text-green-600 dark:text-green-400 font-medium">
+                  {totpStats.adoption_rate.toFixed(1)}% {t('stats.adoptionRate')}
+                </p>
+              </div>
+              <div className="h-12 w-12 rounded-xl flex items-center justify-center bg-green-500/10 text-green-500">
+                <ShieldCheck className="h-6 w-6" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content - 2/3 width */}

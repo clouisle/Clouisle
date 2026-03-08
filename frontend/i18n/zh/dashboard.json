@@ -137,7 +137,10 @@
         "knowledgeBases": "知识库",
         "knowledgeBasesDesc": "总知识库数",
         "avgMessagesPerConv": "平均消息数/对话",
-        "avgTokensPerMessage": "平均 Token/消息"
+        "avgTokensPerMessage": "平均 Token/消息",
+        "twoFactorAuth": "双因素认证",
+        "users": "用户",
+        "adoptionRate": "启用率"
       },
       "passwordExpiration": {
         "title": "密码安全",

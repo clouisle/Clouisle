@@ -1157,6 +1157,51 @@ async def init_password_expiration():
     logger.info("Password expiration migration complete")
 
 
+async def init_totp_fields():
+    """
+    Add TOTP (Two-Factor Authentication) fields to users table.
+    This handles the migration for the TOTP 2FA feature.
+    """
+    logger.info("Initializing TOTP fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if users table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Users table does not exist yet, skipping TOTP migration")
+        return
+
+    # Check if totp_secret column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'totp_secret'
+    """)
+
+    if not rows:
+        logger.info("Adding TOTP fields to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN totp_secret VARCHAR(255) NULL,
+                ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN totp_enabled_at TIMESTAMPTZ NULL,
+                ADD COLUMN totp_backup_codes_hash TEXT NULL
+            """)
+            logger.info("Added TOTP fields to users table")
+        except Exception as e:
+            logger.error(f"Could not add TOTP fields: {e}")
+            raise
+    else:
+        logger.info("TOTP fields already exist")
+
+    logger.info("TOTP migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.

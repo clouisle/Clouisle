@@ -24,6 +24,17 @@ export interface ExpiringPasswordUser {
   last_login: string | null
 }
 
+export interface TOTPStatsResponse {
+  total_users: number
+  totp_enabled: number
+  adoption_rate: number
+}
+
+export interface TOTPUserStatusResponse {
+  enabled: boolean
+  enabled_at: string | null
+}
+
 export const usersApi = {
   getUsers: async (params: UserQueryParams = {}): Promise<PageData<User>> => {
     const { page = 1, pageSize = 20, status, search } = params
@@ -89,5 +100,31 @@ export const usersApi = {
     queryParams.append('page_size', String(pageSize))
     queryParams.append('filter', filter)
     return api.get<PageData<ExpiringPasswordUser>>(`/admin/users/expiring-passwords?${queryParams.toString()}`)
+  },
+}
+
+/**
+ * Admin TOTP API
+ */
+export const adminTOTPApi = {
+  /**
+   * 获取 2FA 统计信息
+   */
+  getStats: async (): Promise<TOTPStatsResponse> => {
+    return api.get<TOTPStatsResponse>('/admin/totp/stats')
+  },
+
+  /**
+   * 强制禁用用户的 2FA
+   */
+  disableUserTOTP: async (userId: string): Promise<void> => {
+    await api.post<null>(`/admin/users/${userId}/totp/disable`)
+  },
+
+  /**
+   * 获取用户的 2FA 状态
+   */
+  getUserTOTPStatus: async (userId: string): Promise<TOTPUserStatusResponse> => {
+    return api.get<TOTPUserStatusResponse>(`/admin/users/${userId}/totp/status`)
   },
 }
