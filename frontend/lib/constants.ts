@@ -22,4 +22,4 @@ export const GITHUB_URL = 'https://github.com/yunhai-dev/Clouisle'
 export const DOCS_URL = 'https://github.com/yunhai-dev/Clouisle/blob/main/README.md'
 
 // 更新日志地址
-export const CHANGELOG_URL = 'https://github.com/yunhai-dev/Clouisle/blob/main/docs/CHANGELOG.md'
+export const CHANGELOG_URL = 'https://github.com/yunhai-dev/Clouisle/blob/main/CHANGELOG.md'

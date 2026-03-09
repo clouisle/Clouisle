@@ -49,7 +49,7 @@ import { SettingsDrawer } from '@/components/settings-drawer'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { useSettings } from '@/hooks/use-settings'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 
@@ -194,7 +194,7 @@ export function PlatformHeader() {
     router.push('/login')
   }
 
-  const isActive = (href: string, exact?: boolean) => 
+  const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
@@ -455,7 +455,7 @@ export function PlatformHeader() {
             </p>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Build In {BUILD_DATE}
+              {t('aboutBuildDate')}: {BUILD_DATE !== 'dev' ? formatDateTime(BUILD_DATE) : BUILD_DATE}
             </p>
             
             <div className="flex items-center gap-1 text-sm">
@@ -482,11 +482,11 @@ export function PlatformHeader() {
           {/* 底部 */}
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm text-muted-foreground">
-              {APP_NAME} {APP_VERSION} {t('aboutLatest')}
+              {APP_NAME} {APP_VERSION}
             </p>
-            <a 
+            <a
               href={CHANGELOG_URL}
-              target="_blank" 
+              target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 px-3"
             >
