@@ -263,7 +263,7 @@ export default function KnowledgeBasePage() {
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
+                        className="text-destructive"
                         onClick={(e) => { e.preventDefault(); handleDeleteClick(kb) }}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -318,9 +318,9 @@ export default function KnowledgeBasePage() {
               {commonT('cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={handleDelete}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? commonT('loading') : commonT('delete')}
             </AlertDialogAction>

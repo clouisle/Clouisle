@@ -13,11 +13,10 @@ import {
 } from 'lucide-react'
 import {
   teamModelsApi,
-  modelsApi,
   type TeamModel,
-  type Model,
   type TeamModelUpdateInput,
 } from '@/lib/api'
+import { modelsApi, type Model } from '@/lib/api/admin/models'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
