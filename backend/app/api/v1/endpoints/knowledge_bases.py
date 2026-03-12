@@ -947,18 +947,16 @@ async def preview_document_chunks(
                 clean_text=preview_in.clean_text,
             )
 
-        # Create chunker with preview settings
-        from app.services.document_processor import TextChunker
+        # Create chunks with preview settings
+        from app.services.document_processor import chunk_text
 
         separators = [preview_in.separator] if preview_in.separator else None
-        chunker = TextChunker(
+        chunks = chunk_text(
+            text,
             chunk_size=preview_in.chunk_size,
             chunk_overlap=preview_in.chunk_overlap,
             separators=separators,
         )
-
-        # Generate chunks
-        chunks = chunker.chunk_text(text)
 
         # Build preview response
         preview_items = [
@@ -967,6 +965,7 @@ async def preview_document_chunks(
                 content=chunk["content"],
                 token_count=chunk["token_count"],
                 char_count=chunk["char_count"],
+                overlap_length=chunk.get("overlap_length", 0),
             )
             for chunk in chunks
         ]
@@ -1047,6 +1046,70 @@ async def reprocess_document(
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(data=doc, msg_key="document_reprocess_started")
+
+
+@router.post(
+    "/{kb_id}/documents/{doc_id}/retry-failed-chunks",
+    response_model=Response[DocumentSchema],
+)
+async def retry_failed_chunks(
+    kb_id: UUID,
+    doc_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+) -> Any:
+    """
+    Retry embedding for failed chunks only.
+    Only works when document has status 'error' and has chunks with status 'failed'.
+    """
+    await check_kb_access(kb_id, current_user, require_write=True)
+
+    doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
+    if not doc:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_NOT_FOUND,
+            msg_key="document_not_found",
+            status_code=404,
+        )
+
+    if doc.status != DocumentStatus.ERROR.value:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="document_not_in_error_state",
+        )
+
+    # Check if there are actually failed chunks
+    from app.models.knowledge_base import DocumentChunk as DocumentChunkModel
+
+    failed_count = await DocumentChunkModel.filter(
+        document_id=doc_id, status="failed"
+    ).count()
+
+    if failed_count == 0:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="no_failed_chunks",
+        )
+
+    # Update status to processing
+    doc.status = DocumentStatus.PROCESSING.value
+    doc.error_message = None  # type: ignore[assignment]
+    await doc.save()
+
+    # Trigger retry task
+    try:
+        from app.tasks.knowledge_base import retry_failed_chunks_task
+
+        task = retry_failed_chunks_task.delay(str(doc.id))
+        doc.metadata = doc.metadata or {}
+        doc.metadata["task_id"] = task.id
+        await doc.save()
+    except Exception:
+        import logging
+
+        logging.warning("Celery task not dispatched - worker may not be running")
+
+    doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
+    return success(data=doc, msg_key="retry_failed_chunks_started")
 
 
 # ============ Document Chunks ============

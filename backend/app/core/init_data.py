@@ -1088,7 +1088,9 @@ async def init_password_expiration():
     """)
 
     if not tables:
-        logger.info("Users table does not exist yet, skipping password expiration migration")
+        logger.info(
+            "Users table does not exist yet, skipping password expiration migration"
+        )
         return
 
     # Check if password_changed_at column exists
@@ -1217,7 +1219,9 @@ async def init_agent_kb_search_mode():
     """)
 
     if not tables:
-        logger.info("agent_knowledge_bases table does not exist yet, skipping search_mode migration")
+        logger.info(
+            "agent_knowledge_bases table does not exist yet, skipping search_mode migration"
+        )
         return
 
     # Check if search_mode column exists
@@ -1239,6 +1243,63 @@ async def init_agent_kb_search_mode():
     """)
 
     logger.info("search_mode field added successfully")
+
+
+async def init_chunk_status():
+    """Add status and error_message fields to document_chunks table."""
+    logger.info("Initializing chunk status fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if document_chunks table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'document_chunks' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("document_chunks table does not exist yet, skipping migration")
+        return
+
+    # Check if status column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'document_chunks' AND column_name = 'status'
+    """)
+
+    if not rows:
+        logger.info("Adding status field to document_chunks table...")
+        # Default to 'embedded' for existing chunks (they were already processed)
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'embedded'
+        """)
+        # Change default for new rows to 'pending'
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ALTER COLUMN status SET DEFAULT 'pending'
+        """)
+        logger.info("status field added successfully")
+    else:
+        logger.info("status field already exists, skipping")
+
+    # Check if error_message column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'document_chunks' AND column_name = 'error_message'
+    """)
+
+    if not rows:
+        logger.info("Adding error_message field to document_chunks table...")
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS error_message TEXT
+        """)
+        logger.info("error_message field added successfully")
+    else:
+        logger.info("error_message field already exists, skipping")
+
+    logger.info("Chunk status migration complete")
 
 
 async def init_db():
@@ -1263,9 +1324,7 @@ async def init_db():
     try:
         await init_permission_is_system_field()
     except Exception as e:
-        logger.warning(
-            f"Permission is_system migration failed (may be first run): {e}"
-        )
+        logger.warning(f"Permission is_system migration failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")

@@ -25,9 +25,9 @@
     "embeddingModelCannotChange": "Embedding model cannot be changed after creation",
     "noEmbeddingModels": "No embedding models available",
     "chunkSize": "Chunk Size",
-    "chunkSizeHint": "Target chunk size in tokens",
+    "chunkSizeHint": "Target chunk size in characters",
     "chunkOverlap": "Chunk Overlap",
-    "chunkOverlapHint": "Overlap between chunks",
+    "chunkOverlapHint": "Overlap between chunks in characters",
     "separator": "Custom Separator",
     "status": "Status",
     "active": "Active",
@@ -199,6 +199,18 @@
     "topKHint": "Maximum number of results to return",
     "threshold": "Similarity Threshold",
     "thresholdHint": "Minimum similarity score for results",
-    "search": "Search"
+    "search": "Search",
+    "embeddingProgress": "Embedding {embedded}/{total}",
+    "embeddedCount": "Embedded: {count}",
+    "failedCount": "Failed: {count}",
+    "totalCount": "Total: {count}",
+    "retryFailedChunks": "Retry Failed Chunks",
+    "retryStarted": "Retry of failed chunks started",
+    "chunkStatusEmbedded": "Embedded",
+    "chunkStatusFailed": "Failed",
+    "chunkStatusPending": "Pending",
+    "failedChunksCount": "{count} failed chunks",
+    "chars": "chars",
+    "overlapChars": "overlap {count}"
   }
 }

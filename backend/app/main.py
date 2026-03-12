@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
         init_password_expiration,
         init_totp_fields,
         init_agent_kb_search_mode,
+        init_chunk_status,
     )
 
     try:
@@ -120,6 +121,11 @@ async def lifespan(app: FastAPI):
         await init_agent_kb_search_mode()
     except Exception as e:
         logger.warning(f"Agent KB search_mode field migration failed: {e}")
+
+    try:
+        await init_chunk_status()
+    except Exception as e:
+        logger.warning(f"Chunk status fields migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

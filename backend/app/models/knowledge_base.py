@@ -234,6 +234,14 @@ class DocumentChunk(models.Model):
         max_length=100, null=True, description="Reference to vector storage"
     )
 
+    # Embedding status tracking
+    status = fields.CharField(
+        max_length=20,
+        default="pending",
+        description="Embedding status: pending, embedded, failed",
+    )
+    error_message = fields.TextField(null=True, description="Embedding error message")
+
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
 

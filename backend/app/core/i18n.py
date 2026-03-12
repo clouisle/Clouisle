@@ -904,6 +904,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Document reprocessing started",
         "zh": "文档重新处理已开始",
     },
+    "document_not_in_error_state": {
+        "en": "Document is not in error state",
+        "zh": "文档不在错误状态",
+    },
+    "no_failed_chunks": {
+        "en": "No failed chunks to retry",
+        "zh": "没有失败的分块需要重试",
+    },
+    "retry_failed_chunks_started": {
+        "en": "Retry failed chunks started",
+        "zh": "重试失败分块已开始",
+    },
     "invalid_document_type": {
         "en": "Invalid document type. Supported: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON",
         "zh": "不支持的文档类型。支持：PDF、DOCX、TXT、MD、HTML、CSV、XLSX、JSON",

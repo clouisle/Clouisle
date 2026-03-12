@@ -25,6 +25,7 @@ import {
   Play,
   Download,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
@@ -250,6 +251,17 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const handleReprocess = (doc: Document) => {
     router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${doc.id}`)
   }
+
+  // 重试失败分段
+  const handleRetryFailedChunks = async (doc: Document) => {
+    try {
+      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
+      toast.success(t('retryStarted'))
+      loadDocuments()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
   
   // 配置文档（跳转到详情页）
   const handleConfigure = (doc: Document) => {
@@ -308,7 +320,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   }
   
   // 获取状态 Badge
-  const getStatusBadge = (status: DocumentStatus) => {
+  const getStatusBadge = (status: DocumentStatus, doc?: Document) => {
     switch (status) {
       case 'completed':
         return (
@@ -317,13 +329,35 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
             {t('statusCompleted')}
           </Badge>
         )
-      case 'processing':
-        return (
+      case 'processing': {
+        const progress = doc?.metadata?.embed_progress as { embedded?: number; failed?: number; total?: number } | undefined
+        const badge = (
           <Badge variant="default" className="bg-blue-500/10 text-blue-500 gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {t('statusProcessing')}
+            {progress?.total
+              ? t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })
+              : t('statusProcessing')}
           </Badge>
         )
+        if (progress?.total) {
+          return (
+            <Tooltip>
+              <TooltipTrigger className="bg-blue-500/10 text-blue-500 gap-1 inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })}
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="text-xs space-y-0.5">
+                  <p>{t('embeddedCount', { count: progress.embedded ?? 0 })}</p>
+                  {(progress.failed ?? 0) > 0 && <p className="text-destructive">{t('failedCount', { count: progress.failed })}</p>}
+                  <p>{t('totalCount', { count: progress.total })}</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )
+        }
+        return badge
+      }
       case 'pending':
         return (
           <Badge variant="outline" className="text-muted-foreground gap-1">
@@ -433,9 +467,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                       </span>
                     </div>
                     {doc.error_message && (
-                      <p className="text-xs text-destructive mt-1 truncate max-w-62.5" title={doc.error_message}>
-                        {doc.error_message}
-                      </p>
+                      <Tooltip>
+                        <TooltipTrigger render={<p />} className="text-xs text-destructive mt-1 truncate max-w-62.5 cursor-default">
+                          {doc.error_message}
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm break-all">
+                          {doc.error_message}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>
@@ -449,7 +488,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   <TableCell className="text-muted-foreground">
                     {doc.chunk_count}
                   </TableCell>
-                  <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                  <TableCell>{getStatusBadge(doc.status, doc)}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(doc.created_at)}
                   </TableCell>
@@ -485,6 +524,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           <DropdownMenuItem onClick={() => handleReprocess(doc)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {t('reprocess')}
+                          </DropdownMenuItem>
+                        )}
+
+                        {doc.status === 'error' && canUpdateKb && (
+                          <DropdownMenuItem onClick={() => handleRetryFailedChunks(doc)}>
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            {t('retryFailedChunks')}
                           </DropdownMenuItem>
                         )}
 

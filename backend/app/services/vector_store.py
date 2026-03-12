@@ -10,6 +10,7 @@ Qdrant collection (e.g., kb_dim_1536).
 import json
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
@@ -570,6 +571,94 @@ class VectorStore:
             logger.error(f"Error storing embeddings for document {document.id}: {e}")
             # Re-raise so we know there's a problem
             raise
+
+        return created_chunks
+
+    async def store_chunks_with_progress(
+        self,
+        document: Document,
+        chunks: list[dict[str, Any]],
+        kb_id: UUID | None = None,
+        progress_callback: Callable[..., Any] | None = None,
+    ) -> list[DocumentChunk]:
+        """
+        Store document chunks with per-chunk embedding and progress reporting.
+
+        Unlike store_chunks which embeds all texts in one batch, this method
+        embeds and stores each chunk individually, calling progress_callback
+        after each one so the caller can update progress.
+
+        Args:
+            document: Parent document
+            chunks: List of chunk dicts with content, index, etc.
+            kb_id: Optional knowledge base ID for dimension management
+            progress_callback: async callable(embedded, failed, total) called after each chunk
+
+        Returns:
+            List of created DocumentChunk objects
+        """
+        if not chunks:
+            return []
+
+        resolved_kb_id = kb_id or document.knowledge_base_id
+        created_chunks: list[DocumentChunk] = []
+        embedded_count = 0
+        failed_count = 0
+        total = len(chunks)
+
+        for chunk_data in chunks:
+            embedding_id = f"doc_{document.id}_chunk_{chunk_data['chunk_index']}"
+
+            chunk_obj = await DocumentChunk.create(
+                document=document,
+                content=chunk_data["content"],
+                chunk_index=chunk_data["chunk_index"],
+                token_count=chunk_data.get("token_count", 0),
+                metadata=chunk_data.get("metadata"),
+                embedding_id=embedding_id,
+                status="pending",
+            )
+
+            try:
+                # Embed single text
+                embeddings = await self.embed_texts([chunk_data["content"]])
+                embedding = embeddings[0]
+                detected_dim = len(embedding)
+
+                # Ensure KB dimension on first chunk
+                if embedded_count == 0 and resolved_kb_id:
+                    self._detected_dimension = detected_dim
+                    await _ensure_kb_dimension(resolved_kb_id, detected_dim)
+
+                # Store in Qdrant
+                await self._store_embedding(
+                    chunk_obj.id,
+                    embedding,
+                    dimension=detected_dim,
+                    payload={
+                        "kb_id": str(resolved_kb_id) if resolved_kb_id else "",
+                        "document_id": str(document.id),
+                    },
+                )
+
+                chunk_obj.status = "embedded"
+                chunk_obj.error_message = None
+                await chunk_obj.save(update_fields=["status", "error_message"])
+                embedded_count += 1
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to embed chunk {chunk_obj.id} (index {chunk_data['chunk_index']}): {e}"
+                )
+                chunk_obj.status = "failed"
+                chunk_obj.error_message = str(e)[:500]
+                await chunk_obj.save(update_fields=["status", "error_message"])
+                failed_count += 1
+
+            created_chunks.append(chunk_obj)
+
+            if progress_callback:
+                await progress_callback(embedded_count, failed_count, total)
 
         return created_chunks
 

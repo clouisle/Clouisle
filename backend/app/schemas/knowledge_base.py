@@ -52,8 +52,12 @@ class DocumentType:
 class KnowledgeBaseSettings(BaseModel):
     """Knowledge base settings"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
 
 
@@ -226,6 +230,7 @@ class DocumentList(BaseModel):
     error_message: Optional[str] = None
     chunk_count: int
     token_count: int
+    metadata: Optional[dict] = None
     created_at: datetime
 
     class Config:
@@ -250,6 +255,8 @@ class DocumentChunk(BaseModel):
     chunk_index: int
     token_count: int
     metadata: Optional[dict] = None
+    status: str = "embedded"
+    error_message: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -259,17 +266,23 @@ class DocumentChunk(BaseModel):
 class RechunkRequest(BaseModel):
     """Request to rechunk a document with new settings"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
 
 
 class ProcessRequest(BaseModel):
     """Request to start processing a pending document"""
 
-    chunk_size: Optional[int] = Field(None, ge=100, description="Chunk size in tokens")
+    chunk_size: Optional[int] = Field(
+        None, ge=100, description="Chunk size in characters"
+    )
     chunk_overlap: Optional[int] = Field(
-        None, ge=0, description="Overlap between chunks"
+        None, ge=0, description="Overlap between chunks in characters"
     )
     separator: Optional[str] = Field(None, description="Custom text separator")
     clean_text: Optional[bool] = Field(
@@ -295,8 +308,12 @@ class ProcessWithChunksRequest(BaseModel):
 class ChunkPreviewRequest(BaseModel):
     """Request to preview chunking results"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
     clean_text: bool = Field(
         default=True, description="Whether to clean and normalize text"
@@ -310,6 +327,7 @@ class ChunkPreviewItem(BaseModel):
     content: str
     token_count: int
     char_count: int
+    overlap_length: int = Field(default=0, description="Overlap character count at the start of this chunk")
 
 
 class ChunkPreviewResponse(BaseModel):

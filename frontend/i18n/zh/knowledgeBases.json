@@ -25,9 +25,9 @@
     "embeddingModelCannotChange": "创建后无法更换嵌入模型",
     "noEmbeddingModels": "暂无可用的嵌入模型",
     "chunkSize": "分块大小",
-    "chunkSizeHint": "目标分块大小（token数）",
+    "chunkSizeHint": "目标分块大小（字符数）",
     "chunkOverlap": "分块重叠",
-    "chunkOverlapHint": "分块之间的重叠部分",
+    "chunkOverlapHint": "分块之间的重叠字符数",
     "separator": "自定义分隔符",
     "status": "状态",
     "active": "启用",
@@ -199,6 +199,18 @@
     "topKHint": "返回的最大结果数量",
     "threshold": "相似度阈值",
     "thresholdHint": "结果的最低相似度分数",
-    "search": "搜索"
+    "search": "搜索",
+    "embeddingProgress": "向量化中 {embedded}/{total}",
+    "embeddedCount": "已完成: {count}",
+    "failedCount": "失败: {count}",
+    "totalCount": "总计: {count}",
+    "retryFailedChunks": "重试失败分段",
+    "retryStarted": "已开始重试失败分段",
+    "chunkStatusEmbedded": "已嵌入",
+    "chunkStatusFailed": "失败",
+    "chunkStatusPending": "等待中",
+    "failedChunksCount": "{count} 个分段失败",
+    "chars": "字符",
+    "overlapChars": "重叠 {count}"
   }
 }

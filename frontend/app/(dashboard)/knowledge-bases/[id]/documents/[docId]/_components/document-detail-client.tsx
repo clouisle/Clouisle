@@ -99,8 +99,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
   // 分块设置
   const [settings, setSettings] = React.useState<ProcessInput>({
-    chunk_size: 500,
-    chunk_overlap: 50,
+    chunk_size: 1000,
+    chunk_overlap: 100,
     separator: '',
     clean_text: true,
   })
@@ -120,8 +120,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       const kbSettings = kbData.settings
       const docMeta = docData.metadata as Record<string, unknown> | null
       setSettings({
-        chunk_size: (docMeta?.chunk_size as number) || kbSettings?.chunk_size || 500,
-        chunk_overlap: (docMeta?.chunk_overlap as number) || kbSettings?.chunk_overlap || 50,
+        chunk_size: (docMeta?.chunk_size as number) || kbSettings?.chunk_size || 1000,
+        chunk_overlap: (docMeta?.chunk_overlap as number) || kbSettings?.chunk_overlap || 100,
         separator: (docMeta?.separator as string) || kbSettings?.separator || '',
         clean_text: docMeta?.clean_text !== undefined ? (docMeta.clean_text as boolean) : true,
       })
@@ -194,13 +194,17 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
             {t('statusCompleted')}
           </Badge>
         )
-      case 'processing':
+      case 'processing': {
+        const progress = document?.metadata?.embed_progress as { embedded?: number; total?: number } | undefined
         return (
           <Badge variant="default" className="bg-blue-500/10 text-blue-500 gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {t('statusProcessing')}
+            {progress?.total
+              ? t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })
+              : t('statusProcessing')}
           </Badge>
         )
+      }
       case 'pending':
         return (
           <Badge variant="outline" className="text-muted-foreground gap-1">
@@ -267,8 +271,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
         knowledgeBaseId,
         documentId,
         {
-          chunk_size: settings.chunk_size || 500,
-          chunk_overlap: settings.chunk_overlap || 50,
+          chunk_size: settings.chunk_size || 1000,
+          chunk_overlap: settings.chunk_overlap || 100,
           separator: settings.separator || undefined,
           clean_text: settings.clean_text,
         }
@@ -299,6 +303,17 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const handleReprocess = () => {
     if (!document) return
     router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${documentId}`)
+  }
+
+  // 重试失败分段
+  const handleRetryFailedChunks = async () => {
+    try {
+      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, documentId)
+      toast.success(t('retryStarted'))
+      loadData()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
   }
 
   // 删除文档
@@ -526,6 +541,17 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
               <Loader2 className="h-12 w-12 text-blue-500 animate-spin mb-4" />
               <h3 className="text-lg font-medium mb-2">{t('documentProcessingTitle')}</h3>
+              {(() => {
+                const progress = document.metadata?.embed_progress as { embedded?: number; failed?: number; total?: number } | undefined
+                if (progress?.total) {
+                  return (
+                    <p className="text-sm text-blue-500 font-medium mb-2">
+                      {t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })}
+                    </p>
+                  )
+                }
+                return null
+              })()}
               <p className="text-muted-foreground max-w-md">
                 {t('documentProcessingDescription')}
               </p>
@@ -540,10 +566,14 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 {t('documentFailedDescription')}
               </p>
               {document.error_message && (
-                <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 max-w-md">
+                <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 max-w-md mb-4">
                   {document.error_message}
                 </p>
               )}
+              <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {t('retryFailedChunks')}
+              </Button>
             </div>
           )}
 
@@ -578,6 +608,18 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             <span className="text-xs text-muted-foreground">
                               {chunk.token_count} tokens
                             </span>
+                            {chunk.status === 'failed' && (
+                              <Badge variant="destructive" className="text-xs gap-1">
+                                <XCircle className="h-3 w-3" />
+                                {t('chunkStatusFailed')}
+                              </Badge>
+                            )}
+                            {chunk.status === 'pending' && (
+                              <Badge variant="outline" className="text-xs text-muted-foreground gap-1">
+                                <Clock className="h-3 w-3" />
+                                {t('chunkStatusPending')}
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             {chunk.isEditing ? (
@@ -719,7 +761,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   value={settings.chunk_size}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
-                    chunk_size: parseInt(e.target.value) || 500
+                    chunk_size: parseInt(e.target.value) || 1000
                   }))}
                   disabled={!isPending}
                 />
@@ -738,7 +780,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   value={settings.chunk_overlap}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
-                    chunk_overlap: parseInt(e.target.value) || 50
+                    chunk_overlap: parseInt(e.target.value) || 100
                   }))}
                   disabled={!isPending}
                 />

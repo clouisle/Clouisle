@@ -72,8 +72,8 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
 
   // 统一的分块设置
   const [settings, setSettings] = React.useState<ProcessInput>({
-    chunk_size: 500,
-    chunk_overlap: 50,
+    chunk_size: 1000,
+    chunk_overlap: 100,
     separator: '',
     clean_text: true,
   })
@@ -111,8 +111,8 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
       // 从知识库设置初始化分块设置
       const kbSettings = kbData.settings
       setSettings({
-        chunk_size: kbSettings?.chunk_size ?? 500,
-        chunk_overlap: kbSettings?.chunk_overlap ?? 50,
+        chunk_size: kbSettings?.chunk_size ?? 1000,
+        chunk_overlap: kbSettings?.chunk_overlap ?? 100,
         separator: kbSettings?.separator ?? '',
         clean_text: true,
       })
@@ -167,8 +167,8 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         knowledgeBaseId,
         docId,
         {
-          chunk_size: settings.chunk_size ?? 500,
-          chunk_overlap: settings.chunk_overlap ?? 50,
+          chunk_size: settings.chunk_size ?? 1000,
+          chunk_overlap: settings.chunk_overlap ?? 100,
           separator: settings.separator || undefined,
           clean_text: settings.clean_text,
         }
@@ -671,7 +671,10 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary">#{chunk.chunk_index + 1}</Badge>
                           <span className="text-xs text-muted-foreground">
-                            {chunk.token_count} tokens · {chunk.char_count} chars
+                            {chunk.token_count} tokens · {chunk.char_count} {t('chars')}
+                            {chunk.overlap_length > 0 && (
+                              <> · <span className="text-yellow-600 dark:text-yellow-400">{t('overlapChars', { count: chunk.overlap_length })}</span></>
+                            )}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -743,7 +746,14 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                           </div>
                         ) : (
                           <p className="text-sm whitespace-pre-wrap break-all wrap-anywhere">
-                            {chunk.content}
+                            {chunk.overlap_length > 0 ? (
+                              <>
+                                <span className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200">{chunk.content.slice(0, chunk.overlap_length)}</span>
+                                {chunk.content.slice(chunk.overlap_length)}
+                              </>
+                            ) : (
+                              chunk.content
+                            )}
                           </p>
                         )}
                       </div>
@@ -778,7 +788,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
                 value={settings.chunk_size}
                 onChange={(e) => handleSettingsChange(prev => ({
                   ...prev,
-                  chunk_size: parseInt(e.target.value) || 500
+                  chunk_size: parseInt(e.target.value) || 1000
                 }))}
               />
               <p className="text-xs text-muted-foreground">

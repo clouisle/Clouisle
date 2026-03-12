@@ -116,6 +116,8 @@ export interface DocumentChunk {
   chunk_index: number
   token_count: number
   metadata: Record<string, unknown> | null
+  status: 'pending' | 'embedded' | 'failed'
+  error_message: string | null
   created_at: string
 }
 
@@ -183,6 +185,7 @@ export interface ChunkPreviewItem {
   content: string
   token_count: number
   char_count: number
+  overlap_length: number
 }
 
 export interface ChunkPreviewResponse {
@@ -334,6 +337,13 @@ export const knowledgeBasesApi = {
    */
   reprocessDocument: async (kbId: string, docId: string): Promise<Document> => {
     return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/reprocess`)
+  },
+
+  /**
+   * 重试失败的分块
+   */
+  retryFailedChunks: async (kbId: string, docId: string): Promise<Document> => {
+    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/retry-failed-chunks`)
   },
 
   /**
