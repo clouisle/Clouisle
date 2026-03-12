@@ -217,6 +217,11 @@
           "offShort": "Off"
         },
         "dialog": {
+          "searchMode": "Search Mode",
+          "searchModeVector": "Vector Search",
+          "searchModeFulltext": "Full-text Search",
+          "searchModeHybrid": "Hybrid Search",
+          "searchModeHint": "Choose how to search the knowledge base",
           "topK": "Top K",
           "topKHint": "Number of most relevant chunks to retrieve",
           "threshold": "Similarity Threshold",

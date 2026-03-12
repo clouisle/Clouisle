@@ -217,6 +217,11 @@
           "offShort": "关闭"
         },
         "dialog": {
+          "searchMode": "检索模式",
+          "searchModeVector": "向量检索",
+          "searchModeFulltext": "全文检索",
+          "searchModeHybrid": "混合检索",
+          "searchModeHint": "选择知识库的检索方式",
           "topK": "召回数量 (Top K)",
           "topKHint": "每次检索返回的最相关文档块数量",
           "threshold": "相似度阈值",

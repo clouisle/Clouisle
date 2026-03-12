@@ -1202,6 +1202,45 @@ async def init_totp_fields():
     logger.info("TOTP migration complete")
 
 
+async def init_agent_kb_search_mode():
+    """
+    Add search_mode field to agent_knowledge_bases table.
+    """
+    logger.info("Initializing agent knowledge base search_mode field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agent_knowledge_bases table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agent_knowledge_bases' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("agent_knowledge_bases table does not exist yet, skipping search_mode migration")
+        return
+
+    # Check if search_mode column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agent_knowledge_bases' AND column_name = 'search_mode'
+    """)
+
+    if rows:
+        logger.info("search_mode field already exists, skipping")
+        return
+
+    logger.info("Adding search_mode field to agent_knowledge_bases table...")
+
+    # Add search_mode field with default value 'hybrid'
+    await conn.execute_query("""
+        ALTER TABLE agent_knowledge_bases
+        ADD COLUMN IF NOT EXISTS search_mode VARCHAR(20) NOT NULL DEFAULT 'hybrid'
+    """)
+
+    logger.info("search_mode field added successfully")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.

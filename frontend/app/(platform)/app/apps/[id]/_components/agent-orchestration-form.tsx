@@ -144,6 +144,7 @@ export function AgentOrchestrationForm({
       knowledge_base_id: akb.knowledge_base.id,
       retrieval_top_k: akb.retrieval_top_k,
       score_threshold: akb.score_threshold,
+      search_mode: akb.search_mode || 'hybrid',
     }))
   )
   const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>(
@@ -181,6 +182,7 @@ export function AgentOrchestrationForm({
         knowledge_base_id: akb.knowledge_base.id,
         retrieval_top_k: akb.retrieval_top_k,
         score_threshold: akb.score_threshold,
+        search_mode: akb.search_mode || 'hybrid',
       }))
     )
     setToolsConfig(agent.tools_config || [])
@@ -439,6 +441,7 @@ export function AgentOrchestrationForm({
                   knowledge_base_id: kb.id,
                   retrieval_top_k: 3,
                   score_threshold: 0.3,
+                  search_mode: 'hybrid',
                 }
                 setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
                 setKbCollapsed(false)

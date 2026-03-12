@@ -217,6 +217,9 @@ class AgentKnowledgeBase(models.Model):
     score_threshold = fields.FloatField(
         default=0.3, description="Minimum similarity score (0-1, lower = more results)"
     )
+    search_mode = fields.CharField(
+        max_length=20, default="hybrid", description="Search mode: vector, fulltext, or hybrid"
+    )
 
     created_at = fields.DatetimeField(auto_now_add=True)
 

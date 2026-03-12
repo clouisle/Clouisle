@@ -479,6 +479,7 @@ class AgentService:
                 results = await vector_store.search(
                     collection_name=str(kb.id),
                     query=query,
+                    search_mode=agent_kb.search_mode,
                     top_k=agent_kb.retrieval_top_k,
                     score_threshold=agent_kb.score_threshold,
                 )

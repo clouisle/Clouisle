@@ -73,6 +73,7 @@ export interface AgentKnowledgeBaseConfig {
   knowledge_base_id: string
   retrieval_top_k: number
   score_threshold: number
+  search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
 /** File parser configuration - which tool to use for parsing files */
@@ -102,6 +103,7 @@ export interface AgentKnowledgeBaseOut {
   knowledge_base: KnowledgeBaseInfo
   retrieval_top_k: number
   score_threshold: number
+  search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
 export interface MemoryConfig {

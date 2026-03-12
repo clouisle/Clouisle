@@ -184,6 +184,7 @@ async def build_agent_out(agent: Agent) -> dict:
                 ),
                 retrieval_top_k=akb.retrieval_top_k,
                 score_threshold=akb.score_threshold,
+                search_mode=akb.search_mode,
             )
         )
 
@@ -454,6 +455,7 @@ async def create_agent(
             knowledge_base_id=kb_config.knowledge_base_id,
             retrieval_top_k=kb_config.retrieval_top_k,
             score_threshold=kb_config.score_threshold,
+            search_mode=kb_config.search_mode,
         )
 
     # Reload with relations
@@ -635,6 +637,7 @@ async def update_agent(
                 knowledge_base_id=kb_config.knowledge_base_id,
                 retrieval_top_k=kb_config.retrieval_top_k,
                 score_threshold=kb_config.score_threshold,
+                search_mode=kb_config.search_mode,
             )
         updated_fields.append("knowledge_base_configs")
 
@@ -803,6 +806,7 @@ async def duplicate_agent(
             knowledge_base_id=akb.knowledge_base_id,
             retrieval_top_k=akb.retrieval_top_k,
             score_threshold=akb.score_threshold,
+            search_mode=akb.search_mode,
         )
 
     # Reload with relations

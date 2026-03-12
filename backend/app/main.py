@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI):
         init_permission_is_system_field,
         init_password_expiration,
         init_totp_fields,
+        init_agent_kb_search_mode,
     )
 
     try:
@@ -114,6 +115,11 @@ async def lifespan(app: FastAPI):
         await init_permission_is_system_field()
     except Exception as e:
         logger.warning(f"Permission is_system field migration failed: {e}")
+
+    try:
+        await init_agent_kb_search_mode()
+    except Exception as e:
+        logger.warning(f"Agent KB search_mode field migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

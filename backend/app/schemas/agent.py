@@ -155,8 +155,9 @@ class AgentKnowledgeBaseConfig(BaseModel):
     """Knowledge base configuration for agent"""
 
     knowledge_base_id: UUID
-    retrieval_top_k: int = Field(default=5, ge=1, le=20)
-    score_threshold: float = Field(default=0.5, ge=0, le=1)
+    retrieval_top_k: int = Field(default=5, ge=1, le=100)
+    score_threshold: float = Field(default=0.3, ge=0, le=1)
+    search_mode: str = Field(default="hybrid", pattern="^(vector|fulltext|hybrid)$")
 
 
 class FileUploadConfig(BaseModel):
@@ -299,6 +300,7 @@ class AgentKnowledgeBaseOut(BaseModel):
     knowledge_base: KnowledgeBaseInfo
     retrieval_top_k: int
     score_threshold: float
+    search_mode: str
 
     class Config:
         from_attributes = True

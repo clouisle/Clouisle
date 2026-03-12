@@ -1283,7 +1283,7 @@ async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
             results = await vector_store.search(
                 kb_id=kb.id,
                 query=query,
-                search_mode="hybrid",
+                search_mode=akb.search_mode,
                 top_k=akb.retrieval_top_k,
                 score_threshold=akb.score_threshold,
             )
