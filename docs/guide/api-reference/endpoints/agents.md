@@ -619,17 +619,23 @@ When `stream: true`, the response is sent as Server-Sent Events (SSE).
 **Event format:**
 
 ```
-data: {"type": "start", "conversation_id": "conv-123", "message_id": "msg-456"}
+event: message_start
+data: {"conversation_id": "conv-123", "message_id": "msg-456"}
 
-data: {"type": "token", "content": "Our"}
+event: content_delta
+data: {"delta": "Our"}
 
-data: {"type": "token", "content": " business"}
+event: content_delta
+data: {"delta": " business"}
 
-data: {"type": "token", "content": " hours"}
+event: content_delta
+data: {"delta": " hours"}
 
-data: {"type": "source", "source": {"document_id": "doc-789", "score": 0.95}}
+event: rag_context
+data: {"contexts": [{"document_name": "FAQ", "content": "...", "score": 0.95}]}
 
-data: {"type": "end", "tokens_used": {"total": 175}, "response_time": 2.3}
+event: message_end
+data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 175}, "timing": {"first_token_ms": 320, "duration_ms": 2300, "tokens_per_second": 10.9}}
 ```
 
 See [SSE Streaming](../sse-streaming.md) for details.

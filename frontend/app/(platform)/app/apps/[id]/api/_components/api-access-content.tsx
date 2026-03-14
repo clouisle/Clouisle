@@ -190,6 +190,7 @@ while (true) {
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
     { event: 'user_input_request', description: t('events.userInputRequest') },
+    { event: 'output_truncated', description: t('events.outputTruncated') },
     { event: 'message_end', description: t('events.messageEnd') },
     { event: 'error', description: t('events.error') },
   ]
@@ -318,6 +319,22 @@ while (true) {
                 </tbody>
               </table>
             </div>
+            <p className="text-sm text-muted-foreground mt-4 mb-2">{t('messageEndExample')}</p>
+            <CodeBlock
+              code={JSON.stringify({
+                usage: {
+                  prompt_tokens: 150,
+                  completion_tokens: 25,
+                  total_tokens: 175,
+                },
+                timing: {
+                  first_token_ms: 320,
+                  duration_ms: 2300,
+                  tokens_per_second: 10.9,
+                },
+              }, null, 2)}
+              language="json"
+            />
           </Section>
 
           {/* Code Examples */}

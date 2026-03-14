@@ -420,9 +420,11 @@
         "toolCall": "工具调用，包含工具名称和参数",
         "toolResult": "工具执行结果",
         "userInputRequest": "Agent 请求用户输入，包含预定义选项",
-        "messageEnd": "消息结束，包含 token 用量统计",
+        "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
+        "messageEnd": "消息结束，包含 token 用量和耗时统计",
         "error": "错误信息"
       },
+      "messageEndExample": "message_end 事件数据示例：",
       "codeExamples": "代码示例",
       "multiTurn": {
         "title": "多轮对话",

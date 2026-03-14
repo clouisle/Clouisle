@@ -353,6 +353,7 @@ export type SSEEventType =
   | 'rag_start'
   | 'rag_context'
   | 'user_input_request'
+  | 'output_truncated'
   | 'message_end'
   | 'error'
 
@@ -386,6 +387,11 @@ export interface SSEMessageEnd {
     prompt_tokens: number
     completion_tokens: number
     total_tokens: number
+  }
+  timing?: {
+    first_token_ms: number | null
+    duration_ms: number
+    tokens_per_second: number | null
   }
 }
 

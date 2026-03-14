@@ -420,9 +420,11 @@
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
         "userInputRequest": "Agent requests user input with predefined options",
-        "messageEnd": "Message ended with token usage statistics",
+        "outputTruncated": "Output was truncated due to max output token limit",
+        "messageEnd": "Message ended with token usage and timing statistics",
         "error": "Error message"
       },
+      "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
       "multiTurn": {
         "title": "Multi-turn Conversation",

@@ -1787,6 +1787,7 @@ async def chat_stream(
             ContentPart,
             ContentType,
             ImageContent,
+            FinishReason,
         )
 
         # Get streaming configuration
@@ -1797,6 +1798,7 @@ async def chat_stream(
 
         # Record start time and last event time
         start_time = time.time()
+        first_token_time: float | None = None
         last_event_time = start_time
         full_content = ""
         full_reasoning = ""
@@ -2303,6 +2305,8 @@ async def chat_stream(
                                     yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += chunk.delta.reasoning_content
                                 iteration_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
                                 emitted_any = True
@@ -2314,6 +2318,8 @@ async def chat_stream(
                                 full_content += chunk.delta.content
                                 iteration_content += chunk.delta.content
 
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
@@ -2328,6 +2334,8 @@ async def chat_stream(
                             if chunk.finish_reason:
                                 if reasoning_started and not full_content:
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                 break
 
                         # Fallback: if stream yields nothing and no tool calls, do a non-stream call
@@ -2346,11 +2354,15 @@ async def chat_stream(
                                 yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += response.reasoning_content
                                 iteration_reasoning += response.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
                                 yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                             if response.content:
                                 full_content += response.content
                                 iteration_content += response.content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
 
                         # If client disconnected, save partial content and exit
@@ -2595,8 +2607,10 @@ async def chat_stream(
                         total_tokens=F("total_tokens") + (input_tokens + output_tokens),
                     )
 
-                    # Send message_end event with version info
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"
+                    # Send message_end event with version info and timing
+                    first_token_ms = int((first_token_time - start_time) * 1000) if first_token_time else None
+                    tokens_per_second = round(output_tokens / (duration_ms / 1000), 1) if duration_ms > 0 and output_tokens > 0 else None
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
                 except QuotaExceededError as e:
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
@@ -2938,6 +2952,7 @@ async def regenerate_message(
             FunctionDefinition,
             ToolCall as LLMToolCall,
             FunctionCall as LLMFunctionCall,
+            FinishReason,
         )
 
         # Get streaming configuration
@@ -2948,6 +2963,7 @@ async def regenerate_message(
 
         # Record start time and last event time
         start_time = time.time()
+        first_token_time: float | None = None
         last_event_time = start_time
         full_content = ""
         full_reasoning = ""
@@ -3187,6 +3203,8 @@ async def regenerate_message(
                                     reasoning_started = True
                                     yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
 
@@ -3195,6 +3213,8 @@ async def regenerate_message(
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                 full_content += chunk.delta.content
 
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
@@ -3205,6 +3225,8 @@ async def regenerate_message(
                             if chunk.finish_reason:
                                 if reasoning_started and not full_content:
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                 break
 
                         # If client disconnected, save partial content and exit
@@ -3342,7 +3364,9 @@ async def regenerate_message(
                         total_tokens=F("total_tokens") + total_tokens,
                     )
 
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
+                    first_token_ms = int((first_token_time - start_time) * 1000) if first_token_time else None
+                    tokens_per_second = round(output_tokens / (duration_ms / 1000), 1) if duration_ms > 0 and output_tokens > 0 else None
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
 
                 except QuotaExceededError as e:
                     # Rollback: delete new message and restore original

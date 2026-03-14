@@ -205,7 +205,7 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
 
@@ -303,7 +303,7 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
 

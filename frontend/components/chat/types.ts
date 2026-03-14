@@ -156,6 +156,13 @@ export interface UserInputRequestPart {
 }
 
 /**
+ * Output truncated warning part
+ */
+export interface TruncatedPart {
+  type: 'truncated'
+}
+
+/**
  * All possible message parts
  */
 export type MessagePart =
@@ -172,6 +179,7 @@ export type MessagePart =
   | StepStartPart
   | TaskPart
   | UserInputRequestPart
+  | TruncatedPart
 
 /**
  * Chat message
@@ -266,6 +274,10 @@ export function isTaskPart(part: MessagePart): part is TaskPart {
 
 export function isUserInputRequestPart(part: MessagePart): part is UserInputRequestPart {
   return part.type === 'user-input-request'
+}
+
+export function isTruncatedPart(part: MessagePart): part is TruncatedPart {
+  return part.type === 'truncated'
 }
 
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {

@@ -4,6 +4,7 @@ DeepSeek Chat 适配器
 支持 DeepSeek API，包括 R1 系列的 reasoning_content 功能。
 """
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -21,6 +22,8 @@ from app.llm.types import (
 from .base import BaseChatAdapter
 from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
+
+logger = logging.getLogger(__name__)
 
 
 class DeepSeekAdapter(BaseChatAdapter):
@@ -148,7 +151,7 @@ class DeepSeekAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
 
@@ -235,7 +238,7 @@ class DeepSeekAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
 

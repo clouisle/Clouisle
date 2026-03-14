@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { embedApi, type EmbedChatRequest } from '@/lib/api/embed'
-import { parseSSEStream } from '@/lib/api/agents'
+import { parseSSEStream, type SSEMessageEnd } from '@/lib/api/agents'
 import type {
   ChatMessage,
   MessagePart,
@@ -41,32 +41,48 @@ type ContentSegment =
   | { type: 'text'; text: string }
   | { type: 'tool-group'; calls: ToolCallPart[]; results: ToolResultPart[] }
   | { type: 'reasoning'; index: number }
+  | { type: 'truncated' }
 
 interface TaskState {
-  rag: 'pending' | 'active' | 'done'
-  generating: 'pending' | 'active' | 'done'
-  toolCalling: 'pending' | 'active' | 'done'
+  rag: 'pending' | 'running' | 'completed' | 'error'
+  generating: 'pending' | 'running' | 'completed' | 'error'
+  toolCalling: 'pending' | 'running' | 'completed' | 'error'
+  ragSourceCount?: number
+  toolCallCount?: number
 }
 
 function buildMessageParts(
   segments: ContentSegment[],
   reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
   ragSources: SourceDocumentPart[],
+  isStreaming: boolean,
   taskState: TaskState,
 ): MessagePart[] {
   const parts: MessagePart[] = []
 
-  // Task part (shows RAG/generating/tool status)
-  const hasActivity = taskState.rag !== 'pending' || taskState.generating !== 'pending' || taskState.toolCalling !== 'pending'
-  if (hasActivity) {
-    parts.push({
+  // Add task parts for RAG and generating steps (not tool calling - we show individual tool calls instead)
+  // Keep showing them even after streaming ends so they're visible when collapsed
+  // RAG task - show if it ran (not pending)
+  if (taskState.rag !== 'pending') {
+    const ragTask: TaskPart = {
       type: 'task',
-      state: {
-        rag: taskState.rag,
-        generating: taskState.generating,
-        toolCalling: taskState.toolCalling,
-      },
-    } as TaskPart)
+      taskType: 'rag',
+      // Mark as completed when streaming ends
+      state: isStreaming ? taskState.rag : 'completed',
+      info: taskState.ragSourceCount,
+    }
+    parts.push(ragTask)
+  }
+
+  // Generating task - show if it ran (not pending)
+  if (taskState.generating !== 'pending') {
+    const generatingTask: TaskPart = {
+      type: 'task',
+      taskType: 'generating',
+      // Mark as completed when streaming ends
+      state: isStreaming ? taskState.generating : 'completed',
+    }
+    parts.push(generatingTask)
   }
 
   // Source documents
@@ -83,8 +99,7 @@ function buildMessageParts(
       if (block) {
         parts.push({
           type: 'reasoning',
-          reasoning: block.text,
-          startTime: block.startTime,
+          text: block.text,
           duration: block.duration,
           state: block.state,
         } as ReasoningPart)
@@ -92,6 +107,8 @@ function buildMessageParts(
     } else if (seg.type === 'tool-group') {
       for (const call of seg.calls) parts.push(call)
       for (const result of seg.results) parts.push(result)
+    } else if (seg.type === 'truncated') {
+      parts.push({ type: 'truncated' })
     }
   }
 
@@ -199,12 +216,12 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                 setConversationId(msgData.conversation_id)
                 onConversationChange?.(msgData.conversation_id)
               }
-              state.taskState.generating = 'active'
+              state.taskState.generating = 'running'
               // Create initial assistant message
               const assistantMsg: ChatMessage = {
                 id: state.assistantMessageId,
                 role: 'assistant',
-                parts: buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, state.taskState),
+                parts: buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState),
               }
               setMessages(prev => [...prev, assistantMsg])
               break
@@ -221,7 +238,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               }
               // Update assistant message
               if (state.assistantMessageId) {
-                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, state.taskState)
+                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
                 setMessages(prev =>
                   prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
                 )
@@ -242,7 +259,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               if (state.currentReasoningIndex >= 0) {
                 state.reasoningBlocks[state.currentReasoningIndex].text += reasoningDelta
                 if (state.assistantMessageId) {
-                  const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, state.taskState)
+                  const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
                   setMessages(prev =>
                     prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
                   )
@@ -262,25 +279,25 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
             }
 
             case 'rag_start': {
-              state.taskState.rag = 'active'
+              state.taskState.rag = 'running'
               break
             }
 
             case 'rag_context': {
-              state.taskState.rag = 'done'
+              state.taskState.rag = 'completed'
               const contexts = (data as { contexts?: Array<Record<string, unknown>> }).contexts || []
               state.ragSources = contexts.map((ctx, i) => ({
                 type: 'source-document' as const,
-                title: (ctx.document_name as string) || `Source ${i + 1}`,
+                documentName: (ctx.document_name as string) || `Source ${i + 1}`,
                 content: (ctx.content as string) || '',
-                score: (ctx.score as number) || 0,
                 metadata: ctx,
               }))
+              state.taskState.ragSourceCount = contexts.length
               break
             }
 
             case 'tool_call': {
-              state.taskState.toolCalling = 'active'
+              state.taskState.toolCalling = 'running'
               const toolData = data as { tool_name?: string; tool_call_id?: string; arguments?: Record<string, unknown> }
               // Find or create tool-group segment
               let toolGroup = state.segments[state.segments.length - 1]
@@ -293,8 +310,8 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                   type: 'tool-call',
                   toolName: toolData.tool_name || 'unknown',
                   toolCallId: toolData.tool_call_id || '',
-                  args: toolData.arguments || {},
-                  state: 'loading',
+                  input: toolData.arguments || {},
+                  state: 'running',
                 } as ToolCallPart)
               }
               break
@@ -315,20 +332,35 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                     type: 'tool-result',
                     toolName: resultData.tool_name || 'unknown',
                     toolCallId: resultData.tool_call_id || '',
-                    result: resultData.result,
+                    output: resultData.result,
                   } as ToolResultPart)
                 }
               }
               break
             }
 
-            case 'message_end': {
-              state.taskState.generating = 'done'
-              state.taskState.toolCalling = state.taskState.toolCalling === 'active' ? 'done' : state.taskState.toolCalling
+            case 'output_truncated': {
+              state.segments.push({ type: 'truncated' })
               if (state.assistantMessageId) {
-                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, state.taskState)
+                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
                 setMessages(prev =>
                   prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
+                )
+              }
+              break
+            }
+
+            case 'message_end': {
+              const endData = data as SSEMessageEnd
+              state.taskState.generating = 'completed'
+              state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
+              if (state.assistantMessageId) {
+                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
+                setMessages(prev =>
+                  prev.map(m => m.id === state.assistantMessageId
+                    ? { ...m, parts, metadata: { ...m.metadata, usage: endData.usage, timing: endData.timing } }
+                    : m
+                  )
                 )
               }
               break

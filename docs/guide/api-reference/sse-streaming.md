@@ -33,20 +33,19 @@ Server-Sent Events (SSE) is a standard for streaming data from server to client 
 
 ### Agent Chat Streaming
 
-**Enable streaming in chat request:**
+**Send a streaming chat request:**
 
 ```bash
-curl -X POST "https://your-domain.com/api/v1/agents/{agent_id}/chat" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+curl -X POST "https://your-domain.com/api/v1/agents/{agent_id}/chat/stream" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -d '{
     "message": "Explain quantum computing",
-    "stream": true
+    "conversation_id": null,
+    "variables": {}
   }'
 ```
-
-**Key parameter:**
-- `stream: true` - Enable streaming mode
 
 ### Workflow Streaming
 
@@ -90,13 +89,19 @@ data: <json_data>
 
 | Event Type | Description |
 |------------|-------------|
-| `start` | Stream started |
-| `token` | New token/chunk of text |
-| `source` | RAG source citation |
-| `tool_call` | Tool invocation |
+| `message_start` | Stream started, contains conversation_id and message_id |
+| `rag_start` | RAG retrieval started |
+| `rag_context` | RAG retrieval results with relevant documents |
+| `reasoning_start` | Reasoning started (if model supports) |
+| `reasoning_delta` | Reasoning content delta |
+| `reasoning_end` | Reasoning ended with duration |
+| `content_delta` | Response content delta (text token) |
+| `tool_call` | Tool call with tool name and arguments |
 | `tool_result` | Tool execution result |
+| `user_input_request` | Agent requests user input with predefined options |
+| `output_truncated` | Output was truncated due to max output token limit |
+| `message_end` | Message ended with token usage statistics |
 | `error` | Error occurred |
-| `end` | Stream completed |
 
 ## Agent Chat Streaming
 
@@ -105,82 +110,99 @@ data: <json_data>
 **Event sequence:**
 
 ```
-event: start
+event: message_start
 data: {"conversation_id": "conv-123", "message_id": "msg-456"}
 
-event: token
-data: {"content": "Quantum"}
+event: rag_start
+data: {}
 
-event: token
-data: {"content": " computing"}
+event: rag_context
+data: {"contexts": [{"document_name": "Quantum Computing Basics", "content": "...", "score": 0.95}]}
 
-event: token
-data: {"content": " is"}
+event: content_delta
+data: {"delta": "Quantum"}
 
-event: source
-data: {"document_id": "doc-789", "score": 0.95, "content": "..."}
+event: content_delta
+data: {"delta": " computing"}
 
-event: token
-data: {"content": " a"}
+event: content_delta
+data: {"delta": " is"}
 
-event: token
-data: {"content": " revolutionary"}
+event: content_delta
+data: {"delta": " a revolutionary"}
 
-event: end
-data: {"tokens_used": {"total": 175}, "response_time": 2.3}
+event: message_end
+data: {"usage": {"prompt_tokens": 150, "completion_tokens": 25, "total_tokens": 175}, "timing": {"first_token_ms": 320, "duration_ms": 2300, "tokens_per_second": 10.9}}
 ```
 
 ### Event Details
 
-**Start event:**
+**message_start event:**
 ```json
 {
-  "type": "start",
   "conversation_id": "conv-123",
-  "message_id": "msg-456",
-  "timestamp": "2026-02-11T14:30:00Z"
+  "message_id": "msg-456"
 }
 ```
 
-**Token event:**
+**content_delta event:**
 ```json
 {
-  "type": "token",
-  "content": "Quantum",
-  "index": 0
+  "delta": "Quantum"
 }
 ```
 
-**Source event (RAG):**
+**rag_start event:**
+```json
+{}
+```
+
+**rag_context event (RAG sources):**
 ```json
 {
-  "type": "source",
-  "source": {
-    "document_id": "doc-789",
-    "document_name": "Quantum Computing Basics",
-    "chunk_id": "chunk-012",
-    "content": "Quantum computing uses quantum mechanics...",
-    "score": 0.95
-  }
+  "contexts": [
+    {
+      "document_name": "Quantum Computing Basics",
+      "content": "Quantum computing uses quantum mechanics...",
+      "score": 0.95
+    }
+  ]
 }
 ```
 
-**Tool call event:**
+**reasoning_start event:**
+```json
+{}
+```
+
+**reasoning_delta event:**
 ```json
 {
-  "type": "tool_call",
-  "tool": "web_search",
+  "delta": "Let me think about this..."
+}
+```
+
+**reasoning_end event:**
+```json
+{}
+```
+
+**tool_call event:**
+```json
+{
+  "tool_name": "web_search",
+  "tool_call_id": "call-123",
   "arguments": {
     "query": "latest quantum computing news"
   }
 }
 ```
 
-**Tool result event:**
+**tool_result event:**
 ```json
 {
-  "type": "tool_result",
-  "tool": "web_search",
+  "tool_call_id": "call-123",
+  "tool_name": "web_search",
   "result": {
     "results": [
       {"title": "...", "url": "...", "snippet": "..."}
@@ -189,31 +211,45 @@ data: {"tokens_used": {"total": 175}, "response_time": 2.3}
 }
 ```
 
-**Error event:**
+**output_truncated event:**
+```json
+{}
+```
+
+> This event is sent when the response is truncated because it reached the max output token limit configured in model settings.
+
+**error event:**
 ```json
 {
-  "type": "error",
-  "error": {
-    "code": 6102,
-    "message": "Model API error",
-    "details": "Rate limit exceeded"
+  "code": 6102,
+  "msg": "Model API error"
+}
+```
+
+**message_end event:**
+```json
+{
+  "usage": {
+    "prompt_tokens": 150,
+    "completion_tokens": 25,
+    "total_tokens": 175
+  },
+  "timing": {
+    "first_token_ms": 320,
+    "duration_ms": 2300,
+    "tokens_per_second": 10.9
   }
 }
 ```
 
-**End event:**
-```json
-{
-  "type": "end",
-  "tokens_used": {
-    "prompt": 150,
-    "completion": 25,
-    "total": 175
-  },
-  "response_time": 2.3,
-  "finish_reason": "stop"
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `usage.prompt_tokens` | integer | Number of input tokens |
+| `usage.completion_tokens` | integer | Number of output tokens |
+| `usage.total_tokens` | integer | Total tokens (input + output) |
+| `timing.first_token_ms` | integer \| null | Time to first token in milliseconds |
+| `timing.duration_ms` | integer | Total generation time in milliseconds |
+| `timing.tokens_per_second` | number \| null | Output token generation speed |
 
 ## Workflow Streaming
 
@@ -298,109 +334,76 @@ data: {"status": "completed", "duration": 83, "output": {...}}
 
 ### JavaScript/TypeScript
 
-**Using EventSource API:**
-
-```javascript
-const eventSource = new EventSource(
-  'https://your-domain.com/api/v1/agents/agent-123/chat',
-  {
-    headers: {
-      'Authorization': 'Bearer YOUR_TOKEN'
-    }
-  }
-);
-
-// Handle different event types
-eventSource.addEventListener('start', (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Stream started:', data);
-});
-
-eventSource.addEventListener('token', (event) => {
-  const data = JSON.parse(event.data);
-  // Append token to UI
-  appendToken(data.content);
-});
-
-eventSource.addEventListener('source', (event) => {
-  const data = JSON.parse(event.data);
-  // Display source citation
-  showSource(data.source);
-});
-
-eventSource.addEventListener('end', (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Stream ended:', data);
-  eventSource.close();
-});
-
-eventSource.addEventListener('error', (event) => {
-  console.error('Stream error:', event);
-  eventSource.close();
-});
-
-// Handle connection errors
-eventSource.onerror = (error) => {
-  console.error('Connection error:', error);
-  eventSource.close();
-};
-```
-
 **Using fetch with streaming:**
 
 ```javascript
 async function streamChat(message) {
   const response = await fetch(
-    'https://your-domain.com/api/v1/agents/agent-123/chat',
+    'https://your-domain.com/api/v1/agents/agent-123/chat/stream',
     {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer YOUR_TOKEN',
+        'Authorization': 'Bearer YOUR_API_KEY',
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
       },
       body: JSON.stringify({
         message: message,
-        stream: true
+        conversation_id: null,
+        variables: {}
       })
     }
   );
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
 
   while (true) {
     const { done, value } = await reader.read();
-
     if (done) break;
 
-    const chunk = decoder.decode(value);
-    const lines = chunk.split('\n\n');
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
 
+    let eventType = '';
     for (const line of lines) {
-      if (line.startsWith('data: ')) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7);
+      } else if (line.startsWith('data: ') && eventType) {
         const data = JSON.parse(line.slice(6));
-        handleEvent(data);
+        handleEvent(eventType, data);
+        eventType = '';
       }
     }
   }
 }
 
-function handleEvent(data) {
-  switch (data.type) {
-    case 'start':
-      console.log('Stream started');
+function handleEvent(eventType, data) {
+  switch (eventType) {
+    case 'message_start':
+      console.log('Conversation ID:', data.conversation_id);
       break;
-    case 'token':
-      appendToken(data.content);
+    case 'content_delta':
+      process.stdout.write(data.delta);
       break;
-    case 'source':
-      showSource(data.source);
+    case 'rag_context':
+      console.log('Sources:', data.contexts?.length);
       break;
-    case 'end':
-      console.log('Stream ended');
+    case 'output_truncated':
+      console.warn('Output was truncated');
+      break;
+    case 'message_end':
+      console.log('\nDone. Usage:', data.usage);
+      if (data.timing) {
+        console.log('First token:', data.timing.first_token_ms + 'ms');
+        console.log('Total time:', data.timing.duration_ms + 'ms');
+        console.log('Speed:', data.timing.tokens_per_second + ' T/s');
+      }
       break;
     case 'error':
-      console.error('Error:', data.error);
+      console.error('Error:', data.msg);
       break;
   }
 }
@@ -415,14 +418,16 @@ import requests
 import json
 
 def stream_chat(message):
-    url = "https://your-domain.com/api/v1/agents/agent-123/chat"
+    url = "https://your-domain.com/api/v1/agents/agent-123/chat/stream"
     headers = {
-        "Authorization": "Bearer YOUR_TOKEN",
-        "Content-Type": "application/json"
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
     }
     data = {
         "message": message,
-        "stream": True
+        "conversation_id": None,
+        "variables": {},
     }
 
     response = requests.post(
@@ -432,26 +437,36 @@ def stream_chat(message):
         stream=True
     )
 
+    event_type = ""
     for line in response.iter_lines():
         if line:
             line = line.decode('utf-8')
-            if line.startswith('data: '):
+            if line.startswith('event: '):
+                event_type = line[7:]
+            elif line.startswith('data: ') and event_type:
                 data = json.loads(line[6:])
-                handle_event(data)
+                handle_event(event_type, data)
+                event_type = ""
 
-def handle_event(data):
-    event_type = data.get('type')
-
-    if event_type == 'start':
-        print('Stream started')
-    elif event_type == 'token':
-        print(data['content'], end='', flush=True)
-    elif event_type == 'source':
-        print(f"\n[Source: {data['source']['document_name']}]")
-    elif event_type == 'end':
-        print('\nStream ended')
+def handle_event(event_type, data):
+    if event_type == 'message_start':
+        print(f"Conversation: {data.get('conversation_id')}")
+    elif event_type == 'content_delta':
+        print(data.get('delta', ''), end='', flush=True)
+    elif event_type == 'rag_context':
+        contexts = data.get('contexts', [])
+        print(f"\n[Found {len(contexts)} sources]")
+    elif event_type == 'output_truncated':
+        print("\n[Warning: Output was truncated]")
+    elif event_type == 'message_end':
+        print(f"\nDone. Usage: {data.get('usage')}")
+        timing = data.get('timing')
+        if timing:
+            print(f"First token: {timing.get('first_token_ms')}ms")
+            print(f"Total time: {timing.get('duration_ms')}ms")
+            print(f"Speed: {timing.get('tokens_per_second')} T/s")
     elif event_type == 'error':
-        print(f"\nError: {data['error']['message']}")
+        print(f"\nError: {data.get('msg')}")
 
 # Usage
 stream_chat("Explain quantum computing")
@@ -465,14 +480,16 @@ import json
 import asyncio
 
 async def stream_chat(message):
-    url = "https://your-domain.com/api/v1/agents/agent-123/chat"
+    url = "https://your-domain.com/api/v1/agents/agent-123/chat/stream"
     headers = {
-        "Authorization": "Bearer YOUR_TOKEN",
-        "Content-Type": "application/json"
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
     }
     data = {
         "message": message,
-        "stream": True
+        "conversation_id": None,
+        "variables": {},
     }
 
     async with httpx.AsyncClient() as client:
@@ -482,18 +499,19 @@ async def stream_chat(message):
             headers=headers,
             json=data
         ) as response:
+            event_type = ""
             async for line in response.aiter_lines():
-                if line.startswith('data: '):
+                if line.startswith('event: '):
+                    event_type = line[7:]
+                elif line.startswith('data: ') and event_type:
                     data = json.loads(line[6:])
-                    await handle_event(data)
-
-async def handle_event(data):
-    event_type = data.get('type')
-
-    if event_type == 'token':
-        print(data['content'], end='', flush=True)
-    elif event_type == 'end':
-        print('\nStream ended')
+                    if event_type == 'content_delta':
+                        print(data.get('delta', ''), end='', flush=True)
+                    elif event_type == 'output_truncated':
+                        print("\n[Warning: Output was truncated]")
+                    elif event_type == 'message_end':
+                        print('\nDone')
+                    event_type = ""
 
 # Usage
 asyncio.run(stream_chat("Explain quantum computing"))
@@ -507,75 +525,75 @@ asyncio.run(stream_chat("Explain quantum computing"))
 package main
 
 import (
-    "bufio"
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "strings"
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
 )
 
-type StreamEvent struct {
-    Type    string          `json:"type"`
-    Content string          `json:"content,omitempty"`
-    Source  json.RawMessage `json:"source,omitempty"`
-}
-
 func streamChat(message string) error {
-    url := "https://your-domain.com/api/v1/agents/agent-123/chat"
+	url := "https://your-domain.com/api/v1/agents/agent-123/chat/stream"
 
-    payload := map[string]interface{}{
-        "message": message,
-        "stream":  true,
-    }
+	payload := map[string]interface{}{
+		"message":         message,
+		"conversation_id": nil,
+		"variables":       map[string]interface{}{},
+	}
 
-    payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, _ := json.Marshal(payload)
 
-    req, err := http.NewRequest("POST", url, strings.NewReader(string(payloadBytes)))
-    if err != nil {
-        return err
-    }
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return err
+	}
 
-    req.Header.Set("Authorization", "Bearer YOUR_TOKEN")
-    req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer YOUR_API_KEY")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-    scanner := bufio.NewScanner(resp.Body)
-    for scanner.Scan() {
-        line := scanner.Text()
-        if strings.HasPrefix(line, "data: ") {
-            data := line[6:]
-            var event StreamEvent
-            if err := json.Unmarshal([]byte(data), &event); err != nil {
-                continue
-            }
-            handleEvent(event)
-        }
-    }
+	scanner := bufio.NewScanner(resp.Body)
+	eventType := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "event: ") {
+			eventType = line[7:]
+		} else if strings.HasPrefix(line, "data: ") && eventType != "" {
+			data := line[6:]
+			handleEvent(eventType, data)
+			eventType = ""
+		}
+	}
 
-    return scanner.Err()
+	return scanner.Err()
 }
 
-func handleEvent(event StreamEvent) {
-    switch event.Type {
-    case "start":
-        fmt.Println("Stream started")
-    case "token":
-        fmt.Print(event.Content)
-    case "end":
-        fmt.Println("\nStream ended")
-    case "error":
-        fmt.Println("\nError occurred")
-    }
+func handleEvent(eventType string, rawData string) {
+	switch eventType {
+	case "message_start":
+		fmt.Println("Stream started")
+	case "content_delta":
+		var data map[string]string
+		json.Unmarshal([]byte(rawData), &data)
+		fmt.Print(data["delta"])
+	case "output_truncated":
+		fmt.Println("\n[Warning: Output was truncated]")
+	case "message_end":
+		fmt.Println("\nStream ended")
+	case "error":
+		fmt.Println("\nError occurred")
+	}
 }
 
 func main() {
-    streamChat("Explain quantum computing")
+	streamChat("Explain quantum computing")
 }
 ```
 
@@ -607,23 +625,24 @@ eventSource.onerror = (error) => {
 **Handle stream-level errors:**
 
 ```javascript
-eventSource.addEventListener('error', (event) => {
-  const data = JSON.parse(event.data);
-
-  switch (data.error.code) {
-    case 2002:
-      // Token expired - refresh and retry
-      refreshToken().then(() => reconnect());
-      break;
-    case 5400:
-      // Rate limit - wait and retry
-      setTimeout(() => reconnect(), data.error.retry_after * 1000);
-      break;
-    default:
-      // Other error - show to user
-      showError(data.error.message);
+// In your event handler
+function handleEvent(eventType, data) {
+  if (eventType === 'error') {
+    switch (data.code) {
+      case 2002:
+        // Token expired - refresh and retry
+        refreshToken().then(() => reconnect());
+        break;
+      case 5400:
+        // Rate limit - wait and retry
+        setTimeout(() => reconnect(), 5000);
+        break;
+      default:
+        // Other error - show to user
+        showError(data.msg);
+    }
   }
-});
+}
 ```
 
 ### Timeout Handling
@@ -632,20 +651,22 @@ eventSource.addEventListener('error', (event) => {
 
 ```javascript
 let timeoutId;
+let lastEventTime = Date.now();
 
-eventSource.addEventListener('token', (event) => {
-  // Reset timeout on each token
+function handleEvent(eventType, data) {
+  // Reset timeout on each event
   clearTimeout(timeoutId);
+  lastEventTime = Date.now();
   timeoutId = setTimeout(() => {
     console.error('Stream timeout');
-    eventSource.close();
+    abortController.abort();
     showError('Response timeout');
   }, 30000); // 30 second timeout
-});
 
-eventSource.addEventListener('end', (event) => {
-  clearTimeout(timeoutId);
-});
+  if (eventType === 'message_end') {
+    clearTimeout(timeoutId);
+  }
+}
 ```
 
 ## Best Practices
@@ -743,4 +764,4 @@ eventSource.addEventListener('end', (event) => {
 
 ---
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-03-15

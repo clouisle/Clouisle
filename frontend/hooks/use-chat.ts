@@ -634,6 +634,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'output_truncated': {
+              const truncatedSegment: ContentSegment = { type: 'truncated' }
+              segments.push(truncatedSegment)
+              streamingStateRef.current.segments = segments
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'message_end': {
               // Get version info from event data
               const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
@@ -665,6 +682,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                         parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
                         versionNumber: endData.version_number ?? 1,
                         versionCount: endData.version_count ?? 1,
+                        metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
                       }
                     : msg
                 )
@@ -1351,6 +1369,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'output_truncated': {
+              const truncatedSegment: ContentSegment = { type: 'truncated' }
+              segments.push(truncatedSegment)
+              streamingStateRef.current.segments = segments
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'message_end': {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
@@ -1389,7 +1424,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                     parts: newParts,
                     versionNumber: finalVersionNumber,
                     versionCount: finalVersionCount,
-                    metadata: { ...msg.metadata, isLoading: false },
+                    metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
                   }
                 })
               )
@@ -1512,7 +1547,7 @@ interface TaskState {
  * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request'
+  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'truncated'
   // For text type
   text?: string
   // For tool-group type
@@ -1600,6 +1635,9 @@ function buildMessageParts(
     } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
       // Add user input request
       parts.push(segment.userInputRequest)
+    } else if (segment.type === 'truncated') {
+      // Add truncated warning
+      parts.push({ type: 'truncated' })
     }
   }
 

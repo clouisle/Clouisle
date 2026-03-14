@@ -3,10 +3,15 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
 import { ImageLightbox, useLightbox } from './image-lightbox'
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
@@ -47,6 +52,7 @@ import {
   isImagePart,
   isTaskPart,
   isUserInputRequestPart,
+  isTruncatedPart,
 } from './types'
 import { SourceContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
@@ -97,6 +103,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     
     // Image lightbox state
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
+
+    // Token usage and timing stats from message_end
+    const usage = message.metadata?.usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined
+    const timing = message.metadata?.timing as { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null } | undefined
 
     // Group sources together (only document sources for citations)
     const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
@@ -235,6 +245,19 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             onSelectOption={onSelectOption}
             isStreaming={isStreaming}
           />
+        )
+      }
+
+      // Output truncated tip
+      if (isTruncatedPart(part)) {
+        return (
+          <div
+            key={index}
+            className="flex items-start gap-2 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{t('outputTruncated')}</span>
+          </div>
         )
       }
 
@@ -537,6 +560,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
+                {usage && (
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-7 w-7 hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">
+                          <Timer className="h-4 w-4" />
+                          <span className="sr-only">{t('tokenStats')}</span>
+                        </button>
+                      }
+                    />
+                    <PopoverContent side="top" sideOffset={8} className="w-auto min-w-[200px] p-3 text-xs">
+                      <TokenStatsContent usage={usage} timing={timing} t={t} />
+                    </PopoverContent>
+                  </Popover>
+                )}
                 {showFeedback && (
                   <>
                     <MessageAction
@@ -571,6 +609,55 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 )
 
 Message.displayName = 'Message'
+
+/**
+ * Token stats popover content
+ */
+function TokenStatsContent({
+  usage,
+  timing,
+  t,
+}: {
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  timing?: { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null }
+  t: (key: string) => string
+}) {
+  const formatTime = (ms: number) => {
+    if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+    return `${ms}ms`
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between gap-8">
+        <span className="text-muted-foreground">{t('inputTokens')}</span>
+        <span className="font-mono tabular-nums">{usage.prompt_tokens.toLocaleString()}</span>
+      </div>
+      <div className="flex justify-between gap-8">
+        <span className="text-muted-foreground">{t('outputTokens')}</span>
+        <span className="font-mono tabular-nums">{usage.completion_tokens.toLocaleString()}</span>
+      </div>
+      {timing?.first_token_ms != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('firstTokenTime')}</span>
+          <span className="font-mono tabular-nums">{formatTime(timing.first_token_ms)}</span>
+        </div>
+      )}
+      {timing?.duration_ms != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('totalTime')}</span>
+          <span className="font-mono tabular-nums">{formatTime(timing.duration_ms)}</span>
+        </div>
+      )}
+      {timing?.tokens_per_second != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('speed')}</span>
+          <span className="font-mono tabular-nums">{timing.tokens_per_second}T/s</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Citation badge component with tooltip
