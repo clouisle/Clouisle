@@ -44,6 +44,8 @@
     "zoomOut": "缩小",
     "fitView": "适应视图",
     "selectAll": "全选",
+    "selectMode": "框选模式",
+    "cancel": "取消",
     "types": {
       "person": "人物",
       "preference": "偏好",

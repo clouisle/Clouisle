@@ -44,6 +44,8 @@
     "zoomOut": "Zoom Out",
     "fitView": "Fit View",
     "selectAll": "Select All",
+    "selectMode": "Select Mode",
+    "cancel": "Cancel",
     "types": {
       "person": "Person",
       "preference": "Preference",

@@ -1396,14 +1396,14 @@ function WorkflowEditorContent() {
             minZoom={0.15}
             maxZoom={2}
             elevateNodesOnSelect={false}
-            panOnScroll={editorMode === 'hand'}
+            panOnScroll
             panOnDrag={editorMode === 'hand'}
             selectionOnDrag={editorMode === 'pointer'}
             selectionMode={editorMode === 'pointer' ? SelectionMode.Partial : SelectionMode.Full}
             zoomOnScroll={false}
             zoomOnPinch
-            zoomActivationKeyCode="Meta"
-            panActivationKeyCode={null}
+            zoomActivationKeyCode={['Meta', 'Control']}
+            panActivationKeyCode={['Meta', 'Control']}
             deleteKeyCode={['Backspace', 'Delete']}
           >
             <Background variant={BackgroundVariant.Dots} gap={15} size={1} />
