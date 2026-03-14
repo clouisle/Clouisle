@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
         init_totp_fields,
         init_agent_kb_search_mode,
         init_chunk_status,
+        init_embed_config,
     )
 
     try:
@@ -126,6 +127,11 @@ async def lifespan(app: FastAPI):
         await init_chunk_status()
     except Exception as e:
         logger.warning(f"Chunk status fields migration failed: {e}")
+
+    try:
+        await init_embed_config()
+    except Exception as e:
+        logger.warning(f"Embed config migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()
@@ -360,6 +366,20 @@ class LanguageMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Embed security headers middleware - allow iframe embedding for /api/v1/embed/ routes
+class EmbedHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith(f"{settings.API_V1_STR}/embed/"):
+            # Remove X-Frame-Options to allow iframe embedding
+            if "x-frame-options" in response.headers:
+                del response.headers["x-frame-options"]
+            # Allow embedding from any origin (domain check is done at API level)
+            response.headers["Content-Security-Policy"] = "frame-ancestors *"
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+
 # Set all CORS enabled origins (must be added before other middlewares)
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
@@ -374,6 +394,7 @@ if settings.BACKEND_CORS_ORIGINS:
 
 app.add_middleware(LanguageMiddleware)
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(EmbedHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

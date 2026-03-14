@@ -54,11 +54,10 @@ export const nodeTypeInfo: Record<string, { icon: React.ElementType; color: stri
 
 // 系统参数 - descriptionKey references workflow.systemParams.*
 export const systemParameters: SystemParameter[] = [
-  { id: 'sys.user_id', name: 'sys.user_id', valueType: 'String', descriptionKey: 'userId' },
-  { id: 'sys.app_id', name: 'sys.app_id', valueType: 'String', descriptionKey: 'appId' },
-  { id: 'sys.workflow_id', name: 'sys.workflow_id', valueType: 'String', descriptionKey: 'workflowId' },
-  { id: 'sys.workflow_run_id', name: 'sys.workflow_run_id', valueType: 'String', descriptionKey: 'workflowRunId' },
-  { id: 'sys.timestamp', name: 'sys.timestamp', valueType: 'Number', descriptionKey: 'timestamp' },
+  { id: 'sys_user_id', name: 'sys_user_id', valueType: 'String', descriptionKey: 'userId' },
+  { id: 'sys_workflow_id', name: 'sys_workflow_id', valueType: 'String', descriptionKey: 'workflowId' },
+  { id: 'sys_workflow_run_id', name: 'sys_workflow_run_id', valueType: 'String', descriptionKey: 'workflowRunId' },
+  { id: 'sys_timestamp', name: 'sys_timestamp', valueType: 'Number', descriptionKey: 'timestamp' },
 ]
 
 // 开始节点的默认用户参数 - descriptionKey references workflow.defaultParams.*

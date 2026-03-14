@@ -123,6 +123,11 @@ class Workflow(models.Model):
         max_length=100, null=True, unique=True, description="Webhook token"
     )
 
+    # Embed configuration
+    embed_config: dict = fields.JSONField(
+        default=dict, description="Embed configuration (enabled, allowed_domains, theme, bubble)"
+    )  # type: ignore[assignment]
+
     # Statistics (累计统计，不会因删除而减少)
     run_count = fields.IntField(default=0, description="Total run count")
     success_count = fields.IntField(default=0, description="Successful run count")

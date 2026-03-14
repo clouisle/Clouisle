@@ -2,60 +2,26 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { MessageSquareText, MoreHorizontal, Type, Hash, ToggleLeft, Brackets, Braces, File, FileQuestion } from 'lucide-react'
+import { MessageSquareText, MoreHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
-// 输出变量定义
+// 输出变量定义（简化：只需选择源变量）
 export interface OutputVariable {
   id: string
-  name: string           // 输出变量名（外部可见）
-  sourceVariable: string // 源变量引用（如 {{node.var}}），传到后端用
-  sourceNodeLabel?: string // 源节点标签（用于显示）
+  sourceVariable: string     // 源变量引用（如 {{node.var}}），传到后端用
+  sourceNodeLabel?: string   // 源节点标签（用于显示）
   sourceVariableName?: string // 源变量名称（用于显示，如 query）
-  type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'file' | 'any'
-  description?: string   // 变量描述
 }
 
 // 输出节点配置
 export interface AnswerNodeConfig {
-  // 输出变量列表
   outputs: OutputVariable[]
-  // 流式输出配置
-  streaming: {
-    enabled: boolean      // 是否启用流式输出
-    variable?: string     // 流式输出的变量名（通常是 LLM 的 response）
-  }
 }
 
 // 默认配置
 export const defaultAnswerNodeConfig: AnswerNodeConfig = {
   outputs: [],
-  streaming: {
-    enabled: false,
-  },
-}
-
-// 类型图标映射
-const typeIconMap: Record<string, React.ElementType> = {
-  string: Type,
-  number: Hash,
-  boolean: ToggleLeft,
-  array: Brackets,
-  object: Braces,
-  file: File,
-  any: FileQuestion,
-}
-
-// 类型显示名称
-const typeDisplayMap: Record<string, string> = {
-  string: 'String',
-  number: 'Number',
-  boolean: 'Boolean',
-  array: 'Array',
-  object: 'Object',
-  file: 'File',
-  any: 'Any',
 }
 
 interface AnswerNodeData {
@@ -88,14 +54,14 @@ export function AnswerNode({ selected, data }: AnswerNodeProps) {
           </button>
         </div>
       </div>
-      
+
       {/* Node Card */}
       <div
         className={cn(
           'relative flex flex-col rounded-xl border bg-card shadow-sm transition-all',
           'min-w-44 max-w-56',
-          selected 
-            ? 'border-primary' 
+          selected
+            ? 'border-primary'
             : 'border-border hover:border-primary/50'
         )}
       >
@@ -107,7 +73,7 @@ export function AnswerNode({ selected, data }: AnswerNodeProps) {
           style={{ top: 24 }}
         />
 
-        {/* Output Handle - 允许连接后续节点实现分段输出 */}
+        {/* Output Handle */}
         <Handle
           type="source"
           position={Position.Right}
@@ -117,42 +83,30 @@ export function AnswerNode({ selected, data }: AnswerNodeProps) {
 
         {/* Header */}
         <div className="flex items-center gap-2 px-2.5 py-2">
-          {/* Icon */}
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white">
             <MessageSquareText className="h-3.5 w-3.5" />
           </div>
-          
-          {/* Label */}
           <div className="flex-1 min-w-0">
             <span className="block text-sm font-medium truncate">
               {data.label || t('nodesAnswer.label')}
             </span>
-            {config.streaming.enabled && (
-              <span className="text-xs text-emerald-500">{t('nodesAnswer.streaming')}</span>
-            )}
           </div>
         </div>
 
         {/* Output Variables List */}
         {hasOutputs && (
           <div className="px-2.5 pb-2 pt-0.5 flex flex-col gap-1">
-            {outputs.slice(0, 4).map((output) => {
-              const TypeIcon = typeIconMap[output.type] || FileQuestion
-              return (
-                <div 
-                  key={output.id}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 bg-emerald-500/10"
-                >
-                  <TypeIcon className="h-3 w-3 text-emerald-500 shrink-0" />
-                  <span className="text-[11px] text-foreground/80 font-medium truncate flex-1">
-                    {output.name || t('nodesCommon.unnamed')}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {typeDisplayMap[output.type] || output.type}
-                  </span>
-                </div>
-              )
-            })}
+            {outputs.slice(0, 4).map((output) => (
+              <div
+                key={output.id}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 bg-emerald-500/10"
+              >
+                <span className="text-primary/80 font-mono text-[10px] shrink-0">{'{x}'}</span>
+                <span className="text-[11px] text-foreground/80 font-medium truncate flex-1">
+                  {output.sourceVariableName || output.sourceVariable.replace(/\{\{|\}\}/g, '').split('.').pop() || t('nodesCommon.unnamed')}
+                </span>
+              </div>
+            ))}
             {outputs.length > 4 && (
               <div className="text-[10px] text-muted-foreground text-center py-0.5">
                 {t('nodesAnswer.outputCount', { n: outputs.length - 4 })}

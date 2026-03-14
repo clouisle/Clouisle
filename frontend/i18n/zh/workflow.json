@@ -15,6 +15,7 @@
     "run": "运行",
     "runWorkflow": "运行工作流",
     "publish": "发布",
+    "embed": "嵌入",
     "published": "已发布",
     "unpublished": "已取消发布",
     "publishFailed": "发布失败",
@@ -467,7 +468,6 @@
     },
     "systemParams": {
       "userId": "当前用户ID",
-      "appId": "应用ID",
       "workflowId": "工作流ID",
       "workflowRunId": "工作流运行ID",
       "timestamp": "当前时间戳"
@@ -730,29 +730,12 @@
       "agentResponseContent": "智能体回复内容"
     },
     "configAnswer": {
-      "streamingOutput": "流式输出",
-      "streamingOutputVariable": "流式输出变量",
-      "selectStreamingVariable": "选择流式输出变量...",
-      "addStringOutputFirst": "请先添加 String 类型的输出变量",
-      "selectStringForStreaming": "选择一个 String 类型的输出变量作为流式输出",
       "outputVariables": "输出变量",
       "noOutputVariables": "暂无输出变量，点击 + 添加",
       "outputIndex": "输出 {index}",
       "sourceVariable": "源变量",
       "selectSourceVariable": "选择源变量...",
-      "outputName": "输出名称",
-      "outputVariableName": "输出变量名",
-      "outputVariableDesc": "输出变量的描述...",
-      "invalidOutputNameFormat": "输出名称格式无效（只能包含字母、数字、下划线，不能以数字开头）",
-      "duplicateOutputNames": "存在重复的输出名称",
-      "outputVariableHint": "定义工作流的输出结果，可选择上游节点的变量作为输出",
-      "typeText": "文本",
-      "typeNumber": "数字",
-      "typeBoolean": "布尔",
-      "typeArray": "数组",
-      "typeObject": "对象",
-      "typeFile": "文件",
-      "typeAny": "任意"
+      "outputVariableHint": "选择上游节点的变量作为输出，所有值将拼接后流式输出"
     },
     "configCode": {
       "errorHandlingNone": "无",

@@ -685,6 +685,8 @@ async def update_workflow(
         workflow.trigger_config = workflow_in.trigger_config
     if workflow_in.visibility is not None:
         workflow.visibility = WorkflowVisibility(workflow_in.visibility)
+    if workflow_in.embed_config is not None:
+        workflow.embed_config = workflow_in.embed_config
 
     await workflow.save()
 

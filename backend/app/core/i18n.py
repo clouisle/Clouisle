@@ -1483,6 +1483,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This API key does not have access to the requested Workflow",
         "zh": "此 API 密钥无权访问请求的工作流",
     },
+    # Embed
+    "api_key_required": {
+        "en": "API key is required for embed access",
+        "zh": "嵌入访问需要 API 密钥",
+    },
+    "embed_not_enabled": {
+        "en": "Embedding is not enabled for this resource",
+        "zh": "此资源未启用嵌入功能",
+    },
+    "embed_domain_not_allowed": {
+        "en": "This domain is not allowed to embed this resource",
+        "zh": "此域名不允许嵌入此资源",
+    },
     # Audit Log
     "audit_log_not_found": {
         "en": "Audit log not found",

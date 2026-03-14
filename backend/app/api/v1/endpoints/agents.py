@@ -216,6 +216,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "opening_message": agent.opening_message,
         "suggested_questions": agent.suggested_questions or [],
         "knowledge_bases": [kb.model_dump() for kb in knowledge_bases],
+        "embed_config": agent.embed_config or {},
         "status": agent.status.value
         if hasattr(agent.status, "value")
         else agent.status,
@@ -612,6 +613,11 @@ async def update_agent(
     if agent_in.variables is not None:
         agent.variables = [v.model_dump() for v in agent_in.variables]
         updated_fields.append("variables")
+
+    # Update embed_config
+    if agent_in.embed_config is not None:
+        agent.embed_config = agent_in.embed_config
+        updated_fields.append("embed_config")
 
     await agent.save()
 

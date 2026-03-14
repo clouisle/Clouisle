@@ -291,6 +291,7 @@ class AgentUpdate(BaseModel):
     opening_message: str | None = None
     suggested_questions: list[str] | None = None
     visibility: str | None = None
+    embed_config: dict[str, Any] | None = None
 
 
 class AgentKnowledgeBaseOut(BaseModel):
@@ -329,6 +330,7 @@ class AgentOut(AgentBase):
     opening_message: str | None = None
     suggested_questions: list[str] = []
     knowledge_bases: list[AgentKnowledgeBaseOut] = []
+    embed_config: dict[str, Any] = {}
     status: str
     visibility: str
     conversation_count: int = 0
@@ -356,6 +358,26 @@ class AgentPublicOut(BaseModel):
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None
     created_by: CreatorInfo | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class EmbedAgentInfo(BaseModel):
+    """Agent info for embed page (minimal, no auth-sensitive data)"""
+
+    id: UUID
+    name: str
+    description: str | None = None
+    icon: str | None = None
+    avatar_url: str | None = None
+    opening_message: str | None = None
+    suggested_questions: list[str] = []
+    variables: list[dict[str, Any]] = []
+    enable_vision: bool = False
+    enable_file_upload: bool = False
+    file_upload_config: dict[str, Any] | None = None
+    embed_config: dict[str, Any] = {}
 
     class Config:
         from_attributes = True

@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -283,15 +284,20 @@ export function PlatformHeader() {
           )}
 
           {/* Settings Drawer Toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 cursor-pointer"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Palette className="h-4 w-4" />
-            <span className="sr-only">{tCommon('appearanceSettings')}</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Palette className="h-4 w-4" />
+                <span className="sr-only">{tCommon('appearanceSettings')}</span>
+              </Button>
+            } />
+            <TooltipContent>{tCommon('appearanceSettings')}</TooltipContent>
+          </Tooltip>
 
           {/* User Menu */}
           <DropdownMenu>

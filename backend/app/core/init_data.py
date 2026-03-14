@@ -1302,6 +1302,47 @@ async def init_chunk_status():
     logger.info("Chunk status migration complete")
 
 
+async def init_embed_config():
+    """Add embed_config field to agents and workflows tables."""
+    logger.info("Initializing embed_config fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    for table_name in ("agents", "workflows"):
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = $1 AND table_schema = 'public'
+            """,
+            [table_name],
+        )
+
+        if not tables:
+            logger.info(f"{table_name} table does not exist yet, skipping migration")
+            continue
+
+        _, rows = await conn.execute_query(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = $1 AND column_name = 'embed_config'
+            """,
+            [table_name],
+        )
+
+        if rows:
+            logger.info(f"embed_config field already exists in {table_name}, skipping")
+            continue
+
+        logger.info(f"Adding embed_config field to {table_name} table...")
+        await conn.execute_query(f"""
+            ALTER TABLE {table_name}
+            ADD COLUMN IF NOT EXISTS embed_config JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        """)
+        logger.info(f"embed_config field added to {table_name} successfully")
+
+    logger.info("Embed config migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.

@@ -126,6 +126,11 @@ class Agent(models.Model):
         description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)",
     )  # type: ignore[assignment]
 
+    # Embed configuration
+    embed_config: dict = fields.JSONField(
+        default=dict, description="Embed configuration (enabled, allowed_domains, theme, bubble)"
+    )  # type: ignore[assignment]
+
     # RAG configuration
     rag_mode = fields.CharEnumField(
         RAGMode,

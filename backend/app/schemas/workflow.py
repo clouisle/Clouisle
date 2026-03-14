@@ -52,6 +52,7 @@ class WorkflowUpdate(BaseModel):
     trigger_type: TriggerType | None = None
     trigger_config: dict | None = None
     visibility: str | None = None
+    embed_config: dict | None = None
 
 
 class WorkflowOut(BaseModel):
@@ -70,6 +71,7 @@ class WorkflowOut(BaseModel):
     trigger_type: TriggerType
     trigger_config: dict
     webhook_token: str | None
+    embed_config: dict
     run_count: int
     success_count: int
     fail_count: int

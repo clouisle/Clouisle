@@ -176,7 +176,8 @@ class LLMNodeExecutor(NodeExecutor):
                 return ExecutionResult(
                     outputs={
                         "response": lazy_result,  # Lazy result, will be executed when referenced
-                        "usage": {},  # Will be populated after execution
+                        "reasoning": "",  # Will be populated after lazy execution
+                        "usage": {},  # Will be populated after lazy execution
                     }
                 )
             else:
@@ -193,6 +194,7 @@ class LLMNodeExecutor(NodeExecutor):
                 return ExecutionResult(
                     outputs={
                         "response": result.content or "",
+                        "reasoning": result.reasoning_content or "",
                         "usage": {
                             "prompt_tokens": result.usage.prompt_tokens
                             if result.usage
@@ -247,5 +249,6 @@ class LLMNodeExecutor(NodeExecutor):
         """Get output variables."""
         return [
             {"name": "response", "type": "string"},
+            {"name": "reasoning", "type": "string"},
             {"name": "usage", "type": "object"},
         ]

@@ -126,6 +126,7 @@
       },
       "toolbar": {
         "chat": "Chat",
+        "embed": "Embed",
         "settings": "Agent Settings",
         "saving": "Saving...",
         "save": "Save",

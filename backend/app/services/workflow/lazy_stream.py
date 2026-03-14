@@ -40,6 +40,8 @@ class LazyStreamResult:
     # State
     _executed: bool = False
     _result: str | None = None
+    _reasoning: str | None = None
+    _usage: dict[str, int] | None = None
 
     async def execute(self, stream_to_node_id: str | None = None) -> str:
         """
@@ -66,6 +68,8 @@ class LazyStreamResult:
         )
 
         full_response = ""
+        full_reasoning = ""
+        last_usage = None
 
         async for chunk in model_manager.chat_stream(
             messages=self.messages,
@@ -84,13 +88,38 @@ class LazyStreamResult:
                         stream_to_node_id, chunk.delta.content
                     )
 
+            # Capture reasoning content (thinking/chain-of-thought)
+            if chunk.delta and chunk.delta.reasoning_content:
+                full_reasoning += chunk.delta.reasoning_content
+
+            # Capture usage from the last chunk
+            if chunk.usage:
+                last_usage = chunk.usage
+
         self._executed = True
         self._result = full_response
+        self._reasoning = full_reasoning if full_reasoning else None
+        self._usage = {
+            "prompt_tokens": last_usage.prompt_tokens if last_usage else 0,
+            "completion_tokens": last_usage.completion_tokens if last_usage else 0,
+            "total_tokens": last_usage.total_tokens if last_usage else 0,
+        }
 
         logger.info(
-            f"LazyStreamResult completed, response length: {len(full_response)}"
+            f"LazyStreamResult completed, response length: {len(full_response)}, "
+            f"reasoning length: {len(full_reasoning)}, usage: {self._usage}"
         )
         return full_response
+
+    @property
+    def reasoning(self) -> str | None:
+        """Get the reasoning content after execution."""
+        return self._reasoning
+
+    @property
+    def usage(self) -> dict[str, int] | None:
+        """Get the usage stats after execution."""
+        return self._usage
 
     def __repr__(self) -> str:
         status = "executed" if self._executed else "pending"

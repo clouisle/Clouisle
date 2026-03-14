@@ -126,6 +126,7 @@
       },
       "toolbar": {
         "chat": "对话",
+        "embed": "嵌入",
         "settings": "Agent 设置",
         "saving": "保存中...",
         "save": "保存",

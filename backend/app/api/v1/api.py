@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     sso,
     memories,
     totp,
+    embed,
 )
 from app.api.v1 import workflow_metrics
 from app.api.v1 import workflow_versions
@@ -58,4 +59,5 @@ api_router.include_router(
 api_router.include_router(sso.router, prefix="/sso", tags=["sso"])
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"])
 api_router.include_router(totp.router, prefix="/totp", tags=["totp"])
+api_router.include_router(embed.router, prefix="/embed", tags=["embed"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

@@ -15,6 +15,7 @@
     "run": "Run",
     "runWorkflow": "Run Workflow",
     "publish": "Publish",
+    "embed": "Embed",
     "published": "Published",
     "unpublished": "Unpublished",
     "publishFailed": "Failed to publish",
@@ -467,7 +468,6 @@
     },
     "systemParams": {
       "userId": "Current user ID",
-      "appId": "App ID",
       "workflowId": "Workflow ID",
       "workflowRunId": "Workflow run ID",
       "timestamp": "Current timestamp"
@@ -730,29 +730,12 @@
       "agentResponseContent": "Agent response content"
     },
     "configAnswer": {
-      "streamingOutput": "Streaming output",
-      "streamingOutputVariable": "Streaming output variable",
-      "selectStreamingVariable": "Select streaming output variable...",
-      "addStringOutputFirst": "Please add a String type output variable first",
-      "selectStringForStreaming": "Select a String type output variable for streaming",
       "outputVariables": "Output variables",
       "noOutputVariables": "No output variables yet, click + to add",
       "outputIndex": "Output {index}",
       "sourceVariable": "Source variable",
       "selectSourceVariable": "Select source variable...",
-      "outputName": "Output name",
-      "outputVariableName": "Output variable name",
-      "outputVariableDesc": "Description of the output variable...",
-      "invalidOutputNameFormat": "Invalid output name format (only letters, numbers, underscores; cannot start with a number)",
-      "duplicateOutputNames": "Duplicate output names exist",
-      "outputVariableHint": "Define workflow output results; upstream node variables can be selected as output",
-      "typeText": "Text",
-      "typeNumber": "Number",
-      "typeBoolean": "Boolean",
-      "typeArray": "Array",
-      "typeObject": "Object",
-      "typeFile": "File",
-      "typeAny": "Any"
+      "outputVariableHint": "Select upstream variables as output; all values are concatenated and streamed"
     },
     "configCode": {
       "errorHandlingNone": "None",

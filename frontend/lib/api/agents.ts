@@ -135,6 +135,7 @@ export interface Agent {
   enable_memory: boolean
   memory_config?: MemoryConfig | null
   rag_mode: RAGMode
+  embed_config?: Record<string, unknown>
   status: AgentStatus
   visibility: AgentVisibility
   conversation_count: number
@@ -205,6 +206,7 @@ export interface AgentUpdateInput {
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
   rag_mode?: RAGMode
+  embed_config?: Record<string, unknown>
   visibility?: AgentVisibility
 }
 

@@ -13,6 +13,7 @@ import { AgentToolbar } from './_components/agent-toolbar'
 import { AgentOrchestrationForm } from './_components/agent-orchestration-form'
 import { AgentPreviewPanel } from './_components/agent-preview-panel'
 import { AgentSettingsDrawer } from './_components/agent-settings-drawer'
+import { EmbedConfigDialog } from './_components/embed-config-dialog'
 
 interface AgentConfigPageProps {
   params: Promise<{ id: string }>
@@ -26,6 +27,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
   const [showSettings, setShowSettings] = React.useState(false)
+  const [showEmbed, setShowEmbed] = React.useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   // Form state
@@ -253,6 +255,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           onSave={handleSave}
           isSaving={isSaving}
           onSettingsClick={() => setShowSettings(true)}
+          onEmbedClick={() => setShowEmbed(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
         />
@@ -298,6 +301,14 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         maxIterations={maxIterations}
         onMaxIterationsChange={setMaxIterations}
         hasToolsEnabled={hasToolsEnabled}
+      />
+
+      {/* Embed Config Dialog */}
+      <EmbedConfigDialog
+        open={showEmbed}
+        onOpenChange={setShowEmbed}
+        agent={agent}
+        onUpdate={setAgent}
       />
     </div>
   )

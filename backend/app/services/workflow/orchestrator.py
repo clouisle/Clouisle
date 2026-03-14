@@ -185,6 +185,7 @@ class WorkflowOrchestrator:
             run_id=str(run.id),
             redis_client=redis_client,
             workflow_id=str(workflow_id),
+            user_id=user_id,
         )
         await context.set_inputs(inputs)
 
@@ -348,6 +349,7 @@ class WorkflowOrchestrator:
             run_id=str(run.id),
             redis_client=redis_client,
             workflow_id=str(workflow_id),
+            user_id=user_id,
         )
         await context.set_inputs(inputs)
 
@@ -1000,12 +1002,8 @@ class WorkflowOrchestrator:
             f"Execute node {node_id}: type={node_type}, label={node_label}, data_keys={list(node_inner_data.keys())}"
         )
 
-        # Check if this is a streaming answer node
-        is_streaming_answer = False
-        if node_type == "answer":
-            answer_config = node_data.get("data", {}).get("answerConfig", {})
-            streaming_config = answer_config.get("streaming", {})
-            is_streaming_answer = streaming_config.get("enabled", False)
+        # Answer nodes are always streaming (real or pseudo)
+        is_streaming_answer = node_type == "answer"
 
         # Publish node start
         if stream_manager:

@@ -107,7 +107,7 @@ export function ChatContainer({
     return (
       <div
         className={cn(
-          'flex-1 flex items-center justify-center',
+          'h-full flex items-center justify-center',
           className
         )}
       >
