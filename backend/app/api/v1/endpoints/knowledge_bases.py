@@ -29,6 +29,7 @@ from app.schemas.knowledge_base import (
     KnowledgeBaseUpdate,
     KnowledgeBaseStats,
     EmbeddingModelInfo,
+    RerankModelInfo,
     Document as DocumentSchema,
     DocumentList,
     DocumentCreate,
@@ -112,13 +113,76 @@ async def get_embedding_model_info(model_id: UUID | None) -> EmbeddingModelInfo 
     )
 
 
-async def kb_with_embedding_model(kb: KnowledgeBase) -> dict:
-    """构建包含嵌入模型信息的知识库响应"""
+async def get_rerank_model_info(model_id: UUID | None) -> RerankModelInfo | None:
+    """获取重排序模型简要信息"""
+    if not model_id:
+        return None
+    model = await Model.filter(id=model_id).first()
+    if not model:
+        return None
+    return RerankModelInfo(
+        id=model.id,
+        name=model.name,
+        provider=model.provider,
+        model_id=model.model_id,
+    )
+
+
+def _build_model_info(model: Model | None) -> dict | None:
+    """构建模型简要信息"""
+    if not model:
+        return None
+    return {
+        "id": model.id,
+        "name": model.name,
+        "provider": model.provider,
+        "model_id": model.model_id,
+    }
+
+
+async def kb_with_model_info(kb: KnowledgeBase) -> dict:
+    """构建包含嵌入模型和重排序模型信息的知识库响应"""
     embedding_model = await get_embedding_model_info(kb.embedding_model_id)
-    # 转换为 dict 并添加 embedding_model
+    rerank_model = await get_rerank_model_info(kb.rerank_model_id)
     kb_data = KnowledgeBaseSchema.model_validate(kb).model_dump()
     kb_data["embedding_model"] = embedding_model
+    kb_data["rerank_model"] = rerank_model
     return kb_data
+
+
+async def ensure_team_authorized_model(
+    team_id: UUID, model_id: UUID | None, model_type: str
+) -> Model | None:
+    """检查团队是否已授权指定类型的模型。"""
+    if not model_id:
+        return None
+
+    model = await Model.filter(id=model_id).first()
+    if not model:
+        raise BusinessError(
+            code=ResponseCode.MODEL_NOT_FOUND,
+            msg_key="model_not_found",
+            status_code=404,
+        )
+
+    if model.model_type != model_type:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg=f"Model {model.name} is not a {model_type} model",
+        )
+
+    team_model = await TeamModel.filter(
+        team_id=team_id,
+        model_id=model_id,
+        is_enabled=True,
+    ).first()
+    if not team_model:
+        raise BusinessError(
+            code=ResponseCode.MODEL_NOT_AUTHORIZED,
+            msg_key="model_not_authorized",
+        )
+
+    return model
 
 
 async def check_kb_access(
@@ -183,25 +247,23 @@ async def list_knowledge_bases(
         await query.prefetch_related("team", "created_by").offset(skip).limit(page_size)
     )
 
-    # 为每个知识库添加嵌入模型信息
-    # Collect all embedding model IDs and fetch them in one query
-    model_ids = [kb.embedding_model_id for kb in kbs if kb.embedding_model_id]
-    embedding_models = await Model.filter(id__in=model_ids).all()
-    model_map = {model.id: model for model in embedding_models}
+    # 为每个知识库添加模型信息
+    model_ids: list[UUID] = []
+    for kb in kbs:
+        if kb.embedding_model_id:
+            model_ids.append(kb.embedding_model_id)
+        if kb.rerank_model_id:
+            model_ids.append(kb.rerank_model_id)
+    models = await Model.filter(id__in=model_ids).all()
+    model_map = {model.id: model for model in models}
 
     kb_list = []
     for kb in kbs:
         kb_data = KnowledgeBaseList.model_validate(kb).model_dump()
-        embedding_model = model_map.get(kb.embedding_model_id)
-        if embedding_model:
-            kb_data["embedding_model"] = EmbeddingModelInfo(
-                id=embedding_model.id,
-                name=embedding_model.name,
-                provider=embedding_model.provider,
-                model_id=embedding_model.model_id,
-            )
-        else:
-            kb_data["embedding_model"] = None
+        kb_data["embedding_model"] = _build_model_info(
+            model_map.get(kb.embedding_model_id)
+        )
+        kb_data["rerank_model"] = _build_model_info(model_map.get(kb.rerank_model_id))
         kb_list.append(kb_data)
 
     return success(
@@ -237,18 +299,12 @@ async def create_knowledge_base(
             msg_key="kb_name_exists",
         )
 
-    # Check if team has permission to use the embedding model
-    if kb_in.embedding_model_id:
-        team_model = await TeamModel.filter(
-            team_id=kb_in.team_id,
-            model_id=kb_in.embedding_model_id,
-            is_enabled=True,
-        ).first()
-        if not team_model:
-            raise BusinessError(
-                code=ResponseCode.MODEL_NOT_AUTHORIZED,
-                msg_key="model_not_authorized",
-            )
+    await ensure_team_authorized_model(
+        kb_in.team_id, kb_in.embedding_model_id, "embedding"
+    )
+    await ensure_team_authorized_model(
+        kb_in.team_id, kb_in.rerank_model_id, "rerank"
+    )
 
     # Create knowledge base
     kb = await KnowledgeBase.create(
@@ -258,12 +314,13 @@ async def create_knowledge_base(
         team=team,
         created_by=current_user,
         embedding_model_id=kb_in.embedding_model_id,
+        rerank_model_id=kb_in.rerank_model_id,
         settings=kb_in.settings.model_dump() if kb_in.settings else None,
     )
 
     # Reload with relations
     kb = await KnowledgeBase.get(id=kb.id).prefetch_related("team", "created_by")
-    kb_data = await kb_with_embedding_model(kb)
+    kb_data = await kb_with_model_info(kb)
     return success(data=kb_data, msg_key="kb_created")
 
 
@@ -276,7 +333,7 @@ async def get_knowledge_base(
     Get knowledge base by ID.
     """
     kb = await check_kb_access(kb_id, current_user)
-    kb_data = await kb_with_embedding_model(kb)
+    kb_data = await kb_with_model_info(kb)
     return success(data=kb_data)
 
 
@@ -312,7 +369,23 @@ async def update_knowledge_base(
         kb.description = kb_in.description
     if kb_in.icon is not None:
         kb.icon = kb_in.icon
+    fields_set = kb_in.model_fields_set
+
     # embedding_model_id 创建后不允许修改，已有文档的向量与模型绑定
+    if (
+        "embedding_model_id" in fields_set
+        and kb_in.embedding_model_id != kb.embedding_model_id
+    ):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg="Embedding model cannot be changed after knowledge base creation",
+        )
+    if "rerank_model_id" in fields_set:
+        if kb_in.rerank_model_id is not None:
+            await ensure_team_authorized_model(
+                kb.team.id, kb_in.rerank_model_id, "rerank"
+            )
+        kb.rerank_model_id = kb_in.rerank_model_id
     if kb_in.settings is not None:
         kb.settings = kb_in.settings.model_dump()
     if kb_in.status is not None and kb_in.status in [
@@ -325,7 +398,7 @@ async def update_knowledge_base(
 
     # Reload with relations
     kb = await KnowledgeBase.get(id=kb_id).prefetch_related("team", "created_by")
-    kb_data = await kb_with_embedding_model(kb)
+    kb_data = await kb_with_model_info(kb)
     return success(data=kb_data, msg_key="kb_updated")
 
 
@@ -1473,8 +1546,21 @@ async def search_knowledge_base(
     team_id = str(kb.team_id) if kb.team_id else None
     vector_store = VectorStore(
         embedding_model_id=embedding_model_id,
+        rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
         team_id=team_id,
     )
+
+    rerank_override_fields = {
+        "rerank_enabled",
+        "rerank_candidate_k",
+        "rerank_fail_open",
+        "rerank_score_threshold",
+    }
+    rerank_overrides = {
+        field_name: getattr(search_in, field_name)
+        for field_name in rerank_override_fields
+        if field_name in search_in.model_fields_set
+    }
 
     # Perform search
     try:
@@ -1485,6 +1571,7 @@ async def search_knowledge_base(
             top_k=search_in.top_k,
             score_threshold=search_in.score_threshold,
             filter_doc_ids=search_in.filter_doc_ids,
+            rerank_overrides=rerank_overrides or None,
         )
     except DimensionMismatchError as e:
         raise BusinessError(

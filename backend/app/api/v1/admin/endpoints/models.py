@@ -79,7 +79,9 @@ async def create_model(
     current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
     existing = await Model.filter(
-        provider=model_in.provider.value, model_id=model_in.model_id
+        provider=model_in.provider.value,
+        model_id=model_in.model_id,
+        model_type=model_in.model_type.value,
     ).first()
     if existing:
         raise BusinessError(
@@ -180,14 +182,13 @@ async def test_model_connection(
             status_code=404,
         )
 
-    if not model.api_key:
+    if _requires_api_key(provider := ModelProvider(model.provider)) and not model.api_key:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_api_key_required",
         )
 
     start_time = time.time()
-    provider = ModelProvider(model.provider)
     model_type = ModelType(model.model_type)
     config = model.config or {}
 
@@ -198,6 +199,10 @@ async def test_model_connection(
             )
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
+        elif model_type == ModelType.RERANK:
+            await _test_rerank_model(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
         elif model_type == ModelType.TEXT_TO_IMAGE:
@@ -300,6 +305,8 @@ async def test_model_config(
             await _test_chat_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.RERANK:
+            await _test_rerank_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
             _validate_api_key(provider, api_key)
         elif model_type in [ModelType.TTS, ModelType.STT]:
@@ -354,25 +361,31 @@ async def test_model_config(
         )
 
 
-def _validate_api_key(provider: ModelProvider, api_key: str) -> None:
+def _validate_api_key(provider: ModelProvider, api_key: str | None) -> None:
+    if not _requires_api_key(provider):
+        return
     if provider == ModelProvider.OPENAI:
-        if not api_key.startswith("sk-"):
+        if not api_key or not api_key.startswith("sk-"):
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="invalid_api_key_format",
             )
     elif provider == ModelProvider.ANTHROPIC:
-        if not api_key.startswith("sk-ant-"):
+        if not api_key or not api_key.startswith("sk-ant-"):
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="invalid_api_key_format",
             )
 
 
+def _requires_api_key(provider: ModelProvider) -> bool:
+    return provider != ModelProvider.OLLAMA
+
+
 async def _test_chat_model(
     provider: ModelProvider,
     model_id: str,
-    api_key: str,
+    api_key: str | None,
     base_url: Optional[str],
     config: dict,
 ) -> None:
@@ -437,7 +450,7 @@ async def _test_chat_model(
 async def _test_embedding_model(
     provider: ModelProvider,
     model_id: str,
-    api_key: str,
+    api_key: str | None,
     base_url: Optional[str],
     config: dict,
 ) -> None:
@@ -465,3 +478,36 @@ async def _test_embedding_model(
 
     if not result or len(result) == 0:
         raise ValueError("Empty embedding result")
+
+
+async def _test_rerank_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = {}
+            self.max_output_tokens = None
+            self.config = config
+
+    from app.llm.adapters.rerank import create_rerank_adapter
+
+    adapter = create_rerank_adapter(TempModel())
+    result = await adapter.rerank(
+        query="What is artificial intelligence?",
+        documents=[
+            "Artificial intelligence is the simulation of human intelligence by machines.",
+            "Bananas are a tropical fruit rich in potassium.",
+        ],
+        top_n=2,
+    )
+
+    if not result.results:
+        raise ValueError("Empty rerank result")

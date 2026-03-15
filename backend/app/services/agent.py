@@ -467,7 +467,7 @@ class AgentService:
             if not agent_kbs:
                 return None
 
-            from app.services.vector_store import vector_store
+            from app.services.vector_store import VectorStore
 
             all_chunks = []
             for agent_kb in agent_kbs:
@@ -476,8 +476,18 @@ class AgentService:
                     continue
 
                 # Search in each knowledge base
+                vector_store = VectorStore(
+                    embedding_model_id=str(kb.embedding_model_id)
+                    if kb.embedding_model_id
+                    else None,
+                    rerank_model_id=str(kb.rerank_model_id)
+                    if getattr(kb, "rerank_model_id", None)
+                    else None,
+                    team_id=str(kb.team_id) if kb.team_id else None,
+                )
+
                 results = await vector_store.search(
-                    collection_name=str(kb.id),
+                    kb_id=kb.id,
                     query=query,
                     search_mode=agent_kb.search_mode,
                     top_k=agent_kb.retrieval_top_k,

@@ -55,6 +55,7 @@ const PROVIDER_GROUPS = {
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
+  rerank: ['rerank'],
   image: ['text_to_image'],
   audio: ['tts', 'stt'],
 }
@@ -70,6 +71,10 @@ function getModelCategory(modelType: string): keyof typeof MODEL_CATEGORIES | nu
 
 function isChatOnly(modelType: string): boolean {
   return modelType === 'chat'
+}
+
+function requiresApiKey(provider: string): boolean {
+  return provider !== 'ollama'
 }
 
 // 分隔线组件 - 移到组件外部避免重新创建
@@ -264,7 +269,12 @@ export function ModelDialog({
   // 测试模型配置
   const handleTestConnection = async () => {
     // 验证必填字段
-    if (!provider || !modelId.trim() || !modelType || !apiKey.trim()) {
+    if (
+      !provider ||
+      !modelId.trim() ||
+      !modelType ||
+      (requiresApiKey(provider) && !apiKey.trim())
+    ) {
       toast.error(t('fillRequiredFieldsFirst'))
       return
     }
@@ -282,7 +292,7 @@ export function ModelDialog({
         model_id: modelId.trim(),
         model_type: modelType,
         base_url: baseUrl.trim() || null,
-        api_key: apiKey,
+        api_key: apiKey || null,
         config: Object.keys(config).length > 0 ? config : null,
       })
       
@@ -332,6 +342,7 @@ export function ModelDialog({
     
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
+      rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       image: ['openai', 'azure_openai', 'custom'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -363,7 +374,9 @@ export function ModelDialog({
     if (!provider) newErrors.provider = t('providerRequired')
     if (!modelId.trim()) newErrors.modelId = t('modelIdRequired')
     if (!modelType) newErrors.modelType = t('modelTypeRequired')
-    if (!isEditing && !apiKey.trim()) newErrors.apiKey = t('apiKeyRequired')
+    if (!isEditing && requiresApiKey(provider) && !apiKey.trim()) {
+      newErrors.apiKey = t('apiKeyRequired')
+    }
     
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -676,7 +689,9 @@ export function ModelDialog({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="apiKey">{t('apiKey')} {!isEditing && '*'}</Label>
+            <Label htmlFor="apiKey">
+              {t('apiKey')} {!isEditing && requiresApiKey(provider) && '*'}
+            </Label>
             <div className="relative">
               <Input
                 id="apiKey"
@@ -705,13 +720,19 @@ export function ModelDialog({
         
         {/* 测试连接按钮和结果 */}
         <div className="flex items-center gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleTestConnection}
-            disabled={isTesting || !provider || !modelId || !modelType || !apiKey}
-          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={
+                isTesting ||
+                !provider ||
+                !modelId ||
+                !modelType ||
+                (requiresApiKey(provider) && !apiKey)
+              }
+            >
             {isTesting ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (

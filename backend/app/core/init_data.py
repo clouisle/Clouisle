@@ -1343,6 +1343,103 @@ async def init_embed_config():
     logger.info("Embed config migration complete")
 
 
+async def init_model_type_unique_constraint():
+    """
+    Update models unique constraint to include model_type.
+    This allows the same provider/model_id to be configured for multiple model types.
+    """
+    logger.info("Initializing model unique constraint with model_type...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'models' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("models table does not exist yet, skipping constraint migration")
+        return
+
+    await conn.execute_query("""
+        DO $$
+        DECLARE old_constraint_name text;
+        BEGIN
+            SELECT c.conname
+            INTO old_constraint_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE t.relname = 'models'
+              AND n.nspname = 'public'
+              AND c.contype = 'u'
+              AND pg_get_constraintdef(c.oid) = 'UNIQUE (provider, model_id)';
+
+            IF old_constraint_name IS NOT NULL THEN
+                EXECUTE format(
+                    'ALTER TABLE models DROP CONSTRAINT %I',
+                    old_constraint_name
+                );
+            END IF;
+        END $$;
+    """)
+
+    await conn.execute_query("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE t.relname = 'models'
+                  AND n.nspname = 'public'
+                  AND c.contype = 'u'
+                  AND pg_get_constraintdef(c.oid) =
+                      'UNIQUE (provider, model_id, model_type)'
+            ) THEN
+                ALTER TABLE models
+                ADD CONSTRAINT models_provider_model_id_model_type_key
+                UNIQUE (provider, model_id, model_type);
+            END IF;
+        END $$;
+    """)
+
+    logger.info("Model unique constraint migration complete")
+
+
+async def init_kb_rerank_fields():
+    """Add rerank model support fields to knowledge_bases table."""
+    logger.info("Initializing knowledge base rerank fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'knowledge_bases' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("knowledge_bases table does not exist yet, skipping migration")
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'knowledge_bases' AND column_name = 'rerank_model_id'
+    """)
+
+    if rows:
+        logger.info("rerank_model_id field already exists, skipping")
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE knowledge_bases
+        ADD COLUMN IF NOT EXISTS rerank_model_id UUID NULL
+    """)
+
+    logger.info("Knowledge base rerank fields migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -1366,6 +1463,18 @@ async def init_db():
         await init_permission_is_system_field()
     except Exception as e:
         logger.warning(f"Permission is_system migration failed (may be first run): {e}")
+
+    try:
+        await init_model_type_unique_constraint()
+    except Exception as e:
+        logger.warning(
+            f"Model unique constraint migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_kb_rerank_fields()
+    except Exception as e:
+        logger.warning(f"KB rerank migration failed (may be first run): {e}")
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")

@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI):
         init_agent_kb_search_mode,
         init_chunk_status,
         init_embed_config,
+        init_model_type_unique_constraint,
+        init_kb_rerank_fields,
     )
 
     try:
@@ -132,6 +134,16 @@ async def lifespan(app: FastAPI):
         await init_embed_config()
     except Exception as e:
         logger.warning(f"Embed config migration failed: {e}")
+
+    try:
+        await init_model_type_unique_constraint()
+    except Exception as e:
+        logger.warning(f"Model unique constraint migration failed: {e}")
+
+    try:
+        await init_kb_rerank_fields()
+    except Exception as e:
+        logger.warning(f"Knowledge base rerank migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

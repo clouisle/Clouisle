@@ -93,6 +93,9 @@ class KnowledgeBase(models.Model):
     embedding_model_id = fields.UUIDField(
         null=True, description="ID of the embedding model to use"
     )
+    rerank_model_id = fields.UUIDField(
+        null=True, description="ID of the rerank model to use"
+    )
     embedding_dimension = fields.IntField(
         null=True,
         description="Embedding vector dimension (set on first document processing)",

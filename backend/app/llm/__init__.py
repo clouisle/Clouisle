@@ -94,6 +94,8 @@ from .types import (
     TTSResponse,
     STTRequest,
     STTResponse,
+    RerankResult,
+    RerankResponse,
 )
 from .tools import tool_registry, ToolRegistry, ToolInfo, ToolParameter
 
@@ -149,6 +151,9 @@ __all__ = [
     "TTSResponse",
     "STTRequest",
     "STTResponse",
+    # Rerank Types
+    "RerankResult",
+    "RerankResponse",
     # Tools
     "tool_registry",
     "ToolRegistry",

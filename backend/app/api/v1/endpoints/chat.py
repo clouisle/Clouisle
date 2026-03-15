@@ -1277,6 +1277,7 @@ async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
         try:
             vector_store = VectorStore(
                 embedding_model_id=str(kb.embedding_model_id),
+                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
                 team_id=str(kb.team_id),
             )
 

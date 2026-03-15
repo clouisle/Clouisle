@@ -80,8 +80,8 @@ class ModelCreate(BaseModel):
     )
     model_type: ModelType = Field(..., description="Model type")
     base_url: Optional[str] = Field(None, max_length=512, description="Custom API URL")
-    api_key: str = Field(
-        ..., min_length=1, max_length=1024, description="API key (required)"
+    api_key: Optional[str] = Field(
+        None, max_length=1024, description="API key (optional for local providers)"
     )
     context_length: Optional[int] = Field(None, ge=1, description="Context length")
     max_output_tokens: Optional[int] = Field(
@@ -180,7 +180,9 @@ class ModelTestRequest(BaseModel):
     )
     model_type: ModelType = Field(..., description="Model type")
     base_url: Optional[str] = Field(None, max_length=512, description="Custom API URL")
-    api_key: str = Field(..., min_length=1, max_length=1024, description="API key")
+    api_key: Optional[str] = Field(
+        None, max_length=1024, description="API key (optional for local providers)"
+    )
     config: Optional[dict[str, Any]] = Field(
         None, description="Additional configuration"
     )
