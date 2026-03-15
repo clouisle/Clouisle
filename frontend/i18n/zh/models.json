@@ -163,8 +163,7 @@
       "tts": "语音合成",
       "stt": "语音识别",
       "text_to_image": "文生图",
-      "text_to_video": "文生视频",
-      "image_to_video": "图生视频"
+      "text_to_video": "文生视频"
     },
     "types": {
       "chat": "对话",
@@ -173,8 +172,7 @@
       "tts": "语音合成",
       "stt": "语音识别",
       "text_to_image": "文生图",
-      "text_to_video": "文生视频",
-      "image_to_video": "图生视频"
+      "text_to_video": "文生视频"
     }
   }
 }

@@ -33,6 +33,9 @@ Clouisle LLM 调用模块
     # 图像生成
     result = await model_manager.generate_image({"prompt": "A cat"})
 
+    # 视频生成
+    video_task = await model_manager.generate_video({"prompt": "A cinematic flying car"})
+
     # TTS
     audio = await model_manager.text_to_speech({"text": "Hello!"})
 

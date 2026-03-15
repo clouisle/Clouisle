@@ -47,7 +47,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {
-  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai'],
+  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
   other: ['ollama', 'custom'],
 }
@@ -57,6 +57,7 @@ const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
   rerank: ['rerank'],
   image: ['text_to_image'],
+  video: ['text_to_video'],
   audio: ['tts', 'stt'],
 }
 
@@ -146,6 +147,10 @@ export function ModelDialog({
   const [defaultImageSize, setDefaultImageSize] = React.useState('')
   const [defaultImageStyle, setDefaultImageStyle] = React.useState('')
   const [defaultImageQuality, setDefaultImageQuality] = React.useState('')
+
+  // 视频生成参数
+  const [defaultVideoDuration, setDefaultVideoDuration] = React.useState('')
+  const [defaultVideoAspectRatio, setDefaultVideoAspectRatio] = React.useState('')
   
   // 音频参数
   const [defaultVoice, setDefaultVoice] = React.useState('')
@@ -196,6 +201,8 @@ export function ModelDialog({
       setDefaultImageSize((params.size as string) || '')
       setDefaultImageStyle((params.style as string) || '')
       setDefaultImageQuality((params.quality as string) || '')
+      setDefaultVideoDuration((params.duration as number)?.toString() || '')
+      setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
       setDefaultVoice((params.voice as string) || '')
       setDefaultSpeed((params.speed as number)?.toString() || '')
       
@@ -249,6 +256,8 @@ export function ModelDialog({
       setDefaultImageSize('')
       setDefaultImageStyle('')
       setDefaultImageQuality('')
+      setDefaultVideoDuration('')
+      setDefaultVideoAspectRatio('')
       setDefaultVoice('')
       setDefaultSpeed('')
       setApiVersion('')
@@ -343,7 +352,8 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'azure_openai', 'custom'],
+      image: ['openai', 'google', 'azure_openai', 'custom', 'runway', 'luma', 'stability'],
+      video: ['runway', 'luma'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
     
@@ -399,6 +409,9 @@ export function ModelDialog({
         if (defaultImageSize) defaultParams.size = defaultImageSize
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+      } else if (category === 'video') {
+        if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
+        if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
       } else if (category === 'audio') {
         if (defaultVoice) defaultParams.voice = defaultVoice
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
@@ -823,6 +836,55 @@ export function ModelDialog({
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
                   <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
                   <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 视频生成参数 */}
+      {category === 'video' && (
+        <div className="space-y-4">
+          <SectionTitle>{t('videoSettings')}</SectionTitle>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="videoDuration">{t('defaultVideoDuration')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="videoDuration"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="30"
+                  value={defaultVideoDuration}
+                  onChange={(e) => setDefaultVideoDuration(e.target.value)}
+                  placeholder="5"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  {t('videoDurationUnit')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('defaultVideoAspectRatio')}</Label>
+              <Select
+                value={defaultVideoAspectRatio}
+                onValueChange={(v) => v && setDefaultVideoAspectRatio(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {defaultVideoAspectRatio || t('selectAspectRatio')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  <SelectItem value="16:9">16:9</SelectItem>
+                  <SelectItem value="9:16">9:16</SelectItem>
+                  <SelectItem value="1:1">1:1</SelectItem>
+                  <SelectItem value="4:3">4:3</SelectItem>
+                  <SelectItem value="3:4">3:4</SelectItem>
+                  <SelectItem value="21:9">21:9</SelectItem>
                 </SelectContent>
               </Select>
             </div>

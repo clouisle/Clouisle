@@ -2137,6 +2137,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "MarkItDown File Parser",
         "zh": "MarkItDown 文件解析",
     },
+    "builtin_tool_generate_image": {
+        "en": "Generate Image",
+        "zh": "生成图片",
+    },
+    "builtin_tool_generate_video": {
+        "en": "Generate Video",
+        "zh": "生成视频",
+    },
 }
 
 

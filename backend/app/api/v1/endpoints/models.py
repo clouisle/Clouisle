@@ -88,6 +88,11 @@ async def get_model_types() -> Any:
             "name": "Text to Image",
             "description": "文生图",
         },
+        {
+            "code": OrmModelType.TEXT_TO_VIDEO.value,
+            "name": "Text to Video",
+            "description": "文生视频",
+        },
     ]
     return success(data=types)
 

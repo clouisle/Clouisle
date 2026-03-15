@@ -4,7 +4,19 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { agentsApi, type Agent, type AgentVisibility, type VariableDefinition, type AgentKnowledgeBaseConfig, type RAGMode, type ToolConfig, type FileUploadConfig, type MemoryConfig } from '@/lib/api'
+import {
+  agentsApi,
+  type Agent,
+  type AgentVisibility,
+  type VariableDefinition,
+  type AgentKnowledgeBaseConfig,
+  type RAGMode,
+  type ToolConfig,
+  type FileUploadConfig,
+  type MemoryConfig,
+  type ImageGenerationConfig,
+  type VideoGenerationConfig,
+} from '@/lib/api'
 import { ApiError } from '@/lib/api/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -50,6 +62,10 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [enableMemory, setEnableMemory] = React.useState(false)
   const [memoryConfig, setMemoryConfig] = React.useState<MemoryConfig | null>(null)
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig | null>(null)
+  const [enableImageGeneration, setEnableImageGeneration] = React.useState(false)
+  const [imageGenerationConfig, setImageGenerationConfig] = React.useState<ImageGenerationConfig | null>(null)
+  const [enableVideoGeneration, setEnableVideoGeneration] = React.useState(false)
+  const [videoGenerationConfig, setVideoGenerationConfig] = React.useState<VideoGenerationConfig | null>(null)
 
   // Unwrap params
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
@@ -82,6 +98,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         knowledge_base_id: akb.knowledge_base.id,
         retrieval_top_k: akb.retrieval_top_k,
         score_threshold: akb.score_threshold,
+        search_mode: akb.search_mode || 'hybrid',
       })))
       setRagMode(data.rag_mode || 'agentic')
       setEnableVision(data.enable_vision || false)
@@ -90,6 +107,10 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setEnableMemory(data.enable_memory || false)
       setMemoryConfig(data.memory_config || null)
       setFileUploadConfig(data.file_upload_config || null)
+      setEnableImageGeneration(data.enable_image_generation || false)
+      setImageGenerationConfig(data.image_generation_config || null)
+      setEnableVideoGeneration(data.enable_video_generation || false)
+      setVideoGenerationConfig(data.video_generation_config || null)
     } catch {
       router.push('/app/apps')
     } finally {
@@ -126,6 +147,10 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         enable_user_input_request: enableUserInputRequest,
         enable_memory: enableMemory,
         memory_config: enableMemory ? memoryConfig : null,
+        enable_image_generation: enableImageGeneration,
+        image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
+        enable_video_generation: enableVideoGeneration,
+        video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
         file_upload_config: enableFileUpload ? fileUploadConfig : null,
       })
       setAgent(updated)
@@ -163,6 +188,10 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     enableMemory,
     memoryConfig,
     fileUploadConfig,
+    enableImageGeneration,
+    imageGenerationConfig,
+    enableVideoGeneration,
+    videoGenerationConfig,
     t,
   ])
 
@@ -216,6 +245,18 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     }
     if (data.memory_config !== undefined) {
       setMemoryConfig(data.memory_config || null)
+    }
+    if (data.enable_image_generation !== undefined) {
+      setEnableImageGeneration(data.enable_image_generation)
+    }
+    if (data.image_generation_config !== undefined) {
+      setImageGenerationConfig(data.image_generation_config || null)
+    }
+    if (data.enable_video_generation !== undefined) {
+      setEnableVideoGeneration(data.enable_video_generation)
+    }
+    if (data.video_generation_config !== undefined) {
+      setVideoGenerationConfig(data.video_generation_config || null)
     }
     if (data.file_upload_config !== undefined) {
       setFileUploadConfig(data.file_upload_config || null)
@@ -308,7 +349,11 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         open={showEmbed}
         onOpenChange={setShowEmbed}
         agent={agent}
-        onUpdate={setAgent}
+        onUpdate={(updated) => {
+          if ('max_iterations' in updated) {
+            setAgent(updated)
+          }
+        }}
       />
     </div>
   )

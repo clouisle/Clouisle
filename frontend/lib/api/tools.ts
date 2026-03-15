@@ -362,6 +362,74 @@ const BUILTIN_TOOL_I18N: Record<string, BuiltinToolI18n> = {
       },
     },
   },
+  generate_image: {
+    zh: {
+      display_name: '生成图片',
+      description:
+        '生成图片。根据提示词调用生图模型，可选设置尺寸、数量和参考图。',
+      parameters: {
+        prompt: '图片生成提示词',
+        width: '输出图片宽度',
+        height: '输出图片高度',
+        num_images: '生成图片数量',
+        style: '可选风格提示',
+        quality: '可选质量档位',
+        negative_prompt: '可选负面提示词',
+        seed: '可选随机种子',
+        images: '可选参考图数组',
+        extra_params: '可选供应商特定参数',
+      },
+    },
+    en: {
+      display_name: 'Generate Image',
+      description:
+        'Generate images from a prompt. Supports optional size, count, and reference images.',
+      parameters: {
+        prompt: 'Image generation prompt',
+        width: 'Output image width',
+        height: 'Output image height',
+        num_images: 'Number of images to generate',
+        style: 'Optional style hint',
+        quality: 'Optional quality tier',
+        negative_prompt: 'Optional negative prompt',
+        seed: 'Optional random seed',
+        images: 'Optional reference image array',
+        extra_params: 'Optional provider-specific parameters',
+      },
+    },
+  },
+  generate_video: {
+    zh: {
+      display_name: '生成视频',
+      description:
+        '生成视频。根据提示词调用文生视频模型，可选设置时长、宽高比和风格。',
+      parameters: {
+        prompt: '视频生成提示词',
+        duration: '生成视频时长（秒）',
+        aspect_ratio: '输出宽高比',
+        motion_intensity: '运动强度（0-1）',
+        camera_motion: '镜头运动描述',
+        style: '可选风格提示',
+        seed: '可选随机种子',
+        extra_params: '可选供应商特定参数',
+      },
+    },
+    en: {
+      display_name: 'Generate Video',
+      description:
+        'Generate a video clip from a prompt. Supports optional duration, aspect ratio, and style.',
+      parameters: {
+        prompt: 'Video generation prompt',
+        duration: 'Video duration in seconds',
+        aspect_ratio: 'Output aspect ratio',
+        motion_intensity: 'Motion intensity from 0 to 1',
+        camera_motion: 'Camera motion description',
+        style: 'Optional style hint',
+        seed: 'Optional random seed',
+        extra_params: 'Optional provider-specific parameters',
+      },
+    },
+  },
 }
 
 const getLocale = (): string => {

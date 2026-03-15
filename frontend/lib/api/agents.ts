@@ -112,6 +112,27 @@ export interface MemoryConfig {
   importance_threshold: 'low' | 'medium' | 'high'
 }
 
+export interface ImageGenerationConfig {
+  default_model_ref?: string | null
+  default_width: number
+  default_height: number
+  max_images: number
+  allow_reference_images: boolean
+  allowed_providers?: string[]
+  require_confirmation?: boolean
+}
+
+export interface VideoGenerationConfig {
+  default_model_ref?: string | null
+  default_duration: number
+  max_duration: number
+  default_aspect_ratio: string
+  poll_interval_ms: number
+  poll_timeout_s: number
+  allowed_providers?: string[]
+  require_confirmation?: boolean
+}
+
 export interface Agent {
   id: string
   team: TeamInfo
@@ -134,6 +155,10 @@ export interface Agent {
   enable_user_input_request: boolean
   enable_memory: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode: RAGMode
   embed_config?: Record<string, unknown>
   status: AgentStatus
@@ -182,6 +207,10 @@ export interface AgentCreateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation?: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation?: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -205,6 +234,10 @@ export interface AgentUpdateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation?: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation?: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode?: RAGMode
   embed_config?: Record<string, unknown>
   visibility?: AgentVisibility
@@ -416,6 +449,31 @@ export interface SSEToolResult {
   is_error?: boolean
 }
 
+export interface AgentVideoGenerationStatus {
+  kind: 'media.video'
+  success: boolean
+  prompt: string
+  model?: string | null
+  model_ref?: string | null
+  task_id?: string | null
+  status: string
+  progress?: number | null
+  video?: {
+    url?: string | null
+    base64?: string | null
+    file_path?: string | null
+    duration?: number | null
+    width?: number | null
+    height?: number | null
+    format?: string
+  } | null
+  estimated_time?: number | null
+  requires_polling?: boolean
+  poll_interval_ms?: number
+  poll_timeout_s?: number
+  error?: string | null
+}
+
 // ============ Agent API ============
 
 export const agentsApi = {
@@ -610,6 +668,16 @@ export const agentsApi = {
       stream,
       abort: () => controller.abort(),
     }
+  },
+
+  getVideoGenerationStatus: async (
+    agentId: string,
+    taskId: string
+  ): Promise<AgentVideoGenerationStatus> => {
+    const queryParams = new URLSearchParams({ task_id: taskId })
+    return api.get<AgentVideoGenerationStatus>(
+      `/agents/${agentId}/media/video-status?${queryParams.toString()}`
+    )
   },
 }
 
@@ -1037,4 +1105,3 @@ export const publicAgentsApi = {
     }
   },
 }
-

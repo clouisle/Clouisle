@@ -244,7 +244,9 @@
           "unit_convert": "单位转换",
           "get_current_time": "获取当前时间",
           "web_search": "网页搜索",
-          "parse_file": "文件解析器"
+          "parse_file": "文件解析器",
+          "generate_image": "生成图片",
+          "generate_video": "生成视频"
         },
         "dialog": {
           "title": "选择工具",
@@ -309,6 +311,36 @@
         "memories": "条记忆",
         "autoExtract": "自动提取记忆",
         "autoExtractHint": "自动从对话中提取并保存重要信息"
+      },
+      "imageGeneration": {
+        "title": "生图",
+        "tooltip": "允许 Agent 通过函数调用触发生图模型",
+        "description": "启用后，Agent 可以调用文生图模型并直接在对话中展示生成结果。",
+        "defaultModel": "默认模型",
+        "defaultModelPlaceholder": "例如：google/gemini-2.5-flash-image",
+        "useSystemDefault": "使用系统默认模型",
+        "defaultWidth": "默认宽度",
+        "defaultHeight": "默认高度",
+        "maxImages": "单次最大生成数量",
+        "allowModelOverride": "允许覆盖默认模型",
+        "allowModelOverrideHint": "允许 Agent 在工具调用时指定其他生图模型。",
+        "allowReferenceImages": "允许参考图",
+        "allowReferenceImagesHint": "允许 Agent 在生图工具中携带参考图像。"
+      },
+      "videoGeneration": {
+        "title": "生视频",
+        "tooltip": "允许 Agent 通过函数调用触发视频模型",
+        "description": "启用后，Agent 可以调用文生视频模型并在对话中返回生成中的状态或最终视频。",
+        "defaultModel": "默认模型",
+        "defaultModelPlaceholder": "例如：runway/gen4.5",
+        "useSystemDefault": "使用系统默认模型",
+        "defaultDuration": "默认时长（秒）",
+        "maxDuration": "最大时长（秒）",
+        "aspectRatio": "默认宽高比",
+        "pollInterval": "轮询间隔（毫秒）",
+        "pollTimeout": "最长等待时间（秒）",
+        "allowModelOverride": "允许覆盖默认模型",
+        "allowModelOverrideHint": "允许 Agent 在工具调用时指定其他生视频模型。"
       },
       "preview": {
         "title": "调试与预览",

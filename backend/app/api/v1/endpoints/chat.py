@@ -683,6 +683,18 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
         agent.tools_config or []
     )  # Make a copy to avoid modifying original
     openai_tools: list[dict] = []
+    seen_tool_names: set[str] = set()
+
+    def append_openai_tool(tool_def: dict) -> None:
+        function_name = (
+            tool_def.get("function", {}).get("name")
+            if isinstance(tool_def, dict)
+            else None
+        )
+        if not function_name or function_name in seen_tool_names:
+            return
+        openai_tools.append(tool_def)
+        seen_tool_names.add(function_name)
 
     # Add memory tools if enabled
     if agent.enable_memory:
@@ -755,11 +767,19 @@ Examples of when to search:
                                     "description": "Search keywords extracted from the user's message. Use nouns, names, and key phrases. For vague questions, use the most specific terms available.",
                                 }
                             },
-                            "required": ["query"],
+                        "required": ["query"],
                         },
                     },
                 }
             )
+
+    if agent.enable_image_generation:
+        for builtin_tool in tool_registry.to_openai_tools(["generate_image"]):
+            append_openai_tool(builtin_tool)
+
+    if agent.enable_video_generation:
+        for builtin_tool in tool_registry.to_openai_tools(["generate_video"]):
+            append_openai_tool(builtin_tool)
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -769,7 +789,8 @@ Examples of when to search:
             if tool_name:
                 # Get builtin tool definition
                 builtin_tools = tool_registry.to_openai_tools([tool_name])
-                openai_tools.extend(builtin_tools)
+                for builtin_tool in builtin_tools:
+                    append_openai_tool(builtin_tool)
 
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
@@ -890,6 +911,24 @@ async def get_tool_display_names(
             "tool_update_memory_entity", lang=user_locale
         )
         display_names["search_memory"] = t("tool_search_memory", lang=user_locale)
+
+    if agent.enable_image_generation:
+        metadata = BUILTIN_TOOLS_METADATA.get("generate_image", {})
+        display_name_key = metadata.get("display_name_key")
+        display_names["generate_image"] = (
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else "generate_image"
+        )
+
+    if agent.enable_video_generation:
+        metadata = BUILTIN_TOOLS_METADATA.get("generate_video", {})
+        display_name_key = metadata.get("display_name_key")
+        display_names["generate_video"] = (
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else "generate_video"
+        )
 
     for config in tools_config:
         tool_type = config.get("type")
@@ -1166,7 +1205,12 @@ async def execute_tool_call(
                         credentials = global_config.credentials or {}
 
             result = await tool_registry.execute(
-                tool_name, arguments, credentials=credentials
+                tool_name,
+                arguments,
+                credentials=credentials,
+                agent=agent,
+                team_id=str(agent.team_id) if agent and agent.team_id else None,
+                user_id=str(user.id) if user else None,
             )
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)

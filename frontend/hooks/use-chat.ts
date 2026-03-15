@@ -17,7 +17,6 @@ import {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
-  type SSEUserInputRequest,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -30,6 +29,7 @@ import type {
   ToolResultPart,
   UserInputRequestPart,
 } from '@/components/chat'
+import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -584,12 +584,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'tool_result': {
               const data = event.data as SSEToolResult
+              const parsedOutput = parseToolResultOutput(data.result)
               const toolResultPart: ToolResultPart = {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
                 toolDisplayName: data.tool_display_name,
-                output: data.result,
+                output: parsedOutput,
                 isError: data.is_error,
               }
               
@@ -1326,12 +1327,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'tool_result': {
               const data = event.data as SSEToolResult
+              const parsedOutput = parseToolResultOutput(data.result)
               const toolResultPart: ToolResultPart = {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
                 toolDisplayName: data.tool_display_name,
-                output: data.result,
+                output: parsedOutput,
                 isError: data.is_error,
               }
               const toolGroup = findToolGroup(data.tool_call_id)

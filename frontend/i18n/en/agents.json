@@ -244,7 +244,9 @@
           "unit_convert": "Unit Converter",
           "get_current_time": "Get Current Time",
           "web_search": "Web Search",
-          "parse_file": "File Parser"
+          "parse_file": "File Parser",
+          "generate_image": "Generate Image",
+          "generate_video": "Generate Video"
         },
         "dialog": {
           "title": "Select Tools",
@@ -309,6 +311,36 @@
         "memories": "memories",
         "autoExtract": "Auto Extract Memories",
         "autoExtractHint": "Automatically extract and save important information from conversations"
+      },
+      "imageGeneration": {
+        "title": "Image Generation",
+        "tooltip": "Allow the agent to call image generation models",
+        "description": "When enabled, the agent can call text-to-image tools and render generated images directly in chat.",
+        "defaultModel": "Default Model",
+        "defaultModelPlaceholder": "For example: google/gemini-2.5-flash-image",
+        "useSystemDefault": "Use system default model",
+        "defaultWidth": "Default Width",
+        "defaultHeight": "Default Height",
+        "maxImages": "Max Images Per Call",
+        "allowModelOverride": "Allow Model Override",
+        "allowModelOverrideHint": "Allow the agent to choose a different image model in a tool call.",
+        "allowReferenceImages": "Allow Reference Images",
+        "allowReferenceImagesHint": "Allow the image tool to include reference images."
+      },
+      "videoGeneration": {
+        "title": "Video Generation",
+        "tooltip": "Allow the agent to call video generation models",
+        "description": "When enabled, the agent can call text-to-video tools and return either an in-progress status or a final video in chat.",
+        "defaultModel": "Default Model",
+        "defaultModelPlaceholder": "For example: runway/gen4.5",
+        "useSystemDefault": "Use system default model",
+        "defaultDuration": "Default Duration (s)",
+        "maxDuration": "Max Duration (s)",
+        "aspectRatio": "Default Aspect Ratio",
+        "pollInterval": "Poll Interval (ms)",
+        "pollTimeout": "Max Wait Time (s)",
+        "allowModelOverride": "Allow Model Override",
+        "allowModelOverrideHint": "Allow the agent to choose a different video model in a tool call."
       },
       "preview": {
         "title": "Debug & Preview",

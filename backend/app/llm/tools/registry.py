@@ -218,6 +218,7 @@ class ToolRegistry:
         name: str,
         arguments: dict[str, Any],
         credentials: dict[str, str] | None = None,
+        **context: Any,
     ) -> Any:
         """
         执行工具
@@ -239,14 +240,19 @@ class ToolRegistry:
         if not tool.handler:
             raise ValueError(f"Tool has no handler: {name}")
 
-        # 如果工具函数支持 credentials 参数，则传递
         import inspect
 
         sig = inspect.signature(tool.handler)
+        handler_kwargs = dict(arguments)
+
         if "credentials" in sig.parameters:
-            return await tool.handler(**arguments, credentials=credentials)
-        else:
-            return await tool.handler(**arguments)
+            handler_kwargs["credentials"] = credentials
+
+        for key, value in context.items():
+            if key in sig.parameters:
+                handler_kwargs[key] = value
+
+        return await tool.handler(**handler_kwargs)
 
     def clear(self) -> None:
         """清空所有注册的工具"""

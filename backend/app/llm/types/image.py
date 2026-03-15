@@ -46,6 +46,11 @@ class ImageGenerationRequest(BaseModel):
     style: str | None = Field(default=None, description="风格")
     quality: str | None = Field(default=None, description="质量")
     seed: int | None = Field(default=None, description="随机种子")
+    images: list[ImageContent] | None = Field(
+        default=None,
+        description="参考图像列表（用于编辑或带参考图的生成）",
+    )
+    extra_params: dict | None = Field(default=None, description="供应商特定参数")
 
 
 class GeneratedImage(BaseModel):

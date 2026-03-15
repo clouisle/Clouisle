@@ -120,6 +120,24 @@ class Agent(models.Model):
         description="Memory configuration (max_memories_per_retrieval, auto_extract, importance_threshold)",
     )  # type: ignore[assignment]
 
+    # Media generation configuration
+    enable_image_generation = fields.BooleanField(
+        default=False,
+        description="Enable agent image generation tool calling",
+    )
+    image_generation_config: dict = fields.JSONField(
+        default=dict,
+        description="Image generation configuration (default_model_ref, defaults, limits)",
+    )  # type: ignore[assignment]
+    enable_video_generation = fields.BooleanField(
+        default=False,
+        description="Enable agent video generation tool calling",
+    )
+    video_generation_config: dict = fields.JSONField(
+        default=dict,
+        description="Video generation configuration (default_model_ref, defaults, limits, polling)",
+    )  # type: ignore[assignment]
+
     # Streaming and tool timeout configuration
     streaming_config: dict = fields.JSONField(
         default=dict,

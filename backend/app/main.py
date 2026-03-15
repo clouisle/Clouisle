@@ -2,13 +2,13 @@ import json
 import logging
 import time
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from tortoise.contrib.fastapi import register_tortoise
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -34,10 +34,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# Custom lifespan to run migrations before Tortoise generates schemas
-from contextlib import asynccontextmanager
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for database initialization and cleanup"""
@@ -60,6 +56,7 @@ async def lifespan(app: FastAPI):
         init_agent_streaming_config,
         init_agent_user_input_request,
         init_agent_memory_fields,
+        init_agent_media_generation_fields,
         init_permission_is_system_field,
         init_password_expiration,
         init_totp_fields,
@@ -104,6 +101,11 @@ async def lifespan(app: FastAPI):
         await init_agent_memory_fields()
     except Exception as e:
         logger.warning(f"Agent memory fields migration failed: {e}")
+
+    try:
+        await init_agent_media_generation_fields()
+    except Exception as e:
+        logger.warning(f"Agent media generation fields migration failed: {e}")
 
     try:
         await init_password_expiration()

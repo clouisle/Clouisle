@@ -56,6 +56,13 @@ import {
 } from './types'
 import { SourceContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
+import {
+  getImageAssetUrl,
+  getVideoAssetUrl,
+  isMediaImageToolResult,
+  isMediaVideoToolResult,
+  parseToolResultOutput,
+} from '@/lib/utils/tool-result'
 
 export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
@@ -136,6 +143,91 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [getTextContent])
 
+    const renderToolResultContent = (output: unknown, isError?: boolean) => {
+      const parsedOutput = parseToolResultOutput(output)
+
+      if (isMediaImageToolResult(parsedOutput)) {
+        return (
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground space-y-1">
+              {parsedOutput.model && <div>Model: {parsedOutput.model}</div>}
+              {parsedOutput.prompt && (
+                <div className="line-clamp-2">Prompt: {parsedOutput.prompt}</div>
+              )}
+              {parsedOutput.error && (
+                <div className="text-red-500">Error: {parsedOutput.error}</div>
+              )}
+            </div>
+            {parsedOutput.images.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {parsedOutput.images.map((item, imageIndex) => {
+                  const imageUrl = getImageAssetUrl(item.image)
+                  if (!imageUrl) return null
+                  return (
+                    <button
+                      key={`${imageIndex}-${imageUrl}`}
+                      type="button"
+                      className="overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imageUrl}
+                        alt={parsedOutput.prompt || 'Generated image'}
+                        className="h-auto w-full object-cover"
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      }
+
+      if (isMediaVideoToolResult(parsedOutput)) {
+        const videoUrl = getVideoAssetUrl(parsedOutput.video)
+        return (
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground space-y-1">
+              {parsedOutput.model && <div>Model: {parsedOutput.model}</div>}
+              <div>Status: {parsedOutput.status}</div>
+              {typeof parsedOutput.progress === 'number' && (
+                <div>Progress: {Math.round(parsedOutput.progress * 100)}%</div>
+              )}
+              {parsedOutput.prompt && (
+                <div className="line-clamp-2">Prompt: {parsedOutput.prompt}</div>
+              )}
+              {parsedOutput.error && (
+                <div className="text-red-500">Error: {parsedOutput.error}</div>
+              )}
+            </div>
+            {videoUrl ? (
+              <video
+                controls
+                playsInline
+                className="max-h-96 w-full rounded-lg border bg-black"
+                src={videoUrl}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+                {parsedOutput.status === 'completed'
+                  ? 'Video generated but no preview URL is available.'
+                  : 'Video is still being generated.'}
+              </div>
+            )}
+          </div>
+        )
+      }
+
+      return (
+        <ToolOutput
+          output={parsedOutput}
+          errorText={isError ? String(parsedOutput) : undefined}
+        />
+      )
+    }
+
     // Render a single part
     const renderDefaultPart = (part: MessagePart, index: number) => {
       if (isTextPart(part)) {
@@ -180,10 +272,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <AIToolContent>
               <ToolInput input={toolPart.input} />
               {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                <ToolOutput
-                  output={result.output}
-                  errorText={result.isError ? String(result.output) : undefined}
-                />
+                renderToolResultContent(result.output, result.isError)
               )}
             </AIToolContent>
           </Tool>
@@ -213,6 +302,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}
@@ -268,8 +358,6 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
     const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
-    const mcpToolCallParts = otherParts.filter(isMcpToolCallPart) as McpToolCallPart[]
-
     // Check if we should show ChainOfThought
     // Only show if there are reasoning parts OR tasks (RAG/generating)
     // Tool calls should only be in ChainOfThought if there's reasoning

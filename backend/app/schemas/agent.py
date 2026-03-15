@@ -66,6 +66,90 @@ class MemoryConfig(BaseModel):
     )
 
 
+class ImageGenerationConfig(BaseModel):
+    """Agent image generation configuration"""
+
+    default_model_ref: str | None = Field(
+        default=None,
+        description="Default image model reference (UUID or provider/model_id)",
+    )
+    default_width: int = Field(
+        default=1024,
+        ge=256,
+        le=4096,
+        description="Default generated image width",
+    )
+    default_height: int = Field(
+        default=1024,
+        ge=256,
+        le=4096,
+        description="Default generated image height",
+    )
+    max_images: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Maximum number of images per tool call",
+    )
+    allow_reference_images: bool = Field(
+        default=True,
+        description="Allow reference images for edit/reference generation flows",
+    )
+    allowed_providers: list[str] = Field(
+        default_factory=list,
+        description="Optional allowlist of providers for image generation",
+    )
+    require_confirmation: bool = Field(
+        default=False,
+        description="Whether generation should require explicit confirmation before execution",
+    )
+
+
+class VideoGenerationConfig(BaseModel):
+    """Agent video generation configuration"""
+
+    default_model_ref: str | None = Field(
+        default=None,
+        description="Default video model reference (UUID or provider/model_id)",
+    )
+    default_duration: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=30.0,
+        description="Default generated video duration in seconds",
+    )
+    max_duration: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=30.0,
+        description="Maximum video duration per tool call",
+    )
+    default_aspect_ratio: str = Field(
+        default="16:9",
+        description="Default video aspect ratio",
+    )
+    poll_interval_ms: int = Field(
+        default=3000,
+        ge=500,
+        le=30000,
+        description="Polling interval for provider video task status",
+    )
+    poll_timeout_s: int = Field(
+        default=120,
+        ge=5,
+        le=600,
+        description="Maximum synchronous polling time before returning pending",
+    )
+    allowed_providers: list[str] = Field(
+        default_factory=list,
+        description="Optional allowlist of providers for video generation",
+    )
+    require_confirmation: bool = Field(
+        default=False,
+        description="Whether generation should require explicit confirmation before execution",
+    )
+
+
 class CreatorInfo(BaseModel):
     """Creator user info"""
 
@@ -255,6 +339,22 @@ class AgentCreate(AgentBase):
         default=None,
         description="Memory configuration (max_memories_per_retrieval, auto_extract)",
     )
+    enable_image_generation: bool = Field(
+        default=False,
+        description="Enable agent image generation tool",
+    )
+    image_generation_config: ImageGenerationConfig | None = Field(
+        default=None,
+        description="Agent image generation configuration",
+    )
+    enable_video_generation: bool = Field(
+        default=False,
+        description="Enable agent video generation tool",
+    )
+    video_generation_config: VideoGenerationConfig | None = Field(
+        default=None,
+        description="Agent video generation configuration",
+    )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"
     )
@@ -285,6 +385,10 @@ class AgentUpdate(BaseModel):
     enable_user_input_request: bool | None = None
     enable_memory: bool | None = None
     memory_config: MemoryConfig | None = None
+    enable_image_generation: bool | None = None
+    image_generation_config: ImageGenerationConfig | None = None
+    enable_video_generation: bool | None = None
+    video_generation_config: VideoGenerationConfig | None = None
     rag_mode: str | None = Field(None, description="RAG mode: off, auto, or agentic")
     knowledge_base_configs: list[AgentKnowledgeBaseConfig] | None = None
     variables: list[VariableDefinition] | None = None
@@ -325,6 +429,10 @@ class AgentOut(AgentBase):
     enable_user_input_request: bool = False
     enable_memory: bool = False
     memory_config: MemoryConfig | None = None
+    enable_image_generation: bool = False
+    image_generation_config: ImageGenerationConfig | None = None
+    enable_video_generation: bool = False
+    video_generation_config: VideoGenerationConfig | None = None
     rag_mode: str = RAGMode.AGENTIC
     variables: list[VariableDefinition] = []
     opening_message: str | None = None

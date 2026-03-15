@@ -13,6 +13,7 @@ import type {
   ToolCallPart,
   ToolResultPart,
 } from '@/components/chat'
+import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 export type EmbedChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -319,6 +320,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
             case 'tool_result': {
               const resultData = data as { tool_call_id?: string; tool_name?: string; result?: unknown }
+              const parsedOutput = parseToolResultOutput(resultData.result)
               // Find the tool-group and update
               for (const seg of state.segments) {
                 if (seg.type === 'tool-group') {
@@ -332,7 +334,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
                     type: 'tool-result',
                     toolName: resultData.tool_name || 'unknown',
                     toolCallId: resultData.tool_call_id || '',
-                    output: resultData.result,
+                    output: parsedOutput,
                   } as ToolResultPart)
                 }
               }

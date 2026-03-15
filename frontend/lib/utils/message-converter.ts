@@ -16,6 +16,7 @@ import type {
   UserInputRequestPart,
 } from '@/components/chat'
 import { isSourcePart, isTextPart } from '@/components/chat'
+import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 /**
  * Backend Message format (from API response)
@@ -328,7 +329,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
                 type: 'tool-result',
                 toolCallId: toolCallPart.toolCallId,
                 toolName: toolResultMsg.tool_name || toolCallPart.toolName,
-                output: toolResultMsg.content,
+                output: parseToolResultOutput(toolResultMsg.content),
                 isError: false,
               } as ToolResultPart)
             }

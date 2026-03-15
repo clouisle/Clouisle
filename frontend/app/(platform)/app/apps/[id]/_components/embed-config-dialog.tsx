@@ -228,7 +228,7 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                     value={config.theme.mode}
                     onValueChange={v => setConfig(prev => ({
                       ...prev,
-                      theme: { ...prev.theme, mode: v },
+                      theme: { ...prev.theme, mode: v || 'auto' },
                     }))}
                   >
                     <SelectTrigger>
@@ -278,7 +278,7 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                     value={config.bubble.position}
                     onValueChange={v => setConfig(prev => ({
                       ...prev,
-                      bubble: { ...prev.bubble, position: v },
+                      bubble: { ...prev.bubble, position: v || 'bottom-right' },
                     }))}
                   >
                     <SelectTrigger>

@@ -1072,6 +1072,45 @@ async def init_agent_memory_fields():
     logger.info("Agent memory fields added successfully")
 
 
+async def init_agent_media_generation_fields():
+    """
+    Add media generation module fields to agents table.
+    """
+    logger.info("Initializing agent media generation fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping media generation migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_image_generation BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS image_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_video_generation BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS video_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    """)
+
+    logger.info("Agent media generation fields added successfully")
+
+
 async def init_password_expiration():
     """
     Add password expiration fields to users table and create password_history table.
@@ -1866,5 +1905,8 @@ async def init_db():
 
     # 11. Initialize agent memory fields
     await init_agent_memory_fields()
+
+    # 12. Initialize agent media generation fields
+    await init_agent_media_generation_fields()
 
     logger.info("Database initialization complete.")

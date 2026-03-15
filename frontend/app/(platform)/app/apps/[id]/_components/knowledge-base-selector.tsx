@@ -128,7 +128,10 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
         <div className="space-y-6 py-4">
           <div className="space-y-3">
             <Label className="text-sm">{t('dialog.searchMode')}</Label>
-            <Select value={searchMode} onValueChange={(value: 'vector' | 'fulltext' | 'hybrid') => setSearchMode(value)}>
+            <Select
+              value={searchMode}
+              onValueChange={(value) => setSearchMode(value || 'hybrid')}
+            >
               <SelectTrigger className="h-9 text-sm">
                 <SelectValue>
                   {searchMode === 'vector' && t('dialog.searchModeVector')}

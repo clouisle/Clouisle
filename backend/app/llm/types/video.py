@@ -4,7 +4,7 @@
 
 from pydantic import BaseModel, Field
 
-from .base import ImageContent, VideoContent, TaskStatus
+from .base import VideoContent, TaskStatus
 
 
 class AspectRatio(str):
@@ -25,8 +25,6 @@ class VideoGenerationRequest(BaseModel):
     """视频生成请求"""
 
     prompt: str = Field(..., description="生成提示词")
-    image: ImageContent | None = Field(default=None, description="参考图像 (图生视频)")
-    end_image: ImageContent | None = Field(default=None, description="结束帧图像")
     duration: float = Field(default=5.0, ge=1.0, le=30.0, description="时长(秒)")
     aspect_ratio: str = Field(default="16:9", description="宽高比")
     motion_intensity: float | None = Field(

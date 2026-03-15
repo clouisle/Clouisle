@@ -26,6 +26,7 @@ from .adapters import (
     create_rerank_adapter,
     create_tts_adapter,
     create_stt_adapter,
+    create_video_adapter,
 )
 from .adapters.chat import (
     BaseChatAdapter,
@@ -45,7 +46,9 @@ from .errors import (
     RateLimitError,
     ContextLengthError,
     ContentFilterError,
+    InvalidRequestError,
     QuotaExceededError as LLMQuotaExceededError,
+    TaskNotFoundError,
 )
 from .types import (
     Message,
@@ -54,6 +57,8 @@ from .types import (
     ToolDefinition,
     ImageGenerationRequest,
     ImageGenerationResponse,
+    VideoGenerationRequest,
+    VideoGenerationResponse,
     TTSRequest,
     TTSResponse,
     STTRequest,
@@ -593,6 +598,98 @@ class ModelManager:
         except Exception as e:
             logger.exception(f"Image generation error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    # ==================== Video 方法 ====================
+
+    async def generate_video(
+        self,
+        request: VideoGenerationRequest | dict,
+        model_id: str | None = None,
+    ) -> VideoGenerationResponse:
+        """
+        视频生成
+
+        Args:
+            request: 视频生成请求
+            model_id: 模型 ID
+
+        Returns:
+            VideoGenerationResponse: 生成任务状态
+        """
+        if isinstance(request, dict) and (
+            request.get("image") is not None or request.get("end_image") is not None
+        ):
+            raise InvalidRequestError(
+                message="Image-to-video has been removed from the project",
+                field="image",
+            )
+
+        if isinstance(request, dict):
+            request = VideoGenerationRequest(**request)
+
+        model_config = await self._get_model_config(model_id, ModelType.TEXT_TO_VIDEO)
+        adapter = create_video_adapter(model_config)
+
+        try:
+            return await adapter.generate(request)
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Video generation error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def get_video_status(
+        self,
+        task_id: str,
+        model_id: str | None = None,
+    ) -> VideoGenerationResponse:
+        """
+        获取视频生成任务状态
+
+        Args:
+            task_id: 视频任务 ID
+            model_id: 模型 ID
+
+        Returns:
+            VideoGenerationResponse: 当前任务状态
+        """
+        candidate_models: list[Model] = []
+
+        if model_id:
+            candidate_models.append(
+                await self._get_model_config(model_id, ModelType.TEXT_TO_VIDEO)
+            )
+        else:
+            candidate_models = await Model.filter(
+                model_type=ModelType.TEXT_TO_VIDEO.value,
+                is_enabled=True,
+            ).order_by("-is_default", "sort_order", "name")
+
+        last_error: Exception | None = None
+        for model_config in candidate_models:
+            adapter = create_video_adapter(model_config)
+            try:
+                return await adapter.get_status(task_id)
+            except TaskNotFoundError as exc:
+                last_error = exc
+                continue
+            except LLMError as exc:
+                last_error = exc
+                if model_id:
+                    raise
+                continue
+            except Exception as e:
+                last_error = e
+                logger.exception(f"Video status error: {e}")
+                if model_id:
+                    raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+        if last_error:
+            if isinstance(last_error, LLMError):
+                raise last_error
+            raise last_error
+
+        raise ModelNotFoundError(message="No enabled video model configured")
 
     # ==================== Audio 方法 ====================
 

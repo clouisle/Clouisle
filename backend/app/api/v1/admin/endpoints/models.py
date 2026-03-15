@@ -189,7 +189,13 @@ async def test_model_connection(
         )
 
     start_time = time.time()
-    model_type = ModelType(model.model_type)
+    try:
+        model_type = ModelType(model.model_type)
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_type_not_supported",
+        ) from exc
     config = model.config or {}
 
     try:
@@ -206,7 +212,13 @@ async def test_model_connection(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _validate_api_key(provider, model.api_key)
+            _test_image_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
+        elif model_type == ModelType.TEXT_TO_VIDEO:
+            _test_video_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
         elif model_type in [ModelType.TTS, ModelType.STT]:
             _validate_api_key(provider, model.api_key)
         else:
@@ -308,7 +320,9 @@ async def test_model_config(
         elif model_type == ModelType.RERANK:
             await _test_rerank_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _validate_api_key(provider, api_key)
+            _test_image_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.TEXT_TO_VIDEO:
+            _test_video_model(provider, model_id, api_key, base_url, config)
         elif model_type in [ModelType.TTS, ModelType.STT]:
             _validate_api_key(provider, api_key)
         else:
@@ -511,3 +525,47 @@ async def _test_rerank_model(
 
     if not result.results:
         raise ValueError("Empty rerank result")
+
+
+def _test_image_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.config = config
+
+    from app.llm.adapters.image import create_image_adapter
+
+    create_image_adapter(TempModel())
+
+
+def _test_video_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.config = config
+
+    from app.llm.adapters.video import create_video_adapter
+
+    create_video_adapter(TempModel())

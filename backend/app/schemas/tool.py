@@ -387,4 +387,16 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "requires_config": False,
         "is_file_parser": True,  # 标记为文件解析器，可用于文件上传功能
     },
+    "generate_image": {
+        "display_name_key": "builtin_tool_generate_image",
+        "category": ToolCategory.OTHER,
+        "icon": "🖼️",
+        "requires_config": False,
+    },
+    "generate_video": {
+        "display_name_key": "builtin_tool_generate_video",
+        "category": ToolCategory.OTHER,
+        "icon": "🎬",
+        "requires_config": False,
+    },
 }
