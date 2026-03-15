@@ -74,7 +74,7 @@ export function ToolShareDialog({
     } finally {
       setIsLoading(false)
     }
-  }, [tool?.id, t])
+  }, [tool?.id])
 
   React.useEffect(() => {
     if (open && tool?.id) {
@@ -91,6 +91,12 @@ export function ToolShareDialog({
       team => team.id !== tool?.team_id && !sharedTeamIds.has(team.id)
     )
   }, [availableTeams, tool?.team_id, shares])
+  const selectedTeamName = React.useMemo(
+    () =>
+      availableTeamsToShare.find((team) => team.id === selectedTeamId)?.name ||
+      t('selectTeam'),
+    [availableTeamsToShare, selectedTeamId, t]
+  )
 
   // 共享工具
   const handleShare = async () => {
@@ -161,11 +167,11 @@ export function ToolShareDialog({
                   <div className="space-y-2">
                     <Label>{t('selectTeam')}</Label>
                     <Select
-                      value={selectedTeamId || undefined}
-                      onValueChange={(v) => v && setSelectedTeamId(v)}
+                      value={selectedTeamId || ''}
+                      onValueChange={setSelectedTeamId}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <SelectValue>{selectedTeamName}</SelectValue>
                       </SelectTrigger>
                       <SelectContent alignItemWithTrigger={false}>
                         {availableTeamsToShare.map((team) => (

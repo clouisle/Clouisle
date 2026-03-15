@@ -186,18 +186,35 @@ export function ToolsClient() {
 
   // 合并所有团队的工具并添加 type 标识
   const allTools = React.useMemo(() => {
-    const result: (Tool & { _type: ToolType })[] = []
+    const dedupedTools = new Map<string, Tool & { _type: ToolType }>()
+
+    const addTool = (tool: Tool, type: ToolType) => {
+      const entry = { ...tool, _type: type as ToolType }
+      const uniqueKey =
+        type === 'builtin'
+          ? `builtin:${tool.name}`
+          : `${type}:${tool.id || tool.name}`
+      const existing = dedupedTools.get(uniqueKey)
+
+      // The same custom/MCP tool can appear multiple times when aggregating
+      // owned-team results and shared-team results. Prefer the owned entry.
+      if (!existing || (!!entry.is_owned && !existing.is_owned)) {
+        dedupedTools.set(uniqueKey, entry)
+      }
+    }
+
     // 内置工具只加载一次（从第一个团队）
     const firstTeamTools = allTeamsTools.values().next().value
     if (firstTeamTools) {
-      firstTeamTools.builtin.forEach((tool: Tool) => result.push({ ...tool, _type: 'builtin' as const }))
+      firstTeamTools.builtin.forEach((tool: Tool) => addTool(tool, 'builtin'))
     }
     // 合并所有团队的自定义和 MCP 工具
     allTeamsTools.forEach((tools) => {
-      tools.custom.forEach((tool) => result.push({ ...tool, _type: 'custom' as const }))
-      tools.mcp.forEach((tool) => result.push({ ...tool, _type: 'mcp' as const }))
+      tools.custom.forEach((tool) => addTool(tool, 'custom'))
+      tools.mcp.forEach((tool) => addTool(tool, 'mcp'))
     })
-    return result
+
+    return Array.from(dedupedTools.values())
   }, [allTeamsTools])
 
   // 获取创建人选项

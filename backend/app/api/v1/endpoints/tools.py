@@ -60,6 +60,7 @@ from app.schemas.tool import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
 
 
 # ============ Helper Functions ============
@@ -106,6 +107,9 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     """
     tools = []
     for tool_info in tool_registry.get_all_tools():
+        if tool_info.name in AGENT_ONLY_BUILTIN_TOOLS:
+            continue
+
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
 
         parameters = [

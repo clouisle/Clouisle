@@ -518,9 +518,9 @@ export function PromptEditor({
         }}
         data-placeholder={placeholder}
         className={cn(
-          'min-h-50 w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed',
+          'min-h-50 max-h-[50vh] w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed',
           'focus:outline-none focus-visible:ring-0 shadow-none',
-          'overflow-auto whitespace-pre-wrap',
+          'overflow-y-auto whitespace-pre-wrap',
           'empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground empty:before:pointer-events-none',
           className
         )}
