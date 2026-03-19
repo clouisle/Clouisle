@@ -11,8 +11,13 @@ from app.llm.adapters.image.openai import OpenAIImageAdapter
 from app.llm.adapters.image.runway import RunwayImageAdapter
 from app.llm.adapters.image.stability import StabilityImageAdapter
 from app.llm.adapters.video import create_video_adapter
+from app.llm.adapters.video.dashscope import DashScopeVideoAdapter
+from app.llm.adapters.video.kling import KlingVideoAdapter
 from app.llm.adapters.video.luma import LumaVideoAdapter
+from app.llm.adapters.video.pika import PikaVideoAdapter
 from app.llm.adapters.video.runway import RunwayVideoAdapter
+from app.llm.adapters.video.siliconflow import SiliconFlowVideoAdapter
+from app.llm.adapters.video.volcengine import VolcengineVideoAdapter
 from app.llm.errors import InvalidRequestError
 from app.llm.manager import ModelManager
 from app.llm.types import (
@@ -221,6 +226,30 @@ class TestVideoFactory:
             LumaVideoAdapter,
         )
 
+    def test_supports_kling_and_pika_video_providers(self):
+        assert isinstance(
+            create_video_adapter(build_model("kling", "kling-v1")),
+            KlingVideoAdapter,
+        )
+        assert isinstance(
+            create_video_adapter(build_model("pika", "pika-v1")),
+            PikaVideoAdapter,
+        )
+
+    def test_supports_siliconflow_volcengine_qwen_video_providers(self):
+        assert isinstance(
+            create_video_adapter(build_model("siliconflow", "Wan2.1-T2V-14B")),
+            SiliconFlowVideoAdapter,
+        )
+        assert isinstance(
+            create_video_adapter(build_model("volcengine", "seedance-1-lite")),
+            VolcengineVideoAdapter,
+        )
+        assert isinstance(
+            create_video_adapter(build_model("qwen", "wan2.1-t2v-plus")),
+            DashScopeVideoAdapter,
+        )
+
 
 class TestModelManagerVideoRouting:
     def test_generate_video_uses_text_to_video_without_input_image(self):
@@ -274,3 +303,194 @@ class TestRunwayVideoAdapter:
 
         with pytest.raises(InvalidRequestError):
             adapter._build_request(VideoGenerationRequest(prompt="No image provided"))
+
+
+class TestKlingVideoAdapter:
+    def test_builds_payload_with_integer_duration(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(prompt="A sunset over mountains", duration=5.7, aspect_ratio="16:9")
+        )
+
+        assert payload["model"] == "kling-v1"
+        assert payload["prompt"] == "A sunset over mountains"
+        assert payload["duration"] == 6
+        assert payload["aspect_ratio"] == "16:9"
+
+    def test_maps_kling_statuses(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        assert adapter._map_status("submitted") == TaskStatus.PENDING
+        assert adapter._map_status("processing") == TaskStatus.PROCESSING
+        assert adapter._map_status("succeed") == TaskStatus.COMPLETED
+        assert adapter._map_status("failed") == TaskStatus.FAILED
+        assert adapter._map_status(None) == TaskStatus.PROCESSING
+
+    def test_extracts_video_url_from_task_result(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        task = {"task_result": {"videos": [{"url": "https://cdn.kling.ai/video.mp4"}]}}
+        assert adapter._extract_video_url(task) == "https://cdn.kling.ai/video.mp4"
+
+        assert adapter._extract_video_url({}) is None
+        assert adapter._extract_video_url({"task_result": {}}) is None
+
+    def test_extracts_error_from_task_status_msg(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        assert adapter._extract_error({"task_status_msg": "Content policy violation"}) == "Content policy violation"
+        assert adapter._extract_error({}) is None
+
+
+class TestPikaVideoAdapter:
+    def test_builds_payload_with_camel_case_aspect_ratio(self):
+        adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(prompt="A robot dancing", duration=4, aspect_ratio="9:16")
+        )
+
+        assert payload["model"] == "pika-v1"
+        assert payload["prompt"] == "A robot dancing"
+        assert payload["duration"] == 4
+        assert payload["aspectRatio"] == "9:16"
+
+    def test_maps_pika_statuses(self):
+        adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
+
+        assert adapter._map_status("pending") == TaskStatus.PENDING
+        assert adapter._map_status("processing") == TaskStatus.PROCESSING
+        assert adapter._map_status("finished") == TaskStatus.COMPLETED
+        assert adapter._map_status("failed") == TaskStatus.FAILED
+        assert adapter._map_status(None) == TaskStatus.PROCESSING
+
+    def test_extracts_video_url_from_result(self):
+        adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
+
+        generation = {"videos": [{"resultUrl": "https://cdn.pika.art/video.mp4"}]}
+        assert adapter._extract_video_url(generation) == "https://cdn.pika.art/video.mp4"
+
+        assert adapter._extract_video_url({}) is None
+        assert adapter._extract_video_url({"videos": []}) is None
+
+    def test_extracts_error_from_message(self):
+        adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
+
+        assert adapter._extract_error({"message": "Generation failed"}) == "Generation failed"
+        assert adapter._extract_error({"error": "timeout"}) == "timeout"
+        assert adapter._extract_error({}) is None
+
+
+class TestSiliconFlowVideoAdapter:
+    def test_builds_payload_with_image_size(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(prompt="A cat playing piano", duration=5, aspect_ratio="16:9")
+        )
+
+        assert payload["model"] == "Wan2.1-T2V-14B"
+        assert payload["prompt"] == "A cat playing piano"
+        assert payload["image_size"] == "1280x720"
+
+    def test_maps_siliconflow_statuses(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
+
+        assert adapter._map_status("InProgress") == TaskStatus.PROCESSING
+        assert adapter._map_status("Succeed") == TaskStatus.COMPLETED
+        assert adapter._map_status("Failed") == TaskStatus.FAILED
+        assert adapter._map_status(None) == TaskStatus.PENDING
+
+    def test_extracts_video_url_from_results(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
+
+        task = {"results": {"videos": [{"url": "https://cdn.siliconflow.cn/video.mp4"}]}}
+        assert adapter._extract_video_url(task) == "https://cdn.siliconflow.cn/video.mp4"
+
+        assert adapter._extract_video_url({}) is None
+        assert adapter._extract_video_url({"results": {}}) is None
+
+    def test_extracts_error_from_reason(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
+
+        assert adapter._extract_error({"reason": "Content violation"}) == "Content violation"
+        assert adapter._extract_error({}) is None
+
+
+class TestVolcengineVideoAdapter:
+    def test_builds_payload_with_content_array(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(prompt="Ocean waves at sunset", duration=5, aspect_ratio="16:9")
+        )
+
+        assert payload["model"] == "seedance-1-lite"
+        assert payload["content"] == [{"type": "text", "text": "Ocean waves at sunset"}]
+        assert payload["parameters"]["duration"] == 5
+        assert payload["parameters"]["aspect_ratio"] == "16:9"
+
+    def test_maps_volcengine_statuses(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+
+        assert adapter._map_status("running") == TaskStatus.PROCESSING
+        assert adapter._map_status("succeeded") == TaskStatus.COMPLETED
+        assert adapter._map_status("failed") == TaskStatus.FAILED
+        assert adapter._map_status("cancelled") == TaskStatus.CANCELLED
+        assert adapter._map_status(None) == TaskStatus.PENDING
+
+    def test_extracts_video_url_from_content(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+
+        task = {"content": [{"video_url": {"url": "https://cdn.volces.com/video.mp4"}}]}
+        assert adapter._extract_video_url(task) == "https://cdn.volces.com/video.mp4"
+
+        assert adapter._extract_video_url({}) is None
+        assert adapter._extract_video_url({"content": []}) is None
+
+    def test_extracts_error_from_error_dict(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+
+        assert adapter._extract_error({"error": {"message": "Quota exceeded"}}) == "Quota exceeded"
+        assert adapter._extract_error({"error": "timeout"}) == "timeout"
+        assert adapter._extract_error({}) is None
+
+
+class TestDashScopeVideoAdapter:
+    def test_builds_payload_with_input_parameters(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(prompt="A futuristic city", duration=4, aspect_ratio="16:9")
+        )
+
+        assert payload["model"] == "wan2.1-t2v-plus"
+        assert payload["input"]["prompt"] == "A futuristic city"
+        assert payload["parameters"]["duration"] == 4
+        assert payload["parameters"]["size"] == "16:9"
+
+    def test_maps_dashscope_statuses(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
+
+        assert adapter._map_status("PENDING") == TaskStatus.PENDING
+        assert adapter._map_status("RUNNING") == TaskStatus.PROCESSING
+        assert adapter._map_status("SUCCEEDED") == TaskStatus.COMPLETED
+        assert adapter._map_status("FAILED") == TaskStatus.FAILED
+        assert adapter._map_status(None) == TaskStatus.PENDING
+
+    def test_extracts_video_url_from_output(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
+
+        task = {"output": {"video_url": "https://cdn.dashscope.com/video.mp4"}}
+        assert adapter._extract_video_url(task) == "https://cdn.dashscope.com/video.mp4"
+
+        assert adapter._extract_video_url({}) is None
+        assert adapter._extract_video_url({"output": {}}) is None
+
+    def test_extracts_error_from_output_message(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
+
+        assert adapter._extract_error({"output": {"message": "Generation failed"}}) == "Generation failed"
+        assert adapter._extract_error({"message": "Server error"}) == "Server error"
+        assert adapter._extract_error({}) is None

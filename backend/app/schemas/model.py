@@ -26,6 +26,7 @@ class ModelProvider(str, Enum):
     BAICHUAN = "baichuan"
     MINIMAX = "minimax"
     VOLCENGINE = "volcengine"  # 火山引擎 (豆包)
+    SILICONFLOW = "siliconflow"
     XAI = "xai"  # Grok
 
     # Local deployment
