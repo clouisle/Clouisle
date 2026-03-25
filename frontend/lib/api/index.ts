@@ -88,6 +88,7 @@ export {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type SSEMediaResult,
   type SSEUserInputRequest,
   type AgentVideoGenerationStatus,
   type AdminConversationListItem,

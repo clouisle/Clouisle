@@ -16,7 +16,11 @@ import type {
   UserInputRequestPart,
 } from '@/components/chat'
 import { isSourcePart, isTextPart } from '@/components/chat'
-import { parseToolResultOutput } from '@/lib/utils/tool-result'
+import {
+  isMediaImageToolResult,
+  isMediaVideoToolResult,
+  parseToolResultOutput,
+} from '@/lib/utils/tool-result'
 
 /**
  * Backend Message format (from API response)
@@ -325,13 +329,21 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
             const toolCallPart = part as ToolCallPart
             const toolResultMsg = toolResults.get(toolCallPart.toolCallId)
             if (toolResultMsg) {
-              partsWithResults.push({
-                type: 'tool-result',
-                toolCallId: toolCallPart.toolCallId,
-                toolName: toolResultMsg.tool_name || toolCallPart.toolName,
-                output: parseToolResultOutput(toolResultMsg.content),
-                isError: false,
-              } as ToolResultPart)
+              const parsedOutput = parseToolResultOutput(toolResultMsg.content)
+              if (isMediaImageToolResult(parsedOutput) || isMediaVideoToolResult(parsedOutput)) {
+                partsWithResults.push({
+                  type: 'media-result',
+                  output: parsedOutput,
+                })
+              } else {
+                partsWithResults.push({
+                  type: 'tool-result',
+                  toolCallId: toolCallPart.toolCallId,
+                  toolName: toolResultMsg.tool_name || toolCallPart.toolName,
+                  output: parsedOutput,
+                  isError: false,
+                } as ToolResultPart)
+              }
             }
           }
         }

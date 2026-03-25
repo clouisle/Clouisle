@@ -15,11 +15,14 @@ from typing import Any
 
 from app.llm import model_manager
 from app.llm.types import (
+    GeneratedImage,
     ImageGenerationRequest,
+    ImageGenerationResponse,
     VideoGenerationRequest,
     VideoGenerationResponse,
     TaskStatus,
 )
+from app.services.media_asset_service import media_asset_service
 
 from ..registry import tool_registry, ToolParameter
 
@@ -55,16 +58,64 @@ def _validate_allowed_providers(
         )
 
 
+class ToolExecutionResult(dict):
+    """Structured tool result for UI persistence and LLM replay."""
+
+    @property
+    def display_result(self) -> dict[str, Any]:
+        return self["display_result"]
+
+    @property
+    def llm_result(self) -> str:
+        return self["llm_result"]
+
+
+async def normalize_image_generation_response(
+    response: ImageGenerationResponse | None,
+) -> ImageGenerationResponse | None:
+    if response is None:
+        return None
+
+    normalized_images: list[GeneratedImage] = []
+    for generated in response.images:
+        normalized_images.append(
+            GeneratedImage(
+                image=(await media_asset_service.normalize_image(generated.image)),
+                revised_prompt=generated.revised_prompt,
+                seed=generated.seed,
+            )
+        )
+
+    return ImageGenerationResponse(images=normalized_images, model=response.model)
+
+
+async def normalize_video_generation_response(
+    response: VideoGenerationResponse | None,
+) -> VideoGenerationResponse | None:
+    if response is None:
+        return None
+
+    return VideoGenerationResponse(
+        task_id=response.task_id,
+        status=response.status,
+        video=await media_asset_service.normalize_video(response.video),
+        progress=response.progress,
+        error=response.error,
+        model=response.model,
+        estimated_time=response.estimated_time,
+    )
+
+
 def build_image_tool_result(
     prompt: str,
-    response: Any | None = None,
+    response: ImageGenerationResponse | None = None,
     *,
     model_ref: str | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     images = (
         [generated.model_dump(mode="json") for generated in response.images]
-        if response and getattr(response, "images", None)
+        if response and response.images
         else []
     )
     model = getattr(response, "model", None) if response else None
@@ -108,6 +159,54 @@ def build_video_tool_result(
         "poll_timeout_s": poll_timeout_s,
         "error": error or (response.error if response else None),
     }
+
+
+def build_image_llm_result(
+    prompt: str,
+    response: ImageGenerationResponse | None = None,
+    *,
+    error: str | None = None,
+) -> str:
+    if error:
+        return f"Image generation failed: {error}"
+
+    count = len(response.images) if response and response.images else 0
+    model = response.model if response else None
+    prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
+    model_suffix = f" using model {model}" if model else ""
+    return (
+        f"Image generation succeeded. Generated {count} image"
+        f"{'s' if count != 1 else ''}{model_suffix}. Prompt: {prompt_excerpt}"
+    )
+
+
+def build_video_llm_result(
+    prompt: str,
+    response: VideoGenerationResponse | None = None,
+    *,
+    error: str | None = None,
+) -> str:
+    status = _normalize_status(response.status) if response else TaskStatus.FAILED.value
+    if error or status == TaskStatus.FAILED.value:
+        message = error or (response.error if response else None) or "unknown error"
+        return f"Video generation failed: {message}"
+
+    prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
+    if status in PENDING_VIDEO_STATUSES:
+        return (
+            f"Video generation started. Task {response.task_id} is {status}. "
+            f"Prompt: {prompt_excerpt}"
+        )
+
+    model_suffix = f" using model {response.model}" if response and response.model else ""
+    return f"Video generation succeeded{model_suffix}. Prompt: {prompt_excerpt}"
+
+
+def build_media_tool_execution_result(
+    display_result: dict[str, Any],
+    llm_result: str,
+) -> ToolExecutionResult:
+    return ToolExecutionResult(display_result=display_result, llm_result=llm_result)
 
 
 async def generate_image(
@@ -159,17 +258,26 @@ async def generate_image(
             request,
             model_id=resolved_model_ref,
         )
-        return build_image_tool_result(
+        response = await normalize_image_generation_response(response)
+        display_result = build_image_tool_result(
             prompt,
             response,
             model_ref=resolved_model_ref,
         )
+        return build_media_tool_execution_result(
+            display_result,
+            build_image_llm_result(prompt, response),
+        )
     except Exception as exc:
         logger.exception("Image generation tool failed: %s", exc)
-        return build_image_tool_result(
+        display_result = build_image_tool_result(
             prompt,
             model_ref=resolved_model_ref,
             error=str(exc),
+        )
+        return build_media_tool_execution_result(
+            display_result,
+            build_image_llm_result(prompt, error=str(exc)),
         )
 
 
@@ -235,21 +343,30 @@ async def generate_video(
                 if _normalize_status(response.status) not in PENDING_VIDEO_STATUSES:
                     break
 
-        return build_video_tool_result(
+        response = await normalize_video_generation_response(response)
+        display_result = build_video_tool_result(
             prompt,
             response,
             model_ref=resolved_model_ref,
             poll_interval_ms=poll_interval_ms,
             poll_timeout_s=poll_timeout_s,
         )
+        return build_media_tool_execution_result(
+            display_result,
+            build_video_llm_result(prompt, response),
+        )
     except Exception as exc:
         logger.exception("Video generation tool failed: %s", exc)
-        return build_video_tool_result(
+        display_result = build_video_tool_result(
             prompt,
             model_ref=resolved_model_ref,
             poll_interval_ms=poll_interval_ms,
             poll_timeout_s=poll_timeout_s,
             error=str(exc),
+        )
+        return build_media_tool_execution_result(
+            display_result,
+            build_video_llm_result(prompt, error=str(exc)),
         )
 
 
@@ -372,9 +489,15 @@ def register_media_tools() -> None:
 
 __all__ = [
     "PENDING_VIDEO_STATUSES",
+    "ToolExecutionResult",
+    "build_image_llm_result",
     "build_image_tool_result",
+    "build_media_tool_execution_result",
+    "build_video_llm_result",
     "build_video_tool_result",
     "generate_image",
     "generate_video",
+    "normalize_image_generation_response",
+    "normalize_video_generation_response",
     "register_media_tools",
 ]

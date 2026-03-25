@@ -451,6 +451,7 @@
         "contentDelta": "Response content delta",
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
+        "mediaResult": "Media display payload for generated images/videos, used by the client to render content directly in the assistant body",
         "userInputRequest": "Agent requests user input with predefined options",
         "outputTruncated": "Output was truncated due to max output token limit",
         "messageEnd": "Message ended with token usage and timing statistics",

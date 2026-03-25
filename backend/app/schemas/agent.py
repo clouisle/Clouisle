@@ -724,6 +724,7 @@ class SSEEventType:
     REASONING_END = "reasoning_end"  # 思维链结束
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    MEDIA_RESULT = "media_result"
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"
     USER_INPUT_REQUEST = "user_input_request"  # 用户输入请求

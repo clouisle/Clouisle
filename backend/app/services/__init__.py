@@ -18,6 +18,7 @@ from .usage_tracker import (
     UsageTracker,
     usage_tracker,
 )
+from .media_asset_service import MediaAssetService, media_asset_service
 from .vector_store import VectorStore, vector_store
 
 __all__ = [
@@ -31,6 +32,8 @@ __all__ = [
     "QuotaExceededError",
     "UsageTracker",
     "usage_tracker",
+    "MediaAssetService",
+    "media_asset_service",
     "VectorStore",
     "vector_store",
 ]

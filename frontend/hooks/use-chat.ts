@@ -17,6 +17,7 @@ import {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type SSEMediaResult,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -28,6 +29,7 @@ import type {
   ToolCallPart,
   ToolResultPart,
   UserInputRequestPart,
+  MediaResultPart,
 } from '@/components/chat'
 import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
@@ -593,7 +595,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 output: parsedOutput,
                 isError: data.is_error,
               }
-              
+
               // Find the tool group containing this tool call
               const toolGroup = findToolGroup(data.tool_call_id)
               if (toolGroup) {
@@ -622,6 +624,30 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               }
 
               // Update message with tool result
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'media_result': {
+              const data = event.data as SSEMediaResult
+              segments.push({
+                type: 'media-result',
+                mediaResult: {
+                  type: 'media-result',
+                  output: data,
+                },
+              })
+              streamingStateRef.current.segments = segments
+
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
@@ -1549,7 +1575,7 @@ interface TaskState {
  * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'truncated'
+  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'media-result' | 'truncated'
   // For text type
   text?: string
   // For tool-group type
@@ -1562,6 +1588,8 @@ interface ContentSegment {
   reasoningDuration?: number
   // For user-input-request type
   userInputRequest?: UserInputRequestPart
+  // For media-result type
+  mediaResult?: MediaResultPart
 }
 
 /**
@@ -1637,6 +1665,8 @@ function buildMessageParts(
     } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
       // Add user input request
       parts.push(segment.userInputRequest)
+    } else if (segment.type === 'media-result' && segment.mediaResult) {
+      parts.push(segment.mediaResult)
     } else if (segment.type === 'truncated') {
       // Add truncated warning
       parts.push({ type: 'truncated' })

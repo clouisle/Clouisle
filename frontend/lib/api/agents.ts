@@ -383,6 +383,7 @@ export type SSEEventType =
   | 'reasoning_end'
   | 'tool_call'
   | 'tool_result'
+  | 'media_result'
   | 'rag_start'
   | 'rag_context'
   | 'user_input_request'
@@ -447,6 +448,44 @@ export interface SSEToolResult {
   tool_display_name?: string
   result: string
   is_error?: boolean
+}
+
+export interface SSEMediaResult {
+  kind: 'media.image' | 'media.video'
+  success: boolean
+  prompt: string
+  model?: string | null
+  model_ref?: string | null
+  images?: Array<{
+    image: {
+      url?: string | null
+      base64?: string | null
+      file_path?: string | null
+      width?: number | null
+      height?: number | null
+      duration?: number | null
+      format?: string
+    }
+    revised_prompt?: string | null
+    seed?: number | null
+  }>
+  task_id?: string | null
+  status?: string
+  progress?: number | null
+  video?: {
+    url?: string | null
+    base64?: string | null
+    file_path?: string | null
+    duration?: number | null
+    width?: number | null
+    height?: number | null
+    format?: string
+  } | null
+  estimated_time?: number | null
+  requires_polling?: boolean
+  poll_interval_ms?: number
+  poll_timeout_s?: number
+  error?: string | null
 }
 
 export interface AgentVideoGenerationStatus {

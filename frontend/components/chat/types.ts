@@ -126,6 +126,14 @@ export interface ImagePart {
 }
 
 /**
+ * Media result part - for generated image/video content shown in assistant body
+ */
+export interface MediaResultPart {
+  type: 'media-result'
+  output: unknown
+}
+
+/**
  * Step start marker (for multi-step reasoning)
  */
 export interface StepStartPart {
@@ -176,6 +184,7 @@ export type MessagePart =
   | SourceDocumentPart
   | FilePart
   | ImagePart
+  | MediaResultPart
   | StepStartPart
   | TaskPart
   | UserInputRequestPart
@@ -262,6 +271,10 @@ export function isFilePart(part: MessagePart): part is FilePart {
 
 export function isImagePart(part: MessagePart): part is ImagePart {
   return part.type === 'image'
+}
+
+export function isMediaResultPart(part: MessagePart): part is MediaResultPart {
+  return part.type === 'media-result'
 }
 
 export function isStepStartPart(part: MessagePart): part is StepStartPart {

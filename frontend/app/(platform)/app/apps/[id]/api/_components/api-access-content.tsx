@@ -189,6 +189,7 @@ while (true) {
     { event: 'content_delta', description: t('events.contentDelta') },
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
+    { event: 'media_result', description: t('events.mediaResult') },
     { event: 'user_input_request', description: t('events.userInputRequest') },
     { event: 'output_truncated', description: t('events.outputTruncated') },
     { event: 'message_end', description: t('events.messageEnd') },

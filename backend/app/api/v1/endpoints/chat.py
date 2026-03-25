@@ -57,6 +57,7 @@ from app.schemas.response import (
     success,
 )
 from app.llm.tools import tool_registry
+from app.llm.tools.builtin.media import ToolExecutionResult
 from app.core.timezone import now_utc
 
 if TYPE_CHECKING:
@@ -127,6 +128,7 @@ class LLMMessage(BaseModel):
 router = APIRouter()
 logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
+MEDIA_TOOL_KINDS = {"media.image", "media.video"}
 
 
 # ============ Helper Functions ============
@@ -163,6 +165,74 @@ def get_streaming_config(agent: Agent) -> dict:
             config["tool_timeouts"].update(agent.streaming_config["tool_timeouts"])
 
     return config
+
+
+def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _build_media_llm_summary(tool_name: str | None, payload: dict[str, Any]) -> str | None:
+    kind = payload.get("kind")
+    if kind not in MEDIA_TOOL_KINDS:
+        return None
+
+    if kind == "media.image":
+        if payload.get("error"):
+            return f"Image generation failed: {payload['error']}"
+        count = len(payload.get("images") or [])
+        model = payload.get("model")
+        model_suffix = f" using model {model}" if model else ""
+        return (
+            f"Image generation succeeded. Generated {count} image"
+            f"{'s' if count != 1 else ''}{model_suffix}."
+        )
+
+    status = payload.get("status") or "unknown"
+    if payload.get("error") or status == "failed":
+        message = payload.get("error") or "unknown error"
+        return f"Video generation failed: {message}"
+    if status in {"pending", "processing"}:
+        task_id = payload.get("task_id") or "unknown"
+        return f"Video generation started. Task {task_id} is {status}."
+    model = payload.get("model")
+    model_suffix = f" using model {model}" if model else ""
+    return f"Video generation succeeded{model_suffix}."
+
+
+def summarize_tool_result_for_llm(
+    tool_name: str | None,
+    stored_content: str,
+) -> str:
+    payload = _safe_json_loads(stored_content)
+    if not payload:
+        return stored_content
+    return _build_media_llm_summary(tool_name, payload) or stored_content
+
+
+def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
+    if isinstance(result, ToolExecutionResult):
+        display_result = json.dumps(result.display_result, ensure_ascii=False)
+        return display_result, result.llm_result
+    if isinstance(result, dict):
+        payload = json.dumps(result, ensure_ascii=False)
+        return payload, payload
+    stringified = str(result) if result is not None else ""
+    return stringified, stringified
+
+
+def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
+    payload = _safe_json_loads(display_result)
+    if not payload:
+        return None
+    if payload.get("kind") not in MEDIA_TOOL_KINDS:
+        return None
+    return payload
 
 
 async def send_heartbeat_if_needed(
@@ -619,7 +689,10 @@ Assistant: "Your name is Alice."
                 messages.append(
                     LLMMessage(
                         role=LLMMessageRole.TOOL,
-                        content=msg.content,
+                        content=summarize_tool_result_for_llm(
+                            msg.tool_name,
+                            msg.content,
+                        ),
                         tool_call_id=msg.tool_call_id,
                     )
                 )
@@ -982,9 +1055,9 @@ async def execute_tool_call(
     agent: Agent | None = None,
     tool_timeouts: dict | None = None,
     user: User | None = None,
-) -> str:
+) -> Any:
     """
-    Execute a tool and return the result as string.
+    Execute a tool and return the result payload.
 
     Args:
         tool_name: Tool name (for builtin) or custom_<name> (for custom) or mcp_<tool_id>_<tool_name> (for MCP)
@@ -1212,6 +1285,8 @@ async def execute_tool_call(
                 team_id=str(agent.team_id) if agent and agent.team_id else None,
                 user_id=str(user.id) if user else None,
             )
+            if isinstance(result, ToolExecutionResult):
+                return result
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)
             return str(result)
@@ -1645,11 +1720,12 @@ async def chat(
                     result = await execute_tool_call(
                         tool_name, arguments, agent=agent, user=current_user
                     )
+                    display_result, llm_result = get_tool_execution_payloads(result)
 
                     await Message.create(
                         conversation=conversation,
                         role=MessageRole.TOOL,
-                        content=result,
+                        content=display_result,
                         tool_call_id=tc.id,
                         tool_name=tool_name,
                     )
@@ -1657,7 +1733,7 @@ async def chat(
                     messages.append(
                         LLMMessage(
                             role=LLMMessageRole.TOOL,
-                            content=result,
+                            content=llm_result,
                             tool_call_id=tc.id,
                         )
                     )
@@ -1791,6 +1867,7 @@ async def chat_stream(
     - rag_context: {"contexts": [...]}
     - tool_call: {"tool_name": "...", "arguments": {...}}
     - tool_result: {"tool_name": "...", "result": {...}}
+    - media_result: {"kind": "media.image"|"media.video", ...} (UI-only media payload for rendering in assistant body, not for LLM replay)
     - message_end: {"usage": {...}}
     - error: {"code": ..., "msg": "..."}
     """
@@ -2016,14 +2093,15 @@ async def chat_stream(
                                             agent,
                                             user=current_user,
                                         )
+                                        display_result, _ = get_tool_execution_payloads(result)
                                         # Custom tool returns parsed content as string
-                                        if result:
+                                        if display_result:
                                             parsed_files.append(
                                                 ParsedFile(
                                                     filename="自定义解析结果",
-                                                    content=result,
+                                                    content=display_result,
                                                     mime_type="text/plain",
-                                                    size=len(result),
+                                                    size=len(display_result),
                                                 )
                                             )
                                     except Exception as e:
@@ -2247,7 +2325,10 @@ async def chat_stream(
                                     messages_for_llm.append(
                                         LLMTypeMessage(
                                             role=LLMTypeRole.TOOL,
-                                            content=msg.content,
+                                            content=summarize_tool_result_for_llm(
+                                                msg.tool_name,
+                                                msg.content,
+                                            ),
                                             tool_call_id=msg.tool_call_id,
                                         )
                                     )
@@ -2492,6 +2573,7 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
+                                display_result, llm_result = get_tool_execution_payloads(result)
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -2511,7 +2593,10 @@ async def chat_stream(
                                     return
 
                                 # Send tool_result event
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
+                                media_payload = extract_media_display_payload(display_result)
+                                if media_payload:
+                                    yield f"event: {SSEEventType.MEDIA_RESULT}\ndata: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
                                 last_event_time = time.time()
 
                                 # Add to pending tool calls for message building
@@ -2520,7 +2605,8 @@ async def chat_stream(
                                         "id": tc.id,
                                         "name": tool_name,
                                         "arguments": arguments,
-                                        "result": result,
+                                        "display_result": display_result,
+                                        "llm_result": llm_result,
                                     }
                                 )
 
@@ -2561,7 +2647,7 @@ async def chat_stream(
                                 await Message.create(
                                     conversation=conversation,
                                     role=MessageRole.TOOL,
-                                    content=tc_data["result"],
+                                    content=tc_data["display_result"],
                                     tool_call_id=tc_data["id"],
                                     tool_name=tc_data["name"],
                                 )
@@ -2592,7 +2678,7 @@ async def chat_stream(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=tc_data["result"],
+                                        content=tc_data["llm_result"],
                                         tool_call_id=tc_data["id"],
                                     )
                                 )
@@ -3167,7 +3253,10 @@ async def regenerate_message(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=msg.content,
+                                        content=summarize_tool_result_for_llm(
+                                            msg.tool_name,
+                                            msg.content,
+                                        ),
                                         tool_call_id=msg.tool_call_id,
                                     )
                                 )
@@ -3327,6 +3416,7 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
+                                display_result, llm_result = get_tool_execution_payloads(result)
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -3345,8 +3435,18 @@ async def regenerate_message(
                                         await new_message.save()
                                     return
 
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
                                 last_event_time = time.time()
+
+                                await Message.create(
+                                    conversation=conversation,
+                                    role=MessageRole.TOOL,
+                                    content=display_result,
+                                    tool_call_id=tc.id,
+                                    tool_name=tool_name,
+                                    parent_id=new_message.parent_id or new_message.id,
+                                    version_number=new_version_number,
+                                )
 
                                 # Add to message history for next iteration
                                 messages_for_llm.append(
@@ -3369,7 +3469,7 @@ async def regenerate_message(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=result,
+                                        content=llm_result,
                                         tool_call_id=tc.id,
                                     )
                                 )

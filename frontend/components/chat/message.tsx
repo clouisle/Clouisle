@@ -38,7 +38,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart } from './types'
+import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -50,6 +50,7 @@ import {
   isSourceDocumentPart,
   isFilePart,
   isImagePart,
+  isMediaResultPart,
   isTaskPart,
   isUserInputRequestPart,
   isTruncatedPart,
@@ -149,15 +150,6 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       if (isMediaImageToolResult(parsedOutput)) {
         return (
           <div className="space-y-3">
-            <div className="text-xs text-muted-foreground space-y-1">
-              {parsedOutput.model && <div>Model: {parsedOutput.model}</div>}
-              {parsedOutput.prompt && (
-                <div className="line-clamp-2">Prompt: {parsedOutput.prompt}</div>
-              )}
-              {parsedOutput.error && (
-                <div className="text-red-500">Error: {parsedOutput.error}</div>
-              )}
-            </div>
             {parsedOutput.images.length > 0 && (
               <div className="grid gap-2 sm:grid-cols-2">
                 {parsedOutput.images.map((item, imageIndex) => {
@@ -181,6 +173,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                 })}
               </div>
             )}
+            {parsedOutput.error && (
+              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+            )}
           </div>
         )
       }
@@ -189,19 +184,6 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         const videoUrl = getVideoAssetUrl(parsedOutput.video)
         return (
           <div className="space-y-3">
-            <div className="text-xs text-muted-foreground space-y-1">
-              {parsedOutput.model && <div>Model: {parsedOutput.model}</div>}
-              <div>Status: {parsedOutput.status}</div>
-              {typeof parsedOutput.progress === 'number' && (
-                <div>Progress: {Math.round(parsedOutput.progress * 100)}%</div>
-              )}
-              {parsedOutput.prompt && (
-                <div className="line-clamp-2">Prompt: {parsedOutput.prompt}</div>
-              )}
-              {parsedOutput.error && (
-                <div className="text-red-500">Error: {parsedOutput.error}</div>
-              )}
-            </div>
             {videoUrl ? (
               <video
                 controls
@@ -213,8 +195,16 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               <div className="rounded-lg border border-dashed bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
                 {parsedOutput.status === 'completed'
                   ? 'Video generated but no preview URL is available.'
-                  : 'Video is still being generated.'}
+                  : parsedOutput.status === 'processing' || parsedOutput.status === 'pending'
+                    ? 'Video is still being generated.'
+                    : 'Video is unavailable.'}
+                {typeof parsedOutput.progress === 'number' && (
+                  <div className="mt-1">Progress: {Math.round(parsedOutput.progress * 100)}%</div>
+                )}
               </div>
+            )}
+            {parsedOutput.error && (
+              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
             )}
           </div>
         )
@@ -272,7 +262,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <AIToolContent>
               <ToolInput input={toolPart.input} />
               {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                renderToolResultContent(result.output, result.isError)
+                (isToolResultPart(result) && (isMediaImageToolResult(parseToolResultOutput(result.output)) || isMediaVideoToolResult(parseToolResultOutput(result.output))))
+                  ? null
+                  : renderToolResultContent(result.output, result.isError)
               )}
             </AIToolContent>
           </Tool>
@@ -308,6 +300,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               alt={imagePart.alt || 'Uploaded image'}
               className="w-full h-auto object-cover"
             />
+          </div>
+        )
+      }
+
+      if (isMediaResultPart(part)) {
+        const mediaPart = part as MediaResultPart
+        return (
+          <div key={index} className="mt-3">
+            {renderToolResultContent(mediaPart.output)}
           </div>
         )
       }
@@ -471,11 +472,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   />
                   <AIToolContent>
                     <ToolInput input={toolPart.input} />
-                    {result && isToolResultPart(result) && (
-                      <ToolOutput
-                        output={result.output}
-                        errorText={result.isError ? String(result.output) : undefined}
-                      />
+                    {result && isToolResultPart(result) && !(
+                      isMediaImageToolResult(parseToolResultOutput(result.output)) ||
+                      isMediaVideoToolResult(parseToolResultOutput(result.output))
+                    ) && (
+                      renderToolResultContent(result.output, result.isError)
                     )}
                   </AIToolContent>
                 </Tool>
