@@ -94,7 +94,9 @@
       "zoomIn": "放大 (+)",
       "rotate": "旋转 (R)",
       "download": "下载",
-      "close": "关闭 (Esc)"
+      "close": "关闭 (Esc)",
+      "showPrompt": "查看提示词",
+      "hidePrompt": "收起提示词"
     }
   }
 }

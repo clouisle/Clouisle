@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { X, ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'
+import { X, ZoomIn, ZoomOut, RotateCw, Download, MessageSquareText, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
@@ -20,6 +20,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = React.useState(false)
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 })
+  const [showPrompt, setShowPrompt] = React.useState(false)
   const containerRef = React.useRef<HTMLDivElement>(null)
 
   // Define handlers before useEffect that uses them
@@ -41,6 +42,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
       setScale(1)
       setRotation(0)
       setPosition({ x: 0, y: 0 })
+      setShowPrompt(false)
     }
   }, [isOpen])
 
@@ -143,7 +145,27 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
       onMouseLeave={handleMouseUp}
     >
       {/* Controls */}
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+      <div className="absolute top-4 right-4 flex items-start gap-2 z-10">
+        {alt && (
+          <div className="flex flex-col items-end gap-2 max-w-[min(28rem,calc(100vw-2rem))]">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-10 rounded-full bg-white/10 px-3 text-white hover:bg-white/20"
+              onClick={() => setShowPrompt((prev) => !prev)}
+              title={showPrompt ? t('hidePrompt') : t('showPrompt')}
+            >
+              <MessageSquareText className="h-4 w-4" />
+              <span className="ml-2">{showPrompt ? t('hidePrompt') : t('showPrompt')}</span>
+              <ChevronUp className={cn('ml-2 h-4 w-4 transition-transform', !showPrompt && 'rotate-180')} />
+            </Button>
+            {showPrompt && (
+              <div className="max-h-48 overflow-y-auto rounded-2xl bg-black/65 px-4 py-3 text-sm leading-6 text-white shadow-lg backdrop-blur-sm">
+                {alt}
+              </div>
+            )}
+          </div>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -153,7 +175,7 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
         >
           <ZoomOut className="h-5 w-5" />
         </Button>
-        <span className="text-white text-sm min-w-15 text-center">
+        <span className="text-white text-sm min-w-15 text-center pt-2">
           {Math.round(scale * 100)}%
         </span>
         <Button
@@ -220,12 +242,6 @@ export function ImageLightbox({ src, alt, isOpen, onClose }: ImageLightboxProps)
         />
       </div>
 
-      {/* Image info */}
-      {alt && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-white/10 text-white text-sm">
-          {alt}
-        </div>
-      )}
     </div>
   )
 }

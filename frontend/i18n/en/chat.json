@@ -94,7 +94,9 @@
       "zoomIn": "Zoom in (+)",
       "rotate": "Rotate (R)",
       "download": "Download",
-      "close": "Close (Esc)"
+      "close": "Close (Esc)",
+      "showPrompt": "Show prompt",
+      "hidePrompt": "Hide prompt"
     }
   }
 }
