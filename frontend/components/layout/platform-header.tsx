@@ -199,8 +199,8 @@ export function PlatformHeader() {
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-8">
+    <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-14 w-full items-center justify-between">
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
@@ -429,7 +429,7 @@ export function PlatformHeader() {
             <DialogTitle>{t('about')}</DialogTitle>
             <DialogDescription>{t('aboutDescription')}</DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex flex-col items-center py-6">
             {/* Logo 和名称 */}
             <div className={`flex aspect-square size-10 items-center justify-center rounded-sm overflow-hidden mb-4 ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
@@ -446,15 +446,15 @@ export function PlatformHeader() {
                 <DefaultSiteIcon width={64} height={64} className="size-full" />
               )}
             </div>
-            
+
             <h2 className="text-2xl font-bold mb-1">
               {siteSettings.site_name || APP_NAME}
             </h2>
-            
+
             <p className="text-sm text-muted-foreground mb-4">
               Version {APP_VERSION}
             </p>
-            
+
             {/* 版权和链接 */}
             <p className="text-sm text-muted-foreground mb-2">
               © {new Date().getFullYear()} {APP_NAME}. {t('aboutRights')}
@@ -463,20 +463,20 @@ export function PlatformHeader() {
             <p className="text-sm text-muted-foreground mb-4">
               {t('aboutBuildDate')}: {BUILD_DATE !== 'dev' ? formatDateTime(BUILD_DATE) : BUILD_DATE}
             </p>
-            
+
             <div className="flex items-center gap-1 text-sm">
-              <a 
+              <a
                 href={GITHUB_URL}
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
                 GitHub
               </a>
               <span className="text-muted-foreground">,</span>
-              <a 
+              <a
                 href={DOCS_URL}
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
@@ -484,7 +484,7 @@ export function PlatformHeader() {
               </a>
             </div>
           </div>
-          
+
           {/* 底部 */}
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm text-muted-foreground">
