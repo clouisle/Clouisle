@@ -200,7 +200,7 @@ export function PlatformHeader() {
 
   return (
     <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 w-full items-center justify-between">
+      <div className="flex h-14 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}

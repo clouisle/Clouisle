@@ -3,9 +3,10 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { RotateCcw, Sparkles, AlertCircle, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import type { Agent, ChatFileUrl } from '@/lib/api'
+import { ApiError, type Agent, type ChatFileUrl } from '@/lib/api'
 import { uploadApi } from '@/lib/api'
 import {
   ChatContainer,
@@ -31,9 +32,22 @@ interface AgentPreviewPanelProps {
   agent: Agent
 }
 
+function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof useTranslations>) {
+  if (error instanceof ApiError && error.code === 1001) {
+    const payload = error.data as { allowed?: string[] } | undefined
+    const allowed = payload?.allowed?.join(', ')
+    toast.error(
+      allowed
+        ? tCommon('invalidFileTypeWithAllowed', { allowed })
+        : tCommon('invalidFileType')
+    )
+  }
+}
+
 export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   const t = useTranslations('agents.orchestration.preview')
   const tVars = useTranslations('chat.variables')
+  const tCommon = useTranslations('common')
   const tError = useTranslations('errors')
   const [input, setInput] = React.useState('')
   const [showError, setShowError] = React.useState(false)
@@ -150,6 +164,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
             fileUrls = await Promise.all(uploadPromises)
           } catch (err) {
             console.error('Failed to upload files:', err)
+            showUploadValidationError(err, tCommon)
             // Reset upload state on error
             setFiles(prev => prev.map(file => ({
               ...file,

@@ -26,6 +26,8 @@
     "clearFilters": "清除筛选",
     "uploadSuccess": "上传成功",
     "invalidFileType": "不支持的文件类型",
+    "invalidFileTypeWithAllowed": "不支持的文件类型。允许的类型：{allowed}",
+    "invalidImageFileTypeWithAllowed": "不支持的图片类型。允许的类型：{allowed}",
     "fileTooLarge": "文件过大，最大支持 10MB",
     "status": "状态",
     "team": "团队",

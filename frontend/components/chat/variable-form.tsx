@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -15,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { VariableDefinition } from '@/lib/api'
+import { ApiError, type VariableDefinition } from '@/lib/api'
 import { Upload, X, FileIcon, ImageIcon } from 'lucide-react'
 import { uploadApi } from '@/lib/api/upload'
 
@@ -25,6 +26,21 @@ interface VariableFormProps {
   onChange: (values: Record<string, unknown>) => void
   onSubmit?: () => void
   className?: string
+}
+
+function showUploadValidationError(error: unknown, fallbackMessage: string, tCommon: ReturnType<typeof useTranslations>) {
+  if (error instanceof ApiError && error.code === 1001) {
+    const payload = error.data as { allowed?: string[] } | undefined
+    const allowed = payload?.allowed?.join(', ')
+    toast.error(
+      allowed
+        ? tCommon('invalidFileTypeWithAllowed', { allowed })
+        : tCommon('invalidFileType')
+    )
+    return
+  }
+
+  toast.error(fallbackMessage)
 }
 
 export function VariableForm({
@@ -430,6 +446,7 @@ interface FileUploadInputProps {
 
 function FileUploadInput({ variable, value, onChange, compact }: FileUploadInputProps) {
   const t = useTranslations('chat.variables')
+  const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -466,9 +483,12 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
       onChange(result.url)
     } catch (error) {
       console.error('File upload failed:', error)
-      alert(t('fileUploadFailed'))
+      showUploadValidationError(error, t('fileUploadFailed'), tCommon)
     } finally {
       setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
     }
   }
 
@@ -542,6 +562,7 @@ interface MultiFileUploadInputProps {
 
 function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileUploadInputProps) {
   const t = useTranslations('chat.variables')
+  const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -593,7 +614,7 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
       onChange([...fileUrls, ...newUrls])
     } catch (error) {
       console.error('File upload failed:', error)
-      alert(t('fileUploadFailed'))
+      showUploadValidationError(error, t('fileUploadFailed'), tCommon)
     } finally {
       setUploading(false)
       if (fileInputRef.current) {
