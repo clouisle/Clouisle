@@ -19,7 +19,8 @@ import {
   agentsApi,
   type AgentListItem,
 } from '@/lib/api'
-import { teamsApi, type Team } from '@/lib/api/admin/teams'
+import { teamsApi } from '@/lib/api/admin/teams'
+import type { Team } from '@/lib/api/teams'
 import { conversationsApi, type AdminConversationListItem, type AdminConversationWithMessages } from '@/lib/api/admin/conversations'
 import { usersApi } from '@/lib/api/admin/users'
 import type { User } from '@/lib/api/auth'
@@ -369,8 +370,8 @@ export function ConversationsTable() {
                           </DropdownMenuItem>
                           {canPerform('conversation:delete') && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDeleteClick([conversation.id])}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}
@@ -461,7 +462,7 @@ export function ConversationsTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
               {commonT('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -526,7 +527,7 @@ export function ConversationsTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
               {commonT('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

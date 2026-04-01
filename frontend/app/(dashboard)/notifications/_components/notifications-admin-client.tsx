@@ -379,8 +379,8 @@ export function NotificationsAdminClient() {
                           {t('admin.detail')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          variant="destructive"
                           onClick={() => handleDelete(item.id)}
-                          className="text-destructive focus:text-destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           {tCommon('delete')}
@@ -519,7 +519,7 @@ export function NotificationsAdminClient() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={confirmDelete}>
               {tCommon('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -537,7 +537,7 @@ export function NotificationsAdminClient() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={confirmBulkDelete}>
               {t('admin.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -48,7 +48,7 @@ export function PasswordExpirationBanner() {
       <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
       <AlertDescription className="flex items-center justify-between gap-4">
         <span className="text-yellow-800 dark:text-yellow-200">
-          {t('passwordExpiringSoon', { days: status.days_until_expiration })}
+          {t('passwordExpiringSoon', { days: status.days_until_expiration ?? 0 })}
         </span>
         <div className="flex items-center gap-2">
           <Link href="/profile">

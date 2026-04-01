@@ -12,6 +12,7 @@ import type {
   TaskPart,
   ToolCallPart,
   ToolResultPart,
+  UserInputRequestPart,
 } from '@/components/chat'
 import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
@@ -42,6 +43,7 @@ type ContentSegment =
   | { type: 'text'; text: string }
   | { type: 'tool-group'; calls: ToolCallPart[]; results: ToolResultPart[] }
   | { type: 'reasoning'; index: number }
+  | { type: 'user-input-request'; userInputRequest: UserInputRequestPart }
   | { type: 'truncated' }
 
 interface TaskState {
@@ -50,6 +52,65 @@ interface TaskState {
   toolCalling: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
+}
+
+function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegment[] {
+  const allText = segments
+    .filter((segment): segment is Extract<ContentSegment, { type: 'text' }> => segment.type === 'text')
+    .map(segment => segment.text)
+    .join('')
+
+  if (!allText.includes('<user_input_request>') || !allText.includes('</user_input_request>')) {
+    return segments
+  }
+
+  const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+  if (!xmlMatch) {
+    return segments
+  }
+
+  const xmlContent = xmlMatch[1]
+  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
+  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
+
+  if (!questionMatch || !optionsMatch) {
+    return segments
+  }
+
+  const question = questionMatch[1].trim()
+  const options = Array.from(optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g))
+    .map(match => match[1].trim())
+    .filter(Boolean)
+
+  if (!question || options.length < 2) {
+    return segments
+  }
+
+  const textBeforeXML = allText.substring(0, allText.indexOf('<user_input_request>'))
+  const textAfterXML = allText.substring(
+    allText.indexOf('</user_input_request>') + '</user_input_request>'.length
+  )
+  const cleanedText = `${textBeforeXML}${textAfterXML}`.trim()
+
+  const nextSegments: ContentSegment[] = segments.filter(
+    segment => segment.type !== 'text' && segment.type !== 'user-input-request'
+  )
+
+  if (cleanedText) {
+    nextSegments.push({ type: 'text', text: cleanedText })
+  }
+
+  nextSegments.push({
+    type: 'user-input-request',
+    userInputRequest: {
+      type: 'user-input-request',
+      question,
+      options,
+      state: 'pending',
+    },
+  })
+
+  return nextSegments
 }
 
 function buildMessageParts(
@@ -108,6 +169,8 @@ function buildMessageParts(
     } else if (seg.type === 'tool-group') {
       for (const call of seg.calls) parts.push(call)
       for (const result of seg.results) parts.push(result)
+    } else if (seg.type === 'user-input-request') {
+      parts.push(seg.userInputRequest)
     } else if (seg.type === 'truncated') {
       parts.push({ type: 'truncated' })
     }
@@ -237,6 +300,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               } else {
                 state.segments.push({ type: 'text', text: delta })
               }
+              state.segments = parseUserInputRequestSegments(state.segments)
               // Update assistant message
               if (state.assistantMessageId) {
                 const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
@@ -353,7 +417,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
             }
 
             case 'message_end': {
-              const endData = data as SSEMessageEnd
+              const endData = data as unknown as SSEMessageEnd
               state.taskState.generating = 'completed'
               state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
               if (state.assistantMessageId) {

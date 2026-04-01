@@ -336,7 +336,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
               <TooltipContent>
                 <div className="text-xs space-y-0.5">
                   <p>{t('embeddedCount', { count: progress.embedded ?? 0 })}</p>
-                  {(progress.failed ?? 0) > 0 && <p className="text-destructive">{t('failedCount', { count: progress.failed })}</p>}
+                  {(progress.failed ?? 0) > 0 && <p className="text-destructive">{t('failedCount', { count: progress.failed ?? 0 })}</p>}
                   <p>{t('totalCount', { count: progress.total })}</p>
                 </div>
               </TooltipContent>
@@ -532,8 +532,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDelete(doc)}
-                              className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}

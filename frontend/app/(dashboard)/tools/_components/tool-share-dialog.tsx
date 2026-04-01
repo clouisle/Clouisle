@@ -168,7 +168,7 @@ export function ToolShareDialog({
                     <Label>{t('selectTeam')}</Label>
                     <Select
                       value={selectedTeamId || ''}
-                      onValueChange={setSelectedTeamId}
+                      onValueChange={(v) => setSelectedTeamId(v ?? '')}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue>{selectedTeamName}</SelectValue>

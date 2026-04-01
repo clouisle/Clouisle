@@ -69,6 +69,9 @@ interface WorkflowNodeData {
   toolConfig?: {
     toolId?: string
     toolName?: string
+    toolType?: 'builtin' | 'custom' | 'mcp'
+    toolDisplayName?: string
+    mcpToolName?: string
     inputs?: Array<{ name: string; value?: string; required?: boolean }>
     outputVariable?: string
   }
@@ -648,7 +651,8 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         const config = node.data.toolConfig
 
         // 检查工具
-        if (!config?.toolId) {
+        const hasTool = !!(config?.toolId || (config?.toolType === 'builtin' && config?.toolName))
+        if (!hasTool) {
           issues.push(createIssue(node, 'error', 'toolNotSelected', 'toolId'))
         }
 

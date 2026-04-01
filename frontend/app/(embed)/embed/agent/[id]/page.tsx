@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -11,6 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChatContainer, ChatInput, VariableForm, useVariableForm, type ChatInputFile, type FileUploadConfig } from '@/components/chat'
 import { useEmbedChat } from '@/hooks/use-embed-chat'
 import { embedApi, type EmbedAgentInfo } from '@/lib/api/embed'
+import type { VariableDefinition, VariableType } from '@/lib/api'
 import { Suspense } from 'react'
 
 function EmbedAgentChatContent() {
@@ -75,21 +77,34 @@ function EmbedAgentChatContent() {
     }]
   }, [agent])
 
-  const variableForm = useVariableForm(
-    (agent?.variables || []) as Array<{
-      name: string
-      type?: string
-      label?: string
-      required?: boolean
-      hidden?: boolean
-      default?: string
-      description?: string
-      options?: string[]
-      min?: number
-      max?: number
-      maxLength?: number
-    }>
-  )
+  const formVariables = React.useMemo((): VariableDefinition[] => {
+    const vars = (agent?.variables || []) as Array<Record<string, unknown>>
+
+    const normalized: VariableDefinition[] = []
+    for (const v of vars) {
+      const name = v.name as string | undefined
+      const type = v.type as string | undefined
+      if (!name || !type) continue
+
+      normalized.push({
+        name,
+        type: type as VariableType,
+        label: (v.label as string | null | undefined) ?? null,
+        required: Boolean(v.required),
+        hidden: Boolean(v.hidden),
+        default: (v.default as string | null | undefined) ?? null,
+        description: (v.description as string | null | undefined) ?? null,
+        options: (v.options as string[] | null | undefined) ?? null,
+        min: (v.min as number | null | undefined) ?? null,
+        max: (v.max as number | null | undefined) ?? null,
+        maxLength: (v.maxLength as number | null | undefined) ?? null,
+      })
+    }
+
+    return normalized
+  }, [agent])
+
+  const variableForm = useVariableForm(formVariables)
 
   const chat = useEmbedChat({
     agentId,
@@ -104,9 +119,9 @@ function EmbedAgentChatContent() {
 
   // Check if agent has required visible variables
   const hasVisibleVariables = React.useMemo(() => {
-    if (!agent?.variables?.length) return false
-    return agent.variables.some((v: Record<string, unknown>) => !v.hidden)
-  }, [agent])
+    if (!formVariables.length) return false
+    return formVariables.some((v) => !v.hidden)
+  }, [formVariables])
 
   const fileToDataUrl = React.useCallback(async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -119,6 +134,10 @@ function EmbedAgentChatContent() {
 
   const handleSend = React.useCallback(async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim()) return
+    if (variableForm.needsInput && !variableForm.isValid) {
+      setVariablesOpen(true)
+      return
+    }
 
     const filesToProcess = submittedFiles || files
 
@@ -189,7 +208,7 @@ function EmbedAgentChatContent() {
     setInputValue('')
     setFiles([])
     await chat.sendMessage(message.trim(), images, fileUrls)
-  }, [files, agent, chat, agentId, apiKey, fileToDataUrl])
+  }, [files, agent, chat, agentId, apiKey, fileToDataUrl, variableForm.isValid, variableForm.needsInput])
 
   const handleNewChat = React.useCallback(() => {
     chat.reset()
@@ -217,11 +236,25 @@ function EmbedAgentChatContent() {
     )
   }
 
+  const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
+
   // Empty state (only shown when no greeting message exists)
   const emptyState = (
     <div className="flex flex-col items-center justify-center gap-4 px-6">
       {agent.icon ? (
-        <span className="text-4xl">{agent.icon}</span>
+        isIconUrl ? (
+          <div className="relative h-20 w-20 overflow-hidden">
+            <Image
+              src={agent.icon}
+              alt={agent.name}
+              fill
+              unoptimized
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <span className="text-4xl">{agent.icon}</span>
+        )
       ) : (
         <Bot className="h-10 w-10 text-muted-foreground" />
       )}
@@ -235,9 +268,9 @@ function EmbedAgentChatContent() {
               key={i}
               variant="outline"
               size="sm"
-              className="text-xs"
+              className="rounded-full px-4 text-xs"
               onClick={() => {
-                setInputValue(q)
+                void handleSend(q)
               }}
             >
               {q}
@@ -253,7 +286,21 @@ function EmbedAgentChatContent() {
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 sm:px-4 py-2">
         <div className="flex items-center gap-2">
-          {agent.icon && <span className="text-lg">{agent.icon}</span>}
+          {agent.icon && (
+            isIconUrl ? (
+              <div className="relative h-6 w-6 overflow-hidden">
+                <Image
+                  src={agent.icon}
+                  alt={agent.name}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <span className="text-lg">{agent.icon}</span>
+            )
+          )}
           <span className="font-medium text-sm">{agent.name}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -287,6 +334,9 @@ function EmbedAgentChatContent() {
         <ChatContainer
           messages={chat.messages}
           isStreaming={chat.isStreaming}
+          onSelectOption={(option) => {
+            void handleSend(option)
+          }}
           emptyState={emptyState}
         />
       </div>
@@ -334,7 +384,7 @@ function EmbedAgentChatContent() {
                 <CollapsibleContent>
                   <div className="px-2.5 pb-2.5 pt-0.5">
                     <VariableForm
-                      variables={(agent.variables || []) as Array<{ name: string; type?: string; label?: string; required?: boolean; hidden?: boolean; default?: string; description?: string; options?: string[]; min?: number; max?: number; maxLength?: number }>}
+                      variables={formVariables}
                       values={variableForm.values}
                       onChange={variableForm.setValues}
                       className="space-y-2"

@@ -84,29 +84,24 @@ export function WorkflowApiContent({ workflow }: WorkflowApiContentProps) {
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+  const sampleInputs = workflow.variables?.reduce((acc, v) => ({
+    ...acc,
+    [v.name]: v.type === 'number' ? 0 : ""
+  }), {}) || {}
+
   // API endpoint
   const webhookUrl = workflow.webhook_token
     ? `${apiBaseUrl}/api/v1/workflows/webhook/${workflow.webhook_token}`
     : ''
 
   // Sample request body
-  const sampleRequestBody = JSON.stringify({
-    inputs: workflow.variables?.reduce((acc, v) => ({
-      ...acc,
-      [v.name]: v.type === 'number' ? 0 : ""
-    }), {}) || {},
-  }, null, 2)
+  const sampleRequestBody = JSON.stringify(sampleInputs, null, 2)
 
   // Sample cURL command
   const curlCommand = webhookUrl ? `curl -X POST "${webhookUrl}" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '${JSON.stringify({
-    inputs: workflow.variables?.reduce((acc, v) => ({
-      ...acc,
-      [v.name]: v.type === 'number' ? 0 : ""
-    }), {}) || {},
-  })}'` : ''
+  -d '${JSON.stringify(sampleInputs)}'` : ''
 
   // Sample Python code
   const pythonCode = webhookUrl ? `import requests
@@ -118,12 +113,7 @@ headers = {
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json",
 }
-data = ${JSON.stringify({
-  inputs: workflow.variables?.reduce((acc, v) => ({
-    ...acc,
-    [v.name]: v.type === 'number' ? 0 : ""
-  }), {}) || {},
-}, null, 2)}
+data = ${JSON.stringify(sampleInputs, null, 2)}
 
 response = requests.post(url, headers=headers, json=data)
 result = response.json()
@@ -148,12 +138,7 @@ const response = await fetch(
       "Authorization": \`Bearer \${API_KEY}\`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(${JSON.stringify({
-      inputs: workflow.variables?.reduce((acc, v) => ({
-        ...acc,
-        [v.name]: v.type === 'number' ? 0 : ""
-      }), {}) || {},
-    }, null, 2)}),
+    body: JSON.stringify(${JSON.stringify(sampleInputs, null, 2)}),
   }
 );
 
@@ -221,6 +206,16 @@ if (result.code === 0) {
             {/* Request Body */}
             <Section title={t('requestBody')}>
               <div className="space-y-4">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-sm">
+                    {t('requestBodyTopLevelNote')}{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                      {`{"query": {...}}`}
+                    </code>
+                  </AlertDescription>
+                </Alert>
+
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
@@ -233,7 +228,7 @@ if (result.code === 0) {
                     </thead>
                     <tbody>
                       <tr className="border-t">
-                        <td className="px-4 py-2"><code>inputs</code></td>
+                        <td className="px-4 py-2"><code>{'{root}'}</code></td>
                         <td className="px-4 py-2">object</td>
                         <td className="px-4 py-2">{t('yes')}</td>
                         <td className="px-4 py-2 text-muted-foreground">{t('inputsDescription')}</td>
@@ -258,10 +253,10 @@ if (result.code === 0) {
                         <tbody>
                           {workflow.variables.map((variable) => (
                             <tr key={variable.name} className="border-t">
-                              <td className="px-4 py-2"><code>inputs.{variable.name}</code></td>
+                              <td className="px-4 py-2"><code>{variable.name}</code></td>
                               <td className="px-4 py-2">{variable.type}</td>
                               <td className="px-4 py-2">{variable.required ? t('yes') : t('no')}</td>
-                              <td className="px-4 py-2 text-muted-foreground">{variable.label || '-'}</td>
+                              <td className="px-4 py-2 text-muted-foreground">{variable.description || '-'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -577,4 +572,3 @@ eventSource.onerror = (error) => {
     </div>
   )
 }
-

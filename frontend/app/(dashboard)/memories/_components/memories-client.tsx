@@ -379,8 +379,8 @@ export function MemoriesClient() {
                           )}
                           {canPerform('admin:memory:delete') && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDelete(entity)}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {t('delete')}

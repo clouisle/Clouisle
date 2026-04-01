@@ -445,7 +445,7 @@ export default function AppsPage() {
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            className="text-destructive"
+                            variant="destructive"
                             onClick={(e) => {
                               e.preventDefault()
                               setDeletingApp(app)

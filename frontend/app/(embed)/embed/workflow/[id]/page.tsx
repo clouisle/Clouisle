@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Image from 'next/image'
 import { useSearchParams, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Loader2, Bot, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react'
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChatContainer, ChatInput, VariableForm, useVariableForm } from '@/components/chat'
 import type { ChatMessage } from '@/components/chat/types'
+import type { VariableDefinition, VariableType } from '@/lib/api'
 import { embedApi, type EmbedWorkflowInfo } from '@/lib/api/embed'
 import { Suspense } from 'react'
 
@@ -73,13 +75,31 @@ function EmbedWorkflowContent() {
   }, [initialMessages])
 
   // Filter out 'query' variable - it's bound to the input box
-  const formVariables = React.useMemo(() => {
+  const formVariables = React.useMemo((): VariableDefinition[] => {
     const vars = (workflow?.variables || []) as Array<{
       name: string; type?: string; label?: string; required?: boolean
       hidden?: boolean; default?: string; description?: string
       options?: string[]; min?: number; max?: number; maxLength?: number
     }>
-    return vars.filter(v => v.name !== 'query')
+    const normalized: VariableDefinition[] = []
+    for (const v of vars) {
+      if (!v.name || !v.type) continue
+      if (v.name === 'query') continue
+      normalized.push({
+        name: v.name,
+        type: v.type as VariableType,
+        label: v.label ?? null,
+        required: Boolean(v.required),
+        hidden: Boolean(v.hidden),
+        default: v.default ?? null,
+        description: v.description ?? null,
+        options: v.options ?? null,
+        min: v.min ?? null,
+        max: v.max ?? null,
+        maxLength: v.maxLength ?? null,
+      })
+    }
+    return normalized
   }, [workflow])
 
   const variableForm = useVariableForm(formVariables)
@@ -192,7 +212,14 @@ function EmbedWorkflowContent() {
       console.error('Failed to start workflow:', err)
       setIsStreaming(false)
     }
-  }, [workflowId, apiKey, variableForm.values, handleWorkflowEvent])
+  }, [
+    workflowId,
+    apiKey,
+    variableForm.isValid,
+    variableForm.needsInput,
+    variableForm.values,
+    handleWorkflowEvent,
+  ])
 
   const handleStop = React.useCallback(() => {
     closeConnectionRef.current?.()
@@ -227,11 +254,24 @@ function EmbedWorkflowContent() {
     )
   }
 
+  const isIconUrl = workflow.icon && (workflow.icon.startsWith('http') || workflow.icon.startsWith('/'))
 
   const emptyState = (
     <div className="flex flex-col items-center justify-center gap-4 px-6">
       {workflow.icon ? (
-        <span className="text-4xl">{workflow.icon}</span>
+        isIconUrl ? (
+          <div className="relative h-20 w-20 overflow-hidden">
+            <Image
+              src={workflow.icon}
+              alt={workflow.name}
+              fill
+              unoptimized
+              className="object-cover"
+            />
+          </div>
+        ) : (
+          <span className="text-4xl">{workflow.icon}</span>
+        )
       ) : (
         <Bot className="h-10 w-10 text-muted-foreground" />
       )}
@@ -246,7 +286,21 @@ function EmbedWorkflowContent() {
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 sm:px-4 py-2">
         <div className="flex items-center gap-2">
-          {workflow.icon && <span className="text-lg">{workflow.icon}</span>}
+          {workflow.icon && (
+            isIconUrl ? (
+              <div className="relative h-6 w-6 overflow-hidden">
+                <Image
+                  src={workflow.icon}
+                  alt={workflow.name}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
+            ) : (
+              <span className="text-lg">{workflow.icon}</span>
+            )
+          )}
           <span className="font-medium text-sm">{workflow.name}</span>
         </div>
         <div className="flex items-center gap-1">

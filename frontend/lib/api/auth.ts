@@ -38,6 +38,7 @@ export interface User {
   external_id: string | null
   force_password_change: boolean
   password_expiration_exempt: boolean
+  password_expires_at?: string | null
   roles: Role[]
   sso_connections: SSOConnection[]
 }

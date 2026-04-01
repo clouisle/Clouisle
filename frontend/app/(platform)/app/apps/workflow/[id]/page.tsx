@@ -1291,19 +1291,24 @@ function WorkflowEditorContent() {
               <>
                 <Tooltip>
                   <TooltipTrigger
-                    ref={addNodeButtonRef}
-                    className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setAddNodePopover({
-                        show: true,
-                        position: { x: rect.right + 8, y: rect.top },
-                        sourceNodeId: '',
-                      })
-                    }}
-                  >
-                    <PlusCircle className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
+                    render={
+                      <button
+                        ref={addNodeButtonRef}
+                        type="button"
+                        className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setAddNodePopover({
+                            show: true,
+                            position: { x: rect.right + 8, y: rect.top },
+                            sourceNodeId: '',
+                          })
+                        }}
+                      >
+                        <PlusCircle className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    }
+                  />
                   <TooltipContent side="right">{t('editor.addNode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}1</kbd></TooltipContent>
                 </Tooltip>
                 <Tooltip>

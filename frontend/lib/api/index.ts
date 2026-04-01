@@ -1,6 +1,6 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
 export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
-export { usersApi, totpApi, type PageData, type UserQueryParams, type TOTPSetupResponse, type TOTPStatusResponse } from './users'
+export { usersApi, totpApi, type PageData, type UserQueryParams, type PasswordStatus, type TOTPSetupResponse, type TOTPStatusResponse } from './users'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
 export {
   siteSettingsApi,

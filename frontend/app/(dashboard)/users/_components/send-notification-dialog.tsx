@@ -125,7 +125,7 @@ export function SendNotificationDialog({
 
           <div className="space-y-2">
             <Label htmlFor="level">{t('notificationLevel')}</Label>
-            <Select value={level} onValueChange={(v: 'low' | 'medium' | 'high') => setLevel(v)}>
+            <Select value={level} onValueChange={(v) => v && setLevel(v)}>
               <SelectTrigger>
                 <SelectValue>
                   {level === 'low' && t('levelLow')}

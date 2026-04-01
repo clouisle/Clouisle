@@ -448,6 +448,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         content: '',
         char_count: 0,
         token_count: 0,
+        overlap_length: 0,
       }
 
       // 插入新分块并重新编号

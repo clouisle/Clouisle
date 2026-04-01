@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Mail, MessageSquare, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import type { NotificationItem } from '@/lib/api/admin/notifications'
+import type { NotificationDelivery } from '@/lib/api/notifications'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,7 +17,7 @@ interface NotificationDetailDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-function DeliveryStatusIcon({ delivery }: { delivery: NotificationItem['deliveries'][0] }) {
+function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
   const t = useTranslations('notifications')
 
   const channelIcon = delivery.channel === 'email' ? (
