@@ -70,13 +70,14 @@ function textToHtml(text: string, variableMap: Map<string, AvailableVariable>): 
     const displayName = escapeHtml(variable?.name || varId)
     const escapedLabel = displayLabel ? escapeHtml(displayLabel) : ''
 
-    result += `<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${escapeHtml(varId)}">`
+    // Wrap variable tag with zero-width spaces to preserve surrounding whitespace
+    result += `\u200B<span class="variable-tag inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded text-[11px] font-medium border align-middle ${tagClass}" contenteditable="false" data-variable="${escapeHtml(varId)}">`
     result += `<span class="opacity-60 text-[10px]">{x}</span>`
     result += `<span>${displayName}</span>`
     if (escapedLabel) {
       result += `<span class="opacity-70 text-[10px]">${escapedLabel}</span>`
     }
-    result += `</span>`
+    result += `</span>\u200B`
 
     lastIndex = match.index + match[0].length
   }
