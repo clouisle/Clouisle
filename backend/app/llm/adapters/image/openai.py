@@ -3,21 +3,23 @@ OpenAI DALL-E 图像生成适配器
 """
 
 import logging
+
 import httpx
 
-from app.models.model import Model
-from app.llm.types import (
-    ImageGenerationRequest,
-    ImageGenerationResponse,
-    GeneratedImage,
-    ImageContent,
-)
+from app.llm.adapters.media_utils import append_prompt_directives
 from app.llm.errors import (
     AuthenticationError,
-    RateLimitError,
     ContentFilterError,
-    ProviderError,
     InvalidRequestError,
+    ProviderError,
+    RateLimitError,
+)
+from app.models.model import Model
+from app.llm.types import (
+    GeneratedImage,
+    ImageContent,
+    ImageGenerationRequest,
+    ImageGenerationResponse,
 )
 from .base import BaseImageAdapter
 
@@ -30,7 +32,19 @@ class OpenAIImageAdapter(BaseImageAdapter):
     def __init__(self, model_config: Model):
         self.model_config = model_config
         self.api_key = model_config.api_key
-        self.base_url = model_config.base_url or "https://api.openai.com/v1"
+        self.provider = (
+            model_config.provider.value
+            if hasattr(model_config.provider, "value")
+            else str(model_config.provider)
+        )
+        if self.provider == "custom" and not model_config.base_url:
+            raise InvalidRequestError(
+                message="Custom image provider requires base_url",
+                field="base_url",
+                provider=self.provider,
+                model=model_config.model_id,
+            )
+        self.base_url = (model_config.base_url or "https://api.openai.com/v1").rstrip("/")
         self.model_id = model_config.model_id
 
     async def generate(
@@ -45,26 +59,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
         Returns:
             ImageGenerationResponse: 生成结果
         """
-        # 构建请求体
-        payload = {
-            "model": self.model_id,
-            "prompt": request.prompt,
-            "n": request.num_images,
-            "response_format": "url",  # 或 "b64_json"
-        }
-
-        # DALL-E 3 使用 size 参数
-        if self.model_id in ["dall-e-3", "dall-e-2"]:
-            # DALL-E 支持的尺寸
-            size = self._get_size(request.width, request.height)
-            payload["size"] = size
-
-            # DALL-E 3 特有参数
-            if self.model_id == "dall-e-3":
-                if request.style:
-                    payload["style"] = request.style  # vivid 或 natural
-                if request.quality:
-                    payload["quality"] = request.quality  # standard 或 hd
+        payload = self._build_payload(request)
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -74,7 +69,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/images/generations",
+                    self._build_url("/images/generations"),
                     json=payload,
                     headers=headers,
                 )
@@ -82,13 +77,13 @@ class OpenAIImageAdapter(BaseImageAdapter):
                 if response.status_code == 401:
                     raise AuthenticationError(
                         message="Invalid API key",
-                        provider="openai",
+                        provider=self.provider,
                         model=self.model_id,
                     )
                 elif response.status_code == 429:
                     raise RateLimitError(
                         message="Rate limit exceeded",
-                        provider="openai",
+                        provider=self.provider,
                         model=self.model_id,
                     )
                 elif response.status_code == 400:
@@ -102,19 +97,19 @@ class OpenAIImageAdapter(BaseImageAdapter):
                     ):
                         raise ContentFilterError(
                             message=error_msg,
-                            provider="openai",
+                            provider=self.provider,
                             model=self.model_id,
                         )
                     raise InvalidRequestError(
                         message=error_msg,
-                        provider="openai",
+                        provider=self.provider,
                         model=self.model_id,
                     )
                 elif response.status_code != 200:
                     raise ProviderError(
-                        message=f"OpenAI API error: {response.text}",
+                        message=f"Image API error: {response.text}",
                         status_code=response.status_code,
-                        provider="openai",
+                        provider=self.provider,
                         model=self.model_id,
                     )
 
@@ -125,7 +120,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
                     image = GeneratedImage(
                         image=ImageContent(
                             url=item.get("url"),
-                            base64=item.get("b64_json"),
+                            base64=item.get("b64_json") or item.get("base64"),
                         ),
                         revised_prompt=item.get("revised_prompt"),
                     )
@@ -139,15 +134,52 @@ class OpenAIImageAdapter(BaseImageAdapter):
             except httpx.TimeoutException:
                 raise ProviderError(
                     message="Request timeout",
-                    provider="openai",
+                    provider=self.provider,
                     model=self.model_id,
                 )
             except httpx.RequestError as e:
                 raise ProviderError(
                     message=f"Request error: {str(e)}",
-                    provider="openai",
+                    provider=self.provider,
                     model=self.model_id,
                 )
+
+    def _build_url(self, path: str) -> str:
+        normalized = path if path.startswith("/") else f"/{path}"
+        if self.base_url.endswith("/v1") and normalized.startswith("/v1/"):
+            normalized = normalized[3:]
+        return f"{self.base_url}{normalized}"
+
+    def _build_payload(self, request: ImageGenerationRequest) -> dict:
+        prompt = append_prompt_directives(
+            request.prompt,
+            f"Avoid: {request.negative_prompt}" if request.negative_prompt else None,
+        )
+        payload = {
+            "model": self.model_id,
+            "prompt": prompt,
+            "n": request.num_images,
+            "size": self._get_size(request.width, request.height),
+        }
+
+        if self.model_id in ["dall-e-3", "dall-e-2"]:
+            payload["response_format"] = "url"
+            if self.model_id == "dall-e-3":
+                if request.style:
+                    payload["style"] = request.style
+                if request.quality:
+                    payload["quality"] = request.quality
+        else:
+            if request.quality:
+                payload["quality"] = request.quality
+
+        if request.seed is not None:
+            payload["seed"] = request.seed
+
+        if request.extra_params:
+            payload.update(request.extra_params)
+
+        return payload
 
     def _get_size(self, width: int, height: int) -> str:
         """将宽高转换为 DALL-E 支持的尺寸"""
@@ -158,6 +190,13 @@ class OpenAIImageAdapter(BaseImageAdapter):
                 return "1792x1024"
             elif height > width:
                 return "1024x1792"
+            else:
+                return "1024x1024"
+        elif self.model_id.startswith("gpt-image"):
+            if width > height:
+                return "1536x1024"
+            elif height > width:
+                return "1024x1536"
             else:
                 return "1024x1024"
         else:  # dall-e-2

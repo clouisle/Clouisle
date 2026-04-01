@@ -13,6 +13,7 @@
       "title": "Profile",
       "teamsDescription": "You have joined {count} teams"
     },
+    "apiKeys": "API Keys",
     "admin": "Admin Panel",
     "logout": "Log out",
     "logoutSuccess": "Logged out successfully",
@@ -24,7 +25,9 @@
     "aboutFramework": "Framework",
     "aboutDocs": "Docs",
     "aboutRights": "All rights reserved",
-    "aboutLatest": "is the latest version.",
+    "aboutLatest": "You're up to date",
+    "aboutCheckingVersion": "Checking for updates...",
+    "aboutNewVersion": "New version {version} available",
     "aboutChangelog": "Changelog",
     "teams": "Teams",
     "manageTeams": "Manage Teams",

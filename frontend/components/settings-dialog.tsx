@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { User, Shield, Loader2, Link as LinkIcon, Unlink } from 'lucide-react'
+import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy, Check } from 'lucide-react'
 import { formatDateTime, isValidEmail } from '@/lib/utils'
 import {
   Dialog,
@@ -31,8 +31,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
-import { usersApi, authApi, ssoApi, type User as UserType, type SSOConnection } from '@/lib/api'
+import { usersApi, authApi, ssoApi, totpApi, type User as UserType, type SSOConnection, type PasswordStatus, type TOTPStatusResponse } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AlertCircle, Clock } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
+import { TOTPSetupWizard } from './totp-setup-wizard'
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 interface SettingsDialogProps {
   open: boolean
@@ -43,11 +48,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const t = useTranslations('settings')
   const tCommon = useTranslations('common')
   const tSSO = useTranslations('sso')
+  const tAuth = useTranslations('auth')
   const router = useRouter()
   const { settings: siteSettings } = useSiteSettings()
 
   const [loading, setLoading] = React.useState(true)
   const [user, setUser] = React.useState<UserType | null>(null)
+  const [passwordStatus, setPasswordStatus] = React.useState<PasswordStatus | null>(null)
+  const [totpStatus, setTotpStatus] = React.useState<TOTPStatusResponse | null>(null)
 
   // Profile form
   const [savingProfile, setSavingProfile] = React.useState(false)
@@ -73,6 +81,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletePassword, setDeletePassword] = React.useState('')
 
+  // TOTP
+  const [setupWizardOpen, setSetupWizardOpen] = React.useState(false)
+  const [disableTotpDialogOpen, setDisableTotpDialogOpen] = React.useState(false)
+  const [disableTotpPassword, setDisableTotpPassword] = React.useState('')
+  const [disableTotpCode, setDisableTotpCode] = React.useState('')
+  const [useBackupCode, setUseBackupCode] = React.useState(false)
+  const [disablingTotp, setDisablingTotp] = React.useState(false)
+  const [regeneratingCodes, setRegeneratingCodes] = React.useState(false)
+  const [regenerateCodesDialogOpen, setRegenerateCodesDialogOpen] = React.useState(false)
+  const [regenerateCode, setRegenerateCode] = React.useState('')
+  const [newBackupCodes, setNewBackupCodes] = React.useState<string[]>([])
+
   // Load user when dialog opens
   React.useEffect(() => {
     if (open) {
@@ -90,6 +110,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         email: userData.email,
         avatar_url: userData.avatar_url || '',
       })
+
+      // Load password status for local auth users
+      if (userData.auth_source === 'local') {
+        try {
+          const status = await usersApi.getPasswordStatus()
+          setPasswordStatus(status)
+        } catch {
+          // Password status not available
+        }
+      }
+
+      // Load TOTP status
+      try {
+        const status = await totpApi.getStatus()
+        setTotpStatus(status)
+      } catch {
+        // TOTP status not available
+      }
     } catch {
       // Error handled by API client
     } finally {
@@ -215,6 +253,76 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     } finally {
       setDeleting(false)
     }
+  }
+
+  const handleSetupTotpSuccess = async () => {
+    await loadUser()
+  }
+
+  const handleDisableTotp = async () => {
+    if (!disableTotpPassword || !disableTotpCode) {
+      return
+    }
+
+    // 处理备份码：去掉连字符
+    const code = useBackupCode ? disableTotpCode.replace('-', '') : disableTotpCode
+
+    // 验证长度
+    if ((useBackupCode && code.length !== 8) || (!useBackupCode && code.length !== 6)) {
+      return
+    }
+
+    try {
+      setDisablingTotp(true)
+      await totpApi.disable(disableTotpPassword, code, useBackupCode)
+      toast.success(t('twoFactorDisabledSuccess'))
+      setDisableTotpDialogOpen(false)
+      setDisableTotpPassword('')
+      setDisableTotpCode('')
+      setUseBackupCode(false)
+      await loadUser()
+    } catch {
+      // Error handled by API client
+    } finally {
+      setDisablingTotp(false)
+    }
+  }
+
+  const handleRegenerateBackupCodes = async () => {
+    if (!regenerateCode || regenerateCode.length !== 6) {
+      return
+    }
+
+    try {
+      setRegeneratingCodes(true)
+      const result = await totpApi.regenerateBackupCodes(regenerateCode)
+      setNewBackupCodes(result.codes)
+      toast.success(t('backupCodesRegeneratedSuccess'))
+      setRegenerateCode('')
+      await loadUser()
+    } catch {
+      // Error handled by API client
+    } finally {
+      setRegeneratingCodes(false)
+    }
+  }
+
+  const handleDownloadBackupCodes = () => {
+    const content = newBackupCodes.join('\n')
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'clouisle-backup-codes.txt'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleCopyBackupCodes = async () => {
+    await navigator.clipboard.writeText(newBackupCodes.join('\n'))
+    toast.success(tAuth('setupStep4CodesCopied'))
   }
 
   return (
@@ -363,6 +471,80 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </Card>
               )}
 
+              {/* Two-Factor Authentication */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{t('twoFactorAuth')}</CardTitle>
+                  <CardDescription>{t('twoFactorAuthDescription')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {totpStatus?.enabled ? (
+                    <>
+                      <div className="flex items-center justify-between rounded-lg border bg-muted/50 p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-full bg-green-100 p-2 dark:bg-green-950">
+                            <KeyRound className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{t('twoFactorEnabled')}</p>
+                            {totpStatus.enabled_at && (
+                              <p className="text-xs text-muted-foreground">
+                                {t('twoFactorEnabledAt')}: {formatDateTime(totpStatus.enabled_at)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {t('backupCodesRemaining', { count: totpStatus.remaining_backup_codes })}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRegenerateCodesDialogOpen(true)}
+                        >
+                          {t('regenerateBackupCodes')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDisableTotpDialogOpen(true)}
+                        >
+                          {t('disableTwoFactor')}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-full bg-muted p-2">
+                            <KeyRound className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">{t('twoFactorDisabled')}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t('setupTwoFactorDescription')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setSetupWizardOpen(true)}
+                      >
+                        <Shield className="mr-2 h-4 w-4" />
+                        {t('enableTwoFactor')}
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Password */}
               <Card>
                 <CardHeader className="pb-3">
@@ -380,6 +562,45 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Password Status */}
+                  {passwordStatus && !passwordStatus.is_exempt && (
+                    <div className="space-y-3">
+                      {passwordStatus.is_expired && (
+                        <Alert className="border-destructive bg-destructive/10">
+                          <AlertCircle className="h-4 w-4 text-destructive" />
+                          <AlertDescription className="text-destructive">
+                            {tAuth('passwordExpired')}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {!passwordStatus.is_expired &&
+                        passwordStatus.days_until_expiration !== null &&
+                        passwordStatus.days_until_expiration <= 7 && (
+                          <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                            <Clock className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                            <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                              {tAuth('passwordExpiringSoon', {
+                                days: passwordStatus.days_until_expiration,
+                              })}
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      {passwordStatus.password_expires_at && (
+                        <div className="rounded-lg border bg-muted/50 p-3">
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">
+                              {tAuth('passwordExpiresAt')}:{' '}
+                              <span className="font-medium text-foreground">
+                                {formatDate(passwordStatus.password_expires_at)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(user?.auth_source === 'local' ||
                     (user?.sso_connections && user.sso_connections.length === 0)) && (
                     <div className="space-y-2">
@@ -482,6 +703,195 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </Tabs>
         )}
       </DialogContent>
+
+      {/* TOTP Setup Wizard */}
+      <TOTPSetupWizard
+        open={setupWizardOpen}
+        onOpenChange={setSetupWizardOpen}
+        onSuccess={handleSetupTotpSuccess}
+      />
+
+      {/* Disable TOTP Dialog */}
+      <AlertDialog open={disableTotpDialogOpen} onOpenChange={setDisableTotpDialogOpen}>
+        <AlertDialogContent className="z-[60]" overlayClassName="z-[60]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('disableTwoFactorTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('disableTwoFactorConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="disable-password">{t('disableTwoFactorPasswordLabel')}</Label>
+              <Input
+                id="disable-password"
+                type="password"
+                value={disableTotpPassword}
+                onChange={(e) => setDisableTotpPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="disable-code">
+                {useBackupCode ? tAuth('backupCode') : t('disableTwoFactorCodeLabel')}
+              </Label>
+              {useBackupCode ? (
+                <Input
+                  id="disable-code"
+                  type="text"
+                  placeholder={tAuth('backupCodePlaceholder')}
+                  value={disableTotpCode}
+                  onChange={(e) => setDisableTotpCode(e.target.value)}
+                  maxLength={9}
+                />
+              ) : (
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={disableTotpCode}
+                    onChange={setDisableTotpCode}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+              )}
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  onClick={() => {
+                    setUseBackupCode(!useBackupCode)
+                    setDisableTotpCode('')
+                  }}
+                  className="text-xs"
+                >
+                  {useBackupCode ? tAuth('useTOTPCode') : tAuth('useBackupCode')}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDisableTotpPassword('')
+                setDisableTotpCode('')
+                setUseBackupCode(false)
+              }}
+            >
+              {tCommon('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleDisableTotp}
+              disabled={
+                disablingTotp ||
+                !disableTotpPassword ||
+                (useBackupCode
+                  ? disableTotpCode.replace('-', '').length !== 8
+                  : disableTotpCode.length !== 6
+                )
+              }
+            >
+              {disablingTotp && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('disableTwoFactor')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Regenerate Backup Codes Dialog */}
+      <AlertDialog open={regenerateCodesDialogOpen} onOpenChange={setRegenerateCodesDialogOpen}>
+        <AlertDialogContent className="z-[60]" overlayClassName="z-[60]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('regenerateBackupCodes')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {newBackupCodes.length > 0
+                ? tAuth('setupStep4Description')
+                : tAuth('setupStep3Description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {newBackupCodes.length === 0 ? (
+            <>
+              <div className="space-y-2">
+                <Label>{tAuth('verificationCode6Digit')}</Label>
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={6}
+                    value={regenerateCode}
+                    onChange={setRegenerateCode}
+                  >
+                    <InputOTPGroup>
+                      <InputOTPSlot index={0} />
+                      <InputOTPSlot index={1} />
+                      <InputOTPSlot index={2} />
+                      <InputOTPSlot index={3} />
+                      <InputOTPSlot index={4} />
+                      <InputOTPSlot index={5} />
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setRegenerateCode('')}>
+                  {tCommon('cancel')}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleRegenerateBackupCodes}
+                  disabled={regeneratingCodes || regenerateCode.length !== 6}
+                >
+                  {regeneratingCodes && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {t('regenerateBackupCodes')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg border bg-muted/50 p-4">
+                <div className="grid grid-cols-2 gap-2 font-mono text-sm">
+                  {newBackupCodes.map((code, index) => (
+                    <div key={index} className="rounded bg-background p-2 text-center">
+                      {code}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleDownloadBackupCodes}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {tAuth('setupStep4Download')}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleCopyBackupCodes}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  {tAuth('setupStep4Copy')}
+                </Button>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogAction
+                  onClick={() => {
+                    setRegenerateCodesDialogOpen(false)
+                    setNewBackupCodes([])
+                  }}
+                >
+                  {tCommon('close')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

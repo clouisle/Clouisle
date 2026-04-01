@@ -21,6 +21,7 @@ import {
   Brain,
   Menu,
   X,
+  Key,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
@@ -37,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   Dialog,
   DialogContent,
@@ -48,7 +50,7 @@ import { SettingsDrawer } from '@/components/settings-drawer'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { useSettings } from '@/hooks/use-settings'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 
@@ -193,12 +195,12 @@ export function PlatformHeader() {
     router.push('/login')
   }
 
-  const isActive = (href: string, exact?: boolean) => 
+  const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-8">
+    <header className="sticky flex justify-center top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-14 w-full items-center justify-between">
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
@@ -282,15 +284,20 @@ export function PlatformHeader() {
           )}
 
           {/* Settings Drawer Toggle */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 cursor-pointer"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Palette className="h-4 w-4" />
-            <span className="sr-only">{tCommon('appearanceSettings')}</span>
-          </Button>
+          <Tooltip>
+            <TooltipTrigger render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 cursor-pointer"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Palette className="h-4 w-4" />
+                <span className="sr-only">{tCommon('appearanceSettings')}</span>
+              </Button>
+            } />
+            <TooltipContent>{tCommon('appearanceSettings')}</TooltipContent>
+          </Tooltip>
 
           {/* User Menu */}
           <DropdownMenu>
@@ -329,6 +336,12 @@ export function PlatformHeader() {
               <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                 <Settings className="mr-2 h-4 w-4" />
                 {t('profile.title')}
+              </DropdownMenuItem>
+
+              {/* API Keys */}
+              <DropdownMenuItem onClick={() => router.push('/app/api-keys')}>
+                <Key className="mr-2 h-4 w-4" />
+                {t('apiKeys')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
 
@@ -416,7 +429,7 @@ export function PlatformHeader() {
             <DialogTitle>{t('about')}</DialogTitle>
             <DialogDescription>{t('aboutDescription')}</DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex flex-col items-center py-6">
             {/* Logo 和名称 */}
             <div className={`flex aspect-square size-10 items-center justify-center rounded-sm overflow-hidden mb-4 ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
@@ -433,37 +446,37 @@ export function PlatformHeader() {
                 <DefaultSiteIcon width={64} height={64} className="size-full" />
               )}
             </div>
-            
+
             <h2 className="text-2xl font-bold mb-1">
               {siteSettings.site_name || APP_NAME}
             </h2>
-            
+
             <p className="text-sm text-muted-foreground mb-4">
               Version {APP_VERSION}
             </p>
-            
+
             {/* 版权和链接 */}
             <p className="text-sm text-muted-foreground mb-2">
               © {new Date().getFullYear()} {APP_NAME}. {t('aboutRights')}
             </p>
 
             <p className="text-sm text-muted-foreground mb-4">
-              Build In {BUILD_DATE}
+              {t('aboutBuildDate')}: {BUILD_DATE !== 'dev' ? formatDateTime(BUILD_DATE) : BUILD_DATE}
             </p>
-            
+
             <div className="flex items-center gap-1 text-sm">
-              <a 
+              <a
                 href={GITHUB_URL}
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
                 GitHub
               </a>
               <span className="text-muted-foreground">,</span>
-              <a 
+              <a
                 href={DOCS_URL}
-                target="_blank" 
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
@@ -471,15 +484,15 @@ export function PlatformHeader() {
               </a>
             </div>
           </div>
-          
+
           {/* 底部 */}
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm text-muted-foreground">
-              {APP_NAME} {APP_VERSION} {t('aboutLatest')}
+              {APP_NAME} {APP_VERSION}
             </p>
-            <a 
+            <a
               href={CHANGELOG_URL}
-              target="_blank" 
+              target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 px-3"
             >

@@ -6,8 +6,10 @@ export const teamsApi = {
   /**
    * 获取所有团队（管理员）
    */
-  getTeams: async (page: number = 1, pageSize: number = 50): Promise<PageData<Team>> => {
-    return api.get<PageData<Team>>(`/admin/teams?page=${page}&page_size=${pageSize}`)
+  getTeams: async (page: number = 1, pageSize: number = 50, search?: string): Promise<PageData<Team>> => {
+    let url = `/admin/teams?page=${page}&page_size=${pageSize}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
+    return api.get<PageData<Team>>(url)
   },
 
   /**

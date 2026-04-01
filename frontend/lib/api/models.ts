@@ -111,21 +111,6 @@ export const modelsApi = {
   },
 
   /**
-   * 获取模型列表（分页）
-   */
-  getModels: async (params: ModelQueryParams = {}): Promise<PageData<Model>> => {
-    const { page = 1, pageSize = 20, provider, model_type, is_enabled, search } = params
-    const queryParams = new URLSearchParams()
-    queryParams.append('page', String(page))
-    queryParams.append('page_size', String(pageSize))
-    if (provider) queryParams.append('provider', provider)
-    if (model_type) queryParams.append('model_type', model_type)
-    if (is_enabled !== undefined) queryParams.append('is_enabled', String(is_enabled))
-    if (search) queryParams.append('search', search)
-    return api.get<PageData<Model>>(`/models?${queryParams.toString()}`)
-  },
-
-  /**
    * 获取可用模型列表（下拉选择用）
    */
   getAvailableModels: async (model_type?: string): Promise<ModelBrief[]> => {
@@ -140,62 +125,6 @@ export const modelsApi = {
    */
   getDefaultModel: async (model_type: string): Promise<ModelBrief | null> => {
     return api.get<ModelBrief | null>(`/models/default/${model_type}`)
-  },
-
-  /**
-   * 获取单个模型
-   */
-  getModel: async (modelId: string): Promise<Model> => {
-    return api.get<Model>(`/models/${modelId}`)
-  },
-
-  /**
-   * 创建模型
-   */
-  createModel: async (data: ModelCreateInput): Promise<Model> => {
-    return api.post<Model>('/models', data)
-  },
-
-  /**
-   * 更新模型
-   */
-  updateModel: async (modelId: string, data: ModelUpdateInput): Promise<Model> => {
-    return api.put<Model>(`/models/${modelId}`, data)
-  },
-
-  /**
-   * 删除模型
-   */
-  deleteModel: async (modelId: string): Promise<Model> => {
-    return api.delete<Model>(`/models/${modelId}`)
-  },
-
-  /**
-   * 测试模型连接（已有模型）
-   */
-  testConnection: async (modelId: string): Promise<{ success: boolean; message: string; latency_ms?: number }> => {
-    return api.post<{ success: boolean; message: string; latency_ms?: number }>(`/models/${modelId}/test`)
-  },
-
-  /**
-   * 测试模型配置（创建前验证）
-   */
-  testModelConfig: async (data: {
-    provider: string
-    model_id: string
-    model_type: string
-    base_url?: string | null
-    api_key: string
-    config?: Record<string, unknown> | null
-  }): Promise<{ success: boolean; message: string; latency_ms?: number }> => {
-    return api.post<{ success: boolean; message: string; latency_ms?: number }>('/models/test', data)
-  },
-
-  /**
-   * 设置为默认模型
-   */
-  setDefault: async (modelId: string): Promise<Model> => {
-    return api.post<Model>(`/models/${modelId}/set-default`)
   },
 }
 

@@ -1,8 +1,10 @@
 {
   "nav": {
     "general": "通用",
-    "admin": "管理",
-    "other": "其他",
+    "system": "系统管理",
+    "resources": "资源管理",
+    "monitoring": "监控",
+    "settings": "设置",
     "dashboard": "仪表盘",
     "teams": "团队",
     "knowledgeBases": "知识库",
@@ -17,7 +19,6 @@
     "notifications": "通知",
     "workspace": "工作台",
     "profile": "个人资料",
-    "settings": "设置",
     "siteSettings": "站点设置",
     "helpCenter": "帮助中心",
     "logout": "退出登录",

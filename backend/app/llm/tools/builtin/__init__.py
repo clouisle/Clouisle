@@ -8,6 +8,7 @@ from .time import register_time_tools
 from .calculator import register_calculator_tools
 from .web_search import register_web_search_tools
 from .file_parser import register_file_parser_tools
+from .media import register_media_tools
 
 
 def register_all_builtin_tools() -> None:
@@ -16,6 +17,7 @@ def register_all_builtin_tools() -> None:
     register_calculator_tools()
     register_web_search_tools()
     register_file_parser_tools()
+    register_media_tools()
 
 
 __all__ = [
@@ -24,4 +26,5 @@ __all__ = [
     "register_calculator_tools",
     "register_web_search_tools",
     "register_file_parser_tools",
+    "register_media_tools",
 ]

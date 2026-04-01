@@ -79,7 +79,7 @@ class ExecutionContext:
             "user_id": str(user_id) if user_id else None,
             "workflow_id": str(workflow_id),
             "workflow_run_id": str(run_id),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": int(datetime.utcnow().timestamp()),
         }
 
         # Store metadata
@@ -126,7 +126,7 @@ class ExecutionContext:
                 "user_id": meta.get("user_id") or None,
                 "workflow_id": meta.get("workflow_id", ""),
                 "workflow_run_id": str(run_id),
-                "timestamp": meta.get("created_at", datetime.utcnow().isoformat()),
+                "timestamp": int(datetime.utcnow().timestamp()),
             }
 
         return ctx
@@ -307,6 +307,14 @@ class ExecutionContext:
 
         if len(parts) == 1:
             var_name = parts[0]
+
+            # Check for sys_ prefixed system variables (e.g. sys_user_id)
+            if var_name.startswith("sys_"):
+                sys_key = var_name[4:]  # Strip "sys_" prefix
+                sys_value = self._get_system_variable(sys_key)
+                if sys_value is not None:
+                    return sys_value
+
             # Single part - could be:
             # 1. A node ID returning all outputs
             # 2. An input variable name (no node prefix)
@@ -350,6 +358,11 @@ class ExecutionContext:
                 result = await value.execute(stream_to_node_id)
                 # Update the stored value with the actual result
                 outputs[var_name] = result
+                # Also update reasoning and usage if they were captured
+                if value.reasoning is not None:
+                    outputs["reasoning"] = value.reasoning
+                if value.usage is not None:
+                    outputs["usage"] = value.usage
                 await self.set_node_outputs(source, outputs)
                 return result
 

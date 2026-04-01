@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import { PlatformHeader } from '@/components/layout/platform-header'
 import { TeamProvider } from '@/contexts/team-context'
+import { PasswordExpirationBanner } from '@/components/password-expiration-banner'
 
 export default function PlatformLayout({
   children,
@@ -32,6 +33,7 @@ export default function PlatformLayout({
     <TeamProvider>
       <div className="h-screen flex flex-col overflow-hidden">
         <PlatformHeader />
+        <PasswordExpirationBanner />
         <main className={`flex-1 relative ${isAgentConfig ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {children}
         </main>

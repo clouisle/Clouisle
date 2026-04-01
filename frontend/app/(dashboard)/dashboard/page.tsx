@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { dashboardApi, type DashboardStats, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api/admin/dashboard'
+import { adminTOTPApi, type TOTPStatsResponse } from '@/lib/api/admin/users'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   // Common data
   const [stats, setStats] = React.useState<DashboardStats | null>(null)
   const [isLoadingStats, setIsLoadingStats] = React.useState(true)
+  const [totpStats, setTotpStats] = React.useState<TOTPStatsResponse | null>(null)
 
   // Overview tab data
   interface TrendData {
@@ -67,8 +69,14 @@ export default function DashboardPage() {
   const fetchStats = React.useCallback(async () => {
     try {
       setIsLoadingStats(true)
-      const statsResponse = await dashboardApi.getStats()
+      const [statsResponse, totpStatsResponse] = await Promise.all([
+        dashboardApi.getStats(),
+        adminTOTPApi.getStats().catch(() => null), // Optional, don't fail if not available
+      ])
       setStats(statsResponse)
+      if (totpStatsResponse) {
+        setTotpStats(totpStatsResponse)
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error)
     } finally {
@@ -264,6 +272,7 @@ export default function DashboardPage() {
               stats={stats}
               trendsData={trendsData}
               isLoading={isLoadingOverview}
+              totpStats={totpStats}
             />
           )}
 

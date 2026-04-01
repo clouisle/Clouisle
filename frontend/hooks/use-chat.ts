@@ -17,7 +17,7 @@ import {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
-  type SSEUserInputRequest,
+  type SSEMediaResult,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -29,7 +29,9 @@ import type {
   ToolCallPart,
   ToolResultPart,
   UserInputRequestPart,
+  MediaResultPart,
 } from '@/components/chat'
+import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -584,15 +586,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'tool_result': {
               const data = event.data as SSEToolResult
+              const parsedOutput = parseToolResultOutput(data.result)
               const toolResultPart: ToolResultPart = {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
                 toolDisplayName: data.tool_display_name,
-                output: data.result,
+                output: parsedOutput,
                 isError: data.is_error,
               }
-              
+
               // Find the tool group containing this tool call
               const toolGroup = findToolGroup(data.tool_call_id)
               if (toolGroup) {
@@ -621,6 +624,47 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               }
 
               // Update message with tool result
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'media_result': {
+              const data = event.data as SSEMediaResult
+              segments.push({
+                type: 'media-result',
+                mediaResult: {
+                  type: 'media-result',
+                  output: data,
+                },
+              })
+              streamingStateRef.current.segments = segments
+
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'output_truncated': {
+              const truncatedSegment: ContentSegment = { type: 'truncated' }
+              segments.push(truncatedSegment)
+              streamingStateRef.current.segments = segments
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
@@ -665,6 +709,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                         parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
                         versionNumber: endData.version_number ?? 1,
                         versionCount: endData.version_count ?? 1,
+                        metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
                       }
                     : msg
                 )
@@ -1308,12 +1353,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'tool_result': {
               const data = event.data as SSEToolResult
+              const parsedOutput = parseToolResultOutput(data.result)
               const toolResultPart: ToolResultPart = {
                 type: 'tool-result',
                 toolCallId: data.tool_call_id,
                 toolName: data.tool_name,
                 toolDisplayName: data.tool_display_name,
-                output: data.result,
+                output: parsedOutput,
                 isError: data.is_error,
               }
               const toolGroup = findToolGroup(data.tool_call_id)
@@ -1338,6 +1384,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 taskState.toolCalling = 'completed'
                 streamingStateRef.current.taskState = taskState
               }
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'output_truncated': {
+              const truncatedSegment: ContentSegment = { type: 'truncated' }
+              segments.push(truncatedSegment)
+              streamingStateRef.current.segments = segments
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
@@ -1389,7 +1452,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                     parts: newParts,
                     versionNumber: finalVersionNumber,
                     versionCount: finalVersionCount,
-                    metadata: { ...msg.metadata, isLoading: false },
+                    metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
                   }
                 })
               )
@@ -1512,7 +1575,7 @@ interface TaskState {
  * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request'
+  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'media-result' | 'truncated'
   // For text type
   text?: string
   // For tool-group type
@@ -1525,6 +1588,8 @@ interface ContentSegment {
   reasoningDuration?: number
   // For user-input-request type
   userInputRequest?: UserInputRequestPart
+  // For media-result type
+  mediaResult?: MediaResultPart
 }
 
 /**
@@ -1600,6 +1665,11 @@ function buildMessageParts(
     } else if (segment.type === 'user-input-request' && segment.userInputRequest) {
       // Add user input request
       parts.push(segment.userInputRequest)
+    } else if (segment.type === 'media-result' && segment.mediaResult) {
+      parts.push(segment.mediaResult)
+    } else if (segment.type === 'truncated') {
+      // Add truncated warning
+      parts.push({ type: 'truncated' })
     }
   }
 

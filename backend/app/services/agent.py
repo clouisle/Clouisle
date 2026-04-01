@@ -306,6 +306,16 @@ class AgentService:
                 # MCP server tools - would need MCP integration
                 pass
 
+        if agent.enable_image_generation:
+            media_tool = self._get_builtin_tool("generate_image")
+            if media_tool:
+                tools.append(media_tool)
+
+        if agent.enable_video_generation:
+            media_tool = self._get_builtin_tool("generate_video")
+            if media_tool:
+                tools.append(media_tool)
+
         # If agentic RAG, add search tool
         if agent.rag_mode == RAGMode.AGENTIC:
             tools.append(
@@ -332,43 +342,12 @@ class AgentService:
 
     def _get_builtin_tool(self, name: str) -> ToolDefinition | None:
         """Get a built-in tool definition."""
-        builtin_tools = {
-            "web_search": ToolDefinition(
-                type="function",
-                function=FunctionDefinition(
-                    name="web_search",
-                    description="Search the web for information",
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query",
-                            },
-                        },
-                        "required": ["query"],
-                    },
-                ),
-            ),
-            "code_interpreter": ToolDefinition(
-                type="function",
-                function=FunctionDefinition(
-                    name="code_interpreter",
-                    description="Execute Python code to solve problems",
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "Python code to execute",
-                            },
-                        },
-                        "required": ["code"],
-                    },
-                ),
-            ),
-        }
-        return builtin_tools.get(name)
+        from app.llm.tools import tool_registry
+
+        tool_defs = tool_registry.to_openai_tools([name])
+        if not tool_defs:
+            return None
+        return ToolDefinition.model_validate(tool_defs[0])
 
     async def _execute_tool(
         self,
@@ -445,7 +424,11 @@ class AgentService:
         # Execute the tool
         try:
             result = await tool_registry.execute(
-                name=tool_name, arguments=arguments, credentials=credentials
+                name=tool_name,
+                arguments=arguments,
+                credentials=credentials,
+                agent=agent,
+                team_id=str(agent.team_id) if agent.team_id else None,
             )
             return result
         except Exception as e:
@@ -467,7 +450,7 @@ class AgentService:
             if not agent_kbs:
                 return None
 
-            from app.services.vector_store import vector_store
+            from app.services.vector_store import VectorStore
 
             all_chunks = []
             for agent_kb in agent_kbs:
@@ -476,9 +459,20 @@ class AgentService:
                     continue
 
                 # Search in each knowledge base
+                vector_store = VectorStore(
+                    embedding_model_id=str(kb.embedding_model_id)
+                    if kb.embedding_model_id
+                    else None,
+                    rerank_model_id=str(kb.rerank_model_id)
+                    if getattr(kb, "rerank_model_id", None)
+                    else None,
+                    team_id=str(kb.team_id) if kb.team_id else None,
+                )
+
                 results = await vector_store.search(
-                    collection_name=str(kb.id),
+                    kb_id=kb.id,
                     query=query,
+                    search_mode=agent_kb.search_mode,
                     top_k=agent_kb.retrieval_top_k,
                     score_threshold=agent_kb.score_threshold,
                 )

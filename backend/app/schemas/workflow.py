@@ -52,6 +52,7 @@ class WorkflowUpdate(BaseModel):
     trigger_type: TriggerType | None = None
     trigger_config: dict | None = None
     visibility: str | None = None
+    embed_config: dict | None = None
 
 
 class WorkflowOut(BaseModel):
@@ -70,6 +71,7 @@ class WorkflowOut(BaseModel):
     trigger_type: TriggerType
     trigger_config: dict
     webhook_token: str | None
+    embed_config: dict
     run_count: int
     success_count: int
     fail_count: int
@@ -285,7 +287,7 @@ class KBRetrievalNodeConfig(BaseModel):
 
     knowledge_base_id: UUID
     query: str = Field(..., description="Query template with {{variable}} placeholders")
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int = Field(default=5, ge=1, le=100)
     score_threshold: float = Field(default=0.3, ge=0, le=1)
 
 

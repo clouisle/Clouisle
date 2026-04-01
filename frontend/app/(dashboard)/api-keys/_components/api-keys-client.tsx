@@ -15,6 +15,8 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Power,
+  PowerOff,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiKeysApi, type APIKey, type PageData } from '@/lib/api'
@@ -268,7 +270,7 @@ export function APIKeysClient() {
   const handleBulkDelete = () => {
     setBulkDeleteDialogOpen(true)
   }
-  
+
   // 确认批量删除
   const confirmBulkDelete = async () => {
     try {
@@ -284,7 +286,35 @@ export function APIKeysClient() {
       setBulkDeleteDialogOpen(false)
     }
   }
-  
+
+  // 批量激活
+  const handleBulkActivate = async () => {
+    try {
+      const promises = Array.from(selectedKeys).map(id => apiKeysApi.activateAPIKey(id))
+      await Promise.all(promises)
+      toast.success(t('bulkActivated', { count: selectedKeys.size }))
+      setSelectedKeys(new Set())
+      loadAPIKeys()
+      loadStats()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 批量停用
+  const handleBulkDeactivate = async () => {
+    try {
+      const promises = Array.from(selectedKeys).map(id => apiKeysApi.deactivateAPIKey(id))
+      await Promise.all(promises)
+      toast.success(t('bulkDeactivated', { count: selectedKeys.size }))
+      setSelectedKeys(new Set())
+      loadAPIKeys()
+      loadStats()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
   // 获取状态 Badge
   const getStatusBadge = (apiKey: APIKey) => {
     const now = new Date()
@@ -471,8 +501,8 @@ export function APIKeysClient() {
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
+                                variant="destructive"
                                 onClick={() => handleDelete(apiKey)}
-                                className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 {commonT('delete')}
@@ -594,6 +624,42 @@ export function APIKeysClient() {
             <Badge variant="secondary" className="px-2 py-1">
               {selectedKeys.size} {t('keysSelected')}
             </Badge>
+
+            {canPerform('apikey:update') && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkActivate}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <Power className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('activate')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkDeactivate}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <PowerOff className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('deactivate')}</TooltipContent>
+                </Tooltip>
+              </>
+            )}
 
             <Tooltip>
               <TooltipTrigger

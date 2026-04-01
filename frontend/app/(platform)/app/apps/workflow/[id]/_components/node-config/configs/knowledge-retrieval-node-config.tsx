@@ -443,7 +443,11 @@ export function KnowledgeRetrievalNodeConfig({
                 }}
               >
                 <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
+                  <SelectValue>
+                    {safeConfig.searchMode === 'vector' && t('configKnowledgeRetrieval.searchModeVector')}
+                    {safeConfig.searchMode === 'fulltext' && t('configKnowledgeRetrieval.searchModeFulltext')}
+                    {safeConfig.searchMode === 'hybrid' && t('configKnowledgeRetrieval.searchModeHybrid')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="vector" className="text-xs">{t('configKnowledgeRetrieval.searchModeVector')}</SelectItem>
@@ -466,7 +470,7 @@ export function KnowledgeRetrievalNodeConfig({
                   onConfigChange({ ...safeConfig, topK: newValue })
                 }}
                 min={1}
-                max={20}
+                max={100}
                 step={1}
                 className="w-full"
               />

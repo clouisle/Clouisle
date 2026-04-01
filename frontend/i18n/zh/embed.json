@@ -1,0 +1,50 @@
+{
+  "embed": {
+    "title": "嵌入",
+    "settings": {
+      "title": "嵌入设置",
+      "description": "配置此 Agent 如何嵌入到外部网站",
+      "enabled": "启用嵌入",
+      "enabledDescription": "允许通过 iframe 将此 Agent 嵌入到外部网站",
+      "allowedDomains": "允许的域名",
+      "allowedDomainsPlaceholder": "例如 example.com, *.example.com",
+      "allowedDomainsDescription": "留空则允许所有域名。支持通配符子域名 (*.example.com)。",
+      "theme": "主题",
+      "themeAuto": "自动",
+      "themeLight": "浅色",
+      "themeDark": "深色",
+      "primaryColor": "主色调",
+      "mode": "嵌入模式",
+      "modeFullscreen": "全屏",
+      "modeMobile": "移动端",
+      "modeBubble": "浮窗",
+      "bubblePosition": "浮窗位置",
+      "bottomRight": "右下角",
+      "bottomLeft": "左下角",
+      "bubbleIcon": "浮窗图标",
+      "bubbleGreeting": "问候语",
+      "bubbleGreetingPlaceholder": "你好！有什么可以帮你的？",
+      "apiKey": "API 密钥",
+      "apiKeyDescription": "粘贴你的 API 密钥，它会自动填入下方代码片段中。",
+      "codeSnippet": "代码片段",
+      "codeSnippetDescription": "复制并粘贴此代码到你的网站",
+      "copied": "已复制！",
+      "copy": "复制代码",
+      "preview": "预览",
+      "save": "保存",
+      "embedButton": "嵌入",
+      "requiresPublish": "Agent 需要先发布才能嵌入"
+    },
+    "page": {
+      "poweredBy": "由",
+      "close": "关闭",
+      "newChat": "新对话",
+      "loadingAgent": "正在加载 Agent...",
+      "errorLoading": "加载 Agent 失败",
+      "invalidToken": "无效或缺少 API 密钥",
+      "defaultGreeting": "你好！有什么可以帮你的？",
+      "configureVariables": "配置变量",
+      "fillRequired": "请先填写必填项"
+    }
+  }
+}

@@ -19,6 +19,7 @@ from app.schemas.response import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
 
 
 # ============ Request/Response Models ============
@@ -306,7 +307,7 @@ async def generate_prompt(
 
         except Exception as e:
             logger.exception(f"Error generating prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -381,7 +382,7 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Error optimizing prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
     return StreamingResponse(
         event_generator(),

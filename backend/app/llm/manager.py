@@ -23,8 +23,10 @@ from .adapters import (
     create_chat_model,
     create_embedding_model,
     create_image_adapter,
+    create_rerank_adapter,
     create_tts_adapter,
     create_stt_adapter,
+    create_video_adapter,
 )
 from .adapters.chat import (
     BaseChatAdapter,
@@ -44,7 +46,9 @@ from .errors import (
     RateLimitError,
     ContextLengthError,
     ContentFilterError,
+    InvalidRequestError,
     QuotaExceededError as LLMQuotaExceededError,
+    TaskNotFoundError,
 )
 from .types import (
     Message,
@@ -53,10 +57,13 @@ from .types import (
     ToolDefinition,
     ImageGenerationRequest,
     ImageGenerationResponse,
+    VideoGenerationRequest,
+    VideoGenerationResponse,
     TTSRequest,
     TTSResponse,
     STTRequest,
     STTResponse,
+    RerankResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -151,7 +158,9 @@ class ModelManager:
             elif provider and parsed_model_id:
                 # 按 provider/model_id 句柄查找
                 model = await Model.filter(
-                    provider=provider, model_id=parsed_model_id
+                    provider=provider,
+                    model_id=parsed_model_id,
+                    model_type=model_type,
                 ).first()
             else:
                 # 无效的标识符格式
@@ -280,7 +289,10 @@ class ModelManager:
             )
 
     async def _get_team_model(
-        self, team_id: str, model_id: str
+        self,
+        team_id: str,
+        model_id: str | None,
+        model_type: ModelType = ModelType.CHAT,
     ) -> tuple[Model, TeamModel]:
         """
         获取团队授权的模型
@@ -297,7 +309,7 @@ class ModelManager:
             ModelDisabledError: 模型或团队授权已禁用
         """
         # 先获取模型配置
-        model_config = await self._get_model_config(model_id)
+        model_config = await self._get_model_config(model_id or None, model_type)
 
         # 查找团队授权
         team_model = await TeamModel.filter(
@@ -525,6 +537,37 @@ class ModelManager:
             else None,
         }
 
+    # ==================== Rerank 方法 ====================
+
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        model_id: str | None = None,
+        top_n: int | None = None,
+        **kwargs: Any,
+    ) -> RerankResponse:
+        """
+        文档重排序
+
+        Args:
+            query: 查询文本
+            documents: 候选文档列表
+            model_id: 模型 ID
+            top_n: 返回结果数量
+
+        Returns:
+            RerankResponse: 重排序结果
+        """
+        model_config = await self._get_model_config(model_id, ModelType.RERANK)
+        adapter = create_rerank_adapter(model_config)
+
+        try:
+            return await adapter.rerank(query, documents, top_n=top_n, **kwargs)
+        except Exception as e:
+            logger.exception(f"Rerank error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
     # ==================== Image 方法 ====================
 
     async def generate_image(
@@ -555,6 +598,98 @@ class ModelManager:
         except Exception as e:
             logger.exception(f"Image generation error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    # ==================== Video 方法 ====================
+
+    async def generate_video(
+        self,
+        request: VideoGenerationRequest | dict,
+        model_id: str | None = None,
+    ) -> VideoGenerationResponse:
+        """
+        视频生成
+
+        Args:
+            request: 视频生成请求
+            model_id: 模型 ID
+
+        Returns:
+            VideoGenerationResponse: 生成任务状态
+        """
+        if isinstance(request, dict) and (
+            request.get("image") is not None or request.get("end_image") is not None
+        ):
+            raise InvalidRequestError(
+                message="Image-to-video has been removed from the project",
+                field="image",
+            )
+
+        if isinstance(request, dict):
+            request = VideoGenerationRequest(**request)
+
+        model_config = await self._get_model_config(model_id, ModelType.TEXT_TO_VIDEO)
+        adapter = create_video_adapter(model_config)
+
+        try:
+            return await adapter.generate(request)
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.exception(f"Video generation error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def get_video_status(
+        self,
+        task_id: str,
+        model_id: str | None = None,
+    ) -> VideoGenerationResponse:
+        """
+        获取视频生成任务状态
+
+        Args:
+            task_id: 视频任务 ID
+            model_id: 模型 ID
+
+        Returns:
+            VideoGenerationResponse: 当前任务状态
+        """
+        candidate_models: list[Model] = []
+
+        if model_id:
+            candidate_models.append(
+                await self._get_model_config(model_id, ModelType.TEXT_TO_VIDEO)
+            )
+        else:
+            candidate_models = await Model.filter(
+                model_type=ModelType.TEXT_TO_VIDEO.value,
+                is_enabled=True,
+            ).order_by("-is_default", "sort_order", "name")
+
+        last_error: Exception | None = None
+        for model_config in candidate_models:
+            adapter = create_video_adapter(model_config)
+            try:
+                return await adapter.get_status(task_id)
+            except TaskNotFoundError as exc:
+                last_error = exc
+                continue
+            except LLMError as exc:
+                last_error = exc
+                if model_id:
+                    raise
+                continue
+            except Exception as e:
+                last_error = e
+                logger.exception(f"Video status error: {e}")
+                if model_id:
+                    raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+        if last_error:
+            if isinstance(last_error, LLMError):
+                raise last_error
+            raise last_error
+
+        raise ModelNotFoundError(message="No enabled video model configured")
 
     # ==================== Audio 方法 ====================
 
@@ -644,7 +779,9 @@ class ModelManager:
             ModelNotFoundError: 团队未授权该模型
         """
         # 获取团队授权的模型
-        model_config, team_model = await self._get_team_model(team_id, model_id or "")
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.CHAT
+        )
 
         # 检查配额（使用已获取的 team_model，避免重复查询）
         try:
@@ -707,7 +844,9 @@ class ModelManager:
             ChatStreamChunk: 流式响应块
         """
         # 获取团队授权的模型
-        model_config, team_model = await self._get_team_model(team_id, model_id or "")
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.CHAT
+        )
 
         # 检查配额（使用已获取的 team_model，避免重复查询）
         try:
@@ -757,7 +896,7 @@ class ModelManager:
         from app.llm.token_counter import count_tokens
 
         # 获取模型配置以获取正确的 model UUID
-        model_config, _ = await self._get_team_model(team_id, model_id or "")
+        model_config, _ = await self._get_team_model(team_id, model_id, ModelType.CHAT)
 
         # 使用 tiktoken 进行准确的 token 计数
         # 构造临时文本用于计数（实际使用时应该传入完整文本）
@@ -799,7 +938,9 @@ class ModelManager:
             list[list[float]]: 嵌入向量列表
         """
         # 获取团队授权的模型
-        model_config, team_model = await self._get_team_model(team_id, model_id or "")
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.EMBEDDING
+        )
 
         # 检查配额（使用已获取的 team_model，避免重复查询）
         try:
@@ -836,6 +977,59 @@ class ModelManager:
             return result
         except Exception as e:
             logger.exception(f"Team embedding error: {e}")
+            raise self._handle_error(e, model_config.provider, model_config.model_id)
+
+    async def team_rerank(
+        self,
+        team_id: str,
+        query: str,
+        documents: list[str],
+        model_id: str | None = None,
+        top_n: int | None = None,
+        **kwargs: Any,
+    ) -> RerankResponse:
+        """
+        团队级文档重排序（带配额检查和用量追踪）
+        """
+        model_config, team_model = await self._get_team_model(
+            team_id, model_id, ModelType.RERANK
+        )
+
+        try:
+            await usage_tracker.check_quota_with_model(team_model)
+        except QuotaExceededError as e:
+            raise LLMQuotaExceededError(
+                message=str(e),
+                quota_type=e.quota_type,
+                team_id=team_id,
+                model=str(model_config.id),
+            )
+
+        adapter = create_rerank_adapter(model_config)
+
+        try:
+            result = await adapter.rerank(query, documents, top_n=top_n, **kwargs)
+
+            total_tokens = result.usage.total_tokens if result.usage else 0
+            if total_tokens <= 0:
+                from app.llm.token_counter import count_tokens
+
+                total_tokens = count_tokens(query, model_config.model_id, model_config.provider)
+                total_tokens += sum(
+                    count_tokens(doc, model_config.model_id, model_config.provider)
+                    for doc in documents
+                )
+                total_tokens = max(total_tokens, 1)
+
+            await self._check_and_record_usage(
+                team_id=team_id,
+                model_id=str(model_config.id),
+                tokens_used=total_tokens,
+            )
+
+            return result
+        except Exception as e:
+            logger.exception(f"Team rerank error: {e}")
             raise self._handle_error(e, model_config.provider, model_config.model_id)
 
 

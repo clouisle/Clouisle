@@ -6,6 +6,7 @@
 """
 
 import logging
+from html.parser import HTMLParser
 
 import httpx
 
@@ -13,6 +14,30 @@ import httpx
 from ..registry import tool_registry, ToolParameter
 
 logger = logging.getLogger(__name__)
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Extract visible text while skipping script and style content."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._skip_depth = 0
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style"}:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"} and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data.strip():
+            self._chunks.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._chunks)
 
 
 async def web_search(
@@ -56,9 +81,7 @@ async def _tavily_search(
     api_key = None
     if credentials:
         api_key = credentials.get("TAVILY_API_KEY")
-        logger.info(
-            f"Tavily API key from credentials: {api_key[:15] if api_key else 'None'}...{api_key[-4:] if api_key and len(api_key) > 19 else ''}"
-        )
+        logger.info("Tavily credentials received: %s", bool(api_key))
     else:
         logger.warning("No credentials provided to Tavily search")
 
@@ -146,27 +169,10 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
             content_type = response.headers.get("content-type", "")
 
             if "text/html" in content_type:
-                # 简单提取文本（实际项目可用 BeautifulSoup 等解析）
-                text = response.text
-                # 移除脚本和样式
-                import re
-
-                text = re.sub(
-                    r"<script[^>]*>.*?</script>",
-                    "",
-                    text,
-                    flags=re.DOTALL | re.IGNORECASE,
-                )
-                text = re.sub(
-                    r"<style[^>]*>.*?</style>",
-                    "",
-                    text,
-                    flags=re.DOTALL | re.IGNORECASE,
-                )
-                # 移除 HTML 标签
-                text = re.sub(r"<[^>]+>", " ", text)
-                # 清理空白
-                text = re.sub(r"\s+", " ", text).strip()
+                extractor = _HTMLTextExtractor()
+                extractor.feed(response.text)
+                extractor.close()
+                text = " ".join(extractor.get_text().split())
 
                 if len(text) > max_length:
                     text = text[:max_length] + "..."

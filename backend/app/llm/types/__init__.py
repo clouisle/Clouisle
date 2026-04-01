@@ -58,6 +58,12 @@ from .audio import (
     TranscriptionWord,
 )
 
+# Rerank types
+from .rerank import (
+    RerankResult,
+    RerankResponse,
+)
+
 __all__ = [
     # Base
     "MediaContent",
@@ -100,4 +106,7 @@ __all__ = [
     "STTResponse",
     "TranscriptionSegment",
     "TranscriptionWord",
+    # Rerank
+    "RerankResult",
+    "RerankResponse",
 ]

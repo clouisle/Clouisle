@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Cpu } from 'lucide-react'
-import type { ModelDistribution } from '@/lib/api/dashboard'
+import type { ModelDistribution } from '@/lib/api/admin/dashboard'
 
 interface ModelDistributionChartProps {
   data: ModelDistribution[]

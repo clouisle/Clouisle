@@ -93,6 +93,9 @@ class KnowledgeBase(models.Model):
     embedding_model_id = fields.UUIDField(
         null=True, description="ID of the embedding model to use"
     )
+    rerank_model_id = fields.UUIDField(
+        null=True, description="ID of the rerank model to use"
+    )
     embedding_dimension = fields.IntField(
         null=True,
         description="Embedding vector dimension (set on first document processing)",
@@ -233,6 +236,14 @@ class DocumentChunk(models.Model):
     embedding_id = fields.CharField(
         max_length=100, null=True, description="Reference to vector storage"
     )
+
+    # Embedding status tracking
+    status = fields.CharField(
+        max_length=20,
+        default="pending",
+        description="Embedding status: pending, embedded, failed",
+    )
+    error_message = fields.TextField(null=True, description="Embedding error message")
 
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)

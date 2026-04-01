@@ -387,8 +387,8 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {commonT('delete')}
             </AlertDialogAction>

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -91,23 +92,25 @@ interface KnowledgeBaseConfigDialogProps {
   item: { config: AgentKnowledgeBaseConfig; knowledgeBase: KnowledgeBase } | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (config: { retrieval_top_k: number; score_threshold: number }) => void
+  onSave: (config: { retrieval_top_k: number; score_threshold: number; search_mode: 'vector' | 'fulltext' | 'hybrid' }) => void
 }
 
 function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: KnowledgeBaseConfigDialogProps) {
   const t = useTranslations('agents.orchestration.knowledgeBase')
   const [topK, setTopK] = React.useState(item?.config.retrieval_top_k ?? 3)
   const [threshold, setThreshold] = React.useState(item?.config.score_threshold ?? 0.3)
+  const [searchMode, setSearchMode] = React.useState<'vector' | 'fulltext' | 'hybrid'>(item?.config.search_mode ?? 'hybrid')
 
   React.useEffect(() => {
     if (item) {
       setTopK(item.config.retrieval_top_k)
       setThreshold(item.config.score_threshold)
+      setSearchMode(item.config.search_mode)
     }
   }, [item])
 
   const handleSave = () => {
-    onSave({ retrieval_top_k: topK, score_threshold: threshold })
+    onSave({ retrieval_top_k: topK, score_threshold: threshold, search_mode: searchMode })
     onOpenChange(false)
   }
 
@@ -124,6 +127,30 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
         </DialogHeader>
         <div className="space-y-6 py-4">
           <div className="space-y-3">
+            <Label className="text-sm">{t('dialog.searchMode')}</Label>
+            <Select
+              value={searchMode}
+              onValueChange={(value) => setSearchMode(value || 'hybrid')}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue>
+                  {searchMode === 'vector' && t('dialog.searchModeVector')}
+                  {searchMode === 'fulltext' && t('dialog.searchModeFulltext')}
+                  {searchMode === 'hybrid' && t('dialog.searchModeHybrid')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectItem value="vector" className="text-sm">{t('dialog.searchModeVector')}</SelectItem>
+                <SelectItem value="fulltext" className="text-sm">{t('dialog.searchModeFulltext')}</SelectItem>
+                <SelectItem value="hybrid" className="text-sm">{t('dialog.searchModeHybrid')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t('dialog.searchModeHint')}
+            </p>
+          </div>
+
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm">{t('dialog.topK')}</Label>
               <span className="text-sm font-mono text-muted-foreground">{topK}</span>
@@ -132,7 +159,7 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
               value={[topK]}
               onValueChange={(v) => setTopK(Array.isArray(v) ? v[0] : v)}
               min={1}
-              max={10}
+              max={100}
               step={1}
             />
             <p className="text-xs text-muted-foreground">
@@ -261,10 +288,10 @@ export function KnowledgeBaseSelector({
     onChange(configs.filter(c => c.knowledge_base_id !== kbId))
   }
 
-  const handleConfigSave = (config: { retrieval_top_k: number; score_threshold: number }) => {
+  const handleConfigSave = (config: { retrieval_top_k: number; score_threshold: number; search_mode: 'vector' | 'fulltext' | 'hybrid' }) => {
     if (!configuringId) return
-    const newConfigs = configs.map(c => 
-      c.knowledge_base_id === configuringId 
+    const newConfigs = configs.map(c =>
+      c.knowledge_base_id === configuringId
         ? { ...c, ...config }
         : c
     )

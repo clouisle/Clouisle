@@ -34,6 +34,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Login successful",
         "zh": "登录成功",
     },
+    "login_successful_change_password_required": {
+        "en": "Login successful. You must change your password before continuing.",
+        "zh": "登录成功。您必须先修改密码才能继续。",
+    },
     "logout_successful": {
         "en": "Logout successful",
         "zh": "登出成功",
@@ -98,6 +102,52 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Password changed successfully",
         "zh": "密码修改成功",
     },
+    # Password expiration messages
+    "password_expired": {
+        "en": "Your password has expired. Please change your password to continue.",
+        "zh": "您的密码已过期，请修改密码后继续。",
+    },
+    "password_expiring_soon": {
+        "en": "Your password will expire in {days} days. Please change it soon.",
+        "zh": "您的密码将在 {days} 天后过期，请尽快修改。",
+    },
+    "password_recently_used": {
+        "en": "This password was recently used. Please choose a different password.",
+        "zh": "此密码最近已使用过，请选择其他密码。",
+    },
+    "password_min_age_not_met": {
+        "en": "Password was changed recently. You can change it again in {days} days.",
+        "zh": "密码最近已修改，您可以在 {days} 天后再次修改。",
+    },
+    "force_password_change_required": {
+        "en": "You are required to change your password before continuing.",
+        "zh": "您需要先修改密码才能继续。",
+    },
+    # Password expiration notification messages
+    "notify_password_expiring_title": {
+        "en": "Password Expiring Soon",
+        "zh": "密码即将过期",
+    },
+    "notify_password_expiring_content": {
+        "en": "Your password will expire in {days} days. Please change it to avoid account lockout.",
+        "zh": "您的密码将在 {days} 天后过期，请及时修改以避免账户锁定。",
+    },
+    "notify_password_expired_title": {
+        "en": "Password Expired",
+        "zh": "密码已过期",
+    },
+    "notify_password_expired_content": {
+        "en": "Your password has expired. You must change it before you can log in again.",
+        "zh": "您的密码已过期，您必须修改密码才能再次登录。",
+    },
+    "notify_password_force_change_title": {
+        "en": "Password Change Required",
+        "zh": "需要修改密码",
+    },
+    "notify_password_force_change_content": {
+        "en": "You are required to change your password. Please log in and update your password.",
+        "zh": "您需要修改密码，请登录并更新您的密码。",
+    },
     "current_password_incorrect": {
         "en": "Current password is incorrect",
         "zh": "当前密码不正确",
@@ -150,6 +200,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Notification created successfully",
         "zh": "通知创建成功",
     },
+    "notifications_created": {
+        "en": "Notifications created successfully",
+        "zh": "通知批量创建成功",
+    },
     "notification_deleted": {
         "en": "Notification deleted successfully",
         "zh": "通知删除成功",
@@ -157,6 +211,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "notification_read_updated": {
         "en": "Notification read status updated",
         "zh": "通知已读状态已更新",
+    },
+    "some_users_not_found": {
+        "en": "Some users not found",
+        "zh": "部分用户不存在",
     },
     # Error messages - General
     "unknown_error": {
@@ -612,9 +670,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Superusers cannot be deleted",
         "zh": "超级管理员不能被删除",
     },
-    "cannot_delete_wildcard_permission": {
-        "en": "Cannot delete the system wildcard permission",
-        "zh": "不能删除系统通配符权限",
+    "cannot_delete_system_permission": {
+        "en": "System permissions cannot be deleted",
+        "zh": "系统权限不能被删除",
+    },
+    "cannot_update_system_permission": {
+        "en": "System permissions cannot be updated",
+        "zh": "系统权限不能被修改",
     },
     "cannot_modify_system_role": {
         "en": "System roles cannot be modified",
@@ -841,6 +903,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "document_reprocess_started": {
         "en": "Document reprocessing started",
         "zh": "文档重新处理已开始",
+    },
+    "document_not_in_error_state": {
+        "en": "Document is not in error state",
+        "zh": "文档不在错误状态",
+    },
+    "no_failed_chunks": {
+        "en": "No failed chunks to retry",
+        "zh": "没有失败的分块需要重试",
+    },
+    "retry_failed_chunks_started": {
+        "en": "Retry failed chunks started",
+        "zh": "重试失败分块已开始",
     },
     "invalid_document_type": {
         "en": "Invalid document type. Supported: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON",
@@ -1409,6 +1483,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "This API key does not have access to the requested Workflow",
         "zh": "此 API 密钥无权访问请求的工作流",
     },
+    # Embed
+    "api_key_required": {
+        "en": "API key is required for embed access",
+        "zh": "嵌入访问需要 API 密钥",
+    },
+    "embed_not_enabled": {
+        "en": "Embedding is not enabled for this resource",
+        "zh": "此资源未启用嵌入功能",
+    },
+    "embed_domain_not_allowed": {
+        "en": "This domain is not allowed to embed this resource",
+        "zh": "此域名不允许嵌入此资源",
+    },
     # Audit Log
     "audit_log_not_found": {
         "en": "Audit log not found",
@@ -1457,6 +1544,100 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "audit_log_reset_password": {
         "en": "Reset password",
         "zh": "重置密码",
+    },
+    "audit_log_force_password_change": {
+        "en": "Force password change",
+        "zh": "强制修改密码",
+    },
+    "audit_log_reset_password_expiration": {
+        "en": "Reset password expiration",
+        "zh": "重置密码过期时间",
+    },
+    "audit_log_exempt_password_expiration": {
+        "en": "Exempt from password expiration",
+        "zh": "豁免密码过期",
+    },
+    "audit_log_bulk_force_password_change": {
+        "en": "Bulk force password change",
+        "zh": "批量强制修改密码",
+    },
+    # TOTP messages
+    "totp_required": {
+        "en": "Two-factor authentication required",
+        "zh": "需要双因素认证",
+    },
+    "totp_setup_required": {
+        "en": "Two-factor authentication setup required by administrator",
+        "zh": "管理员要求设置双因素认证",
+    },
+    "totp_enabled": {
+        "en": "Two-factor authentication enabled successfully",
+        "zh": "双因素认证已启用",
+    },
+    "totp_disabled": {
+        "en": "Two-factor authentication disabled successfully",
+        "zh": "双因素认证已禁用",
+    },
+    "totp_invalid": {
+        "en": "Invalid authentication code",
+        "zh": "验证码无效",
+    },
+    "totp_rate_limited": {
+        "en": "Too many failed attempts. Please try again in {seconds} seconds.",
+        "zh": "尝试次数过多，请在 {seconds} 秒后重试。",
+    },
+    "totp_not_enabled": {
+        "en": "Two-factor authentication is not enabled",
+        "zh": "双因素认证未启用",
+    },
+    "totp_already_enabled": {
+        "en": "Two-factor authentication is already enabled",
+        "zh": "双因素认证已经启用",
+    },
+    "totp_setup_expired": {
+        "en": "TOTP setup session expired. Please start again.",
+        "zh": "TOTP 设置会话已过期，请重新开始。",
+    },
+    "backup_codes_regenerated": {
+        "en": "Backup codes regenerated successfully",
+        "zh": "备份码已重新生成",
+    },
+    "backup_code_used": {
+        "en": "Backup code used. {remaining} codes remaining.",
+        "zh": "备份码已使用，剩余 {remaining} 个。",
+    },
+    "totp_verification_success": {
+        "en": "Two-factor authentication verified successfully",
+        "zh": "双因素认证验证成功",
+    },
+    # TOTP audit log actions
+    "audit_log_enable_totp": {
+        "en": "Enable two-factor authentication",
+        "zh": "启用双因素认证",
+    },
+    "audit_log_disable_totp": {
+        "en": "Disable two-factor authentication",
+        "zh": "禁用双因素认证",
+    },
+    "audit_log_verify_totp_success": {
+        "en": "Verify TOTP code (success)",
+        "zh": "验证 TOTP 码（成功）",
+    },
+    "audit_log_verify_totp_failed": {
+        "en": "Verify TOTP code (failed)",
+        "zh": "验证 TOTP 码（失败）",
+    },
+    "audit_log_use_backup_code": {
+        "en": "Use backup code",
+        "zh": "使用备份码",
+    },
+    "audit_log_regenerate_backup_codes": {
+        "en": "Regenerate backup codes",
+        "zh": "重新生成备份码",
+    },
+    "audit_log_admin_disable_totp": {
+        "en": "Admin disable user 2FA",
+        "zh": "管理员禁用用户双因素认证",
     },
     "audit_log_create_role": {
         "en": "Create role",
@@ -1956,6 +2137,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "MarkItDown File Parser",
         "zh": "MarkItDown 文件解析",
     },
+    "builtin_tool_generate_image": {
+        "en": "Generate Image",
+        "zh": "生成图片",
+    },
+    "builtin_tool_generate_video": {
+        "en": "Generate Video",
+        "zh": "生成视频",
+    },
 }
 
 
@@ -2059,7 +2248,8 @@ def get_code_message(code: int, lang: Optional[str] = None) -> str:
         ResponseCode.PERMISSION_CODE_EXISTS: "permission_code_exists",
         ResponseCode.CANNOT_DELETE_SYSTEM_ROLE: "cannot_delete_system_role",
         ResponseCode.CANNOT_DELETE_SUPERUSER: "cannot_delete_superuser",
-        ResponseCode.CANNOT_DELETE_WILDCARD_PERMISSION: "cannot_delete_wildcard_permission",
+        ResponseCode.CANNOT_DELETE_SYSTEM_PERMISSION: "cannot_delete_system_permission",
+        ResponseCode.CANNOT_UPDATE_SYSTEM_PERMISSION: "cannot_update_system_permission",
         ResponseCode.CANNOT_MODIFY_SYSTEM_ROLE: "cannot_modify_system_role",
         ResponseCode.ROLE_IN_USE: "role_in_use",
         ResponseCode.ACCOUNT_LOCKED: "account_locked",

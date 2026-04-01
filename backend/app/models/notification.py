@@ -82,6 +82,11 @@ class AutoNotificationType(str, Enum):
     SECURITY_ACCOUNT_LOCKED = "security.account_locked"
     SECURITY_PASSWORD_CHANGED = "security.password_changed"
 
+    # 密码过期相关
+    PASSWORD_EXPIRING = "password.expiring"
+    PASSWORD_EXPIRED = "password.expired"
+    PASSWORD_FORCE_CHANGE = "password.force_change"
+
 
 class NotificationDeliveryStatus(str, Enum):
     """通知发送状态"""

@@ -77,6 +77,23 @@
     "createFirstKey": "Create your first API key to get started",
     "created": "Created",
     "lastUsed": "Last used",
-    "invalidEmail": "Please enter a valid email address"
+    "invalidEmail": "Please enter a valid email address",
+    "twoFactorAuth": "Two-Factor Authentication",
+    "twoFactorAuthDescription": "Add an extra layer of security to your account",
+    "twoFactorEnabled": "Two-factor authentication is enabled",
+    "twoFactorDisabled": "Two-factor authentication is disabled",
+    "enableTwoFactor": "Enable 2FA",
+    "disableTwoFactor": "Disable 2FA",
+    "regenerateBackupCodes": "Regenerate Backup Codes",
+    "twoFactorEnabledAt": "Enabled on",
+    "backupCodesRemaining": "{count} backup codes remaining",
+    "setupTwoFactor": "Set up two-factor authentication",
+    "setupTwoFactorDescription": "Secure your account with TOTP-based 2FA",
+    "disableTwoFactorConfirm": "Are you sure you want to disable two-factor authentication? This will make your account less secure.",
+    "disableTwoFactorTitle": "Disable Two-Factor Authentication",
+    "disableTwoFactorPasswordLabel": "Enter your password to confirm",
+    "disableTwoFactorCodeLabel": "Enter your current 6-digit code",
+    "twoFactorDisabledSuccess": "Two-factor authentication has been disabled",
+    "backupCodesRegeneratedSuccess": "Backup codes have been regenerated"
   }
 }

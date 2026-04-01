@@ -21,6 +21,27 @@
     "toolEnabled": "工具已启用",
     "toolDisabled": "工具已禁用",
     "toolDuplicated": "工具已复制",
+    "share": {
+      "title": "共享",
+      "description": "将工具“{toolName}”共享给其他团队。",
+      "selectTeam": "选择团队",
+      "permission": "权限",
+      "shareButton": "共享工具",
+      "sharedWith": "已共享给",
+      "noShares": "该工具尚未共享给任何团队",
+      "sharedBy": "共享者：{name}",
+      "shareSuccess": "工具共享成功",
+      "unshareSuccess": "已取消共享",
+      "confirmUnshare": "取消共享",
+      "confirmUnshareDesc": "确定要取消与团队“{teamName}”的共享吗？",
+      "unshareButton": "取消共享",
+      "permissions": {
+        "readOnly": "只读",
+        "readExecute": "读取并执行",
+        "readOnlyDesc": "目标团队可以查看此工具，但不能执行。",
+        "readExecuteDesc": "目标团队可以查看并执行此工具。"
+      }
+    },
     "deleteToolConfirm": "确定要删除工具 \"{name}\" 吗？此操作不可撤销。",
     "confirmDelete": "确认删除",
     "confirmBulkDelete": "确定要删除选中的 {count} 个工具吗？此操作不可撤销。",
@@ -58,7 +79,9 @@
       "websearch": "网页搜索",
       "parse_file": "文件解析器",
       "markitdown": "Markdown转换器",
-      "fetch_webpage": "获取网页"
+      "fetch_webpage": "获取网页",
+      "generate_image": "生成图片",
+      "generate_video": "生成视频"
     },
     "filters": {
       "all": "全部",

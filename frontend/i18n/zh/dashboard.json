@@ -137,7 +137,21 @@
         "knowledgeBases": "知识库",
         "knowledgeBasesDesc": "总知识库数",
         "avgMessagesPerConv": "平均消息数/对话",
-        "avgTokensPerMessage": "平均 Token/消息"
+        "avgTokensPerMessage": "平均 Token/消息",
+        "twoFactorAuth": "双因素认证",
+        "users": "用户",
+        "adoptionRate": "启用率"
+      },
+      "passwordExpiration": {
+        "title": "密码安全",
+        "description": "密码过期状态",
+        "expired": "已过期",
+        "expiredDesc": "密码已过期的用户",
+        "expiringSoon": "即将过期",
+        "expiringSoonDesc": "密码将在 7 天内过期",
+        "forceChange": "强制修改",
+        "forceChangeDesc": "需要强制修改密码的用户",
+        "allGood": "所有密码均正常"
       }
     }
   }

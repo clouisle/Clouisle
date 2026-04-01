@@ -223,7 +223,7 @@ export function MemoriesClient() {
   }
 
   return (
-    <PermissionGuard permission="memory:read">
+    <PermissionGuard permission="admin:memory:read">
       <div className="space-y-4">
         {/* Header */}
         <div>
@@ -268,25 +268,6 @@ export function MemoriesClient() {
           )}
         </div>
 
-        {/* Bulk actions toolbar */}
-        {selectedEntities.size > 0 && (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
-            <span className="text-sm text-muted-foreground">
-              {selectedEntities.size} {commonT('selected')}
-            </span>
-            <PermissionGuard permission="memory:delete">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBulkDelete}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                {t('deleteSelected')}
-              </Button>
-            </PermissionGuard>
-          </div>
-        )}
-
         {/* Table */}
         <div className="rounded-md border">
           <Table>
@@ -323,7 +304,7 @@ export function MemoriesClient() {
                 </TableRow>
               ) : (
                 entities.map((entity) => (
-                  <TableRow key={entity.id}>
+                  <TableRow key={entity.id} data-state={selectedEntities.has(entity.id) ? 'selected' : undefined}>
                     <TableCell>
                       <Checkbox
                         checked={selectedEntities.has(entity.id)}
@@ -343,9 +324,9 @@ export function MemoriesClient() {
                       {entity.description ? (
                         <Tooltip>
                           <TooltipTrigger>
-                            <span className="line-clamp-1 max-w-[200px] text-sm text-muted-foreground">
+                            <div className="line-clamp-1 max-w-[200px] text-sm text-muted-foreground">
                               {entity.description}
-                            </span>
+                            </div>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-[400px]">
                             {entity.description}
@@ -390,16 +371,16 @@ export function MemoriesClient() {
                           )}
                         />
                         <DropdownMenuContent align="end">
-                          {canPerform('memory:update') && (
+                          {canPerform('admin:memory:update') && (
                             <DropdownMenuItem onClick={() => handleEdit(entity)}>
                               <Pencil className="mr-2 h-4 w-4" />
                               {t('edit')}
                             </DropdownMenuItem>
                           )}
-                          {canPerform('memory:delete') && (
+                          {canPerform('admin:memory:delete') && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDelete(entity)}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {t('delete')}
@@ -483,6 +464,42 @@ export function MemoriesClient() {
                   <ChevronsRight className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 批量操作浮动工具栏 */}
+        {selectedEntities.size > 0 && canPerform('admin:memory:delete') && (
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+            <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSelectedEntities(new Set())}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+
+              <Badge variant="secondary" className="px-2 py-1">
+                {selectedEntities.size} {t('entitiesSelected')}
+              </Badge>
+
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkDelete}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
         )}

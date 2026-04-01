@@ -73,6 +73,7 @@ export interface AgentKnowledgeBaseConfig {
   knowledge_base_id: string
   retrieval_top_k: number
   score_threshold: number
+  search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
 /** File parser configuration - which tool to use for parsing files */
@@ -102,12 +103,34 @@ export interface AgentKnowledgeBaseOut {
   knowledge_base: KnowledgeBaseInfo
   retrieval_top_k: number
   score_threshold: number
+  search_mode: 'vector' | 'fulltext' | 'hybrid'
 }
 
 export interface MemoryConfig {
   max_memories_per_retrieval: number
   auto_extract: boolean
   importance_threshold: 'low' | 'medium' | 'high'
+}
+
+export interface ImageGenerationConfig {
+  default_model_ref?: string | null
+  default_width: number
+  default_height: number
+  max_images: number
+  allow_reference_images: boolean
+  allowed_providers?: string[]
+  require_confirmation?: boolean
+}
+
+export interface VideoGenerationConfig {
+  default_model_ref?: string | null
+  default_duration: number
+  max_duration: number
+  default_aspect_ratio: string
+  poll_interval_ms: number
+  poll_timeout_s: number
+  allowed_providers?: string[]
+  require_confirmation?: boolean
 }
 
 export interface Agent {
@@ -132,7 +155,12 @@ export interface Agent {
   enable_user_input_request: boolean
   enable_memory: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode: RAGMode
+  embed_config?: Record<string, unknown>
   status: AgentStatus
   visibility: AgentVisibility
   conversation_count: number
@@ -179,6 +207,10 @@ export interface AgentCreateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation?: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation?: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode?: RAGMode
   visibility?: AgentVisibility
 }
@@ -202,7 +234,12 @@ export interface AgentUpdateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  enable_image_generation?: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation?: boolean
+  video_generation_config?: VideoGenerationConfig | null
   rag_mode?: RAGMode
+  embed_config?: Record<string, unknown>
   visibility?: AgentVisibility
 }
 
@@ -346,9 +383,11 @@ export type SSEEventType =
   | 'reasoning_end'
   | 'tool_call'
   | 'tool_result'
+  | 'media_result'
   | 'rag_start'
   | 'rag_context'
   | 'user_input_request'
+  | 'output_truncated'
   | 'message_end'
   | 'error'
 
@@ -383,6 +422,11 @@ export interface SSEMessageEnd {
     completion_tokens: number
     total_tokens: number
   }
+  timing?: {
+    first_token_ms: number | null
+    duration_ms: number
+    tokens_per_second: number | null
+  }
 }
 
 export interface SSEError {
@@ -404,6 +448,69 @@ export interface SSEToolResult {
   tool_display_name?: string
   result: string
   is_error?: boolean
+}
+
+export interface SSEMediaResult {
+  kind: 'media.image' | 'media.video'
+  success: boolean
+  prompt: string
+  model?: string | null
+  model_ref?: string | null
+  images?: Array<{
+    image: {
+      url?: string | null
+      base64?: string | null
+      file_path?: string | null
+      width?: number | null
+      height?: number | null
+      duration?: number | null
+      format?: string
+    }
+    revised_prompt?: string | null
+    seed?: number | null
+  }>
+  task_id?: string | null
+  status?: string
+  progress?: number | null
+  video?: {
+    url?: string | null
+    base64?: string | null
+    file_path?: string | null
+    duration?: number | null
+    width?: number | null
+    height?: number | null
+    format?: string
+  } | null
+  estimated_time?: number | null
+  requires_polling?: boolean
+  poll_interval_ms?: number
+  poll_timeout_s?: number
+  error?: string | null
+}
+
+export interface AgentVideoGenerationStatus {
+  kind: 'media.video'
+  success: boolean
+  prompt: string
+  model?: string | null
+  model_ref?: string | null
+  task_id?: string | null
+  status: string
+  progress?: number | null
+  video?: {
+    url?: string | null
+    base64?: string | null
+    file_path?: string | null
+    duration?: number | null
+    width?: number | null
+    height?: number | null
+    format?: string
+  } | null
+  estimated_time?: number | null
+  requires_polling?: boolean
+  poll_interval_ms?: number
+  poll_timeout_s?: number
+  error?: string | null
 }
 
 // ============ Agent API ============
@@ -600,6 +707,16 @@ export const agentsApi = {
       stream,
       abort: () => controller.abort(),
     }
+  },
+
+  getVideoGenerationStatus: async (
+    agentId: string,
+    taskId: string
+  ): Promise<AgentVideoGenerationStatus> => {
+    const queryParams = new URLSearchParams({ task_id: taskId })
+    return api.get<AgentVideoGenerationStatus>(
+      `/agents/${agentId}/media/video-status?${queryParams.toString()}`
+    )
   },
 }
 
@@ -1027,4 +1144,3 @@ export const publicAgentsApi = {
     }
   },
 }
-

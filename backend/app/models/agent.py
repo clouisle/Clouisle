@@ -120,10 +120,33 @@ class Agent(models.Model):
         description="Memory configuration (max_memories_per_retrieval, auto_extract, importance_threshold)",
     )  # type: ignore[assignment]
 
+    # Media generation configuration
+    enable_image_generation = fields.BooleanField(
+        default=False,
+        description="Enable agent image generation tool calling",
+    )
+    image_generation_config: dict = fields.JSONField(
+        default=dict,
+        description="Image generation configuration (default_model_ref, defaults, limits)",
+    )  # type: ignore[assignment]
+    enable_video_generation = fields.BooleanField(
+        default=False,
+        description="Enable agent video generation tool calling",
+    )
+    video_generation_config: dict = fields.JSONField(
+        default=dict,
+        description="Video generation configuration (default_model_ref, defaults, limits, polling)",
+    )  # type: ignore[assignment]
+
     # Streaming and tool timeout configuration
     streaming_config: dict = fields.JSONField(
         default=dict,
         description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)",
+    )  # type: ignore[assignment]
+
+    # Embed configuration
+    embed_config: dict = fields.JSONField(
+        default=dict, description="Embed configuration (enabled, allowed_domains, theme, bubble)"
     )  # type: ignore[assignment]
 
     # RAG configuration
@@ -216,6 +239,9 @@ class AgentKnowledgeBase(models.Model):
     )
     score_threshold = fields.FloatField(
         default=0.3, description="Minimum similarity score (0-1, lower = more results)"
+    )
+    search_mode = fields.CharField(
+        max_length=20, default="hybrid", description="Search mode: vector, fulltext, or hybrid"
     )
 
     created_at = fields.DatetimeField(auto_now_add=True)

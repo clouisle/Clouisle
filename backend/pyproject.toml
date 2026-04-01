@@ -47,6 +47,11 @@ dependencies = [
     # Markdown processing
     "markdown>=3.5.0",
     "gunicorn>=22.0.0",
+    "anthropic>=0.75.0",
+    # TOTP (Two-Factor Authentication)
+    "pyotp>=2.9.0",
+    "qrcode>=8.0",
+    "pillow>=10.0.0",
 ]
 
 [dependency-groups]

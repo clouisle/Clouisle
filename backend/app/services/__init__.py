@@ -4,9 +4,8 @@ Services package for Clouisle backend.
 
 from .document_processor import (
     DocumentProcessor,
-    TextChunker,
+    chunk_text,
     document_processor,
-    text_chunker,
 )
 from .file_parser import (
     FileParserService,
@@ -19,13 +18,13 @@ from .usage_tracker import (
     UsageTracker,
     usage_tracker,
 )
+from .media_asset_service import MediaAssetService, media_asset_service
 from .vector_store import VectorStore, vector_store
 
 __all__ = [
     "DocumentProcessor",
-    "TextChunker",
+    "chunk_text",
     "document_processor",
-    "text_chunker",
     "FileParserService",
     "FileParseConfig",
     "ParsedFile",
@@ -33,6 +32,8 @@ __all__ = [
     "QuotaExceededError",
     "UsageTracker",
     "usage_tracker",
+    "MediaAssetService",
+    "media_asset_service",
     "VectorStore",
     "vector_store",
 ]

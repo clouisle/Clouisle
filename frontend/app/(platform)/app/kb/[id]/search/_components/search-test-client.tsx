@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Popover,
   PopoverContent,
@@ -55,6 +56,10 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
   const [searchMode, setSearchMode] = React.useState<SearchMode>('hybrid')
   const [topK, setTopK] = React.useState(5)
   const [thresholdInput, setThresholdInput] = React.useState('0')
+  const [rerankEnabled, setRerankEnabled] = React.useState(true)
+  const [rerankCandidateK, setRerankCandidateK] = React.useState(10)
+  const [rerankFailOpen, setRerankFailOpen] = React.useState(true)
+  const [rerankThresholdInput, setRerankThresholdInput] = React.useState('')
   const [showSettings, setShowSettings] = React.useState(false)
   
   // 展开的结果
@@ -66,6 +71,12 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
       try {
         const kb = await knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId)
         setKnowledgeBase(kb)
+        setRerankEnabled(kb.settings?.rerank_enabled ?? true)
+        setRerankCandidateK(kb.settings?.rerank_candidate_k ?? 10)
+        setRerankFailOpen(kb.settings?.rerank_fail_open ?? true)
+        setRerankThresholdInput(
+          kb.settings?.rerank_score_threshold?.toString() || ''
+        )
       } catch {
         router.push('/app/kb')
       } finally {
@@ -74,6 +85,8 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
     }
     loadKnowledgeBase()
   }, [knowledgeBaseId, router])
+
+  const hasRerankModel = !!knowledgeBase?.rerank_model
   
   // 执行搜索
   const handleSearch = async () => {
@@ -88,6 +101,12 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
         search_mode: searchMode,
         top_k: topK,
         threshold: parseFloat(thresholdInput) || 0,
+        rerank_enabled: hasRerankModel ? rerankEnabled : false,
+        rerank_candidate_k: hasRerankModel && rerankEnabled ? rerankCandidateK : undefined,
+        rerank_fail_open: hasRerankModel && rerankEnabled ? rerankFailOpen : undefined,
+        rerank_score_threshold: hasRerankModel && rerankEnabled
+          ? (rerankThresholdInput === '' ? null : parseFloat(rerankThresholdInput) || 0)
+          : undefined,
       })
       setResults(response.results)
       // 默认展开第一个结果
@@ -236,19 +255,46 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
                     </div>
                     {/* 折叠时显示预览 */}
                     {!isExpanded && (
-                      <p className="text-xs text-muted-foreground line-clamp-2 mt-1.5">
-                        {result.content}
-                      </p>
+                      <div className="mt-1.5 space-y-1">
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {result.content}
+                        </p>
+                        {(result.original_score !== undefined || result.rerank_score !== undefined) && (
+                          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                            {result.original_score !== undefined && (
+                              <span>{t('originalScore')}: {formatScore(result.original_score)}</span>
+                            )}
+                            {result.rerank_score !== undefined && (
+                              <span>{t('rerankScore')}: {formatScore(result.rerank_score)}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </CardHeader>
                   {/* 展开时显示完整内容 */}
                   {isExpanded && (
                     <CardContent className="pt-0 px-3 pb-3">
+                      {(result.original_score !== undefined || result.rerank_score !== undefined) && (
+                        <div className="mb-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+                          {result.original_score !== undefined && (
+                            <span>{t('originalScore')}: {formatScore(result.original_score)}</span>
+                          )}
+                          {result.rerank_score !== undefined && (
+                            <span>{t('rerankScore')}: {formatScore(result.rerank_score)}</span>
+                          )}
+                        </div>
+                      )}
                       <div className="rounded bg-muted/50 p-3">
                         <p className="text-xs whitespace-pre-wrap leading-relaxed">
                           {result.content}
                         </p>
                       </div>
+                      {result.rerank_reason && (
+                        <p className="mt-2 text-[11px] text-muted-foreground">
+                          {t('rerankReason')}: {result.rerank_reason}
+                        </p>
+                      )}
                     </CardContent>
                   )}
                 </Card>
@@ -355,6 +401,115 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
                       className="h-8"
                       placeholder="0 - 1"
                     />
+                  </div>
+
+                  <div className="border-t pt-3 space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">{t('rerankModel')}</Label>
+                      {knowledgeBase?.rerank_model ? (
+                        <div className="rounded-md border px-2.5 py-2 text-xs">
+                          <div className="font-medium">{knowledgeBase.rerank_model.name}</div>
+                          <div className="text-muted-foreground">
+                            {knowledgeBase.rerank_model.provider}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          {t('rerankNotConfigured')}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="rerankEnabled" className="text-xs font-medium">
+                          {t('rerankEnabled')}
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground">
+                          {t('rerankEnabledHint')}
+                        </p>
+                      </div>
+                      <Switch
+                        id="rerankEnabled"
+                        checked={hasRerankModel && rerankEnabled}
+                        onCheckedChange={setRerankEnabled}
+                        disabled={!hasRerankModel}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="rerankCandidateK" className="text-xs font-medium">
+                        {t('rerankCandidateK')}
+                      </Label>
+                      <Input
+                        id="rerankCandidateK"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={rerankCandidateK}
+                        onChange={(e) =>
+                          setRerankCandidateK(
+                            Math.min(100, Math.max(topK, Number(e.target.value) || topK))
+                          )
+                        }
+                        className="h-8"
+                        disabled={!hasRerankModel || !rerankEnabled}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        {t('rerankCandidateKHint')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="rerankThreshold" className="text-xs font-medium">
+                        {t('rerankScoreThreshold')}
+                      </Label>
+                      <Input
+                        id="rerankThreshold"
+                        type="text"
+                        inputMode="decimal"
+                        value={rerankThresholdInput}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                            const num = parseFloat(val)
+                            if (val === '' || (num >= 0 && num <= 1)) {
+                              setRerankThresholdInput(val)
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (rerankThresholdInput === '') return
+                          const num = parseFloat(rerankThresholdInput) || 0
+                          setRerankThresholdInput(
+                            String(Math.min(1, Math.max(0, num)))
+                          )
+                        }}
+                        className="h-8"
+                        placeholder={t('rerankScoreThresholdPlaceholder')}
+                        disabled={!hasRerankModel || !rerankEnabled}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        {t('rerankScoreThresholdHint')}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-md border px-2.5 py-2">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="rerankFailOpen" className="text-xs font-medium">
+                          {t('rerankFailOpen')}
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground">
+                          {t('rerankFailOpenHint')}
+                        </p>
+                      </div>
+                      <Switch
+                        id="rerankFailOpen"
+                        checked={rerankFailOpen}
+                        onCheckedChange={setRerankFailOpen}
+                        disabled={!hasRerankModel || !rerankEnabled}
+                      />
+                    </div>
                   </div>
                 </div>
               </PopoverContent>

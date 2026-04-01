@@ -14,17 +14,23 @@ import {
   FileUp,
   MessageSquare,
   Brain,
+  ImageIcon,
+  Clapperboard,
 } from 'lucide-react'
 import {
+  teamModelsApi,
   knowledgeBasesApi,
   type Agent,
   type KnowledgeBase,
+  type TeamModel,
   type ToolConfig,
   type VariableDefinition,
   type AgentKnowledgeBaseConfig,
   type RAGMode,
   type FileUploadConfig,
   type PromptGenerateContext,
+  type ImageGenerationConfig,
+  type VideoGenerationConfig,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -117,6 +123,46 @@ function ConfigCard({
   )
 }
 
+const DEFAULT_IMAGE_GENERATION_CONFIG: ImageGenerationConfig = {
+  default_model_ref: null,
+  default_width: 1024,
+  default_height: 1024,
+  max_images: 4,
+  allow_reference_images: true,
+  allowed_providers: [],
+  require_confirmation: false,
+}
+
+const DEFAULT_VIDEO_GENERATION_CONFIG: VideoGenerationConfig = {
+  default_model_ref: null,
+  default_duration: 5,
+  max_duration: 10,
+  default_aspect_ratio: '16:9',
+  poll_interval_ms: 3000,
+  poll_timeout_s: 120,
+  allowed_providers: [],
+  require_confirmation: false,
+}
+
+const DEFAULT_MEDIA_MODEL_VALUE = '__default__'
+
+function getMediaModelOptionLabel(teamModel: TeamModel) {
+  return `${teamModel.model.name} · ${teamModel.model.provider}/${teamModel.model.model_id}`
+}
+
+function getMediaModelSelectLabel(
+  modelRef: string | null,
+  teamModels: TeamModel[],
+  defaultLabel: string
+) {
+  if (!modelRef) {
+    return defaultLabel
+  }
+
+  const matchedModel = teamModels.find((teamModel) => teamModel.model.id === modelRef)
+  return matchedModel ? getMediaModelOptionLabel(matchedModel) : modelRef
+}
+
 interface AgentOrchestrationFormProps {
   agent: Agent
   onUpdate: (data: Partial<Agent> & { knowledge_base_configs?: AgentKnowledgeBaseConfig[]; rag_mode?: RAGMode }) => void
@@ -144,6 +190,7 @@ export function AgentOrchestrationForm({
       knowledge_base_id: akb.knowledge_base.id,
       retrieval_top_k: akb.retrieval_top_k,
       score_threshold: akb.score_threshold,
+      search_mode: akb.search_mode || 'hybrid',
     }))
   )
   const [toolsConfig, setToolsConfig] = React.useState<ToolConfig[]>(
@@ -159,6 +206,18 @@ export function AgentOrchestrationForm({
       auto_extract: true,
       importance_threshold: 'medium' as const,
     }
+  )
+  const [enableImageGeneration, setEnableImageGeneration] = React.useState(
+    agent.enable_image_generation || false
+  )
+  const [imageGenerationConfig, setImageGenerationConfig] = React.useState<ImageGenerationConfig>(
+    agent.image_generation_config || DEFAULT_IMAGE_GENERATION_CONFIG
+  )
+  const [enableVideoGeneration, setEnableVideoGeneration] = React.useState(
+    agent.enable_video_generation || false
+  )
+  const [videoGenerationConfig, setVideoGenerationConfig] = React.useState<VideoGenerationConfig>(
+    agent.video_generation_config || DEFAULT_VIDEO_GENERATION_CONFIG
   )
   const [fileUploadConfig, setFileUploadConfig] = React.useState<FileUploadConfig>(
     agent.file_upload_config || {
@@ -181,6 +240,7 @@ export function AgentOrchestrationForm({
         knowledge_base_id: akb.knowledge_base.id,
         retrieval_top_k: akb.retrieval_top_k,
         score_threshold: akb.score_threshold,
+        search_mode: akb.search_mode || 'hybrid',
       }))
     )
     setToolsConfig(agent.tools_config || [])
@@ -194,6 +254,14 @@ export function AgentOrchestrationForm({
         auto_extract: true,
         importance_threshold: 'medium' as const,
       }
+    )
+    setEnableImageGeneration(agent.enable_image_generation || false)
+    setImageGenerationConfig(
+      agent.image_generation_config || DEFAULT_IMAGE_GENERATION_CONFIG
+    )
+    setEnableVideoGeneration(agent.enable_video_generation || false)
+    setVideoGenerationConfig(
+      agent.video_generation_config || DEFAULT_VIDEO_GENERATION_CONFIG
     )
     setFileUploadConfig(
       agent.file_upload_config || {
@@ -216,6 +284,8 @@ export function AgentOrchestrationForm({
   const [fileUploadCollapsed, setFileUploadCollapsed] = React.useState(true)
   const [userInputRequestCollapsed, setUserInputRequestCollapsed] = React.useState(true)
   const [memoryCollapsed, setMemoryCollapsed] = React.useState(true)
+  const [imageGenerationCollapsed, setImageGenerationCollapsed] = React.useState(true)
+  const [videoGenerationCollapsed, setVideoGenerationCollapsed] = React.useState(true)
 
   // Prompt generate dialog state
   const [showPromptGenerator, setShowPromptGenerator] = React.useState(false)
@@ -223,7 +293,19 @@ export function AgentOrchestrationForm({
   // Data loading
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
   const [fileParsers, setFileParsers] = React.useState<import('@/lib/api').Tool[]>([])
+  const [imageModels, setImageModels] = React.useState<TeamModel[]>([])
+  const [videoModels, setVideoModels] = React.useState<TeamModel[]>([])
   const { tools: availableTools } = useTools()
+  const imageDefaultModelLabel = getMediaModelSelectLabel(
+    imageGenerationConfig.default_model_ref ?? null,
+    imageModels,
+    t('imageGeneration.defaultModel')
+  )
+  const videoDefaultModelLabel = getMediaModelSelectLabel(
+    videoGenerationConfig.default_model_ref ?? null,
+    videoModels,
+    t('videoGeneration.defaultModel')
+  )
 
   // Load knowledge bases and file parsers
   React.useEffect(() => {
@@ -231,14 +313,18 @@ export function AgentOrchestrationForm({
       if (!currentTeam) return
 
       try {
-        const [kbs, parsers] = await Promise.all([
+        const [kbs, parsers, imageTeamModels, videoTeamModels] = await Promise.all([
           knowledgeBasesApi.getKnowledgeBases(),
           import('@/lib/api').then(m => m.toolsApi.listFileParsers(currentTeam.id)),
+          teamModelsApi.getTeamModels(currentTeam.id, 'text_to_image'),
+          teamModelsApi.getTeamModels(currentTeam.id, 'text_to_video'),
         ])
         setKnowledgeBases(
           kbs.items.filter((kb) => kb.team.id === currentTeam.id)
         )
         setFileParsers(parsers)
+        setImageModels(imageTeamModels)
+        setVideoModels(videoTeamModels)
       } catch {
         // Ignore errors
       }
@@ -258,10 +344,14 @@ export function AgentOrchestrationForm({
       enable_user_input_request: enableUserInputRequest,
       enable_memory: enableMemory,
       memory_config: enableMemory ? memoryConfig : null,
+      enable_image_generation: enableImageGeneration,
+      image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
+      enable_video_generation: enableVideoGeneration,
+      video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
       file_upload_config: enableFileUpload ? fileUploadConfig : null,
       rag_mode: ragMode,
     })
-  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, enableMemory, memoryConfig, fileUploadConfig, ragMode, onUpdate])
+  }, [systemPrompt, toolsConfig, variables, knowledgeBaseConfigs, enableVision, enableFileUpload, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig, fileUploadConfig, ragMode, onUpdate])
 
   // Character count for prompt
   const promptLength = systemPrompt.length
@@ -439,6 +529,7 @@ export function AgentOrchestrationForm({
                   knowledge_base_id: kb.id,
                   retrieval_top_k: 3,
                   score_threshold: 0.3,
+                  search_mode: 'hybrid',
                 }
                 setKnowledgeBaseConfigs([...knowledgeBaseConfigs, newConfig])
                 setKbCollapsed(false)
@@ -802,6 +893,300 @@ export function AgentOrchestrationForm({
                   }}
                 />
               </div>
+            </div>
+          )}
+        </div>
+      </ConfigCard>
+
+      {/* Image Generation Section */}
+      <ConfigCard
+        icon={ImageIcon}
+        iconColor="text-amber-500"
+        title={t('imageGeneration.title')}
+        tooltip={t('imageGeneration.tooltip')}
+        action={
+          <Switch
+            checked={enableImageGeneration}
+            onCheckedChange={setEnableImageGeneration}
+          />
+        }
+        collapsed={imageGenerationCollapsed}
+        onToggle={() => setImageGenerationCollapsed(!imageGenerationCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('imageGeneration.description')}
+          </p>
+
+          {enableImageGeneration && (
+            <div className="space-y-4 pt-2 border-t">
+              <div className="space-y-2">
+                <Label className="text-xs">{t('imageGeneration.defaultModel')}</Label>
+                <Select
+                  value={imageGenerationConfig.default_model_ref || DEFAULT_MEDIA_MODEL_VALUE}
+                  onValueChange={(value) => {
+                    setImageGenerationConfig({
+                      ...imageGenerationConfig,
+                      default_model_ref: value === DEFAULT_MEDIA_MODEL_VALUE ? null : value,
+                    })
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-sm bg-background">
+                    <SelectValue>{imageDefaultModelLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={DEFAULT_MEDIA_MODEL_VALUE}>
+                      {t('imageGeneration.defaultModel')}
+                    </SelectItem>
+                    {imageModels.map((teamModel) => (
+                      <SelectItem key={teamModel.id} value={teamModel.model.id}>
+                        {getMediaModelOptionLabel(teamModel)}
+                      </SelectItem>
+                    ))}
+                    {imageGenerationConfig.default_model_ref &&
+                    !imageModels.some((teamModel) => teamModel.model.id === imageGenerationConfig.default_model_ref) ? (
+                      <SelectItem value={imageGenerationConfig.default_model_ref}>
+                        {imageGenerationConfig.default_model_ref}
+                      </SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('imageGeneration.defaultWidth')}</Label>
+                  <Input
+                    type="number"
+                    value={imageGenerationConfig.default_width}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 1024
+                      setImageGenerationConfig({
+                        ...imageGenerationConfig,
+                        default_width: Math.min(Math.max(value, 256), 4096),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={256}
+                    max={4096}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('imageGeneration.defaultHeight')}</Label>
+                  <Input
+                    type="number"
+                    value={imageGenerationConfig.default_height}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 1024
+                      setImageGenerationConfig({
+                        ...imageGenerationConfig,
+                        default_height: Math.min(Math.max(value, 256), 4096),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={256}
+                    max={4096}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs">{t('imageGeneration.maxImages')}</Label>
+                <Input
+                  type="number"
+                  value={imageGenerationConfig.max_images}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 4
+                    setImageGenerationConfig({
+                      ...imageGenerationConfig,
+                      max_images: Math.min(Math.max(value, 1), 10),
+                    })
+                  }}
+                  className="h-8 w-28 text-sm bg-background"
+                  min={1}
+                  max={10}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border bg-background p-3">
+                <div className="space-y-0.5">
+                  <Label className="text-xs font-medium">{t('imageGeneration.allowReferenceImages')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('imageGeneration.allowReferenceImagesHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={imageGenerationConfig.allow_reference_images}
+                  onCheckedChange={(checked) => {
+                    setImageGenerationConfig({
+                      ...imageGenerationConfig,
+                      allow_reference_images: checked,
+                    })
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </ConfigCard>
+
+      {/* Video Generation Section */}
+      <ConfigCard
+        icon={Clapperboard}
+        iconColor="text-rose-500"
+        title={t('videoGeneration.title')}
+        tooltip={t('videoGeneration.tooltip')}
+        action={
+          <Switch
+            checked={enableVideoGeneration}
+            onCheckedChange={setEnableVideoGeneration}
+          />
+        }
+        collapsed={videoGenerationCollapsed}
+        onToggle={() => setVideoGenerationCollapsed(!videoGenerationCollapsed)}
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-muted-foreground">
+            {t('videoGeneration.description')}
+          </p>
+
+          {enableVideoGeneration && (
+            <div className="space-y-4 pt-2 border-t">
+              <div className="space-y-2">
+                <Label className="text-xs">{t('videoGeneration.defaultModel')}</Label>
+                <Select
+                  value={videoGenerationConfig.default_model_ref || DEFAULT_MEDIA_MODEL_VALUE}
+                  onValueChange={(value) => {
+                    setVideoGenerationConfig({
+                      ...videoGenerationConfig,
+                      default_model_ref: value === DEFAULT_MEDIA_MODEL_VALUE ? null : value,
+                    })
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-sm bg-background">
+                    <SelectValue>{videoDefaultModelLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={DEFAULT_MEDIA_MODEL_VALUE}>
+                      {t('videoGeneration.defaultModel')}
+                    </SelectItem>
+                    {videoModels.map((teamModel) => (
+                      <SelectItem key={teamModel.id} value={teamModel.model.id}>
+                        {getMediaModelOptionLabel(teamModel)}
+                      </SelectItem>
+                    ))}
+                    {videoGenerationConfig.default_model_ref &&
+                    !videoModels.some((teamModel) => teamModel.model.id === videoGenerationConfig.default_model_ref) ? (
+                      <SelectItem value={videoGenerationConfig.default_model_ref}>
+                        {videoGenerationConfig.default_model_ref}
+                      </SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('videoGeneration.defaultDuration')}</Label>
+                  <Input
+                    type="number"
+                    value={videoGenerationConfig.default_duration}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 5
+                      setVideoGenerationConfig({
+                        ...videoGenerationConfig,
+                        default_duration: Math.min(Math.max(value, 1), 30),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={1}
+                    max={30}
+                    step={0.5}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('videoGeneration.maxDuration')}</Label>
+                  <Input
+                    type="number"
+                    value={videoGenerationConfig.max_duration}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 10
+                      setVideoGenerationConfig({
+                        ...videoGenerationConfig,
+                        max_duration: Math.min(Math.max(value, 1), 30),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={1}
+                    max={30}
+                    step={0.5}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs">{t('videoGeneration.aspectRatio')}</Label>
+                <Select
+                  value={videoGenerationConfig.default_aspect_ratio}
+                  onValueChange={(value) => {
+                    setVideoGenerationConfig({
+                      ...videoGenerationConfig,
+                      default_aspect_ratio: value || '16:9',
+                    })
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-36 text-sm bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="16:9">16:9</SelectItem>
+                    <SelectItem value="9:16">9:16</SelectItem>
+                    <SelectItem value="1:1">1:1</SelectItem>
+                    <SelectItem value="4:3">4:3</SelectItem>
+                    <SelectItem value="21:9">21:9</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('videoGeneration.pollInterval')}</Label>
+                  <Input
+                    type="number"
+                    value={videoGenerationConfig.poll_interval_ms}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 3000
+                      setVideoGenerationConfig({
+                        ...videoGenerationConfig,
+                        poll_interval_ms: Math.min(Math.max(value, 500), 30000),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={500}
+                    max={30000}
+                    step={500}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">{t('videoGeneration.pollTimeout')}</Label>
+                  <Input
+                    type="number"
+                    value={videoGenerationConfig.poll_timeout_s}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value) || 120
+                      setVideoGenerationConfig({
+                        ...videoGenerationConfig,
+                        poll_timeout_s: Math.min(Math.max(value, 5), 600),
+                      })
+                    }}
+                    className="h-8 text-sm bg-background"
+                    min={5}
+                    max={600}
+                    step={5}
+                  />
+                </div>
+              </div>
+
             </div>
           )}
         </div>

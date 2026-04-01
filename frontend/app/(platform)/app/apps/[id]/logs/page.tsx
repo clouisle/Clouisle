@@ -408,7 +408,7 @@ export default function LogsPage({ params }: LogsPageProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConversation} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConversation}>
               {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -126,6 +126,14 @@ export interface ImagePart {
 }
 
 /**
+ * Media result part - for generated image/video content shown in assistant body
+ */
+export interface MediaResultPart {
+  type: 'media-result'
+  output: unknown
+}
+
+/**
  * Step start marker (for multi-step reasoning)
  */
 export interface StepStartPart {
@@ -156,6 +164,13 @@ export interface UserInputRequestPart {
 }
 
 /**
+ * Output truncated warning part
+ */
+export interface TruncatedPart {
+  type: 'truncated'
+}
+
+/**
  * All possible message parts
  */
 export type MessagePart =
@@ -169,9 +184,11 @@ export type MessagePart =
   | SourceDocumentPart
   | FilePart
   | ImagePart
+  | MediaResultPart
   | StepStartPart
   | TaskPart
   | UserInputRequestPart
+  | TruncatedPart
 
 /**
  * Chat message
@@ -256,6 +273,10 @@ export function isImagePart(part: MessagePart): part is ImagePart {
   return part.type === 'image'
 }
 
+export function isMediaResultPart(part: MessagePart): part is MediaResultPart {
+  return part.type === 'media-result'
+}
+
 export function isStepStartPart(part: MessagePart): part is StepStartPart {
   return part.type === 'step-start'
 }
@@ -266,6 +287,10 @@ export function isTaskPart(part: MessagePart): part is TaskPart {
 
 export function isUserInputRequestPart(part: MessagePart): part is UserInputRequestPart {
   return part.type === 'user-input-request'
+}
+
+export function isTruncatedPart(part: MessagePart): part is TruncatedPart {
+  return part.type === 'truncated'
 }
 
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {

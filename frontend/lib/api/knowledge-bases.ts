@@ -13,6 +13,10 @@ export interface KnowledgeBaseSettings {
   chunk_size?: number
   chunk_overlap?: number
   separator?: string | null
+  rerank_enabled?: boolean
+  rerank_candidate_k?: number
+  rerank_fail_open?: boolean
+  rerank_score_threshold?: number | null
 }
 
 export interface TeamInfo {
@@ -34,6 +38,13 @@ export interface EmbeddingModelInfo {
   model_id: string
 }
 
+export interface RerankModelInfo {
+  id: string
+  name: string
+  provider: string
+  model_id: string
+}
+
 export interface KnowledgeBase {
   id: string
   team: TeamInfo
@@ -43,6 +54,8 @@ export interface KnowledgeBase {
   icon: string | null
   embedding_model_id: string | null
   embedding_model?: EmbeddingModelInfo | null
+  rerank_model_id: string | null
+  rerank_model?: RerankModelInfo | null
   settings: KnowledgeBaseSettings | null
   status: string
   document_count: number
@@ -68,6 +81,7 @@ export interface KnowledgeBaseCreateInput {
   icon?: string | null
   team_id?: string
   embedding_model_id?: string | null
+  rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
 }
 
@@ -76,6 +90,7 @@ export interface KnowledgeBaseUpdateInput {
   description?: string | null
   icon?: string | null
   embedding_model_id?: string | null
+  rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
   status?: string
 }
@@ -116,6 +131,8 @@ export interface DocumentChunk {
   chunk_index: number
   token_count: number
   metadata: Record<string, unknown> | null
+  status: 'pending' | 'embedded' | 'failed'
+  error_message: string | null
   created_at: string
 }
 
@@ -152,6 +169,9 @@ export interface SearchResult {
   score: number
   metadata: Record<string, unknown> | null
   search_type?: string
+  original_score?: number
+  rerank_score?: number
+  rerank_reason?: string
 }
 
 export type SearchMode = 'vector' | 'fulltext' | 'hybrid'
@@ -161,6 +181,10 @@ export interface SearchParams {
   search_mode?: SearchMode
   top_k?: number
   threshold?: number
+  rerank_enabled?: boolean
+  rerank_candidate_k?: number
+  rerank_fail_open?: boolean
+  rerank_score_threshold?: number | null
 }
 
 export interface SearchResponse {
@@ -183,6 +207,7 @@ export interface ChunkPreviewItem {
   content: string
   token_count: number
   char_count: number
+  overlap_length: number
 }
 
 export interface ChunkPreviewResponse {
@@ -254,6 +279,10 @@ export const knowledgeBasesApi = {
       search_mode: params.search_mode || 'hybrid',
       top_k: params.top_k || 5,
       score_threshold: params.threshold || 0,
+      rerank_enabled: params.rerank_enabled,
+      rerank_candidate_k: params.rerank_candidate_k,
+      rerank_fail_open: params.rerank_fail_open,
+      rerank_score_threshold: params.rerank_score_threshold,
     }
     return api.post<SearchResponse>(`/knowledge-bases/${id}/search`, requestBody)
   },
@@ -334,6 +363,13 @@ export const knowledgeBasesApi = {
    */
   reprocessDocument: async (kbId: string, docId: string): Promise<Document> => {
     return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/reprocess`)
+  },
+
+  /**
+   * 重试失败的分块
+   */
+  retryFailedChunks: async (kbId: string, docId: string): Promise<Document> => {
+    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/retry-failed-chunks`)
   },
 
   /**

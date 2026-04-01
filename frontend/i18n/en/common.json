@@ -42,6 +42,7 @@
     "of": "of",
     "confirmDelete": "Confirm Delete",
     "deleteWarning": "This action cannot be undone. Are you sure you want to continue?",
-    "invalidJSON": "Invalid JSON format"
+    "invalidJSON": "Invalid JSON format",
+    "done": "Done"
   }
 }

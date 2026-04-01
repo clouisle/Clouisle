@@ -22,14 +22,14 @@ import {
 import { toast } from 'sonner'
 import {
   workflowsApi,
-  teamsApi,
-  usersApi,
   type WorkflowRunListItemWithWorkflow,
-  type Team,
   type WorkflowListItem,
   type RunStatus,
   type TriggerType,
 } from '@/lib/api'
+import { teamsApi } from '@/lib/api/admin/teams'
+import { usersApi } from '@/lib/api/admin/users'
+import type { Team } from '@/lib/api/teams'
 import type { User } from '@/lib/api/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -481,8 +481,8 @@ export function WorkflowRunsTable() {
                           </DropdownMenuItem>
                           {canDeleteWorkflowRun && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDeleteClick([run.id])}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}
@@ -573,10 +573,7 @@ export function WorkflowRunsTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
               {commonT('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

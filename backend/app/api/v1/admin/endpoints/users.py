@@ -1,5 +1,6 @@
 from typing import Any, List, Optional
 from uuid import UUID
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, BackgroundTasks, Request
 from pydantic import BaseModel
@@ -8,6 +9,7 @@ from tortoise.expressions import Q
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
+from app.core.password import validate_password
 from app.core.email import (
     send_email,
     check_bulk_email_rate,
@@ -17,7 +19,7 @@ from app.core.email import (
 )
 from app.models.user import User, Role
 from app.models.site_setting import SiteSetting
-from app.models.notification import AutoNotificationType
+from app.models.notification import AutoNotificationType, NotificationLevel
 from app.schemas.user import User as UserSchema, UserCreate, UserUpdate
 from app.schemas.response import (
     Response,
@@ -28,6 +30,7 @@ from app.schemas.response import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
+from app.services.password_expiration import PasswordExpirationService
 
 router = APIRouter()
 
@@ -61,6 +64,8 @@ async def serialize_user_with_sso(user: User) -> dict:
         "last_login": user.last_login,
         "auth_source": user.auth_source,
         "external_id": user.external_id,
+        "force_password_change": getattr(user, "force_password_change", False),
+        "password_expiration_exempt": getattr(user, "password_expiration_exempt", False),
         "roles": [
             {
                 "id": role.id,
@@ -109,7 +114,7 @@ async def read_users(
         None, description="Filter by status: active, inactive, pending"
     ),
     search: Optional[str] = Query(None, description="Search by username or email"),
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     skip = (page - 1) * page_size
     query = User.all()
@@ -146,7 +151,7 @@ async def read_users(
 
 @router.get("/stats", response_model=Response[dict])
 async def get_user_stats(
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     total = await User.all().count()
     active = await User.filter(is_active=True).count()
@@ -168,7 +173,7 @@ async def create_user(
     *,
     request: Request,
     user_in: UserCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:create")),
 ) -> Any:
     existing_user = await User.filter(username=user_in.username).first()
     if existing_user:
@@ -223,7 +228,7 @@ async def send_email_to_users(
     *,
     data: SendEmailRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
     if not smtp_enabled:
@@ -300,7 +305,7 @@ async def send_email_to_users(
 @router.get("/{user_id}", response_model=Response[UserSchema])
 async def read_user_by_id(
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     user = await User.filter(id=user_id).prefetch_related("roles__permissions").first()
     if not user:
@@ -316,7 +321,7 @@ async def read_user_by_id(
 async def activate_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -364,7 +369,7 @@ async def activate_user(
 async def deactivate_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -420,7 +425,7 @@ async def update_user(
     request: Request,
     user_id: UUID,
     user_in: UserUpdate,
-    current_user: User = Depends(deps.PermissionChecker("user:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
 ) -> Any:
     user = await User.filter(id=user_id).first()
     if not user:
@@ -435,6 +440,16 @@ async def update_user(
     password_changed = False
     if "password" in user_data:
         password = user_data.pop("password")
+
+        # 验证密码强度（管理员编辑时不检查密码历史）
+        is_valid, errors = await validate_password(password, user=None)
+        if not is_valid:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="password_validation_failed",
+                data={"errors": errors},
+            )
+
         user_data["hashed_password"] = security.get_password_hash(password)
         password_changed = True
 
@@ -484,7 +499,7 @@ async def update_user(
 async def delete_user(
     request: Request,
     user_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:delete")),
 ) -> Any:
     user = await User.filter(id=user_id).prefetch_related("roles__permissions").first()
     if not user:
@@ -513,3 +528,382 @@ async def delete_user(
 
     await user.delete()
     return success(data=await serialize_user_with_sso(user), msg_key="user_deleted")
+
+
+# Password Expiration Management Endpoints
+
+
+@router.post("/{user_id}/force-password-change", response_model=Response[None])
+async def force_password_change(
+    request: Request,
+    user_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
+) -> Any:
+    """
+    Force user to change password on next login.
+    """
+    user = await User.filter(id=user_id).first()
+    if not user:
+        raise BusinessError(
+            code=ResponseCode.USER_NOT_FOUND,
+            msg_key="user_with_id_not_exists",
+            status_code=404,
+        )
+
+    # Set force password change flag
+    user.force_password_change = True
+    await user.save()
+
+    # Send notification to user
+    await AutoNotificationService.send_to_user(
+        notification_type=AutoNotificationType.PASSWORD_FORCE_CHANGE,
+        user_id=user.id,
+        title=t("notify_password_force_change_title", lang=user.locale),
+        content=t("notify_password_force_change_content", lang=user.locale),
+        level=NotificationLevel.HIGH,
+    )
+
+    # Audit log
+    await AuditLogService.log(
+        user=current_user,
+        action="force_password_change",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
+    return success(msg_key="user_updated")
+
+
+@router.post("/{user_id}/reset-password-expiration", response_model=Response[None])
+async def reset_password_expiration(
+    request: Request,
+    user_id: UUID,
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
+) -> Any:
+    """
+    Reset password expiration date (set password_changed_at to now).
+    """
+
+    user = await User.filter(id=user_id).first()
+    if not user:
+        raise BusinessError(
+            code=ResponseCode.USER_NOT_FOUND,
+            msg_key="user_with_id_not_exists",
+            status_code=404,
+        )
+
+    # Reset password changed date to now
+    user.password_changed_at = datetime.now(timezone.utc)
+    user.password_expires_at = (
+        await PasswordExpirationService.calculate_expiration_date(user)
+    )
+    user.password_expiration_notified_at = None
+    await user.save()
+
+    # Audit log
+    await AuditLogService.log(
+        user=current_user,
+        action="reset_password_expiration",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+        changes={
+            "password_changed_at": user.password_changed_at.isoformat(),
+            "password_expires_at": (
+                user.password_expires_at.isoformat()
+                if user.password_expires_at
+                else None
+            ),
+        },
+    )
+
+    return success(msg_key="user_updated")
+
+
+class ExemptPasswordExpirationRequest(BaseModel):
+    exempt: bool
+
+
+@router.post("/{user_id}/exempt-password-expiration", response_model=Response[None])
+async def exempt_password_expiration(
+    request: Request,
+    user_id: UUID,
+    data: ExemptPasswordExpirationRequest,
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
+) -> Any:
+    """
+    Toggle password expiration exemption for user.
+    """
+    user = await User.filter(id=user_id).first()
+    if not user:
+        raise BusinessError(
+            code=ResponseCode.USER_NOT_FOUND,
+            msg_key="user_with_id_not_exists",
+            status_code=404,
+        )
+
+    # Update exemption status
+    user.password_expiration_exempt = data.exempt
+
+    # If granting exemption, clear force_password_change flag
+    if data.exempt and user.force_password_change:
+        user.force_password_change = False
+
+    await user.save()
+
+    # Audit log
+    await AuditLogService.log(
+        user=current_user,
+        action="exempt_password_expiration",
+        resource_type="user",
+        resource_id=user.id,
+        resource_name=user.username,
+        operation="update",
+        status="success",
+        request=request,
+        changes={"password_expiration_exempt": data.exempt},
+    )
+
+    return success(msg_key="user_updated")
+
+
+class BulkForcePasswordChangeRequest(BaseModel):
+    user_ids: List[UUID]
+
+
+@router.post("/bulk-force-password-change", response_model=Response[dict])
+async def bulk_force_password_change(
+    request: Request,
+    data: BulkForcePasswordChangeRequest,
+    current_user: User = Depends(deps.PermissionChecker("admin:user:update")),
+) -> Any:
+    """
+    Force multiple users to change password on next login.
+    """
+    if not data.user_ids:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="no_users_selected",
+        )
+
+    # Get users
+    users = await User.filter(id__in=data.user_ids).all()
+    if not users:
+        raise BusinessError(
+            code=ResponseCode.USER_NOT_FOUND,
+            msg_key="no_users_found",
+        )
+
+    # Update all users
+    success_count = 0
+    for user in users:
+        user.force_password_change = True
+        await user.save()
+
+        # Send notification
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.PASSWORD_FORCE_CHANGE,
+            user_id=user.id,
+            title=t("notify_password_force_change_title", lang=user.locale),
+            content=t("notify_password_force_change_content", lang=user.locale),
+            level=NotificationLevel.HIGH,
+        )
+        success_count += 1
+
+    # Audit log
+    await AuditLogService.log(
+        user=current_user,
+        action="bulk_force_password_change",
+        resource_type="user",
+        resource_id=None,
+        resource_name=f"{success_count} users",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"user_ids": [str(uid) for uid in data.user_ids], "count": success_count},
+    )
+
+    return success(data={"count": success_count}, msg_key="user_updated")
+
+
+class PasswordExpirationStats(BaseModel):
+    total_users: int
+    expired_count: int
+    expiring_soon_count: int
+    force_change_count: int
+    exempt_count: int
+
+
+@router.get("/password-expiration-stats", response_model=Response[PasswordExpirationStats])
+async def get_password_expiration_stats(
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
+) -> Any:
+    """
+    Get password expiration statistics for dashboard widget.
+    """
+
+    # Check if policy is enabled
+    enabled = await SiteSetting.get_value("password_expiration_enabled", False)
+    if not enabled:
+        return success(
+            data=PasswordExpirationStats(
+                total_users=0,
+                expired_count=0,
+                expiring_soon_count=0,
+                force_change_count=0,
+                exempt_count=0,
+            )
+        )
+
+    now = datetime.now(timezone.utc)
+    warning_days = await SiteSetting.get_value("password_expiration_warning_days", 7)
+    warning_threshold = now + timedelta(days=warning_days)
+
+    # Total local auth users (not SSO)
+    total_users = await User.filter(auth_source="local").count()
+
+    # Expired passwords
+    expired_count = await User.filter(
+        auth_source="local",
+        is_superuser=False,
+        password_expiration_exempt=False,
+        password_expires_at__isnull=False,
+        password_expires_at__lt=now,
+    ).count()
+
+    # Expiring soon (within warning period)
+    expiring_soon_count = await User.filter(
+        auth_source="local",
+        is_superuser=False,
+        password_expiration_exempt=False,
+        password_expires_at__isnull=False,
+        password_expires_at__gt=now,
+        password_expires_at__lte=warning_threshold,
+    ).count()
+
+    # Force change required
+    force_change_count = await User.filter(
+        auth_source="local", force_password_change=True
+    ).count()
+
+    # Exempt users
+    exempt_count = await User.filter(
+        auth_source="local", password_expiration_exempt=True
+    ).count()
+
+    stats = PasswordExpirationStats(
+        total_users=total_users,
+        expired_count=expired_count,
+        expiring_soon_count=expiring_soon_count,
+        force_change_count=force_change_count,
+        exempt_count=exempt_count,
+    )
+
+    return success(data=stats)
+
+
+class ExpiringPasswordUser(BaseModel):
+    id: UUID
+    username: str
+    email: str
+    password_changed_at: Optional[str]
+    password_expires_at: Optional[str]
+    days_until_expiration: Optional[int]
+    force_password_change: bool
+    password_expiration_exempt: bool
+    last_login: Optional[str]
+
+
+@router.get("/expiring-passwords", response_model=Response[PageData[ExpiringPasswordUser]])
+async def get_expiring_passwords(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    filter: str = Query("all", regex="^(all|expired|expiring|force_change)$"),
+    current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
+) -> Any:
+    """
+    Get paginated list of users with expired/expiring passwords.
+
+    Filters:
+    - all: All users with password expiration tracking
+    - expired: Users with expired passwords
+    - expiring: Users with passwords expiring soon
+    - force_change: Users required to change password
+    """
+
+    now = datetime.now(timezone.utc)
+    warning_days = await SiteSetting.get_value("password_expiration_warning_days", 7)
+    warning_threshold = now + timedelta(days=warning_days)
+
+    # Base query: local auth users with password expiration tracking
+    query = User.filter(
+        auth_source="local",
+        password_changed_at__isnull=False,
+    )
+
+    # Apply filter
+    if filter == "expired":
+        query = query.filter(
+            is_superuser=False,
+            password_expiration_exempt=False,
+            password_expires_at__isnull=False,
+            password_expires_at__lt=now,
+        )
+    elif filter == "expiring":
+        query = query.filter(
+            is_superuser=False,
+            password_expiration_exempt=False,
+            password_expires_at__isnull=False,
+            password_expires_at__gt=now,
+            password_expires_at__lte=warning_threshold,
+        )
+    elif filter == "force_change":
+        query = query.filter(force_password_change=True)
+
+    # Get total count
+    total = await query.count()
+
+    # Get paginated results
+    offset = (page - 1) * page_size
+    users = await query.offset(offset).limit(page_size).all()
+
+    # Serialize users
+    items = []
+    for user in users:
+        days_until_expiration = None
+        if user.password_expires_at:
+            delta = user.password_expires_at - now
+            days_until_expiration = delta.days
+
+        items.append(
+            ExpiringPasswordUser(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                password_changed_at=(
+                    user.password_changed_at.isoformat()
+                    if user.password_changed_at
+                    else None
+                ),
+                password_expires_at=(
+                    user.password_expires_at.isoformat()
+                    if user.password_expires_at
+                    else None
+                ),
+                days_until_expiration=days_until_expiration,
+                force_password_change=user.force_password_change,
+                password_expiration_exempt=user.password_expiration_exempt,
+                last_login=user.last_login.isoformat() if user.last_login else None,
+            )
+        )
+
+    page_data = PageData(items=items, total=total, page=page, page_size=page_size)
+
+    return success(data=page_data)

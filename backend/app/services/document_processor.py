@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import re
+from pathlib import Path
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -80,8 +81,22 @@ class DocumentProcessor:
             )
             upload_dir = os.path.join(base_dir, "uploads", "documents")
 
-        self.upload_dir = upload_dir
-        os.makedirs(upload_dir, exist_ok=True)
+        self.upload_dir = str(Path(upload_dir).resolve())
+        os.makedirs(self.upload_dir, exist_ok=True)
+
+    def _resolve_storage_path(self, *parts: str) -> Path:
+        """Resolve a path under the document upload directory."""
+        root = Path(self.upload_dir).resolve()
+        candidate = root.joinpath(*parts).resolve()
+        if candidate != root and root not in candidate.parents:
+            raise ValueError("Invalid document storage path")
+        return candidate
+
+    def _sanitize_filename(self, filename: str) -> str:
+        safe_name = os.path.basename(filename).strip()
+        if not safe_name or safe_name in {".", ".."}:
+            raise ValueError("Invalid document filename")
+        return safe_name
 
     def get_document_type(
         self, filename: str, content_type: str | None = None
@@ -115,22 +130,28 @@ class DocumentProcessor:
         Returns:
             Full path for storing the document
         """
+        safe_filename = self._sanitize_filename(filename)
+
         # Organize by KB ID and date
         date_path = datetime.now().strftime("%Y/%m")
 
         # Generate unique filename
         file_hash = hashlib.md5(
-            f"{kb_id}{filename}{datetime.now().isoformat()}".encode()
+            f"{kb_id}{safe_filename}{datetime.now().isoformat()}".encode()
         ).hexdigest()[:8]
-        ext = os.path.splitext(filename)[1]
+        ext = os.path.splitext(safe_filename)[1]
         unique_name = (
-            f"{file_hash}_{filename}" if len(filename) < 50 else f"{file_hash}{ext}"
+            f"{file_hash}_{safe_filename}"
+            if len(safe_filename) < 50
+            else f"{file_hash}{ext}"
         )
 
-        dir_path = os.path.join(self.upload_dir, str(kb_id), date_path)
+        dir_path = self._resolve_storage_path(str(kb_id), *date_path.split("/"))
         os.makedirs(dir_path, exist_ok=True)
 
-        return os.path.join(dir_path, unique_name)
+        return str(
+            self._resolve_storage_path(str(kb_id), *date_path.split("/"), unique_name)
+        )
 
     async def save_file(self, content: bytes, path: str) -> int:
         """
@@ -143,8 +164,9 @@ class DocumentProcessor:
         Returns:
             File size in bytes
         """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        async with aiofiles.open(path, "wb") as f:
+        resolved_path = self._resolve_storage_path(path)
+        os.makedirs(resolved_path.parent, exist_ok=True)
+        async with aiofiles.open(resolved_path, "wb") as f:
             await f.write(content)
         return len(content)
 
@@ -158,7 +180,8 @@ class DocumentProcessor:
         Returns:
             File content bytes
         """
-        async with aiofiles.open(path, "rb") as f:
+        resolved_path = self._resolve_storage_path(path)
+        async with aiofiles.open(resolved_path, "rb") as f:
             return await f.read()
 
     def delete_file(self, path: str) -> bool:
@@ -171,8 +194,9 @@ class DocumentProcessor:
         Returns:
             True if deleted, False if not found
         """
-        if os.path.exists(path):
-            os.remove(path)
+        resolved_path = self._resolve_storage_path(path)
+        if os.path.exists(resolved_path):
+            os.remove(resolved_path)
             return True
         return False
 
@@ -190,7 +214,8 @@ class DocumentProcessor:
         Returns:
             Tuple of (extracted_text, metadata)
         """
-        content = await self.read_file(path)
+        resolved_path = str(self._resolve_storage_path(path))
+        content = await self.read_file(resolved_path)
         metadata: dict[str, Any] = {
             "file_size": len(content),
             "doc_type": doc_type,
@@ -216,14 +241,14 @@ class DocumentProcessor:
                 "pptx",
             ]:
                 # Use MarkItDown for PDF, Office documents, Excel, and HTML
-                text, doc_meta = self._extract_with_markitdown(path, doc_type)
+                text, doc_meta = self._extract_with_markitdown(resolved_path, doc_type)
                 metadata.update(doc_meta)
             else:
                 # Try to decode as text
                 text = content.decode("utf-8", errors="ignore")
 
         except Exception as e:
-            logger.error(f"Error extracting text from {path}: {e}")
+            logger.error(f"Error extracting text from {resolved_path}: {e}")
             raise ValueError(f"Failed to extract text: {e}")
 
         # Clean up text
@@ -375,369 +400,98 @@ class DocumentProcessor:
         return text, metadata
 
 
-# Default chunking settings
-DEFAULT_CHUNK_SIZE = 500  # tokens (approximately 4 chars per token)
-DEFAULT_CHUNK_OVERLAP = 50
+# Default chunking settings (in characters)
+DEFAULT_CHUNK_SIZE = 1000
+DEFAULT_CHUNK_OVERLAP = 100
+
+# Default separators in order of priority (shared with LangChain splitter)
+DEFAULT_SEPARATORS = [
+    "\n\n",  # Paragraph
+    "\n",  # Line
+    "。",  # Chinese period
+    "！",  # Chinese exclamation
+    "？",  # Chinese question
+    ". ",  # Sentence
+    "! ",
+    "? ",
+    "；",  # Chinese semicolon
+    "; ",
+    "，",  # Chinese comma
+    ", ",
+    " ",  # Word
+    "",  # Character
+]
+
+CHARS_PER_TOKEN = 4
 
 
-class TextChunker:
+def chunk_text(
+    text: str,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    separators: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """
-    Text chunking service for splitting documents into searchable chunks.
+    Split text into chunks using LangChain's RecursiveCharacterTextSplitter,
+    then apply exact character-level overlap.
 
-    Uses semantic-aware splitting that respects:
-    - Paragraph boundaries
-    - Sentence boundaries
-    - Token limits
+    LangChain's built-in overlap works at the split-unit level, which can
+    produce much larger overlaps than requested for CJK text (where sentence
+    separators create units larger than the overlap value). To fix this, we
+    split with overlap=0 first, then prepend the exact trailing characters
+    from the previous chunk.
+
+    Args:
+        text: Text to chunk
+        chunk_size: Target chunk size in characters
+        chunk_overlap: Overlap between chunks in characters
+        separators: Optional custom separators
+
+    Returns:
+        List of chunk dicts with content, chunk_index, token_count, char_count
     """
+    if not text.strip():
+        return []
 
-    # Default separators in order of priority
-    DEFAULT_SEPARATORS = [
-        "\n\n",  # Paragraph
-        "\n",  # Line
-        "。",  # Chinese period
-        "！",  # Chinese exclamation
-        "？",  # Chinese question
-        ". ",  # Sentence
-        "! ",
-        "? ",
-        "；",  # Chinese semicolon
-        "; ",
-        "，",  # Chinese comma
-        ", ",
-        " ",  # Word
-        "",  # Character
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    if separators:
+        custom = [s for s in separators if s]
+        seps = custom + [s for s in DEFAULT_SEPARATORS if s not in custom]
+    else:
+        seps = list(DEFAULT_SEPARATORS)
+
+    # Split with overlap=0 to get clean boundaries
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=0,
+        separators=seps,
+        length_function=len,
+    )
+    texts = splitter.split_text(text)
+
+    # Apply exact character-level overlap and track overlap lengths
+    overlap_lengths: list[int] = [0] * len(texts)
+    if chunk_overlap > 0 and len(texts) > 1:
+        overlapped: list[str] = [texts[0]]
+        for i in range(1, len(texts)):
+            prev = texts[i - 1]
+            overlap_text = prev[-chunk_overlap:] if len(prev) > chunk_overlap else prev
+            overlap_lengths[i] = len(overlap_text)
+            overlapped.append(overlap_text + texts[i])
+        texts = overlapped
+
+    return [
+        {
+            "content": t,
+            "chunk_index": idx,
+            "token_count": len(t) // CHARS_PER_TOKEN,
+            "char_count": len(t),
+            "overlap_length": overlap_lengths[idx],
+        }
+        for idx, t in enumerate(texts)
     ]
 
-    def __init__(
-        self,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
-        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-        separators: list[str] | None = None,
-    ):
-        """
-        Initialize chunker.
 
-        Args:
-            chunk_size: Target chunk size in tokens (approx 4 chars = 1 token)
-            chunk_overlap: Number of overlapping tokens between chunks
-            separators: Custom separators list. If provided, text will be split
-                       by these separators first, then by default separators.
-        """
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-
-        # Store custom separators separately for primary splitting
-        self.custom_separators = [s for s in (separators or []) if s]
-
-        # Default separators for secondary splitting (within chunks)
-        self.default_separators = self.DEFAULT_SEPARATORS.copy()
-
-        # Combined list: custom first, then defaults
-        if self.custom_separators:
-            self.separators = self.custom_separators + [
-                s for s in self.default_separators if s not in self.custom_separators
-            ]
-        else:
-            self.separators = self.default_separators
-
-        # Approximate chars per token
-        self.chars_per_token = 4
-
-    def estimate_tokens(self, text: str) -> int:
-        """Estimate token count for text."""
-        return len(text) // self.chars_per_token
-
-    def chunk_text(self, text: str) -> list[dict[str, Any]]:
-        """
-        Split text into chunks.
-
-        If custom separators are provided, text is first split by those separators,
-        then each section is further split if it exceeds the target size.
-
-        Args:
-            text: Text to chunk
-
-        Returns:
-            List of chunk dicts with content, index, and metadata
-        """
-        if not text.strip():
-            return []
-
-        target_chars = self.chunk_size * self.chars_per_token
-        overlap_chars = self.chunk_overlap * self.chars_per_token
-
-        # If custom separators are provided, first split by them
-        if self.custom_separators:
-            chunks = self._split_by_custom_separators(text, target_chars, overlap_chars)
-        else:
-            chunks = self._split_recursive(text, target_chars, overlap_chars)
-
-        result = []
-
-        # Add content chunks
-        for idx, chunk_text in enumerate(chunks):
-            result.append(
-                {
-                    "content": chunk_text,
-                    "chunk_index": idx,
-                    "token_count": self.estimate_tokens(chunk_text),
-                    "char_count": len(chunk_text),
-                }
-            )
-
-        return result
-
-    def _split_by_custom_separators(
-        self, text: str, target_size: int, overlap: int
-    ) -> list[str]:
-        """
-        Split text by custom separators first, then apply size limits.
-
-        This ensures that custom separators are always respected as primary
-        split points, regardless of chunk size.
-        """
-        # Create pattern for all separators
-        # Escape separators to handle special regex characters
-        pattern = f"({'|'.join(map(re.escape, self.custom_separators))})"
-
-        # Split keeping the separators
-        parts = re.split(pattern, text)
-
-        # Reassemble parts attaching separators to the following text
-        # e.g. "text1", "###", "text2" -> "text1", "###text2"
-        sections = []
-        current_section = ""
-
-        for part in parts:
-            if part in self.custom_separators:
-                if current_section:
-                    sections.append(current_section)
-                current_section = part
-            else:
-                current_section += part
-
-        if current_section:
-            sections.append(current_section)
-
-        # Filter empty sections (but keep whitespace-only sections if they exist)
-        sections = [s for s in sections if s]
-
-        # Now process each section
-        all_chunks = []
-        previous_chunk_tail = ""
-
-        for section in sections:
-            section_chunks = []
-
-            # Check size in tokens
-            if self.estimate_tokens(section) <= self.chunk_size:
-                section_chunks = [section]
-            else:
-                # Section is too large, split using default separators
-                section_chunks = self._split_recursive_with_separators(
-                    section, target_size, overlap, self.default_separators
-                )
-
-            # Apply overlap from previous section's last chunk to this section's first chunk
-            if previous_chunk_tail and overlap > 0 and section_chunks:
-                section_chunks[0] = previous_chunk_tail + section_chunks[0]
-
-            all_chunks.extend(section_chunks)
-
-            # Update previous chunk tail for next iteration
-            if section_chunks:
-                last_chunk = section_chunks[-1]
-                if overlap > 0:
-                    if len(last_chunk) > overlap:
-                        previous_chunk_tail = last_chunk[-overlap:]
-                    else:
-                        previous_chunk_tail = last_chunk
-                else:
-                    previous_chunk_tail = ""
-
-        return all_chunks
-
-    def _apply_overlap(self, chunks: list[str], overlap: int) -> list[str]:
-        """Apply overlap between chunks by prepending end of previous chunk."""
-        if len(chunks) <= 1:
-            return chunks
-
-        result = [chunks[0]]
-        for i in range(1, len(chunks)):
-            prev_chunk = chunks[i - 1]
-            curr_chunk = chunks[i]
-
-            # Get the overlap portion from the end of previous chunk
-            if len(prev_chunk) > overlap:
-                overlap_text = prev_chunk[-overlap:]
-            else:
-                overlap_text = prev_chunk
-
-            # Prepend overlap to current chunk
-            result.append(overlap_text + curr_chunk)
-
-        return result
-
-    def _split_recursive_with_separators(
-        self, text: str, target_size: int, overlap: int, separators: list[str]
-    ) -> list[str]:
-        """Recursively split text using specific separators."""
-        if len(text) <= target_size:
-            return [text] if text else []
-
-        # Find the best separator
-        for separator in separators:
-            if separator:
-                splits = text.split(separator)
-            else:
-                # Character-level split
-                splits = list(text)
-
-            if len(splits) > 1:
-                return self._merge_splits(
-                    splits, separator, target_size, overlap, separators
-                )
-
-        # Fallback: hard split
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = min(start + target_size, len(text))
-            chunks.append(text[start:end])
-            if overlap > 0:
-                start = end - overlap
-                if start >= len(text) - overlap:
-                    break
-            else:
-                start = end
-                if start >= len(text):
-                    break
-
-        return chunks
-
-    def _split_recursive(self, text: str, target_size: int, overlap: int) -> list[str]:
-        """Recursively split text using separators."""
-        if len(text) <= target_size:
-            return [text] if text.strip() else []
-
-        # Find the best separator
-        for separator in self.separators:
-            if separator:
-                splits = text.split(separator)
-            else:
-                # Character-level split
-                splits = list(text)
-
-            if len(splits) > 1:
-                return self._merge_splits(splits, separator, target_size, overlap)
-
-        # Fallback: hard split
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = min(start + target_size, len(text))
-            chunks.append(text[start:end])
-            if overlap > 0:
-                start = end - overlap
-                if start >= len(text) - overlap:
-                    break
-            else:
-                start = end
-                if start >= len(text):
-                    break
-
-        return chunks
-
-    def _merge_splits(
-        self,
-        splits: list[str],
-        separator: str,
-        target_size: int,
-        overlap: int,
-        available_separators: list[str] | None = None,
-    ) -> list[str]:
-        """Merge splits into chunks respecting size limits."""
-        if available_separators is None:
-            available_separators = self.separators
-
-        chunks = []
-        current_chunk: list[str] = []
-        current_size = 0
-
-        for split in splits:
-            split_size = len(split) + len(separator)
-
-            if current_size + split_size > target_size and current_chunk:
-                # Save current chunk
-                chunk_text = separator.join(current_chunk)
-                chunks.append(chunk_text)
-
-                # Start new chunk with overlap (only if overlap > 0)
-                if overlap > 0:
-                    overlap_tokens: list[str] = []
-                    overlap_size = 0
-                    for s in reversed(current_chunk):
-                        if overlap_size + len(s) + len(separator) <= overlap:
-                            overlap_tokens.insert(0, s)
-                            overlap_size += len(s) + len(separator)
-                        else:
-                            break
-
-                    current_chunk = overlap_tokens
-                    current_size = overlap_size
-                else:
-                    current_chunk = []
-                    current_size = 0
-
-            # If this split itself is too large, recursively split it
-            if split_size > target_size:
-                # First, save any existing chunk
-                if current_chunk:
-                    chunk_text = separator.join(current_chunk)
-                    chunks.append(chunk_text)
-                    current_chunk = []
-                    current_size = 0
-
-                # Recursively split this large split using remaining separators
-                # Find the next separator in the list
-                sep_index = -1
-                for i, s in enumerate(available_separators):
-                    if s == separator:
-                        sep_index = i
-                        break
-
-                if sep_index >= 0 and sep_index < len(available_separators) - 1:
-                    # Try splitting with a more granular separator
-                    remaining_seps = available_separators[sep_index + 1 :]
-                    sub_chunks = self._split_recursive_with_separators(
-                        split, target_size, overlap, remaining_seps
-                    )
-                    chunks.extend(sub_chunks)
-                else:
-                    # Fallback: hard split by character count
-                    start = 0
-                    while start < len(split):
-                        end = min(start + target_size, len(split))
-                        chunks.append(split[start:end])
-                        if overlap > 0:
-                            start = end - overlap
-                            if start >= len(split) - overlap:
-                                break
-                        else:
-                            start = end
-            else:
-                current_chunk.append(split)
-                current_size += split_size
-
-        # Don't forget the last chunk
-        if current_chunk:
-            chunk_text = separator.join(current_chunk)
-            if chunk_text:
-                chunks.append(chunk_text)
-
-        return chunks
-
-
-# Global instances
+# Global instance
 document_processor = DocumentProcessor()
-text_chunker = TextChunker()

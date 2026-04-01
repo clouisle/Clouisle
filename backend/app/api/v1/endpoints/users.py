@@ -7,6 +7,7 @@ from pydantic import EmailStr
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
+from app.core.password import validate_password
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.models.notification import AutoNotificationType, NotificationLevel
@@ -19,6 +20,7 @@ from app.schemas.response import (
 )
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
+from app.services.password_expiration import PasswordExpirationService
 
 router = APIRouter()
 
@@ -180,6 +182,7 @@ async def change_password(
     """
     Change current user password.
     """
+    # Verify current password
     if not security.verify_password(
         data.current_password, current_user.hashed_password
     ):
@@ -188,14 +191,35 @@ async def change_password(
             msg_key="current_password_incorrect",
         )
 
-    if len(data.new_password) < 6:
+    # Check minimum password age
+    can_change, days_remaining = await PasswordExpirationService.can_change_password(
+        current_user
+    )
+    if not can_change:
         raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="password_too_short",
+            code=ResponseCode.PASSWORD_MIN_AGE_NOT_MET,
+            msg_key="password_min_age_not_met",
+            days=days_remaining,
         )
 
-    current_user.hashed_password = security.get_password_hash(data.new_password)
-    await current_user.save()
+    # Validate new password (including history check)
+    is_valid, errors = await validate_password(data.new_password, current_user)
+    if not is_valid:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg=", ".join([t(err) for err in errors]),
+        )
+
+    # Update password with expiration logic
+    new_hashed_password = security.get_password_hash(data.new_password)
+    await PasswordExpirationService.update_password_with_expiration(
+        current_user, new_hashed_password
+    )
+
+    # Clear force_password_change flag after successful password change
+    if current_user.force_password_change:
+        current_user.force_password_change = False
+        await current_user.save()
 
     await AuditLogService.log(
         user=current_user,
@@ -217,6 +241,47 @@ async def change_password(
     )
 
     return success(msg_key="password_changed")
+
+
+class PasswordStatusResponse(BaseModel):
+    is_exempt: bool
+    password_changed_at: Optional[str] = None
+    password_expires_at: Optional[str] = None
+    is_expired: bool
+    days_until_expiration: Optional[int] = None
+    force_change_required: bool
+
+
+@router.get("/me/password-status", response_model=Response[PasswordStatusResponse])
+async def get_password_status(
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get password expiration status for current user.
+    """
+    is_exempt = await PasswordExpirationService.is_user_exempt(current_user)
+    is_expired = await PasswordExpirationService.is_password_expired(current_user)
+    days_until_expiration = await PasswordExpirationService.days_until_expiration(
+        current_user
+    )
+    expiration_date = await PasswordExpirationService.calculate_expiration_date(
+        current_user
+    )
+
+    status = PasswordStatusResponse(
+        is_exempt=is_exempt,
+        password_changed_at=(
+            current_user.password_changed_at.isoformat()
+            if current_user.password_changed_at
+            else None
+        ),
+        password_expires_at=expiration_date.isoformat() if expiration_date else None,
+        is_expired=is_expired,
+        days_until_expiration=days_until_expiration,
+        force_change_required=current_user.force_password_change,
+    )
+
+    return success(data=status)
 
 
 class DeleteAccountRequest(BaseModel):

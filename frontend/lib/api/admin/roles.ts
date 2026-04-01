@@ -1,28 +1,55 @@
 import { api } from '../client'
-import type {
-  Role,
-  Permission,
-  RoleCreateInput,
-  RoleUpdateInput,
-  RolePermissionsUpdateInput,
-  PermissionCreateInput,
-  PermissionUpdateInput,
-} from '../roles'
 import type { PageData } from '../users'
 
-export type {
-  Role,
-  Permission,
-  RoleCreateInput,
-  RoleUpdateInput,
-  RolePermissionsUpdateInput,
-  PermissionCreateInput,
-  PermissionUpdateInput,
+export interface Permission {
+  id: string
+  scope: string
+  code: string
+  description: string | null
+  is_system: boolean
+}
+
+export interface Role {
+  id: string
+  name: string
+  description: string | null
+  is_system_role: boolean
+  permissions: Permission[]
+}
+
+export interface RoleCreateInput {
+  name: string
+  description?: string
+  permissions?: string[]
+}
+
+export interface RoleUpdateInput {
+  name?: string
+  description?: string
+}
+
+export interface RolePermissionsUpdateInput {
+  permissions: string[]
+}
+
+export interface PermissionCreateInput {
+  scope: string
+  code: string
+  description?: string
+}
+
+export interface PermissionUpdateInput {
+  scope: string
+  code: string
+  description?: string
 }
 
 export const rolesApi = {
-  getRoles: async (page = 1, pageSize = 50): Promise<PageData<Role>> =>
-    api.get<PageData<Role>>(`/admin/roles?page=${page}&page_size=${pageSize}`),
+  getRoles: async (page = 1, pageSize = 50, search?: string): Promise<PageData<Role>> => {
+    let url = `/admin/roles?page=${page}&page_size=${pageSize}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
+    return api.get<PageData<Role>>(url)
+  },
 
   getRole: async (id: string): Promise<Role> =>
     api.get<Role>(`/admin/roles/${id}`),
@@ -41,9 +68,10 @@ export const rolesApi = {
 }
 
 export const permissionsApi = {
-  getPermissions: async (page = 1, pageSize = 100, scope?: string): Promise<PageData<Permission>> => {
+  getPermissions: async (page = 1, pageSize = 100, scope?: string, search?: string): Promise<PageData<Permission>> => {
     let url = `/admin/permissions?page=${page}&page_size=${pageSize}`
-    if (scope) url += `&scope=${scope}`
+    if (scope) url += `&scope=${encodeURIComponent(scope)}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
     return api.get<PageData<Permission>>(url)
   },
 

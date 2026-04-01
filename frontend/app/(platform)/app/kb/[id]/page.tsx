@@ -18,6 +18,7 @@ import {
   Loader2,
   Search,
   Cpu,
+  ArrowUpDown,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { knowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '@/lib/api'
@@ -124,17 +125,6 @@ export default function KnowledgeBaseDetailPage({
             {knowledgeBase.description && (
               <p className="text-sm text-muted-foreground mt-1">{knowledgeBase.description}</p>
             )}
-            {knowledgeBase.embedding_model && (
-              <div className="flex items-center gap-1.5 mt-1">
-                <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">
-                  {t('embeddingModel')}: {knowledgeBase.embedding_model.name}
-                </span>
-                <Badge variant="outline" className="text-xs px-1.5 py-0">
-                  {knowledgeBase.embedding_model.provider}
-                </Badge>
-              </div>
-            )}
           </div>
         </div>
         
@@ -219,9 +209,39 @@ export default function KnowledgeBaseDetailPage({
       
       {/* 文档列表 */}
       <Card>
-        <CardHeader>
-          <CardTitle>{t('documents')}</CardTitle>
-          <CardDescription>{t('documentsDescription')}</CardDescription>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle>{t('documents')}</CardTitle>
+            <CardDescription>{t('documentsDescription')}</CardDescription>
+          </div>
+          {(knowledgeBase.embedding_model || knowledgeBase.rerank_model) && (
+            <div className="flex w-full flex-col gap-1 text-xs md:w-auto md:max-w-sm md:items-end">
+              {knowledgeBase.embedding_model && (
+                <div className="flex min-w-0 items-center gap-1.5 md:max-w-sm md:justify-end">
+                  <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 text-muted-foreground">{t('embeddingModel')}:</span>
+                  <span className="min-w-0 truncate text-foreground/90">
+                    {knowledgeBase.embedding_model.name}
+                  </span>
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                    {knowledgeBase.embedding_model.provider}
+                  </span>
+                </div>
+              )}
+              {knowledgeBase.rerank_model && (
+                <div className="flex min-w-0 items-center gap-1.5 md:max-w-sm md:justify-end">
+                  <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 text-muted-foreground">{t('rerankModel')}:</span>
+                  <span className="min-w-0 truncate text-foreground/90">
+                    {knowledgeBase.rerank_model.name}
+                  </span>
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                    {knowledgeBase.rerank_model.provider}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <DocumentsTable 

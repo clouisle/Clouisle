@@ -470,7 +470,7 @@ async def activate_api_key(
     """
     Activate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents", "workflows", "user").first()
 
     if not api_key:
         raise BusinessError(
@@ -521,7 +521,7 @@ async def deactivate_api_key(
     """
     Deactivate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents").first()
+    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents", "workflows", "user").first()
 
     if not api_key:
         raise BusinessError(

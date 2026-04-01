@@ -163,8 +163,7 @@
       "tts": "Text to Speech",
       "stt": "Speech to Text",
       "text_to_image": "Text to Image",
-      "text_to_video": "Text to Video",
-      "image_to_video": "Image to Video"
+      "text_to_video": "Text to Video"
     },
     "types": {
       "chat": "Chat",
@@ -173,8 +172,7 @@
       "tts": "TTS",
       "stt": "STT",
       "text_to_image": "T2I",
-      "text_to_video": "T2V",
-      "image_to_video": "I2V"
+      "text_to_video": "T2V"
     }
   }
 }

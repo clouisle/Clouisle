@@ -98,7 +98,7 @@ async def list_all_conversations(
     untitled_only: bool = Query(False, description="Show only untitled conversations"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     List conversations.
@@ -206,7 +206,7 @@ async def list_all_conversations(
 @router.get("/stats", response_model=Response[dict])
 async def get_conversation_stats(
     team_id: UUID | None = Query(None, description="Filter by team"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation statistics.
@@ -298,7 +298,7 @@ async def get_conversation_stats(
 async def get_conversation_trends(
     team_id: UUID | None = Query(None, description="Filter by team"),
     period: str = Query("7d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation and message trends.
@@ -427,7 +427,7 @@ async def get_conversation_trends(
 @router.get("/{conversation_id}", response_model=Response[ConversationWithMessages])
 async def get_conversation_detail(
     conversation_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation detail with messages.
@@ -528,7 +528,7 @@ async def get_conversation_detail(
 @router.delete("/{conversation_id}", response_model=Response[dict])
 async def delete_conversation_admin(
     conversation_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:delete")),
 ) -> Any:
     """
     Delete a conversation.
@@ -591,7 +591,7 @@ async def delete_conversation_admin(
 @router.delete("", response_model=Response[dict])
 async def batch_delete_conversations(
     ids: list[UUID] = Query(..., description="Conversation IDs to delete"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:delete")),
 ) -> Any:
     """
     Batch delete conversations.

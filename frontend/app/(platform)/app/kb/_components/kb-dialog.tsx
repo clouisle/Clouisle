@@ -57,15 +57,21 @@ export function KnowledgeBaseDialog({
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [embeddingModelId, setEmbeddingModelId] = React.useState<string | null>(null)
-  const [chunkSize, setChunkSize] = React.useState(500)
-  const [chunkOverlap, setChunkOverlap] = React.useState(50)
+  const [rerankModelId, setRerankModelId] = React.useState<string | null>(null)
+  const [chunkSize, setChunkSize] = React.useState(1000)
+  const [chunkOverlap, setChunkOverlap] = React.useState(100)
   const [separator, setSeparator] = React.useState<string>('')
+  const [rerankEnabled, setRerankEnabled] = React.useState(true)
+  const [rerankCandidateK, setRerankCandidateK] = React.useState(10)
+  const [rerankFailOpen, setRerankFailOpen] = React.useState(true)
+  const [rerankScoreThreshold, setRerankScoreThreshold] = React.useState('')
   const [isActive, setIsActive] = React.useState(true)
   const [isLoading, setIsLoading] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   
   // 团队已授权的嵌入模型列表
   const [teamEmbeddingModels, setTeamEmbeddingModels] = React.useState<TeamModel[]>([])
+  const [teamRerankModels, setTeamRerankModels] = React.useState<TeamModel[]>([])
   const [isLoadingModels, setIsLoadingModels] = React.useState(false)
   
   // 加载团队已授权的嵌入模型
@@ -74,9 +80,12 @@ export function KnowledgeBaseDialog({
       if (!currentTeam) return
       setIsLoadingModels(true)
       try {
-        const models = await teamModelsApi.getTeamModels(currentTeam.id, 'embedding')
-        // 只显示已启用的模型
-        setTeamEmbeddingModels(models.filter(m => m.is_enabled))
+        const [embeddingModels, rerankModels] = await Promise.all([
+          teamModelsApi.getTeamModels(currentTeam.id, 'embedding'),
+          teamModelsApi.getTeamModels(currentTeam.id, 'rerank'),
+        ])
+        setTeamEmbeddingModels(embeddingModels.filter(m => m.is_enabled))
+        setTeamRerankModels(rerankModels.filter(m => m.is_enabled))
       } catch {
         // 忽略错误
       } finally {
@@ -99,6 +108,16 @@ export function KnowledgeBaseDialog({
     }
     return null
   }, [embeddingModelId, teamEmbeddingModels, knowledgeBase])
+
+  const selectedRerankModelName = React.useMemo(() => {
+    if (!rerankModelId) return null
+    const tm = teamRerankModels.find(m => m.model_id === rerankModelId)
+    if (tm) return tm.model.name
+    if (knowledgeBase?.rerank_model?.name) {
+      return knowledgeBase.rerank_model.name
+    }
+    return null
+  }, [rerankModelId, teamRerankModels, knowledgeBase])
   
   // 初始化表单
   React.useEffect(() => {
@@ -107,17 +126,29 @@ export function KnowledgeBaseDialog({
         setName(knowledgeBase.name)
         setDescription(knowledgeBase.description || '')
         setEmbeddingModelId(knowledgeBase.embedding_model_id || null)
-        setChunkSize(knowledgeBase.settings?.chunk_size ?? 500)
-        setChunkOverlap(knowledgeBase.settings?.chunk_overlap ?? 50)
+        setRerankModelId(knowledgeBase.rerank_model_id || null)
+        setChunkSize(knowledgeBase.settings?.chunk_size ?? 1000)
+        setChunkOverlap(knowledgeBase.settings?.chunk_overlap ?? 100)
         setSeparator(knowledgeBase.settings?.separator || '')
+        setRerankEnabled(knowledgeBase.settings?.rerank_enabled ?? true)
+        setRerankCandidateK(knowledgeBase.settings?.rerank_candidate_k ?? 10)
+        setRerankFailOpen(knowledgeBase.settings?.rerank_fail_open ?? true)
+        setRerankScoreThreshold(
+          knowledgeBase.settings?.rerank_score_threshold?.toString() || ''
+        )
         setIsActive(knowledgeBase.status === 'active')
       } else {
         setName('')
         setDescription('')
         setEmbeddingModelId(null)
-        setChunkSize(500)
-        setChunkOverlap(50)
+        setRerankModelId(null)
+        setChunkSize(1000)
+        setChunkOverlap(100)
         setSeparator('')
+        setRerankEnabled(true)
+        setRerankCandidateK(10)
+        setRerankFailOpen(true)
+        setRerankScoreThreshold('')
         setIsActive(true)
       }
       setFieldErrors({})
@@ -147,10 +178,17 @@ export function KnowledgeBaseDialog({
         name: name.trim(),
         description: description.trim() || null,
         embedding_model_id: embeddingModelId || null,
+        rerank_model_id: rerankModelId || null,
         settings: {
           chunk_size: chunkSize,
           chunk_overlap: chunkOverlap,
           separator: separator.trim() || null,
+          rerank_enabled: rerankEnabled,
+          rerank_candidate_k: rerankCandidateK,
+          rerank_fail_open: rerankFailOpen,
+          rerank_score_threshold: rerankScoreThreshold
+            ? parseFloat(rerankScoreThreshold)
+            : null,
         },
       }
       
@@ -179,9 +217,12 @@ export function KnowledgeBaseDialog({
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-125">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
+      <DialogContent className="sm:max-w-125 max-h-[calc(100vh-2rem)] overflow-hidden p-0 gap-0">
+        <form
+          onSubmit={handleSubmit}
+          className="flex max-h-[calc(100vh-2rem)] flex-col"
+        >
+          <DialogHeader className="px-6 pt-6">
             <DialogTitle>
               {isEditing ? t('editKb') : t('createKb')}
             </DialogTitle>
@@ -190,7 +231,7 @@ export function KnowledgeBaseDialog({
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid gap-4 py-4">
+          <div className="grid flex-1 gap-4 overflow-y-auto px-6 py-4">
             {/* 名称 */}
             <div className="space-y-2">
               <Label htmlFor="name">{t('name')}</Label>
@@ -252,6 +293,37 @@ export function KnowledgeBaseDialog({
                 <p className="text-sm text-destructive">{fieldErrors.embedding_model_id}</p>
               )}
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rerankModel">{t('rerankModel')}</Label>
+              <Select
+                value={rerankModelId ?? '__none__'}
+                onValueChange={(value) => setRerankModelId(value === '__none__' ? null : value)}
+                disabled={isLoadingModels}
+              >
+                <SelectTrigger id="rerankModel" className="w-full">
+                  <SelectValue>
+                    {selectedRerankModelName || t('selectRerankModel')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  <SelectItem value="__none__">{t('noRerankModel')}</SelectItem>
+                  {teamRerankModels.length > 0 ? (
+                    teamRerankModels.map((tm) => (
+                      <SelectItem key={tm.model_id} value={tm.model_id}>
+                        {tm.model.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectEmpty>{t('noRerankModels')}</SelectEmpty>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('rerankModelHint')}</p>
+              {fieldErrors.rerank_model_id && (
+                <p className="text-sm text-destructive">{fieldErrors.rerank_model_id}</p>
+              )}
+            </div>
             
             {/* 分块设置 */}
             <div className="grid grid-cols-2 gap-4">
@@ -302,6 +374,62 @@ export function KnowledgeBaseDialog({
                 <p className="text-sm text-destructive">{fieldErrors.separator}</p>
               )}
             </div>
+
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="rerankEnabled">{t('rerankEnabled')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('rerankEnabledHint')}</p>
+                </div>
+                <Switch
+                  id="rerankEnabled"
+                  checked={rerankEnabled}
+                  onCheckedChange={setRerankEnabled}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="rerankCandidateK">{t('rerankCandidateK')}</Label>
+                  <Input
+                    id="rerankCandidateK"
+                    type="number"
+                    value={rerankCandidateK}
+                    onChange={(e) => setRerankCandidateK(Number(e.target.value))}
+                    min={1}
+                    max={100}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('rerankCandidateKHint')}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rerankScoreThreshold">{t('rerankScoreThreshold')}</Label>
+                  <Input
+                    id="rerankScoreThreshold"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={1}
+                    value={rerankScoreThreshold}
+                    onChange={(e) => setRerankScoreThreshold(e.target.value)}
+                    placeholder={t('rerankScoreThresholdPlaceholder')}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('rerankScoreThresholdHint')}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="rerankFailOpen">{t('rerankFailOpen')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('rerankFailOpenHint')}</p>
+                </div>
+                <Switch
+                  id="rerankFailOpen"
+                  checked={rerankFailOpen}
+                  onCheckedChange={setRerankFailOpen}
+                />
+              </div>
+            </div>
             
             {/* 状态切换 - 仅编辑时显示 */}
             {isEditing && (
@@ -319,7 +447,7 @@ export function KnowledgeBaseDialog({
             )}
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="border-t px-6 py-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {commonT('cancel')}
             </Button>

@@ -13,6 +13,7 @@
       "title": "个人资料",
       "teamsDescription": "您已加入 {count} 个团队"
     },
+    "apiKeys": "API 密钥",
     "admin": "后台管理",
     "logout": "退出登录",
     "logoutSuccess": "已成功退出登录",
@@ -24,7 +25,9 @@
     "aboutFramework": "技术栈",
     "aboutDocs": "文档",
     "aboutRights": "保留所有权利",
-    "aboutLatest": "已是最新版本。",
+    "aboutLatest": "已是最新版本",
+    "aboutCheckingVersion": "正在检查更新...",
+    "aboutNewVersion": "发现新版本 {version}",
     "aboutChangelog": "更新日志",
     "teams": "团队",
     "manageTeams": "管理团队",

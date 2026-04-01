@@ -4,17 +4,20 @@
 """
 
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from app.models.site_setting import SiteSetting
 
 
-async def validate_password(password: str) -> Tuple[bool, List[str]]:
+async def validate_password(
+    password: str, user: Optional["User"] = None  # noqa: F821
+) -> Tuple[bool, List[str]]:
     """
     根据站点设置验证密码强度
 
     Args:
         password: 待验证的密码
+        user: 可选的用户对象，用于检查密码历史
 
     Returns:
         Tuple[bool, List[str]]: (是否通过验证, 错误消息列表)
@@ -42,6 +45,16 @@ async def validate_password(password: str) -> Tuple[bool, List[str]]:
     # 验证特殊字符
     if require_special and not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         errors.append("password_require_special")
+
+    # 检查密码历史（如果提供了用户对象）
+    if user:
+        from app.services.password_expiration import PasswordExpirationService
+
+        is_recently_used = await PasswordExpirationService.check_password_history(
+            user, password
+        )
+        if is_recently_used:
+            errors.append("password_recently_used")
 
     return len(errors) == 0, errors
 

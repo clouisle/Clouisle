@@ -29,6 +29,7 @@ export interface Workflow {
   created_by_id: string
   created_at: string
   updated_at: string
+  embed_config?: Record<string, unknown>
 }
 
 export interface WorkflowListItem {
@@ -222,6 +223,7 @@ export interface WorkflowUpdateInput {
   trigger_type?: TriggerType | null
   trigger_config?: Record<string, unknown> | null
   visibility?: WorkflowVisibility | null
+  embed_config?: Record<string, unknown> | null
 }
 
 export interface WorkflowQueryParams {

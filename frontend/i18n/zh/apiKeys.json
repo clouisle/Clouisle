@@ -44,6 +44,8 @@
     "keyActivated": "API 密钥已激活。",
     "keyDeactivated": "API 密钥已禁用。",
     "bulkDeleted": "成功删除 {count} 个 API 密钥。",
+    "bulkActivated": "成功激活 {count} 个 API 密钥。",
+    "bulkDeactivated": "成功禁用 {count} 个 API 密钥。",
     "keyCreatedTitle": "API 密钥已创建",
     "keyCreatedDescription": "您的新 API 密钥已创建。请立即复制保存 - 之后将无法再次查看。",
     "keyWarning": "请务必立即复制您的 API 密钥，之后将无法再次查看！",

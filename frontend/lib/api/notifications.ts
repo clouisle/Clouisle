@@ -65,6 +65,7 @@ export interface NotificationAdminCreateInput {
   scope: NotificationScope
   team_id?: string | null
   user_id?: string | null
+  user_ids?: string[]  // 批量发送给多个用户
   type: string
   source?: NotificationSource
   title: string

@@ -99,8 +99,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
   // 分块设置
   const [settings, setSettings] = React.useState<ProcessInput>({
-    chunk_size: 500,
-    chunk_overlap: 50,
+    chunk_size: 1000,
+    chunk_overlap: 100,
     separator: '',
     clean_text: true,
   })
@@ -120,8 +120,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
       const kbSettings = kbData.settings
       const docMeta = docData.metadata as Record<string, unknown> | null
       setSettings({
-        chunk_size: (docMeta?.chunk_size as number) || kbSettings?.chunk_size || 500,
-        chunk_overlap: (docMeta?.chunk_overlap as number) || kbSettings?.chunk_overlap || 50,
+        chunk_size: (docMeta?.chunk_size as number) || kbSettings?.chunk_size || 1000,
+        chunk_overlap: (docMeta?.chunk_overlap as number) || kbSettings?.chunk_overlap || 100,
         separator: (docMeta?.separator as string) || kbSettings?.separator || '',
         clean_text: docMeta?.clean_text !== undefined ? (docMeta.clean_text as boolean) : true,
       })
@@ -267,8 +267,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
         knowledgeBaseId,
         documentId,
         {
-          chunk_size: settings.chunk_size || 500,
-          chunk_overlap: settings.chunk_overlap || 50,
+          chunk_size: settings.chunk_size || 1000,
+          chunk_overlap: settings.chunk_overlap || 100,
           separator: settings.separator || undefined,
           clean_text: settings.clean_text,
         }
@@ -719,7 +719,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   value={settings.chunk_size}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
-                    chunk_size: parseInt(e.target.value) || 500
+                    chunk_size: parseInt(e.target.value) || 1000
                   }))}
                   disabled={!isPending}
                 />
@@ -738,7 +738,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                   value={settings.chunk_overlap}
                   onChange={(e) => setSettings(prev => ({
                     ...prev,
-                    chunk_overlap: parseInt(e.target.value) || 50
+                    chunk_overlap: parseInt(e.target.value) || 100
                   }))}
                   disabled={!isPending}
                 />

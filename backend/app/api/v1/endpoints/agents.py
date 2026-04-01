@@ -184,8 +184,17 @@ async def build_agent_out(agent: Agent) -> dict:
                 ),
                 retrieval_top_k=akb.retrieval_top_k,
                 score_threshold=akb.score_threshold,
+                search_mode=akb.search_mode,
             )
         )
+
+    def _sanitize_media_config(config: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not config:
+            return None
+
+        sanitized = dict(config)
+        sanitized.pop("allow_model_override", None)
+        return sanitized or None
 
     # Manually build the dict to avoid QuerySet issues with ForeignKey fields
     agent_data = {
@@ -208,6 +217,10 @@ async def build_agent_out(agent: Agent) -> dict:
         "enable_user_input_request": agent.enable_user_input_request,
         "enable_memory": agent.enable_memory,
         "memory_config": agent.memory_config if agent.memory_config else None,
+        "enable_image_generation": agent.enable_image_generation,
+        "image_generation_config": _sanitize_media_config(agent.image_generation_config),
+        "enable_video_generation": agent.enable_video_generation,
+        "video_generation_config": _sanitize_media_config(agent.video_generation_config),
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -215,6 +228,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "opening_message": agent.opening_message,
         "suggested_questions": agent.suggested_questions or [],
         "knowledge_bases": [kb.model_dump() for kb in knowledge_bases],
+        "embed_config": agent.embed_config or {},
         "status": agent.status.value
         if hasattr(agent.status, "value")
         else agent.status,
@@ -433,10 +447,20 @@ async def create_agent(
         enable_file_upload=agent_in.enable_file_upload,
         file_upload_config=agent_in.file_upload_config.model_dump()
         if agent_in.file_upload_config
-        else None,
+        else {},
         enable_user_input_request=agent_in.enable_user_input_request,
         enable_memory=agent_in.enable_memory,
-        memory_config=agent_in.memory_config,
+        memory_config=agent_in.memory_config.model_dump()
+        if agent_in.memory_config
+        else {},
+        enable_image_generation=agent_in.enable_image_generation,
+        image_generation_config=agent_in.image_generation_config.model_dump()
+        if agent_in.image_generation_config
+        else {},
+        enable_video_generation=agent_in.enable_video_generation,
+        video_generation_config=agent_in.video_generation_config.model_dump()
+        if agent_in.video_generation_config
+        else {},
         rag_mode=agent_in.rag_mode,
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
@@ -452,6 +476,7 @@ async def create_agent(
             knowledge_base_id=kb_config.knowledge_base_id,
             retrieval_top_k=kb_config.retrieval_top_k,
             score_threshold=kb_config.score_threshold,
+            search_mode=kb_config.search_mode,
         )
 
     # Reload with relations
@@ -596,8 +621,22 @@ async def update_agent(
         agent.enable_memory = agent_in.enable_memory
         updated_fields.append("enable_memory")
     if agent_in.memory_config is not None:
-        agent.memory_config = agent_in.memory_config
+        agent.memory_config = agent_in.memory_config.model_dump()
         updated_fields.append("memory_config")
+
+    if agent_in.enable_image_generation is not None:
+        agent.enable_image_generation = agent_in.enable_image_generation
+        updated_fields.append("enable_image_generation")
+    if agent_in.image_generation_config is not None:
+        agent.image_generation_config = agent_in.image_generation_config.model_dump()
+        updated_fields.append("image_generation_config")
+
+    if agent_in.enable_video_generation is not None:
+        agent.enable_video_generation = agent_in.enable_video_generation
+        updated_fields.append("enable_video_generation")
+    if agent_in.video_generation_config is not None:
+        agent.video_generation_config = agent_in.video_generation_config.model_dump()
+        updated_fields.append("video_generation_config")
 
     # Update rag_mode
     if agent_in.rag_mode is not None:
@@ -608,6 +647,11 @@ async def update_agent(
     if agent_in.variables is not None:
         agent.variables = [v.model_dump() for v in agent_in.variables]
         updated_fields.append("variables")
+
+    # Update embed_config
+    if agent_in.embed_config is not None:
+        agent.embed_config = agent_in.embed_config
+        updated_fields.append("embed_config")
 
     await agent.save()
 
@@ -633,6 +677,7 @@ async def update_agent(
                 knowledge_base_id=kb_config.knowledge_base_id,
                 retrieval_top_k=kb_config.retrieval_top_k,
                 score_threshold=kb_config.score_threshold,
+                search_mode=kb_config.search_mode,
             )
         updated_fields.append("knowledge_base_configs")
 
@@ -784,6 +829,24 @@ async def duplicate_agent(
         enable_file_upload=agent.enable_file_upload,
         file_upload_config=agent.file_upload_config,
         enable_user_input_request=agent.enable_user_input_request,
+        enable_memory=agent.enable_memory,
+        memory_config=agent.memory_config,
+        enable_image_generation=agent.enable_image_generation,
+        image_generation_config=(
+            {
+                key: value
+                for key, value in (agent.image_generation_config or {}).items()
+                if key != "allow_model_override"
+            }
+        ),
+        enable_video_generation=agent.enable_video_generation,
+        video_generation_config=(
+            {
+                key: value
+                for key, value in (agent.video_generation_config or {}).items()
+                if key != "allow_model_override"
+            }
+        ),
         rag_mode=agent.rag_mode,
         variables=agent.variables,
         opening_message=agent.opening_message,
@@ -801,12 +864,49 @@ async def duplicate_agent(
             knowledge_base_id=akb.knowledge_base_id,
             retrieval_top_k=akb.retrieval_top_k,
             score_threshold=akb.score_threshold,
+            search_mode=akb.search_mode,
         )
 
     # Reload with relations
     new_agent = await Agent.get(id=new_agent.id).prefetch_related("team", "created_by")
     agent_data = await build_agent_out(new_agent)
     return success(data=agent_data, msg_key="agent_duplicated")
+
+
+@router.get(
+    "/{agent_id}/media/video-status",
+    response_model=Response[dict[str, Any]],
+)
+async def get_agent_video_generation_status(
+    agent_id: UUID,
+    task_id: str,
+    current_user: User = Depends(deps.PermissionChecker("agent:read")),
+) -> Any:
+    """Get video generation status for an agent media task."""
+    from app.llm import model_manager
+    from app.llm.tools.builtin.media import build_video_tool_result
+
+    agent = await check_agent_access(agent_id, current_user)
+    if not agent.enable_video_generation:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg="Video generation is not enabled for this agent",
+            status_code=400,
+        )
+
+    config = agent.video_generation_config or {}
+    resolved_model_ref = config.get("default_model_ref") or None
+    response = await model_manager.get_video_status(task_id, model_id=resolved_model_ref)
+    return success(
+        data=build_video_tool_result(
+            "",
+            response,
+            model_ref=resolved_model_ref,
+            poll_interval_ms=int(config.get("poll_interval_ms", 3000)),
+            poll_timeout_s=int(config.get("poll_timeout_s", 120)),
+        ),
+        msg_key="success",
+    )
 
 
 # ============ Conversations ============

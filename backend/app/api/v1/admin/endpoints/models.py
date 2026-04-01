@@ -43,7 +43,7 @@ async def list_models(
     model_type: Optional[str] = Query(None),
     is_enabled: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.PermissionChecker("model:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:read")),
 ) -> Any:
     skip = (page - 1) * page_size
     query = Model.all()
@@ -76,10 +76,12 @@ async def list_models(
 async def create_model(
     *,
     model_in: ModelCreate,
-    current_user: User = Depends(deps.PermissionChecker("model:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
     existing = await Model.filter(
-        provider=model_in.provider.value, model_id=model_in.model_id
+        provider=model_in.provider.value,
+        model_id=model_in.model_id,
+        model_type=model_in.model_type.value,
     ).first()
     if existing:
         raise BusinessError(
@@ -103,7 +105,7 @@ async def create_model(
 @router.get("/{model_id}", response_model=Response[ModelResponse])
 async def get_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:read")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -119,7 +121,7 @@ async def get_model(
 async def update_model(
     model_id: UUID,
     model_in: ModelUpdate,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -152,7 +154,7 @@ async def update_model(
 @router.delete("/{model_id}", response_model=Response[ModelResponse])
 async def delete_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:delete")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -170,7 +172,7 @@ async def delete_model(
 @router.post("/{model_id}/test", response_model=Response[ModelTestResponse])
 async def test_model_connection(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -180,15 +182,20 @@ async def test_model_connection(
             status_code=404,
         )
 
-    if not model.api_key:
+    if _requires_api_key(provider := ModelProvider(model.provider)) and not model.api_key:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_api_key_required",
         )
 
     start_time = time.time()
-    provider = ModelProvider(model.provider)
-    model_type = ModelType(model.model_type)
+    try:
+        model_type = ModelType(model.model_type)
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_type_not_supported",
+        ) from exc
     config = model.config or {}
 
     try:
@@ -200,8 +207,18 @@ async def test_model_connection(
             await _test_embedding_model(
                 provider, model.model_id, model.api_key, model.base_url, config
             )
+        elif model_type == ModelType.RERANK:
+            await _test_rerank_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _validate_api_key(provider, model.api_key)
+            _test_image_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
+        elif model_type == ModelType.TEXT_TO_VIDEO:
+            _test_video_model(
+                provider, model.model_id, model.api_key, model.base_url, config
+            )
         elif model_type in [ModelType.TTS, ModelType.STT]:
             _validate_api_key(provider, model.api_key)
         else:
@@ -257,7 +274,7 @@ async def test_model_connection(
 @router.post("/{model_id}/set-default", response_model=Response[ModelResponse])
 async def set_default_model(
     model_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("model:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:update")),
 ) -> Any:
     model = await Model.filter(id=model_id).first()
     if not model:
@@ -284,7 +301,7 @@ async def set_default_model(
 @router.post("/test", response_model=Response[ModelTestResponse])
 async def test_model_config(
     test_request: ModelTestRequest,
-    current_user: User = Depends(deps.PermissionChecker("model:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:model:create")),
 ) -> Any:
     provider = test_request.provider
     model_id = test_request.model_id
@@ -300,8 +317,12 @@ async def test_model_config(
             await _test_chat_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.RERANK:
+            await _test_rerank_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.TEXT_TO_IMAGE:
-            _validate_api_key(provider, api_key)
+            _test_image_model(provider, model_id, api_key, base_url, config)
+        elif model_type == ModelType.TEXT_TO_VIDEO:
+            _test_video_model(provider, model_id, api_key, base_url, config)
         elif model_type in [ModelType.TTS, ModelType.STT]:
             _validate_api_key(provider, api_key)
         else:
@@ -354,25 +375,31 @@ async def test_model_config(
         )
 
 
-def _validate_api_key(provider: ModelProvider, api_key: str) -> None:
+def _validate_api_key(provider: ModelProvider, api_key: str | None) -> None:
+    if not _requires_api_key(provider):
+        return
     if provider == ModelProvider.OPENAI:
-        if not api_key.startswith("sk-"):
+        if not api_key or not api_key.startswith("sk-"):
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="invalid_api_key_format",
             )
     elif provider == ModelProvider.ANTHROPIC:
-        if not api_key.startswith("sk-ant-"):
+        if not api_key or not api_key.startswith("sk-ant-"):
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="invalid_api_key_format",
             )
 
 
+def _requires_api_key(provider: ModelProvider) -> bool:
+    return provider != ModelProvider.OLLAMA
+
+
 async def _test_chat_model(
     provider: ModelProvider,
     model_id: str,
-    api_key: str,
+    api_key: str | None,
     base_url: Optional[str],
     config: dict,
 ) -> None:
@@ -437,7 +464,7 @@ async def _test_chat_model(
 async def _test_embedding_model(
     provider: ModelProvider,
     model_id: str,
-    api_key: str,
+    api_key: str | None,
     base_url: Optional[str],
     config: dict,
 ) -> None:
@@ -465,3 +492,80 @@ async def _test_embedding_model(
 
     if not result or len(result) == 0:
         raise ValueError("Empty embedding result")
+
+
+async def _test_rerank_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.default_params = {}
+            self.max_output_tokens = None
+            self.config = config
+
+    from app.llm.adapters.rerank import create_rerank_adapter
+
+    adapter = create_rerank_adapter(TempModel())
+    result = await adapter.rerank(
+        query="What is artificial intelligence?",
+        documents=[
+            "Artificial intelligence is the simulation of human intelligence by machines.",
+            "Bananas are a tropical fruit rich in potassium.",
+        ],
+        top_n=2,
+    )
+
+    if not result.results:
+        raise ValueError("Empty rerank result")
+
+
+def _test_image_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.config = config
+
+    from app.llm.adapters.image import create_image_adapter
+
+    create_image_adapter(TempModel())
+
+
+def _test_video_model(
+    provider: ModelProvider,
+    model_id: str,
+    api_key: str | None,
+    base_url: Optional[str],
+    config: dict,
+) -> None:
+    _validate_api_key(provider, api_key)
+
+    class TempModel:
+        def __init__(self):
+            self.provider = provider
+            self.model_id = model_id
+            self.api_key = api_key
+            self.base_url = base_url
+            self.config = config
+
+    from app.llm.adapters.video import create_video_adapter
+
+    create_video_adapter(TempModel())

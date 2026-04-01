@@ -274,7 +274,7 @@ export function ToolCard({
                         {t('share.title')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
+                        className="text-destructive"
                         onClick={(e) => {
                           e.stopPropagation()
                           onDelete?.(tool)

@@ -57,6 +57,7 @@ class NotificationAdminCreate(BaseModel):
     scope: NotificationScope
     team_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
+    user_ids: Optional[list[UUID]] = None  # 批量发送给多个用户
     type: str = Field(..., min_length=1, max_length=100)
     source: NotificationSource = NotificationSource.SYSTEM
     title: str = Field(..., min_length=1, max_length=255)

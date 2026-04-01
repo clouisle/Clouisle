@@ -12,14 +12,15 @@ import {
   X,
   Trash2,
   MoreHorizontal,
+  Eye,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  teamsApi,
   agentsApi,
-  type Team,
   type AgentListItem,
 } from '@/lib/api'
+import { teamsApi } from '@/lib/api/admin/teams'
+import type { Team } from '@/lib/api/teams'
 import { conversationsApi, type AdminConversationListItem, type AdminConversationWithMessages } from '@/lib/api/admin/conversations'
 import { usersApi } from '@/lib/api/admin/users'
 import type { User } from '@/lib/api/auth'
@@ -59,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConversationDrawer } from './conversation-drawer'
 import { useCanPerform } from '@/components/permission-guard'
 
@@ -85,6 +87,7 @@ export function ConversationsTable() {
   const [pageSize, setPageSize] = React.useState(20)
   const [loading, setLoading] = React.useState(true)
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingIds, setDeletingIds] = React.useState<string[]>([])
   const [drawerOpen, setDrawerOpen] = React.useState(false)
@@ -171,7 +174,11 @@ export function ConversationsTable() {
   // Delete handlers
   const handleDeleteClick = (ids: string[]) => {
     setDeletingIds(ids)
-    setDeleteDialogOpen(true)
+    if (ids.length > 1) {
+      setBulkDeleteDialogOpen(true)
+    } else {
+      setDeleteDialogOpen(true)
+    }
   }
 
   const handleDeleteConfirm = async () => {
@@ -189,6 +196,7 @@ export function ConversationsTable() {
       console.error('Failed to delete conversations:', error)
     } finally {
       setDeleteDialogOpen(false)
+      setBulkDeleteDialogOpen(false)
       setDeletingIds([])
     }
   }
@@ -283,17 +291,6 @@ export function ConversationsTable() {
               </Button>
             )}
           </div>
-
-          {selectedIds.size > 0 && canPerform('conversation:delete') && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => handleDeleteClick(Array.from(selectedIds))}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {t('deleteSelected', { count: selectedIds.size })}
-            </Button>
-          )}
         </div>
 
         {/* Table */}
@@ -368,12 +365,13 @@ export function ConversationsTable() {
                         />
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleViewConversation(conversation.id)}>
-                            {t('viewDetails')}
+                            <Eye className="mr-2 h-4 w-4" />
+                            {t('detail')}
                           </DropdownMenuItem>
                           {canPerform('conversation:delete') && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDeleteClick([conversation.id])}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}
@@ -464,7 +462,7 @@ export function ConversationsTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
               {commonT('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -481,6 +479,60 @@ export function ConversationsTable() {
           handleDeleteClick([id])
         }}
       />
+
+      {/* Bulk Actions Floating Bar */}
+      {selectedIds.size > 0 && canPerform('conversation:delete') && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+
+            <Badge variant="secondary" className="px-2 py-1">
+              {t('selectedCount', { count: selectedIds.size })}
+            </Badge>
+
+            <Tooltip>
+              <TooltipTrigger
+                onClick={() => handleDeleteClick(Array.from(selectedIds))}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                }
+              />
+              <TooltipContent>{commonT('delete')}</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('bulkDeleteConfirmDescription', { count: deletingIds.length })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
+              {commonT('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

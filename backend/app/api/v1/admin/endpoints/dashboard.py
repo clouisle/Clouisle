@@ -25,7 +25,7 @@ router = APIRouter()
 
 @router.get("/stats", response_model=Response[dict])
 async def get_dashboard_stats(
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get system-wide dashboard statistics (requires dashboard:access permission).
@@ -115,7 +115,7 @@ async def get_dashboard_stats(
 @router.get("/stats/trends", response_model=Response[dict])
 async def get_dashboard_trends(
     period: str = Query("30d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get system-wide trends for dashboard charts (requires dashboard:access permission).
@@ -218,7 +218,7 @@ async def get_top_agents(
         description="Metric to sort by: conversation_count, message_count, total_tokens",
     ),
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get top agents by usage metrics (requires dashboard:access permission).
@@ -276,7 +276,7 @@ async def get_top_agents(
 async def get_team_token_usage(
     limit: int = Query(10, ge=1, le=50, description="Number of top teams to return"),
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get top teams by token usage (requires dashboard:access permission).
@@ -313,7 +313,7 @@ async def get_team_token_usage(
 @router.get("/stats/models/distribution", response_model=Response[list[dict]])
 async def get_models_distribution(
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get model usage distribution (requires dashboard:access permission).
@@ -371,7 +371,7 @@ async def get_models_distribution(
 @router.get("/stats/workflows/summary", response_model=Response[dict])
 async def get_workflow_summary(
     time_range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
-    current_user: User = Depends(PermissionChecker("dashboard:access")),
+    current_user: User = Depends(PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get workflow statistics summary (requires dashboard:access permission).
