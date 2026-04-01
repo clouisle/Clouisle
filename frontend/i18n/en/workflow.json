@@ -607,7 +607,7 @@
     "nodesVariableAggregator": {
       "label": "Variable Aggregator",
       "modeObject": "Object",
-      "modeObjectDesc": "Aggregate multiple variables into one object { key: value }",
+      "modeObjectDesc": "Aggregate multiple variables into a single key-value object",
       "modeArray": "Array",
       "modeArrayDesc": "Aggregate multiple variables into one array [item1, item2]",
       "modeConcat": "Concatenate",
@@ -1086,7 +1086,8 @@
       "yes": "Yes",
       "no": "No",
       "paramDescription": "Description",
-      "inputsDescription": "Object containing workflow input parameters",
+      "inputsDescription": "Top-level request body object containing workflow input parameters directly",
+      "requestBodyTopLevelNote": "Send workflow variables directly in the JSON body. Do not wrap them in an extra inputs object. Example:",
       "inputParameters": "Input Parameters",
       "noVariables": "This workflow has no input variables",
       "responseFormat": "Response Format",

@@ -531,6 +531,9 @@ class WorkflowOrchestrator:
 
         run.status = "success"
         run.outputs = outputs
+        run.error_message = None
+        run.error_node_id = None
+        run.error_traceback = None
         run.total_duration_ms = duration_ms
         run.finished_at = datetime.now(timezone.utc)
         await run.save()

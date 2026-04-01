@@ -525,7 +525,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               <div className="flex items-center gap-2">
                 {agent.icon ? (
                   isIconUrl ? (
-                    <div className="relative h-6 w-6 rounded overflow-hidden">
+                    <div className="relative h-6 w-6 overflow-hidden">
                       <Image
                         src={agent.icon}
                         alt={agent.name}
@@ -721,7 +721,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 <div className="mb-8">
                   {agent.icon ? (
                     isIconUrl ? (
-                      <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border">
+                      <div className="relative h-20 w-20 overflow-hidden">
                         <Image
                           src={agent.icon}
                           alt={agent.name}

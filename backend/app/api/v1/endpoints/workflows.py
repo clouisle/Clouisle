@@ -56,6 +56,14 @@ logger = logging.getLogger(__name__)
 # ============ Helper Functions ============
 
 
+def normalize_webhook_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Accept both raw webhook inputs and {"inputs": {...}} payloads."""
+    nested_inputs = inputs.get("inputs")
+    if len(inputs) == 1 and isinstance(nested_inputs, dict):
+        return nested_inputs
+    return inputs
+
+
 async def check_team_access(
     team_id: UUID, user: User, require_admin: bool = False
 ) -> Team:
@@ -937,6 +945,8 @@ async def trigger_workflow_webhook(
             )
 
     try:
+        normalized_inputs = normalize_webhook_inputs(inputs)
+
         # Create run record with authenticated user
         run = await WorkflowRun.create(
             workflow_id=matched_workflow.id,
@@ -944,14 +954,14 @@ async def trigger_workflow_webhook(
             triggered_by_id=user.id,  # Record the API key owner as caller
             is_debug=False,
             status=RunStatus.PENDING,
-            inputs=inputs,
+            inputs=normalized_inputs,
         )
 
         # Submit to Celery for background execution
         run_workflow_task.delay(
             run_id=str(run.id),
             workflow_id=str(matched_workflow.id),
-            inputs=inputs,
+            inputs=normalized_inputs,
             user_id=str(user.id),  # Pass user ID for execution context
             team_id=str(matched_workflow.team_id) if matched_workflow.team_id else None,
         )

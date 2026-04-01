@@ -607,7 +607,7 @@
     "nodesVariableAggregator": {
       "label": "变量聚合器",
       "modeObject": "对象",
-      "modeObjectDesc": "将多个变量聚合为一个对象 { key: value }",
+      "modeObjectDesc": "将多个变量聚合为一个键值对象",
       "modeArray": "数组",
       "modeArrayDesc": "将多个变量聚合为一个数组 [item1, item2]",
       "modeConcat": "拼接",
@@ -1086,7 +1086,8 @@
       "yes": "是",
       "no": "否",
       "paramDescription": "描述",
-      "inputsDescription": "包含工作流输入参数的对象",
+      "inputsDescription": "请求体根对象，直接包含工作流输入参数",
+      "requestBodyTopLevelNote": "Webhook 请求体应直接传入工作流变量，不要再额外包一层 inputs。示例：",
       "inputParameters": "输入参数",
       "noVariables": "此工作流没有输入变量",
       "responseFormat": "响应格式",

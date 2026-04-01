@@ -149,13 +149,15 @@ async function __execute__() {{
                 error="Python is not installed on the server",
             )
 
+        params_json = json.dumps(params)
+
         # 创建包装代码
         wrapper_code = f"""
 import json
 import sys
 from io import StringIO
 
-params = {json.dumps(params)}
+params = json.loads({params_json!r})
 
 # 捕获 print 输出
 _logs = []

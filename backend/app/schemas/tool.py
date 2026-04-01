@@ -81,6 +81,14 @@ class HttpConfigSchema(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict, description="请求头")
     query_params: dict[str, str] = Field(default_factory=dict, description="查询参数")
     body_template: str | None = Field(default=None, description="请求体模板 (JSON)")
+    content_type: str | None = Field(
+        default="application/json",
+        description="请求体类型 (application/json, multipart/form-data, application/x-www-form-urlencoded)",
+    )
+    form_fields: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="multipart/form-data 表单字段定义",
+    )
     timeout: int = Field(default=30, ge=1, le=300, description="超时时间（秒）")
     response_path: str | None = Field(
         default=None, description="响应 JSON 路径，如 data.result"

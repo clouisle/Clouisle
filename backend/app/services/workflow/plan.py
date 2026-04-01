@@ -13,6 +13,8 @@ from .errors import CyclicDependencyError, WorkflowValidationError
 
 logger = logging.getLogger(__name__)
 
+NON_EXECUTABLE_NODE_TYPES = {"comment"}
+
 
 @dataclass
 class NodeDependency:
@@ -115,6 +117,10 @@ class ExecutionPlan:
             # Get node type from data.type (as per frontend structure)
             node_data = node.get("data", {})
             node_type = node_data.get("type", node.get("type", "unknown"))
+
+            # Canvas-only nodes should not participate in execution planning.
+            if node_type in NON_EXECUTABLE_NODE_TYPES:
+                continue
 
             self.nodes[node_id] = NodeDependency(
                 node_id=node_id,
@@ -335,6 +341,7 @@ class ExecutionPlan:
                 "trigger",
                 "iteration_start",
                 "loop_start",
+                *NON_EXECUTABLE_NODE_TYPES,
             }:
                 if not node.upstream:
                     errors.append(f"Node {node_id} has no upstream connections")
@@ -343,6 +350,7 @@ class ExecutionPlan:
                 if not node.downstream and node.node_type not in {
                     "user_input",
                     "trigger",
+                    *NON_EXECUTABLE_NODE_TYPES,
                 }:
                     # Allow answer nodes and start nodes to have no downstream
                     pass  # OK for now, could be a dead branch
