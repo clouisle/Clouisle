@@ -198,7 +198,10 @@
       "iterationStartLabel": "迭代开始",
       "loopStartLabel": "循环开始",
       "copiedToClipboard": "已复制到剪贴板",
-      "copyFailed": "复制失败"
+      "copyFailed": "复制失败",
+      "nodesCopied": "已复制 {count} 个节点",
+      "nodesPasted": "已粘贴 {count} 个节点",
+      "selectNodesToCopy": "请先选择要复制的节点"
     },
     "nodeLabels": {
       "llm": "LLM",

@@ -261,6 +261,9 @@ function WorkflowEditorContent() {
   const addNodeButtonRef = React.useRef<HTMLButtonElement>(null)
   const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
 
+  // Copy-paste state
+  const copiedNodesRef = React.useRef<WorkflowNode[]>([])
+
   // Handle connect start - track for click detection
   const onConnectStart: OnConnectStart = React.useCallback(
     (_, params) => {
@@ -1014,12 +1017,226 @@ function WorkflowEditorContent() {
     toast.success(t('editor.nodesArranged'))
   }, [canUpdateWorkflow, nodes, setNodes, setHasChanges, reactFlowInstance, t])
 
+  // Copy selected nodes
+  const handleCopyNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow) return
+
+    // Get selected nodes from ReactFlow
+    const selectedNodes = nodes.filter((n) => n.selected)
+    if (selectedNodes.length === 0) return
+
+    copiedNodesRef.current = selectedNodes.map((node) => ({ ...node }))
+    toast.success(t('editor.nodesCopied', { count: selectedNodes.length }))
+  }, [canUpdateWorkflow, nodes, t])
+
+  // Paste copied nodes
+  const handlePasteNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow || copiedNodesRef.current.length === 0) return
+
+    const copiedNodes = copiedNodesRef.current
+    const timestamp = Date.now()
+
+    // Create ID mapping for old -> new
+    const idMapping = new Map<string, string>()
+    copiedNodes.forEach((node) => {
+      idMapping.set(node.id, `${node.data.type}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`)
+    })
+
+    // Calculate offset for pasted nodes (slightly offset from original)
+    const offsetX = 20
+    const offsetY = 20
+
+    // First pass: create new nodes with new IDs
+    const newNodes: WorkflowNode[] = copiedNodes.map((node) => {
+      const newId = idMapping.get(node.id)!
+      const isContainerNode = node.type === 'iteration' || node.type === 'loop'
+
+      return {
+        ...node,
+        id: newId,
+        position: {
+          x: node.position.x + offsetX,
+          y: node.position.y + offsetY,
+        },
+        // Clear selection from original nodes, select new ones
+        selected: true,
+        // If it was a container node, we'll handle children separately
+        ...(isContainerNode && {
+          style: { width: 500, height: 280 },
+          width: 500,
+          height: 280,
+        }),
+      }
+    })
+
+    // Second pass: update labels to avoid duplicates and append -copy
+    const existingNodes = nodes
+    const finalNewNodes = newNodes.map((node, index) => {
+      const originalLabel = typeof node.data.label === 'string' ? node.data.label : ''
+      const copiedBaseLabel = originalLabel ? `${originalLabel}-copy` : getNodeLabel(node.data.type, t)
+      const existingLabels = [...existingNodes, ...newNodes.slice(0, index)].map((n) => n.data?.label || '')
+
+      let finalLabel = copiedBaseLabel
+      let counter = 1
+      while (existingLabels.includes(finalLabel)) {
+        finalLabel = `${copiedBaseLabel} ${counter}`
+        counter++
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          label: finalLabel,
+        },
+      }
+    })
+
+    // Handle child nodes for iteration/loop containers
+    const childNodes: WorkflowNode[] = []
+    copiedNodes.forEach((parentNode) => {
+      if (parentNode.type === 'iteration' || parentNode.type === 'loop') {
+        const newParentId = idMapping.get(parentNode.id)!
+        const isIteration = parentNode.type === 'iteration'
+
+        // Find child nodes of this container
+        const originalChildren = nodes.filter(
+          (n) => n.parentId === parentNode.id
+        )
+
+        originalChildren.forEach((child) => {
+          const newChildId = `${child.data.type}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`
+          idMapping.set(child.id, newChildId)
+
+          childNodes.push({
+            ...child,
+            id: newChildId,
+            parentId: newParentId,
+            position: { ...child.position },
+            selected: false,
+            data: {
+              ...child.data,
+              ...(isIteration
+                ? { parentIterationId: newParentId }
+                : { parentLoopId: newParentId }),
+            },
+          })
+        })
+      }
+    })
+
+    // Deselect all existing nodes first, then add new nodes
+    setNodes((nds) => [
+      ...nds.map((n) => ({ ...n, selected: false })),
+      ...finalNewNodes,
+      ...childNodes,
+    ])
+    setHasChanges(true)
+    toast.success(t('editor.nodesPasted', { count: finalNewNodes.length }))
+  }, [canUpdateWorkflow, copiedNodesRef, nodes, setNodes, setHasChanges, t])
+
+  // Delete selected nodes
+  const handleDeleteNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow) return
+
+    const selectedNodes = nodes.filter((n) => n.selected)
+    if (selectedNodes.length === 0) return
+
+    // Check if trying to delete start node
+    const hasStartNode = selectedNodes.some((node) => {
+      const nodeType = node.type || (node.data as { type?: string })?.type
+      return nodeType === 'user_input' || nodeType === 'trigger' || nodeType === 'start'
+    })
+
+    if (hasStartNode) {
+      toast.error(t('editor.cannotDeleteStart'))
+    }
+
+    // Filter out selected nodes (except start nodes)
+    const nodesToDelete = selectedNodes.filter((node) => {
+      const nodeType = node.type || (node.data as { type?: string })?.type
+      return nodeType !== 'user_input' && nodeType !== 'trigger' && nodeType !== 'start'
+    })
+
+    if (nodesToDelete.length === 0) return
+
+    const nodeIdsToDelete = new Set(nodesToDelete.map((n) => n.id))
+
+    // Also delete child nodes of container nodes
+    const allNodeIdsToDelete = new Set(nodeIdsToDelete)
+    nodesToDelete.forEach((node) => {
+      if (node.type === 'iteration' || node.type === 'loop') {
+        nodes.forEach((n) => {
+          if (n.parentId === node.id) {
+            allNodeIdsToDelete.add(n.id)
+          }
+        })
+      }
+    })
+
+    // Remove nodes
+    setNodes((nds) => nds.filter((n) => !allNodeIdsToDelete.has(n.id)))
+
+    // Remove connected edges
+    setEdges((eds) =>
+      eds.filter(
+        (e) => !allNodeIdsToDelete.has(e.source) && !allNodeIdsToDelete.has(e.target)
+      )
+    )
+
+    setHasChanges(true)
+    setConfigDrawerOpen(false)
+    setSelectedNode(null)
+  }, [canUpdateWorkflow, nodes, setNodes, setEdges, setHasChanges, setConfigDrawerOpen, setSelectedNode, t])
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Save: Cmd/Ctrl + S
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
+      }
+      // Copy: Cmd/Ctrl + C
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        e.preventDefault()
+        handleCopyNodes()
+      }
+      // Paste: Cmd/Ctrl + V
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        e.preventDefault()
+        handlePasteNodes()
+      }
+      // Delete: Delete or Backspace key
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        handleDeleteNodes()
       }
       // Cmd/Ctrl + 1~5: left toolbar shortcuts
       if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
@@ -1052,7 +1269,7 @@ function WorkflowEditorContent() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave, canUpdateWorkflow, handleAddComment, handleAutoLayout])
+  }, [handleSave, canUpdateWorkflow, handleAddComment, handleAutoLayout, handleCopyNodes, handlePasteNodes, handleDeleteNodes])
 
   // 监听 ESC 退出页面全屏
   React.useEffect(() => {

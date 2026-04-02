@@ -198,7 +198,10 @@
       "iterationStartLabel": "Iteration Start",
       "loopStartLabel": "Loop Start",
       "copiedToClipboard": "Copied to clipboard",
-      "copyFailed": "Copy failed"
+      "copyFailed": "Copy failed",
+      "nodesCopied": "{count} node(s) copied",
+      "nodesPasted": "{count} node(s) pasted",
+      "selectNodesToCopy": "Select nodes to copy first"
     },
     "nodeLabels": {
       "llm": "LLM",
