@@ -100,23 +100,32 @@ function setSafeInnerHTML(element: HTMLElement, html: string): void {
 // 将 HTML 转换回纯文本
 function htmlToText(element: HTMLElement): string {
   let result = ''
-  
-  element.childNodes.forEach(node => {
+
+  const blockElements = new Set(['DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'PRE'])
+
+  element.childNodes.forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      result += node.textContent || ''
+      const text = node.textContent || ''
+      // Skip zero-width spaces used as variable tag boundaries
+      result += text.replace(/\u200B/g, '')
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
       const varId = el.getAttribute('data-variable')
+
       if (varId) {
         result += `{{${varId}}}`
       } else if (el.tagName === 'BR') {
         result += '\n'
       } else {
         result += htmlToText(el)
+
+        if (blockElements.has(el.tagName) && result && !result.endsWith('\n')) {
+          result += '\n'
+        }
       }
     }
   })
-  
+
   return result
 }
 
