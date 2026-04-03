@@ -95,7 +95,7 @@ export interface FileUploadConfig {
 // ============ Agent Types ============
 
 export type AgentStatus = 'draft' | 'published'
-export type AgentVisibility = 'private' | 'team' | 'public'
+export type AgentVisibility = 'private' | 'team'
 export type RAGMode = 'off' | 'auto' | 'agentic'
 
 export interface AgentKnowledgeBaseOut {

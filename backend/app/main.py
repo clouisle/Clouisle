@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
         init_user_locale_field,
         fix_cascade_delete_policies,
         init_workflow_visibility_field,
+        init_agent_visibility_values,
         init_agent_streaming_config,
         init_agent_user_input_request,
         init_agent_memory_fields,
@@ -86,6 +87,11 @@ async def lifespan(app: FastAPI):
         await init_workflow_visibility_field()
     except Exception as e:
         logger.warning(f"Workflow visibility migration failed: {e}")
+
+    try:
+        await init_agent_visibility_values()
+    except Exception as e:
+        logger.warning(f"Agent visibility normalization failed: {e}")
 
     try:
         await init_agent_streaming_config()

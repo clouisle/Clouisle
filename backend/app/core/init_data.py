@@ -236,6 +236,36 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_agent_visibility_values():
+    """
+    Normalize legacy agent visibility values.
+    Convert deprecated public visibility to team.
+    """
+    logger.info("Normalizing agent visibility values...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Agents table does not exist yet, skipping visibility normalization")
+        return
+
+    try:
+        await conn.execute_query("""
+            UPDATE agents
+            SET visibility = 'team'
+            WHERE visibility = 'public'
+        """)
+        logger.info("Normalized legacy public agent visibility to team")
+    except Exception as e:
+        logger.error(f"Could not normalize agent visibility values: {e}")
+        raise
+
+
 async def init_workflow_visibility_field():
     """
     Add visibility field to workflows table if it doesn't exist.

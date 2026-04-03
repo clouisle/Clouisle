@@ -267,50 +267,39 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
             status_code=404,
         )
 
-    # Check visibility first
     if agent.visibility == AgentVisibility.PRIVATE:
-        # Private agents can only be used by creator
-        if agent.created_by.id != user.id and not user.is_superuser:
+        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
-    elif agent.visibility == AgentVisibility.TEAM:
-        # Check if user is a member of the agent's team
-        if not user.is_superuser:
-            is_member = await TeamMember.filter(
-                team_id=agent.team_id, user_id=user.id
-            ).exists()
+        if not agent.created_by and not user.is_superuser:
+            is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
             if not is_member:
                 raise BusinessError(
                     code=ResponseCode.AGENT_ACCESS_DENIED,
                     msg_key="agent_access_denied",
                     status_code=403,
                 )
-
-    # Draft agents: team members can debug/preview, but public users cannot
-    if agent.status == AgentStatus.DRAFT:
-        # For public visibility draft agents, only creator and superuser can use
-        if agent.visibility == AgentVisibility.PUBLIC:
-            if agent.created_by.id != user.id and not user.is_superuser:
-                raise BusinessError(
-                    code=ResponseCode.AGENT_NOT_PUBLISHED,
-                    msg_key="agent_not_published",
-                    status_code=403,
-                )
-        # For private/team visibility, access already checked above
+    elif not user.is_superuser:
+        is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+        if not is_member:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
 
     return agent
 
 
 async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
     """
-    Get agent for public chat page.
+    Get agent for chat page.
     - Must be logged in to access any agent
-    - Public visibility: any logged-in user can access
-    - Team visibility: only team members can access
-    - Private visibility: only creator can access
+    - Private agents: creator only
+    - Team/public agents: team members only
     """
     # Must be logged in
     if not user:
@@ -331,39 +320,29 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
             status_code=404,
         )
 
-    # Check visibility
     if agent.visibility == AgentVisibility.PRIVATE:
-        # Private agents can only be accessed by creator
-        if agent.created_by.id != user.id and not user.is_superuser:
+        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
-    elif agent.visibility == AgentVisibility.TEAM:
-        # Team agents can only be accessed by team members
-        if not user.is_superuser:
-            is_member = await TeamMember.filter(
-                team_id=agent.team_id, user_id=user.id
-            ).exists()
+        if not agent.created_by and not user.is_superuser:
+            is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
             if not is_member:
                 raise BusinessError(
                     code=ResponseCode.AGENT_ACCESS_DENIED,
                     msg_key="agent_access_denied",
                     status_code=403,
                 )
-    # Public visibility: any logged-in user can access
-
-    # Must be published
-    if agent.status != AgentStatus.PUBLISHED:
-        # Only allow draft access for creator/team members
-        if agent.visibility == AgentVisibility.PUBLIC:
-            if agent.created_by.id != user.id and not user.is_superuser:
-                raise BusinessError(
-                    code=ResponseCode.AGENT_NOT_PUBLISHED,
-                    msg_key="agent_not_published",
-                    status_code=403,
-                )
+    elif not user.is_superuser:
+        is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+        if not is_member:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
 
     return agent
 

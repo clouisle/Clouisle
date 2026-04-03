@@ -24,7 +24,6 @@ class AgentVisibility:
 
     PRIVATE = "private"
     TEAM = "team"
-    PUBLIC = "public"
 
 
 class RAGMode:
@@ -362,7 +361,7 @@ class AgentCreate(AgentBase):
     variables: list[VariableDefinition] = Field(default_factory=list)
     opening_message: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
-    visibility: str = Field(default=AgentVisibility.PRIVATE)
+    visibility: str = Field(default=AgentVisibility.TEAM)
 
 
 class AgentUpdate(BaseModel):

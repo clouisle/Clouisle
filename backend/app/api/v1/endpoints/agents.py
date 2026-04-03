@@ -59,6 +59,11 @@ logger = logging.getLogger(__name__)
 # ============ Helper Functions ============
 
 
+def normalize_agent_visibility(visibility: str) -> str:
+    """Normalize legacy public visibility to team."""
+    return AgentVisibility.TEAM if visibility == AgentVisibility.PUBLIC else visibility
+
+
 async def check_team_access(
     team_id: UUID, user: User, require_admin: bool = False
 ) -> Team:
@@ -110,25 +115,16 @@ async def check_agent_access(
             status_code=404,
         )
 
-    # Check visibility and team access
     if agent.visibility == AgentVisibility.PRIVATE:
-        # Only creator can access private agents
-        # If creator is deleted, treat as team-level access
-        if (
-            agent.created_by
-            and agent.created_by.id != user.id
-            and not user.is_superuser
-        ):
+        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
-        elif not agent.created_by and not user.is_superuser:
-            # Creator deleted, check team access
+        if not agent.created_by and not user.is_superuser:
             await check_team_access(agent.team.id, user, require_admin=require_write)
     else:
-        # Team visibility - check team membership
         await check_team_access(agent.team.id, user, require_admin=require_write)
 
     return agent
@@ -232,9 +228,9 @@ async def build_agent_out(agent: Agent) -> dict:
         "status": agent.status.value
         if hasattr(agent.status, "value")
         else agent.status,
-        "visibility": agent.visibility.value
-        if hasattr(agent.visibility, "value")
-        else agent.visibility,
+        "visibility": normalize_agent_visibility(
+            agent.visibility.value if hasattr(agent.visibility, "value") else agent.visibility
+        ),
         "conversation_count": agent.conversation_count,
         "message_count": agent.message_count,
         "created_by": CreatorInfo.model_validate(agent.created_by).model_dump()
@@ -287,9 +283,9 @@ async def build_agent_list_out(
         "status": agent.status.value
         if hasattr(agent.status, "value")
         else agent.status,
-        "visibility": agent.visibility.value
-        if hasattr(agent.visibility, "value")
-        else agent.visibility,
+        "visibility": normalize_agent_visibility(
+            agent.visibility.value if hasattr(agent.visibility, "value") else agent.visibility
+        ),
         "conversation_count": agent.conversation_count,
         "message_count": agent.message_count,
         "created_by": CreatorInfo.model_validate(agent.created_by).model_dump()
@@ -323,7 +319,15 @@ async def list_agents(
 
     if team_id:
         await check_team_access(team_id, current_user)
-        query = query.filter(team_id=team_id)
+        if not current_user.is_superuser:
+            query = query.filter(
+                team_id=team_id
+            ).filter(
+                Q(visibility__in=[AgentVisibility.TEAM, AgentVisibility.PUBLIC])
+                | Q(created_by=current_user, visibility=AgentVisibility.PRIVATE)
+            )
+        else:
+            query = query.filter(team_id=team_id)
     elif not current_user.is_superuser:
         # Get teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
@@ -465,7 +469,7 @@ async def create_agent(
         variables=[v.model_dump() for v in agent_in.variables],
         opening_message=agent_in.opening_message,
         suggested_questions=agent_in.suggested_questions,
-        visibility=agent_in.visibility,
+        visibility=normalize_agent_visibility(agent_in.visibility),
         created_by=current_user,
     )
 
@@ -571,7 +575,7 @@ async def update_agent(
         agent.suggested_questions = agent_in.suggested_questions
         updated_fields.append("suggested_questions")
     if agent_in.visibility is not None:
-        agent.visibility = AgentVisibility(agent_in.visibility)
+        agent.visibility = AgentVisibility(normalize_agent_visibility(agent_in.visibility))
         updated_fields.append("visibility")
 
     # Update model_id

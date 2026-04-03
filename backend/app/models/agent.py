@@ -27,9 +27,9 @@ class AgentStatus(str, Enum):
 class AgentVisibility(str, Enum):
     """Agent visibility"""
 
-    PRIVATE = "private"  # Only creator can access
+    PRIVATE = "private"  # Reserved for future use
     TEAM = "team"  # Team members can access
-    PUBLIC = "public"  # Public access (future)
+    PUBLIC = "public"  # Legacy value kept for DB compatibility
 
 
 class RAGMode(str, Enum):
