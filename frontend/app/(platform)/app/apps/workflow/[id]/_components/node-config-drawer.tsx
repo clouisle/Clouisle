@@ -1287,7 +1287,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   return (
     <div
       className={cn(
-        'absolute top-14 right-2 bottom-2 w-[360px] bg-card border border-border rounded-xl shadow-xl z-40',
+        'absolute top-14 right-2 bottom-2 w-[380px] min-w-[380px] bg-card border border-border rounded-xl shadow-xl z-40 flex flex-col overflow-hidden',
         'transform transition-all duration-200 ease-out',
         open ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0 pointer-events-none'
       )}

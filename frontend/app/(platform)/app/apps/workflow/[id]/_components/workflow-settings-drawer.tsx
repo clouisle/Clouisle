@@ -320,7 +320,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
   return (
     <div
       className={cn(
-        'absolute top-2 right-2 bottom-2 w-90 bg-card border border-border rounded-xl shadow-xl z-40',
+        'absolute top-14 right-2 bottom-2 w-[380px] min-w-[380px] bg-card border border-border rounded-xl shadow-xl z-40 flex flex-col overflow-hidden',
         'transform transition-all duration-200 ease-out',
         open ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0 pointer-events-none'
       )}
@@ -354,8 +354,9 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       </div>
 
       {/* Content */}
-      <ScrollArea className="h-[calc(100%-120px)]">
-        <div className="p-4 space-y-4">
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="p-4 space-y-4">
           {/* 只读模式提示 */}
           {readOnly && (
             <div className="bg-muted/50 rounded-lg px-3 py-2 text-xs text-muted-foreground">
@@ -774,8 +775,9 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               )}
             </CollapsibleContent>
           </Collapsible>
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+      </div>
 
       {/* 恢复版本确认对话框 */}
       <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
@@ -817,7 +819,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
       </Dialog>
 
       {/* Footer */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 py-3 border-t bg-card rounded-b-xl">
+      <div className="px-4 py-3 border-t bg-card rounded-b-xl shrink-0">
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" className="h-8" onClick={onClose}>
             {readOnly ? t('settings.close') : t('settings.cancel')}

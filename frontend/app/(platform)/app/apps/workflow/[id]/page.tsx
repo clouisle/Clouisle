@@ -261,6 +261,30 @@ function WorkflowEditorContent() {
   const addNodeButtonRef = React.useRef<HTMLButtonElement>(null)
   const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
 
+  const openNodeConfig = React.useCallback((node: WorkflowNode) => {
+    setShowValidationChecklist(false)
+    setSelectedNode(node)
+    setSettingsDrawerOpen(false)
+    setTestRunDrawerOpen(false)
+    setConfigDrawerOpen(true)
+  }, [])
+
+  const openRunDrawer = React.useCallback(() => {
+    setShowValidationChecklist(false)
+    setConfigDrawerOpen(false)
+    setSettingsDrawerOpen(false)
+    setSelectedNode(null)
+    setTestRunDrawerOpen(true)
+  }, [])
+
+  const openSettingsDrawer = React.useCallback(() => {
+    setShowValidationChecklist(false)
+    setConfigDrawerOpen(false)
+    setTestRunDrawerOpen(false)
+    setSelectedNode(null)
+    setSettingsDrawerOpen(true)
+  }, [])
+
   // Copy-paste state
   const copiedNodesRef = React.useRef<WorkflowNode[]>([])
 
@@ -281,6 +305,18 @@ function WorkflowEditorContent() {
   // ReactFlow state
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<WorkflowNode>([])
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<WorkflowEdge>([])
+
+  const toggleValidationChecklist = React.useCallback(() => {
+    if (!showValidationChecklist) {
+      setConfigDrawerOpen(false)
+      setSettingsDrawerOpen(false)
+      setTestRunDrawerOpen(false)
+      setSelectedNode(null)
+    }
+    const issues = validateWorkflow(nodes, edges)
+    setValidationIssues(issues)
+    setShowValidationChecklist(prev => !prev)
+  }, [edges, nodes, showValidationChecklist, validateWorkflow])
 
   // 检查节点是否是开始节点
   const isStartNode = React.useCallback((nodeId: string) => {
@@ -439,11 +475,8 @@ function WorkflowEditorContent() {
 
   // Handle node click - open config drawer
   const onNodeClick = React.useCallback((event: React.MouseEvent, node: WorkflowNode) => {
-    setSelectedNode(node)
-    setSettingsDrawerOpen(false)
-    setTestRunDrawerOpen(false)
-    setConfigDrawerOpen(true)
-  }, [])
+    openNodeConfig(node)
+  }, [openNodeConfig])
 
   // Handle clicking on a source handle to show add node popover
   const onConnectEnd: OnConnectEnd = React.useCallback(
@@ -1189,6 +1222,16 @@ function WorkflowEditorContent() {
     setSelectedNode(null)
   }, [canUpdateWorkflow, nodes, setNodes, setEdges, setHasChanges, setConfigDrawerOpen, setSelectedNode, t])
 
+  React.useEffect(() => {
+    if (!selectedNode) return
+
+    const stillExists = nodes.some((node) => node.id === selectedNode.id)
+    if (!stillExists) {
+      setConfigDrawerOpen(false)
+      setSelectedNode(null)
+    }
+  }, [nodes, selectedNode])
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1394,12 +1437,7 @@ function WorkflowEditorContent() {
                 variant="outline"
                 size="sm"
                 className="bg-card shadow-sm h-8"
-                onClick={() => {
-                  setConfigDrawerOpen(false)
-                  setSettingsDrawerOpen(false)
-                  setSelectedNode(null)
-                  setTestRunDrawerOpen(true)
-                }}
+                onClick={openRunDrawer}
               >
                 <Play className="h-4 w-4 mr-1" />
                 {t('run')}
@@ -1412,11 +1450,7 @@ function WorkflowEditorContent() {
                       variant="outline"
                       size="icon"
                       className="bg-card shadow-sm relative h-8 w-8"
-                      onClick={() => {
-                        const issues = validateWorkflow(nodes, edges)
-                        setValidationIssues(issues)
-                        setShowValidationChecklist(!showValidationChecklist)
-                      }}
+                      onClick={toggleValidationChecklist}
                     >
                       <ClipboardCheck className="h-4 w-4" />
                       {validationIssues.length > 0 && (
@@ -1485,11 +1519,7 @@ function WorkflowEditorContent() {
                       variant="outline"
                       size="icon"
                       className="bg-card shadow-sm h-8 w-8"
-                      onClick={() => {
-                        setConfigDrawerOpen(false)
-                        setSelectedNode(null)
-                        setSettingsDrawerOpen(true)
-                      }}
+                      onClick={openSettingsDrawer}
                     >
                       <Settings className="h-4 w-4" />
                     </Button>
@@ -1699,8 +1729,7 @@ function WorkflowEditorContent() {
               // 选中并聚焦到指定节点
               const targetNode = nodes.find(n => n.id === nodeId)
               if (targetNode) {
-                setSelectedNode(targetNode)
-                setConfigDrawerOpen(true)
+                openNodeConfig(targetNode)
                 setShowValidationChecklist(false)
                 
                 // 移动视图到节点位置
