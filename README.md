@@ -41,6 +41,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 - [Configuration](#configuration)
 - [Use Cases](#use-cases)
 - [Roadmap](#roadmap)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -259,6 +260,13 @@ Configure via the admin dashboard:
 - **Email**: SMTP configuration for notifications
 - **SSO**: Configure identity providers
 - **Notifications**: Auto-notification rules and channels
+
+---
+
+## Documentation
+
+- User and operator docs: [docs/guide/README.md](docs/guide/README.md)
+- Developer and architecture docs: [docs/dev/README.md](docs/dev/README.md)
 
 ---
 
