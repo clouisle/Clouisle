@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position, NodeResizeControl } from '@xyflow/react'
-import { RefreshCw, MoreHorizontal, Play, LogOut } from 'lucide-react'
+import { RefreshCw, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslations } from 'next-intl'
 
@@ -126,14 +126,7 @@ export function IterationNode({ selected, data, width, height }: IterationNodePr
           </div>
           <span className="text-xs font-medium">{data.label || t('nodesIteration.label')}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            <Play className="h-3 w-3" />
-          </button>
-          <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            <MoreHorizontal className="h-3 w-3" />
-          </button>
-        </div>
+        <div className="flex items-center gap-1" />
       </div>
       
       {/* 内部子图区域 */}
