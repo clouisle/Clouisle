@@ -75,6 +75,32 @@ export interface ModelDistribution {
   percentage: number
 }
 
+function normalizeModelDistribution(data: unknown): ModelDistribution[] {
+  const payload = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && 'items' in data && Array.isArray((data as { items?: unknown }).items)
+      ? (data as { items: unknown[] }).items
+      : []
+
+  return payload
+    .map((item) => {
+      const record = item as Record<string, unknown>
+      const count = Number(record.count ?? record.usage_count ?? record.token_usage ?? 0)
+      const percentageValue = Number(record.percentage ?? 0)
+
+      return {
+        model: String(record.model ?? record.model_name ?? record.model_used ?? 'Unknown'),
+        count,
+        percentage: Number.isFinite(percentageValue)
+          ? percentageValue > 0 && percentageValue <= 1
+            ? percentageValue * 100
+            : percentageValue
+          : 0,
+      }
+    })
+    .filter((item) => item.count > 0)
+}
+
 export const dashboardApi = {
   getStats: async (): Promise<DashboardStats> =>
     api.get<DashboardStats>('/admin/dashboard/stats'),
@@ -121,6 +147,7 @@ export const dashboardApi = {
     const queryParams = new URLSearchParams({
       time_range: params.time_range || '30d',
     })
-    return api.get<ModelDistribution[]>(`/admin/dashboard/stats/models/distribution?${queryParams}`)
+    const data = await api.get<unknown>(`/admin/dashboard/stats/models/distribution?${queryParams}`)
+    return normalizeModelDistribution(data)
   },
 }

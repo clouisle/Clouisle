@@ -415,11 +415,12 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                     <UsageBar used={tm.monthly_tokens_used} limit={tm.monthly_token_limit} />
                   </TableCell>
                   <TableCell>
-                    <Switch
-                      checked={tm.is_enabled}
-                      onCheckedChange={() => handleToggleEnabled(tm)}
-                      disabled={!canManageTeam}
-                    />
+                    {canManageTeam ? (
+                      <Switch
+                        checked={tm.is_enabled}
+                        onCheckedChange={() => handleToggleEnabled(tm)}
+                      />
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     {canManageTeam && (

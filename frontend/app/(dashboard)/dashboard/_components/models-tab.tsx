@@ -84,6 +84,8 @@ export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, tren
     ? Math.round(stats.overview.total_tokens / stats.overview.total_messages)
     : 0
 
+  const hasTopAgentsData = topAgentsData.some((agent) => agent.value > 0)
+
   // Model data is already in the correct format for pie chart
   const modelChartData = modelData
 
@@ -114,31 +116,32 @@ export function ModelsTab({ stats, modelData, teamTokenData, topAgentsData, tren
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content - 2/3 width */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Model Distribution */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-7">
           <ModelDistributionChart data={modelChartData} isLoading={isLoading} />
+        </div>
 
-          {/* Team Token Usage Ranking */}
+        <div className="lg:col-span-5">
+          <ModelDetailsCard data={modelData} isLoading={isLoading} />
+        </div>
+
+        <div className="lg:col-span-6">
           <TeamTokenUsageChart data={teamTokenData} isLoading={isLoading} />
+        </div>
 
-          {/* Token Usage Trend */}
+        <div className="lg:col-span-6">
           <TokenTrendChart data={trendsData} isLoading={isLoading} />
         </div>
 
-        {/* Sidebar - 1/3 width */}
-        <div className="space-y-6">
-          {/* Model Details */}
-          <ModelDetailsCard data={modelData} isLoading={isLoading} />
-
-          {/* Top Agents by Tokens */}
-          <TopAgentsChart
-            data={topAgentsData}
-            metric="total_tokens"
-            isLoading={isLoading}
-          />
-        </div>
+        {(isLoading || hasTopAgentsData) && (
+          <div className="lg:col-span-12">
+            <TopAgentsChart
+              data={topAgentsData}
+              metric="total_tokens"
+              isLoading={isLoading}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

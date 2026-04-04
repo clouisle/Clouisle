@@ -38,7 +38,7 @@ const PROVIDER_NAME_REGEX = /^[a-z][a-z0-9_-]*$/
 export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
   const t = useTranslations('sso')
   const { canPerform } = useCanPerform()
-  const canUpdate = canPerform('admin:settings:update')
+  const canUpdate = canPerform('admin:sso:update')
   const [loading, setLoading] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [formData, setFormData] = useState({

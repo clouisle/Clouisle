@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { Bot } from 'lucide-react'
+import { CHART_AXIS_COLOR, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 
 interface TopAgent {
   agent_id: string
@@ -19,13 +20,7 @@ interface TopAgentsChartProps {
   isLoading?: boolean
 }
 
-const COLORS = [
-  'color-mix(in srgb, var(--chart-1) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-2) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-3) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-4) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-5) 70%, transparent)',
-]
+const COLORS = CHART_SURFACE_COLORS
 
 export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps) {
   const t = useTranslations('dashboard')
@@ -93,7 +88,7 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5" />
@@ -107,22 +102,23 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
             data={filteredData}
             margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
           >
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
             <XAxis
               dataKey="name"
               className="text-xs"
-              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis hide />
             <Tooltip
+              cursor={CHART_HOVER_CURSOR}
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const data = payload[0].payload as TopAgent
                   const isIconUrl = data.icon?.startsWith('http://') || data.icon?.startsWith('https://')
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="flex items-center gap-2 mb-2">
                         {data.icon ? (
                           isIconUrl ? (
@@ -135,7 +131,7 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
                         )}
                         <span className="font-semibold">{data.name}</span>
                       </div>
-                      <div className="text-sm text-muted-foreground mb-1">
+                      <div className="mb-1 text-sm text-chart-tooltip-text/80">
                         {t('common.team')}: {data.team_name}
                       </div>
                       <div className="text-sm font-medium">
@@ -147,7 +143,7 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
                 return null
               }}
             />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+            <Bar dataKey="value" radius={[8, 8, 0, 0]} fillOpacity={0.82}>
               {filteredData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}

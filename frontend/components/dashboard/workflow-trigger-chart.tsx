@@ -1,9 +1,11 @@
 'use client'
 
+import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Zap } from 'lucide-react'
+import { CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 
 interface TriggerData {
   type: string
@@ -16,15 +18,9 @@ interface WorkflowTriggerChartProps {
   isLoading?: boolean
 }
 
-const COLORS = [
-  'color-mix(in srgb, var(--chart-1) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-2) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-3) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-4) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-5) 70%, transparent)',
-]
+const COLORS = CHART_SURFACE_COLORS
 
-export function WorkflowTriggerChart({ data, isLoading }: WorkflowTriggerChartProps) {
+function WorkflowTriggerChartComponent({ data, isLoading }: WorkflowTriggerChartProps) {
   const t = useTranslations('dashboard')
 
   const getTriggerLabel = (type: string) => {
@@ -95,7 +91,8 @@ export function WorkflowTriggerChart({ data, isLoading }: WorkflowTriggerChartPr
               data={data}
               cx="50%"
               cy="50%"
-              outerRadius={100}
+              innerRadius={76}
+              outerRadius={96}
               fill="#8884d8"
               dataKey="count"
               nameKey="type"
@@ -110,7 +107,7 @@ export function WorkflowTriggerChart({ data, isLoading }: WorkflowTriggerChartPr
                   const data = payload[0].payload as TriggerData
                   const percentage = totalCount > 0 ? ((data.count / totalCount) * 100).toFixed(2) : '0'
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="font-semibold mb-2">{getTriggerLabel(data.type)}</div>
                       <div className="text-sm space-y-1">
                         <div>
@@ -132,3 +129,5 @@ export function WorkflowTriggerChart({ data, isLoading }: WorkflowTriggerChartPr
     </Card>
   )
 }
+
+export const WorkflowTriggerChart = React.memo(WorkflowTriggerChartComponent)

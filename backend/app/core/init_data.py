@@ -1621,6 +1621,7 @@ async def init_db():
         "admin:model:update",
         "admin:model:delete",
         "admin:settings:read",
+        "admin:sso:read",
         "audit:read",
         "audit:export",
         "admin:conversation:read",

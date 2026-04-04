@@ -201,34 +201,38 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
       </Card>
 
       {/* 测试邮件 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('email.testEmail')}</CardTitle>
-          <CardDescription>{t('email.testEmailDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <Input
-              type="email"
-              placeholder={t('email.testEmailPlaceholder')}
-              value={testEmail}
-              onChange={(e) => setTestEmail(e.target.value)}
-            />
-            <Button onClick={handleSendTest} disabled={sendingTest || !canUpdate}>
-              {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('email.sendTest')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {canUpdate && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('email.testEmail')}</CardTitle>
+            <CardDescription>{t('email.testEmailDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder={t('email.testEmailPlaceholder')}
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+              />
+              <Button onClick={handleSendTest} disabled={sendingTest}>
+                {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('email.sendTest')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 保存按钮 */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving || !canUpdate}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

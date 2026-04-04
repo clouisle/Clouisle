@@ -30,7 +30,8 @@ interface StorageSettings {
 export default function SiteSettingsStoragePage() {
   const t = useTranslations('siteSettings')
   const { canPerform } = useCanPerform()
-  const canUpdate = canPerform('admin:settings:update')
+  const canUpdateSettings = canPerform('admin:settings:update')
+  const canArchiveAuditLogs = canPerform('audit:export')
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -131,7 +132,7 @@ export default function SiteSettingsStoragePage() {
                 min={30}
                 max={3650}
                 className="w-32"
-                disabled={!canUpdate}
+                disabled={!canUpdateSettings}
               />
               <span className="text-sm text-muted-foreground">{t('days')}</span>
             </div>
@@ -145,59 +146,65 @@ export default function SiteSettingsStoragePage() {
               placeholder="/var/log/clouisle/audit_archives"
               value={settings.audit_log_archive_path}
               onChange={(e) => updateSetting('audit_log_archive_path', e.target.value)}
-              disabled={!canUpdate}
+              disabled={!canUpdateSettings}
             />
             <p className="text-xs text-muted-foreground">{t('auditLogArchivePathHint')}</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Archive className="h-5 w-5" />
-            <CardTitle>{t('manualArchive')}</CardTitle>
-          </div>
-          <CardDescription>{t('manualArchiveDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={() => setShowArchiveDialog(true)}
-            disabled={archiving || !canUpdate}
-            variant="outline"
-          >
-            {archiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <Archive className="mr-2 h-4 w-4" />
-            {t('archiveNow')}
-          </Button>
-          <p className="text-xs text-muted-foreground mt-2">{t('archiveNowHint')}</p>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving || !canUpdate}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('saveChanges')}
-        </Button>
-      </div>
-
-      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('confirmArchive')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('confirmArchiveDescription', { days: settings.audit_log_retention_days })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={archiving}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleArchive} disabled={archiving}>
+      {canArchiveAuditLogs && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Archive className="h-5 w-5" />
+              <CardTitle>{t('manualArchive')}</CardTitle>
+            </div>
+            <CardDescription>{t('manualArchiveDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={() => setShowArchiveDialog(true)}
+              disabled={archiving}
+              variant="outline"
+            >
               {archiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Archive className="mr-2 h-4 w-4" />
+              {t('archiveNow')}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">{t('archiveNowHint')}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {canUpdateSettings && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('saveChanges')}
+          </Button>
+        </div>
+      )}
+
+      {canArchiveAuditLogs && (
+        <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('confirmArchive')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('confirmArchiveDescription', { days: settings.audit_log_retention_days })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={archiving}>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleArchive} disabled={archiving}>
+                {archiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t('confirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   )
 }

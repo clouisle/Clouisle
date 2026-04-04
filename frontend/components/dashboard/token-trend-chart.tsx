@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { TrendingUp } from 'lucide-react'
+import { CHART_AXIS_COLOR, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_COLOR_ORDER } from '@/lib/chart-theme'
 
 interface TrendData {
   date: string
@@ -15,13 +16,7 @@ interface TokenTrendChartProps {
   isLoading?: boolean
 }
 
-const COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-]
+const COLORS = CHART_COLOR_ORDER
 
 export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
   const t = useTranslations('dashboard')
@@ -72,7 +67,7 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5" />
@@ -89,24 +84,25 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
                 <stop offset="95%" stopColor={COLORS[3]} stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
             <XAxis
               dataKey="date"
               className="text-xs"
-              tick={{ fill: 'var(--muted-foreground)' }}
+              tick={{ fill: CHART_AXIS_COLOR }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               className="text-xs"
-              tick={{ fill: 'var(--muted-foreground)' }}
+              tick={{ fill: CHART_AXIS_COLOR }}
               hide
             />
             <Tooltip
+              cursor={CHART_HOVER_CURSOR}
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="font-semibold mb-2">{payload[0].payload.date}</div>
                       <div className="text-sm">
                         {t('common.tokenUsage')}: {formatNumber(payload[0].value as number)}

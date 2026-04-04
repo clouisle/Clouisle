@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { Building2 } from 'lucide-react'
+import { CHART_AXIS_COLOR, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 
 interface TeamTokenUsage {
   team_id: string
@@ -18,13 +19,7 @@ interface TeamTokenUsageChartProps {
   isLoading?: boolean
 }
 
-const COLORS = [
-  'color-mix(in srgb, var(--chart-1) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-2) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-3) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-4) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-5) 70%, transparent)',
-]
+const COLORS = CHART_SURFACE_COLORS
 
 export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProps) {
   const t = useTranslations('dashboard')
@@ -78,7 +73,7 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Building2 className="h-5 w-5" />
@@ -92,21 +87,22 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
             data={filteredData}
             margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
           >
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
             <XAxis
               dataKey="name"
               className="text-xs"
-              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+              tick={{ fill: CHART_AXIS_COLOR, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis hide />
             <Tooltip
+              cursor={CHART_HOVER_CURSOR}
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const data = payload[0].payload as TeamTokenUsage
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="font-semibold mb-2">{data.name}</div>
                       <div className="text-sm space-y-1">
                         <div>
@@ -125,7 +121,7 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
                 return null
               }}
             />
-            <Bar dataKey="total_tokens" radius={[4, 4, 0, 0]}>
+            <Bar dataKey="total_tokens" radius={[8, 8, 0, 0]} fillOpacity={0.82}>
               {filteredData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}

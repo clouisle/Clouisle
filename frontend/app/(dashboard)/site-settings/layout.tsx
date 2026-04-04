@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl'
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
 import { usePermissions } from '@/hooks/use-permissions'
-import { SITE_SETTINGS_NAV_ITEMS, ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
+import { SITE_SETTINGS_NAV_ITEMS, getRoutePermissionConfig } from '@/lib/route-permissions'
 import { cn } from '@/lib/utils'
 
 export default function SiteSettingsLayout({
@@ -16,16 +16,25 @@ export default function SiteSettingsLayout({
 }) {
   const t = useTranslations('siteSettings')
   const pathname = usePathname()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, isSuperuser } = usePermissions()
 
   const settingsNav = SITE_SETTINGS_NAV_ITEMS
-    .map((item) => ({
-      title: t(item.translationKey),
-      href: item.path,
-      description: t(item.descriptionKey),
-      permission: ROUTE_PERMISSION_MAP[item.path],
-    }))
-    .filter((item) => !item.permission || hasPermission(item.permission))
+    .map((item) => {
+      const routeConfig = getRoutePermissionConfig(item.path)
+      return {
+        title: t(item.translationKey),
+        href: item.path,
+        description: t(item.descriptionKey),
+        permission: routeConfig?.permission ?? null,
+        requiresSuperuser:
+          routeConfig?.requiresSuperuser ?? item.requiresSuperuser ?? false,
+      }
+    })
+    .filter(
+      (item) =>
+        (!item.permission || hasPermission(item.permission)) &&
+        (!item.requiresSuperuser || isSuperuser)
+    )
 
   return (
     <RoutePermissionGuard>

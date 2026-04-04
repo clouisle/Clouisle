@@ -61,8 +61,13 @@ class SystemPermissions:
     ADMIN_SETTINGS_READ = "admin:settings:read"
     ADMIN_SETTINGS_UPDATE = "admin:settings:update"
 
+    # ============ Admin SSO Management ============
+    ADMIN_SSO_READ = "admin:sso:read"
+    ADMIN_SSO_UPDATE = "admin:sso:update"
+
     # ============ Admin Conversation Management ============
     ADMIN_CONVERSATION_READ = "admin:conversation:read"
+    ADMIN_CONVERSATION_DELETE = "admin:conversation:delete"
 
     # ============ Admin Memory Management ============
     ADMIN_MEMORY_READ = "admin:memory:read"
@@ -79,7 +84,9 @@ class SystemPermissions:
 
     # ============ Platform Team Management ============
     TEAM_READ = "team:read"
+    TEAM_CREATE = "team:create"
     TEAM_UPDATE = "team:update"
+    TEAM_DELETE = "team:delete"
     TEAM_MANAGE = "team:manage"
 
     # ============ Platform Agent Management ============
@@ -88,12 +95,15 @@ class SystemPermissions:
     AGENT_UPDATE = "agent:update"
     AGENT_DELETE = "agent:delete"
     AGENT_PUBLISH = "agent:publish"
+    AGENT_CHAT = "agent:chat"
 
     # ============ Platform Workflow Management ============
     WORKFLOW_READ = "workflow:read"
     WORKFLOW_CREATE = "workflow:create"
     WORKFLOW_UPDATE = "workflow:update"
     WORKFLOW_DELETE = "workflow:delete"
+    WORKFLOW_PUBLISH = "workflow:publish"
+    WORKFLOW_RUN = "workflow:run"
     WORKFLOW_EXECUTE = "workflow:execute"
 
     # ============ Platform Knowledge Base Management ============
@@ -107,6 +117,17 @@ class SystemPermissions:
     TOOL_CREATE = "tool:create"
     TOOL_UPDATE = "tool:update"
     TOOL_DELETE = "tool:delete"
+    TOOL_EXECUTE = "tool:execute"
+
+    # ============ Platform API Key Management ============
+    APIKEY_READ = "apikey:read"
+    APIKEY_CREATE = "apikey:create"
+    APIKEY_UPDATE = "apikey:update"
+    APIKEY_DELETE = "apikey:delete"
+
+    # ============ Platform Conversation Management ============
+    CONVERSATION_READ = "conversation:read"
+    CONVERSATION_DELETE = "conversation:delete"
 
     # ============ Platform Memory Management ============
     MEMORY_READ = "memory:read"
@@ -245,11 +266,27 @@ class SystemPermissions:
                 "scope": "admin",
                 "description": "Update system settings and test integrations",
             },
+            # Admin SSO Management
+            {
+                "code": cls.ADMIN_SSO_READ,
+                "scope": "admin",
+                "description": "View SSO providers and configuration",
+            },
+            {
+                "code": cls.ADMIN_SSO_UPDATE,
+                "scope": "admin",
+                "description": "Manage SSO providers and user SSO connections",
+            },
             # Admin Conversation Management
             {
                 "code": cls.ADMIN_CONVERSATION_READ,
                 "scope": "admin",
                 "description": "View all conversations in system",
+            },
+            {
+                "code": cls.ADMIN_CONVERSATION_DELETE,
+                "scope": "admin",
+                "description": "Delete any conversation in system",
             },
             # Admin Memory Management
             {
@@ -296,9 +333,19 @@ class SystemPermissions:
                 "description": "View team information",
             },
             {
+                "code": cls.TEAM_CREATE,
+                "scope": "team",
+                "description": "Create teams",
+            },
+            {
                 "code": cls.TEAM_UPDATE,
                 "scope": "team",
                 "description": "Update team information",
+            },
+            {
+                "code": cls.TEAM_DELETE,
+                "scope": "team",
+                "description": "Delete teams",
             },
             {
                 "code": cls.TEAM_MANAGE,
@@ -331,6 +378,11 @@ class SystemPermissions:
                 "scope": "agent",
                 "description": "Publish agents to marketplace",
             },
+            {
+                "code": cls.AGENT_CHAT,
+                "scope": "agent",
+                "description": "Chat with agents",
+            },
             # Platform Workflow Management
             {
                 "code": cls.WORKFLOW_READ,
@@ -351,6 +403,16 @@ class SystemPermissions:
                 "code": cls.WORKFLOW_DELETE,
                 "scope": "workflow",
                 "description": "Delete workflows",
+            },
+            {
+                "code": cls.WORKFLOW_PUBLISH,
+                "scope": "workflow",
+                "description": "Publish workflows",
+            },
+            {
+                "code": cls.WORKFLOW_RUN,
+                "scope": "workflow",
+                "description": "Run workflows",
             },
             {
                 "code": cls.WORKFLOW_EXECUTE,
@@ -398,6 +460,43 @@ class SystemPermissions:
                 "code": cls.TOOL_DELETE,
                 "scope": "tool",
                 "description": "Delete tools",
+            },
+            {
+                "code": cls.TOOL_EXECUTE,
+                "scope": "tool",
+                "description": "Execute tools",
+            },
+            # Platform API Key Management
+            {
+                "code": cls.APIKEY_READ,
+                "scope": "apikey",
+                "description": "View API keys",
+            },
+            {
+                "code": cls.APIKEY_CREATE,
+                "scope": "apikey",
+                "description": "Create API keys",
+            },
+            {
+                "code": cls.APIKEY_UPDATE,
+                "scope": "apikey",
+                "description": "Update API keys",
+            },
+            {
+                "code": cls.APIKEY_DELETE,
+                "scope": "apikey",
+                "description": "Delete API keys",
+            },
+            # Platform Conversation Management
+            {
+                "code": cls.CONVERSATION_READ,
+                "scope": "conversation",
+                "description": "View conversations",
+            },
+            {
+                "code": cls.CONVERSATION_DELETE,
+                "scope": "conversation",
+                "description": "Delete conversations",
             },
             # Platform Memory Management
             {

@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Link as LinkIcon, Loader2, Unlink } from 'lucide-react'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface UserDialogProps {
   open: boolean
@@ -47,6 +48,8 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   const commonT = useTranslations('common')
   const authT = useTranslations('auth')
   const tSSO = useTranslations('sso')
+  const { canPerform } = useCanPerform()
+  const canManageSSO = canPerform('admin:sso:update')
 
   const isEditing = !!user
 
@@ -281,7 +284,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
             )}
           </div>
 
-          {isEditing && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
+          {isEditing && canManageSSO && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
             <div className="grid gap-2">
               <Label>{tSSO('connectedAccounts')}</Label>
               <div className="space-y-2">

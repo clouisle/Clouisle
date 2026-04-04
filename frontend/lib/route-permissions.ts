@@ -3,6 +3,7 @@ export type RouteMatchMode = 'exact' | 'prefix'
 export interface RoutePermissionConfig {
   path: string
   permission: string | null
+  requiresSuperuser?: boolean
   matchMode?: RouteMatchMode
   children?: RoutePermissionConfig[]
 }
@@ -11,6 +12,7 @@ export interface SiteSettingsNavItem {
   path: string
   translationKey: string
   descriptionKey: string
+  requiresSuperuser?: boolean
 }
 
 export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
@@ -36,7 +38,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
       { path: '/site-settings/security', permission: 'admin:settings:read' },
       { path: '/site-settings/notifications', permission: 'admin:settings:read' },
       { path: '/site-settings/storage', permission: 'admin:settings:read' },
-      { path: '/site-settings/sso', permission: 'admin:settings:read' },
+      { path: '/site-settings/sso', permission: 'admin:sso:read' },
     ],
   },
 ]
@@ -81,27 +83,38 @@ const ROUTE_PERMISSION_ENTRIES: Array<[string, string]> = FLAT_ROUTE_PERMISSION_
 
 export const ROUTE_PERMISSION_MAP: Record<string, string> = Object.fromEntries(ROUTE_PERMISSION_ENTRIES)
 
-export function getRequiredPermissionForPath(pathname: string): string | null {
-  const matchingConfig = FLAT_ROUTE_PERMISSION_CONFIG
-    .filter((config) => {
-      const matchMode = config.matchMode ?? 'exact'
-      if (matchMode === 'exact') {
-        return pathname === config.path
-      }
-      return pathname === config.path || pathname.startsWith(`${config.path}/`)
-    })
-    .sort((a, b) => b.path.length - a.path.length)[0]
+export function getRoutePermissionConfig(pathname: string): RoutePermissionConfig | null {
+  return (
+    FLAT_ROUTE_PERMISSION_CONFIG
+      .filter((config) => {
+        const matchMode = config.matchMode ?? 'exact'
+        if (matchMode === 'exact') {
+          return pathname === config.path
+        }
+        return pathname === config.path || pathname.startsWith(`${config.path}/`)
+      })
+      .sort((a, b) => b.path.length - a.path.length)[0] ?? null
+  )
+}
 
-  return matchingConfig?.permission ?? null
+export function getRequiredPermissionForPath(pathname: string): string | null {
+  return getRoutePermissionConfig(pathname)?.permission ?? null
 }
 
 export function canAccessRoute(
   pathname: string,
-  hasPermission: (permission: string) => boolean
+  hasPermission: (permission: string) => boolean,
+  isSuperuser = false
 ): boolean {
-  const requiredPermission = getRequiredPermissionForPath(pathname)
-  if (!requiredPermission) {
+  const config = getRoutePermissionConfig(pathname)
+  if (!config) {
     return true
   }
-  return hasPermission(requiredPermission)
+  if (config.requiresSuperuser && !isSuperuser) {
+    return false
+  }
+  if (!config.permission) {
+    return true
+  }
+  return hasPermission(config.permission)
 }

@@ -27,6 +27,7 @@ import {
 } from 'recharts'
 import type { DashboardStats } from '@/lib/api/admin/dashboard'
 import type { TOTPStatsResponse } from '@/lib/api/admin/users'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR } from '@/lib/chart-theme'
 
 interface TrendData {
   date: string
@@ -44,13 +45,7 @@ interface OverviewTabProps {
   totpStats: TOTPStatsResponse | null
 }
 
-const COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)',
-]
+const COLORS = CHART_COLOR_ORDER
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -72,8 +67,8 @@ interface TooltipPayloadItem {
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[200px]">
-        <p className="text-sm font-semibold text-foreground mb-2 pb-2 border-b border-border">
+      <div className="min-w-[200px] rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
+        <p className="mb-2 border-b border-chart-tooltip-border pb-2 text-sm font-semibold text-chart-tooltip-text">
           {label}
         </p>
         <div className="space-y-1.5">
@@ -81,14 +76,14 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
             <div key={index} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <div
-                  className="w-3 h-3 rounded-full"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: entry.color }}
                 />
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-chart-tooltip-text/80">
                   {entry.name}
                 </span>
               </div>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-sm font-semibold text-chart-tooltip-text">
                 {typeof entry.value === 'number' ? formatNumber(entry.value) : entry.value}
               </span>
             </div>
@@ -147,6 +142,7 @@ function StatCard({
 
 export function OverviewTab({ stats, trendsData, isLoading, totpStats }: OverviewTabProps) {
   const t = useTranslations('dashboard.home')
+  const passwordExpiration = stats.password_expiration
 
   return (
     <div className="space-y-6">
@@ -205,21 +201,21 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content - 2/3 width */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8">
           {/* User Growth Trend */}
-          <Card>
-            <CardHeader>
+          <Card className="flex h-full flex-col">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <UserPlus className="h-4 w-4" />
                 {t('userGrowth')}
               </CardTitle>
-              <CardDescription>{t('userGrowthDesc')}</CardDescription>
+              <CardDescription className="text-xs">{t('userGrowthDesc')}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={trendsData}>
+            <CardContent className="flex-1 pt-0">
+              <div className="h-full min-h-[160px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendsData}>
                   <defs>
                     <linearGradient id="colorNewUsers" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={COLORS[2]} stopOpacity={0.3}/>
@@ -230,20 +226,20 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
                       <stop offset="95%" stopColor={COLORS[4]} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
-                    tick={{ fill: 'var(--muted-foreground)' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
                     className="text-xs"
-                    tick={{ fill: 'var(--muted-foreground)' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
                     hide
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip cursor={CHART_HOVER_CURSOR} content={<CustomTooltip />} />
                   <Legend />
                   <Area
                     type="monotone"
@@ -263,21 +259,52 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
                   />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        </div>
+
+        <div className="lg:col-span-4">
+          {/* Active Users Card */}
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{t('stats.activeUsers')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-0">
+              <div className="rounded-lg bg-muted/50 p-2.5 text-center">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">{t('stats.dau')}</p>
+                <p className="text-lg font-bold">{formatNumber(stats.active_users.dau)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('stats.dauDesc')}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-2.5 text-center">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">{t('stats.wau')}</p>
+                <p className="text-lg font-bold">{formatNumber(stats.active_users.wau)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('stats.wauDesc')}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-2.5 text-center">
+                <p className="mb-1 text-xs font-medium text-muted-foreground">{t('stats.mau')}</p>
+                <p className="text-lg font-bold">{formatNumber(stats.active_users.mau)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t('stats.mauDesc')}</p>
+              </div>
             </CardContent>
           </Card>
+        </div>
 
+        <div className="lg:col-span-8">
           {/* Activity Trend */}
-          <Card>
-            <CardHeader>
+          <Card className="flex h-full flex-col">
+            <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="h-4 w-4" />
                 {t('activityTrend')}
               </CardTitle>
-              <CardDescription>{t('activityTrendDesc')}</CardDescription>
+              <CardDescription className="text-xs">{t('activityTrendDesc')}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={trendsData}>
+            <CardContent className="flex-1 pt-0">
+              <div className="h-full min-h-[160px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trendsData}>
                   <defs>
                     <linearGradient id="colorConversations" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={COLORS[2]} stopOpacity={0.3}/>
@@ -288,28 +315,28 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
                       <stop offset="95%" stopColor={COLORS[4]} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
-                    tick={{ fill: 'var(--muted-foreground)' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
                     yAxisId="left"
                     className="text-xs"
-                    tick={{ fill: 'var(--muted-foreground)' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
                     hide
                   />
                   <YAxis
                     yAxisId="right"
                     orientation="right"
                     className="text-xs"
-                    tick={{ fill: 'var(--muted-foreground)' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
                     hide
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip cursor={CHART_HOVER_CURSOR} content={<CustomTooltip />} />
                   <Legend />
                   <Area
                     yAxisId="left"
@@ -331,145 +358,122 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
                   />
                 </AreaChart>
               </ResponsiveContainer>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
         </div>
 
-        {/* Sidebar - 1/3 width */}
-        <div className="space-y-6">
-          {/* Password Expiration Stats */}
-          {stats.password_expiration && (
-            <Card className="border-yellow-500/50">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-yellow-600" />
-                  {t('passwordExpiration.title')}
-                </CardTitle>
-                <CardDescription>{t('passwordExpiration.description')}</CardDescription>
+        <div className="lg:col-span-4">
+          <div className="space-y-4">
+            {/* Resource Overview */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t('resources')}</CardTitle>
+                <CardDescription>{t('resourcesDesc')}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {stats.password_expiration.expired_count > 0 && (
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+              <CardContent className="space-y-3 pt-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
+                      <Building2 className="h-5 w-5 text-blue-500" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-destructive">{t('passwordExpiration.expired')}</p>
-                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiredDesc')}</p>
+                      <p className="text-sm font-medium">{t('stats.teams')}</p>
+                      <p className="text-xs text-muted-foreground">{t('stats.teamsDesc')}</p>
                     </div>
-                    <p className="text-2xl font-bold text-destructive">{stats.password_expiration.expired_count}</p>
                   </div>
-                )}
-                {stats.password_expiration.expiring_soon_count > 0 && (
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                  <p className="text-xl font-bold">{stats.overview.total_teams}</p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10">
+                      <Bot className="h-5 w-5 text-purple-500" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-yellow-700 dark:text-yellow-500">{t('passwordExpiration.expiringSoon')}</p>
-                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiringSoonDesc')}</p>
+                      <p className="text-sm font-medium">{t('stats.agents')}</p>
+                      <p className="text-xs text-muted-foreground">{t('stats.agentsDesc')}</p>
                     </div>
-                    <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-500">{stats.password_expiration.expiring_soon_count}</p>
                   </div>
-                )}
-                {stats.password_expiration.force_change_count > 0 && (
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                  <p className="text-xl font-bold">{stats.overview.total_agents}</p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10">
+                      <Workflow className="h-5 w-5 text-cyan-500" />
+                    </div>
                     <div>
-                      <p className="text-sm font-medium text-orange-700 dark:text-orange-500">{t('passwordExpiration.forceChange')}</p>
-                      <p className="text-xs text-muted-foreground">{t('passwordExpiration.forceChangeDesc')}</p>
+                      <p className="text-sm font-medium">{t('stats.workflows')}</p>
+                      <p className="text-xs text-muted-foreground">{t('stats.workflowsDesc')}</p>
                     </div>
-                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-500">{stats.password_expiration.force_change_count}</p>
                   </div>
-                )}
-                {stats.password_expiration.expired_count === 0 &&
-                  stats.password_expiration.expiring_soon_count === 0 &&
-                  stats.password_expiration.force_change_count === 0 && (
-                    <div className="text-center p-4 rounded-lg bg-muted/50">
-                      <p className="text-sm text-muted-foreground">{t('passwordExpiration.allGood')}</p>
+                  <p className="text-xl font-bold">{stats.overview.total_workflows}</p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500/10">
+                      <Database className="h-5 w-5 text-green-500" />
                     </div>
-                  )}
+                    <div>
+                      <p className="text-sm font-medium">{t('stats.knowledgeBases')}</p>
+                      <p className="text-xs text-muted-foreground">{t('stats.knowledgeBasesDesc')}</p>
+                    </div>
+                  </div>
+                  <p className="text-xl font-bold">{stats.overview.total_knowledge_bases}</p>
+                </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* Active Users Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('stats.activeUsers')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-center p-4 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.dau')}</p>
-                <p className="text-3xl font-bold">{formatNumber(stats.active_users.dau)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{t('stats.dauDesc')}</p>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.wau')}</p>
-                <p className="text-3xl font-bold">{formatNumber(stats.active_users.wau)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{t('stats.wauDesc')}</p>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-muted-foreground mb-2">{t('stats.mau')}</p>
-                <p className="text-3xl font-bold">{formatNumber(stats.active_users.mau)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{t('stats.mauDesc')}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Resource Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('resources')}</CardTitle>
-              <CardDescription>{t('resourcesDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                    <Building2 className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.teams')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.teamsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_teams}</p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
-                    <Bot className="h-5 w-5 text-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.agents')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.agentsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_agents}</p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                    <Workflow className="h-5 w-5 text-cyan-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.workflows')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.workflowsDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_workflows}</p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center">
-                    <Database className="h-5 w-5 text-green-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{t('stats.knowledgeBases')}</p>
-                    <p className="text-xs text-muted-foreground">{t('stats.knowledgeBasesDesc')}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold">{stats.overview.total_knowledge_bases}</p>
-              </div>
-            </CardContent>
-          </Card>
+            {passwordExpiration && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-yellow-600" />
+                    {t('passwordExpiration.title')}
+                  </CardTitle>
+                  <CardDescription>{t('passwordExpiration.description')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 pt-0">
+                  {passwordExpiration.expired_count > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/10 p-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-destructive">{t('passwordExpiration.expired')}</p>
+                        <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiredDesc')}</p>
+                      </div>
+                      <p className="text-2xl font-bold text-destructive">{passwordExpiration.expired_count}</p>
+                    </div>
+                  )}
+                  {passwordExpiration.expiring_soon_count > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-yellow-700 dark:text-yellow-500">{t('passwordExpiration.expiringSoon')}</p>
+                        <p className="text-xs text-muted-foreground">{t('passwordExpiration.expiringSoonDesc')}</p>
+                      </div>
+                      <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-500">{passwordExpiration.expiring_soon_count}</p>
+                    </div>
+                  )}
+                  {passwordExpiration.force_change_count > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-orange-500/20 bg-orange-500/10 p-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-orange-700 dark:text-orange-500">{t('passwordExpiration.forceChange')}</p>
+                        <p className="text-xs text-muted-foreground">{t('passwordExpiration.forceChangeDesc')}</p>
+                      </div>
+                      <p className="text-2xl font-bold text-orange-700 dark:text-orange-500">{passwordExpiration.force_change_count}</p>
+                    </div>
+                  )}
+                  {passwordExpiration.expired_count === 0 &&
+                    passwordExpiration.expiring_soon_count === 0 &&
+                    passwordExpiration.force_change_count === 0 && (
+                      <div className="rounded-lg bg-muted/50 p-3 text-center">
+                        <p className="text-sm text-muted-foreground">{t('passwordExpiration.allGood')}</p>
+                      </div>
+                    )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
     </div>

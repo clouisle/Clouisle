@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import get_current_active_superuser
+from app.api import deps
 from app.core.i18n import t
 from app.models.sso_provider import SSOProvider
 from app.models.user import User
@@ -28,7 +28,7 @@ router = APIRouter()
 async def admin_disconnect_sso(
     connection_id: UUID,
     request: Request,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Disconnect SSO connection (admin can disconnect any user's connections)"""
     from app.models.user_sso_connection import UserSSOConnection
@@ -74,7 +74,7 @@ async def admin_disconnect_sso(
 
 @router.get("/providers", response_model=Response[List[SSOProviderAdmin]])
 async def list_providers_admin(
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:read")),
 ):
     """List all SSO providers (admin)"""
     providers = await SSOProvider.all()
@@ -105,7 +105,7 @@ async def list_providers_admin(
 async def create_provider(
     request: Request,
     data: SSOProviderCreate,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Create SSO provider (admin)"""
     existing = await SSOProvider.filter(name=data.name).first()
@@ -136,7 +136,7 @@ async def update_provider(
     provider_id: UUID,
     request: Request,
     data: SSOProviderUpdate,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Update SSO provider (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)
@@ -177,7 +177,7 @@ async def update_provider(
 async def delete_provider(
     provider_id: UUID,
     request: Request,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Delete SSO provider (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)
@@ -206,7 +206,7 @@ async def delete_provider(
 @router.post("/providers/{provider_id}/test", response_model=Response[dict])
 async def test_provider_connection(
     provider_id: UUID,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Test SSO provider connection (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)

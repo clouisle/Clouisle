@@ -206,30 +206,34 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
       )}
 
       {/* 测试消息 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('dingtalk.testMessage')}</CardTitle>
-          <CardDescription>{t('dingtalk.testMessageDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={handleSendTest}
-            disabled={sendingTest || !settings.dingtalk_enabled || !canUpdate}
-            variant="outline"
-          >
-            {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('dingtalk.sendTest')}
-          </Button>
-        </CardContent>
-      </Card>
+      {canUpdate && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('dingtalk.testMessage')}</CardTitle>
+            <CardDescription>{t('dingtalk.testMessageDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleSendTest}
+              disabled={sendingTest || !settings.dingtalk_enabled}
+              variant="outline"
+            >
+              {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('dingtalk.sendTest')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 保存按钮 */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving || !canUpdate}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

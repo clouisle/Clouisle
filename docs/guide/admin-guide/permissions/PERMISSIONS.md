@@ -26,6 +26,8 @@ These permissions are for dashboard management functions, typically only admin r
 | `admin:notification:create/delete` | Dashboard notification management |
 | `admin:settings:read` | View site settings |
 | `admin:settings:update` | Modify site settings |
+| `admin:sso:read` | View SSO providers and configuration |
+| `admin:sso:update` | Manage SSO providers and user SSO connections |
 | `audit:read` | View audit logs |
 | `audit:export` | Export audit logs |
 
@@ -73,6 +75,8 @@ These permissions are for managing business resources. All users may have them, 
 | `admin:notification:create/delete` | ✓ | ✓ | | |
 | `admin:settings:read` | ✓ | ✓ | | |
 | `admin:settings:update` | ✓ | | | |
+| `admin:sso:read` | ✓ | ✓ | | |
+| `admin:sso:update` | ✓ | | | |
 | `audit:read` | ✓ | ✓ | | |
 | `audit:export` | ✓ | ✓ | | |
 | `team:read` | ✓ | ✓ | ✓ | ✓ |
@@ -191,6 +195,20 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 | Super Admin | ✓ | ✓ | View and modify all settings |
 | Admin | ✓ | ✗ | View settings only |
 | Member | ✗ | ✗ | No access |
+
+### 4.5 Scenario: SSO Management
+
+| Role | `admin:sso:read` | `admin:sso:update` | Allowed Operations |
+|------|:----------------:|:------------------:|-------------------|
+| Super Admin | ✓ | ✓ | View and manage all SSO providers and disconnect SSO connections |
+| Admin | ✓ | ✗ | View SSO configuration only |
+| Member | ✗ | ✗ | No access |
+
+### 4.6 Scenario: Audit Log Archiving
+
+- Editing storage settings requires `admin:settings:update`
+- Archiving audit logs requires `audit:export`
+- These two capabilities are independent and should not share a single frontend gate
 
 ---
 

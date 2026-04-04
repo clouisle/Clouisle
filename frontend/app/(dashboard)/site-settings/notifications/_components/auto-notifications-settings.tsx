@@ -178,12 +178,14 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
       ))}
 
       {/* Save button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving || !canUpdate}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

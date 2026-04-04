@@ -9,9 +9,9 @@
 | 权限 | 说明 | 用途 |
 |------|------|------|
 | `*` | 超级权限 | 仅 Super Admin 角色拥有，绕过所有权限检查 |
-| `dashboard:access` | 后台访问权限 | 控制是否能访问管理后台，是区分「管理员」和「普通用户」的关键权限 |
+| `admin:dashboard:access` | 后台访问权限 | 控制是否能访问管理后台，是区分「管理员」和「普通用户」的关键权限 |
 
-### 1.2 后台管理权限（需要 `dashboard:access`）
+### 1.2 后台管理权限（需要 `admin:dashboard:access`）
 
 这些权限用于后台管理功能，通常只有管理员角色拥有：
 
@@ -21,8 +21,10 @@
 | `role:read/create/update/delete` | 角色管理 |
 | `permission:read` | 查看权限列表 |
 | `model:read/create/update/delete` | 模型管理 |
-| `settings:read` | 查看站点设置 |
-| `settings:update` | 修改站点设置 |
+| `admin:settings:read` | 查看站点设置 |
+| `admin:settings:update` | 修改站点设置 |
+| `admin:sso:read` | 查看 SSO 提供商与配置 |
+| `admin:sso:update` | 管理 SSO 提供商与用户 SSO 连接 |
 | `audit:read` | 查看审计日志 |
 | `audit:export` | 导出审计日志 |
 
@@ -49,34 +51,46 @@
 | 角色 | 说明 | 关键权限 |
 |------|------|---------|
 | **Super Admin** | 超级管理员 | `*`（所有权限） |
-| **Admin** | 管理员 | `dashboard:access` + 后台管理权限 + 资源权限 |
-| **Member** | 成员 | 资源权限（无后台访问） |
-| **Viewer** | 查看者 | 只读 + 执行权限（无后台访问） |
+| **Admin** | 管理员 | `admin:dashboard:access` + 系统读权限 + 团队作用域资源管理 |
+| **Member** | 成员 | 日常资源创建与编辑（无后台访问） |
+| **Viewer** | 查看者 | 默认只读用户，具备 chat/run/execute 权限 |
 
 ### 2.2 角色权限对比
 
 | 权限 | Super Admin | Admin | Member | Viewer |
 |------|:-----------:|:-----:|:------:|:------:|
 | `*` | ✓ | | | |
-| `dashboard:access` | ✓ | ✓ | | |
-| `user:*` | ✓ | ✓ | | |
-| `role:*` | ✓ | ✓ | | |
-| `model:*` | ✓ | ✓ | | |
-| `settings:read` | ✓ | ✓ | | |
-| `settings:update` | ✓ | | | |
-| `audit:*` | ✓ | ✓ | | |
+| `admin:dashboard:access` | ✓ | ✓ | | |
+| `admin:user:*` | ✓ | ✓ | | |
+| `admin:role:read` | ✓ | ✓ | | |
+| `admin:role:create/update/delete` | ✓ | | | |
+| `admin:permission:read` | ✓ | ✓ | | |
+| `admin:permission:create/update/delete` | ✓ | | | |
+| `admin:model:*` | ✓ | ✓ | | |
+| `admin:memory:read` | ✓ | ✓ | | |
+| `admin:conversation:read/delete` | ✓ | ✓ | | |
+| `admin:notification:create/delete` | ✓ | ✓ | | |
+| `admin:settings:read` | ✓ | ✓ | | |
+| `admin:settings:update` | ✓ | | | |
+| `admin:sso:read` | ✓ | ✓ | | |
+| `admin:sso:update` | ✓ | | | |
+| `audit:read` | ✓ | ✓ | | |
+| `audit:export` | ✓ | ✓ | | |
 | `team:read` | ✓ | ✓ | ✓ | ✓ |
-| `team:create/update/manage` | ✓ | ✓ | ✓ | |
+| `team:create/update/manage` | ✓ | ✓ | | |
 | `team:delete` | ✓ | ✓ | | |
 | `agent:read/chat` | ✓ | ✓ | ✓ | ✓ |
-| `agent:create/update/delete/publish` | ✓ | ✓ | ✓ | |
+| `agent:create/update` | ✓ | ✓ | ✓ | |
+| `agent:delete/publish` | ✓ | ✓ | | |
 | `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
-| `workflow:create/update/delete/publish` | ✓ | ✓ | ✓ | |
+| `workflow:create/update` | ✓ | ✓ | ✓ | |
+| `workflow:delete/publish` | ✓ | ✓ | | |
 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
-| `kb:create/update/delete` | ✓ | ✓ | ✓ | |
+| `kb:create/update` | ✓ | ✓ | ✓ | |
+| `kb:delete` | ✓ | ✓ | | |
 | `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
-| `apikey:read` | ✓ | ✓ | ✓ | ✓ |
+| `tool:create/update/delete` | ✓ | ✓ | | |
+| `apikey:read` | ✓ | ✓ | ✓ | |
 | `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
 | `conversation:delete` | ✓ | ✓ | ✓ | |
@@ -91,17 +105,17 @@
 - **Admin**：团队级隔离，可访问所属团队的所有数据
 - **Member/Viewer**：团队级隔离 + 用户级隔离（对话数据）
 
-### 3.2 `dashboard:access` 权限的影响
+### 3.2 `admin:dashboard:access` 权限的影响
 
-`dashboard:access` 是区分「管理员视角」和「用户视角」的关键权限：
+`admin:dashboard:access` 是区分「管理员视角」和「用户视角」的关键权限：
 
-| 数据类型 | 有 `dashboard:access` | 无 `dashboard:access` |
+| 数据类型 | 有 `admin:dashboard:access` | 无 `admin:dashboard:access` |
 |----------|----------------------|----------------------|
-| 用户列表 | 可见（需要 `user:read`） | 不可见 |
-| 角色列表 | 可见（需要 `role:read`） | 不可见 |
-| 模型列表 | 可见（需要 `model:read`） | 不可见 |
+| 用户列表 | 可见（需要 `admin:user:read`） | 不可见 |
+| 角色列表 | 可见（需要 `admin:role:read`） | 不可见 |
+| 模型列表 | 可见（需要 `admin:model:read`） | 不可见 |
 | 审计日志 | 可见（需要 `audit:read`） | 不可见 |
-| 站点设置 | 可见（需要 `settings:read`） | 不可见 |
+| 站点设置 | 可见（需要 `admin:settings:read`） | 不可见 |
 | **对话列表** | **团队内所有用户的对话** | **仅自己的对话** |
 | **对话统计** | **团队内所有对话的统计** | **仅自己对话的统计** |
 
@@ -113,12 +127,12 @@
 Super Admin
 └── 可查看所有对话
 
-Admin (有 dashboard:access)
+Admin (有 admin:dashboard:access)
 └── 可查看所属团队内所有用户的对话
     └── 团队 A 的所有对话
     └── 团队 B 的所有对话（如果是成员）
 
-Member / Viewer (无 dashboard:access)
+Member / Viewer (无 admin:dashboard:access)
 └── 只能查看自己的对话
     └── 自己在团队 A 创建的对话
     └── 自己在团队 B 创建的对话
@@ -141,7 +155,7 @@ Member / Viewer (无 dashboard:access)
 
 ### 4.1 场景：普通用户查看活动日志
 
-**用户角色**：Member（无 `dashboard:access`）
+**用户角色**：Member（无 `admin:dashboard:access`）
 
 **可见数据**：
 - ✓ 自己创建的对话
@@ -151,7 +165,7 @@ Member / Viewer (无 dashboard:access)
 
 ### 4.2 场景：管理员查看活动日志
 
-**用户角色**：Admin（有 `dashboard:access`）
+**用户角色**：Admin（有 `admin:dashboard:access`）
 
 **可见数据**：
 - ✓ 团队内所有用户的对话
@@ -173,11 +187,25 @@ Member / Viewer (无 dashboard:access)
 
 ### 4.4 场景：站点设置管理
 
-| 角色 | `settings:read` | `settings:update` | 可执行操作 |
+| 角色 | `admin:settings:read` | `admin:settings:update` | 可执行操作 |
 |------|:---------------:|:-----------------:|-----------|
 | Super Admin | ✓ | ✓ | 查看和修改所有设置 |
 | Admin | ✓ | ✗ | 仅查看设置 |
 | Member | ✗ | ✗ | 无法访问 |
+
+### 4.5 场景：SSO 管理
+
+| 角色 | `admin:sso:read` | `admin:sso:update` | 可执行操作 |
+|------|:----------------:|:------------------:|-----------|
+| Super Admin | ✓ | ✓ | 查看并管理所有 SSO 提供商，以及断开用户的 SSO 连接 |
+| Admin | ✓ | ✗ | 仅查看 SSO 配置 |
+| Member | ✗ | ✗ | 无法访问 |
+
+### 4.6 场景：审计日志归档
+
+- 编辑存储设置需要 `admin:settings:update`
+- 归档审计日志需要 `audit:export`
+- 这两种能力应分别控制，不应复用同一个前端权限判断
 
 ---
 
@@ -187,23 +215,23 @@ Member / Viewer (无 dashboard:access)
 
 | 菜单项 | 所需权限 | Super Admin | Admin | Member | Viewer |
 |--------|---------|:-----------:|:-----:|:------:|:------:|
-| 仪表盘 | `dashboard:access` | ✓ | ✓ | | |
+| 仪表盘 | `admin:dashboard:access` | ✓ | ✓ | | |
 | 团队 | `team:read` | ✓ | ✓ | ✓ | ✓ |
 | 知识库 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
 | 活动 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
-| 用户 | `user:read` | ✓ | ✓ | | |
-| 角色 | `role:read` | ✓ | ✓ | | |
+| 用户 | `admin:user:read` | ✓ | ✓ | | |
+| 角色 | `admin:role:read` | ✓ | ✓ | | |
 | 权限 | `permission:read` | ✓ | ✓ | | |
 | API Keys | `apikey:read` | ✓ | ✓ | ✓ | ✓ |
-| 模型 | `model:read` | ✓ | ✓ | | |
+| 模型 | `admin:model:read` | ✓ | ✓ | | |
 | 工具 | `tool:read` | ✓ | ✓ | ✓ | ✓ |
-| 通知 | `dashboard:access` | ✓ | ✓ | | |
+| 通知 | `admin:dashboard:access` | ✓ | ✓ | | |
 | 审计日志 | `audit:read` | ✓ | ✓ | | |
-| 站点设置 | `settings:read` | ✓ | ✓ | | |
+| 站点设置 | `admin:settings:read` | ✓ | ✓ | | |
 
 ### 5.2 管理菜单组可见性
 
-「管理」菜单组（包含用户、角色、权限、模型、审计日志等）仅在用户拥有 `dashboard:access` 权限时显示。
+「管理」菜单组（包含用户、角色、权限、模型、审计日志等）仅在用户拥有 `admin:dashboard:access` 权限时显示。
 
 ---
 
@@ -227,7 +255,7 @@ has_dashboard_access = current_user.is_superuser
 if not has_dashboard_access:
     for role in current_user.roles:
         for perm in role.permissions:
-            if perm.code == "dashboard:access" or perm.code == "*":
+            if perm.code == "admin:dashboard:access" or perm.code == "*":
                 has_dashboard_access = True
                 break
 
@@ -273,5 +301,5 @@ else:
 ### 7.3 权限最小化原则
 
 - 只授予用户完成工作所需的最小权限
-- 避免给普通用户分配 `dashboard:access` 权限
-- `settings:update` 权限应仅限于系统管理员
+- 避免给普通用户分配 `admin:dashboard:access` 权限
+- `admin:settings:update` 权限应仅限于系统管理员

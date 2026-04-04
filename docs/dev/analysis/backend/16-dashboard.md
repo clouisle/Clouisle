@@ -168,11 +168,11 @@
 | 属性 | 值 |
 |------|-----|
 | 认证 | Bearer Token |
-| 权限 | 超级管理员 |
-| 说明 | 获取各模型的使用占比 |
+| 权限 | `admin:dashboard:access` |
+| 说明 | 获取各模型的消息使用占比 |
 
 **查询参数**:
-- `period`: 时间范围
+- `time_range`: 时间范围（`7d` / `30d` / `90d` / `all`）
 
 **响应**:
 ```json
@@ -180,12 +180,9 @@
   "code": 0,
   "data": [
     {
-      "model_id": "uuid",
-      "model_name": "GPT-4",
-      "provider": "openai",
-      "usage_count": 1000,
-      "token_usage": 500000,
-      "percentage": 0.35
+      "model": "gpt-4o",
+      "count": 1000,
+      "percentage": 35.0
     }
   ]
 }

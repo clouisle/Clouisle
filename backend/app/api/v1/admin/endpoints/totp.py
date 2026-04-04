@@ -29,7 +29,7 @@ class TOTPUserStatusResponse(BaseModel):
 
 @router.get("/stats", response_model=Response[TOTPStatsResponse])
 async def get_totp_stats(
-    current_user: User = Depends(deps.get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:dashboard:access")),
 ) -> Any:
     """
     Get TOTP 2FA statistics (admin only)

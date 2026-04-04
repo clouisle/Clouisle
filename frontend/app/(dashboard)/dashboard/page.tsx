@@ -24,7 +24,7 @@ export default function DashboardPage() {
   const searchParams = useSearchParams()
 
   const [activeTab, setActiveTab] = React.useState<TabType>('overview')
-  const [timeRange, setTimeRange] = React.useState<TimeRange>('7d')
+  const [timeRange, setTimeRange] = React.useState<TimeRange>('30d')
 
   // Initialize activeTab from URL parameter after mount
   React.useEffect(() => {
@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [topAgentsByConversations, setTopAgentsByConversations] = React.useState<TopAgent[]>([])
   const [analyticsMetric, setAnalyticsMetric] = React.useState<'conversation_count' | 'message_count' | 'total_tokens'>('conversation_count')
   const [isLoadingAnalytics, setIsLoadingAnalytics] = React.useState(false)
+  const [isLoadingAnalyticsAgents, setIsLoadingAnalyticsAgents] = React.useState(false)
   const [analyticsDataFetched, setAnalyticsDataFetched] = React.useState(false)
 
   // Fetch common stats (always needed)
@@ -107,34 +108,43 @@ export default function DashboardPage() {
 
     try {
       setIsLoadingModels(true)
-      console.log('[Dashboard] Fetching models data with timeRange:', timeRange)
 
-      const [modelData, teamData, agentsData, trendsResponse] = await Promise.all([
+      const [modelDataResult, teamDataResult, agentsDataResult, trendsResponseResult] = await Promise.allSettled([
         dashboardApi.getModelDistribution({ time_range: timeRange }),
         dashboardApi.getTeamTokenUsage({ limit: 10, time_range: timeRange }),
         dashboardApi.getTopAgents({ limit: 10, metric: 'total_tokens', time_range: timeRange }),
         dashboardApi.getTrends(timeRange),
       ])
 
-      console.log('[Dashboard] Models data received:', {
-        modelData: modelData?.length || 0,
-        teamData: teamData?.length || 0,
-        agentsData: agentsData?.length || 0,
-        trendsData: trendsResponse?.data?.length || 0,
-      })
-      console.log('[Dashboard] Team token data:', teamData)
-      console.log('[Dashboard] Top agents data:', agentsData)
-
-      setModelDistribution(modelData)
-      setTeamTokenUsage(teamData)
-      setTopAgentsByTokens(agentsData)
-      setTrendsData(trendsResponse.data)
-      setModelsDataFetched(true)
-    } catch (error) {
-      console.error('[Dashboard] Failed to fetch models data:', error)
-      if (error instanceof Error) {
-        console.error('[Dashboard] Error details:', error.message, error.stack)
+      if (modelDataResult.status === 'fulfilled') {
+        setModelDistribution(modelDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch model distribution:', modelDataResult.reason)
+        setModelDistribution([])
       }
+
+      if (teamDataResult.status === 'fulfilled') {
+        setTeamTokenUsage(teamDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch team token usage:', teamDataResult.reason)
+        setTeamTokenUsage([])
+      }
+
+      if (agentsDataResult.status === 'fulfilled') {
+        setTopAgentsByTokens(agentsDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch top agents by tokens:', agentsDataResult.reason)
+        setTopAgentsByTokens([])
+      }
+
+      if (trendsResponseResult.status === 'fulfilled') {
+        setTrendsData(trendsResponseResult.value.data)
+      } else {
+        console.error('[Dashboard] Failed to fetch token trends:', trendsResponseResult.reason)
+        setTrendsData([])
+      }
+
+      setModelsDataFetched(true)
     } finally {
       setIsLoadingModels(false)
     }
@@ -164,13 +174,13 @@ export default function DashboardPage() {
   const handleAnalyticsMetricChange = React.useCallback(async (metric: 'conversation_count' | 'message_count' | 'total_tokens') => {
     setAnalyticsMetric(metric)
     try {
-      setIsLoadingAnalytics(true)
+      setIsLoadingAnalyticsAgents(true)
       const agentsData = await dashboardApi.getTopAgents({ limit: 10, metric, time_range: timeRange })
       setTopAgentsByConversations(agentsData)
     } catch (error) {
       console.error('Failed to fetch agents data:', error)
     } finally {
-      setIsLoadingAnalytics(false)
+      setIsLoadingAnalyticsAgents(false)
     }
   }, [timeRange])
 
@@ -297,6 +307,7 @@ export default function DashboardPage() {
                 workflowData={workflowSummary}
                 topAgentsData={topAgentsByConversations}
                 isLoading={isLoadingAnalytics}
+                isLoadingAgents={isLoadingAnalyticsAgents}
                 onMetricChange={handleAnalyticsMetricChange}
                 currentMetric={analyticsMetric}
               />

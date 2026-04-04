@@ -193,30 +193,34 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
       )}
 
       {/* 测试消息 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('wechat.testMessage')}</CardTitle>
-          <CardDescription>{t('wechat.testMessageDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={handleSendTest}
-            disabled={sendingTest || !settings.wechat_enabled || !canUpdate}
-            variant="outline"
-          >
-            {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('wechat.sendTest')}
-          </Button>
-        </CardContent>
-      </Card>
+      {canUpdate && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('wechat.testMessage')}</CardTitle>
+            <CardDescription>{t('wechat.testMessageDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleSendTest}
+              disabled={sendingTest || !settings.wechat_enabled}
+              variant="outline"
+            >
+              {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('wechat.sendTest')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 保存按钮 */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving || !canUpdate}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

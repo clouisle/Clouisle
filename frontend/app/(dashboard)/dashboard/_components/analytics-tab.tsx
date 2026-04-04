@@ -15,6 +15,7 @@ interface AnalyticsTabProps {
   workflowData: WorkflowSummary | null
   topAgentsData: TopAgent[]
   isLoading: boolean
+  isLoadingAgents: boolean
   onMetricChange: (metric: 'conversation_count' | 'message_count' | 'total_tokens') => void
   currentMetric: 'conversation_count' | 'message_count' | 'total_tokens'
 }
@@ -80,7 +81,7 @@ function StatCard({
   )
 }
 
-export function AnalyticsTab({ stats, workflowData, topAgentsData, isLoading, onMetricChange, currentMetric }: AnalyticsTabProps) {
+function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, isLoadingAgents, onMetricChange, currentMetric }: AnalyticsTabProps) {
   const t = useTranslations('dashboard')
 
   const topAgent = topAgentsData.length > 0 ? topAgentsData[0].name : 'N/A'
@@ -119,17 +120,26 @@ export function AnalyticsTab({ stats, workflowData, topAgentsData, isLoading, on
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content - 2/3 width */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-8">
           {/* Agent Performance Comparison */}
           <AgentPerformanceChart
             data={topAgentsData}
             metric={currentMetric}
             onMetricChange={onMetricChange}
+            isLoading={isLoading || isLoadingAgents}
+          />
+        </div>
+
+        <div className="lg:col-span-4">
+          {/* Workflow Status Distribution */}
+          <WorkflowStatusChart
+            data={workflowData?.status_distribution || []}
             isLoading={isLoading}
           />
+        </div>
 
+        <div className="lg:col-span-8">
           {/* Workflow Trigger Distribution */}
           <WorkflowTriggerChart
             data={workflowData?.trigger_type_distribution || []}
@@ -137,52 +147,49 @@ export function AnalyticsTab({ stats, workflowData, topAgentsData, isLoading, on
           />
         </div>
 
-        {/* Sidebar - 1/3 width */}
-        <div className="space-y-6">
-          {/* Workflow Status Distribution */}
-          <WorkflowStatusChart
-            data={workflowData?.status_distribution || []}
-            isLoading={isLoading}
-          />
+        <div className="lg:col-span-4">
+          <div className="space-y-4">
+            {/* Top Workflows */}
+            <TopWorkflowsCard
+              data={workflowData?.top_workflows || []}
+              isLoading={isLoading}
+            />
 
-          {/* Top Workflows */}
-          <TopWorkflowsCard
-            data={workflowData?.top_workflows || []}
-            isLoading={isLoading}
-          />
-
-          {/* System Stats */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium mb-3">{t('home.systemStats')}</h3>
+            {/* System Stats */}
+            <Card>
+              <CardContent className="pt-5">
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium">{t('home.systemStats')}</h3>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{t('home.stats.totalMessages')}</span>
+                    <span className="text-base font-semibold">{formatNumber(stats.overview.total_messages)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{t('home.stats.avgMessagesPerConv')}</span>
+                    <span className="text-base font-semibold">
+                      {stats.overview.total_conversations > 0
+                        ? (stats.overview.total_messages / stats.overview.total_conversations).toFixed(1)
+                        : '0'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">{t('home.stats.avgTokensPerMessage')}</span>
+                    <span className="text-base font-semibold">
+                      {stats.overview.total_messages > 0
+                        ? formatNumber(Math.round(stats.overview.total_tokens / stats.overview.total_messages))
+                        : '0'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('home.stats.totalMessages')}</span>
-                  <span className="text-lg font-semibold">{formatNumber(stats.overview.total_messages)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('home.stats.avgMessagesPerConv')}</span>
-                  <span className="text-lg font-semibold">
-                    {stats.overview.total_conversations > 0
-                      ? (stats.overview.total_messages / stats.overview.total_conversations).toFixed(1)
-                      : '0'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">{t('home.stats.avgTokensPerMessage')}</span>
-                  <span className="text-lg font-semibold">
-                    {stats.overview.total_messages > 0
-                      ? formatNumber(Math.round(stats.overview.total_tokens / stats.overview.total_messages))
-                      : '0'}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
   )
 }
+
+export const AnalyticsTab = React.memo(AnalyticsTabComponent)

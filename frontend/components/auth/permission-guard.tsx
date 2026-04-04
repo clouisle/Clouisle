@@ -1,7 +1,7 @@
 'use client'
 
 import { usePermissions } from '@/hooks/use-permissions'
-import { getRequiredPermissionForPath } from '@/lib/route-permissions'
+import { canAccessRoute } from '@/lib/route-permissions'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
@@ -237,11 +237,10 @@ export function RoutePermissionGuard({
   fallback,
 }: RoutePermissionGuardProps) {
   const pathname = usePathname()
-  const { hasPermission, loading } = usePermissions()
+  const { hasPermission, isSuperuser, loading } = usePermissions()
   const router = useRouter()
 
-  const requiredPermission = pathname ? getRequiredPermissionForPath(pathname) : null
-  const hasAccess = !requiredPermission || hasPermission(requiredPermission)
+  const hasAccess = pathname ? canAccessRoute(pathname, hasPermission, isSuperuser) : true
 
   useEffect(() => {
     if (!loading && !hasAccess && redirectTo) {
