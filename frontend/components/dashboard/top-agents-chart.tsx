@@ -96,7 +96,7 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
         </CardTitle>
         <CardDescription>{t('charts.topAgentsDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="py-0">
         <ResponsiveContainer width="100%" height={400}>
           <BarChart
             data={filteredData}

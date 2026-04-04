@@ -63,8 +63,8 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
           {t('models.modelDetails')}
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3 max-h-[300px] overflow-y-auto">
+      <CardContent className="py-0">
+        <div className="max-h-[300px] space-y-3 overflow-y-auto">
           {data.map((model, index) => (
             <div
               key={index}

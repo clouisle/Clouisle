@@ -137,28 +137,28 @@ function StatCard({
       : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
 
   const content = (
-    <Card className={href ? 'cursor-pointer hover:shadow-md transition-all' : ''}>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Icon className="h-5 w-5 text-primary" />
-              </div>
-              {change !== undefined && (
-                <Badge variant="outline" className={`gap-1 rounded-full px-2 py-0.5 text-xs font-medium shadow-none ${trendBadgeClassName}`}>
-                  <TrendingUp className={`h-3 w-3 ${change < 0 ? 'rotate-180' : ''}`} />
-                  {Math.abs(change)}%
-                </Badge>
-              )}
+    <Card size="sm" className={href ? 'cursor-pointer hover:shadow-md transition-all' : ''}>
+      <CardContent className="py-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 self-start">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Icon className="h-5 w-5 text-primary" />
             </div>
+            {change !== undefined && (
+              <Badge variant="outline" className={`gap-1 rounded-full px-2 py-0.5 text-xs font-medium shadow-none ${trendBadgeClassName}`}>
+                <TrendingUp className={`h-3 w-3 ${change < 0 ? 'rotate-180' : ''}`} />
+                {Math.abs(change)}%
+              </Badge>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-right">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
             {isLoading ? (
-              <Skeleton className="h-8 w-20 mt-1" />
+              <Skeleton className="mt-1 ml-auto h-8 w-20" />
             ) : (
-              <p className="text-2xl font-bold mt-1">
+              <p className="mt-1 text-2xl font-bold">
                 {value}
-                {suffix && <span className="text-sm font-normal text-muted-foreground ml-1">{suffix}</span>}
+                {suffix && <span className="ml-1 text-sm font-normal text-muted-foreground">{suffix}</span>}
               </p>
             )}
           </div>
@@ -381,7 +381,6 @@ export default function PlatformHomePage() {
           icon={MessageSquare}
           isLoading={isLoading}
           change={15}
-          href="/app/apps"
         />
         <StatCard
           title={t('stats.totalMessages')}

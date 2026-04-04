@@ -60,7 +60,7 @@ function StatCard({
 
   return (
     <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="pt-6">
+      <CardContent className="py-0">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
@@ -157,7 +157,7 @@ function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, 
 
             {/* System Stats */}
             <Card>
-              <CardContent className="pt-5">
+              <CardContent className="py-0">
                 <div className="space-y-3">
                   <div>
                     <h3 className="mb-2 text-sm font-medium">{t('home.systemStats')}</h3>
