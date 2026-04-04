@@ -309,12 +309,14 @@ uv run ruff check .          # Lint
 uv run ruff format .         # Format
 uv run mypy app/             # Type check
 uv run pytest                # Test
+uv run python scripts/check_licenses.py  # Dependency license compliance
 ```
 
 **Frontend**
 ```bash
 bun run lint                 # Lint
 bun run build                # Build
+bun run license:check        # Dependency license compliance
 ```
 
 ---

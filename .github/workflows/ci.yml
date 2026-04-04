@@ -25,6 +25,9 @@ jobs:
     - name: Install dependencies
       run: uv sync --all-extras --dev
 
+    - name: Check dependency licenses
+      run: uv run python scripts/check_licenses.py
+
     - name: Lint with Ruff
       run: uv run ruff check .
 
@@ -54,6 +57,9 @@ jobs:
 
     - name: Install dependencies
       run: bun install
+
+    - name: Check dependency licenses
+      run: bun run license:check
 
     - name: Lint
       run: bun run lint

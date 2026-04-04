@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname),
   },
   images: {
+    unoptimized: true,
     dangerouslyAllowSVG: true,
     remotePatterns: [
       {

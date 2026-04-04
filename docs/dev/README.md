@@ -29,6 +29,9 @@ Internal engineering documentation lives here.
 - [Backend overview](analysis/backend/00-overview.md)
 - [Frontend overview](analysis/frontend/00-overview.md)
 
+### Compliance
+- [Dependency license compliance](dependency-license-compliance.md)
+
 ### Status
 - [Section index](status/README.md)
 - [Agent development progress](status/AGENT_DEVELOPMENT_PROGRESS.md)

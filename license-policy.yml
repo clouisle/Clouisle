@@ -1,0 +1,46 @@
+version: 1
+
+defaults:
+  action_on_unknown: deny
+  include_dev_dependencies: false
+  fail_on_missing_license: true
+
+allowed_licenses:
+  - MIT
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - Apache-2.0
+  - ISC
+  - PSF-2.0
+  - Python-2.0
+  - Unlicense
+  - Zlib
+  - 0BSD
+  - CC0-1.0
+  - BlueOak-1.0.0
+  - MIT-CMU
+  - CNRI-Python
+
+conditionally_allowed_licenses:
+  - MPL-2.0
+  - CC-BY-4.0
+
+denied_licenses:
+  - GPL-2.0
+  - GPL-3.0
+  - GPL-2.0-only
+  - GPL-3.0-only
+  - GPL-2.0-or-later
+  - GPL-3.0-or-later
+  - AGPL-3.0
+  - AGPL-3.0-only
+  - AGPL-3.0-or-later
+  - LGPL-2.1-only
+  - LGPL-2.1-or-later
+  - LGPL-3.0-only
+  - LGPL-3.0-or-later
+  - SSPL-1.0
+  - BUSL-1.1
+  - CC-BY-NC-4.0
+
+exceptions: []
