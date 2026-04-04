@@ -88,12 +88,17 @@ class OpenAICompatibleRerankAdapter(BaseRerankAdapter):
                 continue
 
             try:
-                index = int(item.get("index"))
+                raw_index = item.get("index")
+                if raw_index is None:
+                    continue
+                index = int(raw_index)
             except (TypeError, ValueError):
                 continue
 
             try:
-                score = float(item.get("relevance_score", item.get("score", 0.0)) or 0.0)
+                score = float(
+                    item.get("relevance_score", item.get("score", 0.0)) or 0.0
+                )
             except (TypeError, ValueError):
                 score = 0.0
 

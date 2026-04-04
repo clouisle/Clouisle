@@ -2,7 +2,8 @@
 Model utilities for chat.
 """
 
-from app.models.agent import Agent, Model
+from app.models.agent import Agent
+from app.models.model import TeamModel
 
 
 async def get_model_identifier(agent: Agent) -> str | None:
@@ -10,11 +11,13 @@ async def get_model_identifier(agent: Agent) -> str | None:
     if not agent.model_id:
         return None
 
-    model = await Model.get_or_none(id=agent.model_id)
-    if not model:
+    team_model = (
+        await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+    )
+    if not team_model:
         return None
 
-    return model.model_identifier
+    return f"{team_model.model.provider}/{team_model.model.model_id}"
 
 
 async def get_model_capabilities(agent: Agent) -> dict:
@@ -22,14 +25,13 @@ async def get_model_capabilities(agent: Agent) -> dict:
     if not agent.model_id:
         return {"supports_vision": False}
 
-    model = await Model.get_or_none(id=agent.model_id)
-    if not model:
+    team_model = (
+        await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+    )
+    if not team_model:
         return {"supports_vision": False}
 
-    # Check if model supports vision (e.g., gpt-4-vision, claude-3-opus, etc.)
-    supports_vision = any(
-        keyword in model.model_identifier.lower()
-        for keyword in ["vision", "claude-3", "gpt-4o", "gemini-pro-vision"]
-    )
+    capabilities = team_model.model.capabilities or {}
+    supports_vision = bool(capabilities.get("vision"))
 
     return {"supports_vision": supports_vision}

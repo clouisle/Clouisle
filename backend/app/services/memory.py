@@ -3,6 +3,7 @@ Memory service for user memory graph.
 Handles entity and relation CRUD, vector embeddings, and graph traversal.
 """
 
+import importlib
 import logging
 from datetime import datetime
 from typing import Any
@@ -13,16 +14,18 @@ from app.models.user import User
 from app.core.config import settings
 from app.services.audit_log import AuditLogService
 
+AsyncQdrantClient: Any = None
+qmodels: Any = None
+
 try:
-    from qdrant_client import AsyncQdrantClient
-    from qdrant_client.http import models as qmodels
+    AsyncQdrantClient = importlib.import_module("qdrant_client").AsyncQdrantClient
+    qmodels = importlib.import_module("qdrant_client.http.models")
 except Exception:
-    AsyncQdrantClient = None
-    qmodels = None
+    pass
 
 logger = logging.getLogger(__name__)
 
-_qdrant_client: "AsyncQdrantClient | None" = None
+_qdrant_client: Any = None
 _memory_collections: set[str] = set()
 
 
@@ -31,7 +34,7 @@ def _memory_collection_name(dimension: int) -> str:
     return f"memory_entities_dim_{dimension}"
 
 
-async def _get_qdrant_client() -> "AsyncQdrantClient":
+async def _get_qdrant_client() -> Any:
     """Get or create Qdrant client."""
     global _qdrant_client
     if AsyncQdrantClient is None:
@@ -343,7 +346,7 @@ class MemoryService:
         if qmodels is None:
             raise RuntimeError("qdrant-client is not installed")
 
-        conditions = [
+        conditions: list[Any] = [
             qmodels.FieldCondition(
                 key="user_id",
                 match=qmodels.MatchValue(value=str(user_id)),
@@ -380,7 +383,7 @@ class MemoryService:
             return []
 
         # Fetch entities from database
-        entity_ids = [UUID(point.id) for point in results]
+        entity_ids = [UUID(str(point.id)) for point in results]
         entities = await MemoryEntity.filter(
             id__in=entity_ids,
             user_id=user_id,  # Double-check user isolation
@@ -521,9 +524,7 @@ class MemoryService:
         await MemoryService._add_entity_embedding(entity)
 
     @staticmethod
-    async def _delete_entity_embedding(
-        embedding_id: str, model_id: UUID | None
-    ) -> None:
+    async def _delete_entity_embedding(embedding_id: str, model_id: str | None) -> None:
         """Delete entity embedding from Qdrant."""
         if not model_id:
             return
@@ -531,12 +532,12 @@ class MemoryService:
         try:
             # Get model dimension
             from app.llm import model_manager
+            from app.models.model import ModelType
 
-            model_info = await model_manager.get_model_info(model_id)
-            if not model_info:
-                return
-
-            dimension = model_info.get("dimension", 1536)
+            model_config = await model_manager._get_model_config(
+                model_id, ModelType.EMBEDDING
+            )
+            dimension = getattr(model_config, "dimensions", None) or 1536
             collection = _memory_collection_name(dimension)
 
             client = await _get_qdrant_client()
@@ -836,8 +837,8 @@ class MemoryService:
                 }
             if properties is not None and properties != old_properties:
                 changes["properties"] = {
-                    "before": old_properties,
-                    "after": properties,
+                    "before": str(old_properties),
+                    "after": str(properties),
                 }
 
             await AuditLogService.log(

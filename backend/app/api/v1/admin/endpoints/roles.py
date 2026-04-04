@@ -32,8 +32,10 @@ class RolePermissionsUpdate(BaseModel):
 async def read_roles(
     page: int = 1,
     page_size: int = 50,
-    search: Optional[str] = Query(None, description="Search by role name or description"),
-    current_user: User = Depends(deps.get_current_active_user),
+    search: Optional[str] = Query(
+        None, description="Search by role name or description"
+    ),
+    current_user: User = Depends(deps.PermissionChecker("admin:role:read")),
 ) -> Any:
     """
     Retrieve roles.
@@ -41,13 +43,13 @@ async def read_roles(
     query = Role.all()
 
     if search:
-        query = query.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
 
     total = await query.count()
     skip = (page - 1) * page_size
-    roles = (
-        await query.offset(skip).limit(page_size).prefetch_related("permissions")
-    )
+    roles = await query.offset(skip).limit(page_size).prefetch_related("permissions")
 
     return success(
         data={
@@ -97,7 +99,7 @@ async def create_role(
 @router.get("/{role_id}", response_model=Response[RoleSchema])
 async def read_role(
     role_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:role:read")),
 ) -> Any:
     """
     Get role by ID.

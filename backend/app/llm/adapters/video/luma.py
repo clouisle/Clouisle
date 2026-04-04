@@ -50,7 +50,9 @@ class LumaVideoAdapter(BaseVideoAdapter):
             task_id=task_id,
             status=status,
             video=VideoContent(url=video_url, format="mp4") if video_url else None,
-            error=None if status != TaskStatus.FAILED else self._extract_error(generation),
+            error=None
+            if status != TaskStatus.FAILED
+            else self._extract_error(generation),
             model=self.model_id,
         )
 
@@ -60,7 +62,9 @@ class LumaVideoAdapter(BaseVideoAdapter):
             "prompt": append_prompt_directives(
                 request.prompt,
                 f"Style: {request.style}" if request.style else None,
-                f"Camera movement: {request.camera_motion}" if request.camera_motion else None,
+                f"Camera movement: {request.camera_motion}"
+                if request.camera_motion
+                else None,
                 f"Motion intensity: {request.motion_intensity}"
                 if request.motion_intensity is not None
                 else None,

@@ -92,7 +92,7 @@ async def with_retry(
     Raises:
         Last exception if all retries fail
     """
-    last_exception = None
+    last_exception: BaseException | None = None
 
     for attempt in range(policy.max_retries + 1):
         try:
@@ -111,6 +111,8 @@ async def with_retry(
             else:
                 logger.error(f"All {policy.max_retries} retries exhausted. Error: {e}")
 
+    if last_exception is None:
+        raise RuntimeError("Retry failed without capturing an exception")
     raise last_exception
 
 

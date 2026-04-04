@@ -46,7 +46,11 @@ def build_model(provider: str, model_id: str, **extra):
 class TestImageFactory:
     def test_supports_custom_and_task_based_image_providers(self):
         assert isinstance(
-            create_image_adapter(build_model("custom", "image-model", base_url="https://custom.example/v1")),
+            create_image_adapter(
+                build_model(
+                    "custom", "image-model", base_url="https://custom.example/v1"
+                )
+            ),
             OpenAIImageAdapter,
         )
         assert isinstance(
@@ -74,11 +78,15 @@ class TestImageFactory:
 class TestStabilityImageAdapter:
     def test_selects_endpoint_from_model_id(self):
         assert (
-            StabilityImageAdapter(build_model("stability", "stable-image-ultra"))._build_path()
+            StabilityImageAdapter(
+                build_model("stability", "stable-image-ultra")
+            )._build_path()
             == "/v2beta/stable-image/generate/ultra"
         )
         assert (
-            StabilityImageAdapter(build_model("stability", "stable-image-core"))._build_path()
+            StabilityImageAdapter(
+                build_model("stability", "stable-image-core")
+            )._build_path()
             == "/v2beta/stable-image/generate/core"
         )
         assert (
@@ -88,7 +96,9 @@ class TestStabilityImageAdapter:
 
     def test_builds_sd3_form_payload(self):
         adapter = StabilityImageAdapter(
-            build_model("stability", "sd3.5-large", base_url="https://api.stability.ai/v1")
+            build_model(
+                "stability", "sd3.5-large", base_url="https://api.stability.ai/v1"
+            )
         )
 
         payload = adapter._build_form_data(
@@ -158,7 +168,9 @@ class TestGoogleImageAdapter:
         assert overrides["person_generation"] == "ALLOW_ALL"
 
     def test_builds_generation_config_for_nano_banana_models(self):
-        adapter = GoogleImageAdapter(build_model("google", "gemini-3-pro-image-preview"))
+        adapter = GoogleImageAdapter(
+            build_model("google", "gemini-3-pro-image-preview")
+        )
 
         config = adapter._build_generation_config(
             ImageGenerationRequest(
@@ -254,7 +266,9 @@ class TestVideoFactory:
 class TestModelManagerVideoRouting:
     def test_generate_video_uses_text_to_video_without_input_image(self):
         manager = ModelManager()
-        fake_model = build_model("runway", "gen4.5", id="model-1", name="Runway", is_enabled=True)
+        fake_model = build_model(
+            "runway", "gen4.5", id="model-1", name="Runway", is_enabled=True
+        )
         fake_response = VideoGenerationResponse(
             task_id="task-1",
             status=TaskStatus.PENDING,
@@ -263,7 +277,9 @@ class TestModelManagerVideoRouting:
         fake_adapter = SimpleNamespace(generate=AsyncMock(return_value=fake_response))
 
         with (
-            patch.object(manager, "_get_model_config", AsyncMock(return_value=fake_model)) as mock_get_model,
+            patch.object(
+                manager, "_get_model_config", AsyncMock(return_value=fake_model)
+            ) as mock_get_model,
             patch("app.llm.manager.create_video_adapter", return_value=fake_adapter),
         ):
             result = asyncio.run(
@@ -291,7 +307,9 @@ class TestRunwayVideoAdapter:
         adapter = RunwayVideoAdapter(build_model("runway", "gen4.5"))
 
         path, payload = adapter._build_request(
-            VideoGenerationRequest(prompt="A drifting spaceship", duration=5, aspect_ratio="16:9")
+            VideoGenerationRequest(
+                prompt="A drifting spaceship", duration=5, aspect_ratio="16:9"
+            )
         )
 
         assert path == "/v1/text_to_video"
@@ -310,7 +328,9 @@ class TestKlingVideoAdapter:
         adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
 
         payload = adapter._build_payload(
-            VideoGenerationRequest(prompt="A sunset over mountains", duration=5.7, aspect_ratio="16:9")
+            VideoGenerationRequest(
+                prompt="A sunset over mountains", duration=5.7, aspect_ratio="16:9"
+            )
         )
 
         assert payload["model"] == "kling-v1"
@@ -339,7 +359,10 @@ class TestKlingVideoAdapter:
     def test_extracts_error_from_task_status_msg(self):
         adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
 
-        assert adapter._extract_error({"task_status_msg": "Content policy violation"}) == "Content policy violation"
+        assert (
+            adapter._extract_error({"task_status_msg": "Content policy violation"})
+            == "Content policy violation"
+        )
         assert adapter._extract_error({}) is None
 
 
@@ -348,7 +371,9 @@ class TestPikaVideoAdapter:
         adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
 
         payload = adapter._build_payload(
-            VideoGenerationRequest(prompt="A robot dancing", duration=4, aspect_ratio="9:16")
+            VideoGenerationRequest(
+                prompt="A robot dancing", duration=4, aspect_ratio="9:16"
+            )
         )
 
         assert payload["model"] == "pika-v1"
@@ -369,7 +394,9 @@ class TestPikaVideoAdapter:
         adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
 
         generation = {"videos": [{"resultUrl": "https://cdn.pika.art/video.mp4"}]}
-        assert adapter._extract_video_url(generation) == "https://cdn.pika.art/video.mp4"
+        assert (
+            adapter._extract_video_url(generation) == "https://cdn.pika.art/video.mp4"
+        )
 
         assert adapter._extract_video_url({}) is None
         assert adapter._extract_video_url({"videos": []}) is None
@@ -377,7 +404,10 @@ class TestPikaVideoAdapter:
     def test_extracts_error_from_message(self):
         adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
 
-        assert adapter._extract_error({"message": "Generation failed"}) == "Generation failed"
+        assert (
+            adapter._extract_error({"message": "Generation failed"})
+            == "Generation failed"
+        )
         assert adapter._extract_error({"error": "timeout"}) == "timeout"
         assert adapter._extract_error({}) is None
 
@@ -387,7 +417,9 @@ class TestSiliconFlowVideoAdapter:
         adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
 
         payload = adapter._build_payload(
-            VideoGenerationRequest(prompt="A cat playing piano", duration=5, aspect_ratio="16:9")
+            VideoGenerationRequest(
+                prompt="A cat playing piano", duration=5, aspect_ratio="16:9"
+            )
         )
 
         assert payload["model"] == "Wan2.1-T2V-14B"
@@ -405,8 +437,12 @@ class TestSiliconFlowVideoAdapter:
     def test_extracts_video_url_from_results(self):
         adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
 
-        task = {"results": {"videos": [{"url": "https://cdn.siliconflow.cn/video.mp4"}]}}
-        assert adapter._extract_video_url(task) == "https://cdn.siliconflow.cn/video.mp4"
+        task = {
+            "results": {"videos": [{"url": "https://cdn.siliconflow.cn/video.mp4"}]}
+        }
+        assert (
+            adapter._extract_video_url(task) == "https://cdn.siliconflow.cn/video.mp4"
+        )
 
         assert adapter._extract_video_url({}) is None
         assert adapter._extract_video_url({"results": {}}) is None
@@ -414,7 +450,10 @@ class TestSiliconFlowVideoAdapter:
     def test_extracts_error_from_reason(self):
         adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
 
-        assert adapter._extract_error({"reason": "Content violation"}) == "Content violation"
+        assert (
+            adapter._extract_error({"reason": "Content violation"})
+            == "Content violation"
+        )
         assert adapter._extract_error({}) is None
 
 
@@ -423,7 +462,9 @@ class TestVolcengineVideoAdapter:
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
 
         payload = adapter._build_payload(
-            VideoGenerationRequest(prompt="Ocean waves at sunset", duration=5, aspect_ratio="16:9")
+            VideoGenerationRequest(
+                prompt="Ocean waves at sunset", duration=5, aspect_ratio="16:9"
+            )
         )
 
         assert payload["model"] == "seedance-1-lite"
@@ -452,7 +493,10 @@ class TestVolcengineVideoAdapter:
     def test_extracts_error_from_error_dict(self):
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
 
-        assert adapter._extract_error({"error": {"message": "Quota exceeded"}}) == "Quota exceeded"
+        assert (
+            adapter._extract_error({"error": {"message": "Quota exceeded"}})
+            == "Quota exceeded"
+        )
         assert adapter._extract_error({"error": "timeout"}) == "timeout"
         assert adapter._extract_error({}) is None
 
@@ -462,7 +506,9 @@ class TestDashScopeVideoAdapter:
         adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
 
         payload = adapter._build_payload(
-            VideoGenerationRequest(prompt="A futuristic city", duration=4, aspect_ratio="16:9")
+            VideoGenerationRequest(
+                prompt="A futuristic city", duration=4, aspect_ratio="16:9"
+            )
         )
 
         assert payload["model"] == "wan2.1-t2v-plus"
@@ -491,6 +537,9 @@ class TestDashScopeVideoAdapter:
     def test_extracts_error_from_output_message(self):
         adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
 
-        assert adapter._extract_error({"output": {"message": "Generation failed"}}) == "Generation failed"
+        assert (
+            adapter._extract_error({"output": {"message": "Generation failed"}})
+            == "Generation failed"
+        )
         assert adapter._extract_error({"message": "Server error"}) == "Server error"
         assert adapter._extract_error({}) is None

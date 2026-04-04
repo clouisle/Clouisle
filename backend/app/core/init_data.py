@@ -13,6 +13,31 @@ logger = logging.getLogger(__name__)
 SUPER_ADMIN_ROLE = "Super Admin"
 
 
+async def sync_role_permissions(
+    role: Role, target_permissions: list[str], role_name: str
+):
+    target_permission_set = set(target_permissions)
+
+    for perm_code in target_permissions:
+        perm = await Permission.filter(code=perm_code).first()
+        if not perm:
+            logger.warning(
+                f"Permission {perm_code} not found while syncing {role_name} role"
+            )
+            continue
+
+        existing = await role.permissions.filter(id=perm.id).exists()
+        if not existing:
+            await role.permissions.add(perm)
+            logger.info(f"Added permission {perm_code} to {role_name} role")
+
+    current_permissions = await role.permissions.all()
+    for permission in current_permissions:
+        if permission.code not in target_permission_set:
+            await role.permissions.remove(permission)
+            logger.info(f"Removed permission {permission.code} from {role_name} role")
+
+
 async def init_workflow_tables():
     """
     Initialize workflow-related tables if they don't exist.
@@ -251,7 +276,9 @@ async def init_agent_visibility_values():
     """)
 
     if not tables:
-        logger.info("Agents table does not exist yet, skipping visibility normalization")
+        logger.info(
+            "Agents table does not exist yet, skipping visibility normalization"
+        )
         return
 
     try:
@@ -1576,316 +1603,139 @@ async def init_db():
         await super_admin_role.permissions.add(all_perm)
         logger.info(f"Created system role: {SUPER_ADMIN_ROLE}")
 
-    # Admin - can access dashboard and manage users/models, but data is team-isolated
+    admin_permissions = [
+        # Admin permissions (system-wide)
+        "admin:dashboard:access",
+        "admin:user:read",
+        "admin:user:create",
+        "admin:user:update",
+        "admin:user:delete",
+        "admin:role:read",
+        "admin:permission:read",
+        "admin:team:read",
+        "admin:team:create",
+        "admin:team:update",
+        "admin:team:delete",
+        "admin:model:read",
+        "admin:model:create",
+        "admin:model:update",
+        "admin:model:delete",
+        "admin:settings:read",
+        "audit:read",
+        "audit:export",
+        "admin:conversation:read",
+        "admin:conversation:delete",
+        "admin:notification:create",
+        "admin:notification:delete",
+        "admin:memory:read",
+        # Platform permissions (team-scoped)
+        "team:read",
+        "team:create",
+        "team:update",
+        "team:delete",
+        "team:manage",
+        "agent:read",
+        "agent:create",
+        "agent:update",
+        "agent:delete",
+        "agent:publish",
+        "agent:chat",
+        "workflow:read",
+        "workflow:create",
+        "workflow:update",
+        "workflow:delete",
+        "workflow:publish",
+        "workflow:run",
+        "kb:read",
+        "kb:create",
+        "kb:update",
+        "kb:delete",
+        "tool:read",
+        "tool:create",
+        "tool:update",
+        "tool:delete",
+        "tool:execute",
+        "apikey:read",
+        "apikey:create",
+        "apikey:update",
+        "apikey:delete",
+        "conversation:read",
+        "conversation:delete",
+    ]
+
+    # Admin - dashboard access with system read visibility and team-scoped resource management
     admin_role, created = await Role.get_or_create(
         name="Admin",
         defaults={
-            "description": "Admin role with dashboard access and user/model management",
+            "description": "Admin role with dashboard access, system read access, and team-scoped resource management",
             "is_system_role": True,
         },
     )
     if created:
-        admin_permissions = [
-            # Admin permissions (system-wide)
-            "admin:dashboard:access",
-            "admin:user:read",
-            "admin:user:create",
-            "admin:user:update",
-            "admin:user:delete",
-            "admin:role:read",
-            "admin:role:create",
-            "admin:role:update",
-            "admin:role:delete",
-            "admin:permission:read",
-            "admin:permission:create",
-            "admin:permission:update",
-            "admin:permission:delete",
-            "admin:team:read",
-            "admin:team:create",
-            "admin:team:update",
-            "admin:team:delete",
-            "admin:model:read",
-            "admin:model:create",
-            "admin:model:update",
-            "admin:model:delete",
-            "admin:settings:read",
-            "admin:settings:update",
-            "admin:audit:read",
-            "admin:audit:export",
-            "admin:conversation:read",
-            "admin:conversation:delete",
-            "admin:notification:create",
-            "admin:notification:delete",
-            "admin:memory:read",
-            # Platform permissions (team-scoped)
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:delete",
-            "team:manage",
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in admin_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await admin_role.permissions.add(perm)
         logger.info("Created system role: Admin")
-    else:
-        # Ensure existing Admin role has all required permissions
-        admin_permissions = [
-            # Admin permissions (system-wide)
-            "admin:dashboard:access",
-            "admin:user:read",
-            "admin:user:create",
-            "admin:user:update",
-            "admin:user:delete",
-            "admin:role:read",
-            "admin:role:create",
-            "admin:role:update",
-            "admin:role:delete",
-            "admin:permission:read",
-            "admin:permission:create",
-            "admin:permission:update",
-            "admin:permission:delete",
-            "admin:team:read",
-            "admin:team:create",
-            "admin:team:update",
-            "admin:team:delete",
-            "admin:model:read",
-            "admin:model:create",
-            "admin:model:update",
-            "admin:model:delete",
-            "admin:settings:read",
-            "admin:settings:update",
-            "admin:audit:read",
-            "admin:audit:export",
-            "admin:conversation:read",
-            "admin:conversation:delete",
-            "admin:notification:create",
-            "admin:notification:delete",
-            "admin:memory:read",
-            # Platform permissions (team-scoped)
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:delete",
-            "team:manage",
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in admin_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await admin_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await admin_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Admin role")
 
-    # Member - default role for regular users with full resource access (no dashboard access)
+    await sync_role_permissions(admin_role, admin_permissions, "Admin")
+
+    member_permissions = [
+        "team:read",
+        "agent:read",
+        "agent:create",
+        "agent:update",
+        "agent:chat",
+        "workflow:read",
+        "workflow:create",
+        "workflow:update",
+        "workflow:run",
+        "kb:read",
+        "kb:create",
+        "kb:update",
+        "tool:read",
+        "tool:execute",
+        "apikey:read",
+        "apikey:create",
+        "apikey:update",
+        "apikey:delete",
+        "conversation:read",
+        "conversation:delete",
+    ]
+
+    # Member - collaborative contributor role without dashboard access
     member_role, created = await Role.get_or_create(
         name="Member",
         defaults={
-            "description": "Default role with full access to teams, agents, workflows, knowledge bases, and tools",
+            "description": "Collaborative member role for daily resource creation and editing without dashboard access",
             "is_system_role": True,
         },
     )
     if created:
-        # Add all resource permissions for Member role (no dashboard access, no team:delete)
-        member_permissions = [
-            # Team permissions (no team:delete)
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:manage",
-            # Agent permissions
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            # Workflow permissions
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            # Knowledge Base permissions
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            # Tool permissions
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            # API Key permissions (own keys)
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            # Conversation permissions
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in member_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await member_role.permissions.add(perm)
         logger.info("Created system role: Member")
-    else:
-        # Ensure existing Member role has correct permissions (remove team:delete if present)
-        member_permissions = [
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:manage",
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in member_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await member_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await member_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Member role")
-        # Remove team:delete from Member role if present
-        team_delete_perm = await Permission.filter(code="team:delete").first()
-        if team_delete_perm:
-            existing = await member_role.permissions.filter(
-                id=team_delete_perm.id
-            ).exists()
-            if existing:
-                await member_role.permissions.remove(team_delete_perm)
-                logger.info("Removed team:delete permission from Member role")
 
-    # Viewer - read-only access plus execute permissions
+    await sync_role_permissions(member_role, member_permissions, "Member")
+
+    viewer_permissions = [
+        "team:read",
+        "agent:read",
+        "agent:chat",
+        "workflow:read",
+        "workflow:run",
+        "kb:read",
+        "tool:read",
+        "tool:execute",
+        "conversation:read",
+    ]
+
+    # Viewer - default read-only role with execute permissions
     viewer_role, created = await Role.get_or_create(
         name="Viewer",
         defaults={
-            "description": "Read-only access with execute permissions",
+            "description": "Default read-only role with execute permissions",
             "is_system_role": True,
         },
     )
     if created:
-        viewer_permissions = [
-            "team:read",
-            "agent:read",
-            "agent:chat",
-            "workflow:read",
-            "workflow:run",
-            "kb:read",
-            "tool:read",
-            "tool:execute",
-            "apikey:read",
-            "conversation:read",
-        ]
-        for perm_code in viewer_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await viewer_role.permissions.add(perm)
         logger.info("Created system role: Viewer")
-    else:
-        # Ensure existing Viewer role has all required permissions
-        viewer_permissions = [
-            "team:read",
-            "agent:read",
-            "agent:chat",
-            "workflow:read",
-            "workflow:run",
-            "kb:read",
-            "tool:read",
-            "tool:execute",
-            "apikey:read",
-            "conversation:read",
-        ]
-        for perm_code in viewer_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await viewer_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await viewer_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Viewer role")
+
+    await sync_role_permissions(viewer_role, viewer_permissions, "Viewer")
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")

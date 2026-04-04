@@ -682,7 +682,9 @@ class ModelManager:
                 last_error = e
                 logger.exception(f"Video status error: {e}")
                 if model_id:
-                    raise self._handle_error(e, model_config.provider, model_config.model_id)
+                    raise self._handle_error(
+                        e, model_config.provider, model_config.model_id
+                    )
 
         if last_error:
             if isinstance(last_error, LLMError):
@@ -1014,7 +1016,9 @@ class ModelManager:
             if total_tokens <= 0:
                 from app.llm.token_counter import count_tokens
 
-                total_tokens = count_tokens(query, model_config.model_id, model_config.provider)
+                total_tokens = count_tokens(
+                    query, model_config.model_id, model_config.provider
+                )
                 total_tokens += sum(
                     count_tokens(doc, model_config.model_id, model_config.provider)
                     for doc in documents

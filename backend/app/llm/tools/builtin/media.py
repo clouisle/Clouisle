@@ -16,6 +16,7 @@ from typing import Any
 from app.llm import model_manager
 from app.llm.types import (
     GeneratedImage,
+    ImageContent,
     ImageGenerationRequest,
     ImageGenerationResponse,
     VideoGenerationRequest,
@@ -78,9 +79,12 @@ async def normalize_image_generation_response(
 
     normalized_images: list[GeneratedImage] = []
     for generated in response.images:
+        normalized_image = await media_asset_service.normalize_image(generated.image)
+        if normalized_image is None:
+            continue
         normalized_images.append(
             GeneratedImage(
-                image=(await media_asset_service.normalize_image(generated.image)),
+                image=normalized_image,
                 revised_prompt=generated.revised_prompt,
                 seed=generated.seed,
             )
@@ -192,13 +196,15 @@ def build_video_llm_result(
         return f"Video generation failed: {message}"
 
     prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
-    if status in PENDING_VIDEO_STATUSES:
+    if response is not None and status in PENDING_VIDEO_STATUSES:
         return (
             f"Video generation started. Task {response.task_id} is {status}. "
             f"Prompt: {prompt_excerpt}"
         )
 
-    model_suffix = f" using model {response.model}" if response and response.model else ""
+    model_suffix = (
+        f" using model {response.model}" if response and response.model else ""
+    )
     return f"Video generation succeeded{model_suffix}. Prompt: {prompt_excerpt}"
 
 
@@ -230,9 +236,7 @@ async def generate_image(
 
         config = _get_agent_module_config(agent, "image_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
-        _validate_allowed_providers(
-            resolved_model_ref, config, "Image generation"
-        )
+        _validate_allowed_providers(resolved_model_ref, config, "Image generation")
 
         if num_images > int(config.get("max_images", 4)):
             raise ValueError(
@@ -251,14 +255,16 @@ async def generate_image(
             style=style,
             quality=quality,
             seed=seed,
-            images=images,
+            images=[ImageContent.model_validate(image) for image in images]
+            if images
+            else None,
             extra_params=extra_params,
         )
-        response = await model_manager.generate_image(
+        image_response = await model_manager.generate_image(
             request,
             model_id=resolved_model_ref,
         )
-        response = await normalize_image_generation_response(response)
+        response = await normalize_image_generation_response(image_response)
         display_result = build_image_tool_result(
             prompt,
             response,
@@ -303,9 +309,7 @@ async def generate_video(
 
         config = _get_agent_module_config(agent, "video_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
-        _validate_allowed_providers(
-            resolved_model_ref, config, "Video generation"
-        )
+        _validate_allowed_providers(resolved_model_ref, config, "Video generation")
 
         final_duration = duration or float(config.get("default_duration", 5.0))
         max_duration = float(config.get("max_duration", 10.0))
@@ -327,12 +331,15 @@ async def generate_video(
             seed=seed,
             extra_params=extra_params,
         )
-        response = await model_manager.generate_video(
+        response: VideoGenerationResponse | None = await model_manager.generate_video(
             request,
             model_id=resolved_model_ref,
         )
 
-        if _normalize_status(response.status) in PENDING_VIDEO_STATUSES:
+        if (
+            response is not None
+            and _normalize_status(response.status) in PENDING_VIDEO_STATUSES
+        ):
             deadline = time.monotonic() + poll_timeout_s
             while time.monotonic() < deadline:
                 await asyncio.sleep(poll_interval_ms / 1000)

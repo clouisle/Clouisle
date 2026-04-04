@@ -27,9 +27,7 @@ class PikaClient:
         self.model_id = model_config.model_id
         self.api_key = model_config.api_key
         self.config = getattr(model_config, "config", None) or {}
-        self.base_url = (
-            model_config.base_url or "https://api.pika.art/v1"
-        ).rstrip("/")
+        self.base_url = (model_config.base_url or "https://api.pika.art/v1").rstrip("/")
         self.timeout = float(self.config.get("timeout", 180))
         self.poll_interval = max(float(self.config.get("poll_interval_seconds", 5)), 1)
         self.task_timeout = max(float(self.config.get("task_timeout_seconds", 300)), 5)

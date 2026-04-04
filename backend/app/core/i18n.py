@@ -1484,7 +1484,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "此 API 密钥无权访问请求的工作流",
     },
     # Embed
-    "api_key_required": {
+    "embed_api_key_required": {
         "en": "API key is required for embed access",
         "zh": "嵌入访问需要 API 密钥",
     },

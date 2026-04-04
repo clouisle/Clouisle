@@ -39,7 +39,9 @@ async def list_all_teams(
     query = Team.all()
 
     if search:
-        query = query.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
 
     total = await query.count()
     skip = (page - 1) * page_size

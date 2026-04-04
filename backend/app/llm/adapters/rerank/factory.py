@@ -4,6 +4,8 @@ Rerank 适配器工厂
 
 from typing import Any, Protocol
 
+from app.llm.adapters.chat import BaseChatAdapter
+
 from app.models.model import Model, ModelProvider
 from app.llm.adapters.chat import (
     AnthropicAdapter,
@@ -51,6 +53,8 @@ def create_rerank_adapter(model_config: Model | ModelConfig) -> BaseRerankAdapte
     if _should_use_native_openai_compatible_rerank(model_config):
         return OpenAICompatibleRerankAdapter(model_config)
 
+    chat_adapter: BaseChatAdapter
+
     if provider_value == ModelProvider.OPENAI.value:
         chat_adapter = OpenAIAdapter(model_config)
     elif provider_value == ModelProvider.ANTHROPIC.value:
@@ -80,6 +84,8 @@ def create_rerank_adapter(model_config: Model | ModelConfig) -> BaseRerankAdapte
     elif provider_value == ModelProvider.CUSTOM.value:
         chat_adapter = OpenAICompatibleAdapter(model_config, provider_hint="custom")
     else:
-        chat_adapter = OpenAICompatibleAdapter(model_config, provider_hint=provider_value)
+        chat_adapter = OpenAICompatibleAdapter(
+            model_config, provider_hint=provider_value
+        )
 
     return LLMRerankAdapter(model_config, chat_adapter)

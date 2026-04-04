@@ -74,8 +74,8 @@ class SystemPermissions:
     ADMIN_NOTIFICATION_DELETE = "admin:notification:delete"
 
     # ============ Audit Log Management ============
-    AUDIT_READ = "audit:read"
-    AUDIT_EXPORT = "audit:export"
+    ADMIN_AUDIT_READ = "audit:read"
+    ADMIN_AUDIT_EXPORT = "audit:export"
 
     # ============ Platform Team Management ============
     TEAM_READ = "team:read"
@@ -280,12 +280,12 @@ class SystemPermissions:
             },
             # Audit Log Management
             {
-                "code": cls.AUDIT_READ,
+                "code": cls.ADMIN_AUDIT_READ,
                 "scope": "audit",
                 "description": "View audit logs",
             },
             {
-                "code": cls.AUDIT_EXPORT,
+                "code": cls.ADMIN_AUDIT_EXPORT,
                 "scope": "audit",
                 "description": "Export and archive audit logs",
             },

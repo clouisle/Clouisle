@@ -21,6 +21,7 @@ class ToolParameter(BaseModel):
     description: str | None = Field(default=None, description="参数描述")
     required: bool = Field(default=False, description="是否必填")
     enum: list[str] | None = Field(default=None, description="枚举值")
+    items: dict[str, Any] | None = Field(default=None, description="数组元素定义")
     default: Any = Field(default=None, description="默认值")
 
 

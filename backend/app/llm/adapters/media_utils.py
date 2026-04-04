@@ -23,7 +23,9 @@ _ASPECT_RATIO_VALUES: dict[str, float] = {
 
 def append_prompt_directives(prompt: str, *directives: str | None) -> str:
     """Append provider-agnostic hints to the base prompt."""
-    extras = [directive.strip() for directive in directives if directive and directive.strip()]
+    extras = [
+        directive.strip() for directive in directives if directive and directive.strip()
+    ]
     if not extras:
         return prompt
     return f"{prompt}\n\n" + "\n".join(extras)

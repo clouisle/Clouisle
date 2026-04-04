@@ -109,7 +109,9 @@ class User(UserInDBBase):
                 "auth_source": obj.auth_source,
                 "external_id": obj.external_id,
                 "force_password_change": getattr(obj, "force_password_change", False),
-                "password_expiration_exempt": getattr(obj, "password_expiration_exempt", False),
+                "password_expiration_exempt": getattr(
+                    obj, "password_expiration_exempt", False
+                ),
                 "roles": obj.roles if hasattr(obj, "roles") else [],
                 "sso_connections": [],  # Always empty, will be populated separately
             }

@@ -58,7 +58,9 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
         prompt = append_prompt_directives(
             request.prompt,
             f"Style: {request.style}" if request.style else None,
-            f"Camera movement: {request.camera_motion}" if request.camera_motion else None,
+            f"Camera movement: {request.camera_motion}"
+            if request.camera_motion
+            else None,
         )
         payload: dict[str, Any] = {
             "model": self.model_id,

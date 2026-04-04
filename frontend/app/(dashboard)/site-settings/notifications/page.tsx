@@ -24,9 +24,12 @@ import {
   SlackSettingsTab,
   AutoNotificationsSettingsTab,
 } from './_components'
+import { useCanPerform } from '@/components/permission-guard'
 
 export default function SiteSettingsNotificationsPage() {
   const t = useTranslations('siteSettings')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:settings:update')
 
   const [loading, setLoading] = React.useState(true)
 
@@ -174,31 +177,31 @@ export default function SiteSettingsNotificationsPage() {
       </TabsList>
 
       <TabsContent value="auto">
-        <AutoNotificationsSettingsTab enabledChannels={enabledChannels} />
+        <AutoNotificationsSettingsTab enabledChannels={enabledChannels} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="email">
-        <EmailSettingsTab settings={emailSettings} onSettingsChange={setEmailSettings} />
+        <EmailSettingsTab settings={emailSettings} onSettingsChange={setEmailSettings} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="dingtalk">
-        <DingTalkSettingsTab settings={dingtalkSettings} onSettingsChange={setDingtalkSettings} />
+        <DingTalkSettingsTab settings={dingtalkSettings} onSettingsChange={setDingtalkSettings} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="wechat">
-        <WeChatSettingsTab settings={wechatSettings} onSettingsChange={setWechatSettings} />
+        <WeChatSettingsTab settings={wechatSettings} onSettingsChange={setWechatSettings} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="feishu">
-        <FeishuSettingsTab settings={feishuSettings} onSettingsChange={setFeishuSettings} />
+        <FeishuSettingsTab settings={feishuSettings} onSettingsChange={setFeishuSettings} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="webhook">
-        <WebhookSettingsTab settings={webhookSettings} onSettingsChange={setWebhookSettings} />
+        <WebhookSettingsTab settings={webhookSettings} onSettingsChange={setWebhookSettings} canUpdate={canUpdate} />
       </TabsContent>
 
       <TabsContent value="slack">
-        <SlackSettingsTab settings={slackSettings} onSettingsChange={setSlackSettings} />
+        <SlackSettingsTab settings={slackSettings} onSettingsChange={setSlackSettings} canUpdate={canUpdate} />
       </TabsContent>
     </Tabs>
   )

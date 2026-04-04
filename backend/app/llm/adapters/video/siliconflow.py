@@ -69,11 +69,15 @@ class SiliconFlowVideoAdapter(BaseVideoAdapter):
             "prompt": append_prompt_directives(
                 request.prompt,
                 f"Style: {request.style}" if request.style else None,
-                f"Camera movement: {request.camera_motion}" if request.camera_motion else None,
+                f"Camera movement: {request.camera_motion}"
+                if request.camera_motion
+                else None,
             ),
         }
 
-        image_size = _ASPECT_RATIO_TO_SIZE.get(request.aspect_ratio or "16:9", "1280x720")
+        image_size = _ASPECT_RATIO_TO_SIZE.get(
+            request.aspect_ratio or "16:9", "1280x720"
+        )
         payload["image_size"] = image_size
 
         if request.seed is not None:

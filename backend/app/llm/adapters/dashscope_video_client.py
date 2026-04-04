@@ -120,9 +120,7 @@ class DashScopeVideoClient:
 
         return response.json()
 
-    async def create_task(
-        self, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request(
             "POST",
             "/services/aigc/video-generation/generation",

@@ -8,7 +8,7 @@ the LLM execution is triggered and tokens are streamed directly to the Answer no
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from app.services.workflow.context import ExecutionContext
@@ -72,7 +72,7 @@ class LazyStreamResult:
         last_usage = None
 
         async for chunk in model_manager.chat_stream(
-            messages=self.messages,
+            messages=cast(list[Any], self.messages),
             model_id=self.model_id,
             temperature=self.temperature,
             max_tokens=self.max_tokens,

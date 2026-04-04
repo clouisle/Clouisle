@@ -20,7 +20,9 @@ class MediaAssetService:
     VIDEO_CATEGORY = "generated-videos"
     REMOTE_TIMEOUT = 60.0
 
-    async def normalize_image(self, content: ImageContent | None) -> ImageContent | None:
+    async def normalize_image(
+        self, content: ImageContent | None
+    ) -> ImageContent | None:
         if content is None:
             return None
         normalized = await self._normalize_media(
@@ -30,7 +32,9 @@ class MediaAssetService:
         )
         return ImageContent(**normalized.model_dump(mode="json"))
 
-    async def normalize_video(self, content: VideoContent | None) -> VideoContent | None:
+    async def normalize_video(
+        self, content: VideoContent | None
+    ) -> VideoContent | None:
         if content is None:
             return None
         normalized = await self._normalize_media(
@@ -84,7 +88,9 @@ class MediaAssetService:
         try:
             raw_bytes = base64.b64decode(encoded, validate=False)
         except Exception as exc:  # pragma: no cover - defensive
-            raise InvalidRequestError(message=f"Invalid media base64 payload: {exc}") from exc
+            raise InvalidRequestError(
+                message=f"Invalid media base64 payload: {exc}"
+            ) from exc
 
         upload_info = await save_generated_upload(
             content=raw_bytes,
@@ -103,15 +109,14 @@ class MediaAssetService:
     ) -> ImageContent | VideoContent:
         file_path = Path(content.file_path or "")
         if not file_path.exists() or not file_path.is_file():
-            raise InvalidRequestError(message=f"Media file not found: {content.file_path}")
+            raise InvalidRequestError(
+                message=f"Media file not found: {content.file_path}"
+            )
 
         async with aiofiles.open(file_path, "rb") as f:
             raw_bytes = await f.read()
 
-        content_type = (
-            mimetypes.guess_type(file_path.name)[0]
-            or default_mime_type
-        )
+        content_type = mimetypes.guess_type(file_path.name)[0] or default_mime_type
         upload_info = await save_generated_upload(
             content=raw_bytes,
             category=category,
@@ -134,9 +139,14 @@ class MediaAssetService:
                 response = await client.get(url)
                 response.raise_for_status()
             except httpx.HTTPError as exc:
-                raise ProviderError(message=f"Failed to download generated media: {exc}") from exc
+                raise ProviderError(
+                    message=f"Failed to download generated media: {exc}"
+                ) from exc
 
-        content_type = response.headers.get("content-type", "").split(";", 1)[0].strip() or default_mime_type
+        content_type = (
+            response.headers.get("content-type", "").split(";", 1)[0].strip()
+            or default_mime_type
+        )
         parsed = urlparse(url)
         remote_name = Path(parsed.path).name or None
         upload_info = await save_generated_upload(

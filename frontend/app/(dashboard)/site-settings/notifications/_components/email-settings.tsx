@@ -21,9 +21,10 @@ import { siteSettingsApi, type EmailSettings } from '@/lib/api/admin/site-settin
 interface EmailSettingsTabProps {
   settings: EmailSettings
   onSettingsChange: (settings: EmailSettings) => void
+  canUpdate: boolean
 }
 
-export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTabProps) {
+export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: EmailSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [testEmail, setTestEmail] = React.useState('')
@@ -78,6 +79,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
             <Switch
               checked={settings.smtp_enabled}
               onCheckedChange={(checked) => updateSetting('smtp_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -98,6 +100,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder="smtp.example.com"
                 value={settings.smtp_host}
                 onChange={(e) => updateSetting('smtp_host', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -109,6 +112,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder="587"
                 value={settings.smtp_port}
                 onChange={(e) => updateSetting('smtp_port', parseInt(e.target.value) || 587)}
+                disabled={!canUpdate}
               />
             </div>
           </div>
@@ -118,6 +122,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
             <Select
               value={settings.smtp_encryption}
               onValueChange={(value) => value && updateSetting('smtp_encryption', value as 'none' | 'ssl' | 'tls')}
+              disabled={!canUpdate}
             >
               <SelectTrigger id="smtp-encryption" className="min-w-[180px]">
                 <SelectValue>
@@ -142,6 +147,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder={t('email.smtpUsernamePlaceholder')}
                 value={settings.smtp_username}
                 onChange={(e) => updateSetting('smtp_username', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -153,6 +159,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder={t('email.smtpPasswordPlaceholder')}
                 value={settings.smtp_password}
                 onChange={(e) => updateSetting('smtp_password', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
           </div>
@@ -174,6 +181,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder="Clouisle"
                 value={settings.email_from_name}
                 onChange={(e) => updateSetting('email_from_name', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -185,6 +193,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
                 placeholder="noreply@example.com"
                 value={settings.email_from_address}
                 onChange={(e) => updateSetting('email_from_address', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
           </div>
@@ -205,7 +214,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
               value={testEmail}
               onChange={(e) => setTestEmail(e.target.value)}
             />
-            <Button onClick={handleSendTest} disabled={sendingTest}>
+            <Button onClick={handleSendTest} disabled={sendingTest || !canUpdate}>
               {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('email.sendTest')}
             </Button>
@@ -215,7 +224,7 @@ export function EmailSettingsTab({ settings, onSettingsChange }: EmailSettingsTa
 
       {/* 保存按钮 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>

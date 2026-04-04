@@ -261,9 +261,11 @@ async def list_knowledge_bases(
     for kb in kbs:
         kb_data = KnowledgeBaseList.model_validate(kb).model_dump()
         kb_data["embedding_model"] = _build_model_info(
-            model_map.get(kb.embedding_model_id)
+            model_map.get(kb.embedding_model_id) if kb.embedding_model_id else None
         )
-        kb_data["rerank_model"] = _build_model_info(model_map.get(kb.rerank_model_id))
+        kb_data["rerank_model"] = _build_model_info(
+            model_map.get(kb.rerank_model_id) if kb.rerank_model_id else None
+        )
         kb_list.append(kb_data)
 
     return success(
@@ -302,9 +304,7 @@ async def create_knowledge_base(
     await ensure_team_authorized_model(
         kb_in.team_id, kb_in.embedding_model_id, "embedding"
     )
-    await ensure_team_authorized_model(
-        kb_in.team_id, kb_in.rerank_model_id, "rerank"
-    )
+    await ensure_team_authorized_model(kb_in.team_id, kb_in.rerank_model_id, "rerank")
 
     # Create knowledge base
     kb = await KnowledgeBase.create(

@@ -75,7 +75,9 @@ def _extract_placeholder_name(value: str | None) -> str | None:
     return match.group(1) if match else None
 
 
-def _guess_filename(field_name: str, mime_type: str | None, source_url: str | None = None) -> str:
+def _guess_filename(
+    field_name: str, mime_type: str | None, source_url: str | None = None
+) -> str:
     """Build a reasonable filename for uploaded multipart assets."""
     if source_url:
         tail = source_url.rstrip("/").rsplit("/", 1)[-1]
@@ -109,7 +111,9 @@ async def _normalize_file_upload_value(
     if isinstance(value, list):
         uploads: list[tuple[str, tuple[str, bytes, str]]] = []
         for item in value:
-            uploads.extend(await _normalize_file_upload_value(item, field_name, timeout))
+            uploads.extend(
+                await _normalize_file_upload_value(item, field_name, timeout)
+            )
         return uploads
 
     filename: str | None = None
@@ -134,7 +138,11 @@ async def _normalize_file_upload_value(
             response = await client.get(raw_value)
             response.raise_for_status()
             content = response.content
-            mime_type = mime_type or response.headers.get("content-type", "").split(";", 1)[0].strip() or None
+            mime_type = (
+                mime_type
+                or response.headers.get("content-type", "").split(";", 1)[0].strip()
+                or None
+            )
             source_url = raw_value
     else:
         raise ValueError(
@@ -211,8 +219,16 @@ async def _build_request_payload(
 
         if isinstance(body, dict):
             extra_kwargs["data"] = {
-                key: json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else (
-                    "true" if val is True else "false" if val is False else "" if val is None else str(val)
+                key: json.dumps(val, ensure_ascii=False)
+                if isinstance(val, (dict, list))
+                else (
+                    "true"
+                    if val is True
+                    else "false"
+                    if val is False
+                    else ""
+                    if val is None
+                    else str(val)
                 )
                 for key, val in body.items()
             }

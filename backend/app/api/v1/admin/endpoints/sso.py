@@ -61,7 +61,7 @@ async def admin_disconnect_sso(
         user=current_user,
         action="disconnect_sso",
         resource_type="sso_connection",
-        resource_id=str(connection_id),
+        resource_id=connection_id,
         resource_name=provider_name,
         operation="delete",
         status="success",
@@ -121,7 +121,7 @@ async def create_provider(
         user=current_user,
         action="create_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider.id),
+        resource_id=provider.id,
         resource_name=provider.name,
         operation="create",
         status="success",
@@ -163,7 +163,7 @@ async def update_provider(
         user=current_user,
         action="update_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider.id),
+        resource_id=provider.id,
         resource_name=provider.name,
         operation="update",
         status="success",
@@ -193,7 +193,7 @@ async def delete_provider(
         user=current_user,
         action="delete_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider_id),
+        resource_id=provider_id,
         resource_name=provider_name,
         operation="delete",
         status="success",
@@ -222,13 +222,20 @@ async def test_provider_connection(
         test_redirect = "http://localhost/callback"
 
         if provider.protocol in ["oauth2", "oidc"]:
-            auth_url, _, _ = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=test_state, redirect_uri=test_redirect
             )
+            if not isinstance(auth_result, tuple) or len(auth_result) != 3:
+                raise BusinessError(
+                    code=ResponseCode.SSO_INVALID_CONFIGURATION,
+                    msg_key="unsupported_protocol",
+                )
+            auth_url = auth_result[0]
         else:
-            auth_url = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=test_state, redirect_uri=test_redirect
             )
+            auth_url = auth_result if isinstance(auth_result, str) else auth_result[0]
 
         return success(
             data={

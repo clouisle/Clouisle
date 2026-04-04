@@ -9,7 +9,15 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Header, UploadFile, File as FastAPIFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+    Request,
+    Header,
+    UploadFile,
+    File as FastAPIFile,
+)
 from fastapi.responses import StreamingResponse
 
 from app.api import deps
@@ -52,7 +60,7 @@ async def get_embed_auth(
     if not api_key_str:
         raise BusinessError(
             code=ResponseCode.UNAUTHORIZED,
-            msg_key="api_key_required",
+            msg_key="embed_api_key_required",
             status_code=401,
         )
 
@@ -124,14 +132,14 @@ def _check_embed_domain(request: Request, target: Agent | Workflow) -> None:
     )
 
 
-async def _get_embed_agent(
-    agent_id: UUID, api_key: APIKey, request: Request
-) -> Agent:
+async def _get_embed_agent(agent_id: UUID, api_key: APIKey, request: Request) -> Agent:
     """Get agent with embed access checks."""
     # Check API key has access to this agent
     await deps.check_api_key_agent_access(api_key, agent_id)
 
-    agent = await Agent.filter(id=agent_id).prefetch_related("team", "created_by").first()
+    agent = (
+        await Agent.filter(id=agent_id).prefetch_related("team", "created_by").first()
+    )
     if not agent:
         raise BusinessError(
             code=ResponseCode.AGENT_NOT_FOUND,
@@ -275,7 +283,11 @@ async def _get_embed_workflow(
     """Get workflow with embed access checks."""
     await deps.check_api_key_workflow_access(api_key, workflow_id)
 
-    workflow = await Workflow.filter(id=workflow_id).prefetch_related("team", "created_by").first()
+    workflow = (
+        await Workflow.filter(id=workflow_id)
+        .prefetch_related("team", "created_by")
+        .first()
+    )
     if not workflow:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,

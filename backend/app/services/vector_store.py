@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 from uuid import UUID
 
 import jieba
@@ -22,11 +22,13 @@ from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
 from app.services.usage_tracker import QuotaExceededError
 
 try:
-    from qdrant_client import AsyncQdrantClient
+    from qdrant_client import AsyncQdrantClient as _AsyncQdrantClient
     from qdrant_client.http import models as qmodels
 except Exception:  # pragma: no cover - optional dependency at runtime
-    AsyncQdrantClient = None
-    qmodels = None
+    AsyncQdrantClient = cast(Any, None)
+    qmodels = cast(Any, None)
+else:
+    AsyncQdrantClient = cast(Any, _AsyncQdrantClient)
 
 # Avoid circular import - import model_manager lazily
 if TYPE_CHECKING:
@@ -45,7 +47,7 @@ def _get_model_manager():
     return model_manager
 
 
-_qdrant_client: "AsyncQdrantClient | None" = None
+_qdrant_client: Any = None
 _qdrant_collections: set[str] = set()
 _qdrant_payload_indexes: dict[str, set[str]] = {}
 
@@ -67,7 +69,7 @@ def _qdrant_distance() -> "qmodels.Distance":
     raise ValueError(f"Unsupported Qdrant distance: {settings.QDRANT_DISTANCE}")
 
 
-async def _get_qdrant_client() -> "AsyncQdrantClient":
+async def _get_qdrant_client() -> Any:
     global _qdrant_client
     if AsyncQdrantClient is None:
         raise RuntimeError("qdrant-client is not installed")
@@ -131,7 +133,7 @@ async def _ensure_collection(dimension: int) -> str:
     return collection
 
 
-async def _delete_qdrant_points(collection: str, ids: list[str]) -> None:
+async def _delete_qdrant_points(collection: str, ids: list[str | int | UUID]) -> None:
     if not ids:
         return
     client = await _get_qdrant_client()
@@ -173,7 +175,7 @@ def _build_qdrant_filter(
                 match=qmodels.MatchAny(any=[str(did) for did in filter_doc_ids]),
             )
         )
-    return qmodels.Filter(must=conditions)
+    return qmodels.Filter(must=cast(Any, conditions))
 
 
 def _normalize_qdrant_score(score: float) -> float:
@@ -644,7 +646,7 @@ class VectorStore:
         resolved_kb_id = kb_id or document.knowledge_base_id
 
         # Handle KB dimension management
-        if resolved_kb_id:
+        if isinstance(resolved_kb_id, UUID) and detected_dim is not None:
             await _ensure_kb_dimension(resolved_kb_id, detected_dim)
 
         # Create chunk records
@@ -740,7 +742,7 @@ class VectorStore:
                 detected_dim = len(embedding)
 
                 # Ensure KB dimension on first chunk
-                if embedded_count == 0 and resolved_kb_id:
+                if embedded_count == 0 and isinstance(resolved_kb_id, UUID):
                     self._detected_dimension = detected_dim
                     await _ensure_kb_dimension(resolved_kb_id, detected_dim)
 
@@ -756,7 +758,7 @@ class VectorStore:
                 )
 
                 chunk_obj.status = "embedded"
-                chunk_obj.error_message = None
+                chunk_obj.error_message = cast(Any, None)
                 await chunk_obj.save(update_fields=["status", "error_message"])
                 embedded_count += 1
 
@@ -870,11 +872,7 @@ class VectorStore:
             results = [r for r in results if r.get("score", 0) >= score_threshold]
             logger.debug(f"Score filter: {pre_filter_count} -> {len(results)} results")
 
-        if (
-            rerank_config["enabled"]
-            and rerank_config["model_id"]
-            and results
-        ):
+        if rerank_config["enabled"] and rerank_config["model_id"] and results:
             results = await self._rerank_results(
                 query=query,
                 results=results[:rerank_candidate_k],
@@ -1053,7 +1051,7 @@ class VectorStore:
 
         # Sort by score
         results.sort(
-            key=lambda x: float(x.get("score") or 0.0),
+            key=lambda x: float(cast(Any, x.get("score") or 0.0)),
             reverse=True,
         )
         return results[:limit]
@@ -1274,8 +1272,11 @@ class VectorStore:
         Returns:
             Number of deleted vectors
         """
-        kb_ids = await Document.filter(id=document_id).values_list(
-            "knowledge_base_id", flat=True
+        kb_ids = cast(
+            list[UUID],
+            await Document.filter(id=document_id).values_list(
+                "knowledge_base_id", flat=True
+            ),
         )
         kb_id = kb_ids[0] if kb_ids else None
         if kb_id:
@@ -1305,12 +1306,19 @@ class VectorStore:
         Returns:
             True if deleted
         """
-        doc_ids = await DocumentChunk.filter(id=chunk_id).values_list(
-            "document_id", flat=True
+        document_ids = cast(
+            list[UUID],
+            await DocumentChunk.filter(id=chunk_id).values_list(
+                "document_id", flat=True
+            ),
         )
-        if doc_ids:
-            kb_ids = await Document.filter(id=doc_ids[0]).values_list(
-                "knowledge_base_id", flat=True
+        document_id = document_ids[0] if document_ids else None
+        if document_id:
+            kb_ids = cast(
+                list[UUID],
+                await Document.filter(id=document_id).values_list(
+                    "knowledge_base_id", flat=True
+                ),
             )
             kb_id = kb_ids[0] if kb_ids else None
             if kb_id:
@@ -1339,11 +1347,14 @@ class VectorStore:
             # Generate new embedding
             embedding = await self.embed_query(chunk.content)
             if kb_id is None:
-                kb_ids = await Document.filter(id=chunk.document_id).values_list(
-                    "knowledge_base_id", flat=True
+                kb_ids = cast(
+                    list[UUID],
+                    await Document.filter(id=chunk.document_id).values_list(
+                        "knowledge_base_id", flat=True
+                    ),
                 )
                 kb_id = kb_ids[0] if kb_ids else None
-            if kb_id:
+            if isinstance(kb_id, UUID):
                 await _ensure_kb_dimension(kb_id, len(embedding))
 
             # Update embedding reference
@@ -1421,9 +1432,10 @@ class VectorStore:
             )
 
         # Get all documents in KB
-        documents = await Document.filter(knowledge_base_id=kb_id).values_list(
+        documents_raw = await Document.filter(knowledge_base_id=kb_id).values_list(
             "id", flat=True
         )
+        documents = cast(list[UUID], documents_raw)
 
         if not documents:
             return 0

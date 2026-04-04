@@ -271,7 +271,9 @@ class AnthropicAdapter(BaseChatAdapter):
         reasoning = "".join(thinking_parts).strip() or None
 
         logger.debug(f"Extracted content length: {len(content) if content else 0}")
-        logger.debug(f"Extracted reasoning length: {len(reasoning) if reasoning else 0}")
+        logger.debug(
+            f"Extracted reasoning length: {len(reasoning) if reasoning else 0}"
+        )
 
         return content, reasoning, tool_calls or None
 
@@ -340,7 +342,9 @@ class AnthropicAdapter(BaseChatAdapter):
                                 "format": {"type": "json_schema", "schema": schema}
                             }
                             has_output_config = True
-                            logger.info(f"Anthropic adapter: Using output_config with schema")
+                            logger.info(
+                                "Anthropic adapter: Using output_config with schema"
+                            )
                     elif response_format.get("type") == "json_object":
                         # Simple JSON mode - use a generic object schema
                         request_params["output_config"] = {
@@ -353,7 +357,9 @@ class AnthropicAdapter(BaseChatAdapter):
                             }
                         }
                         has_output_config = True
-                        logger.info(f"Anthropic adapter: Using output_config with generic object schema")
+                        logger.info(
+                            "Anthropic adapter: Using output_config with generic object schema"
+                        )
 
             # 启用 thinking (only if not using output_config)
             if self.thinking_enabled and not has_output_config:
@@ -361,9 +367,11 @@ class AnthropicAdapter(BaseChatAdapter):
                 if self.thinking_budget:
                     thinking_config["budget_tokens"] = self.thinking_budget
                 request_params["thinking"] = thinking_config
-                logger.info(f"Anthropic adapter: Enabled thinking")
+                logger.info("Anthropic adapter: Enabled thinking")
             elif self.thinking_enabled and has_output_config:
-                logger.warning(f"Anthropic adapter: Thinking disabled because output_config is used (they cannot be used together)")
+                logger.warning(
+                    "Anthropic adapter: Thinking disabled because output_config is used (they cannot be used together)"
+                )
 
             # Regular response
             response = await client.messages.create(**request_params)

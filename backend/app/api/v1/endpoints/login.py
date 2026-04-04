@@ -329,7 +329,7 @@ async def login_access_token(
     should_warn = await PasswordExpirationService.should_warn_user(user)
     days_remaining = await PasswordExpirationService.days_until_expiration(user)
 
-    token_data = {
+    token_data: dict[str, str | bool] = {
         "access_token": access_token,
         "token_type": "bearer",
     }
@@ -394,7 +394,9 @@ async def verify_totp(
         )
 
     # Check rate limiting
-    is_locked, remaining_seconds = await totp_security.check_totp_rate_limit(str(user.id))
+    is_locked, remaining_seconds = await totp_security.check_totp_rate_limit(
+        str(user.id)
+    )
     if is_locked:
         raise BusinessError(
             code=ResponseCode.TOTP_RATE_LIMITED,
@@ -425,12 +427,21 @@ async def verify_totp(
             )
     else:
         # Verify TOTP code
+        if user.totp_secret is None:
+            raise BusinessError(
+                code=ResponseCode.TOTP_NOT_ENABLED,
+                msg_key="totp_not_enabled",
+            )
         secret = totp_service.decrypt_secret(user.totp_secret)
         is_valid = totp_service.verify_totp_code(secret, code)
 
     if not is_valid:
         # Record failed attempt
-        locked, remaining_attempts, lockout_seconds = await totp_security.record_totp_failure(str(user.id))
+        (
+            locked,
+            remaining_attempts,
+            lockout_seconds,
+        ) = await totp_security.record_totp_failure(str(user.id))
 
         # Log failed verification
         await AuditLogService.log(
@@ -558,7 +569,7 @@ async def verify_totp(
     should_warn = await PasswordExpirationService.should_warn_user(user)
     days_remaining = await PasswordExpirationService.days_until_expiration(user)
 
-    token_data = {
+    token_data: dict[str, str | bool] = {
         "access_token": access_token,
         "token_type": "bearer",
     }

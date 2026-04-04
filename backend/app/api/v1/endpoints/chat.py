@@ -10,13 +10,13 @@ import logging
 import re
 import time
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
-from typing import TYPE_CHECKING
-from xml.etree import ElementTree as ET
 
 if TYPE_CHECKING:
     from app.models.api_key import APIKey
+    from app.models.tool import Tool
+from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -32,7 +32,6 @@ from app.models.user import TeamMember
 from app.models.agent import (
     Agent,
     AgentKnowledgeBase,
-    AgentStatus,
     AgentVisibility,
     Conversation,
     Message,
@@ -59,9 +58,6 @@ from app.schemas.response import (
 from app.llm.tools import tool_registry
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.core.timezone import now_utc
-
-if TYPE_CHECKING:
-    from app.models.tool import Tool
 
 
 # Language instruction templates - must be strong and explicit
@@ -134,7 +130,7 @@ MEDIA_TOOL_KINDS = {"media.image", "media.video"}
 # ============ Helper Functions ============
 
 
-def get_streaming_config(agent: Agent) -> dict:
+def get_streaming_config(agent: Agent) -> dict[str, Any]:
     """
     Get streaming configuration from agent or use defaults.
 
@@ -144,15 +140,16 @@ def get_streaming_config(agent: Agent) -> dict:
     from app.core.config import settings
 
     # Start with defaults from settings
-    config = {
+    tool_timeouts: dict[str, Any] = {
+        "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
+        "code": settings.STREAM_TOOL_TIMEOUT_CODE,
+        "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
+        "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
+    }
+    config: dict[str, Any] = {
         "global_timeout": settings.STREAM_GLOBAL_TIMEOUT,
         "heartbeat_interval": settings.STREAM_HEARTBEAT_INTERVAL,
-        "tool_timeouts": {
-            "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
-            "code": settings.STREAM_TOOL_TIMEOUT_CODE,
-            "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
-            "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
-        },
+        "tool_timeouts": tool_timeouts,
     }
 
     # Override with agent-specific config if present
@@ -161,8 +158,9 @@ def get_streaming_config(agent: Agent) -> dict:
             config["global_timeout"] = agent.streaming_config["global_timeout"]
         if "heartbeat_interval" in agent.streaming_config:
             config["heartbeat_interval"] = agent.streaming_config["heartbeat_interval"]
-        if "tool_timeouts" in agent.streaming_config:
-            config["tool_timeouts"].update(agent.streaming_config["tool_timeouts"])
+        raw_tool_timeouts = agent.streaming_config.get("tool_timeouts")
+        if isinstance(raw_tool_timeouts, dict):
+            tool_timeouts.update(raw_tool_timeouts)
 
     return config
 
@@ -177,7 +175,9 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _build_media_llm_summary(tool_name: str | None, payload: dict[str, Any]) -> str | None:
+def _build_media_llm_summary(
+    tool_name: str | None, payload: dict[str, Any]
+) -> str | None:
     kind = payload.get("kind")
     if kind not in MEDIA_TOOL_KINDS:
         return None
@@ -268,14 +268,20 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
         )
 
     if agent.visibility == AgentVisibility.PRIVATE:
-        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
         if not agent.created_by and not user.is_superuser:
-            is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+            is_member = await TeamMember.filter(
+                team_id=agent.team_id, user_id=user.id
+            ).exists()
             if not is_member:
                 raise BusinessError(
                     code=ResponseCode.AGENT_ACCESS_DENIED,
@@ -283,7 +289,9 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
                     status_code=403,
                 )
     elif not user.is_superuser:
-        is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+        is_member = await TeamMember.filter(
+            team_id=agent.team_id, user_id=user.id
+        ).exists()
         if not is_member:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
@@ -321,14 +329,20 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
         )
 
     if agent.visibility == AgentVisibility.PRIVATE:
-        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
         if not agent.created_by and not user.is_superuser:
-            is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+            is_member = await TeamMember.filter(
+                team_id=agent.team_id, user_id=user.id
+            ).exists()
             if not is_member:
                 raise BusinessError(
                     code=ResponseCode.AGENT_ACCESS_DENIED,
@@ -336,7 +350,9 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
                     status_code=403,
                 )
     elif not user.is_superuser:
-        is_member = await TeamMember.filter(team_id=agent.team_id, user_id=user.id).exists()
+        is_member = await TeamMember.filter(
+            team_id=agent.team_id, user_id=user.id
+        ).exists()
         if not is_member:
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
@@ -819,7 +835,7 @@ Examples of when to search:
                                     "description": "Search keywords extracted from the user's message. Use nouns, names, and key phrases. For vague questions, use the most specific terms available.",
                                 }
                             },
-                        "required": ["query"],
+                            "required": ["query"],
                         },
                     },
                 }
@@ -1112,32 +1128,78 @@ async def execute_tool_call(
 
             try:
                 if tool_name == "create_memory_entity":
+                    name = arguments.get("name")
+                    entity_type = arguments.get("entity_type")
+                    description = arguments.get("description")
+                    if not isinstance(name, str) or not isinstance(entity_type, str):
+                        return json.dumps(
+                            {
+                                "error": "name and entity_type are required for create_memory_entity"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_create_entity(
                         user_id=user.id,
-                        name=arguments.get("name"),
-                        entity_type=arguments.get("entity_type"),
-                        description=arguments.get("description"),
+                        name=name,
+                        entity_type=entity_type,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                         properties=arguments.get("properties", {}),
                     )
                 elif tool_name == "create_memory_relation":
+                    source_entity_name = arguments.get("source_entity_name")
+                    target_entity_name = arguments.get("target_entity_name")
+                    relation_type = arguments.get("relation_type")
+                    description = arguments.get("description")
+                    if (
+                        not isinstance(source_entity_name, str)
+                        or not isinstance(target_entity_name, str)
+                        or not isinstance(relation_type, str)
+                    ):
+                        return json.dumps(
+                            {
+                                "error": "source_entity_name, target_entity_name, and relation_type are required for create_memory_relation"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_create_relation(
                         user_id=user.id,
-                        source_entity_name=arguments.get("source_entity_name"),
-                        target_entity_name=arguments.get("target_entity_name"),
-                        relation_type=arguments.get("relation_type"),
-                        description=arguments.get("description"),
+                        source_entity_name=source_entity_name,
+                        target_entity_name=target_entity_name,
+                        relation_type=relation_type,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                     )
                 elif tool_name == "update_memory_entity":
+                    entity_name = arguments.get("entity_name")
+                    description = arguments.get("description")
+                    if not isinstance(entity_name, str):
+                        return json.dumps(
+                            {
+                                "error": "entity_name is required for update_memory_entity"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_update_entity(
                         user_id=user.id,
-                        entity_name=arguments.get("entity_name"),
-                        description=arguments.get("description"),
+                        entity_name=entity_name,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                         properties=arguments.get("properties"),
                     )
                 elif tool_name == "search_memory":
+                    query = arguments.get("query")
+                    if not isinstance(query, str):
+                        return json.dumps(
+                            {"error": "query is required for search_memory"},
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_search_memory(
                         user_id=user.id,
-                        query=arguments.get("query"),
+                        query=query,
                         top_k=arguments.get("top_k", 5),
                     )
 
@@ -1421,10 +1483,15 @@ def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
             idx = index_map[key]
             if ctx.get("content"):
                 aggregated[idx]["content_parts"].append(ctx.get("content"))
-            if ctx.get("score") is not None:
-                aggregated[idx]["score"] = max(
-                    aggregated[idx].get("score") or 0, ctx.get("score")
+            score = ctx.get("score")
+            if isinstance(score, (int, float)):
+                existing_score = aggregated[idx].get("score")
+                current_score = (
+                    float(existing_score)
+                    if isinstance(existing_score, (int, float))
+                    else 0.0
                 )
+                aggregated[idx]["score"] = max(current_score, float(score))
             continue
 
         index_map[key] = len(aggregated)
@@ -2072,7 +2139,9 @@ async def chat_stream(
                                             agent,
                                             user=current_user,
                                         )
-                                        display_result, _ = get_tool_execution_payloads(result)
+                                        display_result, _ = get_tool_execution_payloads(
+                                            result
+                                        )
                                         # Custom tool returns parsed content as string
                                         if display_result:
                                             parsed_files.append(
@@ -2552,7 +2621,9 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
-                                display_result, llm_result = get_tool_execution_payloads(result)
+                                display_result, llm_result = (
+                                    get_tool_execution_payloads(result)
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -2573,7 +2644,9 @@ async def chat_stream(
 
                                 # Send tool_result event
                                 yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
-                                media_payload = extract_media_display_payload(display_result)
+                                media_payload = extract_media_display_payload(
+                                    display_result
+                                )
                                 if media_payload:
                                     yield f"event: {SSEEventType.MEDIA_RESULT}\ndata: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
                                 last_event_time = time.time()
@@ -2718,8 +2791,16 @@ async def chat_stream(
                     )
 
                     # Send message_end event with version info and timing
-                    first_token_ms = int((first_token_time - start_time) * 1000) if first_token_time else None
-                    tokens_per_second = round(output_tokens / (duration_ms / 1000), 1) if duration_ms > 0 and output_tokens > 0 else None
+                    first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time
+                        else None
+                    )
+                    tokens_per_second = (
+                        round(output_tokens / (duration_ms / 1000), 1)
+                        if duration_ms > 0 and output_tokens > 0
+                        else None
+                    )
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
                 except QuotaExceededError as e:
@@ -3395,7 +3476,9 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
-                                display_result, llm_result = get_tool_execution_payloads(result)
+                                display_result, llm_result = (
+                                    get_tool_execution_payloads(result)
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -3488,8 +3571,16 @@ async def regenerate_message(
                         total_tokens=F("total_tokens") + total_tokens,
                     )
 
-                    first_token_ms = int((first_token_time - start_time) * 1000) if first_token_time else None
-                    tokens_per_second = round(output_tokens / (duration_ms / 1000), 1) if duration_ms > 0 and output_tokens > 0 else None
+                    first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time
+                        else None
+                    )
+                    tokens_per_second = (
+                        round(output_tokens / (duration_ms / 1000), 1)
+                        if duration_ms > 0 and output_tokens > 0
+                        else None
+                    )
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
 
                 except QuotaExceededError as e:

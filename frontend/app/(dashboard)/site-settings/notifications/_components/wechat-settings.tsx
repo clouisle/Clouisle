@@ -21,9 +21,10 @@ import { siteSettingsApi, type WeChatSettings } from '@/lib/api/admin/site-setti
 interface WeChatSettingsTabProps {
   settings: WeChatSettings
   onSettingsChange: (settings: WeChatSettings) => void
+  canUpdate: boolean
 }
 
-export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettingsTabProps) {
+export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeChatSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -73,6 +74,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
             <Switch
               checked={settings.wechat_enabled}
               onCheckedChange={(checked) => updateSetting('wechat_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
 
@@ -81,6 +83,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
             <Select
               value={settings.wechat_notification_type}
               onValueChange={(value) => value && updateSetting('wechat_notification_type', value as 'webhook' | 'app')}
+              disabled={!canUpdate}
             >
               <SelectTrigger className="min-w-[180px]">
                 <SelectValue>
@@ -125,6 +128,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
                 placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
                 value={settings.wechat_webhook_url}
                 onChange={(e) => updateSetting('wechat_webhook_url', e.target.value)}
+                disabled={!canUpdate}
               />
               <p className="text-sm text-muted-foreground">{t('wechat.webhookUrlDesc')}</p>
             </div>
@@ -158,6 +162,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
                 placeholder={t('wechat.corpIdPlaceholder')}
                 value={settings.wechat_corp_id}
                 onChange={(e) => updateSetting('wechat_corp_id', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -168,6 +173,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
                 placeholder={t('wechat.agentIdPlaceholder')}
                 value={settings.wechat_agent_id}
                 onChange={(e) => updateSetting('wechat_agent_id', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -179,6 +185,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
                 placeholder={t('wechat.secretPlaceholder')}
                 value={settings.wechat_secret}
                 onChange={(e) => updateSetting('wechat_secret', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
           </CardContent>
@@ -194,7 +201,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
         <CardContent>
           <Button
             onClick={handleSendTest}
-            disabled={sendingTest || !settings.wechat_enabled}
+            disabled={sendingTest || !settings.wechat_enabled || !canUpdate}
             variant="outline"
           >
             {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -205,7 +212,7 @@ export function WeChatSettingsTab({ settings, onSettingsChange }: WeChatSettings
 
       {/* 保存按钮 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>

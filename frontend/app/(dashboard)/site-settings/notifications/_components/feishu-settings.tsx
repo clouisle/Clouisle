@@ -21,9 +21,10 @@ import { siteSettingsApi, type FeishuSettings } from '@/lib/api/admin/site-setti
 interface FeishuSettingsTabProps {
   settings: FeishuSettings
   onSettingsChange: (settings: FeishuSettings) => void
+  canUpdate: boolean
 }
 
-export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettingsTabProps) {
+export function FeishuSettingsTab({ settings, onSettingsChange, canUpdate }: FeishuSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -73,6 +74,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
             <Switch
               checked={settings.feishu_enabled}
               onCheckedChange={(checked) => updateSetting('feishu_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
 
@@ -81,6 +83,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
             <Select
               value={settings.feishu_notification_type}
               onValueChange={(value) => value && updateSetting('feishu_notification_type', value as 'webhook' | 'app')}
+              disabled={!canUpdate}
             >
               <SelectTrigger className="min-w-[180px]">
                 <SelectValue>
@@ -125,6 +128,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
                 placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
                 value={settings.feishu_webhook_url}
                 onChange={(e) => updateSetting('feishu_webhook_url', e.target.value)}
+                disabled={!canUpdate}
               />
               <p className="text-sm text-muted-foreground">{t('feishu.webhookUrlDesc')}</p>
             </div>
@@ -137,6 +141,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
                 placeholder={t('feishu.secretPlaceholder')}
                 value={settings.feishu_secret}
                 onChange={(e) => updateSetting('feishu_secret', e.target.value)}
+                disabled={!canUpdate}
               />
               <p className="text-sm text-muted-foreground">{t('feishu.secretDesc')}</p>
             </div>
@@ -170,6 +175,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
                 placeholder={t('feishu.appIdPlaceholder')}
                 value={settings.feishu_app_id}
                 onChange={(e) => updateSetting('feishu_app_id', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -181,6 +187,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
                 placeholder={t('feishu.appSecretPlaceholder')}
                 value={settings.feishu_app_secret}
                 onChange={(e) => updateSetting('feishu_app_secret', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
           </CardContent>
@@ -196,7 +203,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
         <CardContent>
           <Button
             onClick={handleSendTest}
-            disabled={sendingTest || !settings.feishu_enabled}
+            disabled={sendingTest || !settings.feishu_enabled || !canUpdate}
             variant="outline"
           >
             {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -207,7 +214,7 @@ export function FeishuSettingsTab({ settings, onSettingsChange }: FeishuSettings
 
       {/* 保存按钮 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>

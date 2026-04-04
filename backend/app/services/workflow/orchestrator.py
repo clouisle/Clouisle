@@ -504,7 +504,7 @@ class WorkflowOrchestrator:
             triggered_by_id=user_id,
             trigger_type=workflow.trigger_type,
             inputs=inputs,
-            status="running",
+            status=RunStatus.RUNNING,
         )
         logger.info(f"Created workflow run {run.id}")
         return run
@@ -529,7 +529,7 @@ class WorkflowOrchestrator:
             [n for n in node_executions if n.status == NodeStatus.SKIPPED]
         )
 
-        run.status = "success"
+        run.status = RunStatus.SUCCESS
         run.outputs = outputs
         run.error_message = None
         run.error_node_id = None
@@ -559,7 +559,9 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
+            await Workflow.filter(id=workflow.id).update(
+                team__total_tokens=F("team__total_tokens") + total_tokens
+            )
 
             # Send workflow run success notification
             try:
@@ -636,7 +638,7 @@ class WorkflowOrchestrator:
             [n for n in node_executions if n.status == NodeStatus.SKIPPED]
         )
 
-        run.status = "failed"
+        run.status = RunStatus.FAILED
         run.error_message = error
         run.total_duration_ms = duration_ms
         run.finished_at = datetime.now(timezone.utc)
@@ -663,7 +665,9 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
+            await Workflow.filter(id=workflow.id).update(
+                team__total_tokens=F("team__total_tokens") + total_tokens
+            )
 
             # Send workflow run failed notification
             try:
@@ -745,10 +749,10 @@ class WorkflowOrchestrator:
         Returns:
             Tuple of (final outputs dictionary, node count)
         """
-        executed_nodes = set()
-        skipped_nodes = set()
+        executed_nodes: set[str] = set()
+        skipped_nodes: set[str] = set()
         node_count = 0
-        final_outputs = {}
+        final_outputs: dict[str, Any] = {}
 
         # Track iteration state for loop/iteration nodes
 
@@ -756,12 +760,14 @@ class WorkflowOrchestrator:
         for stage in plan.stages:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(self.timeout)
+                raise ExecutionTimeoutError(
+                    f"Execution timed out after {self.timeout} seconds"
+                )
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError()
+                raise ExecutionCancelledError("Workflow execution was cancelled")
 
             # Filter nodes that should be executed in this stage
             nodes_to_execute = []
@@ -802,8 +808,9 @@ class WorkflowOrchestrator:
                 node_count += 1
                 if node_count > self.max_nodes:
                     raise NodeExecutionError(
-                        node_id=node_id,
                         message=f"Exceeded maximum node count: {self.max_nodes}",
+                        node_id=node_id,
+                        node_type=node.node_type if node else "unknown",
                     )
 
                 # Execute single node
@@ -944,12 +951,14 @@ class WorkflowOrchestrator:
         for node_id in ordered_body_nodes:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(self.timeout)
+                raise ExecutionTimeoutError(
+                    f"Execution timed out after {self.timeout} seconds"
+                )
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError()
+                raise ExecutionCancelledError("Workflow execution was cancelled")
 
             # Execute node
             result = await self._execute_node(
@@ -986,8 +995,9 @@ class WorkflowOrchestrator:
         node_info = plan.get_node(node_id)
         if not node_info:
             raise NodeExecutionError(
-                node_id=node_id,
                 message="Node not found in execution plan",
+                node_id=node_id,
+                node_type="unknown",
             )
 
         node_type = node_info.node_type
@@ -1158,15 +1168,16 @@ class WorkflowOrchestrator:
         if not run:
             return False
 
-        if run.status != "running":
+        if run.status != RunStatus.RUNNING:
             return False
 
-        run.status = "cancelled"
+        run.status = RunStatus.CANCELLED
         run.finished_at = datetime.now(timezone.utc)
         await run.save()
 
         # Set cancelled status in context
-        context = await ExecutionContext.load(run_id)
+        redis_client = await get_redis()
+        context = await ExecutionContext.load(run_id, redis_client)
         await context.set_status("cancelled")
 
         # Publish cancel event
@@ -1193,7 +1204,7 @@ class WorkflowOrchestrator:
         return {
             "id": str(run.id),
             "workflow_id": str(run.workflow_id),
-            "status": run.status,
+            "status": str(run.status),
             "inputs": run.inputs,
             "outputs": run.outputs,
             "error": run.error_message,

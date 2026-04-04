@@ -185,7 +185,7 @@ def get_tone_description(tone: str, language: str) -> str:
         "detailed": "Detailed and thorough",
     }
     tone_map = tone_map_zh if language == "zh" else tone_map_en
-    return tone_map.get(tone, tone_map.get("professional"))
+    return tone_map.get(tone) or tone_map["professional"]
 
 
 def get_focus_description(focus: str, language: str) -> str:
@@ -201,7 +201,7 @@ def get_focus_description(focus: str, language: str) -> str:
         "balanced": "Balanced between task and conversation",
     }
     focus_map = focus_map_zh if language == "zh" else focus_map_en
-    return focus_map.get(focus, focus_map.get("balanced"))
+    return focus_map.get(focus) or focus_map["balanced"]
 
 
 def build_style_requirements(style: PromptStyle | None, language: str) -> str:

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, TestTube2, Power, PowerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useCanPerform } from '@/components/permission-guard'
 import {
   Table,
   TableBody,
@@ -29,6 +30,8 @@ import { ProviderDialog } from './_components/provider-dialog'
 
 export default function SSOSettingsPage() {
   const t = useTranslations('sso')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:settings:update')
   const [providers, setProviders] = useState<SSOProviderAdmin[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -125,7 +128,7 @@ export default function SSOSettingsPage() {
           <h2 className="text-2xl font-bold tracking-tight">{t('title')}</h2>
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
-        <Button onClick={handleCreate}>
+        <Button onClick={handleCreate} disabled={!canUpdate}>
           <Plus className="mr-2 h-4 w-4" />
           {t('addProvider')}
         </Button>
@@ -188,6 +191,7 @@ export default function SSOSettingsPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleToggleEnabled(provider)}
+                        disabled={!canUpdate}
                         title={
                           provider.is_enabled
                             ? t('disable')
@@ -205,6 +209,7 @@ export default function SSOSettingsPage() {
                         size="icon"
                         onClick={() => handleTest(provider.id)}
                         title={t('testConnection')}
+                        disabled={!canUpdate}
                       >
                         <TestTube2 className="h-4 w-4" />
                       </Button>
@@ -213,6 +218,7 @@ export default function SSOSettingsPage() {
                         size="icon"
                         onClick={() => handleEdit(provider)}
                         title={t('editProvider')}
+                        disabled={!canUpdate}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -221,6 +227,7 @@ export default function SSOSettingsPage() {
                         size="icon"
                         onClick={() => setDeleteId(provider.id)}
                         title={t('deleteProvider')}
+                        disabled={!canUpdate}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -249,7 +256,7 @@ export default function SSOSettingsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
+            <AlertDialogAction onClick={handleDelete} disabled={!canUpdate}>
               {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

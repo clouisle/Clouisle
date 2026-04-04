@@ -259,14 +259,20 @@ async def create_api_key(
     )
 
     # 重新查询以获取关联数据
-    api_key = (
+    reloaded_api_key = (
         await APIKey.filter(id=api_key.id)
         .prefetch_related("user", "agents", "workflows")
         .first()
     )
+    if reloaded_api_key is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="api_key_not_found",
+            status_code=404,
+        )
 
     # 构建响应
-    response_data = await build_api_key_response(api_key)
+    response_data = await build_api_key_response(reloaded_api_key)
     response_data["key"] = full_key  # Only returned once
 
     return success(data=response_data, msg_key="api_key_created")
@@ -386,26 +392,32 @@ async def update_api_key(
         await api_key.save()
 
     # 重新加载（包括关系）
-    api_key = (
+    reloaded_api_key = (
         await APIKey.filter(id=api_key_id)
         .prefetch_related("user", "agents", "workflows")
         .first()
     )
+    if reloaded_api_key is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="api_key_not_found",
+            status_code=404,
+        )
 
     # 记录审计日志
     await AuditLogService.log(
         user=current_user,
         action="update_api_key",
         resource_type="api_key",
-        resource_id=api_key.id,
-        resource_name=api_key.name,
+        resource_id=reloaded_api_key.id,
+        resource_name=reloaded_api_key.name,
         operation="update",
         status="success",
         request=request,
         metadata={"fields_updated": list(data.model_dump(exclude_unset=True).keys())},
     )
 
-    response_data = await build_api_key_response(api_key)
+    response_data = await build_api_key_response(reloaded_api_key)
     return success(data=response_data, msg_key="api_key_updated")
 
 
@@ -470,7 +482,11 @@ async def activate_api_key(
     """
     Activate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents", "workflows", "user").first()
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("agents", "workflows", "user")
+        .first()
+    )
 
     if not api_key:
         raise BusinessError(
@@ -521,7 +537,11 @@ async def deactivate_api_key(
     """
     Deactivate an API key.
     """
-    api_key = await APIKey.filter(id=api_key_id).prefetch_related("agents", "workflows", "user").first()
+    api_key = (
+        await APIKey.filter(id=api_key_id)
+        .prefetch_related("agents", "workflows", "user")
+        .first()
+    )
 
     if not api_key:
         raise BusinessError(

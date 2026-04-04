@@ -14,9 +14,10 @@ import { siteSettingsApi, type SlackSettings } from '@/lib/api/admin/site-settin
 interface SlackSettingsTabProps {
   settings: SlackSettings
   onSettingsChange: (settings: SlackSettings) => void
+  canUpdate: boolean
 }
 
-export function SlackSettingsTab({ settings, onSettingsChange }: SlackSettingsTabProps) {
+export function SlackSettingsTab({ settings, onSettingsChange, canUpdate }: SlackSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -66,6 +67,7 @@ export function SlackSettingsTab({ settings, onSettingsChange }: SlackSettingsTa
             <Switch
               checked={settings.slack_enabled}
               onCheckedChange={(checked) => updateSetting('slack_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -97,6 +99,7 @@ export function SlackSettingsTab({ settings, onSettingsChange }: SlackSettingsTa
               placeholder="https://hooks.slack.com/services/..."
               value={settings.slack_webhook_url}
               onChange={(e) => updateSetting('slack_webhook_url', e.target.value)}
+              disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('slack.webhookUrlDesc')}</p>
           </div>
@@ -112,7 +115,7 @@ export function SlackSettingsTab({ settings, onSettingsChange }: SlackSettingsTa
         <CardContent>
           <Button
             onClick={handleSendTest}
-            disabled={sendingTest || !settings.slack_enabled}
+            disabled={sendingTest || !settings.slack_enabled || !canUpdate}
             variant="outline"
           >
             {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -123,7 +126,7 @@ export function SlackSettingsTab({ settings, onSettingsChange }: SlackSettingsTa
 
       {/* 保存按钮 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>

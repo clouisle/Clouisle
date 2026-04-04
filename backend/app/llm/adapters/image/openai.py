@@ -44,7 +44,9 @@ class OpenAIImageAdapter(BaseImageAdapter):
                 provider=self.provider,
                 model=model_config.model_id,
             )
-        self.base_url = (model_config.base_url or "https://api.openai.com/v1").rstrip("/")
+        self.base_url = (model_config.base_url or "https://api.openai.com/v1").rstrip(
+            "/"
+        )
         self.model_id = model_config.model_id
 
     async def generate(

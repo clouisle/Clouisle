@@ -3,7 +3,7 @@ Password expiration related scheduled tasks
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.core.celery import celery_app
 from app.core.i18n import t
@@ -11,7 +11,6 @@ from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.models.notification import AutoNotificationType, NotificationLevel
 from app.services.auto_notification import AutoNotificationService
-from app.services.password_expiration import PasswordExpirationService
 
 logger = logging.getLogger(__name__)
 

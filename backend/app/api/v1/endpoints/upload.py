@@ -138,10 +138,14 @@ def build_unique_upload_filename(
     """Build a unique upload filename using content hash and extension."""
     file_hash = get_file_hash(content)[:8]
     ext = extension or infer_extension(content_type=content_type, filename=filename)
-    return _validate_path_segment(f"{uuid.uuid4().hex[:12]}_{file_hash}{ext}", "filename")
+    return _validate_path_segment(
+        f"{uuid.uuid4().hex[:12]}_{file_hash}{ext}", "filename"
+    )
 
 
-def get_dated_upload_dir(category: str, date_path: str | None = None) -> tuple[Path, str]:
+def get_dated_upload_dir(
+    category: str, date_path: str | None = None
+) -> tuple[Path, str]:
     """Return the dated upload directory and normalized date path."""
     category = _validate_path_segment(category, "category")
     resolved_date_path = date_path or datetime.now().strftime("%Y/%m")

@@ -146,7 +146,8 @@ class Agent(models.Model):
 
     # Embed configuration
     embed_config: dict = fields.JSONField(
-        default=dict, description="Embed configuration (enabled, allowed_domains, theme, bubble)"
+        default=dict,
+        description="Embed configuration (enabled, allowed_domains, theme, bubble)",
     )  # type: ignore[assignment]
 
     # RAG configuration
@@ -241,7 +242,9 @@ class AgentKnowledgeBase(models.Model):
         default=0.3, description="Minimum similarity score (0-1, lower = more results)"
     )
     search_mode = fields.CharField(
-        max_length=20, default="hybrid", description="Search mode: vector, fulltext, or hybrid"
+        max_length=20,
+        default="hybrid",
+        description="Search mode: vector, fulltext, or hybrid",
     )
 
     created_at = fields.DatetimeField(auto_now_add=True)

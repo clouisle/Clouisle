@@ -6,7 +6,7 @@ Provides chat functionality for agents with tools and knowledge bases.
 
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 
 from app.llm import model_manager
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
@@ -73,7 +73,7 @@ class AgentService:
             current_turn += 1
 
             response = await model_manager.chat(
-                messages=messages,
+                messages=cast(list[Any], messages),
                 tools=tools if tools else None,
                 team_id=team_id,
                 model=model_id,
@@ -168,7 +168,7 @@ class AgentService:
             final_usage = None
 
             async for chunk in model_manager.chat_stream(
-                messages=messages,
+                messages=cast(list[Any], messages),
                 tools=tools if tools else None,
                 team_id=team_id,
                 model=model_id,

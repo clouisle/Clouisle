@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
@@ -144,6 +145,7 @@ class Document(models.Model):
         related_name="documents",
         on_delete=fields.CASCADE,
     )
+    knowledge_base_id: UUID  # type: ignore[assignment]
 
     # Document info
     name = fields.CharField(max_length=255, description="Document name/title")
@@ -182,6 +184,7 @@ class Document(models.Model):
         on_delete=fields.SET_NULL,
         null=True,
     )
+    uploaded_by_id: UUID | None  # type: ignore[assignment]
 
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -217,6 +220,7 @@ class DocumentChunk(models.Model):
         related_name="chunks",
         on_delete=fields.CASCADE,
     )
+    document_id: UUID  # type: ignore[assignment]
 
     # Chunk content
     content = fields.TextField(description="Chunk text content")

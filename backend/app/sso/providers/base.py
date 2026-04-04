@@ -63,7 +63,7 @@ class BaseSSOProvider(ABC):
 
         return user_data
 
-    def _get_nested_value(self, data: Dict, path: str) -> Any:
+    def _get_nested_value(self, data: Dict[str, Any], path: str) -> Any:
         """
         Get nested dictionary value using dot notation or JSONPath
 
@@ -88,7 +88,7 @@ class BaseSSOProvider(ABC):
                 return None
 
         keys = path.split(".")
-        value = data
+        value: Any = data
         for key in keys:
             if isinstance(value, dict):
                 value = value.get(key)

@@ -544,7 +544,7 @@ async def trigger_archive_audit_logs(
 ):
     try:
         # Use Celery task to avoid blocking the server
-        task = archive_old_audit_logs.delay()
+        task = archive_old_audit_logs.delay()  # type: ignore[attr-defined]
         task_id = task.id
     except Exception:
         # Log error without exposing stack trace to user

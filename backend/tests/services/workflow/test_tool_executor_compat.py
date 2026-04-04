@@ -105,7 +105,9 @@ class TestToolNodeExecutorCompatibility:
         with (
             patch("app.models.tool.Tool.filter") as mock_filter,
             patch("app.models.workflow.Workflow.filter") as mock_workflow_filter,
-            patch("app.services.tool.ToolExecutor.execute", new=AsyncMock()) as mock_execute,
+            patch(
+                "app.services.tool.ToolExecutor.execute", new=AsyncMock()
+            ) as mock_execute,
         ):
             mock_filter.return_value.first = AsyncMock(return_value=tool)
             mock_workflow_filter.return_value.only.return_value.first = AsyncMock(
@@ -153,7 +155,9 @@ class TestToolNodeExecutorCompatibility:
 
         with (
             patch("app.models.tool.Tool.filter") as mock_filter,
-            patch("app.services.tool.ToolExecutor.execute", new=AsyncMock()) as mock_execute,
+            patch(
+                "app.services.tool.ToolExecutor.execute", new=AsyncMock()
+            ) as mock_execute,
         ):
             mock_filter.return_value.first = AsyncMock(return_value=tool)
             mock_execute.return_value = {"legacy": True}

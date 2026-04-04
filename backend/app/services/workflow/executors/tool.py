@@ -4,7 +4,7 @@ Tool and agent node executors.
 Handles external tool calls and agent invocations.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import logging
 import json
 
@@ -54,7 +54,6 @@ class ToolNodeExecutor(NodeExecutor):
         from app.services.tool import ToolExecutor
         import time
 
-        node.get("id")
         node_data = node.get("data", {})
         # Try toolConfig first (frontend structure), then fall back to config.
         config = node_data.get("toolConfig") or node_data.get("config", {})
@@ -118,9 +117,7 @@ class ToolNodeExecutor(NodeExecutor):
             if output_var and output_var != "result":
                 outputs[output_var] = result
 
-            return ExecutionResult(
-                outputs=outputs
-            )
+            return ExecutionResult(outputs=outputs)
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
@@ -187,7 +184,7 @@ class AgentNodeExecutor(NodeExecutor):
         from app.models.agent import Agent
         from app.services.agent import AgentService
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         # Try agentConfig first (frontend structure), then fall back to config
         config = node_data.get("agentConfig") or node_data.get("config", {})
@@ -345,11 +342,11 @@ class HTTPRequestNodeExecutor(NodeExecutor):
 
         # Resolve templates
         url = await self._resolve_template(url_template, context)
-        headers = {}
+        headers: dict[str, str] = {}
         for key, value in headers_template.items():
             headers[key] = await self._resolve_template(str(value), context)
 
-        body = None
+        body: Any = None
         if body_template:
             if isinstance(body_template, str):
                 body = await self._resolve_template(body_template, context)
@@ -409,11 +406,11 @@ class HTTPRequestNodeExecutor(NodeExecutor):
 
     async def _resolve_body(
         self,
-        body: dict,
+        body: dict[str, Any],
         context: "ExecutionContext",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Recursively resolve variables in body object."""
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in body.items():
             if isinstance(value, str):
                 result[key] = await self._resolve_template(value, context)

@@ -37,7 +37,7 @@ class IterationStartNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute iteration start node - pass through parent's variables."""
         node_data = node.get("data", {})
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
 
         # Try multiple ways to get parent ID
         parent_id = (
@@ -90,7 +90,7 @@ class LoopStartNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute loop start node - pass through parent's variables."""
         node_data = node.get("data", {})
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
 
         # Try multiple ways to get parent ID
         parent_id = (
@@ -160,7 +160,7 @@ class IterationNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute iteration node."""
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         # Frontend stores config in iterationConfig, fallback to config for backwards compatibility
         config = node_data.get("iterationConfig") or node_data.get("config", {})
@@ -453,7 +453,7 @@ class LoopNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute loop node."""
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         # Frontend stores config in loopConfig, fallback to config for backwards compatibility
         config = node_data.get("loopConfig") or node_data.get("config", {})

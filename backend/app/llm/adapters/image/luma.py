@@ -39,12 +39,14 @@ class LumaImageAdapter(BaseImageAdapter):
         return ImageGenerationResponse(images=images, model=self.model_id)
 
     async def _create_generation(self, request: ImageGenerationRequest) -> str:
-        payload = {
+        payload: dict[str, object] = {
             "model": self.model_id,
             "prompt": append_prompt_directives(
                 request.prompt,
                 f"Style: {request.style}" if request.style else None,
-                f"Avoid: {request.negative_prompt}" if request.negative_prompt else None,
+                f"Avoid: {request.negative_prompt}"
+                if request.negative_prompt
+                else None,
             ),
             "aspect_ratio": closest_aspect_ratio(request.width, request.height),
         }

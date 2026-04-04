@@ -49,7 +49,7 @@ class AnswerNodeExecutor(NodeExecutor):
         """Execute answer node."""
         from ..stream import StreamManager
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
 
         answer_config = node_data.get("answerConfig", {})
@@ -72,7 +72,9 @@ class AnswerNodeExecutor(NodeExecutor):
                     f"sourceVariable={source_variable!r}"
                 )
                 if not source_variable:
-                    logger.warning(f"Answer node {node_id}: output [{idx}] has empty sourceVariable, skipping")
+                    logger.warning(
+                        f"Answer node {node_id}: output [{idx}] has empty sourceVariable, skipping"
+                    )
                     continue
 
                 # Add separator between outputs

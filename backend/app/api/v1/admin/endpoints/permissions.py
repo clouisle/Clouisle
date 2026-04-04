@@ -23,8 +23,10 @@ async def read_permissions(
     page: int = 1,
     page_size: int = 50,
     scope: Optional[str] = None,
-    search: Optional[str] = Query(None, description="Search by permission code or description"),
-    current_user: User = Depends(deps.get_current_active_user),
+    search: Optional[str] = Query(
+        None, description="Search by permission code or description"
+    ),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
 ) -> Any:
     """
     Retrieve permissions.
@@ -33,7 +35,9 @@ async def read_permissions(
     if scope:
         query = query.filter(scope=scope)
     if search:
-        query = query.filter(Q(code__icontains=search) | Q(description__icontains=search))
+        query = query.filter(
+            Q(code__icontains=search) | Q(description__icontains=search)
+        )
 
     total = await query.count()
     skip = (page - 1) * page_size
@@ -79,7 +83,7 @@ async def create_permission(
 @router.get("/{permission_id}", response_model=Response[PermissionSchema])
 async def read_permission(
     permission_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
 ) -> Any:
     """
     Get permission by ID.

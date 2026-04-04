@@ -173,7 +173,9 @@ async def disable_totp(
     is_valid = False
     if data.is_backup_code:
         # Verify backup code
-        is_valid, remaining_codes = totp_service.verify_backup_code(current_user, data.code)
+        is_valid, remaining_codes = totp_service.verify_backup_code(
+            current_user, data.code
+        )
         if is_valid:
             # Note: backup codes will be deleted when TOTP is disabled below
             pass

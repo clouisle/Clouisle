@@ -1,5 +1,7 @@
 import secrets
 from typing import TYPE_CHECKING
+from uuid import UUID
+
 from tortoise import fields, models
 
 if TYPE_CHECKING:
@@ -24,6 +26,7 @@ class APIKey(models.Model):
     user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(  # type: ignore
         "models.User", related_name="api_keys", on_delete=fields.CASCADE
     )
+    user_id: UUID  # type: ignore[assignment]
 
     # 关联可访问的 Agent（多对多）
     agents: fields.ManyToManyRelation["Agent"] = fields.ManyToManyField(  # type: ignore
@@ -42,9 +45,9 @@ class APIKey(models.Model):
     )
 
     # 权限和限制
-    scopes = fields.JSONField(
+    scopes: list = fields.JSONField(
         default=list, description="List of permission scopes, empty means full access"
-    )
+    )  # type: ignore[assignment]
     rate_limit = fields.IntField(
         default=1000, description="Rate limit per minute, 0 means unlimited"
     )

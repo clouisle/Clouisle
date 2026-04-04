@@ -4,7 +4,7 @@ Provides CRUD operations for agents and conversations.
 """
 
 import logging
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -116,7 +116,11 @@ async def check_agent_access(
         )
 
     if agent.visibility == AgentVisibility.PRIVATE:
-        if agent.created_by and agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
@@ -214,9 +218,13 @@ async def build_agent_out(agent: Agent) -> dict:
         "enable_memory": agent.enable_memory,
         "memory_config": agent.memory_config if agent.memory_config else None,
         "enable_image_generation": agent.enable_image_generation,
-        "image_generation_config": _sanitize_media_config(agent.image_generation_config),
+        "image_generation_config": _sanitize_media_config(
+            agent.image_generation_config
+        ),
         "enable_video_generation": agent.enable_video_generation,
-        "video_generation_config": _sanitize_media_config(agent.video_generation_config),
+        "video_generation_config": _sanitize_media_config(
+            agent.video_generation_config
+        ),
         "rag_mode": agent.rag_mode.value
         if hasattr(agent.rag_mode, "value")
         else agent.rag_mode,
@@ -229,7 +237,9 @@ async def build_agent_out(agent: Agent) -> dict:
         if hasattr(agent.status, "value")
         else agent.status,
         "visibility": normalize_agent_visibility(
-            agent.visibility.value if hasattr(agent.visibility, "value") else agent.visibility
+            agent.visibility.value
+            if hasattr(agent.visibility, "value")
+            else agent.visibility
         ),
         "conversation_count": agent.conversation_count,
         "message_count": agent.message_count,
@@ -284,7 +294,9 @@ async def build_agent_list_out(
         if hasattr(agent.status, "value")
         else agent.status,
         "visibility": normalize_agent_visibility(
-            agent.visibility.value if hasattr(agent.visibility, "value") else agent.visibility
+            agent.visibility.value
+            if hasattr(agent.visibility, "value")
+            else agent.visibility
         ),
         "conversation_count": agent.conversation_count,
         "message_count": agent.message_count,
@@ -320,9 +332,7 @@ async def list_agents(
     if team_id:
         await check_team_access(team_id, current_user)
         if not current_user.is_superuser:
-            query = query.filter(
-                team_id=team_id
-            ).filter(
+            query = query.filter(team_id=team_id).filter(
                 Q(visibility__in=[AgentVisibility.TEAM, AgentVisibility.PUBLIC])
                 | Q(created_by=current_user, visibility=AgentVisibility.PRIVATE)
             )
@@ -534,7 +544,7 @@ async def update_agent(
     if agent_in.name is not None and agent_in.name != agent.name:
         existing = (
             await Agent.filter(
-                team_id=agent.team_id,
+                team_id=UUID(str(agent.team_id)),
                 name=agent_in.name,
             )
             .exclude(id=agent_id)
@@ -575,14 +585,16 @@ async def update_agent(
         agent.suggested_questions = agent_in.suggested_questions
         updated_fields.append("suggested_questions")
     if agent_in.visibility is not None:
-        agent.visibility = AgentVisibility(normalize_agent_visibility(agent_in.visibility))
+        agent.visibility = AgentVisibility(
+            normalize_agent_visibility(agent_in.visibility)
+        )
         updated_fields.append("visibility")
 
     # Update model_id
     if agent_in.model_id is not None:
         team_model = await TeamModel.filter(
             id=agent_in.model_id,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             is_enabled=True,
         ).first()
         if not team_model:
@@ -608,11 +620,12 @@ async def update_agent(
         agent.enable_file_upload = agent_in.enable_file_upload
         updated_fields.append("enable_file_upload")
     if agent_in.file_upload_config is not None:
-        agent.file_upload_config = (
+        file_upload_config = (
             agent_in.file_upload_config.model_dump()
             if hasattr(agent_in.file_upload_config, "model_dump")
             else agent_in.file_upload_config
         )
+        agent.file_upload_config = cast(dict[str, Any], file_upload_config)
         updated_fields.append("file_upload_config")
 
     # Update enable_user_input_request
@@ -668,7 +681,7 @@ async def update_agent(
         for kb_config in agent_in.knowledge_base_configs:
             kb = await KnowledgeBase.filter(
                 id=kb_config.knowledge_base_id,
-                team_id=agent.team_id,
+                team_id=UUID(str(agent.team_id)),
             ).first()
             if not kb:
                 raise BusinessError(
@@ -764,7 +777,7 @@ async def publish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_PUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_published_title"),
             content=t("notify_agent_published_content", agent_name=agent.name),
         )
@@ -801,7 +814,7 @@ async def unpublish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_unpublished_title"),
             content=t("notify_agent_unpublished_content", agent_name=agent.name),
         )
@@ -900,7 +913,9 @@ async def get_agent_video_generation_status(
 
     config = agent.video_generation_config or {}
     resolved_model_ref = config.get("default_model_ref") or None
-    response = await model_manager.get_video_status(task_id, model_id=resolved_model_ref)
+    response = await model_manager.get_video_status(
+        task_id, model_id=resolved_model_ref
+    )
     return success(
         data=build_video_tool_result(
             "",
@@ -971,8 +986,9 @@ async def list_my_conversations(
     conv_list = []
     for conv in conversations:
         conv_data = ConversationListOut.model_validate(conv).model_dump()
-        conv_data["agent_name"] = conv.agent.name
-        conv_data["agent_icon"] = conv.agent.icon
+        related_agent = conv.agent
+        conv_data["agent_name"] = related_agent.name if related_agent else None
+        conv_data["agent_icon"] = related_agent.icon if related_agent else None
         conv_list.append(conv_data)
 
     return success(
@@ -1053,8 +1069,9 @@ async def get_conversation(
     # First convert to ConversationOut, then build ConversationWithMessages
     conv_out = ConversationOut.model_validate(conversation)
     conv_data = conv_out.model_dump()
-    conv_data["agent_name"] = conversation.agent.name
-    conv_data["agent_icon"] = conversation.agent.icon
+    related_agent = conversation.agent
+    conv_data["agent_name"] = related_agent.name if related_agent else None
+    conv_data["agent_icon"] = related_agent.icon if related_agent else None
     conv_data["messages"] = messages_out
 
     return success(data=conv_data)
@@ -1091,8 +1108,9 @@ async def update_conversation(
         await conversation.save()
 
     conv_data = ConversationOut.model_validate(conversation).model_dump()
-    conv_data["agent_name"] = conversation.agent.name
-    conv_data["agent_icon"] = conversation.agent.icon
+    related_agent = conversation.agent
+    conv_data["agent_name"] = related_agent.name if related_agent else None
+    conv_data["agent_icon"] = related_agent.icon if related_agent else None
 
     return success(data=conv_data, msg_key="conversation_updated")
 

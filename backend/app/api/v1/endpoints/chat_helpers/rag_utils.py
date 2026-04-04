@@ -4,20 +4,19 @@ RAG (Retrieval-Augmented Generation) utilities for chat.
 
 import asyncio
 
-from app.models.agent import Agent
+from app.models.agent import Agent, AgentKnowledgeBase
 from app.models.knowledge_base import KnowledgeBase, KnowledgeBaseStatus
 from app.services.vector_store import VectorStore
 
 
 async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
     """Perform RAG retrieval for the given query."""
-    if not agent.knowledge_base_ids:
+    kb_links = await AgentKnowledgeBase.filter(agent_id=agent.id).all()
+    kb_ids = [link.knowledge_base_id for link in kb_links]
+    if not kb_ids:
         return []
 
-    # Fetch all knowledge bases concurrently
-    kb_tasks = [
-        KnowledgeBase.get_or_none(id=kb_id) for kb_id in agent.knowledge_base_ids
-    ]
+    kb_tasks = [KnowledgeBase.get_or_none(id=kb_id) for kb_id in kb_ids]
     knowledge_bases = await asyncio.gather(*kb_tasks)
 
     # Filter active knowledge bases and prepare search tasks

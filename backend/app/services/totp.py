@@ -175,4 +175,3 @@ async def get_remaining_backup_codes(user: User) -> int:
 
     codes_data = json.loads(user.totp_backup_codes_hash)
     return sum(1 for c in codes_data if not c["used"])
-

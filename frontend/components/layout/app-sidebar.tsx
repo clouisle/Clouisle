@@ -30,6 +30,7 @@ import {
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
+import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 
@@ -115,25 +116,25 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('dashboard'),
       url: '/dashboard',
       icon: LayoutDashboard,
-      permission: 'admin:dashboard:access',
+      permission: ROUTE_PERMISSION_MAP['/dashboard'],
     },
     {
       title: t('teams'),
       url: '/teams',
       icon: UsersRound,
-      permission: 'team:read',
+      permission: ROUTE_PERMISSION_MAP['/teams'],
     },
     {
       title: t('knowledgeBases'),
       url: '/knowledge-bases',
       icon: Database,
-      permission: 'kb:read',
+      permission: ROUTE_PERMISSION_MAP['/knowledge-bases'],
     },
     {
       title: t('activities'),
       url: '/activities',
       icon: Activity,
-      permission: 'conversation:read',
+      permission: ROUTE_PERMISSION_MAP['/activities'],
     },
   ]
 
@@ -142,19 +143,19 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('users'),
       url: '/users',
       icon: Users,
-      permission: 'admin:user:read',
+      permission: ROUTE_PERMISSION_MAP['/users'],
     },
     {
       title: t('roles'),
       url: '/roles',
       icon: Shield,
-      permission: 'admin:role:read',
+      permission: ROUTE_PERMISSION_MAP['/roles'],
     },
     {
       title: t('permissions'),
       url: '/permissions',
       icon: Key,
-      permission: 'admin:permission:read',
+      permission: ROUTE_PERMISSION_MAP['/permissions'],
     },
   ]
 
@@ -163,25 +164,25 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('models'),
       url: '/models',
       icon: Bot,
-      permission: 'admin:model:read',
+      permission: ROUTE_PERMISSION_MAP['/models'],
     },
     {
       title: t('tools'),
       url: '/tools',
       icon: Wrench,
-      permission: 'tool:read',
+      permission: ROUTE_PERMISSION_MAP['/tools'],
     },
     {
       title: t('apiKeys'),
       url: '/api-keys',
       icon: KeyRound,
-      permission: 'apikey:read',
+      permission: ROUTE_PERMISSION_MAP['/api-keys'],
     },
     {
       title: t('memories'),
       url: '/memories',
       icon: Brain,
-      permission: 'admin:memory:read',
+      permission: ROUTE_PERMISSION_MAP['/memories'],
     },
   ]
 
@@ -190,13 +191,13 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('notifications'),
       url: '/notifications',
       icon: Bell,
-      permission: 'admin:dashboard:access',
+      permission: ROUTE_PERMISSION_MAP['/notifications'],
     },
     {
       title: t('auditLogs'),
       url: '/audit-logs',
       icon: FileText,
-      permission: 'admin:audit:read',
+      permission: ROUTE_PERMISSION_MAP['/audit-logs'],
     },
   ]
 
@@ -205,7 +206,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('siteSettings'),
       url: '/site-settings',
       icon: Settings,
-      permission: 'admin:settings:read',
+      permission: ROUTE_PERMISSION_MAP['/site-settings'],
     },
     {
       title: t('helpCenter'),

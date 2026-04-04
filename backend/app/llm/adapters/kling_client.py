@@ -27,9 +27,7 @@ class KlingClient:
         self.model_id = model_config.model_id
         self.api_key = model_config.api_key
         self.config = getattr(model_config, "config", None) or {}
-        self.base_url = (
-            model_config.base_url or "https://api.klingai.com"
-        ).rstrip("/")
+        self.base_url = (model_config.base_url or "https://api.klingai.com").rstrip("/")
         self.timeout = float(self.config.get("timeout", 180))
         self.poll_interval = max(float(self.config.get("poll_interval_seconds", 5)), 1)
         self.task_timeout = max(float(self.config.get("task_timeout_seconds", 300)), 5)
@@ -118,15 +116,11 @@ class KlingClient:
 
         return response.json()
 
-    async def create_task(
-        self, path: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_task(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", path, json=payload)
 
     async def get_task(self, task_id: str) -> dict[str, Any]:
-        return await self._request(
-            "GET", f"/v1/videos/text2video/{task_id}"
-        )
+        return await self._request("GET", f"/v1/videos/text2video/{task_id}")
 
     async def wait_for_task(self, task_id: str) -> dict[str, Any]:
         elapsed = 0.0

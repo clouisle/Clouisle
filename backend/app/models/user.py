@@ -169,9 +169,7 @@ class User(models.Model):
     totp_secret = fields.CharField(
         max_length=255, null=True, description="Encrypted TOTP secret"
     )
-    totp_enabled = fields.BooleanField(
-        default=False, description="TOTP 2FA enabled"
-    )
+    totp_enabled = fields.BooleanField(default=False, description="TOTP 2FA enabled")
     totp_enabled_at = fields.DatetimeField(
         null=True, description="When TOTP was enabled"
     )

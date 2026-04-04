@@ -2,8 +2,6 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.llm.adapters.rerank.factory import create_rerank_adapter
 from app.llm.adapters.rerank.llm_adapter import LLMRerankAdapter
 from app.llm.adapters.rerank.openai_compatible_adapter import (

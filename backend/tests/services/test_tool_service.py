@@ -85,7 +85,9 @@ class TestToolExecutor:
             "app.services.tool.execute_http_tool",
             new=AsyncMock(return_value={"success": True, "result": {"ok": True}}),
         ) as mock_execute_http:
-            result = await executor._execute_custom_tool(tool=tool, arguments={"q": "x"})
+            result = await executor._execute_custom_tool(
+                tool=tool, arguments={"q": "x"}
+            )
 
         assert result == {"success": True, "result": {"ok": True}}
         mock_execute_http.assert_awaited_once_with(

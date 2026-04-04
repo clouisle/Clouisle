@@ -800,7 +800,7 @@ class TemplateManager:
             t for t in templates if t.visibility == TemplateVisibility.PUBLIC
         ]
 
-        by_category = {}
+        by_category: dict[str, int] = {}
         for template in public_templates:
             cat = template.category.value
             by_category[cat] = by_category.get(cat, 0) + 1

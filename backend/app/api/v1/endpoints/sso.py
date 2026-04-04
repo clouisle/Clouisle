@@ -84,13 +84,15 @@ async def sso_login(
 
     try:
         if provider.protocol in ["oauth2", "oidc"]:
-            (
-                auth_url,
-                code_verifier,
-                nonce,
-            ) = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
+            if not isinstance(auth_result, tuple) or len(auth_result) != 3:
+                raise BusinessError(
+                    code=ResponseCode.SSO_INVALID_CONFIGURATION,
+                    msg_key="unsupported_protocol",
+                )
+            auth_url, code_verifier, nonce = auth_result
 
             await SSOSession.create(
                 session_id=session_id,
@@ -102,9 +104,10 @@ async def sso_login(
             )
 
         elif provider.protocol == "saml2":
-            auth_url = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
+            auth_url = auth_result if isinstance(auth_result, str) else auth_result[0]
 
             await SSOSession.create(
                 session_id=session_id,
@@ -114,9 +117,10 @@ async def sso_login(
             )
 
         elif provider.protocol == "cas":
-            auth_url = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=session_id, redirect_uri=callback_url
             )
+            auth_url = auth_result if isinstance(auth_result, str) else auth_result[0]
 
             await SSOSession.create(
                 session_id=session_id,
@@ -207,7 +211,8 @@ async def sso_callback(
             )
         elif provider.protocol == "saml2":
             form_data = await request.form()
-            saml_response = form_data.get("SAMLResponse")
+            saml_value = form_data.get("SAMLResponse")
+            saml_response = saml_value if isinstance(saml_value, str) else None
             callback_data = {"SAMLResponse": saml_response}
             user_info = await provider_instance.handle_callback(
                 callback_data=callback_data, redirect_uri=callback_url
@@ -266,7 +271,7 @@ async def sso_callback(
             user=user,
             action="sso_login_success",
             resource_type="user",
-            resource_id=str(user.id),
+            resource_id=user.id,
             resource_name=user.username,
             operation="read",
             status="success",
@@ -339,7 +344,7 @@ async def disconnect_sso(
         user=current_user,
         action="disconnect_sso",
         resource_type="sso_connection",
-        resource_id=str(connection_id),
+        resource_id=connection_id,
         resource_name=provider_name,
         operation="delete",
         status="success",

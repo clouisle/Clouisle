@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 import uuid
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID
+
 from tortoise import fields, models
+
+if TYPE_CHECKING:
+    from app.models.user import Team, User
 
 
 class NotificationScope(str, Enum):
@@ -101,14 +108,14 @@ class Notification(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
 
     scope = fields.CharEnumField(NotificationScope, max_length=20)
-    team = fields.ForeignKeyField(
+    team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
         "models.Team",
         related_name="notifications",
         null=True,
         on_delete=fields.CASCADE,
     )
     team_id: UUID | None  # type: ignore[assignment]
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="notifications",
         null=True,
@@ -144,13 +151,13 @@ class Notification(models.Model):
 class NotificationRead(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
 
-    notification = fields.ForeignKeyField(
+    notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",
         related_name="reads",
         on_delete=fields.CASCADE,
     )
     notification_id: UUID  # type: ignore[assignment]
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User",
         related_name="notification_reads",
         on_delete=fields.CASCADE,
@@ -171,13 +178,13 @@ class NotificationRead(models.Model):
 class NotificationAudit(models.Model):
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
 
-    notification = fields.ForeignKeyField(
+    notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",
         related_name="audits",
         on_delete=fields.CASCADE,
     )
     notification_id: UUID  # type: ignore[assignment]
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="notification_audits",
         null=True,
@@ -202,7 +209,7 @@ class NotificationDelivery(models.Model):
 
     id = fields.UUIDField(pk=True, default=uuid.uuid4)
 
-    notification = fields.ForeignKeyField(
+    notification: fields.ForeignKeyRelation["Notification"] = fields.ForeignKeyField(
         "models.Notification",
         related_name="deliveries",
         on_delete=fields.CASCADE,

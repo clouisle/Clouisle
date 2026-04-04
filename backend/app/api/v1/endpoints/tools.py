@@ -381,12 +381,12 @@ async def list_file_parsers(
 
         parsers.append(
             ToolOut(
-                id=str(tool.id),
+                id=tool.id,
                 name=tool.name,
                 display_name=tool.display_name,
                 description=tool.description or "",
                 type=ToolType.CUSTOM,
-                category=tool.category,
+                category=ToolCategory(tool.category),
                 icon=tool.icon,
                 parameters=parameters,
                 is_enabled=tool.is_enabled,
@@ -1241,7 +1241,7 @@ async def share_tool(
     # 不能共享给自己的团队
     if tool.team_id == share_data.team_id:
         raise BusinessError(
-            code=ResponseCode.INVALID_INPUT,
+            code=ResponseCode.BAD_REQUEST,
             msg_key="cannot_share_to_own_team",
             status_code=400,
         )
@@ -1279,7 +1279,7 @@ async def share_tool(
             shared_with_team_name=share.shared_with_team.name,
             permission=ToolSharePermission(share.permission),
             shared_by_id=share.shared_by_id,
-            shared_by_name=share.shared_by.username,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
             shared_at=share.shared_at,
         ).model_dump(),
         msg_key="tool_shared_successfully",
@@ -1325,7 +1325,7 @@ async def list_tool_shares(
             shared_with_team_name=share.shared_with_team.name,
             permission=ToolSharePermission(share.permission),
             shared_by_id=share.shared_by_id,
-            shared_by_name=share.shared_by.username,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
             shared_at=share.shared_at,
         )
         for share in shares

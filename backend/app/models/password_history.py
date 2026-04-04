@@ -1,4 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from tortoise import fields, models
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class PasswordHistory(models.Model):

@@ -60,7 +60,9 @@ class KlingVideoAdapter(BaseVideoAdapter):
             "prompt": append_prompt_directives(
                 request.prompt,
                 f"Style: {request.style}" if request.style else None,
-                f"Camera movement: {request.camera_motion}" if request.camera_motion else None,
+                f"Camera movement: {request.camera_motion}"
+                if request.camera_motion
+                else None,
             ),
             "duration": int(round(request.duration)),
             "aspect_ratio": request.aspect_ratio,

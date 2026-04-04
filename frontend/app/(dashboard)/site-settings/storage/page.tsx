@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, Archive, Database } from 'lucide-react'
 import { siteSettingsApi } from '@/lib/api/admin/site-settings'
+import { useCanPerform } from '@/components/permission-guard'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,8 @@ interface StorageSettings {
 
 export default function SiteSettingsStoragePage() {
   const t = useTranslations('siteSettings')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:settings:update')
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -128,6 +131,7 @@ export default function SiteSettingsStoragePage() {
                 min={30}
                 max={3650}
                 className="w-32"
+                disabled={!canUpdate}
               />
               <span className="text-sm text-muted-foreground">{t('days')}</span>
             </div>
@@ -141,6 +145,7 @@ export default function SiteSettingsStoragePage() {
               placeholder="/var/log/clouisle/audit_archives"
               value={settings.audit_log_archive_path}
               onChange={(e) => updateSetting('audit_log_archive_path', e.target.value)}
+              disabled={!canUpdate}
             />
             <p className="text-xs text-muted-foreground">{t('auditLogArchivePathHint')}</p>
           </div>
@@ -158,7 +163,7 @@ export default function SiteSettingsStoragePage() {
         <CardContent>
           <Button
             onClick={() => setShowArchiveDialog(true)}
-            disabled={archiving}
+            disabled={archiving || !canUpdate}
             variant="outline"
           >
             {archiving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -170,7 +175,7 @@ export default function SiteSettingsStoragePage() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('saveChanges')}
         </Button>

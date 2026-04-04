@@ -47,7 +47,7 @@ async def get_current_user_or_api_key(
         )
 
     # 检查是否是 API Key (以 clou_ 开头)
-    user: User
+    user: User | None
     api_key: Optional[APIKey] = None
 
     if auth_token.startswith("clou_"):
@@ -97,7 +97,7 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
         )
 
     # 获取关联的用户
-    user = matched_api_key.user
+    user: User | None = matched_api_key.user
     if not user:
         user = (
             await User.filter(id=matched_api_key.user_id)
@@ -300,7 +300,9 @@ async def check_api_key_agent_access(api_key: Optional[APIKey], agent_id: UUID) 
         )
 
 
-async def check_api_key_workflow_access(api_key: Optional[APIKey], workflow_id: UUID) -> None:
+async def check_api_key_workflow_access(
+    api_key: Optional[APIKey], workflow_id: UUID
+) -> None:
     """
     检查 API Key 是否有权访问指定的 Workflow。
     如果 api_key 为 None（JWT 认证），则跳过检查。

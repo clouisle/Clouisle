@@ -21,9 +21,10 @@ import { siteSettingsApi, type DingTalkSettings } from '@/lib/api/admin/site-set
 interface DingTalkSettingsTabProps {
   settings: DingTalkSettings
   onSettingsChange: (settings: DingTalkSettings) => void
+  canUpdate: boolean
 }
 
-export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSettingsTabProps) {
+export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: DingTalkSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -73,6 +74,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
             <Switch
               checked={settings.dingtalk_enabled}
               onCheckedChange={(checked) => updateSetting('dingtalk_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
 
@@ -81,6 +83,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
             <Select
               value={settings.dingtalk_notification_type}
               onValueChange={(value) => value && updateSetting('dingtalk_notification_type', value as 'webhook' | 'app')}
+              disabled={!canUpdate}
             >
               <SelectTrigger className="min-w-[180px]">
                 <SelectValue>
@@ -125,6 +128,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
                 placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."
                 value={settings.dingtalk_webhook_url}
                 onChange={(e) => updateSetting('dingtalk_webhook_url', e.target.value)}
+                disabled={!canUpdate}
               />
               <p className="text-sm text-muted-foreground">{t('dingtalk.webhookUrlDesc')}</p>
             </div>
@@ -137,6 +141,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
                 placeholder={t('dingtalk.secretPlaceholder')}
                 value={settings.dingtalk_secret}
                 onChange={(e) => updateSetting('dingtalk_secret', e.target.value)}
+                disabled={!canUpdate}
               />
               <p className="text-sm text-muted-foreground">{t('dingtalk.secretDesc')}</p>
             </div>
@@ -170,6 +175,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
                 placeholder={t('dingtalk.appKeyPlaceholder')}
                 value={settings.dingtalk_app_key}
                 onChange={(e) => updateSetting('dingtalk_app_key', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -181,6 +187,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
                 placeholder={t('dingtalk.appSecretPlaceholder')}
                 value={settings.dingtalk_app_secret}
                 onChange={(e) => updateSetting('dingtalk_app_secret', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
 
@@ -191,6 +198,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
                 placeholder={t('dingtalk.agentIdPlaceholder')}
                 value={settings.dingtalk_agent_id}
                 onChange={(e) => updateSetting('dingtalk_agent_id', e.target.value)}
+                disabled={!canUpdate}
               />
             </div>
           </CardContent>
@@ -206,7 +214,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
         <CardContent>
           <Button
             onClick={handleSendTest}
-            disabled={sendingTest || !settings.dingtalk_enabled}
+            disabled={sendingTest || !settings.dingtalk_enabled || !canUpdate}
             variant="outline"
           >
             {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -217,7 +225,7 @@ export function DingTalkSettingsTab({ settings, onSettingsChange }: DingTalkSett
 
       {/* 保存按钮 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || !canUpdate}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {t('save')}
         </Button>

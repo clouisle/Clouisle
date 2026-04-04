@@ -63,10 +63,11 @@ class GoogleImageAdapter(BaseImageAdapter):
         self, request: ImageGenerationRequest
     ) -> ImageGenerationResponse:
         from google import genai
+        from google.genai import types
 
         client_kwargs: dict[str, Any] = {"api_key": self.api_key}
         if self.base_url:
-            client_kwargs["http_options"] = {"base_url": self.base_url}
+            client_kwargs["http_options"] = types.HttpOptions(base_url=self.base_url)
         client = genai.Client(**client_kwargs)
 
         reference_images, config_overrides = self._split_extra_params(request)
@@ -161,7 +162,7 @@ class GoogleImageAdapter(BaseImageAdapter):
         *,
         seed_offset: int,
         overrides: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> Any:
         config: dict[str, Any] = {
             "response_modalities": self._normalize_response_modalities(
                 overrides.get("response_modalities")
@@ -321,11 +322,14 @@ class GoogleImageAdapter(BaseImageAdapter):
         for candidate in candidates:
             content = getattr(candidate, "content", None)
             parts = getattr(content, "parts", None) or []
-            revised_prompt = "\n".join(
-                part.text.strip()
-                for part in parts
-                if getattr(part, "text", None) and part.text.strip()
-            ).strip() or None
+            revised_prompt = (
+                "\n".join(
+                    part.text.strip()
+                    for part in parts
+                    if getattr(part, "text", None) and part.text.strip()
+                ).strip()
+                or None
+            )
 
             for part in parts:
                 inline_data = getattr(part, "inline_data", None)
@@ -333,7 +337,9 @@ class GoogleImageAdapter(BaseImageAdapter):
                 mime_type = getattr(inline_data, "mime_type", None)
                 if not data or not mime_type or not str(mime_type).startswith("image/"):
                     continue
-                image_bytes = data if isinstance(data, bytes) else base64.b64decode(data)
+                image_bytes = (
+                    data if isinstance(data, bytes) else base64.b64decode(data)
+                )
                 images.append(
                     GeneratedImage(
                         image=ImageContent(

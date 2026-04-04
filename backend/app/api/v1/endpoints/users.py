@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -29,19 +29,17 @@ async def serialize_user_with_sso(user: User) -> dict:
     from app.schemas.sso import UserSSOConnectionSchema
 
     if hasattr(user, "_fetched_relations") and "roles" in user._fetched_relations:
-        roles = user.roles
+        roles = cast(Any, user.roles)
     else:
         roles = await user.roles.all().prefetch_related("permissions")
 
-    if (
-        hasattr(user, "_fetched_relations")
-        and "sso_connections" in user._fetched_relations
-    ):
-        sso_connections = user.sso_connections
-    else:
-        sso_connections = await user.sso_connections.all().prefetch_related("provider")
+    from app.models.user_sso_connection import UserSSOConnection
 
-    user_dict = {
+    sso_connections = await UserSSOConnection.filter(user=user).prefetch_related(
+        "provider"
+    )
+
+    user_dict: dict[str, Any] = {
         "id": user.id,
         "username": user.username,
         "email": user.email,

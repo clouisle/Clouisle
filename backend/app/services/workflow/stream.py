@@ -7,7 +7,7 @@ Handles streaming output to clients via SSE (Server-Sent Events).
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, cast
 import asyncio
 import json
 import logging
@@ -124,12 +124,18 @@ class StreamManager:
         event_json = json.dumps(event_data, ensure_ascii=False)
 
         # Publish to channel
-        await redis.publish(self._channel, event_json)
+        publish_result = redis.publish(self._channel, event_json)
+        if asyncio.iscoroutine(publish_result):
+            await publish_result
 
         # Also store in buffer list for late subscribers
-        await redis.rpush(self._buffer_key, event_json)
+        rpush_result = redis.rpush(self._buffer_key, event_json)
+        if asyncio.iscoroutine(rpush_result):
+            await rpush_result
         # Keep buffer for 1 hour
-        await redis.expire(self._buffer_key, 3600)
+        expire_result = redis.expire(self._buffer_key, 3600)
+        if asyncio.iscoroutine(expire_result):
+            await expire_result
 
         logger.debug(
             f"Published event {event.event_type.value} "
@@ -375,7 +381,13 @@ class StreamManager:
 
         # First, send buffered events
         if from_sequence > 0:
-            buffered = await redis.lrange(self._buffer_key, 0, -1)
+            buffered_result = redis.lrange(self._buffer_key, 0, -1)
+            buffered = cast(
+                list[str],
+                await buffered_result
+                if asyncio.iscoroutine(buffered_result)
+                else buffered_result,
+            )
             for event_json in buffered:
                 try:
                     event_data = json.loads(event_json)
@@ -436,9 +448,15 @@ class StreamManager:
             List of all events in order
         """
         redis = await get_redis()
-        buffered = await redis.lrange(self._buffer_key, 0, -1)
+        buffered_result = redis.lrange(self._buffer_key, 0, -1)
+        buffered = cast(
+            list[str],
+            await buffered_result
+            if asyncio.iscoroutine(buffered_result)
+            else buffered_result,
+        )
 
-        events = []
+        events: list[StreamEvent] = []
         for event_json in buffered:
             try:
                 event_data = json.loads(event_json)

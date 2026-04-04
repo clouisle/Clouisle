@@ -361,7 +361,9 @@ class ChunkPreviewItem(BaseModel):
     content: str
     token_count: int
     char_count: int
-    overlap_length: int = Field(default=0, description="Overlap character count at the start of this chunk")
+    overlap_length: int = Field(
+        default=0, description="Overlap character count at the start of this chunk"
+    )
 
 
 class ChunkPreviewResponse(BaseModel):

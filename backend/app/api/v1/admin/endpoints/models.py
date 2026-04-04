@@ -5,7 +5,7 @@ Public endpoints (providers, types, available, default) remain in the platform r
 
 import time
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -182,7 +182,10 @@ async def test_model_connection(
             status_code=404,
         )
 
-    if _requires_api_key(provider := ModelProvider(model.provider)) and not model.api_key:
+    if (
+        _requires_api_key(provider := ModelProvider(model.provider))
+        and not model.api_key
+    ):
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_api_key_required",
@@ -425,6 +428,7 @@ async def _test_chat_model(
     temp_model = TempModel()
     provider_value = provider.value if hasattr(provider, "value") else str(provider)
 
+    adapter: object
     if provider_value == ModelProvider.OPENAI.value:
         adapter = OpenAIAdapter(temp_model)
     elif provider_value == ModelProvider.ANTHROPIC.value:
@@ -546,7 +550,7 @@ def _test_image_model(
 
     from app.llm.adapters.image import create_image_adapter
 
-    create_image_adapter(TempModel())
+    create_image_adapter(cast(Model, TempModel()))
 
 
 def _test_video_model(
@@ -568,4 +572,4 @@ def _test_video_model(
 
     from app.llm.adapters.video import create_video_adapter
 
-    create_video_adapter(TempModel())
+    create_video_adapter(cast(Model, TempModel()))

@@ -118,17 +118,11 @@ class VolcengineClient:
 
         return response.json()
 
-    async def create_task(
-        self, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        return await self._request(
-            "POST", "/contents/generations/tasks", json=payload
-        )
+    async def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "/contents/generations/tasks", json=payload)
 
     async def get_task(self, task_id: str) -> dict[str, Any]:
-        return await self._request(
-            "GET", f"/contents/generations/tasks/{task_id}"
-        )
+        return await self._request("GET", f"/contents/generations/tasks/{task_id}")
 
     async def wait_for_task(self, task_id: str) -> dict[str, Any]:
         elapsed = 0.0

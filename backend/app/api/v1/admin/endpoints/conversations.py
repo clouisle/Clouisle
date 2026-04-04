@@ -70,15 +70,20 @@ async def get_user_team_agent_ids(
     if team_id:
         # Verify access to specific team
         await check_team_access(team_id, user)
-        agent_ids = await Agent.filter(team_id=team_id).values_list("id", flat=True)
+        agent_id_rows = await Agent.filter(team_id=team_id).values_list("id", flat=True)
+        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
     elif user.is_superuser:
         # Superuser can access all agents
-        agent_ids = await Agent.all().values_list("id", flat=True)
+        agent_id_rows = await Agent.all().values_list("id", flat=True)
+        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
     else:
         # Get teams user belongs to
-        memberships = await TeamMember.filter(user=user).values_list(
+        membership_rows = await TeamMember.filter(user=user).values_list(
             "team_id", flat=True
         )
+        memberships = [
+            row[0] if isinstance(row, tuple) else row for row in membership_rows
+        ]
         agent_ids = await Agent.filter(team_id__in=memberships).values_list(
             "id", flat=True
         )
@@ -644,7 +649,9 @@ async def batch_delete_conversations(
     # Update agent stats - group by agent_id to reduce queries
     from collections import defaultdict
 
-    agent_updates = defaultdict(lambda: {"conv_count": 0, "msg_count": 0})
+    agent_updates: dict[UUID, dict[str, int]] = defaultdict(
+        lambda: {"conv_count": 0, "msg_count": 0}
+    )
 
     for conv in conversations:
         if conv.agent_id:

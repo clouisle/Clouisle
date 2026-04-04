@@ -3,14 +3,20 @@
 基于站点设置动态验证密码强度
 """
 
+from __future__ import annotations
+
 import re
-from typing import List, Tuple, Optional
+from typing import TYPE_CHECKING, List, Tuple, Optional
 
 from app.models.site_setting import SiteSetting
 
+if TYPE_CHECKING:
+    from app.models.user import User
+
 
 async def validate_password(
-    password: str, user: Optional["User"] = None  # noqa: F821
+    password: str,
+    user: Optional["User"] = None,  # noqa: F821
 ) -> Tuple[bool, List[str]]:
     """
     根据站点设置验证密码强度

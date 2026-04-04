@@ -4,7 +4,7 @@ LLM node executor.
 Handles AI model inference calls.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -59,7 +59,7 @@ class LLMNodeExecutor(NodeExecutor):
         from app.llm import model_manager
         from app.models.model import Model, TeamModel
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         config = node_data.get("config", {})
         llm_config = node_data.get("llmConfig", config)
@@ -80,13 +80,13 @@ class LLMNodeExecutor(NodeExecutor):
         team_model = (
             await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
         )
+        model_id: str
         if team_model:
-            model = team_model.model
-            model_id = str(model.id)
+            model_id = str(team_model.model.id)
         else:
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
-            if not model:
+            if model is None:
                 return ExecutionResult(error=f"Model not found: {team_model_id}")
             model_id = str(model.id)
 
@@ -142,15 +142,20 @@ class LLMNodeExecutor(NodeExecutor):
                     import json
 
                     schema = json.loads(json_schema_str)
-                    response_format = {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "response",
-                            "strict": True,
-                            "schema": schema,
+                    response_format = cast(
+                        dict[str, Any],
+                        {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "response",
+                                "strict": True,
+                                "schema": schema,
+                            },
                         },
-                    }
-                    logger.info(f"LLM node {node_id}: Constructed response_format={json.dumps(response_format, ensure_ascii=False)}")
+                    )
+                    logger.info(
+                        f"LLM node {node_id}: Constructed response_format={json.dumps(response_format, ensure_ascii=False)}"
+                    )
                 except json.JSONDecodeError as e:
                     logger.warning(
                         f"LLM node {node_id}: Invalid JSON schema: {e}, ignoring response_format"
@@ -183,7 +188,7 @@ class LLMNodeExecutor(NodeExecutor):
             else:
                 # Non-streaming mode
                 result = await model_manager.chat(
-                    messages=messages,
+                    messages=cast(list[Any], messages),
                     model_id=str(model_id),
                     temperature=temperature,
                     max_tokens=max_tokens,

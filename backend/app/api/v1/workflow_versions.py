@@ -9,6 +9,7 @@ Provides REST API for:
 """
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -47,7 +48,7 @@ class CreateVersionResponse(BaseModel):
     """Response for version creation."""
 
     version_id: str
-    version_number: str
+    version_number: int
     status: str
     created_at: str
 
@@ -109,12 +110,14 @@ async def create_version(
     manager = get_version_manager()
 
     version = await manager.create_version(
-        workflow_id=request.workflow_id,
-        nodes=request.nodes,
-        edges=request.edges,
-        config=request.config,
-        description=request.description,
-        created_by=str(current_user.id),
+        workflow_id=UUID(request.workflow_id),
+        definition={
+            "nodes": request.nodes,
+            "edges": request.edges,
+            **request.config,
+        },
+        user_id=current_user.id,
+        description=request.description or "",
     )
 
     return CreateVersionResponse(
@@ -137,7 +140,7 @@ async def get_version_history(
     manager = get_version_manager()
 
     versions = await manager.get_history(
-        workflow_id=workflow_id,
+        workflow_id=UUID(workflow_id),
         limit=limit,
         offset=offset,
         status=status,
@@ -158,7 +161,8 @@ async def get_version(
     """Get a specific version."""
     manager = get_version_manager()
 
-    version = await manager.get_version(workflow_id, version_id)
+    _ = workflow_id
+    version = await manager.get_version(version_id)
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
@@ -174,7 +178,8 @@ async def publish_version(
     """Publish a version."""
     manager = get_version_manager()
 
-    version = await manager.publish_version(workflow_id, version_id)
+    _ = workflow_id
+    version = await manager.publish_version(version_id, current_user.id)
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
@@ -190,7 +195,8 @@ async def archive_version(
     """Archive a version."""
     manager = get_version_manager()
 
-    version = await manager.archive_version(workflow_id, version_id)
+    _ = workflow_id
+    version = await manager.archive_version(version_id)
     if not version:
         raise HTTPException(status_code=404, detail="Version not found")
 
@@ -207,7 +213,8 @@ async def get_version_diff(
     """Get diff between two versions."""
     manager = get_version_manager()
 
-    diff = await manager.diff(workflow_id, from_version, to_version)
+    _ = workflow_id
+    diff = await manager.diff(from_version, to_version)
     if not diff:
         raise HTTPException(status_code=404, detail="Could not generate diff")
 
@@ -228,19 +235,16 @@ async def rollback_version(
     manager = get_version_manager()
 
     result = await manager.rollback(
-        workflow_id=workflow_id,
+        workflow_id=UUID(workflow_id),
         version_id=request.version_id,
-        created_by=str(current_user.id),
+        user_id=current_user.id,
         create_backup=request.create_backup,
     )
 
-    if not result:
-        raise HTTPException(status_code=400, detail="Rollback failed")
-
     return RollbackResponse(
         success=True,
-        new_version_id=result.get("new_version_id"),
-        backup_version_id=result.get("backup_version_id"),
+        new_version_id=result.version_id,
+        backup_version_id=None,
     )
 
 
@@ -254,14 +258,11 @@ async def fork_workflow(
     manager = get_version_manager()
 
     new_version = await manager.fork(
-        source_workflow_id=workflow_id,
-        source_version_id=request.version_id,
-        new_workflow_id=request.new_workflow_id,
-        created_by=str(current_user.id),
+        workflow_id=UUID(workflow_id),
+        version_id=request.version_id,
+        new_workflow_id=UUID(request.new_workflow_id),
+        user_id=current_user.id,
     )
-
-    if not new_version:
-        raise HTTPException(status_code=400, detail="Fork failed")
 
     return ForkResponse(
         success=True,
@@ -277,7 +278,7 @@ async def get_version_stats(
     """Get version statistics for a workflow."""
     manager = get_version_manager()
 
-    stats = await manager.get_stats(workflow_id)
+    stats = await manager.get_stats(UUID(workflow_id))
     return stats
 
 
@@ -426,7 +427,7 @@ async def create_template(
         category=request.category,
         visibility=request.visibility,
         author_id=str(current_user.id),
-        author_name=current_user.name or current_user.email,
+        author_name=current_user.username,
         nodes=request.nodes,
         edges=request.edges,
         variables=variables,

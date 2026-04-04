@@ -9,7 +9,10 @@ def test_summarize_tool_result_for_llm_compacts_media_image_payload():
 
     summary = summarize_tool_result_for_llm("generate_image", content)
 
-    assert summary == "Image generation succeeded. Generated 1 image using model google/gemini-2.5-flash-image."
+    assert (
+        summary
+        == "Image generation succeeded. Generated 1 image using model google/gemini-2.5-flash-image."
+    )
 
 
 def test_summarize_tool_result_for_llm_compacts_media_video_payload():
@@ -35,7 +38,10 @@ def test_extract_media_display_payload_returns_media_payload_for_image():
 
     assert payload is not None
     assert payload["kind"] == "media.image"
-    assert payload["images"][0]["image"]["url"] == "/api/v1/upload/files/generated-images/2026/03/test.png"
+    assert (
+        payload["images"][0]["image"]["url"]
+        == "/api/v1/upload/files/generated-images/2026/03/test.png"
+    )
 
 
 def test_extract_media_display_payload_returns_none_for_non_media():

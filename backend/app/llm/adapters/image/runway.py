@@ -49,16 +49,16 @@ class RunwayImageAdapter(BaseImageAdapter):
 
         return ImageGenerationResponse(images=images, model=self.model_id)
 
-    async def _create_task(
-        self, request: ImageGenerationRequest, index: int
-    ) -> str:
+    async def _create_task(self, request: ImageGenerationRequest, index: int) -> str:
         ratio = closest_aspect_ratio(request.width, request.height)
         payload: dict[str, Any] = {
             "model": self.model_id,
             "promptText": append_prompt_directives(
                 request.prompt,
                 f"Style: {request.style}" if request.style else None,
-                f"Avoid: {request.negative_prompt}" if request.negative_prompt else None,
+                f"Avoid: {request.negative_prompt}"
+                if request.negative_prompt
+                else None,
             ),
             "ratio": _RUNWAY_IMAGE_RATIOS.get(ratio, _RUNWAY_IMAGE_RATIOS["1:1"]),
         }
@@ -82,7 +82,9 @@ class RunwayImageAdapter(BaseImageAdapter):
     def _parse_images(self, task: dict[str, Any]) -> list[GeneratedImage]:
         status = str(task.get("status", "")).upper()
         if status != "SUCCEEDED":
-            message = task.get("failure") or task.get("error") or "Runway image task failed"
+            message = (
+                task.get("failure") or task.get("error") or "Runway image task failed"
+            )
             raise ProviderError(
                 message=str(message),
                 provider="runway",

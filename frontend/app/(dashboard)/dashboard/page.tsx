@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { dashboardApi, type DashboardStats, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api/admin/dashboard'
 import { adminTOTPApi, type TOTPStatsResponse } from '@/lib/api/admin/users'
+import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
@@ -221,84 +222,88 @@ export default function DashboardPage() {
 
   if (isLoadingStats || !stats) {
     return (
-      <div className="flex h-full flex-col">
-        <Header />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <RoutePermissionGuard>
+        <div className="flex h-full flex-col">
+          <Header />
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
         </div>
-      </div>
+      </RoutePermissionGuard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <Header />
-      <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{tHome('title')}</h1>
-              <p className="text-muted-foreground mt-1">{tHome('description')}</p>
+    <RoutePermissionGuard>
+      <div className="flex h-full flex-col">
+        <Header />
+        <div className="flex-1 overflow-auto p-4">
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">{tHome('title')}</h1>
+                <p className="text-muted-foreground mt-1">{tHome('description')}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-4 mb-6">
-            <Tabs value={activeTab} onValueChange={handleTabChange}>
-              <TabsList>
-                <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
-                <TabsTrigger value="models">{t('tabs.models')}</TabsTrigger>
-                <TabsTrigger value="analytics">{t('tabs.analytics')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {/* Filters */}
+            <div className="flex items-center gap-4 mb-6">
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <TabsList>
+                  <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
+                  <TabsTrigger value="models">{t('tabs.models')}</TabsTrigger>
+                  <TabsTrigger value="analytics">{t('tabs.analytics')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
 
-            <div className="flex items-center gap-2 ml-auto">
-              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleRefresh}
-                disabled={isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics}
-              >
-                <RefreshCw className={`h-4 w-4 ${(isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics) ? 'animate-spin' : ''}`} />
-              </Button>
+              <div className="flex items-center gap-2 ml-auto">
+                <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics}
+                >
+                  <RefreshCw className={`h-4 w-4 ${(isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics) ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </div>
+
+            {/* Tab Content */}
+            {activeTab === 'overview' && (
+              <OverviewTab
+                stats={stats}
+                trendsData={trendsData}
+                isLoading={isLoadingOverview}
+                totpStats={totpStats}
+              />
+            )}
+
+            {activeTab === 'models' && (
+              <ModelsTab
+                stats={stats}
+                modelData={modelDistribution}
+                teamTokenData={teamTokenUsage}
+                topAgentsData={topAgentsByTokens}
+                trendsData={trendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
+                isLoading={isLoadingModels}
+              />
+            )}
+
+            {activeTab === 'analytics' && (
+              <AnalyticsTab
+                stats={stats}
+                workflowData={workflowSummary}
+                topAgentsData={topAgentsByConversations}
+                isLoading={isLoadingAnalytics}
+                onMetricChange={handleAnalyticsMetricChange}
+                currentMetric={analyticsMetric}
+              />
+            )}
           </div>
-
-          {/* Tab Content */}
-          {activeTab === 'overview' && (
-            <OverviewTab
-              stats={stats}
-              trendsData={trendsData}
-              isLoading={isLoadingOverview}
-              totpStats={totpStats}
-            />
-          )}
-
-          {activeTab === 'models' && (
-            <ModelsTab
-              stats={stats}
-              modelData={modelDistribution}
-              teamTokenData={teamTokenUsage}
-              topAgentsData={topAgentsByTokens}
-              trendsData={trendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
-              isLoading={isLoadingModels}
-            />
-          )}
-
-          {activeTab === 'analytics' && (
-            <AnalyticsTab
-              stats={stats}
-              workflowData={workflowSummary}
-              topAgentsData={topAgentsByConversations}
-              isLoading={isLoadingAnalytics}
-              onMetricChange={handleAnalyticsMetricChange}
-              currentMetric={analyticsMetric}
-            />
-          )}
         </div>
       </div>
-    </div>
+    </RoutePermissionGuard>
   )
 }

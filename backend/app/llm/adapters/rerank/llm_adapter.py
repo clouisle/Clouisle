@@ -101,9 +101,7 @@ class LLMRerankAdapter(BaseRerankAdapter):
             return content
         return content[: self.MAX_DOCUMENT_CHARS].rstrip() + "\n...[truncated]"
 
-    def _parse_results(
-        self, content: str, document_count: int
-    ) -> list[RerankResult]:
+    def _parse_results(self, content: str, document_count: int) -> list[RerankResult]:
         payload = self._extract_json_payload(content)
         if isinstance(payload, list):
             items = payload
@@ -119,7 +117,10 @@ class LLMRerankAdapter(BaseRerankAdapter):
             if not isinstance(item, dict):
                 continue
             try:
-                index = int(item.get("index"))
+                raw_index = item.get("index")
+                if raw_index is None:
+                    continue
+                index = int(raw_index)
             except (TypeError, ValueError):
                 continue
             if index < 0 or index >= document_count or index in seen_indices:

@@ -111,9 +111,7 @@ class SiliconFlowClient:
 
         return response.json()
 
-    async def create_task(
-        self, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/video/submit", json=payload)
 
     async def get_task(self, request_id: str) -> dict[str, Any]:
