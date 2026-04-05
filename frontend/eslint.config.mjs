@@ -23,6 +23,7 @@ const eslintConfig = defineConfig([
       "react-hooks/purity": "off",
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/refs": "off",
+      "@next/next/no-img-element": "off",
     },
   },
 ]);

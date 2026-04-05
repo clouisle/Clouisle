@@ -97,8 +97,8 @@ async def serialize_relation_with_entities(relation: MemoryRelation) -> dict:
 async def list_entities(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    user_id: Optional[UUID] = None,
-    entity_type: Optional[str] = None,
+    user_id: Optional[list[UUID]] = Query(None),
+    entity_type: Optional[list[str]] = Query(None),
     search: Optional[str] = None,
     current_user: User = Depends(deps.PermissionChecker("admin:memory:read")),
 ) -> Any:
@@ -110,10 +110,10 @@ async def list_entities(
     query = MemoryEntity.all()
 
     if user_id:
-        query = query.filter(user_id=user_id)
+        query = query.filter(user_id__in=user_id)
 
     if entity_type:
-        query = query.filter(entity_type=entity_type)
+        query = query.filter(entity_type__in=entity_type)
 
     if search:
         query = query.filter(

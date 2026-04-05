@@ -44,7 +44,7 @@ export default function SSOCallbackPage() {
       toast.error(t('loginFailed'))
       router.push('/login')
     }
-  }, [router, searchParams, locale, t])
+  }, [error, router, searchParams, locale, t])
 
   return (
     <div className="flex min-h-screen items-center justify-center">
@@ -52,10 +52,12 @@ export default function SSOCallbackPage() {
         {error ? (
           <>
             <p className="mb-2 text-lg font-medium">
-              {error === 'inactive' ? t('ssoCallbackInactiveTitle') : t('ssoCallbackFailedTitle')}
+              {error === 'inactive' || error === 'pending_approval'
+                ? t('ssoCallbackInactiveTitle')
+                : t('ssoCallbackFailedTitle')}
             </p>
             <p className="mb-6 text-sm text-muted-foreground">
-              {error === 'inactive'
+              {error === 'inactive' || error === 'pending_approval'
                 ? t('ssoCallbackInactiveDescription')
                 : t('ssoCallbackFailedDescription')}
             </p>

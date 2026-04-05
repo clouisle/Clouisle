@@ -16,7 +16,11 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { permissionsApi, type Permission } from '@/lib/api/admin/roles'
+import {
+  permissionsApi,
+  type Permission,
+  type PermissionScopeOption,
+} from '@/lib/api/admin/roles'
 import type { PageData } from '@/lib/api/users'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { Button } from '@/components/ui/button'
@@ -71,15 +75,17 @@ export function PermissionsClient() {
 
   // 数据状态
   const [permissions, setPermissions] = React.useState<Permission[]>([])
+  const [scopeOptions, setScopeOptions] = React.useState<PermissionScopeOption[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
   const [pageData, setPageData] = React.useState<PageData<Permission> | null>(null)
-  
+
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
+  const selectedScopes = React.useMemo(() => Array.from(scopeFilter), [scopeFilter])
 
   // 防抖搜索
   React.useEffect(() => {
@@ -106,9 +112,12 @@ export function PermissionsClient() {
   const loadPermissions = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      // 如果有scope筛选，只传第一个scope（后端只支持单个scope）
-      const scopeParam = scopeFilter.size > 0 ? Array.from(scopeFilter)[0] : undefined
-      const data = await permissionsApi.getPermissions(page, pageSize, scopeParam, debouncedSearchQuery || undefined)
+      const data = await permissionsApi.getPermissions(
+        page,
+        pageSize,
+        selectedScopes.length > 0 ? selectedScopes : undefined,
+        debouncedSearchQuery || undefined
+      )
       setPermissions(data.items)
       setPageData(data)
     } catch {
@@ -116,48 +125,45 @@ export function PermissionsClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize, scopeFilter, debouncedSearchQuery])
+  }, [page, pageSize, selectedScopes, debouncedSearchQuery])
 
   React.useEffect(() => {
     loadPermissions()
   }, [loadPermissions])
 
-  // 本地筛选（仅用于多个scope的情况）
-  const filteredPermissions = React.useMemo(() => {
-    if (scopeFilter.size <= 1) {
-      // 单个或无scope筛选时，直接使用API返回的结果
-      return permissions
+  React.useEffect(() => {
+    const loadScopeOptions = async () => {
+      try {
+        const data = await permissionsApi.getPermissionScopes()
+        setScopeOptions(data)
+      } catch {
+        // 错误已由 API 客户端处理
+      }
     }
-    // 多个scope筛选时，需要在前端过滤
-    return permissions.filter(permission => scopeFilter.has(permission.scope))
-  }, [permissions, scopeFilter])
-  
+
+    loadScopeOptions()
+  }, [])
+
+  const filteredPermissions = permissions
+
   // 检查是否有筛选条件
   const isFiltered = searchQuery || scopeFilter.size > 0
-  
+
+  const handleScopeFilterChange = (values: Set<string>) => {
+    setScopeFilter(values)
+    setPage(1)
+    setSelectedPermissions(new Set())
+  }
+
   // 重置筛选
   const resetFilters = () => {
     setSearchQuery('')
+    setDebouncedSearchQuery('')
     setScopeFilter(new Set())
+    setPage(1)
+    setSelectedPermissions(new Set())
   }
-  
-  // Scope 选项（包含数量统计）
-  const scopeOptions = React.useMemo(() => {
-    const scopeCounts = new Map<string, number>()
-    
-    permissions.forEach(permission => {
-      scopeCounts.set(permission.scope, (scopeCounts.get(permission.scope) || 0) + 1)
-    })
-    
-    return Array.from(scopeCounts.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([scope, count]) => ({
-        value: scope,
-        label: scope,
-        count,
-      }))
-  }, [permissions])
-  
+
   // 可选择的权限（排除系统权限和通配符权限）
   const selectablePermissions = React.useMemo(() => {
     return filteredPermissions.filter(p => !p.is_system && p.code !== '*')
@@ -268,7 +274,7 @@ export function PermissionsClient() {
             title={t('scope')}
             options={scopeOptions}
             selectedValues={scopeFilter}
-            onSelectionChange={setScopeFilter}
+            onSelectionChange={handleScopeFilterChange}
           />
           
           {isFiltered && (

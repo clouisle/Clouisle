@@ -16,6 +16,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -29,6 +36,7 @@ import {
   McpToolInfo,
   toolsApi
 } from '@/lib/api/tools'
+import type { UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
 
 interface McpToolDialogProps {
@@ -36,6 +44,9 @@ interface McpToolDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
+  teams?: UserTeamInfo[]
+  selectedTeamId?: string
+  onSelectedTeamChange?: (teamId: string) => void
 }
 
 interface EnvVar {
@@ -48,11 +59,16 @@ interface Header {
   value: string
 }
 
+const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
 export function McpToolDialog({
   tool,
   open,
   onOpenChange,
   onSave,
+  teams = [],
+  selectedTeamId,
+  onSelectedTeamChange,
 }: McpToolDialogProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
@@ -62,8 +78,9 @@ export function McpToolDialog({
   // 基本信息
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [icon, setIcon] = useState('🔌')
+  const [icon, setIcon] = useState('')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [nameError, setNameError] = useState('')
 
   // 传输类型
   const [transportType, setTransportType] = useState<McpTransportType>('stdio')
@@ -97,8 +114,9 @@ export function McpToolDialog({
       if (tool) {
         setName(tool.name)
         setDisplayName(tool.display_name)
-        setIcon(tool.icon || '🔌')
+        setIcon(tool.icon || '')
         setIsEnabled(tool.is_enabled)
+        setNameError('')
 
         if (tool.mcp_config) {
           const transport = tool.mcp_config.transport || 'stdio'
@@ -132,8 +150,9 @@ export function McpToolDialog({
         // 重置为默认值
         setName('')
         setDisplayName('')
-        setIcon('🔌')
+        setIcon('')
         setIsEnabled(true)
+        setNameError('')
         setTransportType('stdio')
         setCommand('')
         setArgs([''])
@@ -209,6 +228,13 @@ export function McpToolDialog({
   }
 
   const handleSave = async () => {
+    if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      setNameError(t('error.invalidName'))
+      return
+    }
+
+    setNameError('')
+
     setIsLoading(true)
     try {
       const mcpConfig = buildMcpConfig()
@@ -230,7 +256,6 @@ export function McpToolDialog({
       }
 
       await onSave(data)
-      onOpenChange(false)
     } finally {
       setIsLoading(false)
     }
@@ -306,15 +331,39 @@ export function McpToolDialog({
         <div className="space-y-6 py-4">
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
+            {!isEditing && onSelectedTeamChange && teams.length > 0 && (
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="team">{tCommon('team')}</Label>
+                <Select value={selectedTeamId} onValueChange={onSelectedTeamChange}>
+                  <SelectTrigger id="team">
+                    <SelectValue>
+                      {teams.find((team) => team.id === selectedTeamId)?.name || t('selectTeam')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false}>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="name">{t('form.name')}</Label>
               <Input
                 id="name"
                 placeholder="my_mcp_server"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (nameError) setNameError('')
+                }}
                 disabled={isEditing}
+                aria-invalid={!!nameError}
               />
+              {nameError && <p className="text-sm text-destructive">{nameError}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="displayName">{t('form.displayName')}</Label>
@@ -337,7 +386,7 @@ export function McpToolDialog({
                 category="icons"
                 placeholder={
                   <span className="text-2xl">
-                    {icon.startsWith('http') ? '🔌' : icon}
+                    {icon.startsWith('http') ? '' : icon}
                   </span>
                 }
               />

@@ -185,7 +185,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
                 />
               </div>
             ) : (
-              <span className="text-xl">{tool.icon || '🔧'}</span>
+              <span className="text-xl">{tool.icon}</span>
             )}
             {tool.display_name}
           </SheetTitle>

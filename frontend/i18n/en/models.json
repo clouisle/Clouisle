@@ -146,6 +146,7 @@
       "kling": "Kling",
       "stability": "Stability AI",
       "midjourney": "Midjourney",
+      "siliconflow": "SiliconFlow",
       "volcengine": "Volcengine",
       "custom": "Custom"
     },

@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI):
         init_agent_media_generation_fields,
         init_permission_is_system_field,
         init_password_expiration,
+        init_user_approval_status_field,
         init_totp_fields,
         init_agent_kb_search_mode,
         init_chunk_status,
@@ -117,6 +118,11 @@ async def lifespan(app: FastAPI):
         await init_password_expiration()
     except Exception as e:
         logger.warning(f"Password expiration migration failed: {e}")
+
+    try:
+        await init_user_approval_status_field()
+    except Exception as e:
+        logger.warning(f"User approval_status migration failed: {e}")
 
     try:
         await init_totp_fields()

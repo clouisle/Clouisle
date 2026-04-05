@@ -89,8 +89,8 @@ export interface ModelUpdateInput {
 export interface ModelQueryParams {
   page?: number
   pageSize?: number
-  provider?: string
-  model_type?: string
+  provider?: string[]
+  model_type?: string[]
   is_enabled?: boolean
   search?: string
 }

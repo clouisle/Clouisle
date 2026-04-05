@@ -86,7 +86,7 @@ const docTypeIcons: Record<string, React.ReactNode> = {
   docx: <FileType className="h-4 w-4 text-blue-500" />,
   doc: <FileType className="h-4 w-4 text-blue-500" />,
   txt: <FileText className="h-4 w-4 text-gray-500" />,
-  md: <FileText className="h-4 w-4 text-gray-500" />,
+  markdown: <FileText className="h-4 w-4 text-gray-500" />,
   html: <FileType className="h-4 w-4 text-orange-500" />,
   csv: <FileType className="h-4 w-4 text-green-500" />,
   xlsx: <FileType className="h-4 w-4 text-green-600" />,
@@ -133,13 +133,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         page: number
         pageSize: number
         search?: string
-        status?: DocumentStatus
-        doc_type?: DocumentType
+        status?: DocumentStatus[]
+        doc_type?: DocumentType[]
       } = { page, pageSize }
       
       if (searchQuery) params.search = searchQuery
-      if (statusFilter.size === 1) params.status = Array.from(statusFilter)[0] as DocumentStatus
-      if (typeFilter.size === 1) params.doc_type = Array.from(typeFilter)[0] as DocumentType
+      if (statusFilter.size > 0) params.status = Array.from(statusFilter) as DocumentStatus[]
+      if (typeFilter.size > 0) params.doc_type = Array.from(typeFilter) as DocumentType[]
       
       const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, params)
       setDocuments(data.items)
@@ -198,7 +198,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
     { value: 'txt', label: 'TXT' },
-    { value: 'md', label: 'Markdown' },
+    { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
     { value: 'csv', label: 'CSV' },
     { value: 'xlsx', label: 'XLSX' },

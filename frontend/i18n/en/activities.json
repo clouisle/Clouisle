@@ -17,7 +17,8 @@
       "status": "Status",
       "triggerType": "Trigger Type",
       "triggeredBy": "Triggered By",
-      "debugRuns": "Debug Runs Only"
+      "debugRuns": "Debug Runs Only",
+      "untitledOnly": "Untitled Only"
     },
     "status": {
       "success": "Success",

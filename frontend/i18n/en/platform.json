@@ -317,6 +317,7 @@
         "loadFailed": "Failed to load tool",
         "saveFailed": "Failed to save",
         "nameRequired": "Tool name is required",
+        "invalidName": "Tool name must start with a letter and contain only letters, numbers, and underscores",
         "duplicateParamName": "Parameter names must be unique"
       },
       "successMessages": {

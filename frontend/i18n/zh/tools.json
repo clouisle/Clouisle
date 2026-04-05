@@ -202,6 +202,7 @@
       "cannotShareBuiltin": "无法分享内置工具",
       "noTeamSelected": "未选择团队",
       "nameRequired": "请输入工具名称",
+      "invalidName": "工具名称必须以字母开头，且只能包含字母、数字和下划线",
       "duplicateParamName": "参数名称不能重复"
     },
     "success": {

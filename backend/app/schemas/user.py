@@ -26,6 +26,11 @@ class Permission(PermissionBase):
         from_attributes = True
 
 
+class PermissionScopeOption(BaseModel):
+    value: str
+    label: str
+
+
 # Role Schemas
 class RoleBase(BaseModel):
     name: str
@@ -50,6 +55,7 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     is_active: Optional[bool] = True
+    approval_status: Optional[str] = "approved"
     is_superuser: Optional[bool] = False
     avatar_url: Optional[str] = None
     locale: Optional[str] = "en"
@@ -84,6 +90,7 @@ class UserInDBBase(UserBase):
 
 
 class User(UserInDBBase):
+    status: str = "active"
     roles: List[Role] = []
     sso_connections: List[UserSSOConnectionSchema] = []
 
@@ -100,6 +107,7 @@ class User(UserInDBBase):
                 "username": obj.username,
                 "email": obj.email,
                 "is_active": obj.is_active,
+                "approval_status": getattr(obj, "approval_status", "approved"),
                 "is_superuser": obj.is_superuser,
                 "email_verified": obj.email_verified,
                 "avatar_url": obj.avatar_url,

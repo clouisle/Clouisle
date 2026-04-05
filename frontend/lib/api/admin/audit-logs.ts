@@ -26,8 +26,14 @@ export interface AuditLogListParams {
   page?: number
   page_size?: number
   search?: string
-  status?: string
-  action?: string
+  status?: string[]
+  action?: string[]
+}
+
+export interface AuditLogActionOption {
+  value: string
+  translation_key: string
+  fallback_label: string
 }
 
 export interface AuditLogStats {
@@ -52,12 +58,26 @@ export interface PaginatedResponse<T> {
   total_pages: number
 }
 
+const buildAuditLogQuery = (params: AuditLogListParams & { format?: 'csv' | 'json' }) => {
+  const queryParams = new URLSearchParams()
+  if (params.page !== undefined) queryParams.append('page', String(params.page))
+  if (params.page_size !== undefined) queryParams.append('page_size', String(params.page_size))
+  if (params.search) queryParams.append('search', params.search)
+  params.status?.forEach((value) => queryParams.append('status', value))
+  params.action?.forEach((value) => queryParams.append('action', value))
+  if (params.format) queryParams.append('format', params.format)
+  return queryParams.toString()
+}
+
 export const auditLogsApi = {
   list: async (params: AuditLogListParams): Promise<PaginatedResponse<AuditLog>> =>
-    api.get('/admin/audit-logs', { params }),
+    api.get(`/admin/audit-logs?${buildAuditLogQuery(params)}`),
 
   get: async (id: string): Promise<AuditLog> =>
     api.get(`/admin/audit-logs/${id}`),
+
+  getActions: async (): Promise<AuditLogActionOption[]> =>
+    api.get('/admin/audit-logs/actions'),
 
   getStats: async (): Promise<AuditLogStats> =>
     api.get('/admin/audit-logs/stats'),
@@ -70,8 +90,7 @@ export const auditLogsApi = {
 
   export: async (params: AuditLogListParams, format: 'csv' | 'json' = 'csv'): Promise<Blob> => {
     const { axiosInstance } = await import('../client')
-    const response = await axiosInstance.get('/admin/audit-logs/export', {
-      params: { ...params, format },
+    const response = await axiosInstance.get(`/admin/audit-logs/export?${buildAuditLogQuery({ ...params, format })}`, {
       responseType: 'blob',
     })
     return response.data

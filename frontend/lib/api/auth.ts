@@ -28,6 +28,8 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  approval_status: 'approved' | 'pending'
+  status: 'active' | 'inactive' | 'pending'
   is_superuser: boolean
   email_verified: boolean
   avatar_url: string | null

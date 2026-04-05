@@ -119,6 +119,11 @@ class User(models.Model):
     email = fields.CharField(max_length=255, unique=True)
     hashed_password = fields.CharField(max_length=255)
     is_active = fields.BooleanField(default=True)
+    approval_status = fields.CharField(
+        max_length=20,
+        default="approved",
+        description="Approval status: approved, pending",
+    )
     is_superuser = fields.BooleanField(default=False)
     email_verified = fields.BooleanField(
         default=False, description="Email verification status"

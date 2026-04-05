@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { PageData } from './users'
 
 // ============ Types ============
 
@@ -104,6 +105,30 @@ export interface ToolListResponse {
   builtin: Tool[]
   custom: Tool[]
   mcp: Tool[]
+}
+
+export interface ToolFilterOption {
+  value: string
+  label: string
+}
+
+export interface ToolFilterOptions {
+  types: ToolFilterOption[]
+  categories: ToolFilterOption[]
+  statuses: ToolFilterOption[]
+  teams: ToolFilterOption[]
+  creators: ToolFilterOption[]
+}
+
+export interface ToolListQueryParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  type?: string[]
+  category?: string[]
+  status?: string[]
+  team_id?: string[]
+  creator?: string[]
 }
 
 export interface ToolCreateInput {
@@ -472,10 +497,10 @@ const applyToolListOverrides = (tools: Tool[]): Tool[] =>
 
 export const toolsApi = {
   /**
-   * 获取所有工具（内置 + 自定义 + MCP）
+   * 获取单个团队的工具列表（兼容现有平台页）
    */
   list: async (teamId: string): Promise<ToolListResponse> => {
-    const response = await api.get<ToolListResponse>('/tools', { params: { team_id: teamId } })
+    const response = await api.get<ToolListResponse>('/tools/legacy', { params: { team_id: teamId } })
     return {
       ...response,
       builtin: applyToolListOverrides(response.builtin),
@@ -483,6 +508,31 @@ export const toolsApi = {
       mcp: applyToolListOverrides(response.mcp),
     }
   },
+
+  /**
+   * 获取工具分页列表（dashboard）
+   */
+  listPage: async (params: ToolListQueryParams = {}): Promise<PageData<Tool>> => {
+    const { page = 1, pageSize = 10, search, type, category, status, team_id, creator } = params
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    if (search) queryParams.append('search', search)
+    type?.forEach((value) => queryParams.append('type', value))
+    category?.forEach((value) => queryParams.append('category', value))
+    status?.forEach((value) => queryParams.append('status', value))
+    team_id?.forEach((value) => queryParams.append('team_id', value))
+    creator?.forEach((value) => queryParams.append('creator', value))
+
+    const response = await api.get<PageData<Tool>>(`/tools?${queryParams.toString()}`)
+    return {
+      ...response,
+      items: applyToolListOverrides(response.items),
+    }
+  },
+
+  getFilterOptions: async (): Promise<ToolFilterOptions> =>
+    api.get<ToolFilterOptions>('/tools/filters'),
 
   /**
    * 获取所有内置工具

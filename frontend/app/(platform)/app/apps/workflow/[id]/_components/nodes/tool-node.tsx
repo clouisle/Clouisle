@@ -2,22 +2,22 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Wrench, AlertCircle } from 'lucide-react'
+import { Wrench, AlertCircle, Clock3, Calculator, Search, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { ToolCategory, ToolType } from '@/lib/api'
 
 // 分类图标
-const categoryIcons: Record<ToolCategory, string> = {
-  time: '🕐',
-  math: '🔢',
-  search: '🔍',
-  web: '🌐',
-  file: '📁',
-  code: '💻',
-  api: '🔗',
-  data: '📊',
-  other: '⚙️',
+const categoryIcons: Record<ToolCategory, React.ReactNode> = {
+  time: <Clock3 className="h-3.5 w-3.5" />,
+  math: <Calculator className="h-3.5 w-3.5" />,
+  search: <Search className="h-3.5 w-3.5" />,
+  web: <Globe className="h-3.5 w-3.5" />,
+  file: <FolderOpen className="h-3.5 w-3.5" />,
+  code: <Code2 className="h-3.5 w-3.5" />,
+  api: <Link className="h-3.5 w-3.5" />,
+  data: <ChartColumn className="h-3.5 w-3.5" />,
+  other: <Wrench className="h-3.5 w-3.5" />,
 }
 
 // 类型标签配置

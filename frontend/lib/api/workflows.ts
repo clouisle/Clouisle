@@ -108,11 +108,11 @@ export interface WorkflowRunStats {
 export interface AllWorkflowRunsQueryParams {
   page?: number
   pageSize?: number
-  teamId?: string
-  workflowId?: string
-  status?: RunStatus
-  triggerType?: TriggerType
-  userId?: string
+  teamId?: string[]
+  workflowId?: string[]
+  status?: RunStatus[]
+  triggerType?: TriggerType[]
+  userId?: string[]
   isDebug?: boolean
   search?: string
 }
@@ -399,11 +399,11 @@ export const workflowsApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (teamId) queryParams.append('team_id', teamId)
-    if (workflowId) queryParams.append('workflow_id', workflowId)
-    if (status) queryParams.append('status', status)
-    if (triggerType) queryParams.append('trigger_type', triggerType)
-    if (userId) queryParams.append('user_id', userId)
+    teamId?.forEach((value) => queryParams.append('team_id', value))
+    workflowId?.forEach((value) => queryParams.append('workflow_id', value))
+    status?.forEach((value) => queryParams.append('status', value))
+    triggerType?.forEach((value) => queryParams.append('trigger_type', value))
+    userId?.forEach((value) => queryParams.append('user_id', value))
     if (isDebug !== undefined) queryParams.append('is_debug', String(isDebug))
     if (search) queryParams.append('search', search)
     return api.get<PageData<WorkflowRunListItemWithWorkflow>>(

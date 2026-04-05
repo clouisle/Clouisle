@@ -102,15 +102,15 @@ export function KnowledgeBasesClient() {
         page: number
         pageSize: number
         search?: string
-        status?: string
+        status?: string[]
       } = { page, pageSize }
       
       if (searchQuery) {
         params.search = searchQuery
       }
       
-      if (statusFilter.size === 1) {
-        params.status = Array.from(statusFilter)[0]
+      if (statusFilter.size > 0) {
+        params.status = Array.from(statusFilter)
       }
       
       const data = await knowledgeBasesApi.getKnowledgeBases(params)

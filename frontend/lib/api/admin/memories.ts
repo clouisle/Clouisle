@@ -50,10 +50,18 @@ export const memoriesApi = {
   getEntities: (params: {
     page?: number
     page_size?: number
-    user_id?: string
-    entity_type?: string
+    user_id?: string[]
+    entity_type?: string[]
     search?: string
-  }) => api.get<PageData<MemoryEntity>>('/admin/memories/entities', { params }),
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params.page !== undefined) queryParams.append('page', String(params.page))
+    if (params.page_size !== undefined) queryParams.append('page_size', String(params.page_size))
+    params.user_id?.forEach((value) => queryParams.append('user_id', value))
+    params.entity_type?.forEach((value) => queryParams.append('entity_type', value))
+    if (params.search) queryParams.append('search', params.search)
+    return api.get<PageData<MemoryEntity>>(`/admin/memories/entities?${queryParams.toString()}`)
+  },
 
   getStats: () => api.get<MemoryStats>('/admin/memories/entities/stats'),
 

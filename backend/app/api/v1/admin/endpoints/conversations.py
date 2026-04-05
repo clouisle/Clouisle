@@ -96,9 +96,9 @@ async def get_user_team_agent_ids(
 
 @router.get("", response_model=Response[PageData[ConversationListOut]])
 async def list_all_conversations(
-    team_id: UUID | None = Query(None, description="Filter by team"),
-    agent_id: UUID | None = Query(None, description="Filter by agent"),
-    user_id: UUID | None = Query(None, description="Filter by user"),
+    team_id: list[UUID] | None = Query(None, description="Filter by team"),
+    agent_id: list[UUID] | None = Query(None, description="Filter by agent"),
+    user_id: list[UUID] | None = Query(None, description="Filter by user"),
     search: str | None = Query(None, description="Search in title"),
     untitled_only: bool = Query(False, description="Show only untitled conversations"),
     page: int = Query(1, ge=1),
@@ -124,7 +124,17 @@ async def list_all_conversations(
                 break
 
     # Get agent IDs user has access to (team isolation for non-superusers)
-    accessible_agent_ids = await get_user_team_agent_ids(current_user, team_id)
+    if team_id:
+        for current_team_id in team_id:
+            await check_team_access(current_team_id, current_user)
+        agent_id_rows = await Agent.filter(team_id__in=team_id).values_list(
+            "id", flat=True
+        )
+        accessible_agent_ids = [
+            row[0] if isinstance(row, tuple) else row for row in agent_id_rows
+        ]
+    else:
+        accessible_agent_ids = await get_user_team_agent_ids(current_user)
 
     if not accessible_agent_ids:
         # User has no access to any agents
@@ -146,8 +156,9 @@ async def list_all_conversations(
 
     # Apply additional filters
     if agent_id:
-        # Verify agent is in accessible list
-        if agent_id not in accessible_agent_ids:
+        selected_agent_ids = set(agent_id)
+        accessible_agent_id_set = set(accessible_agent_ids)
+        if not selected_agent_ids & accessible_agent_id_set:
             return success(
                 data={
                     "items": [],
@@ -156,16 +167,16 @@ async def list_all_conversations(
                     "page_size": page_size,
                 }
             )
-        query = query.filter(agent_id=agent_id)
+        query = query.filter(agent_id__in=list(selected_agent_ids & accessible_agent_id_set))
 
     # user_id filter only applies for admins (members already filtered to own)
     if user_id and has_dashboard_access:
-        query = query.filter(user_id=user_id)
+        query = query.filter(user_id__in=user_id)
 
     if untitled_only:
         # Filter conversations with null or empty title
         query = query.filter(Q(title__isnull=True) | Q(title=""))
-    elif search:
+    if search:
         query = query.filter(title__icontains=search)
 
     # Get total count

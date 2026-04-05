@@ -242,18 +242,19 @@ async def mark_read(
 
 @admin_router.get("", response_model=Response[dict])
 async def admin_list_notifications(
-    scope: NotificationScope | None = Query(None),
+    scope: list[NotificationScope] | None = Query(None),
     team_id: UUID | None = Query(None),
     user_id: UUID | None = Query(None),
     type: str | None = Query(None),
-    level: str | None = Query(None),
+    level: list[str] | None = Query(None),
+    search: str | None = Query(None),
     include_expired: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     if not current_user.is_superuser:
-        if scope == NotificationScope.GLOBAL:
+        if scope and NotificationScope.GLOBAL in scope:
             raise BusinessError(
                 code=ResponseCode.INSUFFICIENT_PRIVILEGES,
                 msg_key="insufficient_privileges",
@@ -270,7 +271,7 @@ async def admin_list_notifications(
     query = Notification.all()
 
     if scope:
-        query = query.filter(scope=scope)
+        query = query.filter(scope__in=scope)
     if team_id:
         query = query.filter(team_id=team_id)
     if user_id:
@@ -278,7 +279,13 @@ async def admin_list_notifications(
     if type:
         query = query.filter(type=type)
     if level:
-        query = query.filter(level=level)
+        query = query.filter(level__in=level)
+    if search:
+        query = query.filter(
+            Q(title__icontains=search)
+            | Q(content__icontains=search)
+            | Q(type__icontains=search)
+        )
 
     if not include_expired:
         now = now_utc()

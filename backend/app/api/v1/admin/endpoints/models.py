@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 async def list_models(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    provider: Optional[str] = Query(None),
-    model_type: Optional[str] = Query(None),
+    provider: Optional[list[str]] = Query(None),
+    model_type: Optional[list[str]] = Query(None),
     is_enabled: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
     current_user: User = Depends(deps.PermissionChecker("admin:model:read")),
@@ -49,9 +49,9 @@ async def list_models(
     query = Model.all()
 
     if provider:
-        query = query.filter(provider=provider)
+        query = query.filter(provider__in=provider).distinct()
     if model_type:
-        query = query.filter(model_type=model_type)
+        query = query.filter(model_type__in=model_type).distinct()
     if is_enabled is not None:
         query = query.filter(is_enabled=is_enabled)
     if search:

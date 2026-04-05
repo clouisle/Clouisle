@@ -10,6 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.response import PageData
+
 
 class ToolType(str, Enum):
     """工具类型"""
@@ -168,6 +170,23 @@ class ToolListOut(BaseModel):
     builtin: list[ToolOut] = Field(default_factory=list, description="内置工具")
     custom: list[ToolOut] = Field(default_factory=list, description="自定义工具")
     mcp: list[ToolOut] = Field(default_factory=list, description="MCP Server 工具")
+
+
+class ToolFilterOption(BaseModel):
+    value: str = Field(..., description="选项值")
+    label: str = Field(..., description="选项显示文本")
+
+
+class ToolFilterOptionsOut(BaseModel):
+    types: list[ToolFilterOption] = Field(default_factory=list, description="工具类型选项")
+    categories: list[ToolFilterOption] = Field(default_factory=list, description="工具分类选项")
+    statuses: list[ToolFilterOption] = Field(default_factory=list, description="启用状态选项")
+    teams: list[ToolFilterOption] = Field(default_factory=list, description="团队选项")
+    creators: list[ToolFilterOption] = Field(default_factory=list, description="创建者选项")
+
+
+class ToolListPageOut(PageData[ToolOut]):
+    pass
 
 
 class ToolDetailOut(ToolOut):
@@ -354,57 +373,57 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
     "get_current_time": {
         "display_name_key": "builtin_tool_get_current_time",
         "category": ToolCategory.TIME,
-        "icon": "🕐",
+        "icon": None,
         "requires_config": False,
     },
     "format_datetime": {
         "display_name_key": "builtin_tool_format_datetime",
         "category": ToolCategory.TIME,
-        "icon": "📅",
+        "icon": None,
         "requires_config": False,
     },
     "calculate": {
         "display_name_key": "builtin_tool_calculate",
         "category": ToolCategory.MATH,
-        "icon": "🔢",
+        "icon": None,
         "requires_config": False,
     },
     "unit_convert": {
         "display_name_key": "builtin_tool_unit_convert",
         "category": ToolCategory.MATH,
-        "icon": "📐",
+        "icon": None,
         "requires_config": False,
     },
     "web_search": {
         "display_name_key": "builtin_tool_web_search",
         "category": ToolCategory.SEARCH,
-        "icon": "🔍",
+        "icon": None,
         "requires_config": True,
         "config_fields": ["TAVILY_API_KEY"],
     },
     "fetch_webpage": {
         "display_name_key": "builtin_tool_fetch_webpage",
         "category": ToolCategory.WEB,
-        "icon": "🌐",
+        "icon": None,
         "requires_config": False,
     },
     "markitdown": {
         "display_name_key": "builtin_tool_markitdown",
         "category": ToolCategory.FILE,
-        "icon": "📄",
+        "icon": None,
         "requires_config": False,
         "is_file_parser": True,  # 标记为文件解析器，可用于文件上传功能
     },
     "generate_image": {
         "display_name_key": "builtin_tool_generate_image",
         "category": ToolCategory.OTHER,
-        "icon": "🖼️",
+        "icon": None,
         "requires_config": False,
     },
     "generate_video": {
         "display_name_key": "builtin_tool_generate_video",
         "category": ToolCategory.OTHER,
-        "icon": "🎬",
+        "icon": None,
         "requires_config": False,
     },
 }

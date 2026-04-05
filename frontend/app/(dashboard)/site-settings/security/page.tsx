@@ -94,7 +94,7 @@ export default function SiteSettingsSecurityPage() {
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   React.useEffect(() => {
     loadSettings()
@@ -286,6 +286,17 @@ export default function SiteSettingsSecurityPage() {
               disabled={!canUpdate}
             />
           </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>{t('forcePasswordChangeFirstLogin')}</Label>
+              <p className="text-sm text-muted-foreground">{t('forcePasswordChangeFirstLoginDescription')}</p>
+            </div>
+            <Switch
+              checked={settings.force_password_change_first_login}
+              onCheckedChange={(checked) => updateSetting('force_password_change_first_login', checked)}
+              disabled={!canUpdate}
+            />
+          </div>
           {settings.password_expiration_enabled && (
             <>
               <div className="space-y-2">
@@ -352,17 +363,6 @@ export default function SiteSettingsSecurityPage() {
                   />
                   <span className="text-sm text-muted-foreground">{t('days')}</span>
                 </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>{t('forcePasswordChangeFirstLogin')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('forcePasswordChangeFirstLoginDescription')}</p>
-                </div>
-                <Switch
-                  checked={settings.force_password_change_first_login}
-                  onCheckedChange={(checked) => updateSetting('force_password_change_first_login', checked)}
-                  disabled={!canUpdate}
-                />
               </div>
             </>
           )}

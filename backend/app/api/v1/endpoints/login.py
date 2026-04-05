@@ -199,7 +199,11 @@ async def login_access_token(
     if not user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
+            msg_key=(
+                "pending_approval_user"
+                if getattr(user, "approval_status", "approved") == "pending"
+                else "inactive_user"
+            ),
         )
 
     # Check if TOTP is enabled for this user
@@ -717,6 +721,7 @@ async def register(
         # First user is active and superuser
         # Others depend on require_approval setting
         is_active=is_first_user or not require_approval,
+        approval_status="approved" if is_first_user or not require_approval else "pending",
         is_superuser=is_first_user,
         # First user auto-verified, or if email verification is disabled
         email_verified=is_first_user or not email_verification,

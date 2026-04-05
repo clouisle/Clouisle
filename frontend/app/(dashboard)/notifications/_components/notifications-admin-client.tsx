@@ -85,6 +85,7 @@ export function NotificationsAdminClient() {
 
   // Filter states
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
 
@@ -94,45 +95,35 @@ export function NotificationsAdminClient() {
       const result = await notificationsApi.adminList({
         page,
         page_size: pageSize,
+        scope: scopeFilter.size > 0 ? Array.from(scopeFilter) as NotificationScope[] : undefined,
+        level: levelFilter.size > 0 ? Array.from(levelFilter) as NotificationLevel[] : undefined,
+        search: debouncedSearchQuery || undefined,
       })
       setItems(result.items)
       setTotal(result.total)
+      setSelectedIds(new Set())
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
+  }, [page, pageSize, scopeFilter, levelFilter, debouncedSearchQuery])
 
   React.useEffect(() => {
     fetchList()
   }, [fetchList])
 
-  // Filter notifications (client-side filtering on current page)
-  const filteredItems = React.useMemo(() => {
-    return items.filter(item => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        if (!item.title.toLowerCase().includes(query) &&
-            !item.content.toLowerCase().includes(query)) {
-          return false
-        }
-      }
+  React.useEffect(() => {
+    setPage(1)
+    setSelectedIds(new Set())
+  }, [scopeFilter, levelFilter, debouncedSearchQuery])
 
-      // Scope filter
-      if (scopeFilter.size > 0 && !scopeFilter.has(item.scope)) {
-        return false
-      }
-
-      // Level filter
-      if (levelFilter.size > 0 && !levelFilter.has(item.level)) {
-        return false
-      }
-
-      return true
-    })
-  }, [items, searchQuery, scopeFilter, levelFilter])
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim())
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
 
   // Check if filters are active
   const isFiltered = searchQuery || scopeFilter.size > 0 || levelFilter.size > 0
@@ -140,8 +131,11 @@ export function NotificationsAdminClient() {
   // Reset all filters
   const resetFilters = () => {
     setSearchQuery('')
+    setDebouncedSearchQuery('')
     setScopeFilter(new Set())
     setLevelFilter(new Set())
+    setPage(1)
+    setSelectedIds(new Set())
   }
 
   // Scope options
@@ -221,7 +215,7 @@ export function NotificationsAdminClient() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(new Set(filteredItems.map(item => item.id)))
+      setSelectedIds(new Set(items.map(item => item.id)))
     } else {
       setSelectedIds(new Set())
     }
@@ -237,8 +231,8 @@ export function NotificationsAdminClient() {
     setSelectedIds(newSelected)
   }
 
-  const isAllSelected = filteredItems.length > 0 && selectedIds.size === filteredItems.length
-  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < filteredItems.length
+  const isAllSelected = items.length > 0 && selectedIds.size === items.length
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < items.length
 
   return (
     <div className="flex flex-col gap-6">
@@ -323,14 +317,14 @@ export function NotificationsAdminClient() {
                   {tCommon('loading')}
                 </TableCell>
               </TableRow>
-            ) : filteredItems.length === 0 ? (
+            ) : items.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                   {t('empty')}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredItems.map((item) => (
+              items.map((item) => (
                 <TableRow
                   key={item.id}
                   data-state={selectedIds.has(item.id) ? 'selected' : undefined}

@@ -317,6 +317,7 @@
         "loadFailed": "加载工具失败",
         "saveFailed": "保存失败",
         "nameRequired": "请输入工具名称",
+        "invalidName": "工具名称必须以字母开头，且只能包含字母、数字和下划线",
         "duplicateParamName": "参数名称不能重复"
       },
       "successMessages": {

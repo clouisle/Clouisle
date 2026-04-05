@@ -37,11 +37,12 @@ export interface TOTPUserStatusResponse {
 
 export const usersApi = {
   getUsers: async (params: UserQueryParams = {}): Promise<PageData<User>> => {
-    const { page = 1, pageSize = 20, status, search } = params
+    const { page = 1, pageSize = 20, status, roles, search } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (status) queryParams.append('status', status)
+    status?.forEach((value) => queryParams.append('status', value))
+    roles?.forEach((value) => queryParams.append('role', value))
     if (search) queryParams.append('search', search)
     return api.get<PageData<User>>(`/admin/users?${queryParams.toString()}`)
   },

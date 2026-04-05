@@ -51,11 +51,12 @@ export interface NotificationListParams {
 }
 
 export interface NotificationAdminListParams {
-  scope?: NotificationScope
+  scope?: NotificationScope[]
   team_id?: string
   user_id?: string
   type?: string
-  level?: NotificationLevel
+  level?: NotificationLevel[]
+  search?: string
   include_expired?: boolean
   page?: number
   page_size?: number

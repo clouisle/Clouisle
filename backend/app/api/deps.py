@@ -108,7 +108,11 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
     if not user or not user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
+            msg_key=(
+                "pending_approval_user"
+                if user and getattr(user, "approval_status", "approved") == "pending"
+                else "inactive_user"
+            ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -185,7 +189,11 @@ async def get_current_active_user(
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
+            msg_key=(
+                "pending_approval_user"
+                if getattr(current_user, "approval_status", "approved") == "pending"
+                else "inactive_user"
+            ),
         )
     # Set language from user's locale preference
     if hasattr(current_user, "locale") and current_user.locale:

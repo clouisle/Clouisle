@@ -1255,6 +1255,52 @@ async def init_password_expiration():
     logger.info("Password expiration migration complete")
 
 
+async def init_user_approval_status_field():
+    """
+    Add approval_status field to users table.
+    This distinguishes pending approval users from manually inactive users.
+    """
+    logger.info("Initializing user approval_status field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Users table does not exist yet, skipping approval_status migration")
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'approval_status'
+    """)
+
+    if not rows:
+        logger.info("Adding approval_status field to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN approval_status VARCHAR(20) NOT NULL DEFAULT 'approved'
+            """)
+            logger.info("Added approval_status field to users table")
+        except Exception as e:
+            logger.error(f"Could not add approval_status field: {e}")
+            raise
+    else:
+        logger.info("approval_status field already exists")
+
+    await conn.execute_query("""
+        UPDATE users
+        SET approval_status = 'approved'
+        WHERE approval_status IS NULL OR approval_status = ''
+    """)
+
+    logger.info("User approval_status migration complete")
+
+
 async def init_totp_fields():
     """
     Add TOTP (Two-Factor Authentication) fields to users table.

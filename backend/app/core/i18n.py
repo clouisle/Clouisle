@@ -278,6 +278,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Inactive user",
         "zh": "用户未激活",
     },
+    "pending_approval_user": {
+        "en": "Your account is pending admin approval",
+        "zh": "您的账户正在等待管理员审核",
+    },
     "could_not_validate_credentials": {
         "en": "Could not validate credentials",
         "zh": "无法验证凭证",

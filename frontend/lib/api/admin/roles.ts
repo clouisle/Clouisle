@@ -9,6 +9,11 @@ export interface Permission {
   is_system: boolean
 }
 
+export interface PermissionScopeOption {
+  value: string
+  label: string
+}
+
 export interface Role {
   id: string
   name: string
@@ -68,12 +73,22 @@ export const rolesApi = {
 }
 
 export const permissionsApi = {
-  getPermissions: async (page = 1, pageSize = 100, scope?: string, search?: string): Promise<PageData<Permission>> => {
-    let url = `/admin/permissions?page=${page}&page_size=${pageSize}`
-    if (scope) url += `&scope=${encodeURIComponent(scope)}`
-    if (search) url += `&search=${encodeURIComponent(search)}`
-    return api.get<PageData<Permission>>(url)
+  getPermissions: async (
+    page = 1,
+    pageSize = 100,
+    scopes?: string[],
+    search?: string
+  ): Promise<PageData<Permission>> => {
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', String(page))
+    queryParams.append('page_size', String(pageSize))
+    scopes?.forEach((scope) => queryParams.append('scope', scope))
+    if (search) queryParams.append('search', search)
+    return api.get<PageData<Permission>>(`/admin/permissions?${queryParams.toString()}`)
   },
+
+  getPermissionScopes: async (): Promise<PermissionScopeOption[]> =>
+    api.get<PermissionScopeOption[]>('/admin/permissions/scopes'),
 
   getPermission: async (id: string): Promise<Permission> =>
     api.get<Permission>(`/admin/permissions/${id}`),

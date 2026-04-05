@@ -248,7 +248,12 @@ async def sso_callback(
 
         if not user.is_active:
             await session.delete()
-            redirect_url = f"{frontend_url}/sso-callback?error=inactive&redirect={quote(final_redirect)}"
+            error_code = (
+                "pending_approval"
+                if getattr(user, "approval_status", "approved") == "pending"
+                else "inactive"
+            )
+            redirect_url = f"{frontend_url}/sso-callback?error={error_code}&redirect={quote(final_redirect)}"
             return RedirectResponse(url=redirect_url)
 
         user.last_login = now_utc()

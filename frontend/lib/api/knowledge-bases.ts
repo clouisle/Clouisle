@@ -99,14 +99,14 @@ export interface KnowledgeBaseQueryParams {
   page?: number
   pageSize?: number
   search?: string
-  status?: string
+  status?: string[]
   teamId?: string
 }
 
 // ============ Document Types ============
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'error'
-export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'md' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'url'
+export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'markdown' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'url'
 
 export interface Document {
   id: string
@@ -156,8 +156,8 @@ export interface ProcessInput {
 export interface DocumentQueryParams {
   page?: number
   pageSize?: number
-  status?: DocumentStatus
-  doc_type?: DocumentType
+  status?: DocumentStatus[]
+  doc_type?: DocumentType[]
   search?: string
 }
 
@@ -229,7 +229,7 @@ export const knowledgeBasesApi = {
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (search) queryParams.append('search', search)
-    if (status) queryParams.append('status', status)
+    status?.forEach((value) => queryParams.append('status', value))
     if (teamId) queryParams.append('team_id', teamId)
     return api.get<PageData<KnowledgeBase>>(`/knowledge-bases?${queryParams.toString()}`)
   },
@@ -297,8 +297,8 @@ export const knowledgeBasesApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (status) queryParams.append('status', status)
-    if (doc_type) queryParams.append('doc_type', doc_type)
+    status?.forEach((value) => queryParams.append('status', value))
+    doc_type?.forEach((value) => queryParams.append('doc_type', value))
     if (search) queryParams.append('search', search)
     return api.get<PageData<Document>>(`/knowledge-bases/${kbId}/documents?${queryParams.toString()}`)
   },

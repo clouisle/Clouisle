@@ -17,7 +17,8 @@
       "status": "状态",
       "triggerType": "触发类型",
       "triggeredBy": "触发用户",
-      "debugRuns": "仅调试运行"
+      "debugRuns": "仅调试运行",
+      "untitledOnly": "仅无标题"
     },
     "status": {
       "success": "成功",

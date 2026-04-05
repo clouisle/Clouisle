@@ -35,6 +35,15 @@ from app.services.password_expiration import PasswordExpirationService
 router = APIRouter()
 
 
+def get_user_status(user: User) -> str:
+    approval_status = getattr(user, "approval_status", "approved")
+    if not user.is_active and approval_status == "pending":
+        return "pending"
+    if user.is_active:
+        return "active"
+    return "inactive"
+
+
 async def serialize_user_with_sso(user: User) -> dict:
     from app.schemas.sso import UserSSOConnectionSchema
 
@@ -54,6 +63,8 @@ async def serialize_user_with_sso(user: User) -> dict:
         "username": user.username,
         "email": user.email,
         "is_active": user.is_active,
+        "approval_status": getattr(user, "approval_status", "approved"),
+        "status": get_user_status(user),
         "is_superuser": user.is_superuser,
         "email_verified": user.email_verified,
         "avatar_url": user.avatar_url,
@@ -110,24 +121,32 @@ async def serialize_user_with_sso(user: User) -> dict:
 async def read_users(
     page: int = 1,
     page_size: int = 20,
-    status: Optional[str] = Query(
+    status: Optional[List[str]] = Query(
         None, description="Filter by status: active, inactive, pending"
     ),
     search: Optional[str] = Query(None, description="Search by username or email"),
+    role: Optional[List[str]] = Query(None, description="Filter by role name"),
     current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     skip = (page - 1) * page_size
     query = User.all()
 
-    if status == "active":
-        query = query.filter(is_active=True)
-    elif status == "inactive":
-        query = query.filter(is_active=False)
-    elif status == "pending":
-        query = query.filter(is_active=False)
+    if status:
+        status_conditions = Q()
+        if "active" in status:
+            status_conditions |= Q(is_active=True)
+        if "inactive" in status:
+            status_conditions |= Q(is_active=False, approval_status="approved")
+        if "pending" in status:
+            status_conditions |= Q(is_active=False, approval_status="pending")
+        if status_conditions:
+            query = query.filter(status_conditions)
 
     if search:
         query = query.filter(Q(username__icontains=search) | Q(email__icontains=search))
+
+    if role:
+        query = query.filter(roles__name__in=role).distinct()
 
     total = await query.count()
     users = (
@@ -155,8 +174,12 @@ async def get_user_stats(
 ) -> Any:
     total = await User.all().count()
     active = await User.filter(is_active=True).count()
-    inactive = await User.filter(is_active=False).count()
-    pending = await User.filter(is_active=False).count()
+    inactive = await User.filter(
+        is_active=False, approval_status="approved"
+    ).count()
+    pending = await User.filter(
+        is_active=False, approval_status="pending"
+    ).count()
 
     return success(
         data={
@@ -200,6 +223,7 @@ async def create_user(
     user = await User.create(
         **user_dict,
         hashed_password=hashed_password,
+        approval_status="approved",
     )
     user = await User.get(id=user.id).prefetch_related("roles__permissions")
 
@@ -338,7 +362,8 @@ async def activate_user(
         )
 
     user.is_active = True
-    await user.save()
+    user.approval_status = "approved"
+    await user.save(update_fields=["is_active", "approval_status"])
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
 
@@ -392,7 +417,8 @@ async def deactivate_user(
         )
 
     user.is_active = False
-    await user.save()
+    user.approval_status = "approved"
+    await user.save(update_fields=["is_active", "approval_status"])
 
     updated_user = await User.get(id=user_id).prefetch_related("roles__permissions")
 

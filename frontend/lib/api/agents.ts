@@ -905,9 +905,9 @@ export interface ConversationTrends {
 }
 
 export interface AdminConversationQueryParams {
-  team_id?: string
-  agent_id?: string
-  user_id?: string
+  team_id?: string[]
+  agent_id?: string[]
+  user_id?: string[]
   search?: string
   untitled_only?: boolean
   page?: number
@@ -927,9 +927,9 @@ export const conversationsApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (team_id) queryParams.append('team_id', team_id)
-    if (agent_id) queryParams.append('agent_id', agent_id)
-    if (user_id) queryParams.append('user_id', user_id)
+    team_id?.forEach((value) => queryParams.append('team_id', value))
+    agent_id?.forEach((value) => queryParams.append('agent_id', value))
+    user_id?.forEach((value) => queryParams.append('user_id', value))
     if (search) queryParams.append('search', search)
     if (untitled_only) queryParams.append('untitled_only', 'true')
     return api.get<PageData<AdminConversationListItem>>(

@@ -137,6 +137,7 @@ class SSOService:
             hashed_password="",  # No password for SSO users
             auth_source=provider.name,
             is_active=not require_approval,
+            approval_status="approved" if not require_approval else "pending",
             email_verified=True,  # Trust SSO provider
             avatar_url=user_info.get("picture") or user_info.get("avatar_url"),
             locale=default_language,

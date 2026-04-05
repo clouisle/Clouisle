@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField } from '@/lib/api/tools'
+import type { UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { cn } from '@/lib/utils'
 
@@ -207,9 +208,13 @@ interface HttpToolDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
+  teams?: UserTeamInfo[]
+  selectedTeamId?: string
+  onSelectedTeamChange?: (teamId: string) => void
 }
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
+const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 const PARAM_TYPES = ['string', 'number', 'boolean', 'array', 'object', 'file', 'image'] as const
 
@@ -223,6 +228,9 @@ export function HttpToolDialog({
   open,
   onOpenChange,
   onSave,
+  teams = [],
+  selectedTeamId,
+  onSelectedTeamChange,
 }: HttpToolDialogProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
@@ -233,9 +241,10 @@ export function HttpToolDialog({
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('🔗')
+  const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('api')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [nameError, setNameError] = useState('')
 
   // HTTP 配置
   const [method, setMethod] = useState<typeof HTTP_METHODS[number]>('GET')
@@ -264,9 +273,10 @@ export function HttpToolDialog({
         setName(tool.name)
         setDisplayName(tool.display_name)
         setDescription(tool.description)
-        setIcon(tool.icon || '🔗')
+        setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
+        setNameError('')
         setParameters(tool.parameters || [])
 
         if (tool.http_config) {
@@ -292,9 +302,10 @@ export function HttpToolDialog({
         setName('')
         setDisplayName('')
         setDescription('')
-        setIcon('🔗')
+        setIcon('')
         setCategory('api')
         setIsEnabled(true)
+        setNameError('')
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -309,6 +320,13 @@ export function HttpToolDialog({
   }, [tool, open])
 
   const handleSave = async () => {
+    if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      setNameError(t('error.invalidName'))
+      return
+    }
+
+    setNameError('')
+
     setIsLoading(true)
     try {
       const httpConfig: HttpConfig = {
@@ -340,7 +358,6 @@ export function HttpToolDialog({
       }
 
       await onSave(data)
-      onOpenChange(false)
     } finally {
       setIsLoading(false)
     }
@@ -405,15 +422,39 @@ export function HttpToolDialog({
         <div className="space-y-6 py-4">
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
+            {!isEditing && onSelectedTeamChange && teams.length > 0 && (
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="team">{tCommon('team')}</Label>
+                <Select value={selectedTeamId} onValueChange={onSelectedTeamChange}>
+                  <SelectTrigger id="team">
+                    <SelectValue>
+                      {teams.find((team) => team.id === selectedTeamId)?.name || t('selectTeam')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false}>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="name">{t('form.name')}</Label>
               <Input
                 id="name"
                 placeholder="my_api_tool"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (nameError) setNameError('')
+                }}
                 disabled={isEditing}
+                aria-invalid={!!nameError}
               />
+              {nameError && <p className="text-sm text-destructive">{nameError}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="displayName">{t('form.displayName')}</Label>
@@ -437,7 +478,7 @@ export function HttpToolDialog({
                 category="icons"
                 placeholder={
                   <span className="text-2xl">
-                    {icon.startsWith('http') ? '🔗' : icon}
+                    {icon.startsWith('http') ? '' : icon}
                   </span>
                 }
               />

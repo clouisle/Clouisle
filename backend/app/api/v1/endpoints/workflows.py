@@ -142,11 +142,11 @@ async def check_workflow_access(
 
 @router.get("/runs", response_model=Response[PageData[dict]])
 async def list_all_workflow_runs(
-    team_id: UUID | None = Query(None),
-    workflow_id: UUID | None = Query(None),
-    status: RunStatus | None = Query(None),
-    trigger_type: TriggerType | None = Query(None),
-    user_id: UUID | None = Query(None),
+    team_id: list[UUID] | None = Query(None),
+    workflow_id: list[UUID] | None = Query(None),
+    status: list[RunStatus] | None = Query(None),
+    trigger_type: list[TriggerType] | None = Query(None),
+    user_id: list[UUID] | None = Query(None),
     is_debug: bool | None = Query(None),
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -169,8 +169,9 @@ async def list_all_workflow_runs(
     workflow_query = Workflow.all()
 
     if team_id:
-        await check_team_access(team_id, current_user)
-        workflow_query = workflow_query.filter(team_id=team_id)
+        for current_team_id in team_id:
+            await check_team_access(current_team_id, current_user)
+        workflow_query = workflow_query.filter(team_id__in=team_id)
     elif not current_user.is_superuser:
         # Get teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
@@ -195,13 +196,13 @@ async def list_all_workflow_runs(
 
     # Apply filters
     if workflow_id:
-        query = query.filter(workflow_id=workflow_id)
+        query = query.filter(workflow_id__in=workflow_id)
     if status:
-        query = query.filter(status=status)
+        query = query.filter(status__in=status)
     if trigger_type:
-        query = query.filter(trigger_type=trigger_type)
+        query = query.filter(trigger_type__in=trigger_type)
     if user_id:
-        query = query.filter(triggered_by_id=user_id)
+        query = query.filter(triggered_by_id__in=user_id)
     if is_debug is not None:
         query = query.filter(is_debug=is_debug)
 

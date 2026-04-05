@@ -202,6 +202,7 @@
       "cannotShareBuiltin": "Cannot share built-in tools",
       "noTeamSelected": "No team selected",
       "nameRequired": "Please enter tool name",
+      "invalidName": "Tool name must start with a letter and contain only letters, numbers, and underscores",
       "duplicateParamName": "Parameter names must be unique"
     },
     "success": {

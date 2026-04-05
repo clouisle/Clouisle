@@ -5,8 +5,13 @@ from fastapi import APIRouter, Depends, Query
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.permissions import SystemPermissions
 from app.models.user import Permission, User
-from app.schemas.user import Permission as PermissionSchema, PermissionCreate
+from app.schemas.user import (
+    Permission as PermissionSchema,
+    PermissionCreate,
+    PermissionScopeOption,
+)
 from app.schemas.response import (
     Response,
     PageData,
@@ -18,11 +23,34 @@ from app.schemas.response import (
 router = APIRouter()
 
 
+@router.get("/scopes", response_model=Response[list[PermissionScopeOption]])
+async def read_permission_scopes(
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
+) -> Any:
+    """
+    Retrieve stable permission scope options.
+    """
+    db_scopes = set(
+        await Permission.all().distinct().values_list("scope", flat=True)
+    )
+    system_scopes = {
+        definition["scope"] for definition in SystemPermissions.get_all_definitions()
+    }
+    scopes = sorted(scope for scope in (db_scopes | system_scopes) if scope)
+
+    return success(
+        data=[
+            {"value": scope, "label": scope}
+            for scope in scopes
+        ]
+    )
+
+
 @router.get("", response_model=Response[PageData[PermissionSchema]])
 async def read_permissions(
     page: int = 1,
     page_size: int = 50,
-    scope: Optional[str] = None,
+    scope: Optional[list[str]] = Query(None, description="Filter by permission scope"),
     search: Optional[str] = Query(
         None, description="Search by permission code or description"
     ),
@@ -33,7 +61,7 @@ async def read_permissions(
     """
     query = Permission.all()
     if scope:
-        query = query.filter(scope=scope)
+        query = query.filter(scope__in=scope).distinct()
     if search:
         query = query.filter(
             Q(code__icontains=search) | Q(description__icontains=search)

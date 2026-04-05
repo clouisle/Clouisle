@@ -59,6 +59,14 @@ class AuditLogListParams(BaseModel):
     page_size: int = Field(default=20, ge=1, le=100)
 
 
+class AuditLogActionOption(BaseModel):
+    """审计日志 action 筛选选项"""
+
+    value: str
+    translation_key: str
+    fallback_label: str
+
+
 class AuditLogStats(BaseModel):
     """审计日志统计"""
 

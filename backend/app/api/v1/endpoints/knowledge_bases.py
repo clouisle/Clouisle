@@ -215,7 +215,8 @@ async def check_kb_access(
 @router.get("", response_model=Response[PageData[KnowledgeBaseList]])
 async def list_knowledge_bases(
     team_id: UUID | None = None,
-    status: str | None = None,
+    search: str | None = None,
+    status: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(deps.PermissionChecker("kb:read")),
@@ -238,8 +239,11 @@ async def list_knowledge_bases(
         )
         query = query.filter(team_id__in=memberships)
 
+    if search:
+        query = query.filter(name__icontains=search)
+
     if status:
-        query = query.filter(status=status)
+        query = query.filter(status__in=status)
 
     total = await query.count()
     skip = (page - 1) * page_size
@@ -481,7 +485,9 @@ async def get_knowledge_base_stats(
 @router.get("/{kb_id}/documents", response_model=Response[PageData[DocumentList]])
 async def list_documents(
     kb_id: UUID,
-    status: str | None = None,
+    search: str | None = None,
+    status: list[str] | None = None,
+    doc_type: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(deps.PermissionChecker("kb:read")),
@@ -492,8 +498,12 @@ async def list_documents(
     await check_kb_access(kb_id, current_user)
 
     query = Document.filter(knowledge_base_id=kb_id)
+    if search:
+        query = query.filter(name__icontains=search)
     if status:
-        query = query.filter(status=status)
+        query = query.filter(status__in=status)
+    if doc_type:
+        query = query.filter(doc_type__in=doc_type)
 
     total = await query.count()
     skip = (page - 1) * page_size

@@ -69,7 +69,8 @@ export interface TOTPStatusResponse {
 export interface UserQueryParams {
   page?: number
   pageSize?: number
-  status?: 'active' | 'inactive' | 'pending'
+  status?: Array<'active' | 'inactive' | 'pending'>
+  roles?: string[]
   search?: string
 }
 
