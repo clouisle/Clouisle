@@ -1,6 +1,5 @@
 'use client'
 
-import { NextIntlClientProvider } from 'next-intl'
 import { ThemeProvider } from 'next-themes'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'

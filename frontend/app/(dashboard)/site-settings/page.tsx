@@ -42,7 +42,7 @@ export default function SiteSettingsGeneralPage() {
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   React.useEffect(() => {
     loadSettings()

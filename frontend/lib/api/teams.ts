@@ -1,5 +1,4 @@
 import { api } from './client'
-import type { PageData } from './users'
 
 export interface TeamOwner {
   id: string

@@ -129,7 +129,7 @@ export function ToolCard({
   }
 
   // 判断图标是否为 URL
-  const isIconUrl = tool.icon?.startsWith('http')
+  const iconUrl = tool.icon?.startsWith('http') ? tool.icon : null
   const displayIcon = tool.icon || category.icon
 
   return (
@@ -146,9 +146,9 @@ export function ToolCard({
         <div className="flex items-start gap-2">
           {/* 图标 */}
           <div className="shrink-0 w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-base overflow-hidden relative">
-            {isIconUrl ? (
+            {iconUrl ? (
               <Image
-                src={displayIcon}
+                src={iconUrl}
                 alt={tool.display_name}
                 fill
                 className="object-cover"

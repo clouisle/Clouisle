@@ -210,7 +210,7 @@ interface HttpToolDialogProps {
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
   teams?: UserTeamInfo[]
   selectedTeamId?: string
-  onSelectedTeamChange?: (teamId: string) => void
+  onSelectedTeamChange?: (teamId: string | null) => void
 }
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const

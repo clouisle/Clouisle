@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import { QRCodeSVG } from 'qrcode.react'
 import { useTranslations } from 'next-intl'
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'

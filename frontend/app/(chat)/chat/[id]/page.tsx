@@ -126,8 +126,6 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const {
     values: variableValues,
     setValues: setVariableValues,
-    needsInput: needsVariableInput,
-    isValid: variablesValid,
   } = useVariableForm(variables)
 
   React.useEffect(() => {
@@ -248,7 +246,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {

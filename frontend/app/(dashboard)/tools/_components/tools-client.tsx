@@ -902,7 +902,7 @@ export function ToolsClient() {
                 onSave={handleSaveHttpTool}
                 teams={teams}
                 selectedTeamId={currentTeamId}
-                onSelectedTeamChange={setCurrentTeamId}
+                onSelectedTeamChange={(teamId) => setCurrentTeamId(teamId ?? '')}
             />
 
             {/* MCP 工具对话框 */}
@@ -913,7 +913,7 @@ export function ToolsClient() {
                 onSave={handleSaveMcpTool}
                 teams={teams}
                 selectedTeamId={currentTeamId}
-                onSelectedTeamChange={setCurrentTeamId}
+                onSelectedTeamChange={(teamId) => setCurrentTeamId(teamId ?? '')}
             />
 
             <ToolConfigDialog

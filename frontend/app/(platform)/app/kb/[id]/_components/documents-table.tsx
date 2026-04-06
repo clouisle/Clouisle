@@ -131,13 +131,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         page: number
         pageSize: number
         search?: string
-        status?: DocumentStatus
-        doc_type?: DocumentType
+        status?: DocumentStatus[]
+        doc_type?: DocumentType[]
       } = { page, pageSize }
-      
+
       if (searchQuery) params.search = searchQuery
-      if (statusFilter.size === 1) params.status = Array.from(statusFilter)[0] as DocumentStatus
-      if (typeFilter.size === 1) params.doc_type = Array.from(typeFilter)[0] as DocumentType
+      if (statusFilter.size === 1) params.status = [Array.from(statusFilter)[0] as DocumentStatus]
+      if (typeFilter.size === 1) params.doc_type = [Array.from(typeFilter)[0] as DocumentType]
       
       const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, params)
       setDocuments(data.items)

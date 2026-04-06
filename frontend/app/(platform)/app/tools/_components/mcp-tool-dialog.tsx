@@ -46,7 +46,7 @@ interface McpToolDialogProps {
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
   teams?: UserTeamInfo[]
   selectedTeamId?: string
-  onSelectedTeamChange?: (teamId: string) => void
+  onSelectedTeamChange?: (teamId: string | null) => void
 }
 
 interface EnvVar {

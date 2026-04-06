@@ -55,7 +55,7 @@ export default function SiteSettingsStoragePage() {
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   React.useEffect(() => {
     loadSettings()

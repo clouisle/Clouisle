@@ -162,7 +162,6 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                       className="overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
                       onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={imageUrl}
                         alt={parsedOutput.prompt || 'Generated image'}
@@ -294,7 +293,6 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             className="max-w-xs rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => openLightbox(imagePart.url, imagePart.alt)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imagePart.url}
               alt={imagePart.alt || 'Uploaded image'}

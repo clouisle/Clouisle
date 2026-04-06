@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy, Check } from 'lucide-react'
+import { User, Shield, Loader2, Link as LinkIcon, Unlink, KeyRound, Download, Copy } from 'lucide-react'
 import { formatDateTime, isValidEmail } from '@/lib/utils'
 import {
   Dialog,

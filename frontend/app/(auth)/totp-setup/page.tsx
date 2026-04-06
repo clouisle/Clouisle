@@ -30,13 +30,13 @@ export default function TOTPSetupPage() {
       // Get new access token by calling getCurrentUser with temp token
       // The temp token is now a valid access token after TOTP setup
       localStorage.setItem('access_token', tempToken)
-      const user = await authApi.getCurrentUser()
+      await authApi.getCurrentUser()
 
       toast.success(t('setupStep5Description'))
 
       // Redirect to home
       router.push('/')
-    } catch (error) {
+    } catch {
       toast.error(t('setupFailed'))
       router.push('/login')
     }

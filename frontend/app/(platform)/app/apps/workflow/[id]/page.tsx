@@ -316,7 +316,7 @@ function WorkflowEditorContent() {
     const issues = validateWorkflow(nodes, edges)
     setValidationIssues(issues)
     setShowValidationChecklist(prev => !prev)
-  }, [edges, nodes, showValidationChecklist, validateWorkflow])
+  }, [edges, nodes, showValidationChecklist])
 
   // 检查节点是否是开始节点
   const isStartNode = React.useCallback((nodeId: string) => {
@@ -411,7 +411,7 @@ function WorkflowEditorContent() {
       
       onNodesChangeBase(filteredChanges)
     },
-    [nodes, setNodes, onNodesChangeBase, isStartNode]
+    [nodes, setNodes, onNodesChangeBase, isStartNode, t]
   )
 
   // Load workflow and current user
@@ -445,7 +445,7 @@ function WorkflowEditorContent() {
     if (workflowId) {
       loadData()
     }
-  }, [workflowId, router, t, setNodes, setEdges])
+  }, [workflowId, router, setNodes, setEdges])
 
   // Handle start node type selection
   const handleStartNodeSelect = React.useCallback((type: StartNodeType) => {
@@ -462,7 +462,7 @@ function WorkflowEditorContent() {
     setNodes([startNode])
     setShowStartSelector(false)
     setHasChanges(true)
-  }, [setNodes])
+  }, [setNodes, t])
 
   // Handle connection (edge creation)
   const onConnect = React.useCallback(
@@ -749,7 +749,7 @@ function WorkflowEditorContent() {
       setHasChanges(true)
       setAddNodePopover(null)
     },
-    [nodes, setNodes, setEdges, addNodePopover, reactFlowInstance]
+    [nodes, setNodes, setEdges, addNodePopover, reactFlowInstance, t]
   )
 
   // Handle node traces change from run drawer

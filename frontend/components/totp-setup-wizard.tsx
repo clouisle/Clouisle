@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { Loader2, Download, Copy, Check, Shield, Key, Save, CheckCircle2 } from 'lucide-react'
+import { Loader2, Download, Copy, Check, Shield, Key, CheckCircle2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -52,7 +52,7 @@ export function TOTPSetupWizard({ open, onOpenChange, onSuccess }: TOTPSetupWiza
       const data = await totpApi.setup()
       setSetupData(data)
       setStep(2)
-    } catch (error) {
+    } catch {
       // Error handled by API client
     } finally {
       setLoading(false)
@@ -70,7 +70,7 @@ export function TOTPSetupWizard({ open, onOpenChange, onSuccess }: TOTPSetupWiza
       await totpApi.enable(verificationCode)
       toast.success(t('twoFactorEnabledSuccess'))
       setStep(4)
-    } catch (error) {
+    } catch {
       // Error handled by API client
       setVerificationCode('')
     } finally {

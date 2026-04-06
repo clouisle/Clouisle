@@ -61,7 +61,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { EntityDialog } from './entity-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 

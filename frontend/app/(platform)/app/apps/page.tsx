@@ -158,7 +158,7 @@ export default function AppsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentTeam, searchQuery, t])
+  }, [currentTeam, searchQuery])
 
   React.useEffect(() => {
     fetchApps()

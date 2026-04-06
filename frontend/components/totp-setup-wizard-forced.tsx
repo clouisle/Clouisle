@@ -9,7 +9,6 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { Label } from '@/components/ui/label'
 import { Loader2, ShieldCheck, Download, Copy, Check, Info } from 'lucide-react'
 import { TOTPQRCode } from '@/components/totp-qr-code'
-import { api } from '@/lib/api/client'
 import type { TOTPSetupResponse } from '@/lib/api/users'
 
 interface TOTPSetupWizardForcedProps {
@@ -63,7 +62,7 @@ export function TOTPSetupWizardForced({ tempToken, onComplete, onCancel }: TOTPS
       const data = await callApiWithTempToken<TOTPSetupResponse>('/api/v1/totp/setup', 'POST')
       setSetupData(data)
       setStep(2)
-    } catch (error) {
+    } catch {
       toast.error(t('setupFailed'))
     } finally {
       setLoading(false)
@@ -81,7 +80,7 @@ export function TOTPSetupWizardForced({ tempToken, onComplete, onCancel }: TOTPS
       await callApiWithTempToken('/api/v1/totp/enable', 'POST', { code: verificationCode })
       toast.success(t('twoFactorEnabledSuccess'))
       setStep(4)
-    } catch (error) {
+    } catch {
       toast.error(t('twoFactorInvalid'))
     } finally {
       setLoading(false)
