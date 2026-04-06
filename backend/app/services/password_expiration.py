@@ -238,4 +238,3 @@ class PasswordExpirationService:
             "Updated password metadata for user %s (password expiration recalculated)",
             user.username,
         )
-
