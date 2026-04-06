@@ -544,7 +544,7 @@ async def update_agent(
     if agent_in.name is not None and agent_in.name != agent.name:
         existing = (
             await Agent.filter(
-                team_id=UUID(str(agent.team_id)),
+                team_id=agent.team_id,
                 name=agent_in.name,
             )
             .exclude(id=agent_id)
@@ -594,7 +594,7 @@ async def update_agent(
     if agent_in.model_id is not None:
         team_model = await TeamModel.filter(
             id=agent_in.model_id,
-            team_id=UUID(str(agent.team_id)),
+            team_id=agent.team_id,
             is_enabled=True,
         ).first()
         if not team_model:
@@ -681,7 +681,7 @@ async def update_agent(
         for kb_config in agent_in.knowledge_base_configs:
             kb = await KnowledgeBase.filter(
                 id=kb_config.knowledge_base_id,
-                team_id=UUID(str(agent.team_id)),
+                team_id=agent.team_id,
             ).first()
             if not kb:
                 raise BusinessError(
@@ -777,7 +777,7 @@ async def publish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_PUBLISHED,
-            team_id=UUID(str(agent.team_id)),
+            team_id=agent.team_id,
             title=t("notify_agent_published_title"),
             content=t("notify_agent_published_content", agent_name=agent.name),
         )
@@ -814,7 +814,7 @@ async def unpublish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
-            team_id=UUID(str(agent.team_id)),
+            team_id=agent.team_id,
             title=t("notify_agent_unpublished_title"),
             content=t("notify_agent_unpublished_content", agent_name=agent.name),
         )

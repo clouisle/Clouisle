@@ -235,6 +235,7 @@ class PasswordExpirationService:
         await user.save()
 
         logger.info(
-            f"Updated password for user {user.username}, "
-            f"expires_at: {user.password_expires_at}"
+            "Updated password metadata for user %s, expires_at: %s",
+            user.username,
+            user.password_expires_at,
         )
