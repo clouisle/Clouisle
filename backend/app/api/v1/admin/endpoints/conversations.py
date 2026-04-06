@@ -405,7 +405,6 @@ async def get_conversation_trends(
             (token_usage.get("prompt", 0) or 0)
             + (token_usage.get("completion", 0) or 0)
         )
-
     # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
