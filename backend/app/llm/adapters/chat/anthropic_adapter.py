@@ -5,6 +5,7 @@ Anthropic Claude Chat 适配器
 """
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -22,6 +23,8 @@ from app.llm.types import (
 )
 
 from .base import BaseChatAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicAdapter(BaseChatAdapter):
@@ -234,14 +237,19 @@ class AnthropicAdapter(BaseChatAdapter):
         for block in response.content:
             block_type = getattr(block, "type", None)
 
+            # Log block type for debugging
+            logger.debug(f"Processing block type: {block_type}, block: {block}")
+
             if block_type == "text":
                 text = getattr(block, "text", "")
                 if text:
                     content_parts.append(text)
             elif block_type == "thinking":
+                # ThinkingBlock has 'thinking' attribute
                 thinking = getattr(block, "thinking", "")
                 if thinking:
                     thinking_parts.append(thinking)
+                    logger.debug(f"Extracted thinking content: {thinking[:100]}...")
             elif block_type == "tool_use":
                 tool_id = getattr(block, "id", str(uuid.uuid4()))
                 name = getattr(block, "name", "")
@@ -261,6 +269,11 @@ class AnthropicAdapter(BaseChatAdapter):
 
         content = "".join(content_parts).strip() or None
         reasoning = "".join(thinking_parts).strip() or None
+
+        logger.debug(f"Extracted content length: {len(content) if content else 0}")
+        logger.debug(
+            f"Extracted reasoning length: {len(reasoning) if reasoning else 0}"
+        )
 
         return content, reasoning, tool_calls or None
 
@@ -308,13 +321,59 @@ class AnthropicAdapter(BaseChatAdapter):
             if anthropic_tools:
                 request_params["tools"] = anthropic_tools
 
-            # 启用 thinking
-            if self.thinking_enabled:
+            # Response format/schema support
+            # Anthropic uses output_config parameter (requires SDK >= 0.80.0)
+            # NOTE: output_config and thinking cannot be used together
+            has_output_config = False
+            if "response_format" in kwargs and kwargs["response_format"] is not None:
+                response_format = kwargs["response_format"]
+                logger.info(f"Anthropic adapter: response_format={response_format}")
+                if isinstance(response_format, dict):
+                    if response_format.get("type") == "json_schema":
+                        # Extract the schema
+                        json_schema_config = response_format.get("json_schema", {})
+                        schema = json_schema_config.get("schema")
+                        if schema:
+                            # Use Anthropic's output_config format
+                            # Note: additionalProperties must be False for Anthropic
+                            if "additionalProperties" not in schema:
+                                schema["additionalProperties"] = False
+                            request_params["output_config"] = {
+                                "format": {"type": "json_schema", "schema": schema}
+                            }
+                            has_output_config = True
+                            logger.info(
+                                "Anthropic adapter: Using output_config with schema"
+                            )
+                    elif response_format.get("type") == "json_object":
+                        # Simple JSON mode - use a generic object schema
+                        request_params["output_config"] = {
+                            "format": {
+                                "type": "json_schema",
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                },
+                            }
+                        }
+                        has_output_config = True
+                        logger.info(
+                            "Anthropic adapter: Using output_config with generic object schema"
+                        )
+
+            # 启用 thinking (only if not using output_config)
+            if self.thinking_enabled and not has_output_config:
                 thinking_config: dict[str, Any] = {"type": "enabled"}
                 if self.thinking_budget:
                     thinking_config["budget_tokens"] = self.thinking_budget
                 request_params["thinking"] = thinking_config
+                logger.info("Anthropic adapter: Enabled thinking")
+            elif self.thinking_enabled and has_output_config:
+                logger.warning(
+                    "Anthropic adapter: Thinking disabled because output_config is used (they cannot be used together)"
+                )
 
+            # Regular response
             response = await client.messages.create(**request_params)
 
             # 提取内容
@@ -353,6 +412,41 @@ class AnthropicAdapter(BaseChatAdapter):
         """流式调用"""
         from anthropic import AsyncAnthropic
 
+        # Check if structured output is requested
+        # If so, use non-streaming API and simulate streaming
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            # Call non-streaming API which supports output_config
+            response = await self.chat(messages, tools, **kwargs)
+
+            # Simulate streaming by yielding the content in chunks
+            if response.content:
+                # Split content into smaller chunks to simulate streaming
+                chunk_size = 10  # characters per chunk
+                content = response.content
+                for i in range(0, len(content), chunk_size):
+                    chunk_text = content[i : i + chunk_size]
+                    yield self.create_stream_chunk(
+                        content=chunk_text,
+                        response_id=response.id,
+                    )
+
+            # Yield reasoning content if present
+            if response.reasoning_content:
+                yield self.create_stream_chunk(
+                    reasoning_content=response.reasoning_content,
+                    response_id=response.id,
+                )
+
+            # Yield final chunk with finish reason and usage
+            yield self.create_stream_chunk(
+                tool_calls=response.tool_calls,
+                finish_reason=response.finish_reason,
+                usage=response.usage,
+                response_id=response.id,
+            )
+            return
+
+        # Regular streaming without structured output
         client = AsyncAnthropic(
             api_key=self.api_key,
             base_url=self.base_url,

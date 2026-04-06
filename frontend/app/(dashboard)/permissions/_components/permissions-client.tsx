@@ -16,8 +16,13 @@ import {
   ChevronsRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { permissionsApi, type Permission } from '@/lib/api/admin/roles'
+import {
+  permissionsApi,
+  type Permission,
+  type PermissionScopeOption,
+} from '@/lib/api/admin/roles'
 import type { PageData } from '@/lib/api/users'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -66,18 +71,34 @@ import { DeletePermissionDialog } from './delete-permission-dialog'
 export function PermissionsClient() {
   const t = useTranslations('permissions')
   const commonT = useTranslations('common')
-  
+  const { canPerform } = useCanPerform()
+
   // 数据状态
   const [permissions, setPermissions] = React.useState<Permission[]>([])
+  const [scopeOptions, setScopeOptions] = React.useState<PermissionScopeOption[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
   const [pageData, setPageData] = React.useState<PageData<Permission> | null>(null)
-  
+
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
-  
+  const selectedScopes = React.useMemo(() => Array.from(scopeFilter), [scopeFilter])
+
+  // 防抖搜索
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+      if (searchQuery !== debouncedSearchQuery) {
+        setPage(1) // 搜索时重置到第一页
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   // 选择状态
   const [selectedPermissions, setSelectedPermissions] = React.useState<Set<string>>(new Set())
   
@@ -91,7 +112,12 @@ export function PermissionsClient() {
   const loadPermissions = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await permissionsApi.getPermissions(page, pageSize)
+      const data = await permissionsApi.getPermissions(
+        page,
+        pageSize,
+        selectedScopes.length > 0 ? selectedScopes : undefined,
+        debouncedSearchQuery || undefined
+      )
       setPermissions(data.items)
       setPageData(data)
     } catch {
@@ -99,57 +125,48 @@ export function PermissionsClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
-  
+  }, [page, pageSize, selectedScopes, debouncedSearchQuery])
+
   React.useEffect(() => {
     loadPermissions()
   }, [loadPermissions])
-  
-  // 过滤权限
-  const filteredPermissions = React.useMemo(() => {
-    return permissions.filter(permission => {
-      // 搜索过滤
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const matchCode = permission.code.toLowerCase().includes(query)
-        const matchDesc = permission.description?.toLowerCase().includes(query) ?? false
-        if (!matchCode && !matchDesc) return false
+
+  React.useEffect(() => {
+    const loadScopeOptions = async () => {
+      try {
+        const data = await permissionsApi.getPermissionScopes()
+        setScopeOptions(data)
+      } catch {
+        // 错误已由 API 客户端处理
       }
-      // Scope 过滤
-      if (scopeFilter.size > 0 && !scopeFilter.has(permission.scope)) return false
-      return true
-    })
-  }, [permissions, searchQuery, scopeFilter])
-  
+    }
+
+    loadScopeOptions()
+  }, [])
+
+  const filteredPermissions = permissions
+
   // 检查是否有筛选条件
   const isFiltered = searchQuery || scopeFilter.size > 0
-  
+
+  const handleScopeFilterChange = (values: Set<string>) => {
+    setScopeFilter(values)
+    setPage(1)
+    setSelectedPermissions(new Set())
+  }
+
   // 重置筛选
   const resetFilters = () => {
     setSearchQuery('')
+    setDebouncedSearchQuery('')
     setScopeFilter(new Set())
+    setPage(1)
+    setSelectedPermissions(new Set())
   }
-  
-  // Scope 选项（包含数量统计）
-  const scopeOptions = React.useMemo(() => {
-    const scopeCounts = new Map<string, number>()
-    
-    permissions.forEach(permission => {
-      scopeCounts.set(permission.scope, (scopeCounts.get(permission.scope) || 0) + 1)
-    })
-    
-    return Array.from(scopeCounts.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([scope, count]) => ({
-        value: scope,
-        label: scope,
-        count,
-      }))
-  }, [permissions])
-  
-  // 可选择的权限（排除通配符权限）
+
+  // 可选择的权限（排除系统权限和通配符权限）
   const selectablePermissions = React.useMemo(() => {
-    return filteredPermissions.filter(p => p.code !== '*')
+    return filteredPermissions.filter(p => !p.is_system && p.code !== '*')
   }, [filteredPermissions])
   
   // 分页计算
@@ -219,8 +236,8 @@ export function PermissionsClient() {
     setSelectedPermissions(new Set())
   }
   
-  // 判断是否为系统权限（通配符）
-  const isSystemPermission = (permission: Permission) => permission.code === '*'
+  // 判断是否为系统权限
+  const isSystemPermission = (permission: Permission) => permission.is_system
   
   return (
     <div className="flex flex-col gap-6">
@@ -231,10 +248,12 @@ export function PermissionsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createPermission')}
-          </Button>
+          <PermissionGuard permission="admin:permission:create">
+            <Button onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createPermission')}
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
       
@@ -255,7 +274,7 @@ export function PermissionsClient() {
             title={t('scope')}
             options={scopeOptions}
             selectedValues={scopeFilter}
-            onSelectionChange={setScopeFilter}
+            onSelectionChange={handleScopeFilterChange}
           />
           
           {isFiltered && (
@@ -330,31 +349,38 @@ export function PermissionsClient() {
                       {permission.scope}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground max-w-[300px] truncate">
-                    {permission.description || '-'}
+                  <TableCell className="text-muted-foreground">
+                    <div className="max-w-[300px] truncate">
+                      {permission.description || '-'}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    {!isSystemPermission(permission) && (
+                    {!isSystemPermission(permission) && (canPerform('admin:permission:update') || canPerform('admin:permission:delete')) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(permission)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            {commonT('edit')}
-                          </DropdownMenuItem>
-                          
-                          <DropdownMenuSeparator />
-                          
-                          <DropdownMenuItem 
-                            onClick={() => handleDelete(permission)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {commonT('delete')}
-                          </DropdownMenuItem>
+                          {canPerform('admin:permission:update') && (
+                            <DropdownMenuItem onClick={() => handleEdit(permission)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {commonT('edit')}
+                            </DropdownMenuItem>
+                          )}
+
+                          {canPerform('admin:permission:delete') && (
+                            <>
+                              {canPerform('admin:permission:update') && <DropdownMenuSeparator />}
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() => handleDelete(permission)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {commonT('delete')}
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
@@ -446,9 +472,9 @@ export function PermissionsClient() {
         permission={selectedPermission}
         onSuccess={handleDialogSuccess}
       />
-      
+
       {/* 批量操作浮动工具栏 */}
-      {selectedPermissions.size > 0 && (
+      {selectedPermissions.size > 0 && canPerform('admin:permission:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

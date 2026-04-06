@@ -76,7 +76,14 @@
       "helpful": "Helpful",
       "notHelpful": "Not helpful",
       "regenerate": "Regenerate",
-      "thinking": "Thinking..."
+      "thinking": "Thinking...",
+      "outputTruncated": "Output was truncated due to max output token limit. You can increase the limit in model settings.",
+      "tokenStats": "Token Stats",
+      "inputTokens": "Input Tokens",
+      "outputTokens": "Output Tokens",
+      "firstTokenTime": "First Token",
+      "totalTime": "Total Time",
+      "speed": "Speed"
     },
     "userInputRequest": {
       "pending": "Please select an option:",
@@ -87,7 +94,9 @@
       "zoomIn": "Zoom in (+)",
       "rotate": "Rotate (R)",
       "download": "Download",
-      "close": "Close (Esc)"
+      "close": "Close (Esc)",
+      "showPrompt": "Show prompt",
+      "hidePrompt": "Hide prompt"
     }
   }
 }

@@ -4,7 +4,7 @@ Condition node executor.
 Handles conditional branching in workflows.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -28,10 +28,12 @@ OPERATORS = {
     "less_than": lambda a, b: float(a) < float(b),
     "greater_or_equal": lambda a, b: float(a) >= float(b),
     "less_or_equal": lambda a, b: float(a) <= float(b),
-    "is_empty": lambda a, b: not a
-    or (isinstance(a, (list, dict, str)) and len(a) == 0),
-    "is_not_empty": lambda a, b: a
-    and (not isinstance(a, (list, dict, str)) or len(a) > 0),
+    "is_empty": lambda a, b: (
+        not a or (isinstance(a, (list, dict, str)) and len(a) == 0)
+    ),
+    "is_not_empty": lambda a, b: (
+        a and (not isinstance(a, (list, dict, str)) or len(a) > 0)
+    ),
     "is_null": lambda a, b: a is None,
     "is_not_null": lambda a, b: a is not None,
     "regex_match": lambda a, b: bool(__import__("re").match(str(b), str(a))),
@@ -87,7 +89,7 @@ class ConditionNodeExecutor(NodeExecutor):
         run: "WorkflowRun",
     ) -> ExecutionResult:
         """Execute condition node."""
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
 
         # Frontend stores branches directly in node_data, conditions inside branches
@@ -281,7 +283,7 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
         from app.models.model import Model, TeamModel
         import json
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
 
         # Frontend stores config in questionClassifierConfig, also check config for backward compatibility
@@ -316,13 +318,13 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
         team_model = (
             await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
         )
+        model_id: str
         if team_model:
-            model = team_model.model
-            model_id = str(model.id)
+            model_id = str(team_model.model.id)
         else:
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
-            if not model:
+            if model is None:
                 return ExecutionResult(error=f"Model not found: {team_model_id}")
             model_id = str(model.id)
 
@@ -354,7 +356,7 @@ Respond in JSON format:
 
         try:
             result = await model_manager.chat(
-                messages=messages,
+                messages=cast(list[Any], messages),
                 model_id=str(model_id),
                 temperature=0.1,  # Low temperature for classification
                 max_tokens=256,

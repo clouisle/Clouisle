@@ -68,8 +68,8 @@ export interface APIKeyUpdateInput {
 export interface APIKeyQueryParams {
   page?: number
   pageSize?: number
-  status?: 'active' | 'inactive' | 'expired'
-  userId?: string
+  status?: Array<'active' | 'inactive' | 'expired'>
+  userId?: string[]
   search?: string
 }
 
@@ -82,8 +82,8 @@ export const apiKeysApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (status) queryParams.append('status', status)
-    if (userId) queryParams.append('user_id', userId)
+    status?.forEach((value) => queryParams.append('status', value))
+    userId?.forEach((value) => queryParams.append('user_id', value))
     if (search) queryParams.append('search', search)
     return api.get<PageData<APIKey>>(`/api-keys?${queryParams.toString()}`)
   },

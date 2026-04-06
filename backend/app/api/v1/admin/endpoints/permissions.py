@@ -1,11 +1,17 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.permissions import SystemPermissions
 from app.models.user import Permission, User
-from app.schemas.user import Permission as PermissionSchema, PermissionCreate
+from app.schemas.user import (
+    Permission as PermissionSchema,
+    PermissionCreate,
+    PermissionScopeOption,
+)
 from app.schemas.response import (
     Response,
     PageData,
@@ -17,19 +23,42 @@ from app.schemas.response import (
 router = APIRouter()
 
 
+@router.get("/scopes", response_model=Response[list[PermissionScopeOption]])
+async def read_permission_scopes(
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
+) -> Any:
+    """
+    Retrieve stable permission scope options.
+    """
+    db_scopes = set(await Permission.all().distinct().values_list("scope", flat=True))
+    system_scopes = {
+        definition["scope"] for definition in SystemPermissions.get_all_definitions()
+    }
+    scopes = sorted(scope for scope in (db_scopes | system_scopes) if scope)
+
+    return success(data=[{"value": scope, "label": scope} for scope in scopes])
+
+
 @router.get("", response_model=Response[PageData[PermissionSchema]])
 async def read_permissions(
     page: int = 1,
     page_size: int = 50,
-    scope: Optional[str] = None,
-    current_user: User = Depends(deps.get_current_active_user),
+    scope: Optional[list[str]] = Query(None, description="Filter by permission scope"),
+    search: Optional[str] = Query(
+        None, description="Search by permission code or description"
+    ),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
 ) -> Any:
     """
     Retrieve permissions.
     """
     query = Permission.all()
     if scope:
-        query = query.filter(scope=scope)
+        query = query.filter(scope__in=scope).distinct()
+    if search:
+        query = query.filter(
+            Q(code__icontains=search) | Q(description__icontains=search)
+        )
 
     total = await query.count()
     skip = (page - 1) * page_size
@@ -49,10 +78,10 @@ async def read_permissions(
 async def create_permission(
     *,
     permission_in: PermissionCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:create")),
 ) -> Any:
     """
-    Create new permission.
+    Create new custom permission (non-system).
     """
     # Check if permission code already exists
     existing = await Permission.filter(code=permission_in.code).first()
@@ -62,10 +91,12 @@ async def create_permission(
             msg_key="permission_with_code_exists",
         )
 
+    # Custom permissions are created with is_system=False
     permission = await Permission.create(
         scope=permission_in.scope,
         code=permission_in.code,
         description=permission_in.description,
+        is_system=False,
     )
     return success(data=permission, msg_key="permission_created")
 
@@ -73,7 +104,7 @@ async def create_permission(
 @router.get("/{permission_id}", response_model=Response[PermissionSchema])
 async def read_permission(
     permission_id: UUID,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:read")),
 ) -> Any:
     """
     Get permission by ID.
@@ -93,10 +124,10 @@ async def update_permission(
     *,
     permission_id: UUID,
     permission_in: PermissionCreate,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:update")),
 ) -> Any:
     """
-    Update a permission.
+    Update a permission (only custom permissions can be updated).
     """
     permission = await Permission.filter(id=permission_id).first()
     if not permission:
@@ -104,6 +135,13 @@ async def update_permission(
             code=ResponseCode.PERMISSION_NOT_FOUND,
             msg_key="permission_not_found",
             status_code=404,
+        )
+
+    # Prevent updating system permissions
+    if permission.is_system:
+        raise BusinessError(
+            code=ResponseCode.CANNOT_UPDATE_SYSTEM_PERMISSION,
+            msg_key="cannot_update_system_permission",
         )
 
     # Check if code is being changed and if it conflicts
@@ -126,10 +164,10 @@ async def update_permission(
 @router.delete("/{permission_id}", response_model=Response[PermissionSchema])
 async def delete_permission(
     permission_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("user:manage")),
+    current_user: User = Depends(deps.PermissionChecker("admin:permission:delete")),
 ) -> Any:
     """
-    Delete a permission.
+    Delete a permission (only custom permissions can be deleted).
     """
     permission = await Permission.filter(id=permission_id).first()
     if not permission:
@@ -139,11 +177,11 @@ async def delete_permission(
             status_code=404,
         )
 
-    # Prevent deleting the wildcard permission
-    if permission.code == "*":
+    # Prevent deleting system permissions
+    if permission.is_system:
         raise BusinessError(
-            code=ResponseCode.CANNOT_DELETE_WILDCARD_PERMISSION,
-            msg_key="cannot_delete_wildcard_permission",
+            code=ResponseCode.CANNOT_DELETE_SYSTEM_PERMISSION,
+            msg_key="cannot_delete_system_permission",
         )
 
     await permission.delete()

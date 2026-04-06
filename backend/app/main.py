@@ -2,13 +2,13 @@ import json
 import logging
 import time
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from tortoise.contrib.fastapi import register_tortoise
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -34,9 +34,152 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for database initialization and cleanup"""
+    from tortoise import Tortoise
+
+    # Initialize Tortoise connection with global fallback enabled
+    await Tortoise.init(
+        db_url=settings.DATABASE_URL
+        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
+        modules={"models": ["app.models"]},
+        _enable_global_fallback=True,  # Enable global state for compatibility
+    )
+
+    # Run migrations BEFORE generating schemas
+    from app.core.init_data import (
+        init_agent_tools_credentials,
+        init_user_locale_field,
+        fix_cascade_delete_policies,
+        init_workflow_visibility_field,
+        init_agent_visibility_values,
+        init_agent_streaming_config,
+        init_agent_user_input_request,
+        init_agent_memory_fields,
+        init_agent_media_generation_fields,
+        init_permission_is_system_field,
+        init_password_expiration,
+        init_user_approval_status_field,
+        init_totp_fields,
+        init_agent_kb_search_mode,
+        init_chunk_status,
+        init_embed_config,
+        init_model_type_unique_constraint,
+        init_kb_rerank_fields,
+    )
+
+    try:
+        await init_user_locale_field()
+    except Exception as e:
+        logger.warning(f"User locale migration failed: {e}")
+
+    try:
+        await init_agent_tools_credentials()
+    except Exception as e:
+        logger.warning(f"Agent tools_credentials migration failed: {e}")
+
+    try:
+        await fix_cascade_delete_policies()
+    except Exception as e:
+        logger.warning(f"CASCADE delete policies migration failed: {e}")
+
+    try:
+        await init_workflow_visibility_field()
+    except Exception as e:
+        logger.warning(f"Workflow visibility migration failed: {e}")
+
+    try:
+        await init_agent_visibility_values()
+    except Exception as e:
+        logger.warning(f"Agent visibility normalization failed: {e}")
+
+    try:
+        await init_agent_streaming_config()
+    except Exception as e:
+        logger.warning(f"Agent streaming_config migration failed: {e}")
+
+    try:
+        await init_agent_user_input_request()
+    except Exception as e:
+        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+
+    try:
+        await init_agent_memory_fields()
+    except Exception as e:
+        logger.warning(f"Agent memory fields migration failed: {e}")
+
+    try:
+        await init_agent_media_generation_fields()
+    except Exception as e:
+        logger.warning(f"Agent media generation fields migration failed: {e}")
+
+    try:
+        await init_password_expiration()
+    except Exception as e:
+        logger.warning(f"Password expiration migration failed: {e}")
+
+    try:
+        await init_user_approval_status_field()
+    except Exception as e:
+        logger.warning(f"User approval_status migration failed: {e}")
+
+    try:
+        await init_totp_fields()
+    except Exception as e:
+        logger.warning(f"TOTP fields migration failed: {e}")
+
+    try:
+        await init_permission_is_system_field()
+    except Exception as e:
+        logger.warning(f"Permission is_system field migration failed: {e}")
+
+    try:
+        await init_agent_kb_search_mode()
+    except Exception as e:
+        logger.warning(f"Agent KB search_mode field migration failed: {e}")
+
+    try:
+        await init_chunk_status()
+    except Exception as e:
+        logger.warning(f"Chunk status fields migration failed: {e}")
+
+    try:
+        await init_embed_config()
+    except Exception as e:
+        logger.warning(f"Embed config migration failed: {e}")
+
+    try:
+        await init_model_type_unique_constraint()
+    except Exception as e:
+        logger.warning(f"Model unique constraint migration failed: {e}")
+
+    try:
+        await init_kb_rerank_fields()
+    except Exception as e:
+        logger.warning(f"Knowledge base rerank migration failed: {e}")
+
+    # Generate schemas
+    await Tortoise.generate_schemas()
+
+    # Initialize default data
+    try:
+        await init_db()
+    except Exception as e:
+        logger.error(f"Error seeding data: {e}")
+
+    yield
+
+    # Cleanup
+    await Tortoise.close_connections()
+    await close_redis()
+
+
+# Update app to use custom lifespan
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,
 )
 
 
@@ -249,6 +392,20 @@ class LanguageMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Embed security headers middleware - allow iframe embedding for /api/v1/embed/ routes
+class EmbedHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith(f"{settings.API_V1_STR}/embed/"):
+            # Remove X-Frame-Options to allow iframe embedding
+            if "x-frame-options" in response.headers:
+                del response.headers["x-frame-options"]
+            # Allow embedding from any origin (domain check is done at API level)
+            response.headers["Content-Security-Policy"] = "frame-ancestors *"
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+
 # Set all CORS enabled origins (must be added before other middlewares)
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
@@ -263,6 +420,7 @@ if settings.BACKEND_CORS_ORIGINS:
 
 app.add_middleware(LanguageMiddleware)
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(EmbedHeadersMiddleware)
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
@@ -275,90 +433,3 @@ async def root():
 @app.get(f"{settings.API_V1_STR}/health")
 async def health():
     return success(data={"status": "healthy"})
-
-
-# Pre-register hook to run migrations before Tortoise generates schemas
-@app.on_event("startup")
-async def pre_tortoise_init():
-    """Run database migrations before Tortoise initializes schemas"""
-    from tortoise import Tortoise
-
-    # Initialize Tortoise connection (without generating schemas yet)
-    await Tortoise.init(
-        db_url=settings.DATABASE_URL
-        or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
-        modules={"models": ["app.models"]},
-    )
-
-    # Run migrations BEFORE generating schemas
-    from app.core.init_data import (
-        init_agent_tools_credentials,
-        init_user_locale_field,
-        fix_cascade_delete_policies,
-        init_workflow_visibility_field,
-        init_agent_streaming_config,
-        init_agent_user_input_request,
-        init_agent_memory_fields,
-    )
-
-    try:
-        await init_user_locale_field()
-    except Exception as e:
-        logger.warning(f"User locale migration failed: {e}")
-
-    try:
-        await init_agent_tools_credentials()
-    except Exception as e:
-        logger.warning(f"Agent tools_credentials migration failed: {e}")
-
-    try:
-        await fix_cascade_delete_policies()
-    except Exception as e:
-        logger.warning(f"CASCADE delete policies migration failed: {e}")
-
-    try:
-        await init_workflow_visibility_field()
-    except Exception as e:
-        logger.warning(f"Workflow visibility migration failed: {e}")
-
-    try:
-        await init_agent_streaming_config()
-    except Exception as e:
-        logger.warning(f"Agent streaming_config migration failed: {e}")
-
-    try:
-        await init_agent_user_input_request()
-    except Exception as e:
-        logger.warning(f"Agent enable_user_input_request migration failed: {e}")
-
-    try:
-        await init_agent_memory_fields()
-    except Exception as e:
-        logger.warning(f"Agent memory fields migration failed: {e}")
-
-    # Now generate schemas (this will validate against the updated database)
-    await Tortoise.generate_schemas()
-
-
-# Register Tortoise (but skip generate_schemas since we did it manually above)
-register_tortoise(
-    app,
-    db_url=settings.DATABASE_URL
-    or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
-    modules={"models": ["app.models"]},
-    generate_schemas=False,  # Changed to False - we handle it manually in pre_tortoise_init
-    add_exception_handlers=True,
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    try:
-        await init_db()
-    except Exception as e:
-        print(f"Error seeding data: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await close_redis()

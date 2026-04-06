@@ -17,7 +17,8 @@
       "status": "状态",
       "triggerType": "触发类型",
       "triggeredBy": "触发用户",
-      "debugRuns": "仅调试运行"
+      "debugRuns": "仅调试运行",
+      "untitledOnly": "仅无标题"
     },
     "status": {
       "success": "成功",
@@ -81,6 +82,9 @@
     "page": "第 {current} 页，共 {total} 页",
     "deleteConfirmTitle": "删除对话",
     "deleteConfirmDescription": "确定要删除 {count} 个对话吗？此操作无法撤销。",
+    "bulkDeleteConfirmDescription": "确定要删除 {count} 个对话吗？此操作无法撤销。",
+    "selectedCount": "已选择 {count} 项",
+    "detail": "详情",
     "viewDetails": "查看详情",
     "noData": "暂无活动记录",
     "loadingStats": "加载统计中...",

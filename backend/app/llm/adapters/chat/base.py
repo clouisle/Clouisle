@@ -4,6 +4,7 @@ Chat 适配器基类
 定义统一的 Chat 适配器接口，所有服务商适配器都需要实现这个接口。
 """
 
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -20,6 +21,9 @@ from app.llm.types import (
     FinishReason,
     Usage,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseChatAdapter(ABC):
@@ -81,7 +85,19 @@ class BaseChatAdapter(ABC):
     @property
     def max_tokens(self) -> int | None:
         """最大输出 token"""
-        return self.config.get("max_tokens")
+        # 优先使用 ORM 独立字段 max_output_tokens
+        max_output = getattr(self.model_config, "max_output_tokens", None)
+        if max_output is not None:
+            return max_output
+        # 其次从 default_params 读取
+        max_from_params = self.default_params.get("max_tokens")
+        if max_from_params is not None:
+            return int(max_from_params)
+        # 最后从 config 读取
+        max_from_config = self.config.get("max_tokens")
+        if max_from_config is not None:
+            return int(max_from_config)
+        return None
 
     @property
     def timeout(self) -> int:

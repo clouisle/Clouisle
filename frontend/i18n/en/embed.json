@@ -1,0 +1,50 @@
+{
+  "embed": {
+    "title": "Embed",
+    "settings": {
+      "title": "Embed Settings",
+      "description": "Configure how this agent can be embedded in external websites",
+      "enabled": "Enable Embedding",
+      "enabledDescription": "Allow this agent to be embedded in external websites via iframe",
+      "allowedDomains": "Allowed Domains",
+      "allowedDomainsPlaceholder": "e.g. example.com, *.example.com",
+      "allowedDomainsDescription": "Leave empty to allow all domains. Supports wildcard subdomains (*.example.com).",
+      "theme": "Theme",
+      "themeAuto": "Auto",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "primaryColor": "Primary Color",
+      "mode": "Embed Mode",
+      "modeFullscreen": "Fullscreen",
+      "modeMobile": "Mobile",
+      "modeBubble": "Bubble",
+      "bubblePosition": "Bubble Position",
+      "bottomRight": "Bottom Right",
+      "bottomLeft": "Bottom Left",
+      "bubbleIcon": "Bubble Icon",
+      "bubbleGreeting": "Greeting Message",
+      "bubbleGreetingPlaceholder": "Hi! How can I help you?",
+      "apiKey": "API Key",
+      "apiKeyDescription": "Paste your API key here. It will be included in the code snippet below.",
+      "codeSnippet": "Code Snippet",
+      "codeSnippetDescription": "Copy and paste this code into your website",
+      "copied": "Copied!",
+      "copy": "Copy Code",
+      "preview": "Preview",
+      "save": "Save",
+      "embedButton": "Embed",
+      "requiresPublish": "Agent must be published before embedding"
+    },
+    "page": {
+      "poweredBy": "Powered by",
+      "close": "Close",
+      "newChat": "New Chat",
+      "loadingAgent": "Loading agent...",
+      "errorLoading": "Failed to load agent",
+      "invalidToken": "Invalid or missing API key",
+      "defaultGreeting": "Hi! How can I help you?",
+      "configureVariables": "Configure Variables",
+      "fillRequired": "Please fill in required fields first"
+    }
+  }
+}

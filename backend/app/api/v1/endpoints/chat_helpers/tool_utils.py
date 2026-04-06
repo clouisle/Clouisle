@@ -2,20 +2,24 @@
 Tool utilities for chat.
 """
 
-from app.models.agent import Agent, Tool
+from app.models.agent import Agent
+from app.models.tool import Tool
 
 
 async def get_agent_tools(agent: Agent) -> list[dict]:
-    """Get all tools configured for an agent."""
-    if not agent.tools:
+    """Get all custom tools configured for an agent."""
+    tools_config = list(agent.tools_config or [])
+    tool_ids = [
+        config.get("tool_id") for config in tools_config if config.get("tool_id")
+    ]
+    if not tool_ids:
         return []
 
-    # Fetch all tools in one query
-    all_tools = await Tool.filter(id__in=agent.tools, is_active=True).all()
+    all_tools = await Tool.filter(id__in=tool_ids, is_enabled=True).all()
     tool_map = {str(t.id): t for t in all_tools}
 
-    tools = []
-    for tool_id in agent.tools:
+    tools: list[dict] = []
+    for tool_id in tool_ids:
         tool = tool_map.get(str(tool_id))
         if tool:
             tools.append(
@@ -35,21 +39,21 @@ async def get_tool_display_names(
     agent: Agent, user_locale: str | None = None
 ) -> dict[str, str]:
     """Get tool display names for the given locale."""
-    if not agent.tools:
+    _ = user_locale
+    tools_config = list(agent.tools_config or [])
+    tool_ids = [
+        config.get("tool_id") for config in tools_config if config.get("tool_id")
+    ]
+    if not tool_ids:
         return {}
 
-    # Fetch all tools in one query
-    all_tools = await Tool.filter(id__in=agent.tools, is_active=True).all()
+    all_tools = await Tool.filter(id__in=tool_ids, is_enabled=True).all()
     tool_map = {str(t.id): t for t in all_tools}
 
-    display_names = {}
-    for tool_id in agent.tools:
+    display_names: dict[str, str] = {}
+    for tool_id in tool_ids:
         tool = tool_map.get(str(tool_id))
         if tool:
-            # Use localized name if available
-            if user_locale and tool.i18n_names and user_locale in tool.i18n_names:
-                display_names[tool.name] = tool.i18n_names[user_locale]
-            else:
-                display_names[tool.name] = tool.name
+            display_names[tool.name] = tool.display_name
 
     return display_names

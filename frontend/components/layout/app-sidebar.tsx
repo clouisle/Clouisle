@@ -30,6 +30,7 @@ import {
 import { authApi, type User as UserType } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
+import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 
@@ -115,91 +116,97 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       title: t('dashboard'),
       url: '/dashboard',
       icon: LayoutDashboard,
-      permission: 'dashboard:access',
+      permission: ROUTE_PERMISSION_MAP['/dashboard'],
     },
     {
       title: t('teams'),
       url: '/teams',
       icon: UsersRound,
-      permission: 'team:read',
+      permission: ROUTE_PERMISSION_MAP['/teams'],
     },
     {
       title: t('knowledgeBases'),
       url: '/knowledge-bases',
       icon: Database,
-      permission: 'kb:read',
+      permission: ROUTE_PERMISSION_MAP['/knowledge-bases'],
     },
     {
       title: t('activities'),
       url: '/activities',
       icon: Activity,
-      permission: 'conversation:read',
+      permission: ROUTE_PERMISSION_MAP['/activities'],
     },
   ]
 
-  const adminItems = [
+  const systemItems = [
     {
       title: t('users'),
       url: '/users',
       icon: Users,
-      permission: 'user:read',
+      permission: ROUTE_PERMISSION_MAP['/users'],
     },
     {
       title: t('roles'),
       url: '/roles',
       icon: Shield,
-      permission: 'role:read',
+      permission: ROUTE_PERMISSION_MAP['/roles'],
     },
     {
       title: t('permissions'),
       url: '/permissions',
       icon: Key,
-      permission: 'permission:read',
+      permission: ROUTE_PERMISSION_MAP['/permissions'],
     },
-    {
-      title: t('apiKeys'),
-      url: '/api-keys',
-      icon: KeyRound,
-      permission: 'apikey:read',
-    },
+  ]
+
+  const resourceItems = [
     {
       title: t('models'),
       url: '/models',
       icon: Bot,
-      permission: 'model:read',
+      permission: ROUTE_PERMISSION_MAP['/models'],
     },
     {
       title: t('tools'),
       url: '/tools',
       icon: Wrench,
-      permission: 'tool:read',
+      permission: ROUTE_PERMISSION_MAP['/tools'],
     },
     {
-      title: t('notifications'),
-      url: '/notifications',
-      icon: Bell,
-      permission: 'dashboard:access',
+      title: t('apiKeys'),
+      url: '/api-keys',
+      icon: KeyRound,
+      permission: ROUTE_PERMISSION_MAP['/api-keys'],
     },
     {
       title: t('memories'),
       url: '/memories',
       icon: Brain,
-      permission: 'memory:read',
+      permission: ROUTE_PERMISSION_MAP['/memories'],
+    },
+  ]
+
+  const monitoringItems = [
+    {
+      title: t('notifications'),
+      url: '/notifications',
+      icon: Bell,
+      permission: ROUTE_PERMISSION_MAP['/notifications'],
     },
     {
       title: t('auditLogs'),
       url: '/audit-logs',
       icon: FileText,
-      permission: 'audit:read',
+      permission: ROUTE_PERMISSION_MAP['/audit-logs'],
     },
   ]
 
-  const otherItems = [
+  const settingsItems = [
     {
       title: t('siteSettings'),
       url: '/site-settings',
       icon: Settings,
-      permission: 'settings:read',
+      permission: ROUTE_PERMISSION_MAP['/site-settings'],
     },
     {
       title: t('helpCenter'),
@@ -213,10 +220,16 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
   const filteredGeneralItems = generalItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
-  const filteredAdminItems = adminItems.filter(
+  const filteredSystemItems = systemItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
-  const filteredOtherItems = otherItems.filter(
+  const filteredResourceItems = resourceItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredMonitoringItems = monitoringItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  )
+  const filteredSettingsItems = settingsItems.filter(
     (item) => !item.permission || hasPermission(item.permission)
   )
 
@@ -275,13 +288,13 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           </SidebarGroup>
         )}
 
-        {/* Admin - only show if user has dashboard access and there are visible items */}
-        {canAccessDashboard && filteredAdminItems.length > 0 && (
+        {/* System - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredSystemItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>{t('admin')}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('system')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {filteredAdminItems.map((item) => (
+                {filteredSystemItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <Link href={item.url}>
                       <SidebarMenuButton isActive={isActive(item.url)}>
@@ -296,13 +309,55 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
           </SidebarGroup>
         )}
 
-        {/* Other */}
-        {filteredOtherItems.length > 0 && (
+        {/* Resources - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredResourceItems.length > 0 && (
           <SidebarGroup>
-            <SidebarGroupLabel>{t('other')}</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('resources')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {filteredOtherItems.map((item) => (
+                {filteredResourceItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Monitoring - only show if user has dashboard access and there are visible items */}
+        {canAccessDashboard && filteredMonitoringItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('monitoring')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredMonitoringItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <Link href={item.url}>
+                      <SidebarMenuButton isActive={isActive(item.url)}>
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </Link>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Settings */}
+        {filteredSettingsItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>{t('settings')}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredSettingsItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <Link href={item.url}>
                       <SidebarMenuButton isActive={isActive(item.url)}>

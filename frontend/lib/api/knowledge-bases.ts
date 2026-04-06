@@ -13,6 +13,10 @@ export interface KnowledgeBaseSettings {
   chunk_size?: number
   chunk_overlap?: number
   separator?: string | null
+  rerank_enabled?: boolean
+  rerank_candidate_k?: number
+  rerank_fail_open?: boolean
+  rerank_score_threshold?: number | null
 }
 
 export interface TeamInfo {
@@ -34,6 +38,13 @@ export interface EmbeddingModelInfo {
   model_id: string
 }
 
+export interface RerankModelInfo {
+  id: string
+  name: string
+  provider: string
+  model_id: string
+}
+
 export interface KnowledgeBase {
   id: string
   team: TeamInfo
@@ -43,6 +54,8 @@ export interface KnowledgeBase {
   icon: string | null
   embedding_model_id: string | null
   embedding_model?: EmbeddingModelInfo | null
+  rerank_model_id: string | null
+  rerank_model?: RerankModelInfo | null
   settings: KnowledgeBaseSettings | null
   status: string
   document_count: number
@@ -68,6 +81,7 @@ export interface KnowledgeBaseCreateInput {
   icon?: string | null
   team_id?: string
   embedding_model_id?: string | null
+  rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
 }
 
@@ -76,6 +90,7 @@ export interface KnowledgeBaseUpdateInput {
   description?: string | null
   icon?: string | null
   embedding_model_id?: string | null
+  rerank_model_id?: string | null
   settings?: KnowledgeBaseSettings | null
   status?: string
 }
@@ -84,14 +99,14 @@ export interface KnowledgeBaseQueryParams {
   page?: number
   pageSize?: number
   search?: string
-  status?: string
+  status?: string[]
   teamId?: string
 }
 
 // ============ Document Types ============
 
 export type DocumentStatus = 'pending' | 'processing' | 'completed' | 'error'
-export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'md' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'url'
+export type DocumentType = 'pdf' | 'docx' | 'doc' | 'txt' | 'markdown' | 'html' | 'csv' | 'xlsx' | 'xls' | 'json' | 'url'
 
 export interface Document {
   id: string
@@ -116,6 +131,8 @@ export interface DocumentChunk {
   chunk_index: number
   token_count: number
   metadata: Record<string, unknown> | null
+  status: 'pending' | 'embedded' | 'failed'
+  error_message: string | null
   created_at: string
 }
 
@@ -139,8 +156,8 @@ export interface ProcessInput {
 export interface DocumentQueryParams {
   page?: number
   pageSize?: number
-  status?: DocumentStatus
-  doc_type?: DocumentType
+  status?: DocumentStatus[]
+  doc_type?: DocumentType[]
   search?: string
 }
 
@@ -152,6 +169,9 @@ export interface SearchResult {
   score: number
   metadata: Record<string, unknown> | null
   search_type?: string
+  original_score?: number
+  rerank_score?: number
+  rerank_reason?: string
 }
 
 export type SearchMode = 'vector' | 'fulltext' | 'hybrid'
@@ -161,6 +181,10 @@ export interface SearchParams {
   search_mode?: SearchMode
   top_k?: number
   threshold?: number
+  rerank_enabled?: boolean
+  rerank_candidate_k?: number
+  rerank_fail_open?: boolean
+  rerank_score_threshold?: number | null
 }
 
 export interface SearchResponse {
@@ -183,6 +207,7 @@ export interface ChunkPreviewItem {
   content: string
   token_count: number
   char_count: number
+  overlap_length: number
 }
 
 export interface ChunkPreviewResponse {
@@ -204,7 +229,7 @@ export const knowledgeBasesApi = {
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (search) queryParams.append('search', search)
-    if (status) queryParams.append('status', status)
+    status?.forEach((value) => queryParams.append('status', value))
     if (teamId) queryParams.append('team_id', teamId)
     return api.get<PageData<KnowledgeBase>>(`/knowledge-bases?${queryParams.toString()}`)
   },
@@ -254,6 +279,10 @@ export const knowledgeBasesApi = {
       search_mode: params.search_mode || 'hybrid',
       top_k: params.top_k || 5,
       score_threshold: params.threshold || 0,
+      rerank_enabled: params.rerank_enabled,
+      rerank_candidate_k: params.rerank_candidate_k,
+      rerank_fail_open: params.rerank_fail_open,
+      rerank_score_threshold: params.rerank_score_threshold,
     }
     return api.post<SearchResponse>(`/knowledge-bases/${id}/search`, requestBody)
   },
@@ -268,8 +297,8 @@ export const knowledgeBasesApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (status) queryParams.append('status', status)
-    if (doc_type) queryParams.append('doc_type', doc_type)
+    status?.forEach((value) => queryParams.append('status', value))
+    doc_type?.forEach((value) => queryParams.append('doc_type', value))
     if (search) queryParams.append('search', search)
     return api.get<PageData<Document>>(`/knowledge-bases/${kbId}/documents?${queryParams.toString()}`)
   },
@@ -334,6 +363,13 @@ export const knowledgeBasesApi = {
    */
   reprocessDocument: async (kbId: string, docId: string): Promise<Document> => {
     return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/reprocess`)
+  },
+
+  /**
+   * 重试失败的分块
+   */
+  retryFailedChunks: async (kbId: string, docId: string): Promise<Document> => {
+    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/retry-failed-chunks`)
   },
 
   /**

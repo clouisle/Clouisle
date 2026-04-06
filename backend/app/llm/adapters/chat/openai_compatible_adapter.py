@@ -205,9 +205,13 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+
+            # Add response_format if provided in kwargs
+            if "response_format" in kwargs and kwargs["response_format"] is not None:
+                request_params["response_format"] = kwargs["response_format"]
 
             response = await client.chat.completions.create(**request_params)
 
@@ -299,9 +303,13 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
             if self.max_tokens is not None:
-                request_params["max_completion_tokens"] = self.max_tokens
+                request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+
+            # Add response_format if provided in kwargs
+            if "response_format" in kwargs and kwargs["response_format"] is not None:
+                request_params["response_format"] = kwargs["response_format"]
 
             stream = await client.chat.completions.create(**request_params)
 

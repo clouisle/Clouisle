@@ -61,7 +61,7 @@ export function McpToolDialog({
   // 基本信息
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [icon, setIcon] = useState('🔌')
+  const [icon, setIcon] = useState('')
   const [isEnabled, setIsEnabled] = useState(true)
 
   // 传输类型
@@ -96,7 +96,7 @@ export function McpToolDialog({
       if (tool) {
         setName(tool.name)
         setDisplayName(tool.display_name)
-        setIcon(tool.icon || '🔌')
+        setIcon(tool.icon || '')
         setIsEnabled(tool.is_enabled)
 
         if (tool.mcp_config) {
@@ -131,7 +131,7 @@ export function McpToolDialog({
         // 重置为默认值
         setName('')
         setDisplayName('')
-        setIcon('🔌')
+        setIcon('')
         setIsEnabled(true)
         setTransportType('stdio')
         setCommand('')

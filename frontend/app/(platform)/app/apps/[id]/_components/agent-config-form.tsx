@@ -45,7 +45,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
   const [autoExtract, setAutoExtract] = React.useState(
     agent.memory_config?.auto_extract !== false
   )
-  const [importanceThreshold, setImportanceThreshold] = React.useState<'low' | 'medium' | 'high'>(
+  const [importanceThreshold] = React.useState<'low' | 'medium' | 'high'>(
     agent.memory_config?.importance_threshold || 'medium'
   )
 

@@ -32,7 +32,6 @@ import {
   Link,
   Workflow as WorkflowIcon,
   Sparkles,
-  SkipForward,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,6 +54,7 @@ interface WorkflowRunDrawerProps {
   variables: VariableDefinition[]  // 向后兼容，但优先从节点提取
   open: boolean
   onClose: () => void
+  onNodeTracesChange?: (traces: Map<string, NodeTrace>) => void
 }
 
 // 从工作流定义中提取开始节点的输入参数
@@ -88,25 +88,10 @@ function extractInputVariables(workflow: Workflow | null): VariableDefinition[] 
   }))
 }
 
-// 节点执行追踪数据
-interface NodeTrace {
-  nodeId: string
-  nodeType: string
-  nodeLabel: string
-  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped'
-  startTime?: string
-  endTime?: string
-  durationMs?: number
-  inputs?: Record<string, unknown>
-  outputs?: Record<string, unknown>
-  error?: string
-  tokens?: {
-    prompt?: number
-    completion?: number
-    total?: number
-  }
-  streamingContent?: string
-}
+// Re-export NodeTrace from shared module
+export type { NodeTrace } from './node-output-renderer'
+import type { NodeTrace } from './node-output-renderer'
+import { nodeStatusConfig, renderNodeOutput as sharedRenderNodeOutput } from './node-output-renderer'
 
 // 节点图标映射
 const nodeTypeIcons: Record<string, React.ElementType> = {
@@ -186,19 +171,14 @@ const statusConfig: Record<
   },
 }
 
-const nodeStatusConfig = {
-  pending: { icon: Clock, className: 'text-gray-400' },
-  running: { icon: Loader2, className: 'text-blue-500 animate-spin' },
-  success: { icon: CheckCircle2, className: 'text-green-500' },
-  failed: { icon: XCircle, className: 'text-red-500' },
-  skipped: { icon: SkipForward, className: 'text-gray-400' },
-}
+// nodeStatusConfig is imported from node-output-renderer
 
 export function WorkflowRunDrawer({
   workflow,
   variables: propVariables,
   open,
   onClose,
+  onNodeTracesChange,
 }: WorkflowRunDrawerProps) {
   const t = useTranslations('workflow')
 
@@ -229,6 +209,11 @@ export function WorkflowRunDrawer({
   // 节点追踪状态
   const [nodeTraces, setNodeTraces] = React.useState<Map<string, NodeTrace>>(new Map())
   const [expandedNodes, setExpandedNodes] = React.useState<Set<string>>(new Set())
+
+  // 通知父组件 nodeTraces 变化
+  React.useEffect(() => {
+    onNodeTracesChange?.(nodeTraces)
+  }, [nodeTraces, onNodeTracesChange])
 
   // SSE 连接关闭函数
   const closeStreamRef = React.useRef<(() => void) | null>(null)
@@ -573,119 +558,7 @@ export function WorkflowRunDrawer({
 
   // 根据节点类型渲染输出
   const renderNodeOutput = (nodeType: string, outputs: Record<string, unknown>) => {
-    // LLM 节点 - 显示文本内容
-    if (nodeType === 'llm') {
-      const text = outputs.text || outputs.content || outputs.response || ''
-      if (typeof text === 'string' && text) {
-        return (
-          <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {text}
-          </div>
-        )
-      }
-    }
-
-    // Answer 节点 - 显示所有文本输出
-    if (nodeType === 'answer') {
-      const textOutputs = Object.entries(outputs)
-        .filter(([, v]) => typeof v === 'string')
-        .map(([k, v]) => ({ key: k, value: v as string }))
-      
-      if (textOutputs.length > 0) {
-        return (
-          <div className="space-y-2">
-            {textOutputs.map(({ key, value }) => (
-              <div key={key} className="space-y-1">
-                <span className="text-[10px] text-muted-foreground">{key}</span>
-                <div className="p-2 bg-background rounded text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  {value}
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      }
-    }
-
-    // Code 节点 - 显示代码执行结果
-    if (nodeType === 'code') {
-      return (
-        <div className="space-y-2">
-          {Object.entries(outputs).map(([key, value]) => (
-            <div key={key} className="space-y-1">
-              <span className="text-[10px] text-muted-foreground font-mono">{key}</span>
-              <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32 font-mono">
-                {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
-              </pre>
-            </div>
-          ))}
-        </div>
-      )
-    }
-
-    // Condition / Question Classifier 节点 - 显示匹配的分支
-    if (nodeType === 'condition' || nodeType === 'question_classifier') {
-      const matchedBranch = outputs.matched_branch || outputs.matched_category || outputs.branch
-      const matchedHandle = outputs.matched_handle || outputs.handle
-      return (
-        <div className="p-2 bg-background rounded space-y-1">
-          {!!matchedBranch && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">{t('runDrawer.matchedBranch')}</span>
-              <span className="font-medium ml-1">{String(matchedBranch)}</span>
-            </div>
-          )}
-          {!!matchedHandle && (
-            <div className="text-[10px] text-muted-foreground font-mono">
-              Handle: {String(matchedHandle)}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    // HTTP 请求节点 - 显示状态码和响应
-    if (nodeType === 'http_request') {
-      const statusCode = outputs.status_code || outputs.statusCode
-      const body = outputs.body || outputs.response
-      return (
-        <div className="space-y-2">
-          {!!statusCode && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">{t('runDrawer.statusCode')}</span>
-              <span className={cn(
-                'font-medium ml-1',
-                Number(statusCode) >= 200 && Number(statusCode) < 300 ? 'text-green-600' : 'text-red-600'
-              )}>
-                {String(statusCode)}
-              </span>
-            </div>
-          )}
-          {!!body && (
-            <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
-              {typeof body === 'string' ? body : JSON.stringify(body, null, 2)}
-            </pre>
-          )}
-        </div>
-      )
-    }
-
-    // Tool 节点 - 显示工具执行结果
-    if (nodeType === 'tool') {
-      const result = outputs.result || outputs.output
-      return (
-        <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
-          {typeof result === 'string' ? result : JSON.stringify(outputs, null, 2)}
-        </pre>
-      )
-    }
-
-    // 默认 - JSON 格式显示
-    return (
-      <pre className="p-2 bg-background rounded text-[10px] overflow-x-auto max-h-32">
-        {JSON.stringify(outputs, null, 2)}
-      </pre>
-    )
+    return sharedRenderNodeOutput(nodeType, outputs, t)
   }
 
   const isPublished = workflow?.status === 'published'
@@ -842,7 +715,8 @@ export function WorkflowRunDrawer({
                   // 如果有 outputs（来自 Answer 节点），显示它
                   if (outputs && Object.keys(outputs).length > 0) {
                     const outputText = Object.values(outputs)
-                      .filter((v): v is string => typeof v === 'string')
+                      .map(v => v != null ? String(v) : '')
+                      .filter(v => v.length > 0)
                       .join('\n')
                     if (outputText) {
                       return (

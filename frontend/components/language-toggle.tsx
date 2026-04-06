@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { locales, localeNames, type Locale } from '@/i18n/config'
+import { locales, localeNames } from '@/i18n/config'
 import { useLocaleChange } from '@/hooks/use-locale-change'
 
 export function LanguageToggle() {

@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { locales, localeNames, type Locale } from '@/i18n/config'
+import { locales, localeNames } from '@/i18n/config'
 import { useSettings } from '@/hooks/use-settings'
 import { useLocaleChange } from '@/hooks/use-locale-change'
 

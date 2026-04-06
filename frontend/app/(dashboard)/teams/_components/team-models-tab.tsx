@@ -13,11 +13,10 @@ import {
 } from 'lucide-react'
 import {
   teamModelsApi,
-  modelsApi,
   type TeamModel,
-  type Model,
   type TeamModelUpdateInput,
 } from '@/lib/api'
+import { modelsApi, type Model } from '@/lib/api/admin/models'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -416,11 +415,12 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                     <UsageBar used={tm.monthly_tokens_used} limit={tm.monthly_token_limit} />
                   </TableCell>
                   <TableCell>
-                    <Switch
-                      checked={tm.is_enabled}
-                      onCheckedChange={() => handleToggleEnabled(tm)}
-                      disabled={!canManageTeam}
-                    />
+                    {canManageTeam ? (
+                      <Switch
+                        checked={tm.is_enabled}
+                        onCheckedChange={() => handleToggleEnabled(tm)}
+                      />
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     {canManageTeam && (

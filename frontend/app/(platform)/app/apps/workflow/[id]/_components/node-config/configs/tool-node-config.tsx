@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Trash2, Search, ChevronDown, Wrench, Check, AlertCircle, Loader2, Clock3, Calculator, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,16 +57,16 @@ export const defaultToolNodeConfig: ToolNodeConfig = {
 }
 
 // 分类图标和颜色
-const categoryConfig: Record<ToolCategory, { icon: string; color: string }> = {
-  time: { icon: '🕐', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' },
-  math: { icon: '🔢', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' },
-  search: { icon: '🔍', color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' },
-  web: { icon: '🌐', color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300' },
-  file: { icon: '📁', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' },
-  code: { icon: '💻', color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300' },
-  api: { icon: '🔗', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' },
-  data: { icon: '📊', color: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300' },
-  other: { icon: '⚙️', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
+const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: string }> = {
+  time: { icon: <Clock3 className="h-4 w-4" />, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' },
+  math: { icon: <Calculator className="h-4 w-4" />, color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' },
+  search: { icon: <Search className="h-4 w-4" />, color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' },
+  web: { icon: <Globe className="h-4 w-4" />, color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300' },
+  file: { icon: <FolderOpen className="h-4 w-4" />, color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' },
+  code: { icon: <Code2 className="h-4 w-4" />, color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300' },
+  api: { icon: <Link className="h-4 w-4" />, color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' },
+  data: { icon: <ChartColumn className="h-4 w-4" />, color: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300' },
+  other: { icon: <Wrench className="h-4 w-4" />, color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
 }
 
 // 类型标签配置 - 颜色部分

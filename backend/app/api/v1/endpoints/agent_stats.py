@@ -335,9 +335,12 @@ async def get_agent_tool_usage(
                     tool_stats[tool_name] = tool_stats.get(tool_name, 0) + 1
 
     # Sort by count descending
+    tool_items: list[dict[str, int | str]] = [
+        {"name": k, "count": v} for k, v in tool_stats.items()
+    ]
     sorted_tools = sorted(
-        [{"name": k, "count": v} for k, v in tool_stats.items()],
-        key=lambda x: x["count"],
+        tool_items,
+        key=lambda x: int(x["count"]),
         reverse=True,
     )
 

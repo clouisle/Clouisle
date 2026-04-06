@@ -89,8 +89,8 @@ export function ChunkEditorDialog({
 
   // 重新分块设置
   const [rechunkSettings, setRechunkSettings] = React.useState({
-    chunk_size: 500,
-    chunk_overlap: 50,
+    chunk_size: 1000,
+    chunk_overlap: 100,
     separator: '',
   })
   const [isRechunking, setIsRechunking] = React.useState(false)
@@ -455,7 +455,7 @@ export function ChunkEditorDialog({
                       value={rechunkSettings.chunk_size}
                       onChange={(e) => setRechunkSettings(prev => ({
                         ...prev,
-                        chunk_size: parseInt(e.target.value) || 500
+                        chunk_size: parseInt(e.target.value) || 1000
                       }))}
                     />
                     <p className="text-xs text-muted-foreground">
@@ -473,7 +473,7 @@ export function ChunkEditorDialog({
                       value={rechunkSettings.chunk_overlap}
                       onChange={(e) => setRechunkSettings(prev => ({
                         ...prev,
-                        chunk_overlap: parseInt(e.target.value) || 50
+                        chunk_overlap: parseInt(e.target.value) || 100
                       }))}
                     />
                     <p className="text-xs text-muted-foreground">

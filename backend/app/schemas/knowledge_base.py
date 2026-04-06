@@ -52,9 +52,29 @@ class DocumentType:
 class KnowledgeBaseSettings(BaseModel):
     """Knowledge base settings"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
+    rerank_enabled: bool = Field(
+        default=True, description="Whether reranking is enabled for retrieval"
+    )
+    rerank_candidate_k: int = Field(
+        default=10, ge=1, le=100, description="Candidate pool size before reranking"
+    )
+    rerank_fail_open: bool = Field(
+        default=True,
+        description="Whether to fall back to recall results when reranking fails",
+    )
+    rerank_score_threshold: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Optional minimum rerank score threshold",
+    )
 
 
 class KnowledgeBaseBase(BaseModel):
@@ -72,6 +92,7 @@ class KnowledgeBaseCreate(KnowledgeBaseBase):
 
     team_id: UUID = Field(..., description="Team ID for ownership")
     embedding_model_id: Optional[UUID] = Field(None, description="Embedding model ID")
+    rerank_model_id: Optional[UUID] = Field(None, description="Rerank model ID")
     settings: Optional[KnowledgeBaseSettings] = Field(None, description="KB settings")
 
 
@@ -82,6 +103,7 @@ class KnowledgeBaseUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     icon: Optional[str] = Field(None, max_length=50)
     embedding_model_id: Optional[UUID] = None
+    rerank_model_id: Optional[UUID] = None
     settings: Optional[KnowledgeBaseSettings] = None
     status: Optional[str] = Field(None, description="Status (active, archived)")
 
@@ -120,6 +142,18 @@ class EmbeddingModelInfo(BaseModel):
         from_attributes = True
 
 
+class RerankModelInfo(BaseModel):
+    """重排序模型简要信息"""
+
+    id: UUID
+    name: str
+    provider: str
+    model_id: str
+
+    class Config:
+        from_attributes = True
+
+
 class KnowledgeBase(KnowledgeBaseBase):
     """Knowledge base response schema"""
 
@@ -129,6 +163,8 @@ class KnowledgeBase(KnowledgeBaseBase):
     status: str
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
+    rerank_model_id: Optional[UUID] = None
+    rerank_model: Optional[RerankModelInfo] = None
     embedding_dimension: Optional[int] = Field(
         None,
         description="Embedding vector dimension (set after first document processing)",
@@ -156,6 +192,8 @@ class KnowledgeBaseList(BaseModel):
     status: str
     embedding_model_id: Optional[UUID] = None
     embedding_model: Optional[EmbeddingModelInfo] = None
+    rerank_model_id: Optional[UUID] = None
+    rerank_model: Optional[RerankModelInfo] = None
     embedding_dimension: Optional[int] = Field(
         None, description="Embedding vector dimension"
     )
@@ -226,6 +264,7 @@ class DocumentList(BaseModel):
     error_message: Optional[str] = None
     chunk_count: int
     token_count: int
+    metadata: Optional[dict] = None
     created_at: datetime
 
     class Config:
@@ -250,6 +289,8 @@ class DocumentChunk(BaseModel):
     chunk_index: int
     token_count: int
     metadata: Optional[dict] = None
+    status: str = "embedded"
+    error_message: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -259,17 +300,23 @@ class DocumentChunk(BaseModel):
 class RechunkRequest(BaseModel):
     """Request to rechunk a document with new settings"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
 
 
 class ProcessRequest(BaseModel):
     """Request to start processing a pending document"""
 
-    chunk_size: Optional[int] = Field(None, ge=100, description="Chunk size in tokens")
+    chunk_size: Optional[int] = Field(
+        None, ge=100, description="Chunk size in characters"
+    )
     chunk_overlap: Optional[int] = Field(
-        None, ge=0, description="Overlap between chunks"
+        None, ge=0, description="Overlap between chunks in characters"
     )
     separator: Optional[str] = Field(None, description="Custom text separator")
     clean_text: Optional[bool] = Field(
@@ -295,8 +342,12 @@ class ProcessWithChunksRequest(BaseModel):
 class ChunkPreviewRequest(BaseModel):
     """Request to preview chunking results"""
 
-    chunk_size: int = Field(default=500, ge=100, description="Chunk size in tokens")
-    chunk_overlap: int = Field(default=50, ge=0, description="Overlap between chunks")
+    chunk_size: int = Field(
+        default=1000, ge=100, description="Chunk size in characters"
+    )
+    chunk_overlap: int = Field(
+        default=100, ge=0, description="Overlap between chunks in characters"
+    )
     separator: Optional[str] = Field(default=None, description="Custom text separator")
     clean_text: bool = Field(
         default=True, description="Whether to clean and normalize text"
@@ -310,6 +361,9 @@ class ChunkPreviewItem(BaseModel):
     content: str
     token_count: int
     char_count: int
+    overlap_length: int = Field(
+        default=0, description="Overlap character count at the start of this chunk"
+    )
 
 
 class ChunkPreviewResponse(BaseModel):
@@ -346,6 +400,21 @@ class SearchRequest(BaseModel):
     filter_doc_ids: Optional[List[UUID]] = Field(
         None, description="Filter by document IDs"
     )
+    rerank_enabled: Optional[bool] = Field(
+        default=None, description="Override rerank enabled setting"
+    )
+    rerank_candidate_k: Optional[int] = Field(
+        default=None, ge=1, le=100, description="Override rerank candidate pool size"
+    )
+    rerank_fail_open: Optional[bool] = Field(
+        default=None, description="Override rerank fail-open behavior"
+    )
+    rerank_score_threshold: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Override rerank score threshold, null disables threshold",
+    )
 
 
 class SearchResult(BaseModel):
@@ -357,6 +426,10 @@ class SearchResult(BaseModel):
     content: str
     score: float
     metadata: Optional[dict] = None
+    search_type: Optional[str] = None
+    original_score: Optional[float] = None
+    rerank_score: Optional[float] = None
+    rerank_reason: Optional[str] = None
 
 
 class SearchResponse(BaseModel):

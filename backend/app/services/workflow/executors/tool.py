@@ -4,7 +4,7 @@ Tool and agent node executors.
 Handles external tool calls and agent invocations.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import logging
 import json
 
@@ -50,69 +50,102 @@ class ToolNodeExecutor(NodeExecutor):
     ) -> ExecutionResult:
         """Execute tool node."""
         from app.models.tool import Tool
+        from app.models.workflow import Workflow
         from app.services.tool import ToolExecutor
         import time
 
-        node.get("id")
         node_data = node.get("data", {})
-        config = node_data.get("config", {})
+        # Try toolConfig first (frontend structure), then fall back to config.
+        config = node_data.get("toolConfig") or node_data.get("config", {})
 
-        tool_id = config.get("toolId")
-        input_mappings = config.get("inputs", [])
+        tool_id = config.get("toolId") or config.get("tool_id")
+        tool_name = config.get("toolName")
+        tool_type = config.get("toolType")
+        input_mappings = config.get("parameterMappings") or config.get("inputs", [])
+        if not input_mappings and config.get("arguments"):
+            input_mappings = [
+                {
+                    "name": name,
+                    "source": "variable",
+                    "variableRef": value,
+                }
+                for name, value in config["arguments"].items()
+            ]
+        output_var = config.get("outputVariable", "result")
 
-        if not tool_id:
+        if not tool_id and not (tool_type == "builtin" and tool_name):
             return ExecutionResult(error="Tool ID not configured")
-
-        # Load tool
-        tool = await Tool.filter(id=tool_id).first()
-        if not tool:
-            return ExecutionResult(error=f"Tool not found: {tool_id}")
 
         # Resolve inputs
         inputs = await self.resolve_inputs(context, input_mappings)
+        workflow_team_id = None
+        if run.workflow_id:
+            workflow = await Workflow.filter(id=run.workflow_id).only("team_id").first()
+            workflow_team_id = workflow.team_id if workflow else None
 
         start_time = time.time()
 
         try:
             # Execute tool
             tool_executor = ToolExecutor()
-            result = await tool_executor.execute(
-                tool=tool,
-                arguments=inputs,
-                user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
-                team_id=run.workflow.team_id if run.workflow else None,
-            )
+            if tool_type == "builtin" and tool_name:
+                result = await tool_executor.execute_builtin_tool(
+                    tool_name=tool_name,
+                    arguments=inputs,
+                    team_id=workflow_team_id,
+                )
+            else:
+                # Load tool
+                tool = await Tool.filter(id=tool_id).first()
+                if not tool:
+                    return ExecutionResult(error=f"Tool not found: {tool_id}")
+
+                result = await tool_executor.execute(
+                    tool=tool,
+                    arguments=inputs,
+                    user_id=str(run.triggered_by_id) if run.triggered_by_id else None,
+                    team_id=workflow_team_id,
+                )
 
             duration_ms = int((time.time() - start_time) * 1000)
 
-            return ExecutionResult(
-                outputs={
-                    "result": result,
-                    "status": "success",
-                    "executionTime": duration_ms,
-                }
-            )
+            outputs = {
+                "result": result,
+                "status": "success",
+                "executionTime": duration_ms,
+            }
+            if output_var and output_var != "result":
+                outputs[output_var] = result
+
+            return ExecutionResult(outputs=outputs)
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.exception(f"Tool execution error: {e}")
+            outputs = {
+                "result": None,
+                "status": "error",
+                "error": str(e),
+                "executionTime": duration_ms,
+            }
+            if output_var and output_var != "result":
+                outputs[output_var] = None
             return ExecutionResult(
-                outputs={
-                    "result": None,
-                    "status": "error",
-                    "error": str(e),
-                    "executionTime": duration_ms,
-                },
+                outputs=outputs,
                 error=f"Tool execution failed: {str(e)}",
             )
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
-        return [
+        output_var = config.get("outputVariable", "result")
+        variables = [
             {"name": "result", "type": "any"},
             {"name": "status", "type": "string"},
             {"name": "executionTime", "type": "number"},
         ]
+        if output_var and output_var != "result":
+            variables.insert(0, {"name": output_var, "type": "any"})
+        return variables
 
 
 @NodeExecutorRegistry.register("agent")
@@ -151,7 +184,7 @@ class AgentNodeExecutor(NodeExecutor):
         from app.models.agent import Agent
         from app.services.agent import AgentService
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         # Try agentConfig first (frontend structure), then fall back to config
         config = node_data.get("agentConfig") or node_data.get("config", {})
@@ -309,11 +342,11 @@ class HTTPRequestNodeExecutor(NodeExecutor):
 
         # Resolve templates
         url = await self._resolve_template(url_template, context)
-        headers = {}
+        headers: dict[str, str] = {}
         for key, value in headers_template.items():
             headers[key] = await self._resolve_template(str(value), context)
 
-        body = None
+        body: Any = None
         if body_template:
             if isinstance(body_template, str):
                 body = await self._resolve_template(body_template, context)
@@ -373,11 +406,11 @@ class HTTPRequestNodeExecutor(NodeExecutor):
 
     async def _resolve_body(
         self,
-        body: dict,
+        body: dict[str, Any],
         context: "ExecutionContext",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Recursively resolve variables in body object."""
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in body.items():
             if isinstance(value, str):
                 result[key] = await self._resolve_template(value, context)

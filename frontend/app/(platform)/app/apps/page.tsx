@@ -158,7 +158,7 @@ export default function AppsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentTeam, searchQuery, t])
+  }, [currentTeam, searchQuery])
 
   React.useEffect(() => {
     fetchApps()
@@ -445,7 +445,7 @@ export default function AppsPage() {
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            className="text-destructive"
+                            variant="destructive"
                             onClick={(e) => {
                               e.preventDefault()
                               setDeletingApp(app)

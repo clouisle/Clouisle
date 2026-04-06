@@ -6,10 +6,11 @@
 
 import logging
 import time
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api import deps
 from app.core.i18n import t
@@ -40,6 +41,9 @@ from app.schemas.tool import (
     ToolOut,
     ToolDetailOut,
     ToolListOut,
+    ToolFilterOption,
+    ToolFilterOptionsOut,
+    ToolListPageOut,
     ToolCreateInput,
     ToolUpdateInput,
     ToolExecuteRequest,
@@ -60,6 +64,7 @@ from app.schemas.tool import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
 
 
 # ============ Helper Functions ============
@@ -106,6 +111,9 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     """
     tools = []
     for tool_info in tool_registry.get_all_tools():
+        if tool_info.name in AGENT_ONLY_BUILTIN_TOOLS:
+            continue
+
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
 
         parameters = [
@@ -198,27 +206,211 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
     )
 
 
+def _option(value: str, label: str | None = None) -> ToolFilterOption:
+    return ToolFilterOption(value=value, label=label or value)
+
+
+def _matches_filter(value: str | None, selected: set[str]) -> bool:
+    if not selected:
+        return True
+    if value is None:
+        return False
+    return value in selected
+
+
+async def _get_accessible_teams(user: User) -> list[Team]:
+    if user.is_superuser:
+        return await Team.all().order_by("name")
+
+    memberships = await TeamMember.filter(user=user).prefetch_related("team")
+    return sorted(
+        [membership.team for membership in memberships], key=lambda team: team.name
+    )
+
+
+async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[ToolOut]:
+    accessible_teams = list(teams)
+    deduped_tools: dict[str, ToolOut] = {}
+
+    builtin_tools = get_builtin_tools(user.locale)
+    for tool in builtin_tools:
+        deduped_tools[f"builtin:{tool.name}"] = tool
+
+    for team in accessible_teams:
+        custom_db_tools = (
+            await Tool.filter(team_id=team.id, type=DBToolType.CUSTOM)
+            .prefetch_related("created_by")
+            .order_by("-updated_at")
+        )
+        for tool in custom_db_tools:
+            creator_name = tool.created_by.username if tool.created_by else None
+            tool_out = db_tool_to_out(tool, creator_name)
+            tool_out.is_owned = True
+            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_name = team.name
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
+            deduped_tools[f"custom:{tool.id}"] = tool_out
+
+        mcp_db_tools = (
+            await Tool.filter(team_id=team.id, type=DBToolType.MCP)
+            .prefetch_related("created_by")
+            .order_by("-updated_at")
+        )
+        for tool in mcp_db_tools:
+            creator_name = tool.created_by.username if tool.created_by else None
+            tool_out = db_tool_to_out(tool, creator_name)
+            tool_out.is_owned = True
+            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_name = team.name
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
+            deduped_tools[f"mcp:{tool.id}"] = tool_out
+
+        shares = await ToolShare.filter(shared_with_team_id=team.id).prefetch_related(
+            "tool", "tool__team", "tool__created_by"
+        )
+        for share in shares:
+            tool = share.tool
+            creator_name = tool.created_by.username if tool.created_by else None
+            tool_out = db_tool_to_out(tool, creator_name)
+            tool_out.is_owned = False
+            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_name = tool.team.name
+            tool_out.share_permission = ToolSharePermission(share.permission)
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
+            unique_key = f"{tool.type.value}:{tool.id}"
+            existing = deduped_tools.get(unique_key)
+            if existing is None or (tool_out.is_owned and not existing.is_owned):
+                deduped_tools[unique_key] = tool_out
+
+    return list(deduped_tools.values())
+
+
 # ============ API Endpoints ============
 
 
-@router.get("", response_model=Response[ToolListOut])
+@router.get("", response_model=Response[ToolListPageOut])
 async def list_tools(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    search: str | None = Query(None),
+    type: list[str] | None = Query(None),
+    category: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
+    team_id: list[UUID] | None = Query(None),
+    creator: list[str] | None = Query(None),
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
+) -> Any:
+    """获取工具分页列表。"""
+    accessible_teams = await _get_accessible_teams(current_user)
+    accessible_team_ids = {team.id for team in accessible_teams}
+
+    if team_id:
+        requested_team_ids = set(team_id)
+        if not requested_team_ids.issubset(accessible_team_ids):
+            raise BusinessError(
+                code=ResponseCode.NOT_TEAM_MEMBER,
+                msg_key="not_team_member",
+                status_code=403,
+            )
+        selected_teams = [
+            team for team in accessible_teams if team.id in requested_team_ids
+        ]
+    else:
+        selected_teams = accessible_teams
+
+    tools = await _build_accessible_tools(current_user, selected_teams)
+
+    type_filter = set(type or [])
+    category_filter = set(category or [])
+    status_filter = set(status or [])
+    creator_filter = set(creator or [])
+    search_query = search.lower() if search else None
+
+    filtered_tools = []
+    for tool in tools:
+        if search_query and (
+            search_query not in tool.name.lower()
+            and search_query not in tool.display_name.lower()
+            and search_query not in tool.description.lower()
+        ):
+            continue
+        if not _matches_filter(tool.type.value, type_filter):
+            continue
+        if not _matches_filter(tool.category.value, category_filter):
+            continue
+        if not _matches_filter(
+            "enabled" if tool.is_enabled else "disabled", status_filter
+        ):
+            continue
+        if not _matches_filter(
+            str(tool.team_id) if tool.team_id else None,
+            {str(v) for v in requested_team_ids} if team_id else set(),
+        ):
+            continue
+        if not _matches_filter(tool.created_by_name, creator_filter):
+            continue
+        filtered_tools.append(tool)
+
+    filtered_tools.sort(
+        key=lambda tool: (
+            tool.display_name.lower(),
+            str(tool.id) if tool.id else tool.name,
+        )
+    )
+
+    total = len(filtered_tools)
+    start = (page - 1) * page_size
+    items = filtered_tools[start : start + page_size]
+
+    return success(
+        data=ToolListPageOut(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+        ),
+        msg_key="success",
+    )
+
+
+@router.get("/filters", response_model=Response[ToolFilterOptionsOut])
+async def get_tool_filter_options(
+    current_user: User = Depends(deps.PermissionChecker("tool:read")),
+) -> Any:
+    accessible_teams = await _get_accessible_teams(current_user)
+    tools = await _build_accessible_tools(current_user, accessible_teams)
+
+    creator_values = sorted(
+        {tool.created_by_name for tool in tools if tool.created_by_name}
+    )
+
+    return success(
+        data=ToolFilterOptionsOut(
+            types=[
+                _option(ToolType.BUILTIN.value),
+                _option(ToolType.CUSTOM.value),
+                _option(ToolType.MCP.value),
+            ],
+            categories=[_option(category.value) for category in ToolCategory],
+            statuses=[_option("enabled"), _option("disabled")],
+            teams=[_option(str(team.id), team.name) for team in accessible_teams],
+            creators=[_option(value) for value in creator_values],
+        ),
+        msg_key="success",
+    )
+
+
+@router.get("/legacy", response_model=Response[ToolListOut])
+async def list_tools_legacy(
     team_id: UUID,
     include_shared: bool = True,
     current_user: User = Depends(deps.PermissionChecker("tool:read")),
 ) -> Any:
-    """
-    获取所有可用工具
-
-    返回内置工具、自定义工具和 MCP Server 工具列表。
-    如果 include_shared=True，还会包含共享给该团队的工具。
-    """
+    """兼容旧版团队工具列表接口。"""
     await check_team_access(team_id, current_user)
 
-    # 获取内置工具
     builtin_tools = get_builtin_tools(current_user.locale)
 
-    # 获取团队的自定义工具（预加载创建者信息）
     custom_db_tools = (
         await Tool.filter(
             team_id=team_id,
@@ -232,15 +424,11 @@ async def list_tools(
     for tool in custom_db_tools:
         creator_name = tool.created_by.username if tool.created_by else None
         tool_out = db_tool_to_out(tool, creator_name)
-        # 添加共享信息
         tool_out.is_owned = True
         tool_out.owner_team_id = tool.team_id
-        # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=tool.id).count()
-        tool_out.shared_with_count = share_count
+        tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
         custom_tools.append(tool_out)
 
-    # 获取团队的 MCP 工具（预加载创建者信息）
     mcp_db_tools = (
         await Tool.filter(
             team_id=team_id,
@@ -254,17 +442,12 @@ async def list_tools(
     for tool in mcp_db_tools:
         creator_name = tool.created_by.username if tool.created_by else None
         tool_out = db_tool_to_out(tool, creator_name)
-        # 添加共享信息
         tool_out.is_owned = True
         tool_out.owner_team_id = tool.team_id
-        # 计算共享数量
-        share_count = await ToolShare.filter(tool_id=tool.id).count()
-        tool_out.shared_with_count = share_count
+        tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
         mcp_tools.append(tool_out)
 
-    # 如果需要包含共享工具
     if include_shared:
-        # 获取共享给该团队的工具
         shares = await ToolShare.filter(shared_with_team_id=team_id).prefetch_related(
             "tool", "tool__team", "tool__created_by"
         )
@@ -273,8 +456,6 @@ async def list_tools(
             tool = share.tool
             creator_name = tool.created_by.username if tool.created_by else None
             tool_out = db_tool_to_out(tool, creator_name)
-
-            # 添加共享信息
             tool_out.is_owned = False
             tool_out.owner_team_id = tool.team_id
             tool_out.owner_team_name = tool.team.name
@@ -377,12 +558,12 @@ async def list_file_parsers(
 
         parsers.append(
             ToolOut(
-                id=str(tool.id),
+                id=tool.id,
                 name=tool.name,
                 display_name=tool.display_name,
                 description=tool.description or "",
                 type=ToolType.CUSTOM,
-                category=tool.category,
+                category=ToolCategory(tool.category),
                 icon=tool.icon,
                 parameters=parameters,
                 is_enabled=tool.is_enabled,
@@ -1237,7 +1418,7 @@ async def share_tool(
     # 不能共享给自己的团队
     if tool.team_id == share_data.team_id:
         raise BusinessError(
-            code=ResponseCode.INVALID_INPUT,
+            code=ResponseCode.BAD_REQUEST,
             msg_key="cannot_share_to_own_team",
             status_code=400,
         )
@@ -1275,7 +1456,7 @@ async def share_tool(
             shared_with_team_name=share.shared_with_team.name,
             permission=ToolSharePermission(share.permission),
             shared_by_id=share.shared_by_id,
-            shared_by_name=share.shared_by.username,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
             shared_at=share.shared_at,
         ).model_dump(),
         msg_key="tool_shared_successfully",
@@ -1321,7 +1502,7 @@ async def list_tool_shares(
             shared_with_team_name=share.shared_with_team.name,
             permission=ToolSharePermission(share.permission),
             shared_by_id=share.shared_by_id,
-            shared_by_name=share.shared_by.username,
+            shared_by_name=share.shared_by.username if share.shared_by else "",
             shared_at=share.shared_at,
         )
         for share in shares

@@ -56,6 +56,14 @@ logger = logging.getLogger(__name__)
 # ============ Helper Functions ============
 
 
+def normalize_webhook_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Accept both raw webhook inputs and {"inputs": {...}} payloads."""
+    nested_inputs = inputs.get("inputs")
+    if len(inputs) == 1 and isinstance(nested_inputs, dict):
+        return nested_inputs
+    return inputs
+
+
 async def check_team_access(
     team_id: UUID, user: User, require_admin: bool = False
 ) -> Team:
@@ -134,11 +142,11 @@ async def check_workflow_access(
 
 @router.get("/runs", response_model=Response[PageData[dict]])
 async def list_all_workflow_runs(
-    team_id: UUID | None = Query(None),
-    workflow_id: UUID | None = Query(None),
-    status: RunStatus | None = Query(None),
-    trigger_type: TriggerType | None = Query(None),
-    user_id: UUID | None = Query(None),
+    team_id: list[UUID] | None = Query(None),
+    workflow_id: list[UUID] | None = Query(None),
+    status: list[RunStatus] | None = Query(None),
+    trigger_type: list[TriggerType] | None = Query(None),
+    user_id: list[UUID] | None = Query(None),
     is_debug: bool | None = Query(None),
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -161,8 +169,9 @@ async def list_all_workflow_runs(
     workflow_query = Workflow.all()
 
     if team_id:
-        await check_team_access(team_id, current_user)
-        workflow_query = workflow_query.filter(team_id=team_id)
+        for current_team_id in team_id:
+            await check_team_access(current_team_id, current_user)
+        workflow_query = workflow_query.filter(team_id__in=team_id)
     elif not current_user.is_superuser:
         # Get teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
@@ -187,13 +196,13 @@ async def list_all_workflow_runs(
 
     # Apply filters
     if workflow_id:
-        query = query.filter(workflow_id=workflow_id)
+        query = query.filter(workflow_id__in=workflow_id)
     if status:
-        query = query.filter(status=status)
+        query = query.filter(status__in=status)
     if trigger_type:
-        query = query.filter(trigger_type=trigger_type)
+        query = query.filter(trigger_type__in=trigger_type)
     if user_id:
-        query = query.filter(triggered_by_id=user_id)
+        query = query.filter(triggered_by_id__in=user_id)
     if is_debug is not None:
         query = query.filter(is_debug=is_debug)
 
@@ -211,8 +220,9 @@ async def list_all_workflow_runs(
     items = []
     for run in runs:
         item = WorkflowRunListItem.model_validate(run).model_dump()
-        item["workflow_name"] = run.workflow.name
-        item["workflow_icon"] = run.workflow.icon
+        related_workflow = run.workflow
+        item["workflow_name"] = related_workflow.name if related_workflow else None
+        item["workflow_icon"] = related_workflow.icon if related_workflow else None
         item["triggered_by_name"] = (
             run.triggered_by.username if run.triggered_by else None
         )
@@ -272,14 +282,16 @@ async def get_workflow_run_stats(
     total_runs = len(runs)
 
     # Runs by status
-    runs_by_status = {}
+    runs_by_status: dict[str, int] = {}
     for run in runs:
         status_key = run.status.value
         runs_by_status[status_key] = runs_by_status.get(status_key, 0) + 1
 
     # Runs by workflow (top 10)
-    workflow_counts = {}
+    workflow_counts: dict[UUID, int] = {}
     for run in runs:
+        if run.workflow_id is None:
+            continue
         workflow_counts[run.workflow_id] = workflow_counts.get(run.workflow_id, 0) + 1
 
     # Sort and get top 10
@@ -312,6 +324,7 @@ async def get_workflow_run_stats(
         total_duration_ms = sum(
             int((r.finished_at - r.started_at).total_seconds() * 1000)
             for r in completed_runs
+            if r.started_at is not None and r.finished_at is not None
         )
         avg_duration_ms = total_duration_ms // len(completed_runs)
     else:
@@ -534,10 +547,12 @@ async def get_workflow_stats(
     timeout_count = sum(1 for r in runs if r.status == RunStatus.TIMEOUT)
 
     # Calculate average duration (only for completed runs)
-    completed_runs = [r for r in runs if r.total_duration_ms is not None]
+    completed_durations = [
+        r.total_duration_ms for r in runs if r.total_duration_ms is not None
+    ]
     avg_duration_ms = (
-        sum(r.total_duration_ms for r in completed_runs) / len(completed_runs)
-        if completed_runs
+        sum(completed_durations) / len(completed_durations)
+        if completed_durations
         else 0
     )
 
@@ -611,10 +626,12 @@ async def get_workflow_trends(
         failed_count = sum(1 for r in runs_in_day if r.status == RunStatus.FAILED)
 
         # Calculate average duration for completed runs
-        completed_runs = [r for r in runs_in_day if r.total_duration_ms is not None]
+        completed_durations = [
+            r.total_duration_ms for r in runs_in_day if r.total_duration_ms is not None
+        ]
         avg_duration = (
-            sum(r.total_duration_ms for r in completed_runs) / len(completed_runs)
-            if completed_runs
+            sum(completed_durations) / len(completed_durations)
+            if completed_durations
             else 0
         )
 
@@ -685,6 +702,8 @@ async def update_workflow(
         workflow.trigger_config = workflow_in.trigger_config
     if workflow_in.visibility is not None:
         workflow.visibility = WorkflowVisibility(workflow_in.visibility)
+    if workflow_in.embed_config is not None:
+        workflow.embed_config = workflow_in.embed_config
 
     await workflow.save()
 
@@ -935,6 +954,8 @@ async def trigger_workflow_webhook(
             )
 
     try:
+        normalized_inputs = normalize_webhook_inputs(inputs)
+
         # Create run record with authenticated user
         run = await WorkflowRun.create(
             workflow_id=matched_workflow.id,
@@ -942,14 +963,14 @@ async def trigger_workflow_webhook(
             triggered_by_id=user.id,  # Record the API key owner as caller
             is_debug=False,
             status=RunStatus.PENDING,
-            inputs=inputs,
+            inputs=normalized_inputs,
         )
 
         # Submit to Celery for background execution
         run_workflow_task.delay(
             run_id=str(run.id),
             workflow_id=str(matched_workflow.id),
-            inputs=inputs,
+            inputs=normalized_inputs,
             user_id=str(user.id),  # Pass user ID for execution context
             team_id=str(matched_workflow.team_id) if matched_workflow.team_id else None,
         )
@@ -1120,6 +1141,12 @@ async def stream_workflow_run(
             msg_key="workflow_run_not_found",
             status_code=404,
         )
+    if run.workflow_id is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_not_found",
+            status_code=404,
+        )
 
     # Check access: allow if webhook trigger (no user) or user has access to workflow
     if run.triggered_by_id is not None:
@@ -1130,7 +1157,7 @@ async def stream_workflow_run(
                 msg_key="unauthorized",
                 status_code=401,
             )
-        await check_workflow_access(run.workflow.id, current_user)
+        await check_workflow_access(run.workflow_id, current_user)
     # Webhook-triggered runs (triggered_by_id is None) are publicly accessible
 
     async def event_generator():
@@ -1163,8 +1190,14 @@ async def cancel_workflow_run(
             msg_key="workflow_run_not_found",
             status_code=404,
         )
+    if run.workflow_id is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_not_found",
+            status_code=404,
+        )
 
-    await check_workflow_access(run.workflow.id, current_user, require_write=True)
+    await check_workflow_access(run.workflow_id, current_user, require_write=True)
 
     orchestrator = WorkflowOrchestrator()
     cancelled = await orchestrator.cancel(str(run_id))
@@ -1232,9 +1265,15 @@ async def get_workflow_run(
             msg_key="workflow_run_not_found",
             status_code=404,
         )
+    if run.workflow_id is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_not_found",
+            status_code=404,
+        )
 
     # Check access through workflow
-    await check_workflow_access(run.workflow.id, current_user)
+    await check_workflow_access(run.workflow_id, current_user)
 
     return success(data=WorkflowRunOut.model_validate(run).model_dump())
 
@@ -1253,9 +1292,15 @@ async def list_run_node_executions(
             msg_key="workflow_run_not_found",
             status_code=404,
         )
+    if run.workflow_id is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_not_found",
+            status_code=404,
+        )
 
     # Check access through workflow
-    await check_workflow_access(run.workflow.id, current_user)
+    await check_workflow_access(run.workflow_id, current_user)
 
     executions = await NodeExecution.filter(run_id=run_id).order_by("execution_order")
 
@@ -1278,9 +1323,15 @@ async def delete_workflow_run(
             msg_key="workflow_run_not_found",
             status_code=404,
         )
+    if run.workflow_id is None:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_not_found",
+            status_code=404,
+        )
 
     # Check write access through workflow
-    await check_workflow_access(run.workflow.id, current_user, require_write=True)
+    await check_workflow_access(run.workflow_id, current_user, require_write=True)
 
     await run.delete()
 
@@ -1419,7 +1470,7 @@ async def restore_workflow_version(
     workflow.definition = workflow_version.definition
     workflow.variables = workflow_version.variables
     workflow.trigger_type = workflow_version.trigger_type
-    workflow.trigger_config = workflow_version.trigger_config
+    workflow.trigger_config = workflow_version.trigger_config or {}
     workflow.version += 1  # Increment version
 
     await workflow.save()

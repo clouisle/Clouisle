@@ -15,8 +15,8 @@ export const modelsApi = {
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
-    if (provider) queryParams.append('provider', provider)
-    if (model_type) queryParams.append('model_type', model_type)
+    provider?.forEach((value) => queryParams.append('provider', value))
+    model_type?.forEach((value) => queryParams.append('model_type', value))
     if (is_enabled !== undefined) queryParams.append('is_enabled', String(is_enabled))
     if (search) queryParams.append('search', search)
     return api.get<PageData<Model>>(`/admin/models?${queryParams.toString()}`)
@@ -42,7 +42,7 @@ export const modelsApi = {
     model_id: string
     model_type: string
     base_url?: string | null
-    api_key: string
+    api_key?: string | null
     config?: Record<string, unknown> | null
   }): Promise<{ success: boolean; message: string; latency_ms?: number }> =>
     api.post('/admin/models/test', data),

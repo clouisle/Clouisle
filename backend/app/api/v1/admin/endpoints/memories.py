@@ -97,10 +97,10 @@ async def serialize_relation_with_entities(relation: MemoryRelation) -> dict:
 async def list_entities(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    user_id: Optional[UUID] = None,
-    entity_type: Optional[str] = None,
+    user_id: Optional[list[UUID]] = Query(None),
+    entity_type: Optional[list[str]] = Query(None),
     search: Optional[str] = None,
-    current_user: User = Depends(deps.PermissionChecker("memory:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:read")),
 ) -> Any:
     """
     List all memory entities (admin only).
@@ -110,10 +110,10 @@ async def list_entities(
     query = MemoryEntity.all()
 
     if user_id:
-        query = query.filter(user_id=user_id)
+        query = query.filter(user_id__in=user_id)
 
     if entity_type:
-        query = query.filter(entity_type=entity_type)
+        query = query.filter(entity_type__in=entity_type)
 
     if search:
         query = query.filter(
@@ -148,7 +148,7 @@ async def list_entities(
 
 @router.get("/entities/stats", response_model=Response[dict])
 async def get_stats(
-    current_user: User = Depends(deps.PermissionChecker("memory:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:read")),
 ) -> Any:
     """
     Get memory statistics (admin only).
@@ -199,7 +199,7 @@ async def get_stats(
 @router.get("/entities/{entity_id}", response_model=Response[dict])
 async def get_entity(
     entity_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("memory:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:read")),
 ) -> Any:
     """
     Get single memory entity with relations (admin only).
@@ -236,7 +236,7 @@ async def update_entity(
     entity_id: UUID,
     data: MemoryEntityUpdate,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("memory:update")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:update")),
 ) -> Any:
     """
     Update memory entity (admin only).
@@ -296,7 +296,7 @@ async def update_entity(
 async def delete_entity(
     entity_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("memory:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:delete")),
 ) -> Any:
     """
     Delete memory entity (admin only).
@@ -341,7 +341,7 @@ async def list_relations(
     page_size: int = Query(20, ge=1, le=100),
     user_id: Optional[UUID] = None,
     relation_type: Optional[str] = None,
-    current_user: User = Depends(deps.PermissionChecker("memory:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:read")),
 ) -> Any:
     """
     List all memory relations (admin only).
@@ -386,7 +386,7 @@ async def list_relations(
 async def delete_relation(
     relation_id: UUID,
     request: Request,
-    current_user: User = Depends(deps.PermissionChecker("memory:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:memory:delete")),
 ) -> Any:
     """
     Delete memory relation (admin only).

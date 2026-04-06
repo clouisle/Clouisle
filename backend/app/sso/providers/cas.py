@@ -117,14 +117,22 @@ class CASProvider(BaseSSOProvider):
                 success = root.find(".//cas:authenticationSuccess", ns)
                 if success is None:
                     failure = root.find(".//cas:authenticationFailure", ns)
-                    error_msg = failure.text if failure is not None else "Unknown error"
+                    error_msg = (
+                        failure.text
+                        if failure is not None and failure.text is not None
+                        else "Unknown error"
+                    )
                     raise ValueError(f"CAS validation failed: {error_msg}")
 
                 # Extract user
                 user_elem = success.find("cas:user", ns)
-                username = user_elem.text if user_elem is not None else ""
+                username = (
+                    user_elem.text
+                    if user_elem is not None and user_elem.text is not None
+                    else ""
+                )
 
-                user_info = {
+                user_info: Dict[str, Any] = {
                     "provider_user_id": username,
                     "username": username,
                 }
@@ -138,7 +146,7 @@ class CASProvider(BaseSSOProvider):
                             tag = (
                                 attr.tag.split("}")[-1] if "}" in attr.tag else attr.tag
                             )
-                            user_info[tag] = attr.text
+                            user_info[tag] = attr.text or ""
 
                 return user_info
 

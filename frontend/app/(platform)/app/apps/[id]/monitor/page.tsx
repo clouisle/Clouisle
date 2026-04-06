@@ -46,7 +46,9 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  Cell,
 } from 'recharts'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR, CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 import { cn } from '@/lib/utils'
 
 interface MonitorPageProps {
@@ -131,47 +133,32 @@ export default function MonitorPage({ params }: MonitorPageProps) {
   const conversationChartConfig: ChartConfig = React.useMemo(() => ({
     conversations: {
       label: t('charts.conversations'),
-      theme: {
-        light: 'oklch(0.55 0.15 250)',
-        dark: 'oklch(0.70 0.15 195)',
-      },
+      color: CHART_COLOR_ORDER[2],
     },
     messages: {
       label: t('charts.messages'),
-      theme: {
-        light: 'oklch(0.60 0.18 145)',
-        dark: 'oklch(0.65 0.18 160)',
-      },
+      color: CHART_COLOR_ORDER[4],
     },
   }), [t])
 
   const tokenChartConfig: ChartConfig = React.useMemo(() => ({
     tokens: {
       label: t('charts.tokens'),
-      theme: {
-        light: 'oklch(0.55 0.16 280)',
-        dark: 'oklch(0.65 0.16 280)',
-      },
+      color: CHART_COLOR_ORDER[5],
     },
   }), [t])
 
   const responseTimeChartConfig: ChartConfig = React.useMemo(() => ({
     avg_response_time_ms: {
       label: t('charts.avgResponseTime'),
-      theme: {
-        light: 'oklch(0.65 0.20 50)',
-        dark: 'oklch(0.72 0.20 50)',
-      },
+      color: CHART_COLOR_ORDER[4],
     },
   }), [t])
 
   const toolUsageChartConfig: ChartConfig = React.useMemo(() => ({
     count: {
       label: t('charts.calls'),
-      theme: {
-        light: 'oklch(0.55 0.14 330)',
-        dark: 'oklch(0.68 0.14 330)',
-      },
+      color: CHART_COLOR_ORDER[0],
     },
   }), [t])
 
@@ -366,10 +353,10 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                             <stop offset="95%" stopColor="var(--color-messages)" stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                        <YAxis tickLine={false} axisLine={false} fontSize={12} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
                         <Area
                           type="monotone"
                           dataKey="conversations"
@@ -404,10 +391,10 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                             <stop offset="95%" stopColor="var(--color-tokens)" stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                        <YAxis tickLine={false} axisLine={false} fontSize={12} tickFormatter={(v) => formatNumber(v)} />
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => formatNumber(v)} />
+                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
                         <Area
                           type="monotone"
                           dataKey="tokens"
@@ -438,10 +425,10 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                             <stop offset="95%" stopColor="var(--color-avg_response_time_ms)" stopOpacity={0.1}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                        <YAxis tickLine={false} axisLine={false} fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(1)}s`} />
-                        <ChartTooltip content={<ChartTooltipContent formatter={(value) => [`${(Number(value) / 1000).toFixed(2)}s`, 'Response Time']} />} />
+                        <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                        <YAxis tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}s`} />
+                        <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent formatter={(value) => [`${(Number(value) / 1000).toFixed(2)}s`, 'Response Time']} />} />
                         <Area
                           type="monotone"
                           dataKey="avg_response_time_ms"
@@ -464,11 +451,15 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                     {toolUsage && toolUsage.tools.length > 0 ? (
                       <ChartContainer config={toolUsageChartConfig} className="h-[250px] w-full">
                         <BarChart data={toolUsage.tools.slice(0, 8)} layout="vertical" margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                          <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
-                          <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} width={100} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                          <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                          <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} />
+                          <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tick={{ fill: CHART_AXIS_COLOR, fontSize: 12 }} width={100} />
+                          <ChartTooltip cursor={CHART_HOVER_CURSOR} content={<ChartTooltipContent />} />
+                          <Bar dataKey="count" radius={[0, 8, 8, 0]}>
+                            {toolUsage.tools.slice(0, 8).map((tool, index) => (
+                              <Cell key={tool.name} fill={CHART_SURFACE_COLORS[index % CHART_SURFACE_COLORS.length]} />
+                            ))}
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     ) : (

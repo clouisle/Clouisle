@@ -36,9 +36,10 @@ interface EnabledChannels {
 
 interface AutoNotificationsSettingsTabProps {
   enabledChannels: EnabledChannels
+  canUpdate: boolean
 }
 
-export function AutoNotificationsSettingsTab({ enabledChannels }: AutoNotificationsSettingsTabProps) {
+export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: AutoNotificationsSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -127,6 +128,7 @@ export function AutoNotificationsSettingsTab({ enabledChannels }: AutoNotificati
                         id={`global-${channel}`}
                         checked={config.channels.includes(channel)}
                         onCheckedChange={() => toggleChannel(channel)}
+                        disabled={!canUpdate}
                       />
                       <Label htmlFor={`global-${channel}`} className="text-sm cursor-pointer">
                         {t(`notifications.${channel}`)}
@@ -166,6 +168,7 @@ export function AutoNotificationsSettingsTab({ enabledChannels }: AutoNotificati
                   <Switch
                     checked={config.enabled_types.includes(type)}
                     onCheckedChange={() => toggleType(type)}
+                    disabled={!canUpdate}
                   />
                 </div>
               ))}
@@ -175,12 +178,14 @@ export function AutoNotificationsSettingsTab({ enabledChannels }: AutoNotificati
       ))}
 
       {/* Save button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

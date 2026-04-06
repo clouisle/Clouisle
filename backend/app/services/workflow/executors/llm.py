@@ -4,7 +4,7 @@ LLM node executor.
 Handles AI model inference calls.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -59,7 +59,7 @@ class LLMNodeExecutor(NodeExecutor):
         from app.llm import model_manager
         from app.models.model import Model, TeamModel
 
-        node_id = node.get("id")
+        node_id = str(node.get("id") or "")
         node_data = node.get("data", {})
         config = node_data.get("config", {})
         llm_config = node_data.get("llmConfig", config)
@@ -80,13 +80,13 @@ class LLMNodeExecutor(NodeExecutor):
         team_model = (
             await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
         )
+        model_id: str
         if team_model:
-            model = team_model.model
-            model_id = str(model.id)
+            model_id = str(team_model.model.id)
         else:
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
-            if not model:
+            if model is None:
                 return ExecutionResult(error=f"Model not found: {team_model_id}")
             model_id = str(model.id)
 
@@ -125,6 +125,42 @@ class LLMNodeExecutor(NodeExecutor):
             "streaming", False
         )  # Frontend uses "streaming", default to non-streaming
 
+        # Response format configuration
+        response_format = None
+        response_format_type = llm_config.get("responseFormat", "text")
+        logger.info(f"LLM node {node_id}: responseFormat={response_format_type}")
+        logger.info(f"LLM node {node_id}: Full llmConfig={llm_config}")
+
+        if response_format_type == "json":
+            response_format = {"type": "json_object"}
+            logger.info(f"LLM node {node_id}: Using JSON object response format")
+        elif response_format_type == "json_schema":
+            json_schema_str = llm_config.get("jsonSchema")
+            logger.info(f"LLM node {node_id}: jsonSchema string={json_schema_str}")
+            if json_schema_str:
+                try:
+                    import json
+
+                    schema = json.loads(json_schema_str)
+                    response_format = cast(
+                        dict[str, Any],
+                        {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "response",
+                                "strict": True,
+                                "schema": schema,
+                            },
+                        },
+                    )
+                    logger.info(
+                        f"LLM node {node_id}: Constructed response_format={json.dumps(response_format, ensure_ascii=False)}"
+                    )
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"LLM node {node_id}: Invalid JSON schema: {e}, ignoring response_format"
+                    )
+
         try:
             if should_stream:
                 # For streaming mode, return a lazy result
@@ -135,6 +171,7 @@ class LLMNodeExecutor(NodeExecutor):
                     temperature=temperature,
                     max_tokens=max_tokens,
                     top_p=top_p,
+                    response_format=response_format,
                     context=context,
                     source_node_id=node_id,
                 )
@@ -144,22 +181,25 @@ class LLMNodeExecutor(NodeExecutor):
                 return ExecutionResult(
                     outputs={
                         "response": lazy_result,  # Lazy result, will be executed when referenced
-                        "usage": {},  # Will be populated after execution
+                        "reasoning": "",  # Will be populated after lazy execution
+                        "usage": {},  # Will be populated after lazy execution
                     }
                 )
             else:
                 # Non-streaming mode
                 result = await model_manager.chat(
-                    messages=messages,
+                    messages=cast(list[Any], messages),
                     model_id=str(model_id),
                     temperature=temperature,
                     max_tokens=max_tokens,
                     top_p=top_p,
+                    response_format=response_format,
                 )
 
                 return ExecutionResult(
                     outputs={
                         "response": result.content or "",
+                        "reasoning": result.reasoning_content or "",
                         "usage": {
                             "prompt_tokens": result.usage.prompt_tokens
                             if result.usage
@@ -214,5 +254,6 @@ class LLMNodeExecutor(NodeExecutor):
         """Get output variables."""
         return [
             {"name": "response", "type": "string"},
+            {"name": "reasoning", "type": "string"},
             {"name": "usage", "type": "object"},
         ]

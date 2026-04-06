@@ -15,7 +15,7 @@ from tortoise.functions import Count
 
 from app.api import deps
 from app.core.i18n import t
-from app.core.timezone import now, to_utc
+from app.core.timezone import now, to_local, to_utc
 from app.models.user import User, Team, TeamMember
 from app.models.agent import Agent, Conversation, Message
 from app.schemas.agent import (
@@ -70,15 +70,20 @@ async def get_user_team_agent_ids(
     if team_id:
         # Verify access to specific team
         await check_team_access(team_id, user)
-        agent_ids = await Agent.filter(team_id=team_id).values_list("id", flat=True)
+        agent_id_rows = await Agent.filter(team_id=team_id).values_list("id", flat=True)
+        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
     elif user.is_superuser:
         # Superuser can access all agents
-        agent_ids = await Agent.all().values_list("id", flat=True)
+        agent_id_rows = await Agent.all().values_list("id", flat=True)
+        agent_ids = [row[0] if isinstance(row, tuple) else row for row in agent_id_rows]
     else:
         # Get teams user belongs to
-        memberships = await TeamMember.filter(user=user).values_list(
+        membership_rows = await TeamMember.filter(user=user).values_list(
             "team_id", flat=True
         )
+        memberships = [
+            row[0] if isinstance(row, tuple) else row for row in membership_rows
+        ]
         agent_ids = await Agent.filter(team_id__in=memberships).values_list(
             "id", flat=True
         )
@@ -91,14 +96,14 @@ async def get_user_team_agent_ids(
 
 @router.get("", response_model=Response[PageData[ConversationListOut]])
 async def list_all_conversations(
-    team_id: UUID | None = Query(None, description="Filter by team"),
-    agent_id: UUID | None = Query(None, description="Filter by agent"),
-    user_id: UUID | None = Query(None, description="Filter by user"),
+    team_id: list[UUID] | None = Query(None, description="Filter by team"),
+    agent_id: list[UUID] | None = Query(None, description="Filter by agent"),
+    user_id: list[UUID] | None = Query(None, description="Filter by user"),
     search: str | None = Query(None, description="Search in title"),
     untitled_only: bool = Query(False, description="Show only untitled conversations"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     List conversations.
@@ -119,7 +124,17 @@ async def list_all_conversations(
                 break
 
     # Get agent IDs user has access to (team isolation for non-superusers)
-    accessible_agent_ids = await get_user_team_agent_ids(current_user, team_id)
+    if team_id:
+        for current_team_id in team_id:
+            await check_team_access(current_team_id, current_user)
+        agent_id_rows = await Agent.filter(team_id__in=team_id).values_list(
+            "id", flat=True
+        )
+        accessible_agent_ids = [
+            row[0] if isinstance(row, tuple) else row for row in agent_id_rows
+        ]
+    else:
+        accessible_agent_ids = await get_user_team_agent_ids(current_user)
 
     if not accessible_agent_ids:
         # User has no access to any agents
@@ -141,8 +156,9 @@ async def list_all_conversations(
 
     # Apply additional filters
     if agent_id:
-        # Verify agent is in accessible list
-        if agent_id not in accessible_agent_ids:
+        selected_agent_ids = set(agent_id)
+        accessible_agent_id_set = set(accessible_agent_ids)
+        if not selected_agent_ids & accessible_agent_id_set:
             return success(
                 data={
                     "items": [],
@@ -151,16 +167,18 @@ async def list_all_conversations(
                     "page_size": page_size,
                 }
             )
-        query = query.filter(agent_id=agent_id)
+        query = query.filter(
+            agent_id__in=list(selected_agent_ids & accessible_agent_id_set)
+        )
 
     # user_id filter only applies for admins (members already filtered to own)
     if user_id and has_dashboard_access:
-        query = query.filter(user_id=user_id)
+        query = query.filter(user_id__in=user_id)
 
     if untitled_only:
         # Filter conversations with null or empty title
         query = query.filter(Q(title__isnull=True) | Q(title=""))
-    elif search:
+    if search:
         query = query.filter(title__icontains=search)
 
     # Get total count
@@ -206,7 +224,7 @@ async def list_all_conversations(
 @router.get("/stats", response_model=Response[dict])
 async def get_conversation_stats(
     team_id: UUID | None = Query(None, description="Filter by team"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation statistics.
@@ -298,7 +316,7 @@ async def get_conversation_stats(
 async def get_conversation_trends(
     team_id: UUID | None = Query(None, description="Filter by team"),
     period: str = Query("7d", description="Time period: 7d, 30d"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation and message trends.
@@ -361,58 +379,44 @@ async def get_conversation_trends(
     if not has_dashboard_access:
         conv_query = conv_query.filter(user_id=current_user.id)
 
+    conversations = await conv_query.values("id", "created_at")
+    conversation_ids = [row["id"] for row in conversations]
+
+    message_rows: list[dict[str, Any]] = []
+    if conversation_ids:
+        message_rows = await Message.filter(
+            conversation_id__in=conversation_ids,
+            created_at__gte=start_time_utc,
+        ).values("created_at", "token_usage")
+
+    conv_counts_by_date: dict[datetime.date, int] = {}
+    for row in conversations:
+        date_key = to_local(row["created_at"]).date()
+        conv_counts_by_date[date_key] = conv_counts_by_date.get(date_key, 0) + 1
+
+    msg_counts_by_date: dict[datetime.date, int] = {}
+    token_counts_by_date: dict[datetime.date, int] = {}
+    for row in message_rows:
+        date_key = to_local(row["created_at"]).date()
+        msg_counts_by_date[date_key] = msg_counts_by_date.get(date_key, 0) + 1
+
+        token_usage = row["token_usage"] or {}
+        token_counts_by_date[date_key] = token_counts_by_date.get(date_key, 0) + (
+            (token_usage.get("prompt", 0) or 0)
+            + (token_usage.get("completion", 0) or 0)
+        )
     # Build time series data grouped by day
     data_points = []
     for i in range(num_points):
         point_date = (now_local - timedelta(days=num_points - i - 1)).date()
-        point_start = datetime.combine(point_date, datetime.min.time()).replace(
-            tzinfo=now_local.tzinfo
-        )
-        point_end = point_start + timedelta(days=1)
-
-        point_start_utc = to_utc(point_start)
-        point_end_utc = to_utc(point_end)
-
-        # Count conversations created in this day using database query
-        conv_count = await conv_query.filter(
-            created_at__gte=point_start_utc, created_at__lt=point_end_utc
-        ).count()
-
-        # Count messages for conversations in accessible scope (not just today's conversations)
-        all_conv_ids = await conv_query.values_list("id", flat=True)
-        if all_conv_ids:
-            msg_count = await Message.filter(
-                conversation_id__in=list(all_conv_ids),
-                created_at__gte=point_start_utc,
-                created_at__lt=point_end_utc,
-            ).count()
-
-            # Get token usage for this day
-            token_messages = await Message.filter(
-                conversation_id__in=list(all_conv_ids),
-                created_at__gte=point_start_utc,
-                created_at__lt=point_end_utc,
-                token_usage__isnull=False,
-            ).values("token_usage")
-
-            tokens = 0
-            for m in token_messages:
-                if m["token_usage"]:
-                    tokens += m["token_usage"].get("prompt", 0) or 0
-                    tokens += m["token_usage"].get("completion", 0) or 0
-        else:
-            msg_count = 0
-            tokens = 0
-
-        # Format label based on locale (use simple format for now)
         label = point_date.strftime("%m/%d")
 
         data_points.append(
             {
                 "date": label,
-                "conversations": conv_count,
-                "messages": msg_count,
-                "tokens": tokens,
+                "conversations": conv_counts_by_date.get(point_date, 0),
+                "messages": msg_counts_by_date.get(point_date, 0),
+                "tokens": token_counts_by_date.get(point_date, 0),
             }
         )
 
@@ -427,7 +431,7 @@ async def get_conversation_trends(
 @router.get("/{conversation_id}", response_model=Response[ConversationWithMessages])
 async def get_conversation_detail(
     conversation_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("conversation:read")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:read")),
 ) -> Any:
     """
     Get conversation detail with messages.
@@ -528,7 +532,7 @@ async def get_conversation_detail(
 @router.delete("/{conversation_id}", response_model=Response[dict])
 async def delete_conversation_admin(
     conversation_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:delete")),
 ) -> Any:
     """
     Delete a conversation.
@@ -591,7 +595,7 @@ async def delete_conversation_admin(
 @router.delete("", response_model=Response[dict])
 async def batch_delete_conversations(
     ids: list[UUID] = Query(..., description="Conversation IDs to delete"),
-    current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:conversation:delete")),
 ) -> Any:
     """
     Batch delete conversations.
@@ -644,7 +648,9 @@ async def batch_delete_conversations(
     # Update agent stats - group by agent_id to reduce queries
     from collections import defaultdict
 
-    agent_updates = defaultdict(lambda: {"conv_count": 0, "msg_count": 0})
+    agent_updates: dict[UUID, dict[str, int]] = defaultdict(
+        lambda: {"conv_count": 0, "msg_count": 0}
+    )
 
     for conv in conversations:
         if conv.agent_id:

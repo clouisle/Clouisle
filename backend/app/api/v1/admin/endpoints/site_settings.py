@@ -40,7 +40,7 @@ class TestEmailRequest(BaseModel):
 @router.get("", response_model=Response[SiteSettingsResponse])
 async def get_all_settings(
     category: Optional[str] = None,
-    current_user: User = Depends(PermissionChecker("settings:read")),
+    current_user: User = Depends(PermissionChecker("admin:settings:read")),
 ):
     settings = await SiteSetting.get_all_by_category(category=category)
     return success(data=SiteSettingsResponse(settings=settings))
@@ -50,7 +50,7 @@ async def get_all_settings(
     "/auto-notifications", response_model=Response[AutoNotificationConfigResponse]
 )
 async def get_auto_notification_config(
-    current_user: User = Depends(PermissionChecker("settings:read")),
+    current_user: User = Depends(PermissionChecker("admin:settings:read")),
 ):
     config = await SiteSetting.get_value("auto_notification_config", {})
     return success(
@@ -67,7 +67,7 @@ async def get_auto_notification_config(
 async def update_auto_notification_config(
     request: Request,
     data: AutoNotificationConfigUpdate,
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     old_config = await SiteSetting.get_value("auto_notification_config", {})
 
@@ -120,7 +120,7 @@ async def update_auto_notification_config(
 @router.get("/{key}", response_model=Response[SiteSettingResponse])
 async def get_setting(
     key: str,
-    current_user: User = Depends(PermissionChecker("settings:read")),
+    current_user: User = Depends(PermissionChecker("admin:settings:read")),
 ):
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
@@ -146,7 +146,7 @@ async def update_setting(
     request: Request,
     key: str,
     data: SiteSettingUpdate,
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     old_setting = await SiteSetting.filter(key=key).first()
     old_value = None
@@ -218,7 +218,7 @@ async def update_setting(
 async def bulk_update_settings(
     request: Request,
     data: SiteSettingBulkUpdate,
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     if data.settings.get("sso_allow_password_login") is False:
         await _ensure_superadmin_sso_bound()
@@ -271,7 +271,7 @@ async def bulk_update_settings(
 async def reset_settings(
     request: Request,
     category: Optional[str] = None,
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     reset_keys = []
     for key, config in DEFAULT_SETTINGS.items():
@@ -310,7 +310,7 @@ async def reset_settings(
 @router.post("/test-email", response_model=Response[None])
 async def send_test_email(
     data: TestEmailRequest,
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     smtp_enabled = await SiteSetting.get_value("smtp_enabled", False)
     if not smtp_enabled:
@@ -338,7 +338,7 @@ async def send_test_email(
 
 @router.post("/test-dingtalk", response_model=Response[None])
 async def send_test_dingtalk(
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     from app.core.dingtalk import get_dingtalk_config, send_dingtalk_notification
 
@@ -381,7 +381,7 @@ async def send_test_dingtalk(
 
 @router.post("/test-wechat", response_model=Response[None])
 async def send_test_wechat(
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     from app.core.wechat import get_wechat_config, send_wechat_notification
 
@@ -424,7 +424,7 @@ async def send_test_wechat(
 
 @router.post("/test-feishu", response_model=Response[None])
 async def send_test_feishu(
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     from app.core.feishu import get_feishu_config, send_feishu_notification
 
@@ -467,7 +467,7 @@ async def send_test_feishu(
 
 @router.post("/test-webhook", response_model=Response[None])
 async def send_test_webhook(
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     from app.core.webhook import get_webhook_config, send_webhook_notification
 
@@ -503,7 +503,7 @@ async def send_test_webhook(
 
 @router.post("/test-slack", response_model=Response[None])
 async def send_test_slack(
-    current_user: User = Depends(PermissionChecker("settings:update")),
+    current_user: User = Depends(PermissionChecker("admin:settings:update")),
 ):
     from app.core.slack import get_slack_config, send_slack_notification
 
@@ -544,7 +544,7 @@ async def trigger_archive_audit_logs(
 ):
     try:
         # Use Celery task to avoid blocking the server
-        task = archive_old_audit_logs.delay()
+        task = archive_old_audit_logs.delay()  # type: ignore[attr-defined]
         task_id = task.id
     except Exception:
         # Log error without exposing stack trace to user

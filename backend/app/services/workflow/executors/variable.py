@@ -4,7 +4,7 @@ Variable node executors.
 Handles variable manipulation: assignment, aggregation, etc.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
@@ -294,6 +294,7 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
 
         logger.info(f"Variable aggregator resolved: {resolved}")
 
+        result: Any
         # Aggregate based on mode
         if mode == "array":
             # Return values as array, maintaining order
@@ -306,12 +307,13 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
             result = separator.join(str(v) for v in resolved.values() if v is not None)
         elif mode == "merge":
             # Deep merge objects
-            result = {}
+            merged_result: dict[str, Any] = {}
             for value in resolved.values():
                 if isinstance(value, dict):
-                    result = self._deep_merge(result, value)
+                    merged_result = self._deep_merge(merged_result, value)
                 else:
                     logger.warning(f"Cannot merge non-dict value: {value}")
+            result = merged_result
         else:
             result = resolved
 
@@ -449,7 +451,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                 error=f"Input must be JSON string, dict, or list, got {type(input_value)}"
             )
 
-        outputs = {}
+        outputs: dict[str, Any] = {}
         for param in parameters:
             name = param.get("name")
             json_path = param.get("jsonPath", "")
@@ -492,7 +494,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                     )
                 outputs[name] = (
                     self._parse_default_value(default_value, param_type)
-                    if default_value
+                    if default_value is not None
                     else None
                 )
 
@@ -506,7 +508,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         """Extract parameters using regex patterns."""
         import re
 
-        outputs = {}
+        outputs: dict[str, Any] = {}
         for param in parameters:
             name = param.get("name")
             pattern = param.get("pattern", "")
@@ -548,7 +550,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                     )
                 outputs[name] = (
                     self._parse_default_value(default_value, param_type)
-                    if default_value
+                    if default_value is not None
                     else None
                 )
 
@@ -574,13 +576,13 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         team_model = (
             await TeamModel.filter(id=team_model_id).prefetch_related("model").first()
         )
+        model_id: str
         if team_model:
-            model = team_model.model
-            model_id = str(model.id)
+            model_id = str(team_model.model.id)
         else:
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
-            if not model:
+            if model is None:
                 return ExecutionResult(error=f"Model not found: {team_model_id}")
             model_id = str(model.id)
 
@@ -614,7 +616,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
 
         try:
             result = await model_manager.chat(
-                messages=messages,
+                messages=cast(list[Any], messages),
                 model_id=str(model_id),
                 temperature=0.1,
                 max_tokens=512,
@@ -635,10 +637,12 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
                     parsed = json.loads(response_text)
 
                 # Validate required parameters
-                outputs = {}
+                outputs: dict[str, Any] = {}
                 for param in parameters:
                     name = param.get("name")
                     required = param.get("required", False)
+                    if not name:
+                        continue
                     value = parsed.get(name)
 
                     if required and value is None:

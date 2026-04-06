@@ -11,6 +11,8 @@ export interface UserInputRequestCardProps {
   state?: 'pending' | 'answered'
   selectedOption?: string
   onSelectOption?: (option: string) => void
+  /** Whether the message is currently streaming (disables interaction) */
+  isStreaming?: boolean
   className?: string
 }
 
@@ -20,6 +22,7 @@ export function UserInputRequestCard({
   state = 'pending',
   selectedOption,
   onSelectOption,
+  isStreaming = false,
   className,
 }: UserInputRequestCardProps) {
   const [localState, setLocalState] = React.useState<'pending' | 'answered'>(state)
@@ -35,9 +38,11 @@ export function UserInputRequestCard({
   }, [selectedOption])
 
   const isPending = localState === 'pending'
+  // Disable interaction if streaming or already answered
+  const isInteractive = isPending && !isStreaming
 
   const handleSelectOption = (option: string) => {
-    if (!isPending) return
+    if (!isInteractive) return
 
     // Immediately update local state to prevent multiple clicks
     setLocalState('answered')
@@ -50,14 +55,16 @@ export function UserInputRequestCard({
   return (
     <div
       className={cn(
-        'rounded-lg border bg-muted/50 p-4 space-y-3',
+        'w-full max-w-full min-w-0 rounded-lg border bg-muted/50 p-4 space-y-3',
         className
       )}
     >
       {/* Question */}
       <div className="flex items-start gap-2">
         <MessageCircleQuestion className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-        <p className="text-sm font-medium">{question}</p>
+        <p className="min-w-0 whitespace-pre-wrap break-words text-sm font-medium leading-6">
+          {question}
+        </p>
       </div>
 
       {/* Options */}
@@ -71,12 +78,12 @@ export function UserInputRequestCard({
               variant={isSelected ? 'default' : 'outline'}
               size="sm"
               className={cn(
-                'justify-start text-left h-auto py-2 px-3 whitespace-normal',
-                isPending && 'hover:bg-primary/10 hover:border-primary/50 transition-colors cursor-pointer',
-                !isPending && !isSelected && 'opacity-50 cursor-default',
+                'h-auto w-full min-w-0 justify-start px-3 py-2 text-left !whitespace-normal break-words leading-6',
+                isInteractive && 'hover:bg-primary/10 hover:border-primary/50 transition-colors cursor-pointer',
+                !isInteractive && !isSelected && 'opacity-50 cursor-not-allowed',
                 isSelected && 'bg-primary text-primary-foreground'
               )}
-              disabled={!isPending}
+              disabled={!isInteractive}
               onClick={() => handleSelectOption(option)}
             >
               {option}
@@ -86,9 +93,14 @@ export function UserInputRequestCard({
       </div>
 
       {/* Helper text */}
-      {isPending && (
+      {isInteractive && (
         <p className="text-xs text-muted-foreground">
           Click an option above or type your own response
+        </p>
+      )}
+      {isStreaming && isPending && (
+        <p className="text-xs text-muted-foreground">
+          Waiting for response to complete...
         </p>
       )}
     </div>

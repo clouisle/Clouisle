@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { Database, MoreHorizontal, AlertCircle, Play } from 'lucide-react'
+import { Database, AlertCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 import type { KnowledgeRetrievalNodeConfig } from '../node-config/configs/knowledge-retrieval-node-config'
@@ -34,14 +34,6 @@ export function KnowledgeRetrievalNode({ selected, data }: KnowledgeRetrievalNod
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">{t('nodeLabels.knowledge_retrieval')}</span>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background" title={t('nodesCommon.debugRun')}>
-            <Play className="h-3 w-3 text-muted-foreground" />
-          </button>
-          <button className="p-1 rounded hover:bg-background">
-            <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
-          </button>
-        </div>
       </div>
 
       {/* Node Card */}

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import get_current_active_superuser
+from app.api import deps
 from app.core.i18n import t
 from app.models.sso_provider import SSOProvider
 from app.models.user import User
@@ -28,7 +28,7 @@ router = APIRouter()
 async def admin_disconnect_sso(
     connection_id: UUID,
     request: Request,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Disconnect SSO connection (admin can disconnect any user's connections)"""
     from app.models.user_sso_connection import UserSSOConnection
@@ -61,7 +61,7 @@ async def admin_disconnect_sso(
         user=current_user,
         action="disconnect_sso",
         resource_type="sso_connection",
-        resource_id=str(connection_id),
+        resource_id=connection_id,
         resource_name=provider_name,
         operation="delete",
         status="success",
@@ -74,7 +74,7 @@ async def admin_disconnect_sso(
 
 @router.get("/providers", response_model=Response[List[SSOProviderAdmin]])
 async def list_providers_admin(
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:read")),
 ):
     """List all SSO providers (admin)"""
     providers = await SSOProvider.all()
@@ -105,7 +105,7 @@ async def list_providers_admin(
 async def create_provider(
     request: Request,
     data: SSOProviderCreate,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Create SSO provider (admin)"""
     existing = await SSOProvider.filter(name=data.name).first()
@@ -121,7 +121,7 @@ async def create_provider(
         user=current_user,
         action="create_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider.id),
+        resource_id=provider.id,
         resource_name=provider.name,
         operation="create",
         status="success",
@@ -136,7 +136,7 @@ async def update_provider(
     provider_id: UUID,
     request: Request,
     data: SSOProviderUpdate,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Update SSO provider (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)
@@ -163,7 +163,7 @@ async def update_provider(
         user=current_user,
         action="update_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider.id),
+        resource_id=provider.id,
         resource_name=provider.name,
         operation="update",
         status="success",
@@ -177,7 +177,7 @@ async def update_provider(
 async def delete_provider(
     provider_id: UUID,
     request: Request,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Delete SSO provider (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)
@@ -193,7 +193,7 @@ async def delete_provider(
         user=current_user,
         action="delete_sso_provider",
         resource_type="sso_provider",
-        resource_id=str(provider_id),
+        resource_id=provider_id,
         resource_name=provider_name,
         operation="delete",
         status="success",
@@ -206,7 +206,7 @@ async def delete_provider(
 @router.post("/providers/{provider_id}/test", response_model=Response[dict])
 async def test_provider_connection(
     provider_id: UUID,
-    current_user: User = Depends(get_current_active_superuser),
+    current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Test SSO provider connection (admin)"""
     provider = await SSOProvider.get_or_none(id=provider_id)
@@ -222,13 +222,20 @@ async def test_provider_connection(
         test_redirect = "http://localhost/callback"
 
         if provider.protocol in ["oauth2", "oidc"]:
-            auth_url, _, _ = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=test_state, redirect_uri=test_redirect
             )
+            if not isinstance(auth_result, tuple) or len(auth_result) != 3:
+                raise BusinessError(
+                    code=ResponseCode.SSO_INVALID_CONFIGURATION,
+                    msg_key="unsupported_protocol",
+                )
+            auth_url = auth_result[0]
         else:
-            auth_url = await provider_instance.get_authorization_url(
+            auth_result = await provider_instance.get_authorization_url(
                 state=test_state, redirect_uri=test_redirect
             )
+            auth_url = auth_result if isinstance(auth_result, str) else auth_result[0]
 
         return success(
             data={

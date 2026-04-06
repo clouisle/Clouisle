@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Node, Edge } from '@xyflow/react'
-import { X, Check } from 'lucide-react'
+import { X, Check, Copy, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { type NodeTrace, nodeStatusConfig, renderNodeOutput } from './node-output-renderer'
 import { ConditionBranch } from './nodes/condition-node'
 import { IterationConfig, defaultIterationConfig } from './nodes/iteration-node'
 import { LoopConfig, defaultLoopConfig } from './nodes/loop-node'
@@ -69,9 +70,10 @@ interface NodeConfigDrawerProps {
   onClose: () => void
   onUpdate: (nodeId: string, data: Record<string, unknown>) => void
   readOnly?: boolean
+  lastRunTrace?: NodeTrace | null
 }
 
-export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false }: NodeConfigDrawerProps) {
+export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUpdate, readOnly = false, lastRunTrace }: NodeConfigDrawerProps) {
   const t = useTranslations('workflow')
   const [label, setLabel] = React.useState('')
   const [description, setDescription] = React.useState('')
@@ -1285,7 +1287,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
   return (
     <div
       className={cn(
-        'absolute top-14 right-2 bottom-2 w-[360px] bg-card border border-border rounded-xl shadow-xl z-40',
+        'absolute top-14 right-2 bottom-2 w-[380px] min-w-[380px] bg-card border border-border rounded-xl shadow-xl z-40 flex flex-col overflow-hidden',
         'transform transition-all duration-200 ease-out',
         open ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0 pointer-events-none'
       )}
@@ -1355,9 +1357,13 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
                 {renderConfigFields()}
               </TabsContent>
               <TabsContent value="last-run" className="mt-3">
-                <div className="text-center py-6 text-muted-foreground text-xs">
-                  {t('nodeConfig.noRunHistory')}
-                </div>
+                {lastRunTrace ? (
+                  <LastRunContent trace={lastRunTrace} t={t} />
+                ) : (
+                  <div className="text-center py-6 text-muted-foreground text-xs">
+                    {t('nodeConfig.noRunHistory')}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           )}
@@ -1403,6 +1409,99 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           }
         }}
       />
+    </div>
+  )
+}
+
+// 上次执行内容组件
+function LastRunContent({ trace, t }: { trace: NodeTrace; t: (key: string) => string }) {
+  const StatusIcon = nodeStatusConfig[trace.status]?.icon
+  const statusClassName = nodeStatusConfig[trace.status]?.className || ''
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* 状态栏 */}
+      <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+        {StatusIcon && <StatusIcon className={cn('h-4 w-4', statusClassName)} />}
+        <span className={cn(
+          'text-xs font-medium',
+          trace.status === 'success' && 'text-green-600',
+          trace.status === 'failed' && 'text-red-600',
+          trace.status === 'running' && 'text-blue-600',
+          trace.status === 'skipped' && 'text-muted-foreground',
+        )}>
+          {trace.status}
+        </span>
+        {trace.durationMs !== undefined && (
+          <span className="text-xs text-muted-foreground ml-auto">
+            {trace.durationMs.toFixed(3)} ms
+          </span>
+        )}
+      </div>
+
+      {/* Token 信息 */}
+      {trace.tokens && (trace.tokens.total ?? 0) > 0 && (
+        <div className="flex items-center gap-4 text-xs p-2.5 bg-muted/30 rounded-lg">
+          <div>
+            <span className="text-muted-foreground">Prompt: </span>
+            <span>{trace.tokens.prompt || 0}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Completion: </span>
+            <span>{trace.tokens.completion || 0}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Total: </span>
+            <span className="font-medium">{trace.tokens.total || 0}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 流式内容（运行中的 LLM 节点） */}
+      {trace.nodeType === 'llm' && trace.status === 'running' && trace.streamingContent && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>{t('runDrawer.generating')}</span>
+          </div>
+          <div className="p-2 bg-muted rounded text-sm whitespace-pre-wrap max-h-40 overflow-y-auto">
+            {trace.streamingContent}
+            <span className="animate-pulse">▌</span>
+          </div>
+        </div>
+      )}
+
+      {/* 输出 */}
+      {trace.outputs && Object.keys(trace.outputs).length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">{t('runDrawer.outputLabel')}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1"
+              onClick={() => copyToClipboard(JSON.stringify(trace.outputs, null, 2))}
+            >
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
+          {renderNodeOutput(trace.nodeType, trace.outputs, t)}
+        </div>
+      )}
+
+      {/* 错误信息 */}
+      {trace.error && (
+        <div className="space-y-1">
+          <span className="text-xs text-red-500 font-medium">{t('runDrawer.errorLabel')}</span>
+          <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-600 dark:text-red-400">
+            {trace.error}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -99,6 +99,7 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
 
             vector_store = VectorStore(
                 embedding_model_id=embedding_model_id,
+                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
                 team_id=team_id,
             )
 

@@ -4,7 +4,8 @@ Sub-workflow node executor.
 Handles nested workflow execution with depth tracking.
 """
 
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 import logging
 
@@ -55,7 +56,6 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         from app.models.workflow import Workflow, WorkflowRun as WorkflowRunModel
         from ..orchestrator import WorkflowOrchestrator
 
-        node.get("id")
         node_data = node.get("data", {})
         # Try subWorkflowConfig first (frontend structure), then fall back to config
         config = node_data.get("subWorkflowConfig") or node_data.get("config", {})
@@ -74,7 +74,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         # Check depth to prevent infinite recursion
         current_depth = run.depth if hasattr(run, "depth") else 0
         if current_depth >= MAX_DEPTH:
-            raise MaxDepthExceededError(MAX_DEPTH)
+            raise MaxDepthExceededError(MAX_DEPTH, current_depth)
 
         # Load sub-workflow
         sub_workflow = await Workflow.filter(id=workflow_id).first()
@@ -84,7 +84,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         # Convert frontend inputMappings format to resolve_inputs format
         # Frontend format: {name, type, required, source, variableRef, constantValue}
         # resolve_inputs format: {name, value} or {name, variableRef}
-        converted_mappings = []
+        converted_mappings: list[dict[str, Any]] = []
         for mapping in input_mappings_raw:
             name = mapping.get("name", "")
             source = mapping.get("source", "variable")
@@ -102,7 +102,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
                     converted_mappings.append(mapping)
 
         # Resolve inputs
-        inputs = {}
+        inputs: dict[str, Any] = {}
         for mapping in converted_mappings:
             name = mapping.get("name", "")
             if not name:
@@ -121,17 +121,21 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             orchestrator = WorkflowOrchestrator(timeout=timeout)
 
             # Run sub-workflow
+            triggered_by_id = run.triggered_by_id
+            if triggered_by_id is None:
+                return ExecutionResult(error="Sub-workflow requires a triggering user")
+
             sub_run_id = await orchestrator.run(
                 workflow_id=UUID(workflow_id),
                 inputs=inputs,
-                user_id=run.triggered_by_id,
+                user_id=triggered_by_id,
                 team_id=None,  # Inherit from parent
                 stream=False,  # Don't stream sub-workflow
             )
 
             # Get sub-workflow results
             sub_run = await WorkflowRunModel.filter(id=sub_run_id).first()
-            if not sub_run:
+            if sub_run is None:
                 return ExecutionResult(error="Sub-workflow run not found")
 
             # Update sub-run with parent info
@@ -160,6 +164,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
 
             # Frontend uses outputVariable as a single output name that contains all sub-workflow outputs
             # If outputVariable is set, wrap all outputs under that key
+            outputs: dict[str, Any]
             if output_variable:
                 outputs = {
                     output_variable: sub_outputs,
@@ -282,10 +287,14 @@ class FileToURLNodeExecutor(NodeExecutor):
                     )
                 else:
                     # Generate URL (simplified - in production use signed URLs)
-                    relative_path = file_path.replace(
-                        str(settings.UPLOAD_DIR), ""
-                    ).lstrip("/")
-                    url = f"{settings.BASE_URL}/uploads/{relative_path}"
+                    uploads_root = Path(
+                        "/Users/yunhai/Documents/CodeData/Project/Clouisle/uploads"
+                    )
+                    relative_path = Path(file_path).resolve().relative_to(uploads_root)
+                    url = (
+                        f"{str(settings.API_BASE_URL).rstrip('/')}/uploads/"
+                        f"{relative_path.as_posix()}"
+                    )
 
                     return ExecutionResult(
                         outputs={

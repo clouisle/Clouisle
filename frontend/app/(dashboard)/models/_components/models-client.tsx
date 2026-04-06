@@ -87,6 +87,8 @@ export function ModelsClient() {
   const [providerFilter, setProviderFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
+  const selectedProviders = React.useMemo(() => Array.from(providerFilter), [providerFilter])
+  const selectedTypes = React.useMemo(() => Array.from(typeFilter), [typeFilter])
   
   // 选择状态
   const [selectedModels, setSelectedModels] = React.useState<Set<string>>(new Set())
@@ -118,36 +120,31 @@ export function ModelsClient() {
   const loadModels = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      // 构建筛选参数
       const params: {
         page: number
         pageSize: number
-        provider?: string
-        model_type?: string
+        provider?: string[]
+        model_type?: string[]
         is_enabled?: boolean
         search?: string
       } = { page, pageSize }
-      
-      // 搜索关键词
+
       if (searchQuery) {
         params.search = searchQuery
       }
-      
-      // 供应商筛选（只支持单选，取第一个）
-      if (providerFilter.size > 0) {
-        params.provider = Array.from(providerFilter)[0]
+
+      if (selectedProviders.length > 0) {
+        params.provider = selectedProviders
       }
-      
-      // 类型筛选（只支持单选，取第一个）
-      if (typeFilter.size > 0) {
-        params.model_type = Array.from(typeFilter)[0]
+
+      if (selectedTypes.length > 0) {
+        params.model_type = selectedTypes
       }
-      
-      // 状态筛选
+
       if (statusFilter.size === 1) {
         params.is_enabled = statusFilter.has('enabled')
       }
-      
+
       const data = await modelsApi.getModels(params)
       setModels(data.items)
       setPageData(data)
@@ -156,7 +153,7 @@ export function ModelsClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize, searchQuery, providerFilter, typeFilter, statusFilter])
+  }, [page, pageSize, searchQuery, selectedProviders, selectedTypes, statusFilter])
   
   React.useEffect(() => {
     loadModels()
@@ -167,42 +164,48 @@ export function ModelsClient() {
   
   // 检查是否有筛选条件
   const isFiltered = searchQuery || providerFilter.size > 0 || typeFilter.size > 0 || statusFilter.size > 0
-  
+
+  const handleProviderFilterChange = (values: Set<string>) => {
+    setProviderFilter(values)
+    setPage(1)
+    setSelectedModels(new Set())
+  }
+
+  const handleTypeFilterChange = (values: Set<string>) => {
+    setTypeFilter(values)
+    setPage(1)
+    setSelectedModels(new Set())
+  }
+
+  const handleStatusFilterChange = (values: Set<string>) => {
+    setStatusFilter(values)
+    setPage(1)
+    setSelectedModels(new Set())
+  }
+
   // 重置所有筛选
   const resetFilters = () => {
     setSearchQuery('')
     setProviderFilter(new Set())
     setTypeFilter(new Set())
     setStatusFilter(new Set())
-    setPage(1) // 重置到第一页
-  }
-  
-  // 筛选条件变化时重置到第一页
-  React.useEffect(() => {
     setPage(1)
-  }, [searchQuery, providerFilter, typeFilter, statusFilter])
-  
-  // 供应商选项 - 只显示模型列表中存在的供应商
+    setSelectedModels(new Set())
+  }
+
   const providerOptions = React.useMemo(() => {
-    const existingProviders = new Set(models.map(m => m.provider))
-    return providers
-      .filter(p => existingProviders.has(p.code))
-      .map(p => ({
-        value: p.code,
-        label: t(`providers.${p.code}`),
-      }))
-  }, [providers, models, t])
-  
-  // 类型选项 - 只显示模型列表中存在的类型
+    return providers.map(p => ({
+      value: p.code,
+      label: t(`providers.${p.code}`),
+    }))
+  }, [providers, t])
+
   const typeOptions = React.useMemo(() => {
-    const existingTypes = new Set(models.map(m => m.model_type))
-    return modelTypes
-      .filter(mt => existingTypes.has(mt.code))
-      .map(mt => ({
-        value: mt.code,
-        label: t(`modelTypes.${mt.code}`),
-      }))
-  }, [modelTypes, models, t])
+    return modelTypes.map(mt => ({
+      value: mt.code,
+      label: t(`modelTypes.${mt.code}`),
+    }))
+  }, [modelTypes, t])
   
   // 状态选项
   const statusOptions = [
@@ -342,7 +345,7 @@ export function ModelsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="model:create">
+          <PermissionGuard permission="admin:model:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createModel')}
@@ -368,21 +371,21 @@ export function ModelsClient() {
             title={t('provider')}
             options={providerOptions}
             selectedValues={providerFilter}
-            onSelectionChange={setProviderFilter}
+            onSelectionChange={handleProviderFilterChange}
           />
           
           <DataTableFacetedFilter
             title={t('modelType')}
             options={typeOptions}
             selectedValues={typeFilter}
-            onSelectionChange={setTypeFilter}
+            onSelectionChange={handleTypeFilterChange}
           />
           
           <DataTableFacetedFilter
             title={t('status')}
             options={statusOptions}
             selectedValues={statusFilter}
-            onSelectionChange={setStatusFilter}
+            onSelectionChange={handleStatusFilterChange}
           />
           
           {isFiltered && (
@@ -471,14 +474,14 @@ export function ModelsClient() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {(canPerform('model:update') || canPerform('model:delete')) && (
+                    {(canPerform('admin:model:update') || canPerform('admin:model:delete')) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {canPerform('model:update') && (
+                          {canPerform('admin:model:update') && (
                             <>
                               <DropdownMenuItem onClick={() => handleEdit(model)}>
                                 <Pencil className="mr-2 h-4 w-4" />
@@ -515,12 +518,12 @@ export function ModelsClient() {
                             </>
                           )}
 
-                          {canPerform('model:delete') && (
+                          {canPerform('admin:model:delete') && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
+                                variant="destructive"
                                 onClick={() => handleDelete(model)}
-                                className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 {commonT('delete')}
@@ -622,7 +625,7 @@ export function ModelsClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedModels.size > 0 && canPerform('model:delete') && (
+      {selectedModels.size > 0 && canPerform('admin:model:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

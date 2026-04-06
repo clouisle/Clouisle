@@ -22,14 +22,14 @@ import {
 import { toast } from 'sonner'
 import {
   workflowsApi,
-  teamsApi,
-  usersApi,
   type WorkflowRunListItemWithWorkflow,
-  type Team,
   type WorkflowListItem,
   type RunStatus,
   type TriggerType,
 } from '@/lib/api'
+import { teamsApi } from '@/lib/api/admin/teams'
+import { usersApi } from '@/lib/api/admin/users'
+import type { Team } from '@/lib/api/teams'
 import type { User } from '@/lib/api/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -161,7 +161,6 @@ export function WorkflowRunsTable() {
   const [statusFilter, setStatusFilter] = React.useState<string[]>([])
   const [triggerTypeFilter, setTriggerTypeFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])
-  const [debugOnly, setDebugOnly] = React.useState(false)
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -196,12 +195,11 @@ export function WorkflowRunsTable() {
         page,
         pageSize,
         search: search || undefined,
-        teamId: teamFilter.length === 1 ? teamFilter[0] : undefined,
-        workflowId: workflowFilter.length === 1 ? workflowFilter[0] : undefined,
-        status: statusFilter.length === 1 ? (statusFilter[0] as RunStatus) : undefined,
-        triggerType: triggerTypeFilter.length === 1 ? (triggerTypeFilter[0] as TriggerType) : undefined,
-        userId: userFilter.length === 1 ? userFilter[0] : undefined,
-        isDebug: debugOnly || undefined,
+        teamId: teamFilter.length > 0 ? teamFilter : undefined,
+        workflowId: workflowFilter.length > 0 ? workflowFilter : undefined,
+        status: statusFilter.length > 0 ? (statusFilter as RunStatus[]) : undefined,
+        triggerType: triggerTypeFilter.length > 0 ? (triggerTypeFilter as TriggerType[]) : undefined,
+        userId: userFilter.length > 0 ? userFilter : undefined,
       }
       console.log('Loading workflow runs with params:', params)
       const data = await workflowsApi.getAllWorkflowRuns(params)
@@ -215,7 +213,7 @@ export function WorkflowRunsTable() {
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter, debugOnly])
+  }, [page, pageSize, search, teamFilter, workflowFilter, statusFilter, triggerTypeFilter, userFilter])
 
   React.useEffect(() => {
     loadRuns()
@@ -274,7 +272,6 @@ export function WorkflowRunsTable() {
     setStatusFilter([])
     setTriggerTypeFilter([])
     setUserFilter([])
-    setDebugOnly(false)
     setPage(1)
   }
 
@@ -284,8 +281,7 @@ export function WorkflowRunsTable() {
     workflowFilter.length > 0 ||
     statusFilter.length > 0 ||
     triggerTypeFilter.length > 0 ||
-    userFilter.length > 0 ||
-    debugOnly
+    userFilter.length > 0
 
   const totalPages = Math.ceil(total / pageSize)
 
@@ -332,6 +328,7 @@ export function WorkflowRunsTable() {
                   setTeamFilter(Array.from(values))
                   setPage(1)
                 }}
+                searchable
               />
             )}
 
@@ -344,6 +341,7 @@ export function WorkflowRunsTable() {
                   setWorkflowFilter(Array.from(values))
                   setPage(1)
                 }}
+                searchable
               />
             )}
 
@@ -376,6 +374,7 @@ export function WorkflowRunsTable() {
                   setUserFilter(Array.from(values))
                   setPage(1)
                 }}
+                searchable
               />
             )}
 
@@ -481,8 +480,8 @@ export function WorkflowRunsTable() {
                           </DropdownMenuItem>
                           {canDeleteWorkflowRun && (
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDeleteClick([run.id])}
-                              className="text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}
@@ -573,10 +572,7 @@ export function WorkflowRunsTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>
               {commonT('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

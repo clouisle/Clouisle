@@ -5,7 +5,7 @@ Main entry point for workflow execution. Coordinates execution plan,
 node executors, and stream events.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 import logging
@@ -185,6 +185,7 @@ class WorkflowOrchestrator:
             run_id=str(run.id),
             redis_client=redis_client,
             workflow_id=str(workflow_id),
+            user_id=user_id,
         )
         await context.set_inputs(inputs)
 
@@ -325,7 +326,7 @@ class WorkflowOrchestrator:
 
         # Update run status to running
         run.status = RunStatus.RUNNING
-        run.started_at = datetime.utcnow()
+        run.started_at = datetime.now(timezone.utc)
         await run.save()
 
         # Record metrics - workflow start
@@ -348,6 +349,7 @@ class WorkflowOrchestrator:
             run_id=str(run.id),
             redis_client=redis_client,
             workflow_id=str(workflow_id),
+            user_id=user_id,
         )
         await context.set_inputs(inputs)
 
@@ -502,7 +504,7 @@ class WorkflowOrchestrator:
             triggered_by_id=user_id,
             trigger_type=workflow.trigger_type,
             inputs=inputs,
-            status="running",
+            status=RunStatus.RUNNING,
         )
         logger.info(f"Created workflow run {run.id}")
         return run
@@ -527,10 +529,13 @@ class WorkflowOrchestrator:
             [n for n in node_executions if n.status == NodeStatus.SKIPPED]
         )
 
-        run.status = "success"
+        run.status = RunStatus.SUCCESS
         run.outputs = outputs
+        run.error_message = None
+        run.error_node_id = None
+        run.error_traceback = None
         run.total_duration_ms = duration_ms
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
         logger.info(f"Completed workflow run {run.id}")
 
@@ -554,7 +559,9 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
+            await Workflow.filter(id=workflow.id).update(
+                team__total_tokens=F("team__total_tokens") + total_tokens
+            )
 
             # Send workflow run success notification
             try:
@@ -631,10 +638,10 @@ class WorkflowOrchestrator:
             [n for n in node_executions if n.status == NodeStatus.SKIPPED]
         )
 
-        run.status = "failed"
+        run.status = RunStatus.FAILED
         run.error_message = error
         run.total_duration_ms = duration_ms
-        run.finished_at = datetime.utcnow()
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
         logger.error(f"Failed workflow run {run.id}: {error}")
 
@@ -658,7 +665,9 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await workflow.team.update(total_tokens=F("total_tokens") + total_tokens)
+            await Workflow.filter(id=workflow.id).update(
+                team__total_tokens=F("team__total_tokens") + total_tokens
+            )
 
             # Send workflow run failed notification
             try:
@@ -740,10 +749,10 @@ class WorkflowOrchestrator:
         Returns:
             Tuple of (final outputs dictionary, node count)
         """
-        executed_nodes = set()
-        skipped_nodes = set()
+        executed_nodes: set[str] = set()
+        skipped_nodes: set[str] = set()
         node_count = 0
-        final_outputs = {}
+        final_outputs: dict[str, Any] = {}
 
         # Track iteration state for loop/iteration nodes
 
@@ -751,12 +760,14 @@ class WorkflowOrchestrator:
         for stage in plan.stages:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(self.timeout)
+                raise ExecutionTimeoutError(
+                    f"Execution timed out after {self.timeout} seconds"
+                )
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError()
+                raise ExecutionCancelledError("Workflow execution was cancelled")
 
             # Filter nodes that should be executed in this stage
             nodes_to_execute = []
@@ -797,8 +808,9 @@ class WorkflowOrchestrator:
                 node_count += 1
                 if node_count > self.max_nodes:
                     raise NodeExecutionError(
-                        node_id=node_id,
                         message=f"Exceeded maximum node count: {self.max_nodes}",
+                        node_id=node_id,
+                        node_type=node.node_type if node else "unknown",
                     )
 
                 # Execute single node
@@ -939,12 +951,14 @@ class WorkflowOrchestrator:
         for node_id in ordered_body_nodes:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(self.timeout)
+                raise ExecutionTimeoutError(
+                    f"Execution timed out after {self.timeout} seconds"
+                )
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError()
+                raise ExecutionCancelledError("Workflow execution was cancelled")
 
             # Execute node
             result = await self._execute_node(
@@ -981,8 +995,9 @@ class WorkflowOrchestrator:
         node_info = plan.get_node(node_id)
         if not node_info:
             raise NodeExecutionError(
-                node_id=node_id,
                 message="Node not found in execution plan",
+                node_id=node_id,
+                node_type="unknown",
             )
 
         node_type = node_info.node_type
@@ -1000,12 +1015,8 @@ class WorkflowOrchestrator:
             f"Execute node {node_id}: type={node_type}, label={node_label}, data_keys={list(node_inner_data.keys())}"
         )
 
-        # Check if this is a streaming answer node
-        is_streaming_answer = False
-        if node_type == "answer":
-            answer_config = node_data.get("data", {}).get("answerConfig", {})
-            streaming_config = answer_config.get("streaming", {})
-            is_streaming_answer = streaming_config.get("enabled", False)
+        # Answer nodes are always streaming (real or pseudo)
+        is_streaming_answer = node_type == "answer"
 
         # Publish node start
         if stream_manager:
@@ -1025,7 +1036,7 @@ class WorkflowOrchestrator:
             node_name=node_label,
             execution_order=execution_order,
             status=NodeStatus.RUNNING,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             config_snapshot=node_inner_data.get("config"),
         )
 
@@ -1088,7 +1099,7 @@ class WorkflowOrchestrator:
 
             # Update NodeExecution record - success
             node_execution.status = NodeStatus.SUCCESS
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.outputs = serializable_outputs
             await node_execution.save()
@@ -1115,7 +1126,7 @@ class WorkflowOrchestrator:
             # Update NodeExecution record - failed
             duration_ms = int((time.time() - start_time) * 1000)
             node_execution.status = NodeStatus.FAILED
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.error_message = str(e)
             node_execution.error_type = type(e).__name__
@@ -1125,7 +1136,7 @@ class WorkflowOrchestrator:
             # Update NodeExecution record - failed
             duration_ms = int((time.time() - start_time) * 1000)
             node_execution.status = NodeStatus.FAILED
-            node_execution.finished_at = datetime.utcnow()
+            node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
             node_execution.error_message = str(e)
             node_execution.error_type = type(e).__name__
@@ -1157,15 +1168,16 @@ class WorkflowOrchestrator:
         if not run:
             return False
 
-        if run.status != "running":
+        if run.status != RunStatus.RUNNING:
             return False
 
-        run.status = "cancelled"
-        run.finished_at = datetime.utcnow()
+        run.status = RunStatus.CANCELLED
+        run.finished_at = datetime.now(timezone.utc)
         await run.save()
 
         # Set cancelled status in context
-        context = await ExecutionContext.load(run_id)
+        redis_client = await get_redis()
+        context = await ExecutionContext.load(run_id, redis_client)
         await context.set_status("cancelled")
 
         # Publish cancel event
@@ -1192,7 +1204,7 @@ class WorkflowOrchestrator:
         return {
             "id": str(run.id),
             "workflow_id": str(run.workflow_id),
-            "status": run.status,
+            "status": str(run.status),
             "inputs": run.inputs,
             "outputs": run.outputs,
             "error": run.error_message,

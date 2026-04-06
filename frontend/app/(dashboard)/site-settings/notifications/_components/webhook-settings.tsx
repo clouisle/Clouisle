@@ -22,9 +22,10 @@ import { siteSettingsApi, type WebhookSettings } from '@/lib/api/admin/site-sett
 interface WebhookSettingsTabProps {
   settings: WebhookSettings
   onSettingsChange: (settings: WebhookSettings) => void
+  canUpdate: boolean
 }
 
-export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettingsTabProps) {
+export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: WebhookSettingsTabProps) {
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
@@ -87,6 +88,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
             <Switch
               checked={settings.webhook_enabled}
               onCheckedChange={(checked) => updateSetting('webhook_enabled', checked)}
+              disabled={!canUpdate}
             />
           </div>
         </CardContent>
@@ -107,6 +109,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
               placeholder="https://example.com/webhook"
               value={settings.webhook_url}
               onChange={(e) => updateSetting('webhook_url', e.target.value)}
+              disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('webhook.urlDesc')}</p>
           </div>
@@ -116,6 +119,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
             <Select
               value={settings.webhook_method}
               onValueChange={(value) => value && updateSetting('webhook_method', value as 'POST' | 'GET')}
+              disabled={!canUpdate}
             >
               <SelectTrigger className="min-w-[180px]">
                 <SelectValue>{settings.webhook_method}</SelectValue>
@@ -135,6 +139,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
               placeholder={t('webhook.secretPlaceholder')}
               value={settings.webhook_secret}
               onChange={(e) => updateSetting('webhook_secret', e.target.value)}
+              disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('webhook.secretDesc')}</p>
           </div>
@@ -157,6 +162,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
               onChange={(e) => handleHeadersChange(e.target.value)}
               className="font-mono text-sm"
               rows={4}
+              disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('webhook.headersDesc')}</p>
           </div>
@@ -170,6 +176,7 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
               onChange={(e) => updateSetting('webhook_body_template', e.target.value)}
               className="font-mono text-sm"
               rows={6}
+              disabled={!canUpdate}
             />
             <p className="text-sm text-muted-foreground">{t('webhook.bodyTemplateDesc')}</p>
             <div className="rounded-md bg-muted p-3 text-sm">
@@ -185,30 +192,34 @@ export function WebhookSettingsTab({ settings, onSettingsChange }: WebhookSettin
       </Card>
 
       {/* 测试消息 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('webhook.testMessage')}</CardTitle>
-          <CardDescription>{t('webhook.testMessageDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={handleSendTest}
-            disabled={sendingTest || !settings.webhook_enabled}
-            variant="outline"
-          >
-            {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {t('webhook.sendTest')}
-          </Button>
-        </CardContent>
-      </Card>
+      {canUpdate && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('webhook.testMessage')}</CardTitle>
+            <CardDescription>{t('webhook.testMessageDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              onClick={handleSendTest}
+              disabled={sendingTest || !settings.webhook_enabled}
+              variant="outline"
+            >
+              {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('webhook.sendTest')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 保存按钮 */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {t('save')}
-        </Button>
-      </div>
+      {canUpdate && (
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('save')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

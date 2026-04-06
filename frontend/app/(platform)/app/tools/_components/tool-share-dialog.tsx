@@ -76,7 +76,7 @@ export function ToolShareDialog({
     } finally {
       setIsLoading(false)
     }
-  }, [tool?.id, t])
+  }, [tool?.id])
 
   React.useEffect(() => {
     if (open && tool?.id) {

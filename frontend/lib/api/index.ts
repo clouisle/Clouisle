@@ -1,6 +1,6 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
 export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
-export { usersApi, type PageData, type UserQueryParams } from './users'
+export { usersApi, totpApi, type PageData, type UserQueryParams, type PasswordStatus, type TOTPSetupResponse, type TOTPStatusResponse } from './users'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
 export {
   siteSettingsApi,
@@ -62,6 +62,8 @@ export {
   type AgentKnowledgeBaseOut,
   type FileUploadConfig,
   type MemoryConfig,
+  type ImageGenerationConfig,
+  type VideoGenerationConfig,
   type ToolConfig,
   type VariableDefinition,
   type VariableType,
@@ -86,7 +88,9 @@ export {
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
+  type SSEMediaResult,
   type SSEUserInputRequest,
+  type AgentVideoGenerationStatus,
   type AdminConversationListItem,
   type AdminConversationWithMessages,
   type ConversationStats,
@@ -110,6 +114,9 @@ export {
   type ToolParameter,
   type HttpConfig,
   type ToolListResponse,
+  type ToolFilterOption,
+  type ToolFilterOptions,
+  type ToolListQueryParams,
   type ToolCreateInput,
   type ToolUpdateInput,
   type ToolExecuteRequest,

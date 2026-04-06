@@ -214,24 +214,22 @@ def process_document_task(self, document_id: str) -> dict:
             doc_meta = document.metadata or {}
             kb_settings = kb.settings or {}
             chunk_size = doc_meta.get("chunk_size") or kb_settings.get(
-                "chunk_size", 500
+                "chunk_size", 1000
             )
             chunk_overlap = doc_meta.get("chunk_overlap") or kb_settings.get(
-                "chunk_overlap", 50
+                "chunk_overlap", 100
             )
             separator = doc_meta.get("separator") or kb_settings.get("separator")
 
-            # Create chunker with settings
-            from app.services.document_processor import TextChunker
+            # Chunk text
+            from app.services.document_processor import chunk_text
 
-            chunker = TextChunker(
+            chunks = chunk_text(
+                text,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 separators=[separator] if separator else None,
             )
-
-            # Chunk text
-            chunks = chunker.chunk_text(text)
 
             if not chunks:
                 raise ValueError("No chunks generated from document")
@@ -246,26 +244,74 @@ def process_document_task(self, document_id: str) -> dict:
                 team_id=team_id,
             )
 
-            # Store chunks with embeddings
+            # Store chunks with embeddings and progress tracking
             # Pass kb_id to enable dimension management:
             # - First document sets the KB's embedding dimension
             # - Subsequent documents must match the dimension
-            created_chunks = await vector_store.store_chunks(
-                document, chunks, kb_id=kb.id
+            async def _update_progress(embedded: int, failed: int, total: int) -> None:
+                document.metadata = document.metadata or {}
+                document.metadata["embed_progress"] = {
+                    "embedded": embedded,
+                    "failed": failed,
+                    "total": total,
+                }
+                await document.save(update_fields=["metadata"])
+
+            created_chunks = await vector_store.store_chunks_with_progress(
+                document, chunks, kb_id=kb.id, progress_callback=_update_progress
             )
             logger.info(
                 f"Document {document_id} embeddings stored, chunks={len(created_chunks)}"
             )
 
-            # Calculate totals
+            # Check for failed chunks
+            failed_chunks = [c for c in created_chunks if c.status == "failed"]
+            embedded_chunks = [c for c in created_chunks if c.status == "embedded"]
+
+            # Calculate totals from embedded chunks
             total_tokens = sum(c.token_count for c in created_chunks)
 
-            # Update document
-            document.status = DocumentStatus.COMPLETED.value
+            # Clear progress from metadata
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
+
+            if failed_chunks and not embedded_chunks:
+                # All failed
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = (
+                    f"All {len(created_chunks)} chunks failed to embed"[:500]
+                )
+                document.chunk_count = len(created_chunks)
+                document.token_count = total_tokens
+                await document.save()
+
+                await _send_doc_failed_notification(
+                    document=document,
+                    kb_name=kb.name,
+                    team_id=kb.team_id,
+                    error=document.error_message,
+                    user_locale=user_locale,
+                )
+
+                return {
+                    "status": "error",
+                    "document_id": document_id,
+                    "message": document.error_message,
+                }
+
+            if failed_chunks:
+                # Partial failure
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = f"{len(failed_chunks)}/{len(created_chunks)} chunks failed to embed"[
+                    :500
+                ]
+            else:
+                document.status = DocumentStatus.COMPLETED.value
+                document.error_message = None
+
             document.chunk_count = len(created_chunks)
             document.token_count = total_tokens
             document.processed_at = datetime.now(timezone.utc)
-            document.error_message = None
             await document.save()
             logger.info(
                 f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
@@ -490,8 +536,8 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
             # Get rechunk settings from metadata
             rechunk_settings = (document.metadata or {}).get("rechunk_settings", {})
-            chunk_size = rechunk_settings.get("chunk_size", 500)
-            chunk_overlap = rechunk_settings.get("chunk_overlap", 50)
+            chunk_size = rechunk_settings.get("chunk_size", 1000)
+            chunk_overlap = rechunk_settings.get("chunk_overlap", 100)
             separator = rechunk_settings.get("separator")
             clean_text_setting = rechunk_settings.get("clean_text", True)
 
@@ -530,35 +576,63 @@ def rechunk_document_task(self, document_id: str) -> dict:
             else:
                 raise ValueError("Document has no file_path or source_url")
 
-            # Create chunker with new settings
-            from app.services.document_processor import TextChunker
+            # Chunk text
+            from app.services.document_processor import chunk_text
 
-            chunker = TextChunker(
+            chunks = chunk_text(
+                text,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 separators=[separator] if separator else None,
             )
 
-            # Chunk text
-            chunks = chunker.chunk_text(text)
-
             if not chunks:
                 raise ValueError("No chunks generated from document")
 
-            # Store chunks with embeddings (pass kb_id for dimension management)
-            created_chunks = await vector_store.store_chunks(
-                document, chunks, kb_id=kb.id
+            # Store chunks with embeddings and progress (pass kb_id for dimension management)
+            async def _update_rechunk_progress(
+                embedded: int, failed: int, total: int
+            ) -> None:
+                document.metadata = document.metadata or {}
+                document.metadata["embed_progress"] = {
+                    "embedded": embedded,
+                    "failed": failed,
+                    "total": total,
+                }
+                await document.save(update_fields=["metadata"])
+
+            created_chunks = await vector_store.store_chunks_with_progress(
+                document,
+                chunks,
+                kb_id=kb.id,
+                progress_callback=_update_rechunk_progress,
             )
 
-            # Calculate totals
+            # Check for failed chunks
+            failed_chunks = [c for c in created_chunks if c.status == "failed"]
             total_tokens = sum(c.token_count for c in created_chunks)
 
-            # Update document
-            document.status = DocumentStatus.COMPLETED.value
+            # Clear progress from metadata
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
+
+            if failed_chunks and len(failed_chunks) == len(created_chunks):
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = (
+                    f"All {len(created_chunks)} chunks failed to embed"[:500]
+                )
+            elif failed_chunks:
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = f"{len(failed_chunks)}/{len(created_chunks)} chunks failed to embed"[
+                    :500
+                ]
+            else:
+                document.status = DocumentStatus.COMPLETED.value
+                document.error_message = None
+
             document.chunk_count = len(created_chunks)
             document.token_count = total_tokens
             document.processed_at = datetime.now(timezone.utc)
-            document.error_message = None
             await document.save()
 
             # Update KB statistics
@@ -730,18 +804,38 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 team_id=team_id,
             )
 
-            # Generate embeddings and store vectors for each chunk
+            # Generate embeddings and store vectors for each chunk with progress
             embedded_count = 0
             failed_count = 0
             last_error = None
+            total_chunks = len(chunks)
             for chunk in chunks:
                 try:
                     await vector_store.add_chunk_vector(kb.id, chunk)
+                    chunk.status = "embedded"
+                    chunk.error_message = None
+                    await chunk.save(update_fields=["status", "error_message"])
                     embedded_count += 1
                 except Exception as e:
                     failed_count += 1
                     last_error = str(e)
+                    chunk.status = "failed"
+                    chunk.error_message = str(e)[:500]
+                    await chunk.save(update_fields=["status", "error_message"])
                     logger.error(f"Failed to embed chunk {chunk.id}: {e}")
+
+                # Update progress in document metadata
+                document.metadata = document.metadata or {}
+                document.metadata["embed_progress"] = {
+                    "embedded": embedded_count,
+                    "failed": failed_count,
+                    "total": total_chunks,
+                }
+                await document.save(update_fields=["metadata"])
+
+            # Clear progress from metadata
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
 
             # Check if embedding was successful
             if embedded_count == 0 and len(chunks) > 0:
@@ -873,3 +967,191 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
         asyncio.set_event_loop(loop)
 
     return loop.run_until_complete(_embed())
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def retry_failed_chunks_task(self, document_id: str) -> dict:
+    """
+    Celery task to retry embedding for failed chunks only.
+
+    Args:
+        document_id: UUID string of document with failed chunks
+
+    Returns:
+        Result dict with status and stats
+    """
+    import asyncio
+
+    async def _retry():
+        from app.models.knowledge_base import DocumentChunk
+
+        doc_uuid = UUID(document_id)
+
+        document = (
+            await Document.filter(id=doc_uuid)
+            .prefetch_related("knowledge_base", "uploaded_by")
+            .first()
+        )
+
+        if not document:
+            logger.error(f"Document {document_id} not found")
+            default_lang = await get_default_language()
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
+
+        kb = document.knowledge_base
+        user_locale = (
+            getattr(document.uploaded_by, "locale", "en")
+            if document.uploaded_by
+            else "en"
+        )
+
+        try:
+            # Update status to processing
+            document.status = DocumentStatus.PROCESSING.value
+            await document.save()
+
+            # Get only failed chunks
+            failed_chunks = await DocumentChunk.filter(
+                document_id=doc_uuid, status="failed"
+            ).order_by("chunk_index")
+
+            if not failed_chunks:
+                document.status = DocumentStatus.COMPLETED.value
+                document.error_message = None
+                await document.save()
+                return {
+                    "status": "success",
+                    "document_id": document_id,
+                    "message": "No failed chunks to retry",
+                    "retried_count": 0,
+                }
+
+            # Get total chunk count for progress
+            total_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
+
+            # Initialize vector store
+            embedding_model_id = (
+                str(kb.embedding_model_id) if kb.embedding_model_id else None
+            )
+            team_id = str(kb.team_id) if kb.team_id else None
+            vector_store = VectorStore(
+                embedding_model_id=embedding_model_id,
+                team_id=team_id,
+            )
+
+            # Count already-embedded chunks
+            already_embedded = await DocumentChunk.filter(
+                document_id=doc_uuid, status="embedded"
+            ).count()
+
+            embedded_count = already_embedded
+            still_failed = 0
+            last_error = None
+
+            for chunk in failed_chunks:
+                try:
+                    await vector_store.add_chunk_vector(kb.id, chunk)
+                    chunk.status = "embedded"
+                    chunk.error_message = None
+                    await chunk.save(update_fields=["status", "error_message"])
+                    embedded_count += 1
+                except Exception as e:
+                    still_failed += 1
+                    last_error = str(e)
+                    chunk.error_message = str(e)[:500]
+                    await chunk.save(update_fields=["error_message"])
+                    logger.error(f"Retry failed for chunk {chunk.id}: {e}")
+
+                # Update progress
+                document.metadata = document.metadata or {}
+                document.metadata["embed_progress"] = {
+                    "embedded": embedded_count,
+                    "failed": still_failed,
+                    "total": total_chunks,
+                }
+                await document.save(update_fields=["metadata"])
+
+            # Clear progress
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
+
+            if still_failed > 0:
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = (
+                    f"{still_failed}/{total_chunks} chunks still failed: {last_error}"[
+                        :500
+                    ]
+                )
+                await document.save()
+
+                await _send_doc_failed_notification(
+                    document=document,
+                    kb_name=kb.name,
+                    team_id=kb.team_id,
+                    error=document.error_message,
+                    user_locale=user_locale,
+                )
+
+                return {
+                    "status": "error",
+                    "document_id": document_id,
+                    "message": document.error_message,
+                    "retried_count": len(failed_chunks),
+                    "still_failed": still_failed,
+                }
+
+            # All retries succeeded
+            document.status = DocumentStatus.COMPLETED.value
+            document.error_message = None
+            document.processed_at = datetime.now(timezone.utc)
+            await document.save()
+
+            # Refresh KB stats
+            docs = await Document.filter(
+                knowledge_base_id=kb.id,
+                status=DocumentStatus.COMPLETED.value,
+            ).all()
+            kb.total_chunks = sum(doc.chunk_count for doc in docs)
+            kb.total_tokens = sum(doc.token_count for doc in docs)
+            await kb.save()
+
+            await _send_doc_indexed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                chunk_count=document.chunk_count,
+                token_count=document.token_count,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "success",
+                "document_id": document_id,
+                "retried_count": len(failed_chunks),
+                "total_chunks": total_chunks,
+            }
+
+        except Exception as e:
+            logger.exception(
+                f"Error retrying failed chunks for document {document_id}: {e}"
+            )
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = str(e)[:500]
+            await document.save()
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": str(e),
+            }
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(_retry())

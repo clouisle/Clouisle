@@ -1,71 +1,54 @@
 # Clouisle Documentation
 
-## Directory Structure
+## Overview
 
-```
-docs/
-├── guide/                        # User guides and usage documentation
-│   ├── README_zh-CN.md           # Chinese README
-│   ├── DEPLOYMENT.md             # Deployment guide (English)
-│   ├── DEPLOYMENT_zh-CN.md       # Deployment guide (Chinese)
-│   ├── PERMISSIONS.md            # Permission system (English)
-│   ├── PERMISSIONS_zh-CN.md      # Permission system (Chinese)
-│   ├── AUTO_NOTIFICATIONS.md     # Auto notifications (English)
-│   ├── AUTO_NOTIFICATIONS_zh-CN.md # Auto notifications (Chinese)
-│   ├── CHANGELOG.md              # Changelog (English)
-│   └── CHANGELOG_zh-CN.md        # Changelog (Chinese)
-│
-└── dev/                          # Development documentation
-    ├── analysis/                 # Code analysis documents
-    ├── api/                      # API documentation
-    │   └── BACKEND_API.md
-    ├── design/                   # Design specification documents
-    │   ├── AGENT_WORKFLOW_SPEC.md
-    │   ├── KNOWLEDGE_BASE_SPEC.md
-    │   ├── LLM_SPEC.md
-    │   ├── NOTIFICATION_SPEC.md
-    │   ├── RBAC_SPEC.md
-    │   ├── TEAM_MODEL_AUTH_SPEC.md
-    │   ├── TOOL_SYSTEM_SPEC.md
-    │   ├── WORKFLOW_ENGINE_ARCHITECTURE.md
-    │   └── WORKFLOW_NODE_SPEC.md
-    ├── AGENT_DEVELOPMENT_PROGRESS.md
-    ├── WORKFLOW_BACKEND_SPEC.md
-    └── WORKFLOW_ENGINE_STATUS.md
-```
+Documentation is split by audience:
 
-## User Guides (guide/)
+- `guide/` - user-facing and operator-facing documentation
+- `dev/` - internal engineering, architecture, and implementation documentation
 
-Documentation for users and operators:
+## Entry points
 
-| Document | English | 中文 |
-|----------|---------|------|
-| Project Introduction | [README](../README.md) | [README_zh-CN](guide/README_zh-CN.md) |
-| Deployment Guide | [DEPLOYMENT](guide/DEPLOYMENT.md) | [DEPLOYMENT_zh-CN](guide/DEPLOYMENT_zh-CN.md) |
-| Permission System | [PERMISSIONS](guide/PERMISSIONS.md) | [PERMISSIONS_zh-CN](guide/PERMISSIONS_zh-CN.md) |
-| Auto Notifications | [AUTO_NOTIFICATIONS](guide/AUTO_NOTIFICATIONS.md) | [AUTO_NOTIFICATIONS_zh-CN](guide/AUTO_NOTIFICATIONS_zh-CN.md) |
-| Changelog | [CHANGELOG](guide/CHANGELOG.md) | [CHANGELOG_zh-CN](guide/CHANGELOG_zh-CN.md) |
+### User and operator docs
+- `guide/README.md`
 
-## Development Documentation (dev/)
+### Developer docs
+- `dev/README.md`
 
-Technical documentation for developers:
+## Key areas
 
-### Design Specifications (design/)
+### `docs/guide/`
+Use this area for:
+- getting started guides
+- user workflows
+- admin/operator workflows
+- deployment and operations docs
+- public API reference and concepts
 
-- **AGENT_WORKFLOW_SPEC.md** - Agent and workflow design specification
-- **KNOWLEDGE_BASE_SPEC.md** - Knowledge base system design
-- **LLM_SPEC.md** - LLM integration specification
-- **NOTIFICATION_SPEC.md** - Notification system design
-- **RBAC_SPEC.md** - Permission system design
-- **TOOL_SYSTEM_SPEC.md** - Tool system design
-- **WORKFLOW_ENGINE_ARCHITECTURE.md** - Workflow engine architecture
-- **WORKFLOW_NODE_SPEC.md** - Workflow node specification
+### `docs/dev/`
+Use this area for:
+- backend conventions and implementation guides
+- frontend conventions and implementation guides
+- API implementation guidance
+- design specs
+- codebase analysis
+- engineering status documents
 
-### API Documentation (api/)
+## Developer sections
 
-- **BACKEND_API.md** - Backend API interface documentation
+- `dev/backend/README.md`
+- `dev/frontend/README.md`
+- `dev/api/BACKEND_API.md`
+- `dev/design/`
+- `dev/analysis/README.md`
+- `dev/status/README.md`
 
-### Development Progress
+## Quick links
 
-- **AGENT_DEVELOPMENT_PROGRESS.md** - Agent development progress
-- **WORKFLOW_ENGINE_STATUS.md** - Workflow engine development status
+- `guide/getting-started/quick-start.md`
+- `guide/concepts/architecture.md`
+- `dev/api/BACKEND_API.md`
+- `dev/backend/api-conventions.md`
+- `dev/frontend/conventions.md`
+- `dev/design/access-control/TEAM_MODEL_AUTH_SPEC.md`
+- `dev/design/app-platform/WORKFLOW_ENGINE_ARCHITECTURE.md`

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from tortoise import fields, models
 
@@ -93,6 +94,9 @@ class KnowledgeBase(models.Model):
     embedding_model_id = fields.UUIDField(
         null=True, description="ID of the embedding model to use"
     )
+    rerank_model_id = fields.UUIDField(
+        null=True, description="ID of the rerank model to use"
+    )
     embedding_dimension = fields.IntField(
         null=True,
         description="Embedding vector dimension (set on first document processing)",
@@ -141,6 +145,7 @@ class Document(models.Model):
         related_name="documents",
         on_delete=fields.CASCADE,
     )
+    knowledge_base_id: UUID  # type: ignore[assignment]
 
     # Document info
     name = fields.CharField(max_length=255, description="Document name/title")
@@ -179,6 +184,7 @@ class Document(models.Model):
         on_delete=fields.SET_NULL,
         null=True,
     )
+    uploaded_by_id: UUID | None  # type: ignore[assignment]
 
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -214,6 +220,7 @@ class DocumentChunk(models.Model):
         related_name="chunks",
         on_delete=fields.CASCADE,
     )
+    document_id: UUID  # type: ignore[assignment]
 
     # Chunk content
     content = fields.TextField(description="Chunk text content")
@@ -233,6 +240,14 @@ class DocumentChunk(models.Model):
     embedding_id = fields.CharField(
         max_length=100, null=True, description="Reference to vector storage"
     )
+
+    # Embedding status tracking
+    status = fields.CharField(
+        max_length=20,
+        default="pending",
+        description="Embedding status: pending, embedded, failed",
+    )
+    error_message = fields.TextField(null=True, description="Embedding error message")
 
     # Timestamps
     created_at = fields.DatetimeField(auto_now_add=True)

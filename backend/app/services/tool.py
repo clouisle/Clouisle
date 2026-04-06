@@ -49,18 +49,20 @@ class ToolExecutor:
         if not team_id and tool.team_id:
             team_id = tool.team_id
 
-        if tool.type == ToolType.BUILTIN:
-            return await self._execute_builtin_tool(
-                tool=tool,
+        tool_type = self._get_tool_type_value(tool.type)
+
+        if tool_type == "builtin":
+            return await self.execute_builtin_tool(
+                tool_name=tool.name,
                 arguments=arguments,
                 team_id=team_id,
             )
-        elif tool.type == ToolType.CUSTOM:
+        elif tool_type == ToolType.CUSTOM.value:
             return await self._execute_custom_tool(
                 tool=tool,
                 arguments=arguments,
             )
-        elif tool.type == ToolType.MCP:
+        elif tool_type == ToolType.MCP.value:
             return await self._execute_mcp_tool(
                 tool=tool,
                 arguments=arguments,
@@ -68,23 +70,34 @@ class ToolExecutor:
         else:
             raise ValueError(f"Unknown tool type: {tool.type}")
 
-    async def _execute_builtin_tool(
+    @staticmethod
+    def _get_tool_type_value(tool_type: Any) -> str:
+        """Normalize tool type enum/string values across schema and model layers."""
+        return getattr(tool_type, "value", tool_type)
+
+    async def execute_builtin_tool(
         self,
-        tool: Tool,
+        tool_name: str,
         arguments: dict[str, Any],
         team_id: UUID | None = None,
     ) -> Any:
         """Execute a builtin tool with credentials support."""
+        # Worker processes may not have imported the builtin registration path yet.
+        if tool_registry.get_tool(tool_name) is None:
+            from app.llm.tools.builtin import register_all_builtin_tools
+
+            register_all_builtin_tools()
+
         # Get credentials for builtin tools
         credentials = await self._get_tool_credentials(
-            tool_name=tool.name,
+            tool_name=tool_name,
             team_id=team_id,
         )
 
         # Execute the tool
         try:
             result = await tool_registry.execute(
-                name=tool.name,
+                name=tool_name,
                 arguments=arguments,
                 credentials=credentials,
             )
@@ -104,8 +117,9 @@ class ToolExecutor:
                 raise ValueError("HTTP tool missing http_config")
 
             return await execute_http_tool(
-                config=tool.http_config,
+                http_config=tool.http_config,
                 arguments=arguments,
+                credentials=tool.credentials or None,
             )
         elif tool.custom_type == CustomToolType.CODE:
             if not tool.code_config:

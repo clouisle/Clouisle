@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { GitBranch, MoreHorizontal, Home } from 'lucide-react'
+import { GitBranch, Home } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
 
@@ -98,10 +98,11 @@ const defaultBranches: ConditionBranch[] = [
   { id: 'else', type: 'else', name: 'ELSE', conditions: [], logicOperator: 'and' },
 ]
 
-// 从变量字符串中提取变量名，如 {{query}} -> query
+// 从变量字符串中提取显示名称，如 {{query}} -> query, {{nodeId.query}} -> query
 const extractVariableName = (variable: string) => {
   const match = variable.match(/\{\{(.+?)\}\}/)
-  return match ? match[1] : variable
+  const variableRef = match ? match[1] : variable
+  return variableRef.split('.').pop() || variableRef
 }
 
 export function ConditionNode({ selected, data }: ConditionNodeProps) {
@@ -137,11 +138,6 @@ export function ConditionNode({ selected, data }: ConditionNodeProps) {
       {/* Node Label */}
       <div className="flex items-center justify-between mb-2 px-1 h-5">
         <span className="text-xs text-muted-foreground">{t('nodesCondition.label')}</span>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-muted rounded-lg px-1 py-0.5">
-          <button className="p-1 rounded hover:bg-background">
-            <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
-          </button>
-        </div>
       </div>
       
       {/* Node Card */}

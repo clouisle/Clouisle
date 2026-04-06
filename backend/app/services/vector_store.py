@@ -10,7 +10,8 @@ Qdrant collection (e.g., kb_dim_1536).
 import json
 import logging
 import re
-from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
+from typing import Any, TYPE_CHECKING, cast
 from uuid import UUID
 
 import jieba
@@ -21,11 +22,13 @@ from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
 from app.services.usage_tracker import QuotaExceededError
 
 try:
-    from qdrant_client import AsyncQdrantClient
+    from qdrant_client import AsyncQdrantClient as _AsyncQdrantClient
     from qdrant_client.http import models as qmodels
 except Exception:  # pragma: no cover - optional dependency at runtime
-    AsyncQdrantClient = None
-    qmodels = None
+    AsyncQdrantClient = cast(Any, None)
+    qmodels = cast(Any, None)
+else:
+    AsyncQdrantClient = cast(Any, _AsyncQdrantClient)
 
 # Avoid circular import - import model_manager lazily
 if TYPE_CHECKING:
@@ -44,7 +47,7 @@ def _get_model_manager():
     return model_manager
 
 
-_qdrant_client: "AsyncQdrantClient | None" = None
+_qdrant_client: Any = None
 _qdrant_collections: set[str] = set()
 _qdrant_payload_indexes: dict[str, set[str]] = {}
 
@@ -66,7 +69,7 @@ def _qdrant_distance() -> "qmodels.Distance":
     raise ValueError(f"Unsupported Qdrant distance: {settings.QDRANT_DISTANCE}")
 
 
-async def _get_qdrant_client() -> "AsyncQdrantClient":
+async def _get_qdrant_client() -> Any:
     global _qdrant_client
     if AsyncQdrantClient is None:
         raise RuntimeError("qdrant-client is not installed")
@@ -130,7 +133,7 @@ async def _ensure_collection(dimension: int) -> str:
     return collection
 
 
-async def _delete_qdrant_points(collection: str, ids: list[str]) -> None:
+async def _delete_qdrant_points(collection: str, ids: list[str | int | UUID]) -> None:
     if not ids:
         return
     client = await _get_qdrant_client()
@@ -172,7 +175,7 @@ def _build_qdrant_filter(
                 match=qmodels.MatchAny(any=[str(did) for did in filter_doc_ids]),
             )
         )
-    return qmodels.Filter(must=conditions)
+    return qmodels.Filter(must=cast(Any, conditions))
 
 
 def _normalize_qdrant_score(score: float) -> float:
@@ -321,6 +324,7 @@ class VectorStore:
     def __init__(
         self,
         embedding_model_id: str | None = None,
+        rerank_model_id: str | None = None,
         team_id: str | None = None,
         embedding_dimension: int | None = None,
     ):
@@ -329,13 +333,126 @@ class VectorStore:
 
         Args:
             embedding_model_id: Optional embedding model ID to use
+            rerank_model_id: Optional rerank model ID to use
             team_id: Optional team ID for usage tracking
             embedding_dimension: Optional embedding dimension (detected from model if not provided)
         """
         self.embedding_model_id = embedding_model_id
+        self.rerank_model_id = rerank_model_id
         self.team_id = team_id
         self.embedding_dimension = embedding_dimension
         self._detected_dimension: int | None = None
+
+    async def _resolve_rerank_config(
+        self,
+        kb_id: UUID,
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve effective rerank configuration from KB settings and overrides."""
+        kb = await KnowledgeBase.get_or_none(id=kb_id)
+        settings_dict = kb.settings if kb and isinstance(kb.settings, dict) else {}
+
+        model_id = self.rerank_model_id
+        if not model_id and kb and kb.rerank_model_id:
+            model_id = str(kb.rerank_model_id)
+
+        candidate_k = settings_dict.get("rerank_candidate_k")
+        if candidate_k is None:
+            candidate_k = 10
+
+        score_threshold = settings_dict.get("rerank_score_threshold")
+        if score_threshold is not None:
+            score_threshold = float(score_threshold)
+
+        config = {
+            "model_id": model_id,
+            "enabled": settings_dict.get("rerank_enabled", True),
+            "candidate_k": int(candidate_k),
+            "fail_open": settings_dict.get("rerank_fail_open", True),
+            "score_threshold": score_threshold,
+        }
+
+        if overrides:
+            if "rerank_enabled" in overrides:
+                config["enabled"] = bool(overrides["rerank_enabled"])
+            if (
+                "rerank_candidate_k" in overrides
+                and overrides["rerank_candidate_k"] is not None
+            ):
+                config["candidate_k"] = int(overrides["rerank_candidate_k"])
+            if "rerank_fail_open" in overrides:
+                config["fail_open"] = bool(overrides["rerank_fail_open"])
+            if "rerank_score_threshold" in overrides:
+                threshold_override = overrides["rerank_score_threshold"]
+                config["score_threshold"] = (
+                    float(threshold_override)
+                    if threshold_override is not None
+                    else None
+                )
+
+        return config
+
+    async def _rerank_results(
+        self,
+        query: str,
+        results: list[dict[str, Any]],
+        model_id: str,
+        fail_open: bool,
+        rerank_score_threshold: float | None,
+    ) -> list[dict[str, Any]]:
+        """Apply second-stage reranking to retrieved results."""
+        if not results:
+            return results
+
+        documents = [str(result.get("content", "")) for result in results]
+
+        try:
+            if self.team_id:
+                rerank_response = await _get_model_manager().team_rerank(
+                    team_id=self.team_id,
+                    query=query,
+                    documents=documents,
+                    model_id=model_id,
+                    top_n=len(documents),
+                )
+            else:
+                rerank_response = await _get_model_manager().rerank(
+                    query=query,
+                    documents=documents,
+                    model_id=model_id,
+                    top_n=len(documents),
+                )
+        except Exception as e:
+            if fail_open:
+                logger.warning(f"Rerank failed, using recall results instead: {e}")
+                return results
+            raise
+
+        rerank_map = {item.index: item for item in rerank_response.results}
+        reranked_results: list[dict[str, Any]] = []
+
+        for index, result in enumerate(results):
+            rerank_item = rerank_map.get(index)
+            rerank_score = rerank_item.score if rerank_item else 0.0
+            updated = result.copy()
+            updated["original_score"] = result.get("score", 0.0)
+            updated["rerank_score"] = rerank_score
+            updated["score"] = rerank_score
+            updated["search_type"] = f"{result.get('search_type', 'retrieval')}+rerank"
+            if rerank_item and rerank_item.reason:
+                updated["rerank_reason"] = rerank_item.reason
+            reranked_results.append(updated)
+
+        reranked_results.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+
+        if rerank_score_threshold is not None:
+            reranked_results = [
+                item
+                for item in reranked_results
+                if item.get("rerank_score", 0.0) >= rerank_score_threshold
+            ]
+
+        return reranked_results
 
     async def _store_embedding(
         self,
@@ -529,7 +646,7 @@ class VectorStore:
         resolved_kb_id = kb_id or document.knowledge_base_id
 
         # Handle KB dimension management
-        if resolved_kb_id:
+        if isinstance(resolved_kb_id, UUID) and detected_dim is not None:
             await _ensure_kb_dimension(resolved_kb_id, detected_dim)
 
         # Create chunk records
@@ -573,6 +690,94 @@ class VectorStore:
 
         return created_chunks
 
+    async def store_chunks_with_progress(
+        self,
+        document: Document,
+        chunks: list[dict[str, Any]],
+        kb_id: UUID | None = None,
+        progress_callback: Callable[..., Any] | None = None,
+    ) -> list[DocumentChunk]:
+        """
+        Store document chunks with per-chunk embedding and progress reporting.
+
+        Unlike store_chunks which embeds all texts in one batch, this method
+        embeds and stores each chunk individually, calling progress_callback
+        after each one so the caller can update progress.
+
+        Args:
+            document: Parent document
+            chunks: List of chunk dicts with content, index, etc.
+            kb_id: Optional knowledge base ID for dimension management
+            progress_callback: async callable(embedded, failed, total) called after each chunk
+
+        Returns:
+            List of created DocumentChunk objects
+        """
+        if not chunks:
+            return []
+
+        resolved_kb_id = kb_id or document.knowledge_base_id
+        created_chunks: list[DocumentChunk] = []
+        embedded_count = 0
+        failed_count = 0
+        total = len(chunks)
+
+        for chunk_data in chunks:
+            embedding_id = f"doc_{document.id}_chunk_{chunk_data['chunk_index']}"
+
+            chunk_obj = await DocumentChunk.create(
+                document=document,
+                content=chunk_data["content"],
+                chunk_index=chunk_data["chunk_index"],
+                token_count=chunk_data.get("token_count", 0),
+                metadata=chunk_data.get("metadata"),
+                embedding_id=embedding_id,
+                status="pending",
+            )
+
+            try:
+                # Embed single text
+                embeddings = await self.embed_texts([chunk_data["content"]])
+                embedding = embeddings[0]
+                detected_dim = len(embedding)
+
+                # Ensure KB dimension on first chunk
+                if embedded_count == 0 and isinstance(resolved_kb_id, UUID):
+                    self._detected_dimension = detected_dim
+                    await _ensure_kb_dimension(resolved_kb_id, detected_dim)
+
+                # Store in Qdrant
+                await self._store_embedding(
+                    chunk_obj.id,
+                    embedding,
+                    dimension=detected_dim,
+                    payload={
+                        "kb_id": str(resolved_kb_id) if resolved_kb_id else "",
+                        "document_id": str(document.id),
+                    },
+                )
+
+                chunk_obj.status = "embedded"
+                chunk_obj.error_message = cast(Any, None)
+                await chunk_obj.save(update_fields=["status", "error_message"])
+                embedded_count += 1
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to embed chunk {chunk_obj.id} (index {chunk_data['chunk_index']}): {e}"
+                )
+                chunk_obj.status = "failed"
+                chunk_obj.error_message = str(e)[:500]
+                await chunk_obj.save(update_fields=["status", "error_message"])
+                failed_count += 1
+
+            created_chunks.append(chunk_obj)
+
+            if progress_callback:
+                await progress_callback(embedded_count, failed_count, total)
+
+        return created_chunks
+
     async def search(
         self,
         kb_id: UUID,
@@ -582,6 +787,7 @@ class VectorStore:
         score_threshold: float = 0.0,
         filter_doc_ids: list[UUID] | None = None,
         embedding_dimension: int | None = None,
+        rerank_overrides: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search knowledge base using specified search mode.
@@ -594,6 +800,7 @@ class VectorStore:
             score_threshold: Minimum similarity score (0-1)
             filter_doc_ids: Optional list of document IDs to filter
             embedding_dimension: Optional embedding dimension (auto-detected from KB if not provided)
+            rerank_overrides: Optional rerank config overrides for this search only
 
         Returns:
             List of search results with chunk info and scores
@@ -606,6 +813,9 @@ class VectorStore:
         if embedding_dimension:
             self.embedding_dimension = embedding_dimension
 
+        rerank_config = await self._resolve_rerank_config(kb_id, rerank_overrides)
+        rerank_candidate_k = max(top_k, rerank_config["candidate_k"])
+        recall_limit = max(top_k * 2, rerank_candidate_k)
         results: list[dict[str, Any]] = []
 
         logger.debug(
@@ -615,17 +825,21 @@ class VectorStore:
 
         if search_mode == "vector":
             results = await self._vector_search(
-                kb_id, query, top_k * 2, filter_doc_ids, embedding_dimension
+                kb_id, query, recall_limit, filter_doc_ids, embedding_dimension
             )
         elif search_mode == "fulltext":
             results = await self._fulltext_search(
-                kb_id, query, top_k * 2, filter_doc_ids
+                kb_id, query, recall_limit, filter_doc_ids
             )
         else:  # hybrid
             # Get results from both methods
             try:
                 vector_results = await self._vector_search(
-                    kb_id, query, top_k, filter_doc_ids, embedding_dimension
+                    kb_id,
+                    query,
+                    rerank_candidate_k,
+                    filter_doc_ids,
+                    embedding_dimension,
                 )
             except DimensionMismatchError as e:
                 logger.warning(f"Vector search dimension mismatch for KB {kb_id}: {e}")
@@ -634,7 +848,7 @@ class VectorStore:
                 logger.warning(f"Vector search failed for KB {kb_id}: {e}")
                 vector_results = []
             fulltext_results = await self._fulltext_search(
-                kb_id, query, top_k, filter_doc_ids
+                kb_id, query, rerank_candidate_k, filter_doc_ids
             )
 
             # Merge results using RRF (Reciprocal Rank Fusion)
@@ -657,6 +871,15 @@ class VectorStore:
         if score_threshold > 0:
             results = [r for r in results if r.get("score", 0) >= score_threshold]
             logger.debug(f"Score filter: {pre_filter_count} -> {len(results)} results")
+
+        if rerank_config["enabled"] and rerank_config["model_id"] and results:
+            results = await self._rerank_results(
+                query=query,
+                results=results[:rerank_candidate_k],
+                model_id=rerank_config["model_id"],
+                fail_open=bool(rerank_config["fail_open"]),
+                rerank_score_threshold=rerank_config["score_threshold"],
+            )
 
         # Return top_k
         return results[:top_k]
@@ -828,7 +1051,7 @@ class VectorStore:
 
         # Sort by score
         results.sort(
-            key=lambda x: float(x.get("score") or 0.0),
+            key=lambda x: float(cast(Any, x.get("score") or 0.0)),
             reverse=True,
         )
         return results[:limit]
@@ -1049,8 +1272,11 @@ class VectorStore:
         Returns:
             Number of deleted vectors
         """
-        kb_ids = await Document.filter(id=document_id).values_list(
-            "knowledge_base_id", flat=True
+        kb_ids = cast(
+            list[UUID],
+            await Document.filter(id=document_id).values_list(
+                "knowledge_base_id", flat=True
+            ),
         )
         kb_id = kb_ids[0] if kb_ids else None
         if kb_id:
@@ -1080,12 +1306,19 @@ class VectorStore:
         Returns:
             True if deleted
         """
-        doc_ids = await DocumentChunk.filter(id=chunk_id).values_list(
-            "document_id", flat=True
+        document_ids = cast(
+            list[UUID],
+            await DocumentChunk.filter(id=chunk_id).values_list(
+                "document_id", flat=True
+            ),
         )
-        if doc_ids:
-            kb_ids = await Document.filter(id=doc_ids[0]).values_list(
-                "knowledge_base_id", flat=True
+        document_id = document_ids[0] if document_ids else None
+        if document_id:
+            kb_ids = cast(
+                list[UUID],
+                await Document.filter(id=document_id).values_list(
+                    "knowledge_base_id", flat=True
+                ),
             )
             kb_id = kb_ids[0] if kb_ids else None
             if kb_id:
@@ -1114,11 +1347,14 @@ class VectorStore:
             # Generate new embedding
             embedding = await self.embed_query(chunk.content)
             if kb_id is None:
-                kb_ids = await Document.filter(id=chunk.document_id).values_list(
-                    "knowledge_base_id", flat=True
+                kb_ids = cast(
+                    list[UUID],
+                    await Document.filter(id=chunk.document_id).values_list(
+                        "knowledge_base_id", flat=True
+                    ),
                 )
                 kb_id = kb_ids[0] if kb_ids else None
-            if kb_id:
+            if isinstance(kb_id, UUID):
                 await _ensure_kb_dimension(kb_id, len(embedding))
 
             # Update embedding reference
@@ -1196,9 +1432,10 @@ class VectorStore:
             )
 
         # Get all documents in KB
-        documents = await Document.filter(knowledge_base_id=kb_id).values_list(
+        documents_raw = await Document.filter(knowledge_base_id=kb_id).values_list(
             "id", flat=True
         )
+        documents = cast(list[UUID], documents_raw)
 
         if not documents:
             return 0

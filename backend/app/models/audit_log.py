@@ -1,4 +1,5 @@
 import uuid
+
 from tortoise import fields, models
 
 
@@ -30,8 +31,8 @@ class AuditLog(models.Model):
     error_message = fields.TextField(null=True)
 
     # 变更详情（JSON）
-    changes = fields.JSONField(null=True)  # {"before": {...}, "after": {...}}
-    metadata = fields.JSONField(null=True)  # 额外信息
+    changes: dict | None = fields.JSONField(null=True)  # type: ignore[assignment]  # {"before": {...}, "after": {...}}
+    metadata: dict | None = fields.JSONField(null=True)  # type: ignore[assignment]  # 额外信息
 
     # 认证方式
     auth_method = fields.CharField(max_length=20, null=True)  # jwt, api_key

@@ -19,7 +19,8 @@ import {
   Users,
   Cpu,
 } from 'lucide-react'
-import { teamsApi, type TeamWithMembers, type TeamMember } from '@/lib/api'
+import { teamsApi as platformTeamsApi, type TeamWithMembers, type TeamMember } from '@/lib/api'
+import { teamsApi as adminTeamsApi } from '@/lib/api/admin'
 import { usersApi, type User as UserType } from '@/lib/api/admin/users'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -135,7 +136,7 @@ export function TeamDetailDialog({
     if (!teamId) return
     setIsLoading(true)
     try {
-      const data = await teamsApi.getTeam(teamId)
+      const data = await platformTeamsApi.getTeam(teamId)
       setTeam(data)
     } catch {
       // 错误已由 API 客户端处理
@@ -193,7 +194,7 @@ export function TeamDetailDialog({
     if (!teamId || !selectedUserId) return
     setIsAddingMember(true)
     try {
-      await teamsApi.addMember(teamId, { user_id: selectedUserId, role: selectedRole })
+      await platformTeamsApi.addMember(teamId, { user_id: selectedUserId, role: selectedRole })
       toast.success(t('memberAdded'))
       setAddMemberOpen(false)
       setSelectedUserId(null)
@@ -211,7 +212,7 @@ export function TeamDetailDialog({
   const handleRemoveMember = async () => {
     if (!teamId || !memberToRemove) return
     try {
-      await teamsApi.removeMember(teamId, memberToRemove.user_id)
+      await platformTeamsApi.removeMember(teamId, memberToRemove.user_id)
       toast.success(t('memberRemoved'))
       setRemoveMemberDialogOpen(false)
       setMemberToRemove(null)
@@ -225,7 +226,7 @@ export function TeamDetailDialog({
   const handleChangeRole = async () => {
     if (!teamId || !memberToChangeRole) return
     try {
-      await teamsApi.updateMember(teamId, memberToChangeRole.user_id, { role: newRole })
+      await platformTeamsApi.updateMember(teamId, memberToChangeRole.user_id, { role: newRole })
       toast.success(t('roleUpdated'))
       setChangeRoleDialogOpen(false)
       setMemberToChangeRole(null)
@@ -239,7 +240,7 @@ export function TeamDetailDialog({
   const handleTransferOwnership = async () => {
     if (!teamId || !transferToMember) return
     try {
-      await teamsApi.transferOwnership(teamId, transferToMember.user_id)
+      await platformTeamsApi.transferOwnership(teamId, transferToMember.user_id)
       toast.success(t('ownershipTransferred'))
       setTransferDialogOpen(false)
       setTransferToMember(null)
@@ -253,7 +254,7 @@ export function TeamDetailDialog({
   const handleLeaveTeam = async () => {
     if (!teamId) return
     try {
-      await teamsApi.leaveTeam(teamId)
+      await platformTeamsApi.leaveTeam(teamId)
       toast.success(t('leftTeam'))
       setLeaveDialogOpen(false)
       onOpenChange(false)
@@ -267,7 +268,7 @@ export function TeamDetailDialog({
   const handleDeleteTeam = async () => {
     if (!teamId) return
     try {
-      await teamsApi.deleteTeam(teamId)
+      await adminTeamsApi.deleteTeam(teamId)
       toast.success(t('teamDeleted'))
       setDeleteDialogOpen(false)
       onOpenChange(false)

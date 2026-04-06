@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { dashboardApi, type DashboardStats, type ModelDistribution, type TeamTokenUsage, type TopAgent, type WorkflowSummary } from '@/lib/api/admin/dashboard'
+import { adminTOTPApi, type TOTPStatsResponse } from '@/lib/api/admin/users'
+import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
@@ -22,7 +24,7 @@ export default function DashboardPage() {
   const searchParams = useSearchParams()
 
   const [activeTab, setActiveTab] = React.useState<TabType>('overview')
-  const [timeRange, setTimeRange] = React.useState<TimeRange>('7d')
+  const [timeRange, setTimeRange] = React.useState<TimeRange>('30d')
 
   // Initialize activeTab from URL parameter after mount
   React.useEffect(() => {
@@ -35,6 +37,7 @@ export default function DashboardPage() {
   // Common data
   const [stats, setStats] = React.useState<DashboardStats | null>(null)
   const [isLoadingStats, setIsLoadingStats] = React.useState(true)
+  const [totpStats, setTotpStats] = React.useState<TOTPStatsResponse | null>(null)
 
   // Overview tab data
   interface TrendData {
@@ -61,14 +64,21 @@ export default function DashboardPage() {
   const [topAgentsByConversations, setTopAgentsByConversations] = React.useState<TopAgent[]>([])
   const [analyticsMetric, setAnalyticsMetric] = React.useState<'conversation_count' | 'message_count' | 'total_tokens'>('conversation_count')
   const [isLoadingAnalytics, setIsLoadingAnalytics] = React.useState(false)
+  const [isLoadingAnalyticsAgents, setIsLoadingAnalyticsAgents] = React.useState(false)
   const [analyticsDataFetched, setAnalyticsDataFetched] = React.useState(false)
 
   // Fetch common stats (always needed)
   const fetchStats = React.useCallback(async () => {
     try {
       setIsLoadingStats(true)
-      const statsResponse = await dashboardApi.getStats()
+      const [statsResponse, totpStatsResponse] = await Promise.all([
+        dashboardApi.getStats(),
+        adminTOTPApi.getStats().catch(() => null), // Optional, don't fail if not available
+      ])
       setStats(statsResponse)
+      if (totpStatsResponse) {
+        setTotpStats(totpStatsResponse)
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error)
     } finally {
@@ -98,34 +108,43 @@ export default function DashboardPage() {
 
     try {
       setIsLoadingModels(true)
-      console.log('[Dashboard] Fetching models data with timeRange:', timeRange)
 
-      const [modelData, teamData, agentsData, trendsResponse] = await Promise.all([
+      const [modelDataResult, teamDataResult, agentsDataResult, trendsResponseResult] = await Promise.allSettled([
         dashboardApi.getModelDistribution({ time_range: timeRange }),
         dashboardApi.getTeamTokenUsage({ limit: 10, time_range: timeRange }),
         dashboardApi.getTopAgents({ limit: 10, metric: 'total_tokens', time_range: timeRange }),
         dashboardApi.getTrends(timeRange),
       ])
 
-      console.log('[Dashboard] Models data received:', {
-        modelData: modelData?.length || 0,
-        teamData: teamData?.length || 0,
-        agentsData: agentsData?.length || 0,
-        trendsData: trendsResponse?.data?.length || 0,
-      })
-      console.log('[Dashboard] Team token data:', teamData)
-      console.log('[Dashboard] Top agents data:', agentsData)
-
-      setModelDistribution(modelData)
-      setTeamTokenUsage(teamData)
-      setTopAgentsByTokens(agentsData)
-      setTrendsData(trendsResponse.data)
-      setModelsDataFetched(true)
-    } catch (error) {
-      console.error('[Dashboard] Failed to fetch models data:', error)
-      if (error instanceof Error) {
-        console.error('[Dashboard] Error details:', error.message, error.stack)
+      if (modelDataResult.status === 'fulfilled') {
+        setModelDistribution(modelDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch model distribution:', modelDataResult.reason)
+        setModelDistribution([])
       }
+
+      if (teamDataResult.status === 'fulfilled') {
+        setTeamTokenUsage(teamDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch team token usage:', teamDataResult.reason)
+        setTeamTokenUsage([])
+      }
+
+      if (agentsDataResult.status === 'fulfilled') {
+        setTopAgentsByTokens(agentsDataResult.value)
+      } else {
+        console.error('[Dashboard] Failed to fetch top agents by tokens:', agentsDataResult.reason)
+        setTopAgentsByTokens([])
+      }
+
+      if (trendsResponseResult.status === 'fulfilled') {
+        setTrendsData(trendsResponseResult.value.data)
+      } else {
+        console.error('[Dashboard] Failed to fetch token trends:', trendsResponseResult.reason)
+        setTrendsData([])
+      }
+
+      setModelsDataFetched(true)
     } finally {
       setIsLoadingModels(false)
     }
@@ -155,13 +174,13 @@ export default function DashboardPage() {
   const handleAnalyticsMetricChange = React.useCallback(async (metric: 'conversation_count' | 'message_count' | 'total_tokens') => {
     setAnalyticsMetric(metric)
     try {
-      setIsLoadingAnalytics(true)
+      setIsLoadingAnalyticsAgents(true)
       const agentsData = await dashboardApi.getTopAgents({ limit: 10, metric, time_range: timeRange })
       setTopAgentsByConversations(agentsData)
     } catch (error) {
       console.error('Failed to fetch agents data:', error)
     } finally {
-      setIsLoadingAnalytics(false)
+      setIsLoadingAnalyticsAgents(false)
     }
   }, [timeRange])
 
@@ -213,83 +232,89 @@ export default function DashboardPage() {
 
   if (isLoadingStats || !stats) {
     return (
-      <div className="flex h-full flex-col">
-        <Header />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <RoutePermissionGuard>
+        <div className="flex h-full flex-col">
+          <Header />
+          <div className="flex flex-1 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
         </div>
-      </div>
+      </RoutePermissionGuard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <Header />
-      <div className="flex-1 overflow-auto p-4">
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{tHome('title')}</h1>
-              <p className="text-muted-foreground mt-1">{tHome('description')}</p>
+    <RoutePermissionGuard>
+      <div className="flex h-full flex-col">
+        <Header />
+        <div className="flex-1 overflow-auto p-4">
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">{tHome('title')}</h1>
+                <p className="text-muted-foreground mt-1">{tHome('description')}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-4 mb-6">
-            <Tabs value={activeTab} onValueChange={handleTabChange}>
-              <TabsList>
-                <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
-                <TabsTrigger value="models">{t('tabs.models')}</TabsTrigger>
-                <TabsTrigger value="analytics">{t('tabs.analytics')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {/* Filters */}
+            <div className="flex items-center gap-4 mb-6">
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <TabsList>
+                  <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
+                  <TabsTrigger value="models">{t('tabs.models')}</TabsTrigger>
+                  <TabsTrigger value="analytics">{t('tabs.analytics')}</TabsTrigger>
+                </TabsList>
+              </Tabs>
 
-            <div className="flex items-center gap-2 ml-auto">
-              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleRefresh}
-                disabled={isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics}
-              >
-                <RefreshCw className={`h-4 w-4 ${(isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics) ? 'animate-spin' : ''}`} />
-              </Button>
+              <div className="flex items-center gap-2 ml-auto">
+                <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics}
+                >
+                  <RefreshCw className={`h-4 w-4 ${(isLoadingStats || isLoadingOverview || isLoadingModels || isLoadingAnalytics) ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </div>
+
+            {/* Tab Content */}
+            {activeTab === 'overview' && (
+              <OverviewTab
+                stats={stats}
+                trendsData={trendsData}
+                isLoading={isLoadingOverview}
+                totpStats={totpStats}
+              />
+            )}
+
+            {activeTab === 'models' && (
+              <ModelsTab
+                stats={stats}
+                modelData={modelDistribution}
+                teamTokenData={teamTokenUsage}
+                topAgentsData={topAgentsByTokens}
+                trendsData={trendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
+                isLoading={isLoadingModels}
+              />
+            )}
+
+            {activeTab === 'analytics' && (
+              <AnalyticsTab
+                stats={stats}
+                workflowData={workflowSummary}
+                topAgentsData={topAgentsByConversations}
+                isLoading={isLoadingAnalytics}
+                isLoadingAgents={isLoadingAnalyticsAgents}
+                onMetricChange={handleAnalyticsMetricChange}
+                currentMetric={analyticsMetric}
+              />
+            )}
           </div>
-
-          {/* Tab Content */}
-          {activeTab === 'overview' && (
-            <OverviewTab
-              stats={stats}
-              trendsData={trendsData}
-              isLoading={isLoadingOverview}
-            />
-          )}
-
-          {activeTab === 'models' && (
-            <ModelsTab
-              stats={stats}
-              modelData={modelDistribution}
-              teamTokenData={teamTokenUsage}
-              topAgentsData={topAgentsByTokens}
-              trendsData={trendsData.map(d => ({ date: d.date, tokens: d.tokens }))}
-              isLoading={isLoadingModels}
-            />
-          )}
-
-          {activeTab === 'analytics' && (
-            <AnalyticsTab
-              stats={stats}
-              workflowData={workflowSummary}
-              topAgentsData={topAgentsByConversations}
-              isLoading={isLoadingAnalytics}
-              onMetricChange={handleAnalyticsMetricChange}
-              currentMetric={analyticsMetric}
-            />
-          )}
         </div>
       </div>
-    </div>
+    </RoutePermissionGuard>
   )
 }

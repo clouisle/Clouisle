@@ -4,31 +4,43 @@ RAG (Retrieval-Augmented Generation) utilities for chat.
 
 import asyncio
 
-from app.models.agent import Agent, KnowledgeBase
-from app.services.vector_store import vector_store_service
+from app.models.agent import Agent, AgentKnowledgeBase
+from app.models.knowledge_base import KnowledgeBase, KnowledgeBaseStatus
+from app.services.vector_store import VectorStore
 
 
 async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
     """Perform RAG retrieval for the given query."""
-    if not agent.knowledge_base_ids:
+    kb_links = await AgentKnowledgeBase.filter(agent_id=agent.id).all()
+    kb_ids = [link.knowledge_base_id for link in kb_links]
+    if not kb_ids:
         return []
 
-    # Fetch all knowledge bases concurrently
-    kb_tasks = [
-        KnowledgeBase.get_or_none(id=kb_id) for kb_id in agent.knowledge_base_ids
-    ]
+    kb_tasks = [KnowledgeBase.get_or_none(id=kb_id) for kb_id in kb_ids]
     knowledge_bases = await asyncio.gather(*kb_tasks)
 
     # Filter active knowledge bases and prepare search tasks
     search_tasks = []
     kb_info = []
     for kb in knowledge_bases:
-        if kb and kb.is_active:
-            task = vector_store_service.search(
-                collection_name=kb.collection_name,
+        if (
+            kb
+            and kb.status == KnowledgeBaseStatus.ACTIVE.value
+            and kb.embedding_model_id
+        ):
+            vector_store = VectorStore(
+                embedding_model_id=str(kb.embedding_model_id),
+                rerank_model_id=str(kb.rerank_model_id)
+                if getattr(kb, "rerank_model_id", None)
+                else None,
+                team_id=str(kb.team_id) if kb.team_id else None,
+            )
+            task = vector_store.search(
+                kb_id=kb.id,
                 query=query,
-                top_k=kb.top_k or 5,
-                score_threshold=kb.score_threshold or 0.7,
+                search_mode=getattr(kb, "search_mode", "hybrid"),
+                top_k=getattr(kb, "top_k", 5) or 5,
+                score_threshold=getattr(kb, "score_threshold", 0.7) or 0.7,
             )
             search_tasks.append(task)
             kb_info.append({"id": kb.id, "name": kb.name})

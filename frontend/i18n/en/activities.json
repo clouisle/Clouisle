@@ -17,7 +17,8 @@
       "status": "Status",
       "triggerType": "Trigger Type",
       "triggeredBy": "Triggered By",
-      "debugRuns": "Debug Runs Only"
+      "debugRuns": "Debug Runs Only",
+      "untitledOnly": "Untitled Only"
     },
     "status": {
       "success": "Success",
@@ -81,6 +82,9 @@
     "page": "Page {current} of {total}",
     "deleteConfirmTitle": "Delete Conversations",
     "deleteConfirmDescription": "Are you sure you want to delete {count} conversation(s)? This action cannot be undone.",
+    "bulkDeleteConfirmDescription": "Are you sure you want to delete {count} conversations? This action cannot be undone.",
+    "selectedCount": "{count} selected",
+    "detail": "Details",
     "viewDetails": "View Details",
     "noData": "No activities found",
     "loadingStats": "Loading statistics...",

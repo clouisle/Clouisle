@@ -1,7 +1,8 @@
 'use client'
 
 import { usePermissions } from '@/hooks/use-permissions'
-import { useRouter } from 'next/navigation'
+import { canAccessRoute } from '@/lib/route-permissions'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 interface PermissionGuardProps {
@@ -210,6 +211,48 @@ export function SuperuserGuard({
   }
 
   if (isSuperuser) {
+    return <>{children}</>
+  }
+
+  if (redirectTo) {
+    return null
+  }
+
+  if (fallback) {
+    return <>{fallback}</>
+  }
+
+  return null
+}
+
+interface RoutePermissionGuardProps {
+  children: React.ReactNode
+  redirectTo?: string
+  fallback?: React.ReactNode
+}
+
+export function RoutePermissionGuard({
+  children,
+  redirectTo = '/app',
+  fallback,
+}: RoutePermissionGuardProps) {
+  const pathname = usePathname()
+  const { hasPermission, isSuperuser, loading } = usePermissions()
+  const router = useRouter()
+
+  const hasAccess = pathname ? canAccessRoute(pathname, hasPermission, isSuperuser) : true
+
+  useEffect(() => {
+    if (!loading && !hasAccess && redirectTo) {
+      router.replace(redirectTo)
+    }
+  }, [loading, hasAccess, redirectTo, router])
+
+  if (loading) {
+    return null
+  }
+
+  if (hasAccess) {
     return <>{children}</>
   }
 

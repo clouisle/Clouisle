@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { X, Loader2, ImageIcon } from 'lucide-react'
-import { uploadApi } from '@/lib/api'
+import { ApiError, uploadApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface ImageUploadProps {
@@ -93,13 +93,22 @@ export function ImageUpload({
       const fullUrl = uploadApi.getFullUrl(result.url)
       onChange?.(fullUrl)
       toast.success(t('uploadSuccess'))
-      
+
       // 上传成功后删除旧文件
       if (oldValue) {
         await tryDeleteOldFile(oldValue)
       }
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 1001) {
+        const payload = error.data as { allowed?: string[] } | undefined
+        const allowed = payload?.allowed?.join(', ')
+        toast.error(
+          allowed
+            ? t('invalidImageFileTypeWithAllowed', { allowed })
+            : t('invalidFileType')
+        )
+      }
+      // 其余错误已由 API 客户端处理
     } finally {
       setUploading(false)
       // 重置 input 以允许重新选择相同文件

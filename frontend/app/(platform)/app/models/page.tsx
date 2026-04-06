@@ -21,7 +21,6 @@ const MODEL_TYPES = [
   'stt',
   'text_to_image',
   'text_to_video',
-  'image_to_video',
 ] as const
 
 export default function ModelsPage() {

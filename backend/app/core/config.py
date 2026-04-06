@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pydantic import FieldValidationInfo, field_validator
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = "changethis-to-a-secure-random-secret-key"
     ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_connection(cls, v: str, info: FieldValidationInfo) -> str:
+    def assemble_db_connection(cls, v: str, info: ValidationInfo) -> str:
         if isinstance(v, str) and v:
             return v
         data = info.data

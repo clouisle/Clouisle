@@ -25,6 +25,7 @@ import {
   Play,
   Download,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
@@ -85,7 +86,7 @@ const docTypeIcons: Record<string, React.ReactNode> = {
   docx: <FileType className="h-4 w-4 text-blue-500" />,
   doc: <FileType className="h-4 w-4 text-blue-500" />,
   txt: <FileText className="h-4 w-4 text-gray-500" />,
-  md: <FileText className="h-4 w-4 text-gray-500" />,
+  markdown: <FileText className="h-4 w-4 text-gray-500" />,
   html: <FileType className="h-4 w-4 text-orange-500" />,
   csv: <FileType className="h-4 w-4 text-green-500" />,
   xlsx: <FileType className="h-4 w-4 text-green-600" />,
@@ -132,13 +133,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
         page: number
         pageSize: number
         search?: string
-        status?: DocumentStatus
-        doc_type?: DocumentType
+        status?: DocumentStatus[]
+        doc_type?: DocumentType[]
       } = { page, pageSize }
       
       if (searchQuery) params.search = searchQuery
-      if (statusFilter.size === 1) params.status = Array.from(statusFilter)[0] as DocumentStatus
-      if (typeFilter.size === 1) params.doc_type = Array.from(typeFilter)[0] as DocumentType
+      if (statusFilter.size > 0) params.status = Array.from(statusFilter) as DocumentStatus[]
+      if (typeFilter.size > 0) params.doc_type = Array.from(typeFilter) as DocumentType[]
       
       const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, params)
       setDocuments(data.items)
@@ -197,7 +198,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     { value: 'docx', label: 'DOCX' },
     { value: 'doc', label: 'DOC' },
     { value: 'txt', label: 'TXT' },
-    { value: 'md', label: 'Markdown' },
+    { value: 'markdown', label: 'Markdown' },
     { value: 'html', label: 'HTML' },
     { value: 'csv', label: 'CSV' },
     { value: 'xlsx', label: 'XLSX' },
@@ -249,6 +250,17 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 重新处理 - 跳转到预览编辑器页面
   const handleReprocess = (doc: Document) => {
     router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${doc.id}`)
+  }
+
+  // 重试失败分段
+  const handleRetryFailedChunks = async (doc: Document) => {
+    try {
+      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
+      toast.success(t('retryStarted'))
+      loadDocuments()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
   }
   
   // 配置文档（跳转到详情页）
@@ -308,7 +320,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   }
   
   // 获取状态 Badge
-  const getStatusBadge = (status: DocumentStatus) => {
+  const getStatusBadge = (status: DocumentStatus, doc?: Document) => {
     switch (status) {
       case 'completed':
         return (
@@ -317,13 +329,35 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
             {t('statusCompleted')}
           </Badge>
         )
-      case 'processing':
-        return (
+      case 'processing': {
+        const progress = doc?.metadata?.embed_progress as { embedded?: number; failed?: number; total?: number } | undefined
+        const badge = (
           <Badge variant="default" className="bg-blue-500/10 text-blue-500 gap-1">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {t('statusProcessing')}
+            {progress?.total
+              ? t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })
+              : t('statusProcessing')}
           </Badge>
         )
+        if (progress?.total) {
+          return (
+            <Tooltip>
+              <TooltipTrigger className="bg-blue-500/10 text-blue-500 gap-1 inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })}
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="text-xs space-y-0.5">
+                  <p>{t('embeddedCount', { count: progress.embedded ?? 0 })}</p>
+                  {(progress.failed ?? 0) > 0 && <p className="text-destructive">{t('failedCount', { count: progress.failed ?? 0 })}</p>}
+                  <p>{t('totalCount', { count: progress.total })}</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )
+        }
+        return badge
+      }
       case 'pending':
         return (
           <Badge variant="outline" className="text-muted-foreground gap-1">
@@ -433,9 +467,14 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                       </span>
                     </div>
                     {doc.error_message && (
-                      <p className="text-xs text-destructive mt-1 truncate max-w-62.5" title={doc.error_message}>
-                        {doc.error_message}
-                      </p>
+                      <Tooltip>
+                        <TooltipTrigger render={<p />} className="text-xs text-destructive mt-1 truncate max-w-62.5 cursor-default">
+                          {doc.error_message}
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm break-all">
+                          {doc.error_message}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>
@@ -449,7 +488,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                   <TableCell className="text-muted-foreground">
                     {doc.chunk_count}
                   </TableCell>
-                  <TableCell>{getStatusBadge(doc.status)}</TableCell>
+                  <TableCell>{getStatusBadge(doc.status, doc)}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(doc.created_at)}
                   </TableCell>
@@ -488,6 +527,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           </DropdownMenuItem>
                         )}
 
+                        {doc.status === 'error' && canUpdateKb && (
+                          <DropdownMenuItem onClick={() => handleRetryFailedChunks(doc)}>
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            {t('retryFailedChunks')}
+                          </DropdownMenuItem>
+                        )}
+
                         {doc.file_path && doc.doc_type !== 'url' && (
                           <DropdownMenuItem onClick={() => handleDownload(doc)}>
                             <Download className="mr-2 h-4 w-4" />
@@ -506,8 +552,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDelete(doc)}
-                              className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}

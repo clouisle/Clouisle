@@ -26,6 +26,7 @@ celery_app = Celery(
         "app.tasks.audit_log",
         "app.tasks.notification",
         "app.tasks.api_key",
+        "app.tasks.password_expiration",
     ],
 )
 
@@ -57,6 +58,7 @@ celery_app.conf.task_routes = {
     "app.tasks.notification.*": {"queue": "default"},
     "app.tasks.audit_log.*": {"queue": "default"},
     "app.tasks.api_key.*": {"queue": "default"},
+    "app.tasks.password_expiration.*": {"queue": "default"},
     "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
 }
@@ -78,6 +80,11 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.check_api_key_expiration",
         "schedule": crontab(hour=9, minute=0),
     },
+    # Check password expiration every day at 08:00
+    "check-password-expiration": {
+        "task": "tasks.check_password_expiration",
+        "schedule": crontab(hour=8, minute=0),
+    },
 }
 
 
@@ -87,17 +94,20 @@ def init_tortoise(**kwargs):
     """Initialize Tortoise ORM for each worker process."""
     import asyncio
     from tortoise import Tortoise
+    from app.llm.tools.builtin import register_all_builtin_tools
 
     async def _init():
         await Tortoise.init(
             db_url=settings.DATABASE_URL
             or f"postgres://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}",
             modules={"models": ["app.models"]},
+            _enable_global_fallback=True,  # Enable global state for compatibility
         )
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(_init())
+    register_all_builtin_tools()
 
 
 # Close Tortoise ORM when worker process shuts down

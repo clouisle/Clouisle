@@ -42,7 +42,11 @@ import {
   AreaChart,
   Area,
   Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
 } from 'recharts'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR } from '@/lib/chart-theme'
 
 interface StatsData {
   knowledgeBases: number
@@ -61,6 +65,41 @@ interface RecentItem {
   type: 'agent' | 'workflow'
   icon?: string | null
   updatedAt: string
+}
+
+const CHART_COLORS = CHART_COLOR_ORDER
+
+interface UsageTrendTooltipPayloadItem {
+  name: string
+  value: number | string
+  color: string
+}
+
+function UsageTrendTooltip({ active, payload, label }: { active?: boolean; payload?: UsageTrendTooltipPayloadItem[]; label?: string }) {
+  if (!active || !payload?.length) {
+    return null
+  }
+
+  return (
+    <div className="min-w-[200px] rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
+      <p className="mb-2 border-b border-chart-tooltip-border pb-2 text-sm font-semibold text-chart-tooltip-text">
+        {label}
+      </p>
+      <div className="space-y-1.5">
+        {payload.map((entry, index) => (
+          <div key={index} className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span className="text-xs text-chart-tooltip-text/80">{entry.name}</span>
+            </div>
+            <span className="text-sm font-semibold text-chart-tooltip-text">
+              {typeof entry.value === 'number' ? formatNumber(entry.value) : entry.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // 格式化大数字
@@ -91,29 +130,35 @@ function StatCard({
   suffix?: string
   href?: string
 }) {
+  const trendBadgeClassName = change === undefined
+    ? ''
+    : change >= 0
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+      : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300'
+
   const content = (
-    <Card className={href ? 'cursor-pointer hover:shadow-md transition-all' : ''}>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Icon className="h-5 w-5 text-primary" />
-              </div>
-              {change !== undefined && (
-                <Badge variant={change >= 0 ? 'default' : 'secondary'} className="text-xs">
-                  <TrendingUp className={`h-3 w-3 mr-1 ${change < 0 ? 'rotate-180' : ''}`} />
-                  {Math.abs(change)}%
-                </Badge>
-              )}
+    <Card size="sm" className={href ? 'cursor-pointer hover:shadow-md transition-all' : ''}>
+      <CardContent className="py-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 self-start">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Icon className="h-5 w-5 text-primary" />
             </div>
+            {change !== undefined && (
+              <Badge variant="outline" className={`gap-1 rounded-full px-2 py-0.5 text-xs font-medium shadow-none ${trendBadgeClassName}`}>
+                <TrendingUp className={`h-3 w-3 ${change < 0 ? 'rotate-180' : ''}`} />
+                {Math.abs(change)}%
+              </Badge>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-right">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
             {isLoading ? (
-              <Skeleton className="h-8 w-20 mt-1" />
+              <Skeleton className="mt-1 ml-auto h-8 w-20" />
             ) : (
-              <p className="text-2xl font-bold mt-1">
+              <p className="mt-1 text-2xl font-bold">
                 {value}
-                {suffix && <span className="text-sm font-normal text-muted-foreground ml-1">{suffix}</span>}
+                {suffix && <span className="ml-1 text-sm font-normal text-muted-foreground">{suffix}</span>}
               </p>
             )}
           </div>
@@ -167,42 +212,42 @@ function RecentItemCard({ item }: { item: RecentItem }) {
   )
 }
 
-// Chart 配置
-const usageTrendChartConfig = {
-  conversations: {
-    label: 'Conversations',
-    color: 'var(--chart-1)',
-  },
-  tokens: {
-    label: 'Token',
-    color: 'var(--chart-2)',
-  },
-} satisfies ChartConfig
-
-const resourceChartConfig = {
-  value: {
-    label: 'Count',
-  },
-  agents: {
-    label: 'Agents',
-    color: 'var(--chart-1)',
-  },
-  workflows: {
-    label: 'Workflows',
-    color: 'var(--chart-2)',
-  },
-  knowledgeBases: {
-    label: 'Knowledge Bases',
-    color: 'var(--chart-3)',
-  },
-  models: {
-    label: 'Models',
-    color: 'var(--chart-4)',
-  },
-} satisfies ChartConfig
-
 export default function PlatformHomePage() {
   const t = useTranslations('platform.home')
+
+  // Chart 配置 - 使用 i18n
+  const usageTrendChartConfig = {
+    conversations: {
+      label: t('stats.conversations'),
+      color: 'var(--chart-1)',
+    },
+    tokens: {
+      label: t('stats.tokens'),
+      color: 'var(--chart-2)',
+    },
+  } satisfies ChartConfig
+
+  const resourceChartConfig = {
+    value: {
+      label: t('charts.count'),
+    },
+    agents: {
+      label: t('stats.agents'),
+      color: 'var(--chart-1)',
+    },
+    workflows: {
+      label: t('stats.workflows'),
+      color: 'var(--chart-2)',
+    },
+    knowledgeBases: {
+      label: t('stats.knowledgeBases'),
+      color: 'var(--chart-3)',
+    },
+    models: {
+      label: t('stats.models'),
+      color: 'var(--chart-4)',
+    },
+  } satisfies ChartConfig
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
   const [stats, setStats] = React.useState<StatsData>({
     knowledgeBases: 0,
@@ -336,7 +381,6 @@ export default function PlatformHomePage() {
           icon={MessageSquare}
           isLoading={isLoading}
           change={15}
-          href="/app/apps"
         />
         <StatCard
           title={t('stats.totalMessages')}
@@ -364,7 +408,7 @@ export default function PlatformHomePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content - 2/3 width */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
           {/* Usage Trend Chart */}
           <Card>
             <CardHeader>
@@ -376,48 +420,55 @@ export default function PlatformHomePage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="h-[300px] flex items-center justify-center">
+                <div className="h-[220px] flex items-center justify-center">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <ChartContainer config={usageTrendChartConfig}>
-                  <AreaChart
-                    accessibilityLayer
-                    data={usageTrendData}
-                    margin={{
-                      left: 12,
-                      right: 12,
-                    }}
-                  >
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                    />
-                    <YAxis hide domain={[0, 'auto']} />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="line" />}
-                    />
-                    <Area
-                      dataKey="conversations"
-                      type="monotone"
-                      baseValue={0}
-                      fill="var(--color-conversations)"
-                      fillOpacity={0.4}
-                      stroke="var(--color-conversations)"
-                    />
-                    <Area
-                      dataKey="tokens"
-                      type="monotone"
-                      baseValue={0}
-                      fill="var(--color-tokens)"
-                      fillOpacity={0.4}
-                      stroke="var(--color-tokens)"
-                    />
-                  </AreaChart>
+                <ChartContainer config={usageTrendChartConfig} className="h-[220px] w-full aspect-auto">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={usageTrendData} margin={{ left: 12, right: 12 }}>
+                      <defs>
+                        <linearGradient id="platformUsageConversations" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={CHART_COLORS[2]} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={CHART_COLORS[2]} stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="platformUsageTokens" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={CHART_COLORS[4]} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={CHART_COLORS[4]} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="date"
+                        className="text-xs"
+                        tick={{ fill: CHART_AXIS_COLOR }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis yAxisId="left" className="text-xs" tick={{ fill: CHART_AXIS_COLOR }} hide />
+                      <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: CHART_AXIS_COLOR }} hide />
+                      <Tooltip cursor={CHART_HOVER_CURSOR} content={<UsageTrendTooltip />} />
+                      <Legend wrapperStyle={{ color: 'var(--chart-label)' }} />
+                      <Area
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="conversations"
+                        stroke={CHART_COLORS[2]}
+                        fillOpacity={1}
+                        fill="url(#platformUsageConversations)"
+                        name={t('stats.conversations')}
+                      />
+                      <Area
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="tokens"
+                        stroke={CHART_COLORS[4]}
+                        fillOpacity={1}
+                        fill="url(#platformUsageTokens)"
+                        name={t('stats.tokens')}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </ChartContainer>
               )}
             </CardContent>
@@ -460,7 +511,7 @@ export default function PlatformHomePage() {
                       tickMargin={8}
                     />
                     <ChartTooltip
-                      cursor={false}
+                      cursor={CHART_HOVER_CURSOR}
                       content={<ChartTooltipContent />}
                     />
                     <Bar dataKey="value" radius={8}>

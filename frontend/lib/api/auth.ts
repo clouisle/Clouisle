@@ -3,6 +3,11 @@ import { api } from './client'
 export interface Token {
   access_token: string
   token_type: string
+  force_password_change?: boolean
+  reason?: 'expired' | 'force'
+  requires_totp?: boolean
+  requires_totp_setup?: boolean
+  temp_token?: string
 }
 
 export interface SSOConnection {
@@ -23,6 +28,8 @@ export interface User {
   username: string
   email: string
   is_active: boolean
+  approval_status: 'approved' | 'pending'
+  status: 'active' | 'inactive' | 'pending'
   is_superuser: boolean
   email_verified: boolean
   avatar_url: string | null
@@ -31,6 +38,9 @@ export interface User {
   last_login: string | null
   auth_source: string
   external_id: string | null
+  force_password_change: boolean
+  password_expiration_exempt: boolean
+  password_expires_at?: string | null
   roles: Role[]
   sso_connections: SSOConnection[]
 }
@@ -165,5 +175,16 @@ export const authApi = {
    */
   resetPasswordByToken: async (token: string, newPassword: string): Promise<void> => {
     await api.post<null>('/reset-password', { token, new_password: newPassword })
+  },
+
+  /**
+   * 验证 TOTP 码或备份码
+   */
+  verifyTOTP: async (tempToken: string, code: string, isBackupCode: boolean = false): Promise<Token> => {
+    const formData = new FormData()
+    formData.append('temp_token', tempToken)
+    formData.append('code', code)
+    formData.append('is_backup_code', isBackupCode.toString())
+    return api.postForm<Token>('/login/verify-totp', formData, { skipAuthRedirect: true })
   },
 }

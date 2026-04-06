@@ -19,6 +19,7 @@ from app.schemas.response import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
 
 
 # ============ Request/Response Models ============
@@ -184,7 +185,7 @@ def get_tone_description(tone: str, language: str) -> str:
         "detailed": "Detailed and thorough",
     }
     tone_map = tone_map_zh if language == "zh" else tone_map_en
-    return tone_map.get(tone, tone_map.get("professional"))
+    return tone_map.get(tone) or tone_map["professional"]
 
 
 def get_focus_description(focus: str, language: str) -> str:
@@ -200,7 +201,7 @@ def get_focus_description(focus: str, language: str) -> str:
         "balanced": "Balanced between task and conversation",
     }
     focus_map = focus_map_zh if language == "zh" else focus_map_en
-    return focus_map.get(focus, focus_map.get("balanced"))
+    return focus_map.get(focus) or focus_map["balanced"]
 
 
 def build_style_requirements(style: PromptStyle | None, language: str) -> str:
@@ -306,7 +307,7 @@ async def generate_prompt(
 
         except Exception as e:
             logger.exception(f"Error generating prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -381,7 +382,7 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Error optimizing prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
     return StreamingResponse(
         event_generator(),

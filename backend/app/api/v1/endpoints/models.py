@@ -76,12 +76,22 @@ async def get_model_types() -> Any:
             "name": "Embedding",
             "description": "嵌入模型",
         },
+        {
+            "code": OrmModelType.RERANK.value,
+            "name": "Rerank",
+            "description": "重排序模型",
+        },
         {"code": OrmModelType.TTS.value, "name": "TTS", "description": "语音合成"},
         {"code": OrmModelType.STT.value, "name": "STT", "description": "语音识别"},
         {
             "code": OrmModelType.TEXT_TO_IMAGE.value,
             "name": "Text to Image",
             "description": "文生图",
+        },
+        {
+            "code": OrmModelType.TEXT_TO_VIDEO.value,
+            "name": "Text to Video",
+            "description": "文生视频",
         },
     ]
     return success(data=types)

@@ -52,8 +52,9 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
+import { CHART_AXIS_COLOR, CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_HOVER_CURSOR } from '@/lib/chart-theme'
 
-const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#06b6d4']
+const COLORS = CHART_COLOR_ORDER
 
 // 格式化数字
 function formatNumber(num: number): string {
@@ -90,8 +91,8 @@ interface CustomTooltipProps {
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-lg shadow-lg p-3 min-w-[180px]">
-        <p className="text-sm font-semibold text-foreground mb-2 pb-2 border-b border-border">
+      <div className="min-w-[180px] rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
+        <p className="mb-2 border-b border-chart-tooltip-border pb-2 text-sm font-semibold text-chart-tooltip-text">
           {label}
         </p>
         <div className="space-y-1.5">
@@ -99,14 +100,14 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
             <div key={index} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <div
-                  className="w-3 h-3 rounded-full"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: entry.color }}
                 />
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-chart-tooltip-text/80">
                   {entry.name}
                 </span>
               </div>
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-sm font-semibold text-chart-tooltip-text">
                 {typeof entry.value === 'number' ? formatNumber(entry.value) : entry.value}
               </span>
             </div>
@@ -382,17 +383,21 @@ export default function WorkflowMonitorPage() {
                       <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip cursor={CHART_HOVER_CURSOR} content={<CustomTooltip />} />
                   <Area
                     type="monotone"
                     dataKey="runs"
@@ -418,20 +423,24 @@ export default function WorkflowMonitorPage() {
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={trendsData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                   />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Bar dataKey="success" fill={COLORS[1]} name={tMonitor('stats.success')} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="failed" fill={COLORS[2]} name={tMonitor('stats.failed')} radius={[4, 4, 0, 0]} />
+                  <Tooltip cursor={CHART_HOVER_CURSOR} content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ color: 'var(--chart-label)' }} />
+                  <Bar dataKey="success" fill={COLORS[4]} name={tMonitor('stats.success')} radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="failed" fill={COLORS[8]} name={tMonitor('stats.failed')} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -449,19 +458,23 @@ export default function WorkflowMonitorPage() {
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={trendsData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <CartesianGrid stroke={CHART_GRID_COLOR} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <YAxis
                     className="text-xs"
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tick={{ fill: CHART_AXIS_COLOR }}
+                    axisLine={false}
+                    tickLine={false}
                     tickFormatter={(value) => formatDuration(value)}
                   />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
+                  <Tooltip cursor={CHART_HOVER_CURSOR} content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ color: 'var(--chart-label)' }} />
                   <Line
                     type="monotone"
                     dataKey="avgDuration"

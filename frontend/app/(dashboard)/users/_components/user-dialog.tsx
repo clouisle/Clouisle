@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { Link as LinkIcon, Loader2, Unlink } from 'lucide-react'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface UserDialogProps {
   open: boolean
@@ -47,6 +48,8 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   const commonT = useTranslations('common')
   const authT = useTranslations('auth')
   const tSSO = useTranslations('sso')
+  const { canPerform } = useCanPerform()
+  const canManageSSO = canPerform('admin:sso:update')
 
   const isEditing = !!user
 
@@ -175,7 +178,33 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       onOpenChange(false)
     } catch (error) {
       if (error instanceof ApiError && error.isValidationError()) {
-        setFieldErrors(error.getFieldErrors())
+        const errors = error.getFieldErrors()
+        // 处理密码验证错误（后端返回的是数组格式）
+        if (error.data && typeof error.data === 'object' && 'errors' in error.data) {
+          const errorData = error.data as { errors: string[] }
+          if (Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+            // 将密码错误数组转换为可读的错误消息
+            const passwordErrors = errorData.errors.map(err => {
+              // 处理带参数的错误消息，如 "password_min_length:8"
+              const [key, param] = err.split(':')
+              if (key === 'password_min_length') {
+                return authT('passwordMinLength', { length: param })
+              } else if (key === 'password_require_uppercase') {
+                return authT('passwordRequireUppercase')
+              } else if (key === 'password_require_number') {
+                return authT('passwordRequireNumber')
+              } else if (key === 'password_require_special') {
+                return authT('passwordRequireSpecial')
+              } else if (key === 'password_recently_used') {
+                return authT('passwordRecentlyUsed')
+              }
+              return err
+            }).join('; ')
+            setFieldErrors({ password: passwordErrors })
+            return
+          }
+        }
+        setFieldErrors(errors)
       }
     } finally {
       setIsSubmitting(false)
@@ -255,7 +284,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
             )}
           </div>
 
-          {isEditing && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
+          {isEditing && canManageSSO && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
             <div className="grid gap-2">
               <Label>{tSSO('connectedAccounts')}</Label>
               <div className="space-y-2">

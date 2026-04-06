@@ -332,13 +332,13 @@ class ExecutionProfiler:
                 sp.parallel_nodes == 1
                 and sp.duration_ms > profile.total_duration_ms * 0.3
             ):
-                node_id = sp.node_ids[0] if sp.node_ids else None
-                if node_id:
+                stage_node_id = sp.node_ids[0] if sp.node_ids else None
+                if stage_node_id:
                     bottlenecks.append(
                         {
                             "type": "sequential_bottleneck",
                             "stage_index": sp.stage_index,
-                            "node_id": node_id,
+                            "node_id": stage_node_id,
                             "duration_ms": sp.duration_ms,
                             "severity": "low",
                         }

@@ -6,7 +6,8 @@ Platform-side endpoints (my teams, get team, update, members, leave, transfer) r
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
+from tortoise.expressions import Q
 
 from app.api import deps
 from app.models.user import Team, TeamMember, User
@@ -31,12 +32,20 @@ router = APIRouter()
 async def list_all_teams(
     page: int = 1,
     page_size: int = 50,
-    current_user: User = Depends(deps.PermissionChecker("team:read")),
+    search: str | None = Query(None, description="Search by team name or description"),
+    current_user: User = Depends(deps.PermissionChecker("admin:team:read")),
 ) -> Any:
     """List all teams (admin: sees all teams regardless of membership)."""
-    total = await Team.all().count()
+    query = Team.all()
+
+    if search:
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
+
+    total = await query.count()
     skip = (page - 1) * page_size
-    teams = await Team.all().offset(skip).limit(page_size).prefetch_related("owner")
+    teams = await query.offset(skip).limit(page_size).prefetch_related("owner")
 
     return success(
         data={
@@ -53,7 +62,7 @@ async def create_team(
     *,
     request: Request,
     team_in: TeamCreate,
-    current_user: User = Depends(deps.PermissionChecker("team:create")),
+    current_user: User = Depends(deps.PermissionChecker("admin:team:create")),
 ) -> Any:
     """Create a new team (admin)."""
     existing = await Team.filter(name=team_in.name).first()
@@ -96,7 +105,7 @@ async def create_team(
 async def delete_team(
     request: Request,
     team_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("team:delete")),
+    current_user: User = Depends(deps.PermissionChecker("admin:team:delete")),
 ) -> Any:
     """Delete a team (admin: superuser can delete any non-default team)."""
     team = await Team.filter(id=team_id).prefetch_related("owner").first()

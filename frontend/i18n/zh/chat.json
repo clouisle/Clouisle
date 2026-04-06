@@ -76,7 +76,14 @@
       "helpful": "有帮助",
       "notHelpful": "没帮助",
       "regenerate": "重新生成",
-      "thinking": "思考中..."
+      "thinking": "思考中...",
+      "outputTruncated": "输出已被截断，已达到最大输出 token 限制。您可以在模型设置中增加该限制。",
+      "tokenStats": "Token 统计",
+      "inputTokens": "输入 Tokens",
+      "outputTokens": "输出 Tokens",
+      "firstTokenTime": "首 Token 耗时",
+      "totalTime": "总耗时",
+      "speed": "生成速度"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",
@@ -87,7 +94,9 @@
       "zoomIn": "放大 (+)",
       "rotate": "旋转 (R)",
       "download": "下载",
-      "close": "关闭 (Esc)"
+      "close": "关闭 (Esc)",
+      "showPrompt": "查看提示词",
+      "hidePrompt": "收起提示词"
     }
   }
 }

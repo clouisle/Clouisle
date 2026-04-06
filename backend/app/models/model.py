@@ -28,6 +28,7 @@ class ModelProvider(str, Enum):
     BAICHUAN = "baichuan"
     MINIMAX = "minimax"
     VOLCENGINE = "volcengine"  # 火山引擎 (豆包)
+    SILICONFLOW = "siliconflow"
     XAI = "xai"  # Grok
 
     # Local deployment
@@ -57,7 +58,6 @@ class ModelType(str, Enum):
     STT = "stt"  # Speech-to-text
     TEXT_TO_IMAGE = "text_to_image"  # Text-to-image generation
     TEXT_TO_VIDEO = "text_to_video"  # Text-to-video generation
-    IMAGE_TO_VIDEO = "image_to_video"  # Image-to-video generation
 
 
 # Provider default configurations (base URLs, etc.)
@@ -112,6 +112,16 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
         "base_url": "https://api.minimax.chat/v1",
         "icon": "minimax",
     },
+    ModelProvider.VOLCENGINE: {
+        "name": "Volcengine",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "icon": "volcengine",
+    },
+    ModelProvider.SILICONFLOW: {
+        "name": "SiliconFlow",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "icon": "siliconflow",
+    },
     ModelProvider.XAI: {
         "name": "xAI (Grok)",
         "base_url": "https://api.x.ai/v1",
@@ -124,7 +134,7 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
     },
     ModelProvider.RUNWAY: {
         "name": "Runway",
-        "base_url": "https://api.runwayml.com/v1",
+        "base_url": "https://api.dev.runwayml.com",
         "icon": "runway",
     },
     ModelProvider.PIKA: {
@@ -134,7 +144,7 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
     },
     ModelProvider.LUMA: {
         "name": "Luma AI",
-        "base_url": "https://api.lumalabs.ai",
+        "base_url": "https://api.lumalabs.ai/dream-machine/v1",
         "icon": "luma",
     },
     ModelProvider.KLING: {
@@ -144,7 +154,7 @@ PROVIDER_DEFAULTS: dict[ModelProvider, dict[str, str | None]] = {
     },
     ModelProvider.STABILITY: {
         "name": "Stability AI",
-        "base_url": "https://api.stability.ai/v1",
+        "base_url": "https://api.stability.ai",
         "icon": "stability",
     },
     ModelProvider.MIDJOURNEY: {
@@ -237,7 +247,7 @@ class Model(models.Model):
 
     class Meta:
         table = "models"
-        unique_together = (("provider", "model_id"),)
+        unique_together = (("provider", "model_id", "model_type"),)
         ordering = ["sort_order", "-created_at"]
 
     def __str__(self):

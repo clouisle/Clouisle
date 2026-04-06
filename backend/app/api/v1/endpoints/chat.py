@@ -10,13 +10,13 @@ import logging
 import re
 import time
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
-from typing import TYPE_CHECKING
-from xml.etree import ElementTree as ET
 
 if TYPE_CHECKING:
     from app.models.api_key import APIKey
+    from app.models.tool import Tool
+from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -32,7 +32,6 @@ from app.models.user import TeamMember
 from app.models.agent import (
     Agent,
     AgentKnowledgeBase,
-    AgentStatus,
     AgentVisibility,
     Conversation,
     Message,
@@ -57,10 +56,8 @@ from app.schemas.response import (
     success,
 )
 from app.llm.tools import tool_registry
+from app.llm.tools.builtin.media import ToolExecutionResult
 from app.core.timezone import now_utc
-
-if TYPE_CHECKING:
-    from app.models.tool import Tool
 
 
 # Language instruction templates - must be strong and explicit
@@ -126,12 +123,14 @@ class LLMMessage(BaseModel):
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
+MEDIA_TOOL_KINDS = {"media.image", "media.video"}
 
 
 # ============ Helper Functions ============
 
 
-def get_streaming_config(agent: Agent) -> dict:
+def get_streaming_config(agent: Agent) -> dict[str, Any]:
     """
     Get streaming configuration from agent or use defaults.
 
@@ -141,15 +140,16 @@ def get_streaming_config(agent: Agent) -> dict:
     from app.core.config import settings
 
     # Start with defaults from settings
-    config = {
+    tool_timeouts: dict[str, Any] = {
+        "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
+        "code": settings.STREAM_TOOL_TIMEOUT_CODE,
+        "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
+        "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
+    }
+    config: dict[str, Any] = {
         "global_timeout": settings.STREAM_GLOBAL_TIMEOUT,
         "heartbeat_interval": settings.STREAM_HEARTBEAT_INTERVAL,
-        "tool_timeouts": {
-            "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
-            "code": settings.STREAM_TOOL_TIMEOUT_CODE,
-            "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
-            "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
-        },
+        "tool_timeouts": tool_timeouts,
     }
 
     # Override with agent-specific config if present
@@ -158,10 +158,81 @@ def get_streaming_config(agent: Agent) -> dict:
             config["global_timeout"] = agent.streaming_config["global_timeout"]
         if "heartbeat_interval" in agent.streaming_config:
             config["heartbeat_interval"] = agent.streaming_config["heartbeat_interval"]
-        if "tool_timeouts" in agent.streaming_config:
-            config["tool_timeouts"].update(agent.streaming_config["tool_timeouts"])
+        raw_tool_timeouts = agent.streaming_config.get("tool_timeouts")
+        if isinstance(raw_tool_timeouts, dict):
+            tool_timeouts.update(raw_tool_timeouts)
 
     return config
+
+
+def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _build_media_llm_summary(
+    tool_name: str | None, payload: dict[str, Any]
+) -> str | None:
+    kind = payload.get("kind")
+    if kind not in MEDIA_TOOL_KINDS:
+        return None
+
+    if kind == "media.image":
+        if payload.get("error"):
+            return f"Image generation failed: {payload['error']}"
+        count = len(payload.get("images") or [])
+        model = payload.get("model")
+        model_suffix = f" using model {model}" if model else ""
+        return (
+            f"Image generation succeeded. Generated {count} image"
+            f"{'s' if count != 1 else ''}{model_suffix}."
+        )
+
+    status = payload.get("status") or "unknown"
+    if payload.get("error") or status == "failed":
+        message = payload.get("error") or "unknown error"
+        return f"Video generation failed: {message}"
+    if status in {"pending", "processing"}:
+        task_id = payload.get("task_id") or "unknown"
+        return f"Video generation started. Task {task_id} is {status}."
+    model = payload.get("model")
+    model_suffix = f" using model {model}" if model else ""
+    return f"Video generation succeeded{model_suffix}."
+
+
+def summarize_tool_result_for_llm(
+    tool_name: str | None,
+    stored_content: str,
+) -> str:
+    payload = _safe_json_loads(stored_content)
+    if not payload:
+        return stored_content
+    return _build_media_llm_summary(tool_name, payload) or stored_content
+
+
+def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
+    if isinstance(result, ToolExecutionResult):
+        display_result = json.dumps(result.display_result, ensure_ascii=False)
+        return display_result, result.llm_result
+    if isinstance(result, dict):
+        payload = json.dumps(result, ensure_ascii=False)
+        return payload, payload
+    stringified = str(result) if result is not None else ""
+    return stringified, stringified
+
+
+def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
+    payload = _safe_json_loads(display_result)
+    if not payload:
+        return None
+    if payload.get("kind") not in MEDIA_TOOL_KINDS:
+        return None
+    return payload
 
 
 async def send_heartbeat_if_needed(
@@ -196,18 +267,18 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
             status_code=404,
         )
 
-    # Check visibility first
     if agent.visibility == AgentVisibility.PRIVATE:
-        # Private agents can only be used by creator
-        if agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
-    elif agent.visibility == AgentVisibility.TEAM:
-        # Check if user is a member of the agent's team
-        if not user.is_superuser:
+        if not agent.created_by and not user.is_superuser:
             is_member = await TeamMember.filter(
                 team_id=agent.team_id, user_id=user.id
             ).exists()
@@ -217,29 +288,26 @@ async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
                     msg_key="agent_access_denied",
                     status_code=403,
                 )
-
-    # Draft agents: team members can debug/preview, but public users cannot
-    if agent.status == AgentStatus.DRAFT:
-        # For public visibility draft agents, only creator and superuser can use
-        if agent.visibility == AgentVisibility.PUBLIC:
-            if agent.created_by.id != user.id and not user.is_superuser:
-                raise BusinessError(
-                    code=ResponseCode.AGENT_NOT_PUBLISHED,
-                    msg_key="agent_not_published",
-                    status_code=403,
-                )
-        # For private/team visibility, access already checked above
+    elif not user.is_superuser:
+        is_member = await TeamMember.filter(
+            team_id=agent.team_id, user_id=user.id
+        ).exists()
+        if not is_member:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
 
     return agent
 
 
 async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
     """
-    Get agent for public chat page.
+    Get agent for chat page.
     - Must be logged in to access any agent
-    - Public visibility: any logged-in user can access
-    - Team visibility: only team members can access
-    - Private visibility: only creator can access
+    - Private agents: creator only
+    - Team/public agents: team members only
     """
     # Must be logged in
     if not user:
@@ -260,18 +328,18 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
             status_code=404,
         )
 
-    # Check visibility
     if agent.visibility == AgentVisibility.PRIVATE:
-        # Private agents can only be accessed by creator
-        if agent.created_by.id != user.id and not user.is_superuser:
+        if (
+            agent.created_by
+            and agent.created_by.id != user.id
+            and not user.is_superuser
+        ):
             raise BusinessError(
                 code=ResponseCode.AGENT_ACCESS_DENIED,
                 msg_key="agent_access_denied",
                 status_code=403,
             )
-    elif agent.visibility == AgentVisibility.TEAM:
-        # Team agents can only be accessed by team members
-        if not user.is_superuser:
+        if not agent.created_by and not user.is_superuser:
             is_member = await TeamMember.filter(
                 team_id=agent.team_id, user_id=user.id
             ).exists()
@@ -281,18 +349,16 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
                     msg_key="agent_access_denied",
                     status_code=403,
                 )
-    # Public visibility: any logged-in user can access
-
-    # Must be published
-    if agent.status != AgentStatus.PUBLISHED:
-        # Only allow draft access for creator/team members
-        if agent.visibility == AgentVisibility.PUBLIC:
-            if agent.created_by.id != user.id and not user.is_superuser:
-                raise BusinessError(
-                    code=ResponseCode.AGENT_NOT_PUBLISHED,
-                    msg_key="agent_not_published",
-                    status_code=403,
-                )
+    elif not user.is_superuser:
+        is_member = await TeamMember.filter(
+            team_id=agent.team_id, user_id=user.id
+        ).exists()
+        if not is_member:
+            raise BusinessError(
+                code=ResponseCode.AGENT_ACCESS_DENIED,
+                msg_key="agent_access_denied",
+                status_code=403,
+            )
 
     return agent
 
@@ -618,7 +684,10 @@ Assistant: "Your name is Alice."
                 messages.append(
                     LLMMessage(
                         role=LLMMessageRole.TOOL,
-                        content=msg.content,
+                        content=summarize_tool_result_for_llm(
+                            msg.tool_name,
+                            msg.content,
+                        ),
                         tool_call_id=msg.tool_call_id,
                     )
                 )
@@ -682,6 +751,18 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
         agent.tools_config or []
     )  # Make a copy to avoid modifying original
     openai_tools: list[dict] = []
+    seen_tool_names: set[str] = set()
+
+    def append_openai_tool(tool_def: dict) -> None:
+        function_name = (
+            tool_def.get("function", {}).get("name")
+            if isinstance(tool_def, dict)
+            else None
+        )
+        if not function_name or function_name in seen_tool_names:
+            return
+        openai_tools.append(tool_def)
+        seen_tool_names.add(function_name)
 
     # Add memory tools if enabled
     if agent.enable_memory:
@@ -760,6 +841,14 @@ Examples of when to search:
                 }
             )
 
+    if agent.enable_image_generation:
+        for builtin_tool in tool_registry.to_openai_tools(["generate_image"]):
+            append_openai_tool(builtin_tool)
+
+    if agent.enable_video_generation:
+        for builtin_tool in tool_registry.to_openai_tools(["generate_video"]):
+            append_openai_tool(builtin_tool)
+
     for config in tools_config:
         tool_type = config.get("type")
 
@@ -768,7 +857,8 @@ Examples of when to search:
             if tool_name:
                 # Get builtin tool definition
                 builtin_tools = tool_registry.to_openai_tools([tool_name])
-                openai_tools.extend(builtin_tools)
+                for builtin_tool in builtin_tools:
+                    append_openai_tool(builtin_tool)
 
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
@@ -890,6 +980,24 @@ async def get_tool_display_names(
         )
         display_names["search_memory"] = t("tool_search_memory", lang=user_locale)
 
+    if agent.enable_image_generation:
+        metadata = BUILTIN_TOOLS_METADATA.get("generate_image", {})
+        display_name_key = metadata.get("display_name_key")
+        display_names["generate_image"] = (
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else "generate_image"
+        )
+
+    if agent.enable_video_generation:
+        metadata = BUILTIN_TOOLS_METADATA.get("generate_video", {})
+        display_name_key = metadata.get("display_name_key")
+        display_names["generate_video"] = (
+            t(display_name_key, lang=user_locale)
+            if display_name_key
+            else "generate_video"
+        )
+
     for config in tools_config:
         tool_type = config.get("type")
 
@@ -942,9 +1050,9 @@ async def execute_tool_call(
     agent: Agent | None = None,
     tool_timeouts: dict | None = None,
     user: User | None = None,
-) -> str:
+) -> Any:
     """
-    Execute a tool and return the result as string.
+    Execute a tool and return the result payload.
 
     Args:
         tool_name: Tool name (for builtin) or custom_<name> (for custom) or mcp_<tool_id>_<tool_name> (for MCP)
@@ -1020,32 +1128,78 @@ async def execute_tool_call(
 
             try:
                 if tool_name == "create_memory_entity":
+                    name = arguments.get("name")
+                    entity_type = arguments.get("entity_type")
+                    description = arguments.get("description")
+                    if not isinstance(name, str) or not isinstance(entity_type, str):
+                        return json.dumps(
+                            {
+                                "error": "name and entity_type are required for create_memory_entity"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_create_entity(
                         user_id=user.id,
-                        name=arguments.get("name"),
-                        entity_type=arguments.get("entity_type"),
-                        description=arguments.get("description"),
+                        name=name,
+                        entity_type=entity_type,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                         properties=arguments.get("properties", {}),
                     )
                 elif tool_name == "create_memory_relation":
+                    source_entity_name = arguments.get("source_entity_name")
+                    target_entity_name = arguments.get("target_entity_name")
+                    relation_type = arguments.get("relation_type")
+                    description = arguments.get("description")
+                    if (
+                        not isinstance(source_entity_name, str)
+                        or not isinstance(target_entity_name, str)
+                        or not isinstance(relation_type, str)
+                    ):
+                        return json.dumps(
+                            {
+                                "error": "source_entity_name, target_entity_name, and relation_type are required for create_memory_relation"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_create_relation(
                         user_id=user.id,
-                        source_entity_name=arguments.get("source_entity_name"),
-                        target_entity_name=arguments.get("target_entity_name"),
-                        relation_type=arguments.get("relation_type"),
-                        description=arguments.get("description"),
+                        source_entity_name=source_entity_name,
+                        target_entity_name=target_entity_name,
+                        relation_type=relation_type,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                     )
                 elif tool_name == "update_memory_entity":
+                    entity_name = arguments.get("entity_name")
+                    description = arguments.get("description")
+                    if not isinstance(entity_name, str):
+                        return json.dumps(
+                            {
+                                "error": "entity_name is required for update_memory_entity"
+                            },
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_update_entity(
                         user_id=user.id,
-                        entity_name=arguments.get("entity_name"),
-                        description=arguments.get("description"),
+                        entity_name=entity_name,
+                        description=description
+                        if isinstance(description, str)
+                        else None,
                         properties=arguments.get("properties"),
                     )
                 elif tool_name == "search_memory":
+                    query = arguments.get("query")
+                    if not isinstance(query, str):
+                        return json.dumps(
+                            {"error": "query is required for search_memory"},
+                            ensure_ascii=False,
+                        )
                     result = await MemoryService.handle_search_memory(
                         user_id=user.id,
-                        query=arguments.get("query"),
+                        query=query,
                         top_k=arguments.get("top_k", 5),
                     )
 
@@ -1165,8 +1319,15 @@ async def execute_tool_call(
                         credentials = global_config.credentials or {}
 
             result = await tool_registry.execute(
-                tool_name, arguments, credentials=credentials
+                tool_name,
+                arguments,
+                credentials=credentials,
+                agent=agent,
+                team_id=str(agent.team_id) if agent and agent.team_id else None,
+                user_id=str(user.id) if user else None,
             )
+            if isinstance(result, ToolExecutionResult):
+                return result
             if isinstance(result, dict):
                 return json.dumps(result, ensure_ascii=False)
             return str(result)
@@ -1276,13 +1437,14 @@ async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
         try:
             vector_store = VectorStore(
                 embedding_model_id=str(kb.embedding_model_id),
+                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
                 team_id=str(kb.team_id),
             )
 
             results = await vector_store.search(
                 kb_id=kb.id,
                 query=query,
-                search_mode="hybrid",
+                search_mode=akb.search_mode,
                 top_k=akb.retrieval_top_k,
                 score_threshold=akb.score_threshold,
             )
@@ -1321,10 +1483,15 @@ def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
             idx = index_map[key]
             if ctx.get("content"):
                 aggregated[idx]["content_parts"].append(ctx.get("content"))
-            if ctx.get("score") is not None:
-                aggregated[idx]["score"] = max(
-                    aggregated[idx].get("score") or 0, ctx.get("score")
+            score = ctx.get("score")
+            if isinstance(score, (int, float)):
+                existing_score = aggregated[idx].get("score")
+                current_score = (
+                    float(existing_score)
+                    if isinstance(existing_score, (int, float))
+                    else 0.0
                 )
+                aggregated[idx]["score"] = max(current_score, float(score))
             continue
 
         index_map[key] = len(aggregated)
@@ -1599,11 +1766,12 @@ async def chat(
                     result = await execute_tool_call(
                         tool_name, arguments, agent=agent, user=current_user
                     )
+                    display_result, llm_result = get_tool_execution_payloads(result)
 
                     await Message.create(
                         conversation=conversation,
                         role=MessageRole.TOOL,
-                        content=result,
+                        content=display_result,
                         tool_call_id=tc.id,
                         tool_name=tool_name,
                     )
@@ -1611,7 +1779,7 @@ async def chat(
                     messages.append(
                         LLMMessage(
                             role=LLMMessageRole.TOOL,
-                            content=result,
+                            content=llm_result,
                             tool_call_id=tc.id,
                         )
                     )
@@ -1745,6 +1913,7 @@ async def chat_stream(
     - rag_context: {"contexts": [...]}
     - tool_call: {"tool_name": "...", "arguments": {...}}
     - tool_result: {"tool_name": "...", "result": {...}}
+    - media_result: {"kind": "media.image"|"media.video", ...} (UI-only media payload for rendering in assistant body, not for LLM replay)
     - message_end: {"usage": {...}}
     - error: {"code": ..., "msg": "..."}
     """
@@ -1786,6 +1955,7 @@ async def chat_stream(
             ContentPart,
             ContentType,
             ImageContent,
+            FinishReason,
         )
 
         # Get streaming configuration
@@ -1796,6 +1966,7 @@ async def chat_stream(
 
         # Record start time and last event time
         start_time = time.time()
+        first_token_time: float | None = None
         last_event_time = start_time
         full_content = ""
         full_reasoning = ""
@@ -1968,14 +2139,17 @@ async def chat_stream(
                                             agent,
                                             user=current_user,
                                         )
+                                        display_result, _ = get_tool_execution_payloads(
+                                            result
+                                        )
                                         # Custom tool returns parsed content as string
-                                        if result:
+                                        if display_result:
                                             parsed_files.append(
                                                 ParsedFile(
                                                     filename="自定义解析结果",
-                                                    content=result,
+                                                    content=display_result,
                                                     mime_type="text/plain",
-                                                    size=len(result),
+                                                    size=len(display_result),
                                                 )
                                             )
                                     except Exception as e:
@@ -2199,7 +2373,10 @@ async def chat_stream(
                                     messages_for_llm.append(
                                         LLMTypeMessage(
                                             role=LLMTypeRole.TOOL,
-                                            content=msg.content,
+                                            content=summarize_tool_result_for_llm(
+                                                msg.tool_name,
+                                                msg.content,
+                                            ),
                                             tool_call_id=msg.tool_call_id,
                                         )
                                     )
@@ -2302,6 +2479,8 @@ async def chat_stream(
                                     yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += chunk.delta.reasoning_content
                                 iteration_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
                                 emitted_any = True
@@ -2313,6 +2492,8 @@ async def chat_stream(
                                 full_content += chunk.delta.content
                                 iteration_content += chunk.delta.content
 
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
@@ -2327,6 +2508,8 @@ async def chat_stream(
                             if chunk.finish_reason:
                                 if reasoning_started and not full_content:
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                 break
 
                         # Fallback: if stream yields nothing and no tool calls, do a non-stream call
@@ -2345,11 +2528,15 @@ async def chat_stream(
                                 yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += response.reasoning_content
                                 iteration_reasoning += response.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': response.reasoning_content})}\n\n"
                                 yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                             if response.content:
                                 full_content += response.content
                                 iteration_content += response.content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': response.content})}\n\n"
 
                         # If client disconnected, save partial content and exit
@@ -2434,6 +2621,9 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
+                                display_result, llm_result = (
+                                    get_tool_execution_payloads(result)
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -2453,7 +2643,12 @@ async def chat_stream(
                                     return
 
                                 # Send tool_result event
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
+                                media_payload = extract_media_display_payload(
+                                    display_result
+                                )
+                                if media_payload:
+                                    yield f"event: {SSEEventType.MEDIA_RESULT}\ndata: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
                                 last_event_time = time.time()
 
                                 # Add to pending tool calls for message building
@@ -2462,7 +2657,8 @@ async def chat_stream(
                                         "id": tc.id,
                                         "name": tool_name,
                                         "arguments": arguments,
-                                        "result": result,
+                                        "display_result": display_result,
+                                        "llm_result": llm_result,
                                     }
                                 )
 
@@ -2503,7 +2699,7 @@ async def chat_stream(
                                 await Message.create(
                                     conversation=conversation,
                                     role=MessageRole.TOOL,
-                                    content=tc_data["result"],
+                                    content=tc_data["display_result"],
                                     tool_call_id=tc_data["id"],
                                     tool_name=tc_data["name"],
                                 )
@@ -2534,7 +2730,7 @@ async def chat_stream(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=tc_data["result"],
+                                        content=tc_data["llm_result"],
                                         tool_call_id=tc_data["id"],
                                     )
                                 )
@@ -2594,8 +2790,18 @@ async def chat_stream(
                         total_tokens=F("total_tokens") + (input_tokens + output_tokens),
                     )
 
-                    # Send message_end event with version info
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': 1, 'version_count': 1})}\n\n"
+                    # Send message_end event with version info and timing
+                    first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time
+                        else None
+                    )
+                    tokens_per_second = (
+                        round(output_tokens / (duration_ms / 1000), 1)
+                        if duration_ms > 0 and output_tokens > 0
+                        else None
+                    )
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
                 except QuotaExceededError as e:
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
@@ -2610,10 +2816,10 @@ async def chat_stream(
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
                 except LLMError as e:
                     logger.exception(f"LLM error during stream: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     logger.exception(f"Unexpected error during stream: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
             # Global timeout
@@ -2937,6 +3143,7 @@ async def regenerate_message(
             FunctionDefinition,
             ToolCall as LLMToolCall,
             FunctionCall as LLMFunctionCall,
+            FinishReason,
         )
 
         # Get streaming configuration
@@ -2947,6 +3154,7 @@ async def regenerate_message(
 
         # Record start time and last event time
         start_time = time.time()
+        first_token_time: float | None = None
         last_event_time = start_time
         full_content = ""
         full_reasoning = ""
@@ -3105,7 +3313,10 @@ async def regenerate_message(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=msg.content,
+                                        content=summarize_tool_result_for_llm(
+                                            msg.tool_name,
+                                            msg.content,
+                                        ),
                                         tool_call_id=msg.tool_call_id,
                                     )
                                 )
@@ -3186,6 +3397,8 @@ async def regenerate_message(
                                     reasoning_started = True
                                     yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
                                 full_reasoning += chunk.delta.reasoning_content
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
                                 last_event_time = time.time()
 
@@ -3194,6 +3407,8 @@ async def regenerate_message(
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
                                 full_content += chunk.delta.content
 
+                                if first_token_time is None:
+                                    first_token_time = time.time()
                                 # Stream content normally
                                 yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
                                 last_event_time = time.time()
@@ -3204,6 +3419,8 @@ async def regenerate_message(
                             if chunk.finish_reason:
                                 if reasoning_started and not full_content:
                                     yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                if chunk.finish_reason == FinishReason.LENGTH:
+                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                 break
 
                         # If client disconnected, save partial content and exit
@@ -3259,6 +3476,9 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                 )
+                                display_result, llm_result = (
+                                    get_tool_execution_payloads(result)
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
@@ -3277,8 +3497,18 @@ async def regenerate_message(
                                         await new_message.save()
                                     return
 
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': result})}\n\n"
+                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
                                 last_event_time = time.time()
+
+                                await Message.create(
+                                    conversation=conversation,
+                                    role=MessageRole.TOOL,
+                                    content=display_result,
+                                    tool_call_id=tc.id,
+                                    tool_name=tool_name,
+                                    parent_id=new_message.parent_id or new_message.id,
+                                    version_number=new_version_number,
+                                )
 
                                 # Add to message history for next iteration
                                 messages_for_llm.append(
@@ -3301,7 +3531,7 @@ async def regenerate_message(
                                 messages_for_llm.append(
                                     LLMTypeMessage(
                                         role=LLMTypeRole.TOOL,
-                                        content=result,
+                                        content=llm_result,
                                         tool_call_id=tc.id,
                                     )
                                 )
@@ -3341,7 +3571,17 @@ async def regenerate_message(
                         total_tokens=F("total_tokens") + total_tokens,
                     )
 
-                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
+                    first_token_ms = (
+                        int((first_token_time - start_time) * 1000)
+                        if first_token_time
+                        else None
+                    )
+                    tokens_per_second = (
+                        round(output_tokens / (duration_ms / 1000), 1)
+                        if duration_ms > 0 and output_tokens > 0
+                        else None
+                    )
+                    yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
 
                 except QuotaExceededError as e:
                     # Rollback: delete new message and restore original
@@ -3357,7 +3597,7 @@ async def regenerate_message(
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception(f"LLM error during regenerate: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     # Rollback: delete new message and restore original
                     if new_message_id:
@@ -3365,7 +3605,7 @@ async def regenerate_message(
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception(f"Unexpected error during regenerate: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
             # Global timeout

@@ -94,7 +94,7 @@ async def get_entity(
 
     if not entity:
         raise BusinessError(
-            code=ResponseCode.RESOURCE_NOT_FOUND,
+            code=ResponseCode.NOT_FOUND,
             msg_key="memory_entity_not_found",
         )
 
@@ -138,7 +138,7 @@ async def update_entity(
 
         if not entity:
             raise BusinessError(
-                code=ResponseCode.RESOURCE_NOT_FOUND,
+                code=ResponseCode.NOT_FOUND,
                 msg_key="memory_entity_not_found",
             )
 
@@ -182,7 +182,7 @@ async def delete_entity(
         return success({"message": "Entity deleted successfully"})
     except ValueError:
         raise BusinessError(
-            code=ResponseCode.RESOURCE_NOT_FOUND,
+            code=ResponseCode.NOT_FOUND,
             msg_key="memory_entity_not_found",
         )
     except Exception as e:
@@ -280,7 +280,7 @@ async def delete_relation(
         return success({"message": "Relation deleted successfully"})
     except ValueError:
         raise BusinessError(
-            code=ResponseCode.RESOURCE_NOT_FOUND,
+            code=ResponseCode.NOT_FOUND,
             msg_key="memory_relation_not_found",
         )
     except Exception as e:

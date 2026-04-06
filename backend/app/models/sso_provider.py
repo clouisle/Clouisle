@@ -1,4 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from tortoise import fields, models
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class SSOProvider(models.Model):
@@ -22,16 +29,16 @@ class SSOProvider(models.Model):
     )
 
     # Configuration (JSON field)
-    config = fields.JSONField(description="Protocol-specific configuration")
+    config: dict = fields.JSONField(description="Protocol-specific configuration")  # type: ignore[assignment]
     # OIDC: {client_id, client_secret, issuer_url, authorization_url, token_url, userinfo_url, scopes}
     # SAML: {sp_entity_id, idp_entity_id, sso_url, slo_url, x509_cert, acs_url}
     # CAS: {server_url, service_url, version}
 
     # Attribute mapping (JSON field)
-    attribute_mapping = fields.JSONField(
+    attribute_mapping: dict = fields.JSONField(
         default=dict,
         description="Maps provider attributes to user fields (e.g., {'email': 'email', 'username': 'preferred_username'})",
-    )
+    )  # type: ignore[assignment]
 
     # Settings
     is_enabled = fields.BooleanField(
@@ -50,7 +57,7 @@ class SSOProvider(models.Model):
     # Metadata
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
-    created_by = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="created_sso_providers",
         null=True,

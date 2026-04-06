@@ -51,11 +51,12 @@ export interface NotificationListParams {
 }
 
 export interface NotificationAdminListParams {
-  scope?: NotificationScope
+  scope?: NotificationScope[]
   team_id?: string
   user_id?: string
   type?: string
-  level?: NotificationLevel
+  level?: NotificationLevel[]
+  search?: string
   include_expired?: boolean
   page?: number
   page_size?: number
@@ -65,6 +66,7 @@ export interface NotificationAdminCreateInput {
   scope: NotificationScope
   team_id?: string | null
   user_id?: string | null
+  user_ids?: string[]  // 批量发送给多个用户
   type: string
   source?: NotificationSource
   title: string

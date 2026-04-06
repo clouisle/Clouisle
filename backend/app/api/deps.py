@@ -47,7 +47,7 @@ async def get_current_user_or_api_key(
         )
 
     # 检查是否是 API Key (以 clou_ 开头)
-    user: User
+    user: User | None
     api_key: Optional[APIKey] = None
 
     if auth_token.startswith("clou_"):
@@ -97,7 +97,7 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
         )
 
     # 获取关联的用户
-    user = matched_api_key.user
+    user: User | None = matched_api_key.user
     if not user:
         user = (
             await User.filter(id=matched_api_key.user_id)
@@ -108,7 +108,11 @@ async def _authenticate_api_key(api_key_str: str) -> tuple[User, APIKey]:
     if not user or not user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
+            msg_key=(
+                "pending_approval_user"
+                if user and getattr(user, "approval_status", "approved") == "pending"
+                else "inactive_user"
+            ),
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
@@ -185,7 +189,11 @@ async def get_current_active_user(
     if not current_user.is_active:
         raise BusinessError(
             code=ResponseCode.INACTIVE_USER,
-            msg_key="inactive_user",
+            msg_key=(
+                "pending_approval_user"
+                if getattr(current_user, "approval_status", "approved") == "pending"
+                else "inactive_user"
+            ),
         )
     # Set language from user's locale preference
     if hasattr(current_user, "locale") and current_user.locale:
@@ -296,5 +304,33 @@ async def check_api_key_agent_access(api_key: Optional[APIKey], agent_id: UUID) 
         raise BusinessError(
             code=ResponseCode.PERMISSION_DENIED,
             msg_key="api_key_no_agent_access",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
+async def check_api_key_workflow_access(
+    api_key: Optional[APIKey], workflow_id: UUID
+) -> None:
+    """
+    检查 API Key 是否有权访问指定的 Workflow。
+    如果 api_key 为 None（JWT 认证），则跳过检查。
+    如果 API Key 没有关联任何 Workflow，则允许访问所有 Workflow。
+    """
+    if api_key is None:
+        return  # JWT 认证，跳过检查
+
+    # 获取 API Key 关联的 Workflows
+    workflows = await api_key.workflows.all()
+
+    # 如果没有关联任何 Workflow，允许访问所有（向后兼容）
+    if not workflows:
+        return
+
+    # 检查是否有权访问指定的 Workflow
+    workflow_ids = [w.id for w in workflows]
+    if workflow_id not in workflow_ids:
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="api_key_no_workflow_access",
             status_code=status.HTTP_403_FORBIDDEN,
         )

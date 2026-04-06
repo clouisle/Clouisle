@@ -41,6 +41,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 - [Configuration](#configuration)
 - [Use Cases](#use-cases)
 - [Roadmap](#roadmap)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -262,6 +263,13 @@ Configure via the admin dashboard:
 
 ---
 
+## Documentation
+
+- User and operator docs: [docs/guide/README.md](docs/guide/README.md)
+- Developer and architecture docs: [docs/dev/README.md](docs/dev/README.md)
+
+---
+
 ## Use Cases
 
 | Use Case | Description |
@@ -301,12 +309,14 @@ uv run ruff check .          # Lint
 uv run ruff format .         # Format
 uv run mypy app/             # Type check
 uv run pytest                # Test
+uv run python scripts/check_licenses.py  # Dependency license compliance
 ```
 
 **Frontend**
 ```bash
 bun run lint                 # Lint
 bun run build                # Build
+bun run license:check        # Dependency license compliance
 ```
 
 ---

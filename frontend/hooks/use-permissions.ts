@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { authApi, type User } from '@/lib/api'
+import { ROUTE_PERMISSION_MAP } from '@/lib/route-permissions'
 
 export function usePermissions() {
   const [user, setUser] = useState<User | null>(null)
@@ -55,7 +56,7 @@ export function usePermissions() {
     return perms.every((p) => hasPermission(p))
   }
 
-  const canAccessDashboard = hasPermission('dashboard:access')
+  const canAccessDashboard = hasPermission('admin:dashboard:access')
 
   return {
     user,
@@ -69,30 +70,7 @@ export function usePermissions() {
   }
 }
 
-/**
- * Permission map for sidebar menu items
- * Maps URL paths to required permissions
- */
-export const MENU_PERMISSION_MAP: Record<string, string> = {
-  // Dashboard requires dashboard:access
-  '/dashboard': 'dashboard:access',
-  // User management
-  '/users': 'user:read',
-  '/roles': 'role:read',
-  '/permissions': 'permission:read',
-  // Model management
-  '/models': 'model:read',
-  // Audit logs
-  '/audit-logs': 'audit:read',
-  // Site settings
-  '/site-settings': 'settings:read',
-  // API Keys (team-isolated, all users with apikey:read can access)
-  '/api-keys': 'apikey:read',
-  // Tools (team-isolated)
-  '/tools': 'tool:read',
-  // Notifications
-  '/notifications': 'dashboard:access',
-}
+export const MENU_PERMISSION_MAP: Record<string, string> = ROUTE_PERMISSION_MAP
 
 /**
  * Check if a menu item should be visible based on user permissions

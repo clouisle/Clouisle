@@ -10,7 +10,6 @@ import {
   Mic,
   Image,
   Video,
-  Clapperboard,
   Infinity,
   TrendingUp,
   Calendar,
@@ -39,7 +38,6 @@ const modelTypeIcons: Record<string, React.ComponentType<{ className?: string }>
   stt: Mic,
   text_to_image: Image,
   text_to_video: Video,
-  image_to_video: Clapperboard,
 }
 
 // 供应商颜色映射

@@ -101,7 +101,6 @@
     "visibility": "Visibility",
     "visibilityPrivate": "Private",
     "visibilityTeam": "Team",
-    "visibilityPublic": "Public",
     "saveAndPublish": "Save & Publish",
     "saveDraft": "Save Draft",
     "preview": "Preview",
@@ -126,6 +125,7 @@
       },
       "toolbar": {
         "chat": "Chat",
+        "embed": "Embed",
         "settings": "Agent Settings",
         "saving": "Saving...",
         "save": "Save",
@@ -217,6 +217,11 @@
           "offShort": "Off"
         },
         "dialog": {
+          "searchMode": "Search Mode",
+          "searchModeVector": "Vector Search",
+          "searchModeFulltext": "Full-text Search",
+          "searchModeHybrid": "Hybrid Search",
+          "searchModeHint": "Choose how to search the knowledge base",
           "topK": "Top K",
           "topKHint": "Number of most relevant chunks to retrieve",
           "threshold": "Similarity Threshold",
@@ -238,7 +243,9 @@
           "unit_convert": "Unit Converter",
           "get_current_time": "Get Current Time",
           "web_search": "Web Search",
-          "parse_file": "File Parser"
+          "parse_file": "File Parser",
+          "generate_image": "Generate Image",
+          "generate_video": "Generate Video"
         },
         "dialog": {
           "title": "Select Tools",
@@ -303,6 +310,36 @@
         "memories": "memories",
         "autoExtract": "Auto Extract Memories",
         "autoExtractHint": "Automatically extract and save important information from conversations"
+      },
+      "imageGeneration": {
+        "title": "Image Generation",
+        "tooltip": "Allow the agent to call image generation models",
+        "description": "When enabled, the agent can call text-to-image tools and render generated images directly in chat.",
+        "defaultModel": "Default Model",
+        "defaultModelPlaceholder": "For example: google/gemini-2.5-flash-image",
+        "useSystemDefault": "Use system default model",
+        "defaultWidth": "Default Width",
+        "defaultHeight": "Default Height",
+        "maxImages": "Max Images Per Call",
+        "allowModelOverride": "Allow Model Override",
+        "allowModelOverrideHint": "Allow the agent to choose a different image model in a tool call.",
+        "allowReferenceImages": "Allow Reference Images",
+        "allowReferenceImagesHint": "Allow the image tool to include reference images."
+      },
+      "videoGeneration": {
+        "title": "Video Generation",
+        "tooltip": "Allow the agent to call video generation models",
+        "description": "When enabled, the agent can call text-to-video tools and return either an in-progress status or a final video in chat.",
+        "defaultModel": "Default Model",
+        "defaultModelPlaceholder": "For example: runway/gen4.5",
+        "useSystemDefault": "Use system default model",
+        "defaultDuration": "Default Duration (s)",
+        "maxDuration": "Max Duration (s)",
+        "aspectRatio": "Default Aspect Ratio",
+        "pollInterval": "Poll Interval (ms)",
+        "pollTimeout": "Max Wait Time (s)",
+        "allowModelOverride": "Allow Model Override",
+        "allowModelOverrideHint": "Allow the agent to choose a different video model in a tool call."
       },
       "preview": {
         "title": "Debug & Preview",
@@ -395,7 +432,9 @@
       "params": {
         "message": "The user's message content",
         "conversationId": "Conversation ID for multi-turn dialogue. Leave empty (null) for first message, the response will return a conversation_id in the message_start event. Use this ID in subsequent requests to continue the conversation with context.",
-        "variables": "Values for Agent variables (if defined)"
+        "variables": "Values for Agent variables (if defined)",
+        "images": "Array of image objects for vision-enabled agents. Each object should contain a url field with either a data URL (data:image/png;base64,...) or remote URL.",
+        "fileUrls": "Array of file URL objects for file upload. Backend will download, parse and inject content into the fileContent variable. Each object should contain url, filename, mime_type, and size fields."
       },
       "responseFormat": "Response Format",
       "sseDescription": "Responses are streamed using Server-Sent Events (SSE) format. Here are the possible event types:",
@@ -411,9 +450,13 @@
         "contentDelta": "Response content delta",
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
-        "messageEnd": "Message ended with token usage statistics",
+        "mediaResult": "Media display payload for generated images/videos, used by the client to render content directly in the assistant body",
+        "userInputRequest": "Agent requests user input with predefined options",
+        "outputTruncated": "Output was truncated due to max output token limit",
+        "messageEnd": "Message ended with token usage and timing statistics",
         "error": "Error message"
       },
+      "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
       "multiTurn": {
         "title": "Multi-turn Conversation",

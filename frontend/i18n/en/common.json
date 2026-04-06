@@ -26,6 +26,8 @@
     "clearFilters": "Clear filters",
     "uploadSuccess": "Upload successful",
     "invalidFileType": "Unsupported file type",
+    "invalidFileTypeWithAllowed": "Unsupported file type. Allowed types: {allowed}",
+    "invalidImageFileTypeWithAllowed": "Unsupported image type. Allowed types: {allowed}",
     "fileTooLarge": "File too large, maximum 10MB",
     "status": "Status",
     "team": "Team",
@@ -42,6 +44,7 @@
     "of": "of",
     "confirmDelete": "Confirm Delete",
     "deleteWarning": "This action cannot be undone. Are you sure you want to continue?",
-    "invalidJSON": "Invalid JSON format"
+    "invalidJSON": "Invalid JSON format",
+    "done": "Done"
   }
 }

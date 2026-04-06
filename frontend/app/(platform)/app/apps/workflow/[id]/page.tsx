@@ -46,6 +46,7 @@ import {
   FileText,
   Activity,
   GitBranch,
+  Code,
 } from 'lucide-react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
@@ -69,6 +70,7 @@ import {
 import { workflowsApi, Workflow, VariableDefinition } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 // Custom Node Types
 import { UserInputNode } from './_components/nodes/user-input-node'
@@ -93,7 +95,7 @@ import { AnswerNode } from './_components/nodes/answer-node'
 import { CommentNode, type CommentColor } from './_components/nodes/comment-node'
 
 // Workflow Run Drawer
-import { WorkflowRunDrawer } from './_components/workflow-run-drawer'
+import { WorkflowRunDrawer, type NodeTrace } from './_components/workflow-run-drawer'
 
 // Components
 import { StartNodeSelector, StartNodeType } from './_components/start-node-selector'
@@ -101,6 +103,7 @@ import { NodeConfigDrawer } from './_components/node-config-drawer'
 import { WorkflowSettingsDrawer } from './_components/workflow-settings-drawer'
 import { AddNodePopover } from './_components/add-node-popover'
 import { ValidationChecklist } from './_components/validation-checklist'
+import { EmbedConfigDialog } from '../../[id]/_components/embed-config-dialog'
 import { validateWorkflow, ValidationIssue } from './_components/workflow-validator'
 
 // Define custom node data type
@@ -243,16 +246,47 @@ function WorkflowEditorContent() {
   const [configDrawerOpen, setConfigDrawerOpen] = React.useState(false)
   const [settingsDrawerOpen, setSettingsDrawerOpen] = React.useState(false)
   const [testRunDrawerOpen, setTestRunDrawerOpen] = React.useState(false)
+  const [nodeTraces, setNodeTraces] = React.useState<Map<string, NodeTrace>>(new Map())
   const [addNodePopover, setAddNodePopover] = React.useState<AddNodePopoverState>(null)
   const [editorMode, setEditorMode] = React.useState<'pointer' | 'hand'>('hand')
   const [isFullscreen, setIsFullscreen] = React.useState(false)
   const [showExitConfirm, setShowExitConfirm] = React.useState(false)
   const [showValidationChecklist, setShowValidationChecklist] = React.useState(false)
   const [validationIssues, setValidationIssues] = React.useState<ValidationIssue[]>([])
+  const [showEmbed, setShowEmbed] = React.useState(false)
 
   // ReactFlow instance
   const reactFlowInstance = useReactFlow()
   const connectStartRef = React.useRef<{ nodeId: string; handleId?: string; time: number } | null>(null)
+  const addNodeButtonRef = React.useRef<HTMLButtonElement>(null)
+  const modKey = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
+
+  const openNodeConfig = React.useCallback((node: WorkflowNode) => {
+    setShowValidationChecklist(false)
+    setSelectedNode(node)
+    setSettingsDrawerOpen(false)
+    setTestRunDrawerOpen(false)
+    setConfigDrawerOpen(true)
+  }, [])
+
+  const openRunDrawer = React.useCallback(() => {
+    setShowValidationChecklist(false)
+    setConfigDrawerOpen(false)
+    setSettingsDrawerOpen(false)
+    setSelectedNode(null)
+    setTestRunDrawerOpen(true)
+  }, [])
+
+  const openSettingsDrawer = React.useCallback(() => {
+    setShowValidationChecklist(false)
+    setConfigDrawerOpen(false)
+    setTestRunDrawerOpen(false)
+    setSelectedNode(null)
+    setSettingsDrawerOpen(true)
+  }, [])
+
+  // Copy-paste state
+  const copiedNodesRef = React.useRef<WorkflowNode[]>([])
 
   // Handle connect start - track for click detection
   const onConnectStart: OnConnectStart = React.useCallback(
@@ -271,6 +305,18 @@ function WorkflowEditorContent() {
   // ReactFlow state
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<WorkflowNode>([])
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<WorkflowEdge>([])
+
+  const toggleValidationChecklist = React.useCallback(() => {
+    if (!showValidationChecklist) {
+      setConfigDrawerOpen(false)
+      setSettingsDrawerOpen(false)
+      setTestRunDrawerOpen(false)
+      setSelectedNode(null)
+    }
+    const issues = validateWorkflow(nodes, edges)
+    setValidationIssues(issues)
+    setShowValidationChecklist(prev => !prev)
+  }, [edges, nodes, showValidationChecklist])
 
   // 检查节点是否是开始节点
   const isStartNode = React.useCallback((nodeId: string) => {
@@ -365,7 +411,7 @@ function WorkflowEditorContent() {
       
       onNodesChangeBase(filteredChanges)
     },
-    [nodes, setNodes, onNodesChangeBase, isStartNode]
+    [nodes, setNodes, onNodesChangeBase, isStartNode, t]
   )
 
   // Load workflow and current user
@@ -399,7 +445,7 @@ function WorkflowEditorContent() {
     if (workflowId) {
       loadData()
     }
-  }, [workflowId, router, t, setNodes, setEdges])
+  }, [workflowId, router, setNodes, setEdges])
 
   // Handle start node type selection
   const handleStartNodeSelect = React.useCallback((type: StartNodeType) => {
@@ -416,7 +462,7 @@ function WorkflowEditorContent() {
     setNodes([startNode])
     setShowStartSelector(false)
     setHasChanges(true)
-  }, [setNodes])
+  }, [setNodes, t])
 
   // Handle connection (edge creation)
   const onConnect = React.useCallback(
@@ -429,10 +475,8 @@ function WorkflowEditorContent() {
 
   // Handle node click - open config drawer
   const onNodeClick = React.useCallback((event: React.MouseEvent, node: WorkflowNode) => {
-    setSelectedNode(node)
-    setSettingsDrawerOpen(false)
-    setConfigDrawerOpen(true)
-  }, [])
+    openNodeConfig(node)
+  }, [openNodeConfig])
 
   // Handle clicking on a source handle to show add node popover
   const onConnectEnd: OnConnectEnd = React.useCallback(
@@ -705,8 +749,13 @@ function WorkflowEditorContent() {
       setHasChanges(true)
       setAddNodePopover(null)
     },
-    [nodes, setNodes, setEdges, addNodePopover, reactFlowInstance]
+    [nodes, setNodes, setEdges, addNodePopover, reactFlowInstance, t]
   )
+
+  // Handle node traces change from run drawer
+  const handleNodeTracesChange = React.useCallback((traces: Map<string, NodeTrace>) => {
+    setNodeTraces(traces)
+  }, [])
 
   // Handle node update from config drawer
   const handleNodeUpdate = React.useCallback((nodeId: string, data: Record<string, unknown>) => {
@@ -881,18 +930,24 @@ function WorkflowEditorContent() {
 
     try {
       setIsSaving(true)
-      
+
       // 提取开始节点的输入变量
       const variables = extractVariablesFromNodes()
-      
+
+      const newDefinition = {
+        nodes: nodes as never[],
+        edges: edges as never[],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      }
+
       await workflowsApi.updateWorkflow(workflowId, {
-        definition: {
-          nodes: nodes as never[],
-          edges: edges as never[],
-          viewport: { x: 0, y: 0, zoom: 1 },
-        },
+        definition: newDefinition,
         variables,
       })
+
+      // 同步更新本地 workflow 状态，使运行面板等组件能读到最新定义
+      setWorkflow(prev => prev ? { ...prev, definition: newDefinition, variables } : prev)
+
       setHasChanges(false)
       setLastSavedAt(new Date())
       toast.success(t('saved'))
@@ -944,17 +999,320 @@ function WorkflowEditorContent() {
     }
   }, [workflow, workflowId, nodes, edges, hasChanges, t, extractVariablesFromNodes])
 
+  // Add comment helper (shared by toolbar button and keyboard shortcut)
+  const handleAddComment = React.useCallback(() => {
+    if (!canUpdateWorkflow) return
+    const viewport = reactFlowInstance.getViewport()
+    const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom
+    const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom
+    const newNodeId = `comment-${Date.now()}`
+    const newNode: WorkflowNode = {
+      id: newNodeId,
+      type: 'comment',
+      position: { x: centerX - 120, y: centerY - 80 },
+      style: { width: 240, height: 160 },
+      zIndex: -1,
+      data: {
+        type: 'comment',
+        label: t('editor.comment'),
+        content: '',
+        author: currentUser?.username || '',
+        config: {},
+      },
+    }
+    setNodes((nds) => [...nds, newNode])
+    setHasChanges(true)
+  }, [canUpdateWorkflow, reactFlowInstance, t, currentUser, setNodes, setHasChanges])
+
+  // Auto layout helper (shared by toolbar button and keyboard shortcut)
+  const handleAutoLayout = React.useCallback(() => {
+    if (!canUpdateWorkflow || nodes.length === 0) return
+    const sortedNodes = [...nodes].sort((a, b) => a.position.x - b.position.x)
+    const startX = 100
+    const startY = 100
+    const gapX = 280
+    const gapY = 150
+    const updatedNodes = sortedNodes.map((node, index) => {
+      if (node.parentId) return node
+      return {
+        ...node,
+        position: {
+          x: startX + (index * gapX),
+          y: startY + (index % 2 === 0 ? 0 : gapY / 2),
+        },
+      }
+    })
+    setNodes(updatedNodes)
+    setHasChanges(true)
+    setTimeout(() => {
+      reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
+    }, 100)
+    toast.success(t('editor.nodesArranged'))
+  }, [canUpdateWorkflow, nodes, setNodes, setHasChanges, reactFlowInstance, t])
+
+  // Copy selected nodes
+  const handleCopyNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow) return
+
+    // Get selected nodes from ReactFlow
+    const selectedNodes = nodes.filter((n) => n.selected)
+    if (selectedNodes.length === 0) return
+
+    copiedNodesRef.current = selectedNodes.map((node) => ({ ...node }))
+    toast.success(t('editor.nodesCopied', { count: selectedNodes.length }))
+  }, [canUpdateWorkflow, nodes, t])
+
+  // Paste copied nodes
+  const handlePasteNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow || copiedNodesRef.current.length === 0) return
+
+    const copiedNodes = copiedNodesRef.current
+    const timestamp = Date.now()
+
+    // Create ID mapping for old -> new
+    const idMapping = new Map<string, string>()
+    copiedNodes.forEach((node) => {
+      idMapping.set(node.id, `${node.data.type}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`)
+    })
+
+    // Calculate offset for pasted nodes (slightly offset from original)
+    const offsetX = 20
+    const offsetY = 20
+
+    // First pass: create new nodes with new IDs
+    const newNodes: WorkflowNode[] = copiedNodes.map((node) => {
+      const newId = idMapping.get(node.id)!
+      const isContainerNode = node.type === 'iteration' || node.type === 'loop'
+
+      return {
+        ...node,
+        id: newId,
+        position: {
+          x: node.position.x + offsetX,
+          y: node.position.y + offsetY,
+        },
+        // Clear selection from original nodes, select new ones
+        selected: true,
+        // If it was a container node, we'll handle children separately
+        ...(isContainerNode && {
+          style: { width: 500, height: 280 },
+          width: 500,
+          height: 280,
+        }),
+      }
+    })
+
+    // Second pass: update labels to avoid duplicates and append -copy
+    const existingNodes = nodes
+    const finalNewNodes = newNodes.map((node, index) => {
+      const originalLabel = typeof node.data.label === 'string' ? node.data.label : ''
+      const copiedBaseLabel = originalLabel ? `${originalLabel}-copy` : getNodeLabel(node.data.type, t)
+      const existingLabels = [...existingNodes, ...newNodes.slice(0, index)].map((n) => n.data?.label || '')
+
+      let finalLabel = copiedBaseLabel
+      let counter = 1
+      while (existingLabels.includes(finalLabel)) {
+        finalLabel = `${copiedBaseLabel} ${counter}`
+        counter++
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          label: finalLabel,
+        },
+      }
+    })
+
+    // Handle child nodes for iteration/loop containers
+    const childNodes: WorkflowNode[] = []
+    copiedNodes.forEach((parentNode) => {
+      if (parentNode.type === 'iteration' || parentNode.type === 'loop') {
+        const newParentId = idMapping.get(parentNode.id)!
+        const isIteration = parentNode.type === 'iteration'
+
+        // Find child nodes of this container
+        const originalChildren = nodes.filter(
+          (n) => n.parentId === parentNode.id
+        )
+
+        originalChildren.forEach((child) => {
+          const newChildId = `${child.data.type}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`
+          idMapping.set(child.id, newChildId)
+
+          childNodes.push({
+            ...child,
+            id: newChildId,
+            parentId: newParentId,
+            position: { ...child.position },
+            selected: false,
+            data: {
+              ...child.data,
+              ...(isIteration
+                ? { parentIterationId: newParentId }
+                : { parentLoopId: newParentId }),
+            },
+          })
+        })
+      }
+    })
+
+    // Deselect all existing nodes first, then add new nodes
+    setNodes((nds) => [
+      ...nds.map((n) => ({ ...n, selected: false })),
+      ...finalNewNodes,
+      ...childNodes,
+    ])
+    setHasChanges(true)
+    toast.success(t('editor.nodesPasted', { count: finalNewNodes.length }))
+  }, [canUpdateWorkflow, copiedNodesRef, nodes, setNodes, setHasChanges, t])
+
+  // Delete selected nodes
+  const handleDeleteNodes = React.useCallback(() => {
+    if (!canUpdateWorkflow) return
+
+    const selectedNodes = nodes.filter((n) => n.selected)
+    if (selectedNodes.length === 0) return
+
+    // Check if trying to delete start node
+    const hasStartNode = selectedNodes.some((node) => {
+      const nodeType = node.type || (node.data as { type?: string })?.type
+      return nodeType === 'user_input' || nodeType === 'trigger' || nodeType === 'start'
+    })
+
+    if (hasStartNode) {
+      toast.error(t('editor.cannotDeleteStart'))
+    }
+
+    // Filter out selected nodes (except start nodes)
+    const nodesToDelete = selectedNodes.filter((node) => {
+      const nodeType = node.type || (node.data as { type?: string })?.type
+      return nodeType !== 'user_input' && nodeType !== 'trigger' && nodeType !== 'start'
+    })
+
+    if (nodesToDelete.length === 0) return
+
+    const nodeIdsToDelete = new Set(nodesToDelete.map((n) => n.id))
+
+    // Also delete child nodes of container nodes
+    const allNodeIdsToDelete = new Set(nodeIdsToDelete)
+    nodesToDelete.forEach((node) => {
+      if (node.type === 'iteration' || node.type === 'loop') {
+        nodes.forEach((n) => {
+          if (n.parentId === node.id) {
+            allNodeIdsToDelete.add(n.id)
+          }
+        })
+      }
+    })
+
+    // Remove nodes
+    setNodes((nds) => nds.filter((n) => !allNodeIdsToDelete.has(n.id)))
+
+    // Remove connected edges
+    setEdges((eds) =>
+      eds.filter(
+        (e) => !allNodeIdsToDelete.has(e.source) && !allNodeIdsToDelete.has(e.target)
+      )
+    )
+
+    setHasChanges(true)
+    setConfigDrawerOpen(false)
+    setSelectedNode(null)
+  }, [canUpdateWorkflow, nodes, setNodes, setEdges, setHasChanges, setConfigDrawerOpen, setSelectedNode, t])
+
+  React.useEffect(() => {
+    if (!selectedNode) return
+
+    const stillExists = nodes.some((node) => node.id === selectedNode.id)
+    if (!stillExists) {
+      setConfigDrawerOpen(false)
+      setSelectedNode(null)
+    }
+  }, [nodes, selectedNode])
+
   // Keyboard shortcuts
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Save: Cmd/Ctrl + S
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
       }
+      // Copy: Cmd/Ctrl + C
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        e.preventDefault()
+        handleCopyNodes()
+      }
+      // Paste: Cmd/Ctrl + V
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        e.preventDefault()
+        handlePasteNodes()
+      }
+      // Delete: Delete or Backspace key
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Don't intercept if user is typing in an input/textarea
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.contentEditable === 'true'
+        ) {
+          return
+        }
+        handleDeleteNodes()
+      }
+      // Cmd/Ctrl + 1~5: left toolbar shortcuts
+      if ((e.metaKey || e.ctrlKey) && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault()
+        switch (e.key) {
+          case '1': {
+            // Add node — open popover near the toolbar button
+            if (!canUpdateWorkflow) return
+            const btn = addNodeButtonRef.current
+            if (btn) {
+              const rect = btn.getBoundingClientRect()
+              setAddNodePopover({ show: true, position: { x: rect.right + 8, y: rect.top }, sourceNodeId: '' })
+            }
+            break
+          }
+          case '2':
+            handleAddComment()
+            break
+          case '3':
+            setEditorMode('pointer')
+            break
+          case '4':
+            setEditorMode('hand')
+            break
+          case '5':
+            handleAutoLayout()
+            break
+        }
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave])
+  }, [handleSave, canUpdateWorkflow, handleAddComment, handleAutoLayout, handleCopyNodes, handlePasteNodes, handleDeleteNodes])
 
   // 监听 ESC 退出页面全屏
   React.useEffect(() => {
@@ -1079,36 +1437,31 @@ function WorkflowEditorContent() {
                 variant="outline"
                 size="sm"
                 className="bg-card shadow-sm h-8"
-                onClick={() => {
-                  setConfigDrawerOpen(false)
-                  setSettingsDrawerOpen(false)
-                  setSelectedNode(null)
-                  setTestRunDrawerOpen(true)
-                }}
+                onClick={openRunDrawer}
               >
                 <Play className="h-4 w-4 mr-1" />
                 {t('run')}
               </Button>
               {/* Validation Checklist Button */}
               {canUpdateWorkflow && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="bg-card shadow-sm relative h-8 w-8"
-                  onClick={() => {
-                    // 执行校验
-                    const issues = validateWorkflow(nodes, edges)
-                    setValidationIssues(issues)
-                    setShowValidationChecklist(!showValidationChecklist)
-                  }}
-                >
-                  <ClipboardCheck className="h-4 w-4" />
-                  {validationIssues.length > 0 && (
-                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">
-                      {validationIssues.length > 9 ? '9+' : validationIssues.length}
-                    </span>
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="bg-card shadow-sm relative h-8 w-8"
+                      onClick={toggleValidationChecklist}
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      {validationIssues.length > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-medium">
+                          {validationIssues.length > 9 ? '9+' : validationIssues.length}
+                        </span>
+                      )}
+                    </Button>
+                  } />
+                  <TooltipContent>{t('checklist.title')}</TooltipContent>
+                </Tooltip>
               )}
               {canUpdateWorkflow && (
                 <Button
@@ -1145,18 +1498,34 @@ function WorkflowEditorContent() {
                 </Button>
               )}
               {canUpdateWorkflow && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="bg-card shadow-sm h-8 w-8"
-                  onClick={() => {
-                    setConfigDrawerOpen(false)
-                    setSelectedNode(null)
-                    setSettingsDrawerOpen(true)
-                  }}
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="bg-card shadow-sm h-8 w-8"
+                      onClick={() => setShowEmbed(true)}
+                    >
+                      <Code className="h-4 w-4" />
+                    </Button>
+                  } />
+                  <TooltipContent>{t('embed')}</TooltipContent>
+                </Tooltip>
+              )}
+              {canUpdateWorkflow && (
+                <Tooltip>
+                  <TooltipTrigger render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="bg-card shadow-sm h-8 w-8"
+                      onClick={openSettingsDrawer}
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  } />
+                  <TooltipContent>{t('settings.title')}</TooltipContent>
+                </Tooltip>
               )}
           </div>
         </div>
@@ -1167,133 +1536,89 @@ function WorkflowEditorContent() {
           <div className="flex flex-col items-center gap-0.5 bg-card border border-border rounded-lg p-1 shadow-sm">
             {canUpdateWorkflow && (
               <>
-                <button
-                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title={t('editor.addNode')}
-                  onClick={(e) => {
-                    // 获取按钮位置，在按钮右侧显示弹窗
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    setAddNodePopover({
-                      show: true,
-                      position: { x: rect.right + 8, y: rect.top },
-                      sourceNodeId: '',
-                    })
-                  }}
-                >
-                  <PlusCircle className="h-4 w-4 text-muted-foreground" />
-                </button>
-                <button
-                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title={t('editor.addComment')}
-                  onClick={() => {
-                    // 在视口中心位置添加注释节点
-                    const viewport = reactFlowInstance.getViewport()
-                    const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom
-                    const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom
-
-                    const newNodeId = `comment-${Date.now()}`
-                    const newNode: WorkflowNode = {
-                      id: newNodeId,
-                      type: 'comment',
-                      position: { x: centerX - 120, y: centerY - 80 },
-                      style: { width: 240, height: 160 },
-                      zIndex: -1, // 置于最底层
-                      data: {
-                        type: 'comment',
-                        label: t('editor.comment'),
-                        content: '',
-                        author: currentUser?.username || '',
-                        config: {},
-                      },
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        ref={addNodeButtonRef}
+                        type="button"
+                        className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setAddNodePopover({
+                            show: true,
+                            position: { x: rect.right + 8, y: rect.top },
+                            sourceNodeId: '',
+                          })
+                        }}
+                      >
+                        <PlusCircle className="h-4 w-4 text-muted-foreground" />
+                      </button>
                     }
-                    setNodes((nds) => [...nds, newNode])
-                    setHasChanges(true)
-                  }}
-                >
-                  <StickyNote className="h-4 w-4 text-muted-foreground" />
-                </button>
+                  />
+                  <TooltipContent side="right">{t('editor.addNode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}1</kbd></TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                    onClick={handleAddComment}
+                  >
+                    <StickyNote className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{t('editor.addComment')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}2</kbd></TooltipContent>
+                </Tooltip>
                 <div className="w-full h-px bg-border my-0.5" />
               </>
             )}
-            <button
-              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
-              }`}
-              title={t('editor.pointerMode')}
-              onClick={() => setEditorMode('pointer')}
-            >
-              <MousePointer2 className={`h-4 w-4 ${
-                editorMode === 'pointer' ? 'text-primary' : 'text-muted-foreground'
-              }`} />
-            </button>
-            <button
-              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
-              }`}
-              title={t('editor.editMode')}
-              onClick={() => setEditorMode('hand')}
-            >
-              <Hand className={`h-4 w-4 ${
-                editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
-              }`} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  editorMode === 'pointer' ? 'bg-accent' : 'hover:bg-accent'
+                }`}
+                onClick={() => setEditorMode('pointer')}
+              >
+                <MousePointer2 className={`h-4 w-4 ${
+                  editorMode === 'pointer' ? 'text-primary' : 'text-muted-foreground'
+                }`} />
+              </TooltipTrigger>
+              <TooltipContent side="right">{t('editor.pointerMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}3</kbd></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                  editorMode === 'hand' ? 'bg-accent' : 'hover:bg-accent'
+                }`}
+                onClick={() => setEditorMode('hand')}
+              >
+                <Hand className={`h-4 w-4 ${
+                  editorMode === 'hand' ? 'text-primary' : 'text-muted-foreground'
+                }`} />
+              </TooltipTrigger>
+              <TooltipContent side="right">{t('editor.editMode')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}4</kbd></TooltipContent>
+            </Tooltip>
             {canUpdateWorkflow && (
               <>
                 <div className="w-full h-px bg-border my-0.5" />
-                <button
-                  className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                  title={t('editor.autoLayout')}
-                  onClick={() => {
-                    // 自动整理节点布局
-                    if (nodes.length === 0) return
-
-                    // 简单的水平排列布局
-                    const sortedNodes = [...nodes].sort((a, b) => {
-                      // 根据节点位置排序，从左到右
-                      return a.position.x - b.position.x
-                    })
-
-                    const startX = 100
-                    const startY = 100
-                    const gapX = 280
-                    const gapY = 150
-
-                    // 按照连接关系分层
-                    const updatedNodes = sortedNodes.map((node, index) => {
-                      // 跳过子节点（它们相对于父节点定位）
-                      if (node.parentId) return node
-
-                      return {
-                        ...node,
-                        position: {
-                          x: startX + (index * gapX),
-                          y: startY + (index % 2 === 0 ? 0 : gapY / 2),
-                        },
-                      }
-                    })
-
-                    setNodes(updatedNodes)
-                    setHasChanges(true)
-
-                    // 自动适应视图
-                    setTimeout(() => {
-                      reactFlowInstance.fitView({ padding: 0.2, duration: 300 })
-                    }, 100)
-
-                    toast.success(t('editor.nodesArranged'))
-                  }}
-                >
-                  <Sparkles className="h-4 w-4 text-muted-foreground" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                    onClick={handleAutoLayout}
+                  >
+                    <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{t('editor.autoLayout')} <kbd className="ml-1 text-[10px] opacity-60">{modKey}5</kbd></TooltipContent>
+                </Tooltip>
               </>
             )}
-            <button
-              className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
-              title={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
-              onClick={() => setIsFullscreen(!isFullscreen)}
-            >
-              <Maximize className="h-4 w-4 text-muted-foreground" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger
+                className="p-1.5 rounded-md hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => setIsFullscreen(!isFullscreen)}
+              >
+                <Maximize className="h-4 w-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent side="right">{isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -1323,14 +1648,14 @@ function WorkflowEditorContent() {
             minZoom={0.15}
             maxZoom={2}
             elevateNodesOnSelect={false}
-            panOnScroll={editorMode === 'hand'}
+            panOnScroll
             panOnDrag={editorMode === 'hand'}
             selectionOnDrag={editorMode === 'pointer'}
             selectionMode={editorMode === 'pointer' ? SelectionMode.Partial : SelectionMode.Full}
             zoomOnScroll={false}
             zoomOnPinch
-            zoomActivationKeyCode="Meta"
-            panActivationKeyCode={null}
+            zoomActivationKeyCode={['Meta', 'Control']}
+            panActivationKeyCode={['Meta', 'Control']}
             deleteKeyCode={['Backspace', 'Delete']}
           >
             <Background variant={BackgroundVariant.Dots} gap={15} size={1} />
@@ -1358,6 +1683,7 @@ function WorkflowEditorContent() {
             }}
             onUpdate={handleNodeUpdate}
             readOnly={!canUpdateWorkflow}
+            lastRunTrace={selectedNode ? (nodeTraces.get(selectedNode.id) ?? null) : null}
           />
 
           {/* Workflow Settings Panel - floating inside canvas */}
@@ -1375,6 +1701,7 @@ function WorkflowEditorContent() {
             variables={workflow?.variables as VariableDefinition[] || []}
             open={testRunDrawerOpen}
             onClose={() => setTestRunDrawerOpen(false)}
+            onNodeTracesChange={handleNodeTracesChange}
           />
         </div>
       </div>
@@ -1402,8 +1729,7 @@ function WorkflowEditorContent() {
               // 选中并聚焦到指定节点
               const targetNode = nodes.find(n => n.id === nodeId)
               if (targetNode) {
-                setSelectedNode(targetNode)
-                setConfigDrawerOpen(true)
+                openNodeConfig(targetNode)
                 setShowValidationChecklist(false)
                 
                 // 移动视图到节点位置
@@ -1438,6 +1764,16 @@ function WorkflowEditorContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Embed Config Dialog */}
+      {workflow && (
+        <EmbedConfigDialog
+          open={showEmbed}
+          onOpenChange={setShowEmbed}
+          workflow={workflow}
+          onUpdate={(updated) => setWorkflow(updated as Workflow)}
+        />
+      )}
     </div>
   )
 }

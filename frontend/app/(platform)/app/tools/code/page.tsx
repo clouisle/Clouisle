@@ -110,7 +110,7 @@ export default function CodeToolPage() {
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('📜')
+  const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('code')
   const [isEnabled, setIsEnabled] = useState(true)
 
@@ -146,7 +146,7 @@ export default function CodeToolPage() {
       setName(tool.name)
       setDisplayName(tool.display_name)
       setDescription(tool.description)
-      setIcon(tool.icon || '📜')
+      setIcon(tool.icon || '')
       setCategory(tool.category || 'code')
       setIsEnabled(tool.is_enabled)
 
@@ -168,7 +168,7 @@ export default function CodeToolPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [t, router])
+  }, [router])
 
   useEffect(() => {
     if (toolId) {
@@ -474,7 +474,7 @@ export default function CodeToolPage() {
                       category="icons"
                       placeholder={
                         <span className="text-xl">
-                          {icon.startsWith('http') ? '📜' : icon}
+                          {icon.startsWith('http') ? '' : icon}
                         </span>
                       }
                     />

@@ -47,7 +47,7 @@ import type { ProviderInfo, ModelTypeInfo } from '@/lib/api/models'
 
 // 供应商分组
 const PROVIDER_GROUPS = {
-  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai'],
+  international: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'runway', 'luma', 'stability'],
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
   other: ['ollama', 'custom'],
 }
@@ -55,7 +55,9 @@ const PROVIDER_GROUPS = {
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
+  rerank: ['rerank'],
   image: ['text_to_image'],
+  video: ['text_to_video'],
   audio: ['tts', 'stt'],
 }
 
@@ -70,6 +72,10 @@ function getModelCategory(modelType: string): keyof typeof MODEL_CATEGORIES | nu
 
 function isChatOnly(modelType: string): boolean {
   return modelType === 'chat'
+}
+
+function requiresApiKey(provider: string): boolean {
+  return provider !== 'ollama'
 }
 
 // 分隔线组件 - 移到组件外部避免重新创建
@@ -141,6 +147,10 @@ export function ModelDialog({
   const [defaultImageSize, setDefaultImageSize] = React.useState('')
   const [defaultImageStyle, setDefaultImageStyle] = React.useState('')
   const [defaultImageQuality, setDefaultImageQuality] = React.useState('')
+
+  // 视频生成参数
+  const [defaultVideoDuration, setDefaultVideoDuration] = React.useState('')
+  const [defaultVideoAspectRatio, setDefaultVideoAspectRatio] = React.useState('')
   
   // 音频参数
   const [defaultVoice, setDefaultVoice] = React.useState('')
@@ -191,6 +201,8 @@ export function ModelDialog({
       setDefaultImageSize((params.size as string) || '')
       setDefaultImageStyle((params.style as string) || '')
       setDefaultImageQuality((params.quality as string) || '')
+      setDefaultVideoDuration((params.duration as number)?.toString() || '')
+      setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
       setDefaultVoice((params.voice as string) || '')
       setDefaultSpeed((params.speed as number)?.toString() || '')
       
@@ -244,6 +256,8 @@ export function ModelDialog({
       setDefaultImageSize('')
       setDefaultImageStyle('')
       setDefaultImageQuality('')
+      setDefaultVideoDuration('')
+      setDefaultVideoAspectRatio('')
       setDefaultVoice('')
       setDefaultSpeed('')
       setApiVersion('')
@@ -264,7 +278,12 @@ export function ModelDialog({
   // 测试模型配置
   const handleTestConnection = async () => {
     // 验证必填字段
-    if (!provider || !modelId.trim() || !modelType || !apiKey.trim()) {
+    if (
+      !provider ||
+      !modelId.trim() ||
+      !modelType ||
+      (requiresApiKey(provider) && !apiKey.trim())
+    ) {
       toast.error(t('fillRequiredFieldsFirst'))
       return
     }
@@ -282,7 +301,7 @@ export function ModelDialog({
         model_id: modelId.trim(),
         model_type: modelType,
         base_url: baseUrl.trim() || null,
-        api_key: apiKey,
+        api_key: apiKey || null,
         config: Object.keys(config).length > 0 ? config : null,
       })
       
@@ -332,7 +351,9 @@ export function ModelDialog({
     
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'azure_openai', 'custom'],
+      rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
+      image: ['openai', 'google', 'azure_openai', 'custom', 'runway', 'luma', 'stability'],
+      video: ['runway', 'luma'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
     
@@ -363,7 +384,9 @@ export function ModelDialog({
     if (!provider) newErrors.provider = t('providerRequired')
     if (!modelId.trim()) newErrors.modelId = t('modelIdRequired')
     if (!modelType) newErrors.modelType = t('modelTypeRequired')
-    if (!isEditing && !apiKey.trim()) newErrors.apiKey = t('apiKeyRequired')
+    if (!isEditing && requiresApiKey(provider) && !apiKey.trim()) {
+      newErrors.apiKey = t('apiKeyRequired')
+    }
     
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
@@ -386,6 +409,9 @@ export function ModelDialog({
         if (defaultImageSize) defaultParams.size = defaultImageSize
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+      } else if (category === 'video') {
+        if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
+        if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
       } else if (category === 'audio') {
         if (defaultVoice) defaultParams.voice = defaultVoice
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
@@ -676,7 +702,9 @@ export function ModelDialog({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="apiKey">{t('apiKey')} {!isEditing && '*'}</Label>
+            <Label htmlFor="apiKey">
+              {t('apiKey')} {!isEditing && requiresApiKey(provider) && '*'}
+            </Label>
             <div className="relative">
               <Input
                 id="apiKey"
@@ -705,13 +733,19 @@ export function ModelDialog({
         
         {/* 测试连接按钮和结果 */}
         <div className="flex items-center gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleTestConnection}
-            disabled={isTesting || !provider || !modelId || !modelType || !apiKey}
-          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={
+                isTesting ||
+                !provider ||
+                !modelId ||
+                !modelType ||
+                (requiresApiKey(provider) && !apiKey)
+              }
+            >
             {isTesting ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -802,6 +836,55 @@ export function ModelDialog({
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
                   <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
                   <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 视频生成参数 */}
+      {category === 'video' && (
+        <div className="space-y-4">
+          <SectionTitle>{t('videoSettings')}</SectionTitle>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="videoDuration">{t('defaultVideoDuration')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="videoDuration"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="30"
+                  value={defaultVideoDuration}
+                  onChange={(e) => setDefaultVideoDuration(e.target.value)}
+                  placeholder="5"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  {t('videoDurationUnit')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t('defaultVideoAspectRatio')}</Label>
+              <Select
+                value={defaultVideoAspectRatio}
+                onValueChange={(v) => v && setDefaultVideoAspectRatio(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {defaultVideoAspectRatio || t('selectAspectRatio')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" alignItemWithTrigger={false}>
+                  <SelectItem value="16:9">16:9</SelectItem>
+                  <SelectItem value="9:16">9:16</SelectItem>
+                  <SelectItem value="1:1">1:1</SelectItem>
+                  <SelectItem value="4:3">4:3</SelectItem>
+                  <SelectItem value="3:4">3:4</SelectItem>
+                  <SelectItem value="21:9">21:9</SelectItem>
                 </SelectContent>
               </Select>
             </div>

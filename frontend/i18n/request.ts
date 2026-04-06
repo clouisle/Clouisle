@@ -34,6 +34,7 @@ async function loadMessages(locale: Locale) {
     'notifications',
     'run',
     'memories',
+    'embed',
   ]
 
   const messages: Record<string, unknown> = {}

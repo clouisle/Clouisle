@@ -20,9 +20,15 @@ class PermissionCreate(PermissionBase):
 
 class Permission(PermissionBase):
     id: UUID
+    is_system: bool = True
 
     class Config:
         from_attributes = True
+
+
+class PermissionScopeOption(BaseModel):
+    value: str
+    label: str
 
 
 # Role Schemas
@@ -49,6 +55,7 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     is_active: Optional[bool] = True
+    approval_status: Optional[str] = "approved"
     is_superuser: Optional[bool] = False
     avatar_url: Optional[str] = None
     locale: Optional[str] = "en"
@@ -75,12 +82,15 @@ class UserInDBBase(UserBase):
     external_id: Optional[str] = None
     email_verified: bool = False
     locale: str = "en"
+    force_password_change: bool = False
+    password_expiration_exempt: bool = False
 
     class Config:
         from_attributes = True
 
 
 class User(UserInDBBase):
+    status: str = "active"
     roles: List[Role] = []
     sso_connections: List[UserSSOConnectionSchema] = []
 
@@ -97,6 +107,7 @@ class User(UserInDBBase):
                 "username": obj.username,
                 "email": obj.email,
                 "is_active": obj.is_active,
+                "approval_status": getattr(obj, "approval_status", "approved"),
                 "is_superuser": obj.is_superuser,
                 "email_verified": obj.email_verified,
                 "avatar_url": obj.avatar_url,
@@ -105,6 +116,10 @@ class User(UserInDBBase):
                 "last_login": obj.last_login,
                 "auth_source": obj.auth_source,
                 "external_id": obj.external_id,
+                "force_password_change": getattr(obj, "force_password_change", False),
+                "password_expiration_exempt": getattr(
+                    obj, "password_expiration_exempt", False
+                ),
                 "roles": obj.roles if hasattr(obj, "roles") else [],
                 "sso_connections": [],  # Always empty, will be populated separately
             }

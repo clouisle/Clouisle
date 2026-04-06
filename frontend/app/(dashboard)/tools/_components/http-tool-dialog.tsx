@@ -60,7 +60,7 @@ export function HttpToolDialog({
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('🔗')
+  const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('api')
   const [isEnabled, setIsEnabled] = useState(true)
 
@@ -85,7 +85,7 @@ export function HttpToolDialog({
         setName(tool.name)
         setDisplayName(tool.display_name)
         setDescription(tool.description)
-        setIcon(tool.icon || '🔗')
+        setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
 
@@ -110,7 +110,7 @@ export function HttpToolDialog({
         setName('')
         setDisplayName('')
         setDescription('')
-        setIcon('🔗')
+        setIcon('')
         setCategory('api')
         setIsEnabled(true)
         setMethod('GET')

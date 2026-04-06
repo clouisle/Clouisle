@@ -47,7 +47,14 @@ def create_chat_model(model_config: Model | ModelConfig) -> BaseChatModel:
 
     # 从 config 获取额外配置
     config = model_config.config or {}
-    max_output = config.get("max_tokens")
+    # max_output_tokens: 优先 ORM 独立字段 > default_params > config
+    max_output = getattr(model_config, "max_output_tokens", None)
+    if max_output is None:
+        max_output = params.get("max_tokens")
+    if max_output is None:
+        max_output = config.get("max_tokens")
+    if max_output is not None:
+        max_output = int(max_output)
     timeout = config.get("timeout", 60)
 
     if provider == ModelProvider.OPENAI:

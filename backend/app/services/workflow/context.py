@@ -8,16 +8,23 @@ Manages state during workflow execution using Redis for distributed access:
 - Stream events (Pub/Sub)
 """
 
+import asyncio
 import json
 import re
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)
+
+
+async def _resolve_redis_result(result: Any) -> Any:
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
 
 
 class ExecutionContext:
@@ -79,23 +86,25 @@ class ExecutionContext:
             "user_id": str(user_id) if user_id else None,
             "workflow_id": str(workflow_id),
             "workflow_run_id": str(run_id),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": int(datetime.utcnow().timestamp()),
         }
 
         # Store metadata
         meta_key = cls.META_KEY.format(run_id=ctx.run_id)
-        await redis_client.hset(
-            meta_key,
-            mapping={
-                "workflow_id": str(workflow_id),
-                "user_id": str(user_id) if user_id else "",
-                "created_at": datetime.utcnow().isoformat(),
-            },
+        await _resolve_redis_result(
+            redis_client.hset(
+                meta_key,
+                mapping={
+                    "workflow_id": str(workflow_id),
+                    "user_id": str(user_id) if user_id else "",
+                    "created_at": datetime.utcnow().isoformat(),
+                },
+            )
         )
 
         # Set initial status
         status_key = cls.STATUS_KEY.format(run_id=ctx.run_id)
-        await redis_client.set(status_key, "pending")
+        await _resolve_redis_result(redis_client.set(status_key, "pending"))
 
         # Set TTL on all keys
         await ctx.set_ttl(ttl)
@@ -119,14 +128,16 @@ class ExecutionContext:
 
         # Load system variables from metadata
         meta_key = cls.META_KEY.format(run_id=ctx.run_id)
-        meta = await redis_client.hgetall(meta_key)
+        meta = cast(
+            dict[str, Any], await _resolve_redis_result(redis_client.hgetall(meta_key))
+        )
 
         if meta:
             ctx._system_variables = {
                 "user_id": meta.get("user_id") or None,
                 "workflow_id": meta.get("workflow_id", ""),
                 "workflow_run_id": str(run_id),
-                "timestamp": meta.get("created_at", datetime.utcnow().isoformat()),
+                "timestamp": int(datetime.utcnow().timestamp()),
             }
 
         return ctx
@@ -155,18 +166,22 @@ class ExecutionContext:
     async def set_variable(self, name: str, value: Any):
         """Set a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
-        await self.redis.hset(key, name, json.dumps(value, ensure_ascii=False))
+        await _resolve_redis_result(
+            self.redis.hset(key, name, json.dumps(value, ensure_ascii=False))
+        )
 
     async def get_variable(self, name: str) -> Any:
         """Get a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
-        value = await self.redis.hget(key, name)
+        value = await _resolve_redis_result(self.redis.hget(key, name))
         return json.loads(value) if value else None
 
     async def get_all_variables(self) -> dict[str, Any]:
         """Get all global variables."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
-        data = await self.redis.hgetall(key)
+        data = cast(
+            dict[str, str], await _resolve_redis_result(self.redis.hgetall(key))
+        )
         return {k: json.loads(v) for k, v in data.items()}
 
     # ==================== Node Output Management ====================
@@ -194,8 +209,10 @@ class ExecutionContext:
 
         # Store serializable outputs in Redis
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
-        await self.redis.hset(
-            key, node_id, json.dumps(serializable_outputs, ensure_ascii=False)
+        await _resolve_redis_result(
+            self.redis.hset(
+                key, node_id, json.dumps(serializable_outputs, ensure_ascii=False)
+            )
         )
 
         # Store lazy outputs in memory
@@ -215,7 +232,7 @@ class ExecutionContext:
             Output variables dictionary or None if not found
         """
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
-        value = await self.redis.hget(key, node_id)
+        value = await _resolve_redis_result(self.redis.hget(key, node_id))
         if not value:
             return None
 
@@ -231,7 +248,9 @@ class ExecutionContext:
     async def get_all_node_outputs(self) -> dict[str, dict[str, Any]]:
         """Get all node outputs."""
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
-        data = await self.redis.hgetall(key)
+        data = cast(
+            dict[str, str], await _resolve_redis_result(self.redis.hgetall(key))
+        )
         return {k: json.loads(v) for k, v in data.items()}
 
     # ==================== Variable Resolution ====================
@@ -307,6 +326,14 @@ class ExecutionContext:
 
         if len(parts) == 1:
             var_name = parts[0]
+
+            # Check for sys_ prefixed system variables (e.g. sys_user_id)
+            if var_name.startswith("sys_"):
+                sys_key = var_name[4:]  # Strip "sys_" prefix
+                sys_value = self._get_system_variable(sys_key)
+                if sys_value is not None:
+                    return sys_value
+
             # Single part - could be:
             # 1. A node ID returning all outputs
             # 2. An input variable name (no node prefix)
@@ -350,6 +377,11 @@ class ExecutionContext:
                 result = await value.execute(stream_to_node_id)
                 # Update the stored value with the actual result
                 outputs[var_name] = result
+                # Also update reasoning and usage if they were captured
+                if value.reasoning is not None:
+                    outputs["reasoning"] = value.reasoning
+                if value.usage is not None:
+                    outputs["usage"] = value.usage
                 await self.set_node_outputs(source, outputs)
                 return result
 
@@ -394,7 +426,7 @@ class ExecutionContext:
             handles: List of active source handle IDs
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        await self.redis.hset(key, node_id, json.dumps(handles))
+        await _resolve_redis_result(self.redis.hset(key, node_id, json.dumps(handles)))
 
     async def get_active_branches(self, node_id: str) -> list[str] | None:
         """
@@ -407,7 +439,7 @@ class ExecutionContext:
             List of active handle IDs or None
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        value = await self.redis.hget(key, node_id)
+        value = await _resolve_redis_result(self.redis.hget(key, node_id))
         return json.loads(value) if value else None
 
     async def should_execute_node(
@@ -434,6 +466,8 @@ class ExecutionContext:
             source_handle = edge.get("sourceHandle")
 
             # Check if source node has active branches
+            if not isinstance(source_node, str):
+                continue
             active_branches = await self.get_active_branches(source_node)
 
             if active_branches is None:
@@ -452,12 +486,12 @@ class ExecutionContext:
     async def set_status(self, status: str):
         """Set run status."""
         key = self.STATUS_KEY.format(run_id=self.run_id)
-        await self.redis.set(key, status)
+        await _resolve_redis_result(self.redis.set(key, status))
 
     async def get_status(self) -> str | None:
         """Get run status."""
         key = self.STATUS_KEY.format(run_id=self.run_id)
-        return await self.redis.get(key)
+        return cast(str | None, await _resolve_redis_result(self.redis.get(key)))
 
     # ==================== Stream Publishing ====================
 
@@ -469,7 +503,9 @@ class ExecutionContext:
             event_data: Event data dictionary
         """
         key = self.STREAM_KEY.format(run_id=self.run_id)
-        await self.redis.publish(key, json.dumps(event_data, ensure_ascii=False))
+        await _resolve_redis_result(
+            self.redis.publish(key, json.dumps(event_data, ensure_ascii=False))
+        )
 
     def get_stream_channel(self) -> str:
         """Get the Redis Pub/Sub channel name for this run."""
@@ -494,7 +530,7 @@ class ExecutionContext:
 
         for pattern in key_patterns:
             key = pattern.format(run_id=self.run_id)
-            await self.redis.expire(key, seconds)
+            await _resolve_redis_result(self.redis.expire(key, seconds))
 
     async def cleanup(self):
         """Remove all context data immediately."""
@@ -508,4 +544,4 @@ class ExecutionContext:
 
         for pattern in key_patterns:
             key = pattern.format(run_id=self.run_id)
-            await self.redis.delete(key)
+            await _resolve_redis_result(self.redis.delete(key))

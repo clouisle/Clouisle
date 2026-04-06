@@ -9,20 +9,25 @@ This document describes the permission system design of the Clouisle platform, i
 | Permission | Description | Purpose |
 |------------|-------------|---------|
 | `*` | Super permission | Only Super Admin role has this, bypasses all permission checks |
-| `dashboard:access` | Dashboard access | Controls access to admin dashboard, key permission distinguishing "admin" from "regular user" |
+| `admin:dashboard:access` | Dashboard access | Controls access to admin dashboard, key permission distinguishing "admin" from "regular user" |
 
-### 1.2 Dashboard Management Permissions (requires `dashboard:access`)
+### 1.2 Dashboard Management Permissions (requires `admin:dashboard:access`)
 
 These permissions are for dashboard management functions, typically only admin roles have them:
 
 | Permission | Description |
 |------------|-------------|
-| `user:read/create/update/delete` | User management |
-| `role:read/create/update/delete` | Role management |
-| `permission:read` | View permission list |
-| `model:read/create/update/delete` | Model management |
-| `settings:read` | View site settings |
-| `settings:update` | Modify site settings |
+| `admin:user:read/create/update/delete` | User management |
+| `admin:role:read/create/update/delete` | Role management |
+| `admin:permission:read` | View permission list |
+| `admin:model:read/create/update/delete` | Model management |
+| `admin:memory:read` | View memory records |
+| `admin:conversation:read/delete` | Dashboard conversation management |
+| `admin:notification:create/delete` | Dashboard notification management |
+| `admin:settings:read` | View site settings |
+| `admin:settings:update` | Modify site settings |
+| `admin:sso:read` | View SSO providers and configuration |
+| `admin:sso:update` | Manage SSO providers and user SSO connections |
 | `audit:read` | View audit logs |
 | `audit:export` | Export audit logs |
 
@@ -49,34 +54,46 @@ These permissions are for managing business resources. All users may have them, 
 | Role | Description | Key Permissions |
 |------|-------------|-----------------|
 | **Super Admin** | Super administrator | `*` (all permissions) |
-| **Admin** | Administrator | `dashboard:access` + dashboard management + resource permissions |
-| **Member** | Member | Resource permissions (no dashboard access) |
-| **Viewer** | Viewer | Read-only + execute permissions (no dashboard access) |
+| **Admin** | Dashboard administrator | `admin:dashboard:access` + system read visibility + team-scoped resource management |
+| **Member** | Collaborative member | Daily resource creation and editing without dashboard access |
+| **Viewer** | Default read-only user | Read/chat/run/execute permissions without dashboard access |
 
 ### 2.2 Role Permission Comparison
 
 | Permission | Super Admin | Admin | Member | Viewer |
 |------------|:-----------:|:-----:|:------:|:------:|
 | `*` | ✓ | | | |
-| `dashboard:access` | ✓ | ✓ | | |
-| `user:*` | ✓ | ✓ | | |
-| `role:*` | ✓ | ✓ | | |
-| `model:*` | ✓ | ✓ | | |
-| `settings:read` | ✓ | ✓ | | |
-| `settings:update` | ✓ | | | |
-| `audit:*` | ✓ | ✓ | | |
+| `admin:dashboard:access` | ✓ | ✓ | | |
+| `admin:user:*` | ✓ | ✓ | | |
+| `admin:role:read` | ✓ | ✓ | | |
+| `admin:role:create/update/delete` | ✓ | | | |
+| `admin:permission:read` | ✓ | ✓ | | |
+| `admin:permission:create/update/delete` | ✓ | | | |
+| `admin:model:*` | ✓ | ✓ | | |
+| `admin:memory:read` | ✓ | ✓ | | |
+| `admin:conversation:read/delete` | ✓ | ✓ | | |
+| `admin:notification:create/delete` | ✓ | ✓ | | |
+| `admin:settings:read` | ✓ | ✓ | | |
+| `admin:settings:update` | ✓ | | | |
+| `admin:sso:read` | ✓ | ✓ | | |
+| `admin:sso:update` | ✓ | | | |
+| `audit:read` | ✓ | ✓ | | |
+| `audit:export` | ✓ | ✓ | | |
 | `team:read` | ✓ | ✓ | ✓ | ✓ |
-| `team:create/update/manage` | ✓ | ✓ | ✓ | |
+| `team:create/update/manage` | ✓ | ✓ | | |
 | `team:delete` | ✓ | ✓ | | |
 | `agent:read/chat` | ✓ | ✓ | ✓ | ✓ |
-| `agent:create/update/delete/publish` | ✓ | ✓ | ✓ | |
+| `agent:create/update` | ✓ | ✓ | ✓ | |
+| `agent:delete/publish` | ✓ | ✓ | | |
 | `workflow:read/run` | ✓ | ✓ | ✓ | ✓ |
-| `workflow:create/update/delete/publish` | ✓ | ✓ | ✓ | |
+| `workflow:create/update` | ✓ | ✓ | ✓ | |
+| `workflow:delete/publish` | ✓ | ✓ | | |
 | `kb:read` | ✓ | ✓ | ✓ | ✓ |
-| `kb:create/update/delete` | ✓ | ✓ | ✓ | |
+| `kb:create/update` | ✓ | ✓ | ✓ | |
+| `kb:delete` | ✓ | ✓ | | |
 | `tool:read/execute` | ✓ | ✓ | ✓ | ✓ |
-| `tool:create/update/delete` | ✓ | ✓ | ✓ | |
-| `apikey:read` | ✓ | ✓ | ✓ | ✓ |
+| `tool:create/update/delete` | ✓ | ✓ | | |
+| `apikey:read` | ✓ | ✓ | ✓ | |
 | `apikey:create/update/delete` | ✓ | ✓ | ✓ | |
 | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
 | `conversation:delete` | ✓ | ✓ | ✓ | |
@@ -91,17 +108,17 @@ These permissions are for managing business resources. All users may have them, 
 - **Admin**: Team-level isolation, can access all data of their teams
 - **Member/Viewer**: Team-level isolation + user-level isolation (for conversation data)
 
-### 3.2 Impact of `dashboard:access` Permission
+### 3.2 Impact of `admin:dashboard:access` Permission
 
-`dashboard:access` is the key permission distinguishing "admin view" from "user view":
+`admin:dashboard:access` is the key permission distinguishing "admin view" from "user view":
 
-| Data Type | With `dashboard:access` | Without `dashboard:access` |
+| Data Type | With `admin:dashboard:access` | Without `admin:dashboard:access` |
 |-----------|------------------------|---------------------------|
-| User list | Visible (requires `user:read`) | Not visible |
-| Role list | Visible (requires `role:read`) | Not visible |
-| Model list | Visible (requires `model:read`) | Not visible |
+| User list | Visible (requires `admin:user:read`) | Not visible |
+| Role list | Visible (requires `admin:role:read`) | Not visible |
+| Model list | Visible (requires `admin:model:read`) | Not visible |
 | Audit logs | Visible (requires `audit:read`) | Not visible |
-| Site settings | Visible (requires `settings:read`) | Not visible |
+| Site settings | Visible (requires `admin:settings:read`) | Not visible |
 | **Conversation list** | **All users' conversations in team** | **Only own conversations** |
 | **Conversation stats** | **Stats for all team conversations** | **Stats for own conversations only** |
 
@@ -113,12 +130,12 @@ Conversation data has finer-grained isolation:
 Super Admin
 └── Can view all conversations
 
-Admin (has dashboard:access)
+Admin (has admin:dashboard:access)
 └── Can view all users' conversations in their teams
     └── All conversations in Team A
     └── All conversations in Team B (if member)
 
-Member / Viewer (no dashboard:access)
+Member / Viewer (no admin:dashboard:access)
 └── Can only view own conversations
     └── Own conversations created in Team A
     └── Own conversations created in Team B
@@ -141,7 +158,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 
 ### 4.1 Scenario: Regular User Viewing Activity Logs
 
-**User Role**: Member (no `dashboard:access`)
+**User Role**: Member or Viewer (no `admin:dashboard:access`)
 
 **Visible Data**:
 - ✓ Own created conversations
@@ -151,7 +168,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 
 ### 4.2 Scenario: Admin Viewing Activity Logs
 
-**User Role**: Admin (has `dashboard:access`)
+**User Role**: Admin (has `admin:dashboard:access`)
 
 **Visible Data**:
 - ✓ All users' conversations in team
@@ -161,7 +178,7 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 
 ### 4.3 Scenario: Read-Only User
 
-**User Role**: Viewer
+**User Role**: Viewer (default role)
 
 **Allowed Operations**:
 - ✓ View team resources (Agent, Workflow, Knowledge Base, etc.)
@@ -173,11 +190,25 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 
 ### 4.4 Scenario: Site Settings Management
 
-| Role | `settings:read` | `settings:update` | Allowed Operations |
+| Role | `admin:settings:read` | `admin:settings:update` | Allowed Operations |
 |------|:---------------:|:-----------------:|-------------------|
 | Super Admin | ✓ | ✓ | View and modify all settings |
 | Admin | ✓ | ✗ | View settings only |
 | Member | ✗ | ✗ | No access |
+
+### 4.5 Scenario: SSO Management
+
+| Role | `admin:sso:read` | `admin:sso:update` | Allowed Operations |
+|------|:----------------:|:------------------:|-------------------|
+| Super Admin | ✓ | ✓ | View and manage all SSO providers and disconnect SSO connections |
+| Admin | ✓ | ✗ | View SSO configuration only |
+| Member | ✗ | ✗ | No access |
+
+### 4.6 Scenario: Audit Log Archiving
+
+- Editing storage settings requires `admin:settings:update`
+- Archiving audit logs requires `audit:export`
+- These two capabilities are independent and should not share a single frontend gate
 
 ---
 
@@ -187,23 +218,23 @@ For resources other than conversations (Agent, Workflow, Knowledge Base, etc.):
 
 | Menu Item | Required Permission | Super Admin | Admin | Member | Viewer |
 |-----------|---------------------|:-----------:|:-----:|:------:|:------:|
-| Dashboard | `dashboard:access` | ✓ | ✓ | | |
+| Dashboard | `admin:dashboard:access` | ✓ | ✓ | | |
 | Teams | `team:read` | ✓ | ✓ | ✓ | ✓ |
 | Knowledge Bases | `kb:read` | ✓ | ✓ | ✓ | ✓ |
 | Activities | `conversation:read` | ✓ | ✓ | ✓ | ✓ |
-| Users | `user:read` | ✓ | ✓ | | |
-| Roles | `role:read` | ✓ | ✓ | | |
-| Permissions | `permission:read` | ✓ | ✓ | | |
-| API Keys | `apikey:read` | ✓ | ✓ | ✓ | ✓ |
-| Models | `model:read` | ✓ | ✓ | | |
+| Users | `admin:user:read` | ✓ | ✓ | | |
+| Roles | `admin:role:read` | ✓ | ✓ | | |
+| Permissions | `admin:permission:read` | ✓ | ✓ | | |
+| API Keys | `apikey:read` | ✓ | ✓ | ✓ | |
+| Models | `admin:model:read` | ✓ | ✓ | | |
 | Tools | `tool:read` | ✓ | ✓ | ✓ | ✓ |
-| Notifications | `dashboard:access` | ✓ | ✓ | | |
+| Notifications | `admin:dashboard:access` | ✓ | ✓ | | |
 | Audit Logs | `audit:read` | ✓ | ✓ | | |
-| Site Settings | `settings:read` | ✓ | ✓ | | |
+| Site Settings | `admin:settings:read` | ✓ | ✓ | | |
 
 ### 5.2 Management Menu Group Visibility
 
-The "Management" menu group (including Users, Roles, Permissions, Models, Audit Logs, etc.) is only visible when the user has `dashboard:access` permission.
+The "Management" menu group (including Users, Roles, Permissions, Models, Audit Logs, etc.) is only visible when the user has `admin:dashboard:access` permission.
 
 ---
 
@@ -213,7 +244,7 @@ The "Management" menu group (including Users, Roles, Permissions, Models, Audit 
 
 ```python
 # Method 1: Single permission check
-current_user: User = Depends(PermissionChecker("user:read"))
+current_user: User = Depends(PermissionChecker("admin:user:read"))
 
 # Method 2: Super admin only (deprecated, use permission check instead)
 # current_user: User = Depends(get_current_active_superuser)
@@ -227,7 +258,7 @@ has_dashboard_access = current_user.is_superuser
 if not has_dashboard_access:
     for role in current_user.roles:
         for perm in role.permissions:
-            if perm.code == "dashboard:access" or perm.code == "*":
+            if perm.code == "admin:dashboard:access" or perm.code == "*":
                 has_dashboard_access = True
                 break
 
@@ -252,9 +283,9 @@ else:
 | User Type | Recommended Role | Description |
 |-----------|------------------|-------------|
 | System Administrator | Super Admin | Responsible for system configuration, user management |
-| Department Manager | Admin | Responsible for department user and resource management |
-| Developer | Member | Create and manage Agents, workflows, etc. |
-| Business User | Viewer | Use Agents and workflows, no creation needed |
+| Department Manager | Admin | View dashboard data and manage team resources without changing the permission system |
+| Developer | Member | Create and edit day-to-day resources without dashboard access |
+| Business User | Viewer | Default read-only access for using agents and workflows |
 
 ### 7.2 Custom Roles
 
@@ -273,5 +304,5 @@ You can create custom roles based on business needs, for example:
 ### 7.3 Principle of Least Privilege
 
 - Only grant users the minimum permissions needed to complete their work
-- Avoid assigning `dashboard:access` permission to regular users
-- `settings:update` permission should be limited to system administrators only
+- Avoid assigning `admin:dashboard:access` permission to regular users
+- `admin:settings:update` permission should be limited to system administrators only

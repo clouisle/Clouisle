@@ -3,10 +3,15 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
 import { ImageLightbox, useLightbox } from './image-lightbox'
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
@@ -33,7 +38,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart } from './types'
+import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -45,11 +50,20 @@ import {
   isSourceDocumentPart,
   isFilePart,
   isImagePart,
+  isMediaResultPart,
   isTaskPart,
   isUserInputRequestPart,
+  isTruncatedPart,
 } from './types'
 import { SourceContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
+import {
+  getImageAssetUrl,
+  getVideoAssetUrl,
+  isMediaImageToolResult,
+  isMediaVideoToolResult,
+  parseToolResultOutput,
+} from '@/lib/utils/tool-result'
 
 export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
@@ -98,6 +112,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Image lightbox state
     const { isOpen: lightboxOpen, imageSrc, imageAlt, openLightbox, closeLightbox } = useLightbox()
 
+    // Token usage and timing stats from message_end
+    const usage = message.metadata?.usage as { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined
+    const timing = message.metadata?.timing as { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null } | undefined
+
     // Group sources together (only document sources for citations)
     const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
     const documentSources = message.parts.filter(isSourceDocumentPart) as SourceDocumentPart[]
@@ -126,6 +144,79 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
     }, [getTextContent])
 
+    const renderToolResultContent = (output: unknown, isError?: boolean) => {
+      const parsedOutput = parseToolResultOutput(output)
+
+      if (isMediaImageToolResult(parsedOutput)) {
+        return (
+          <div className="space-y-3">
+            {parsedOutput.images.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {parsedOutput.images.map((item, imageIndex) => {
+                  const imageUrl = getImageAssetUrl(item.image)
+                  if (!imageUrl) return null
+                  return (
+                    <button
+                      key={`${imageIndex}-${imageUrl}`}
+                      type="button"
+                      className="overflow-hidden rounded-lg border bg-background text-left transition-opacity hover:opacity-90"
+                      onClick={() => openLightbox(imageUrl, parsedOutput.prompt)}
+                    >
+                      <img
+                        src={imageUrl}
+                        alt={parsedOutput.prompt || 'Generated image'}
+                        className="h-auto w-full object-cover"
+                      />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {parsedOutput.error && (
+              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+            )}
+          </div>
+        )
+      }
+
+      if (isMediaVideoToolResult(parsedOutput)) {
+        const videoUrl = getVideoAssetUrl(parsedOutput.video)
+        return (
+          <div className="space-y-3">
+            {videoUrl ? (
+              <video
+                controls
+                playsInline
+                className="max-h-96 w-full rounded-lg border bg-black"
+                src={videoUrl}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
+                {parsedOutput.status === 'completed'
+                  ? 'Video generated but no preview URL is available.'
+                  : parsedOutput.status === 'processing' || parsedOutput.status === 'pending'
+                    ? 'Video is still being generated.'
+                    : 'Video is unavailable.'}
+                {typeof parsedOutput.progress === 'number' && (
+                  <div className="mt-1">Progress: {Math.round(parsedOutput.progress * 100)}%</div>
+                )}
+              </div>
+            )}
+            {parsedOutput.error && (
+              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+            )}
+          </div>
+        )
+      }
+
+      return (
+        <ToolOutput
+          output={parsedOutput}
+          errorText={isError ? String(parsedOutput) : undefined}
+        />
+      )
+    }
+
     // Render a single part
     const renderDefaultPart = (part: MessagePart, index: number) => {
       if (isTextPart(part)) {
@@ -138,9 +229,45 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
-      // Tool calls are now rendered in ChainOfThought, skip here
+      // Tool calls: only skip if there's reasoning (they'll be in ChainOfThought)
+      // If no reasoning, render them normally in message content
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
-        return null
+        if (hasReasoning) {
+          return null // Skip, will be rendered in ChainOfThought
+        }
+        // No reasoning - render tool call in message content
+        const toolPart = part as ToolCallPart | McpToolCallPart
+        const toolName = isToolCallPart(part)
+          ? (part.toolDisplayName || part.toolName)
+          : `${part.serverName}/${part.toolName}`
+
+        // Find matching result
+        const result = message.parts.find(
+          (p) => (isToolResultPart(p) || isMcpToolResultPart(p)) && p.toolCallId === toolPart.toolCallId
+        )
+
+        const state = toolPart.state === 'error' ? 'output-error'
+          : toolPart.state === 'done' ? 'output-available'
+          : toolPart.state === 'running' ? 'input-available'
+          : 'input-streaming'
+
+        return (
+          <Tool key={index} defaultOpen={false} className="my-2">
+            <ToolHeader
+              title={toolName}
+              type="tool-call"
+              state={state}
+            />
+            <AIToolContent>
+              <ToolInput input={toolPart.input} />
+              {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
+                (isToolResultPart(result) && (isMediaImageToolResult(parseToolResultOutput(result.output)) || isMediaVideoToolResult(parseToolResultOutput(result.output))))
+                  ? null
+                  : renderToolResultContent(result.output, result.isError)
+              )}
+            </AIToolContent>
+          </Tool>
+        )
       }
 
       if (isFilePart(part)) {
@@ -175,12 +302,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      if (isMediaResultPart(part)) {
+        const mediaPart = part as MediaResultPart
+        return (
+          <div key={index} className="mt-3">
+            {renderToolResultContent(mediaPart.output)}
+          </div>
+        )
+      }
+
       // Skip tool results (rendered with tool calls) and step starts
       if (isToolResultPart(part) || isMcpToolResultPart(part)) {
         return null
       }
 
-      // Task parts and reasoning are rendered in ChainOfThought
+      // Task parts and reasoning are always rendered in ChainOfThought
       if (isTaskPart(part) || isReasoningPart(part)) {
         return null
       }
@@ -196,7 +332,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             state={userInputPart.state}
             selectedOption={userInputPart.selectedOption}
             onSelectOption={onSelectOption}
+            isStreaming={isStreaming}
           />
+        )
+      }
+
+      // Output truncated tip
+      if (isTruncatedPart(part)) {
+        return (
+          <div
+            key={index}
+            className="flex items-start gap-2 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{t('outputTruncated')}</span>
+          </div>
         )
       }
 
@@ -207,9 +357,12 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
     const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
-
-    // Check if we should show ChainOfThought (has tasks, reasoning, or tool calls)
-    const hasChainOfThought = taskParts.length > 0 || reasoningParts.length > 0 || toolCallParts.length > 0
+    // Check if we should show ChainOfThought
+    // Only show if there are reasoning parts OR tasks (RAG/generating)
+    // Tool calls should only be in ChainOfThought if there's reasoning
+    const hasReasoning = reasoningParts.length > 0
+    const hasTasks = taskParts.length > 0
+    const hasChainOfThought = hasReasoning || hasTasks
 
     // Get text parts to check if content has started
     const textParts = otherParts.filter(isTextPart) as TextPart[]
@@ -217,10 +370,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
     // Check if any step is still active (streaming)
     // Chain of thought is streaming until content starts appearing
+    // Only consider tool calls if there's reasoning (otherwise they're in message content)
     const isChainOfThoughtStreaming = !hasTextContent && (
       taskParts.some(t => t.state === 'running') ||
       reasoningParts.some(r => r.state === 'streaming') ||
-      toolCallParts.some(tc => tc.state === 'running') ||
+      (hasReasoning && toolCallParts.some(tc => tc.state === 'running')) ||
       isStreaming  // Still streaming but no text yet
     )
 
@@ -286,100 +440,103 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       })
 
-      // 2. Process other parts in their original order (tool calls and reasoning interleaved)
-      otherParts.forEach((part, index) => {
-        if (isToolCallPart(part)) {
-          const toolPart = part as ToolCallPart
-          // Find matching result
-          const result = message.parts.find(
-            (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
-          )
-          const state = toolPart.state === 'error' ? 'output-error'
-            : toolPart.state === 'done' ? 'output-available'
-            : toolPart.state === 'running' ? 'input-available'
-            : 'input-streaming'
+      // 2. Process other parts in their original order
+      // Only include tool calls and reasoning if there's reasoning content
+      if (hasReasoning) {
+        otherParts.forEach((part, index) => {
+          if (isToolCallPart(part)) {
+            const toolPart = part as ToolCallPart
+            // Find matching result
+            const result = message.parts.find(
+              (p) => isToolResultPart(p) && p.toolCallId === toolPart.toolCallId
+            )
+            const state = toolPart.state === 'error' ? 'output-error'
+              : toolPart.state === 'done' ? 'output-available'
+              : toolPart.state === 'running' ? 'input-available'
+              : 'input-streaming'
 
-          steps.push(
-            <ChainOfThoughtStep
-              key={`tool-${toolPart.toolCallId}`}
-              icon={Wrench}
-              label={getToolCallLabel(toolPart)}
-              status={getToolCallStepStatus(toolPart.state)}
-            >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={toolPart.toolDisplayName || toolPart.toolName}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={toolPart.input} />
-                  {result && isToolResultPart(result) && (
-                    <ToolOutput
-                      output={result.output}
-                      errorText={result.isError ? String(result.output) : undefined}
-                    />
-                  )}
-                </AIToolContent>
-              </Tool>
-            </ChainOfThoughtStep>
-          )
-        } else if (isMcpToolCallPart(part)) {
-          const mcpPart = part as McpToolCallPart
-          // Find matching result
-          const result = message.parts.find(
-            (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
-          )
-          const state = mcpPart.state === 'error' ? 'output-error'
-            : mcpPart.state === 'done' ? 'output-available'
-            : mcpPart.state === 'running' ? 'input-available'
-            : 'input-streaming'
+            steps.push(
+              <ChainOfThoughtStep
+                key={`tool-${toolPart.toolCallId}`}
+                icon={Wrench}
+                label={getToolCallLabel(toolPart)}
+                status={getToolCallStepStatus(toolPart.state)}
+              >
+                <Tool defaultOpen={false} className="mt-2">
+                  <ToolHeader
+                    title={toolPart.toolDisplayName || toolPart.toolName}
+                    type="tool-call"
+                    state={state}
+                  />
+                  <AIToolContent>
+                    <ToolInput input={toolPart.input} />
+                    {result && isToolResultPart(result) && !(
+                      isMediaImageToolResult(parseToolResultOutput(result.output)) ||
+                      isMediaVideoToolResult(parseToolResultOutput(result.output))
+                    ) && (
+                      renderToolResultContent(result.output, result.isError)
+                    )}
+                  </AIToolContent>
+                </Tool>
+              </ChainOfThoughtStep>
+            )
+          } else if (isMcpToolCallPart(part)) {
+            const mcpPart = part as McpToolCallPart
+            // Find matching result
+            const result = message.parts.find(
+              (p) => isMcpToolResultPart(p) && p.toolCallId === mcpPart.toolCallId
+            )
+            const state = mcpPart.state === 'error' ? 'output-error'
+              : mcpPart.state === 'done' ? 'output-available'
+              : mcpPart.state === 'running' ? 'input-available'
+              : 'input-streaming'
 
-          steps.push(
-            <ChainOfThoughtStep
-              key={`mcp-tool-${mcpPart.toolCallId}`}
-              icon={Wrench}
-              label={`${mcpPart.serverName}/${mcpPart.toolName}`}
-              status={getToolCallStepStatus(mcpPart.state)}
-            >
-              <Tool defaultOpen={false} className="mt-2">
-                <ToolHeader
-                  title={`${mcpPart.serverName}/${mcpPart.toolName}`}
-                  type="tool-call"
-                  state={state}
-                />
-                <AIToolContent>
-                  <ToolInput input={mcpPart.input} />
-                  {result && isMcpToolResultPart(result) && (
-                    <ToolOutput
-                      output={result.output}
-                      errorText={result.isError ? String(result.output) : undefined}
-                    />
-                  )}
-                </AIToolContent>
-              </Tool>
-            </ChainOfThoughtStep>
-          )
-        } else if (isReasoningPart(part)) {
-          const reasoningPart = part as ReasoningPart
-          steps.push(
-            <ChainOfThoughtStep
-              key={`reasoning-${index}`}
-              label={reasoningPart.state === 'streaming'
-                ? tReasoning('processing')
-                : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
-              }
-              status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
-            >
-              {reasoningPart.text && (
-                <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
-                  {reasoningPart.text}
-                </pre>
-              )}
-            </ChainOfThoughtStep>
-          )
-        }
-      })
+            steps.push(
+              <ChainOfThoughtStep
+                key={`mcp-tool-${mcpPart.toolCallId}`}
+                icon={Wrench}
+                label={`${mcpPart.serverName}/${mcpPart.toolName}`}
+                status={getToolCallStepStatus(mcpPart.state)}
+              >
+                <Tool defaultOpen={false} className="mt-2">
+                  <ToolHeader
+                    title={`${mcpPart.serverName}/${mcpPart.toolName}`}
+                    type="tool-call"
+                    state={state}
+                  />
+                  <AIToolContent>
+                    <ToolInput input={mcpPart.input} />
+                    {result && isMcpToolResultPart(result) && (
+                      <ToolOutput
+                        output={result.output}
+                        errorText={result.isError ? String(result.output) : undefined}
+                      />
+                    )}
+                  </AIToolContent>
+                </Tool>
+              </ChainOfThoughtStep>
+            )
+          } else if (isReasoningPart(part)) {
+            const reasoningPart = part as ReasoningPart
+            steps.push(
+              <ChainOfThoughtStep
+                key={`reasoning-${index}`}
+                label={reasoningPart.state === 'streaming'
+                  ? tReasoning('processing')
+                  : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
+                }
+                status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
+              >
+                {reasoningPart.text && (
+                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
+                    {reasoningPart.text}
+                  </pre>
+                )}
+              </ChainOfThoughtStep>
+            )
+          }
+        })
+      }
 
       // 3. Generating steps last
       taskParts.filter(t => t.taskType === 'generating').forEach((taskPart, index) => {
@@ -490,6 +647,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                     <RefreshCw className="h-4 w-4" />
                   </MessageAction>
                 )}
+                {usage && (
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-7 w-7 hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">
+                          <Timer className="h-4 w-4" />
+                          <span className="sr-only">{t('tokenStats')}</span>
+                        </button>
+                      }
+                    />
+                    <PopoverContent side="top" sideOffset={8} className="w-auto min-w-[200px] p-3 text-xs">
+                      <TokenStatsContent usage={usage} timing={timing} t={t} />
+                    </PopoverContent>
+                  </Popover>
+                )}
                 {showFeedback && (
                   <>
                     <MessageAction
@@ -524,6 +696,55 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 )
 
 Message.displayName = 'Message'
+
+/**
+ * Token stats popover content
+ */
+function TokenStatsContent({
+  usage,
+  timing,
+  t,
+}: {
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  timing?: { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null }
+  t: (key: string) => string
+}) {
+  const formatTime = (ms: number) => {
+    if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+    return `${ms}ms`
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between gap-8">
+        <span className="text-muted-foreground">{t('inputTokens')}</span>
+        <span className="font-mono tabular-nums">{usage.prompt_tokens.toLocaleString()}</span>
+      </div>
+      <div className="flex justify-between gap-8">
+        <span className="text-muted-foreground">{t('outputTokens')}</span>
+        <span className="font-mono tabular-nums">{usage.completion_tokens.toLocaleString()}</span>
+      </div>
+      {timing?.first_token_ms != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('firstTokenTime')}</span>
+          <span className="font-mono tabular-nums">{formatTime(timing.first_token_ms)}</span>
+        </div>
+      )}
+      {timing?.duration_ms != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('totalTime')}</span>
+          <span className="font-mono tabular-nums">{formatTime(timing.duration_ms)}</span>
+        </div>
+      )}
+      {timing?.tokens_per_second != null && (
+        <div className="flex justify-between gap-8">
+          <span className="text-muted-foreground">{t('speed')}</span>
+          <span className="font-mono tabular-nums">{timing.tokens_per_second}T/s</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Citation badge component with tooltip

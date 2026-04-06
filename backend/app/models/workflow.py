@@ -123,6 +123,12 @@ class Workflow(models.Model):
         max_length=100, null=True, unique=True, description="Webhook token"
     )
 
+    # Embed configuration
+    embed_config: dict = fields.JSONField(
+        default=dict,
+        description="Embed configuration (enabled, allowed_domains, theme, bubble)",
+    )  # type: ignore[assignment]
+
     # Statistics (累计统计，不会因删除而减少)
     run_count = fields.IntField(default=0, description="Total run count")
     success_count = fields.IntField(default=0, description="Successful run count")
@@ -184,6 +190,7 @@ class WorkflowRun(models.Model):
         null=True,
         description="User who triggered (null for webhook/cron)",
     )
+    triggered_by_id: UUID | None  # type: ignore[assignment]
 
     # Execution mode
     is_debug = fields.BooleanField(
@@ -231,11 +238,15 @@ class WorkflowRun(models.Model):
     )  # type: ignore[assignment]
 
     # Error info
-    error_message = fields.TextField(null=True, description="Error message if failed")
+    error_message: str | None = fields.TextField(
+        null=True, description="Error message if failed"
+    )
     error_node_id = fields.CharField(
         max_length=100, null=True, description="Node ID where error occurred"
     )
-    error_traceback = fields.TextField(null=True, description="Error traceback")
+    error_traceback: str | None = fields.TextField(
+        null=True, description="Error traceback"
+    )
 
     # Relations
     node_executions: fields.ReverseRelation["NodeExecution"]
@@ -377,7 +388,7 @@ class WorkflowVersion(models.Model):
     description = fields.TextField(null=True, description="Version description/notes")
 
     # Created by
-    created_by: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
+    created_by: fields.ForeignKeyRelation["User"] | None = fields.ForeignKeyField(
         "models.User",
         related_name="workflow_versions",
         on_delete=fields.SET_NULL,

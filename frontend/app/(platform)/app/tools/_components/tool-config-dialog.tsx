@@ -90,7 +90,6 @@ export function ToolConfigDialog({
     setIsLoading(true)
     try {
       await onSave(config)
-      onOpenChange(false)
     } finally {
       setIsLoading(false)
     }

@@ -11,6 +11,7 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeft,
+  Code,
 } from 'lucide-react'
 import type { Agent } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,7 @@ interface AgentToolbarProps {
   onSave: () => void
   isSaving: boolean
   onSettingsClick: () => void
+  onEmbedClick: () => void
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
 }
@@ -44,6 +46,7 @@ export function AgentToolbar({
   onSave,
   isSaving,
   onSettingsClick,
+  onEmbedClick,
   sidebarCollapsed,
   onToggleSidebar,
 }: AgentToolbarProps) {
@@ -94,6 +97,12 @@ export function AgentToolbar({
         </Link>
 
         <PermissionGuard permission="agent:update">
+          {/* Embed Button */}
+          <Button variant="outline" size="sm" onClick={onEmbedClick} className="cursor-pointer">
+            <Code className="mr-1.5 h-3.5 w-3.5" />
+            {t('toolbar.embed')}
+          </Button>
+
           {/* Settings Button */}
           <Button variant="outline" size="sm" onClick={onSettingsClick} className="cursor-pointer">
             <Settings className="mr-1.5 h-3.5 w-3.5" />

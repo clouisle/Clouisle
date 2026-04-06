@@ -21,6 +21,27 @@
     "toolEnabled": "Tool enabled",
     "toolDisabled": "Tool disabled",
     "toolDuplicated": "Tool duplicated",
+    "share": {
+      "title": "Share",
+      "description": "Share \"{toolName}\" with other teams.",
+      "selectTeam": "Select Team",
+      "permission": "Permission",
+      "shareButton": "Share Tool",
+      "sharedWith": "Shared With",
+      "noShares": "This tool has not been shared with any team yet",
+      "sharedBy": "Shared by {name}",
+      "shareSuccess": "Tool shared successfully",
+      "unshareSuccess": "Sharing removed",
+      "confirmUnshare": "Remove Sharing",
+      "confirmUnshareDesc": "Are you sure you want to remove sharing with team \"{teamName}\"?",
+      "unshareButton": "Remove Sharing",
+      "permissions": {
+        "readOnly": "Read Only",
+        "readExecute": "Read and Execute",
+        "readOnlyDesc": "The target team can view this tool but cannot execute it.",
+        "readExecuteDesc": "The target team can view and execute this tool."
+      }
+    },
     "deleteToolConfirm": "Are you sure you want to delete tool \"{name}\"? This action cannot be undone.",
     "confirmDelete": "Confirm Delete",
     "confirmBulkDelete": "Are you sure you want to delete {count} selected tools? This action cannot be undone.",
@@ -58,7 +79,9 @@
       "websearch": "Web Search",
       "parse_file": "File Parser",
       "markitdown": "Markdown Converter",
-      "fetch_webpage": "Fetch Webpage"
+      "fetch_webpage": "Fetch Webpage",
+      "generate_image": "Generate Image",
+      "generate_video": "Generate Video"
     },
     "filters": {
       "all": "All",
@@ -179,6 +202,7 @@
       "cannotShareBuiltin": "Cannot share built-in tools",
       "noTeamSelected": "No team selected",
       "nameRequired": "Please enter tool name",
+      "invalidName": "Tool name must start with a letter and contain only letters, numbers, and underscores",
       "duplicateParamName": "Parameter names must be unique"
     },
     "success": {

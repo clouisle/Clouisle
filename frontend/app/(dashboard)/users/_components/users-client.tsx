@@ -16,13 +16,20 @@ import {
   ChevronsRight,
   Shield,
   X,
-  Mail,
+  Bell,
   UserPlus,
   UserMinus,
   Link as LinkIcon,
+  KeyRound,
+  Clock,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usersApi, type User, type PageData, type UserStats } from '@/lib/api/admin/users'
+import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { rolesApi } from '@/lib/api/admin/roles'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -69,7 +76,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { UserDialog } from './user-dialog'
 import { DeleteUserDialog } from './delete-user-dialog'
-import { SendEmailDialog } from './send-email-dialog'
+import { SendNotificationDialog } from './send-notification-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type Role = {
@@ -83,7 +90,10 @@ export function UsersClient() {
   const t = useTranslations('users')
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
-  
+
+  // 系统设置
+  const [siteSettings, setSiteSettings] = React.useState<PublicSiteSettings | null>(null)
+
   // 数据状态
   const [users, setUsers] = React.useState<User[]>([])
   const [roles, setRoles] = React.useState<Role[]>([])
@@ -95,8 +105,23 @@ export function UsersClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [roleFilter, setRoleFilter] = React.useState<Set<string>>(new Set())
+  const selectedStatuses = React.useMemo(() => Array.from(statusFilter), [statusFilter])
+  const selectedRoles = React.useMemo(() => Array.from(roleFilter), [roleFilter])
+
+  // 防抖搜索
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+      if (searchQuery !== debouncedSearchQuery) {
+        setPage(1) // 搜索时重置到第一页
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
   
   // 选择状态
   const [selectedUsers, setSelectedUsers] = React.useState<Set<string>>(new Set())
@@ -105,7 +130,7 @@ export function UsersClient() {
   const [userDialogOpen, setUserDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
-  const [emailDialogOpen, setEmailDialogOpen] = React.useState(false)
+  const [notificationDialogOpen, setNotificationDialogOpen] = React.useState(false)
   const [selectedUser, setSelectedUser] = React.useState<User | null>(null)
   
   // 加载角色列表
@@ -119,6 +144,19 @@ export function UsersClient() {
       }
     }
     loadRoles()
+  }, [])
+
+  // 加载系统设置
+  React.useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await siteSettingsApi.getPublic()
+        setSiteSettings(data)
+      } catch {
+        // 忽略错误
+      }
+    }
+    loadSettings()
   }, [])
 
   // 加载用户统计
@@ -135,7 +173,13 @@ export function UsersClient() {
   const loadUsers = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await usersApi.getUsers({ page, pageSize })
+      const data = await usersApi.getUsers({
+        page,
+        pageSize,
+        status: selectedStatuses.length > 0 ? selectedStatuses as Array<'active' | 'inactive' | 'pending'> : undefined,
+        roles: selectedRoles.length > 0 ? selectedRoles : undefined,
+        search: debouncedSearchQuery || undefined,
+      })
       setUsers(data.items)
       setPageData(data)
     } catch {
@@ -143,87 +187,63 @@ export function UsersClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
-  
+  }, [page, pageSize, selectedStatuses, selectedRoles, debouncedSearchQuery])
+
   React.useEffect(() => {
     loadUsers()
     loadStats()
   }, [loadUsers, loadStats])
-  
-  // 筛选用户
-  const filteredUsers = React.useMemo(() => {
-    return users.filter(user => {
-      // 搜索筛选
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        if (!user.username.toLowerCase().includes(query) &&
-            !user.email.toLowerCase().includes(query)) {
-          return false
-        }
-      }
-      
-      // 状态筛选
-      if (statusFilter.size > 0) {
-        const isActive = user.is_active
-        if (!statusFilter.has(isActive ? 'active' : 'inactive')) {
-          return false
-        }
-      }
-      
-      // 角色筛选
-      if (roleFilter.size > 0) {
-        const hasMatchingRole = user.roles.some(role => roleFilter.has(role.name))
-        if (!hasMatchingRole) return false
-      }
-      
-      return true
-    })
-  }, [users, searchQuery, statusFilter, roleFilter])
-  
+
   // 检查是否有筛选条件
   const isFiltered = searchQuery || statusFilter.size > 0 || roleFilter.size > 0
   
+  const handleStatusFilterChange = (values: Set<string>) => {
+    setStatusFilter(values)
+    setPage(1)
+    setSelectedUsers(new Set())
+  }
+
+  const handleRoleFilterChange = (values: Set<string>) => {
+    setRoleFilter(values)
+    setPage(1)
+    setSelectedUsers(new Set())
+  }
+
   // 重置所有筛选
   const resetFilters = () => {
     setSearchQuery('')
+    setDebouncedSearchQuery('')
     setStatusFilter(new Set())
     setRoleFilter(new Set())
+    setPage(1)
+    setSelectedUsers(new Set())
   }
   
   // 状态选项
   const statusOptions = [
     { value: 'active', label: t('active') },
     { value: 'inactive', label: t('inactive') },
+    { value: 'pending', label: t('pending') },
   ]
   
-  // 角色选项（包含用户数量统计）
+  // 角色选项
   const roleOptions = React.useMemo(() => {
-    const roleCounts = new Map<string, number>()
-    
-    // 统计各角色
-    users.forEach(user => {
-      user.roles.forEach(role => {
-        roleCounts.set(role.name, (roleCounts.get(role.name) || 0) + 1)
-      })
-    })
-    
     return roles.map(role => ({
       value: role.name,
       label: role.name,
       icon: <Shield className="h-4 w-4" />,
-      count: roleCounts.get(role.name) || 0,
     }))
-  }, [roles, users])
+  }, [roles])
   
   // 计算分页信息
   const totalPages = pageData ? Math.ceil(pageData.total / pageSize) : 1
   
   // 选择操作
   const toggleSelectAll = () => {
-    if (selectedUsers.size === filteredUsers.length) {
+    if (selectedUsers.size === users.length) {
       setSelectedUsers(new Set())
     } else {
-      setSelectedUsers(new Set(filteredUsers.map(u => u.id)))
+      setSelectedUsers(new Set(users.map(u => u.id)))
     }
   }
   
@@ -279,9 +299,9 @@ export function UsersClient() {
     setSelectedUsers(new Set())
   }
   
-  // 批量发送邮件
-  const handleBulkEmail = () => {
-    setEmailDialogOpen(true)
+  // 批量发送通知
+  const handleBulkNotification = () => {
+    setNotificationDialogOpen(true)
   }
 
   // 批量激活
@@ -316,6 +336,85 @@ export function UsersClient() {
   const handleBulkDelete = () => {
     setBulkDeleteDialogOpen(true)
   }
+
+  // 批量强制修改密码
+  const handleBulkForcePasswordChange = async () => {
+    try {
+      await usersApi.bulkForcePasswordChange(Array.from(selectedUsers))
+      toast.success(t('bulkForcePasswordChange', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 批量授予密码豁免
+  const handleBulkGrantExemption = async () => {
+    try {
+      const promises = Array.from(selectedUsers).map(id =>
+        usersApi.exemptPasswordExpiration(id, true)
+      )
+      await Promise.all(promises)
+      toast.success(t('bulkPasswordExemptionGranted', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 批量移除密码豁免
+  const handleBulkRevokeExemption = async () => {
+    try {
+      const promises = Array.from(selectedUsers).map(id =>
+        usersApi.exemptPasswordExpiration(id, false)
+      )
+      await Promise.all(promises)
+      toast.success(t('bulkPasswordExemptionRevoked', { count: selectedUsers.size }))
+      setSelectedUsers(new Set())
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 强制修改密码
+  const handleForcePasswordChange = async (userId: string) => {
+    try {
+      await usersApi.forcePasswordChange(userId)
+      toast.success(t('forcePasswordChangeSuccess'))
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 重置密码过期时间
+  const handleResetPasswordExpiration = async (userId: string) => {
+    try {
+      await usersApi.resetPasswordExpiration(userId)
+      toast.success(t('resetPasswordExpirationSuccess'))
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  // 切换密码过期豁免
+  const handleTogglePasswordExemption = async (user: User) => {
+    try {
+      await usersApi.exemptPasswordExpiration(user.id, !user.password_expiration_exempt)
+      toast.success(
+        user.password_expiration_exempt
+          ? t('passwordExemptionRemoved')
+          : t('passwordExemptionGranted')
+      )
+      loadUsers()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
   
   // 确认批量删除
   const confirmBulkDelete = async () => {
@@ -335,7 +434,14 @@ export function UsersClient() {
   
   // 获取状态 Badge
   const getStatusBadge = (user: User) => {
-    if (user.is_active) {
+    if (user.status === 'pending') {
+      return (
+        <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-500">
+          {t('pending')}
+        </Badge>
+      )
+    }
+    if (user.status === 'active') {
       return <Badge variant="default" className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20">{t('active')}</Badge>
     }
     return <Badge variant="outline" className="text-muted-foreground">{t('inactive')}</Badge>
@@ -345,6 +451,103 @@ export function UsersClient() {
   const getPrimaryRole = (user: User) => {
     if (user.roles.length > 0) return user.roles[0].name
     return '-'
+  }
+
+  // 获取密码过期状态
+  const getPasswordExpirationBadge = (user: User) => {
+    // SSO 用户显示 SSO 标识
+    if (user.auth_source !== 'local') {
+      return (
+        <Badge variant="secondary" className="gap-1">
+          {t('sso')}
+        </Badge>
+      )
+    }
+
+    // 邮箱未验证（仅在系统开启邮箱校验时显示）
+    if (siteSettings?.email_verification && !user.email_verified) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="outline" className="gap-1 border-amber-500 text-amber-700 dark:text-amber-500">
+              <AlertCircle className="h-3 w-3" />
+              {t('unverified')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('emailNotVerifiedDesc')}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    // 豁免用户
+    if (user.password_expiration_exempt) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="outline" className="gap-1">
+              <ShieldCheck className="h-3 w-3" />
+              {t('exempt')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('passwordExpirationExempt')}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    // 强制修改
+    if (user.force_password_change) {
+      return (
+        <Tooltip>
+          <TooltipTrigger>
+            <Badge variant="destructive" className="gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              {t('forceChange')}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{t('forcePasswordChangeRequired')}</TooltipContent>
+        </Tooltip>
+      )
+    }
+
+    // 计算剩余天数
+    if (user.password_expires_at) {
+      const expiresAt = new Date(user.password_expires_at)
+      const now = new Date()
+      const daysRemaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+
+      if (daysRemaining < 0) {
+        return (
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="destructive" className="gap-1">
+                <Clock className="h-3 w-3" />
+                {t('expired')}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{t('passwordExpired')}</TooltipContent>
+          </Tooltip>
+        )
+      } else if (daysRemaining <= 7) {
+        return (
+          <Tooltip>
+            <TooltipTrigger>
+              <Badge variant="outline" className="gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-500">
+                <Clock className="h-3 w-3" />
+                {t('expiringSoon', { days: daysRemaining })}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>{t('passwordExpiringSoon', { days: daysRemaining })}</TooltipContent>
+          </Tooltip>
+        )
+      }
+    }
+
+    // 正常状态
+    return (
+      <Badge variant="outline" className="gap-1 text-muted-foreground">
+        {t('normal')}
+      </Badge>
+    )
   }
   
   return (
@@ -362,7 +565,11 @@ export function UsersClient() {
             variant="outline"
             size="sm"
             className="border-amber-300 bg-transparent hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40"
-            onClick={() => setStatusFilter(new Set(['inactive']))}
+            onClick={() => {
+              setStatusFilter(new Set(['pending']))
+              setPage(1)
+              setSelectedUsers(new Set())
+            }}
           >
             {t('viewPending')}
           </Button>
@@ -376,7 +583,7 @@ export function UsersClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="user:create">
+          <PermissionGuard permission="admin:user:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createUser')}
@@ -402,14 +609,14 @@ export function UsersClient() {
             title={t('status')}
             options={statusOptions}
             selectedValues={statusFilter}
-            onSelectionChange={setStatusFilter}
+            onSelectionChange={handleStatusFilterChange}
           />
-          
+
           <DataTableFacetedFilter
             title={t('role')}
             options={roleOptions}
             selectedValues={roleFilter}
-            onSelectionChange={setRoleFilter}
+            onSelectionChange={handleRoleFilterChange}
             searchable
           />
           
@@ -435,7 +642,7 @@ export function UsersClient() {
             <TableRow className="bg-muted/50 hover:bg-muted/50">
               <TableHead className="w-[40px]">
                 <Checkbox
-                  checked={selectedUsers.size === filteredUsers.length && filteredUsers.length > 0}
+                  checked={selectedUsers.size === users.length && users.length > 0}
                   onCheckedChange={toggleSelectAll}
                 />
               </TableHead>
@@ -444,6 +651,7 @@ export function UsersClient() {
               <TableHead>SSO</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('role')}</TableHead>
+              <TableHead>{t('passwordStatus')}</TableHead>
               <TableHead>{t('createdAt')}</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -451,18 +659,18 @@ export function UsersClient() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   {commonT('loading')}
                 </TableCell>
               </TableRow>
-            ) : filteredUsers.length === 0 ? (
+            ) : users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   {t('noUsers')}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredUsers.map((user) => (
+              users.map((user) => (
                 <TableRow key={user.id} data-state={selectedUsers.has(user.id) ? 'selected' : undefined}>
                   <TableCell>
                     <Checkbox
@@ -517,6 +725,7 @@ export function UsersClient() {
                       <span>{getPrimaryRole(user)}</span>
                     </div>
                   </TableCell>
+                  <TableCell>{getPasswordExpirationBadge(user)}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(user.created_at)}
                   </TableCell>
@@ -526,15 +735,15 @@ export function UsersClient() {
                         <MoreHorizontal className="h-4 w-4" />
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {canPerform('user:update') && (
+                      <DropdownMenuContent align="end" className="w-56">
+                        {canPerform('admin:user:update') && (
                           <DropdownMenuItem onClick={() => handleEdit(user)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {commonT('edit')}
                           </DropdownMenuItem>
                         )}
 
-                        {canPerform('user:update') && (
+                        {canPerform('admin:user:update') && (
                           <DropdownMenuItem onClick={() => handleToggleStatus(user)}>
                             {user.is_active ? (
                               <>
@@ -550,12 +759,40 @@ export function UsersClient() {
                           </DropdownMenuItem>
                         )}
 
-                        {canPerform('user:delete') && (
+                        {/* Password expiration actions for local auth users */}
+                        {canPerform('admin:user:update') && user.auth_source === 'local' && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleForcePasswordChange(user.id)}>
+                              <KeyRound className="mr-2 h-4 w-4" />
+                              {t('forcePasswordChange')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleResetPasswordExpiration(user.id)}>
+                              <Clock className="mr-2 h-4 w-4" />
+                              {t('resetPasswordExpiration')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleTogglePasswordExemption(user)}>
+                              {user.password_expiration_exempt ? (
+                                <>
+                                  <ShieldOff className="mr-2 h-4 w-4" />
+                                  {t('removePasswordExemption')}
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldCheck className="mr-2 h-4 w-4" />
+                                  {t('grantPasswordExemption')}
+                                </>
+                              )}
+                            </DropdownMenuItem>
+                          </>
+                        )}
+
+                        {canPerform('admin:user:delete') && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
+                              variant="destructive"
                               onClick={() => handleDelete(user)}
-                              className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               {commonT('delete')}
@@ -654,11 +891,11 @@ export function UsersClient() {
       />
       
       {/* 发送邮件 Dialog */}
-      <SendEmailDialog
-        open={emailDialogOpen}
-        onOpenChange={setEmailDialogOpen}
-        users={users.filter(u => selectedUsers.has(u.id))}
-        onSuccess={() => setSelectedUsers(new Set())}
+      <SendNotificationDialog
+        open={notificationDialogOpen}
+        onOpenChange={setNotificationDialogOpen}
+        userIds={Array.from(selectedUsers)}
+        users={users}
       />
       
       {/* 批量操作浮动工具栏 */}
@@ -680,21 +917,21 @@ export function UsersClient() {
 
             <Tooltip>
               <TooltipTrigger
-                onClick={handleBulkEmail}
+                onClick={handleBulkNotification}
                 render={
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
                   >
-                    <Mail className="h-4 w-4" />
+                    <Bell className="h-4 w-4" />
                   </Button>
                 }
               />
-              <TooltipContent>{t('sendEmail')}</TooltipContent>
+              <TooltipContent>{t('sendNotification')}</TooltipContent>
             </Tooltip>
 
-            {canPerform('user:update') && (
+            {canPerform('admin:user:update') && (
               <>
                 <Tooltip>
                   <TooltipTrigger
@@ -730,7 +967,7 @@ export function UsersClient() {
               </>
             )}
 
-            {canPerform('user:delete') && (
+            {canPerform('admin:user:delete') && (
               <Tooltip>
                 <TooltipTrigger
                   onClick={handleBulkDelete}
@@ -746,6 +983,58 @@ export function UsersClient() {
                 />
                 <TooltipContent>{commonT('delete')}</TooltipContent>
               </Tooltip>
+            )}
+
+            {canPerform('admin:user:update') && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkForcePasswordChange}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('forcePasswordChange')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkGrantExemption}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('grantPasswordExemption')}</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger
+                    onClick={handleBulkRevokeExemption}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                      >
+                        <ShieldOff className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t('removePasswordExemption')}</TooltipContent>
+                </Tooltip>
+              </>
             )}
           </div>
         </div>

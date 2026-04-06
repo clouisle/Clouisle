@@ -44,8 +44,7 @@ interface WorkflowNodeData {
   }
   // 输出节点
   answerConfig?: {
-    outputs?: Array<{ id: string; name: string; sourceVariable?: string }>
-    streaming?: { enabled: boolean; variable?: string }
+    outputs?: Array<{ id: string; sourceVariable?: string }>
   }
   // 条件节点
   branches?: Array<{
@@ -70,6 +69,9 @@ interface WorkflowNodeData {
   toolConfig?: {
     toolId?: string
     toolName?: string
+    toolType?: 'builtin' | 'custom' | 'mcp'
+    toolDisplayName?: string
+    mcpToolName?: string
     inputs?: Array<{ name: string; value?: string; required?: boolean }>
     outputVariable?: string
   }
@@ -185,7 +187,7 @@ export const getNodeTypeColor = (nodeType: string): string => {
 }
 
 // 系统变量列表
-const systemVariables = ['sys.user_id', 'sys.app_id', 'sys.workflow_id', 'sys.run_id', 'sys.timestamp']
+const systemVariables = ['sys_user_id', 'sys_workflow_id', 'sys_workflow_run_id', 'sys_timestamp']
 
 // 获取节点的上游节点 ID 集合
 function getUpstreamNodeIds(nodeId: string, edges: Edge[]): Set<string> {
@@ -430,7 +432,7 @@ function isVariableAvailable(variableRef: string, availableVars: Set<string>): b
   if (!cleanRef) return true
   
   // 系统变量直接检查
-  if (cleanRef.startsWith('sys.')) {
+  if (cleanRef.startsWith('sys_')) {
     return systemVariables.includes(cleanRef)
   }
   
@@ -527,21 +529,15 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
           issues.push(createIssue(node, 'error', 'outputVariableEmpty', 'outputs'))
         } else {
           // 检查每个输出变量是否有源变量
-          const missingSource = config.outputs.filter(o => !o.sourceVariable)
+          const missingSource = config.outputs.filter((o: { sourceVariable?: string }) => !o.sourceVariable)
           if (missingSource.length > 0) {
             issues.push(createIssue(node, 'error', 'outputsMissingSource', 'outputs', { count: missingSource.length }))
           }
 
-          // 检查变量名
-          const unnamedOutputs = config.outputs.filter(o => !o.name?.trim())
-          if (unnamedOutputs.length > 0) {
-            issues.push(createIssue(node, 'warning', 'unnamedOutputs', 'outputs', { count: unnamedOutputs.length }))
-          }
-
           // 检查源变量是否存在
-          const invalidVars = config.outputs.filter(o => o.sourceVariable && !isVariableAvailable(o.sourceVariable, availableVars))
+          const invalidVars = config.outputs.filter((o: { sourceVariable?: string }) => o.sourceVariable && !isVariableAvailable(o.sourceVariable, availableVars))
           if (invalidVars.length > 0) {
-            invalidVars.forEach(v => {
+            invalidVars.forEach((v: { sourceVariable?: string }) => {
               issues.push(createIssue(node, 'error', 'variableNotAvailable', 'outputs', { name: extractVariableName(v.sourceVariable!) }))
             })
           }
@@ -655,7 +651,8 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
         const config = node.data.toolConfig
 
         // 检查工具
-        if (!config?.toolId) {
+        const hasTool = !!(config?.toolId || (config?.toolType === 'builtin' && config?.toolName))
+        if (!hasTool) {
           issues.push(createIssue(node, 'error', 'toolNotSelected', 'toolId'))
         }
 

@@ -242,18 +242,19 @@ async def mark_read(
 
 @admin_router.get("", response_model=Response[dict])
 async def admin_list_notifications(
-    scope: NotificationScope | None = Query(None),
+    scope: list[NotificationScope] | None = Query(None),
     team_id: UUID | None = Query(None),
     user_id: UUID | None = Query(None),
     type: str | None = Query(None),
-    level: str | None = Query(None),
+    level: list[str] | None = Query(None),
+    search: str | None = Query(None),
     include_expired: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     if not current_user.is_superuser:
-        if scope == NotificationScope.GLOBAL:
+        if scope and NotificationScope.GLOBAL in scope:
             raise BusinessError(
                 code=ResponseCode.INSUFFICIENT_PRIVILEGES,
                 msg_key="insufficient_privileges",
@@ -270,7 +271,7 @@ async def admin_list_notifications(
     query = Notification.all()
 
     if scope:
-        query = query.filter(scope=scope)
+        query = query.filter(scope__in=scope)
     if team_id:
         query = query.filter(team_id=team_id)
     if user_id:
@@ -278,7 +279,13 @@ async def admin_list_notifications(
     if type:
         query = query.filter(type=type)
     if level:
-        query = query.filter(level=level)
+        query = query.filter(level__in=level)
+    if search:
+        query = query.filter(
+            Q(title__icontains=search)
+            | Q(content__icontains=search)
+            | Q(type__icontains=search)
+        )
 
     if not include_expired:
         now = now_utc()
@@ -345,8 +352,9 @@ async def admin_list_notifications(
 @admin_router.post("", response_model=Response[NotificationOut])
 async def admin_create_notification(
     payload: NotificationAdminCreate,
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(deps.PermissionChecker("admin:notification:create")),
 ) -> Any:
+    # 验证 scope 和权限
     if payload.scope == NotificationScope.GLOBAL:
         if not current_user.is_superuser:
             raise BusinessError(
@@ -363,6 +371,75 @@ async def admin_create_notification(
             )
         await check_team_admin_permission(payload.team_id, current_user)
     elif payload.scope == NotificationScope.USER:
+        # 批量发送用户通知
+        if payload.user_ids:
+            if not current_user.is_superuser:
+                # 非 superuser 需要有 admin:notification:create 权限（已在依赖中检查）
+                pass
+
+            # 验证所有用户是否存在
+            users = await User.filter(id__in=payload.user_ids).all()
+            if len(users) != len(payload.user_ids):
+                raise BusinessError(
+                    code=ResponseCode.USER_NOT_FOUND,
+                    msg_key="some_users_not_found",
+                    status_code=404,
+                )
+
+            # 批量创建通知
+            notifications = []
+            for user_id in payload.user_ids:
+                notification = await Notification.create(
+                    scope=payload.scope,
+                    team_id=None,
+                    user_id=user_id,
+                    type=payload.type,
+                    source=payload.source,
+                    title=payload.title,
+                    content=payload.content,
+                    level=payload.level,
+                    data=payload.data,
+                    link_url=payload.link_url,
+                    expires_at=payload.expires_at,
+                )
+                await create_notification(
+                    notification, actor=current_user, meta={"source": "admin"}
+                )
+                notifications.append(notification)
+
+            # 返回第一个通知作为示例
+            first_notification = notifications[0] if notifications else None
+            if not first_notification:
+                raise BusinessError(
+                    code=ResponseCode.INTERNAL_ERROR,
+                    msg_key="notification_creation_failed",
+                )
+
+            return success(
+                data=NotificationOut(
+                    id=first_notification.id,
+                    scope=first_notification.scope,
+                    team_id=first_notification.team_id,
+                    user_id=first_notification.user_id,
+                    type=first_notification.type,
+                    source=first_notification.source,
+                    title=first_notification.title,
+                    content=first_notification.content,
+                    level=first_notification.level,
+                    data=first_notification.data,
+                    link_url=first_notification.link_url,
+                    status=first_notification.status,
+                    expires_at=first_notification.expires_at,
+                    created_at=first_notification.created_at,
+                    updated_at=first_notification.updated_at,
+                    is_read=False,
+                    read_at=None,
+                    deliveries=[],
+                ),
+                msg_key="notifications_created",
+            )
+
+        # 单个用户通知
         if not payload.user_id:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST,
@@ -370,11 +447,8 @@ async def admin_create_notification(
                 status_code=400,
             )
         if not current_user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.INSUFFICIENT_PRIVILEGES,
-                msg_key="insufficient_privileges",
-                status_code=403,
-            )
+            # 非 superuser 需要有 admin:notification:create 权限（已在依赖中检查）
+            pass
         user = await User.filter(id=payload.user_id).first()
         if not user:
             raise BusinessError(

@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory } from '@/lib/api/tools'
 import { teamsApi, UserTeamInfo } from '@/lib/api'
+import { ImageUpload } from '@/components/ui/image-upload'
 import Editor from '@monaco-editor/react'
 
 const CODE_LANGUAGES = [
@@ -97,6 +98,8 @@ const DEFAULT_PARAM: ToolParameter = {
   required: false,
 }
 
+const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
 function CodeToolPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -113,9 +116,10 @@ function CodeToolPageContent() {
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('📜')
+  const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('code')
   const [isEnabled, setIsEnabled] = useState(true)
+  const [nameError, setNameError] = useState('')
 
   // 参数定义
   const [parameters, setParameters] = useState<ToolParameter[]>([
@@ -165,9 +169,10 @@ function CodeToolPageContent() {
       setName(tool.name)
       setDisplayName(tool.display_name)
       setDescription(tool.description)
-      setIcon(tool.icon || '📜')
+      setIcon(tool.icon || '')
       setCategory(tool.category || 'code')
       setIsEnabled(tool.is_enabled)
+      setNameError('')
 
       // 加载参数
       if (tool.parameters && tool.parameters.length > 0) {
@@ -187,7 +192,7 @@ function CodeToolPageContent() {
     } finally {
       setIsLoading(false)
     }
-  }, [t, router])
+  }, [router])
 
   useEffect(() => {
     if (toolId) {
@@ -258,6 +263,13 @@ function CodeToolPageContent() {
       toast.error(t('error.nameRequired'))
       return
     }
+
+    if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      setNameError(t('error.invalidName'))
+      return
+    }
+
+    setNameError('')
 
     if (!currentTeamId) {
       toast.error(t('error.noTeamSelected'))
@@ -389,7 +401,9 @@ function CodeToolPageContent() {
           {!isEditing && teams.length > 1 && (
             <Select value={currentTeamId} onValueChange={(v) => v && setCurrentTeamId(v)}>
               <SelectTrigger className="w-32 h-8">
-                <SelectValue />
+                <SelectValue>
+                  {teams.find((team) => team.id === currentTeamId)?.name || t('selectTeam')}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {teams.map((team) => (
@@ -480,10 +494,15 @@ function CodeToolPageContent() {
                     id="name"
                     placeholder="my_tool"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value)
+                      if (nameError) setNameError('')
+                    }}
                     disabled={isEditing}
                     className="h-8 text-sm"
+                    aria-invalid={!!nameError}
                   />
+                  {nameError && <p className="text-sm text-destructive">{nameError}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="displayName" className="text-xs text-muted-foreground">
@@ -499,15 +518,19 @@ function CodeToolPageContent() {
                 </div>
                 <div className="flex gap-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="icon" className="text-xs text-muted-foreground">
+                    <Label className="text-xs text-muted-foreground">
                       {t('icon')}
                     </Label>
-                    <Input
-                      id="icon"
-                      className="w-12 h-8 text-center text-lg"
-                      value={icon}
-                      onChange={(e) => setIcon(e.target.value)}
-                      maxLength={2}
+                    <ImageUpload
+                      value={icon.startsWith('http') ? icon : ''}
+                      onChange={setIcon}
+                      previewSize="sm"
+                      category="icons"
+                      placeholder={
+                        <span className="text-xl">
+                          {icon.startsWith('http') ? '' : icon}
+                        </span>
+                      }
                     />
                   </div>
                   <div className="flex-1 space-y-1.5">

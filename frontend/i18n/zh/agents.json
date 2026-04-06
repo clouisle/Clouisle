@@ -101,7 +101,6 @@
     "visibility": "可见性",
     "visibilityPrivate": "私有",
     "visibilityTeam": "团队",
-    "visibilityPublic": "公开",
     "saveAndPublish": "保存并发布",
     "saveDraft": "保存草稿",
     "preview": "预览",
@@ -126,6 +125,7 @@
       },
       "toolbar": {
         "chat": "对话",
+        "embed": "嵌入",
         "settings": "Agent 设置",
         "saving": "保存中...",
         "save": "保存",
@@ -217,6 +217,11 @@
           "offShort": "关闭"
         },
         "dialog": {
+          "searchMode": "检索模式",
+          "searchModeVector": "向量检索",
+          "searchModeFulltext": "全文检索",
+          "searchModeHybrid": "混合检索",
+          "searchModeHint": "选择知识库的检索方式",
           "topK": "召回数量 (Top K)",
           "topKHint": "每次检索返回的最相关文档块数量",
           "threshold": "相似度阈值",
@@ -238,7 +243,9 @@
           "unit_convert": "单位转换",
           "get_current_time": "获取当前时间",
           "web_search": "网页搜索",
-          "parse_file": "文件解析器"
+          "parse_file": "文件解析器",
+          "generate_image": "生成图片",
+          "generate_video": "生成视频"
         },
         "dialog": {
           "title": "选择工具",
@@ -303,6 +310,36 @@
         "memories": "条记忆",
         "autoExtract": "自动提取记忆",
         "autoExtractHint": "自动从对话中提取并保存重要信息"
+      },
+      "imageGeneration": {
+        "title": "生图",
+        "tooltip": "允许 Agent 通过函数调用触发生图模型",
+        "description": "启用后，Agent 可以调用文生图模型并直接在对话中展示生成结果。",
+        "defaultModel": "默认模型",
+        "defaultModelPlaceholder": "例如：google/gemini-2.5-flash-image",
+        "useSystemDefault": "使用系统默认模型",
+        "defaultWidth": "默认宽度",
+        "defaultHeight": "默认高度",
+        "maxImages": "单次最大生成数量",
+        "allowModelOverride": "允许覆盖默认模型",
+        "allowModelOverrideHint": "允许 Agent 在工具调用时指定其他生图模型。",
+        "allowReferenceImages": "允许参考图",
+        "allowReferenceImagesHint": "允许 Agent 在生图工具中携带参考图像。"
+      },
+      "videoGeneration": {
+        "title": "生视频",
+        "tooltip": "允许 Agent 通过函数调用触发视频模型",
+        "description": "启用后，Agent 可以调用文生视频模型并在对话中返回生成中的状态或最终视频。",
+        "defaultModel": "默认模型",
+        "defaultModelPlaceholder": "例如：runway/gen4.5",
+        "useSystemDefault": "使用系统默认模型",
+        "defaultDuration": "默认时长（秒）",
+        "maxDuration": "最大时长（秒）",
+        "aspectRatio": "默认宽高比",
+        "pollInterval": "轮询间隔（毫秒）",
+        "pollTimeout": "最长等待时间（秒）",
+        "allowModelOverride": "允许覆盖默认模型",
+        "allowModelOverrideHint": "允许 Agent 在工具调用时指定其他生视频模型。"
       },
       "preview": {
         "title": "调试与预览",
@@ -395,7 +432,9 @@
       "params": {
         "message": "用户输入的消息内容",
         "conversationId": "多轮对话的会话 ID。首次发送消息时留空（null），响应的 message_start 事件中会返回 conversation_id。后续请求中使用该 ID 即可带上下文继续对话。",
-        "variables": "Agent 变量的值（如果定义了变量）"
+        "variables": "Agent 变量的值（如果定义了变量）",
+        "images": "图片对象数组，用于支持视觉的 Agent。每个对象应包含 url 字段，值为 data URL（data:image/png;base64,...）或远程 URL。",
+        "fileUrls": "文件 URL 对象数组，用于文件上传。后端会下载、解析并将内容注入到 fileContent 变量中。每个对象应包含 url、filename、mime_type 和 size 字段。"
       },
       "responseFormat": "响应格式",
       "sseDescription": "响应使用 Server-Sent Events (SSE) 格式进行流式传输。以下是可能接收到的事件类型：",
@@ -411,9 +450,13 @@
         "contentDelta": "回复内容增量",
         "toolCall": "工具调用，包含工具名称和参数",
         "toolResult": "工具执行结果",
-        "messageEnd": "消息结束，包含 token 用量统计",
+        "mediaResult": "生成图片/视频的媒体展示载荷，前端使用该事件将内容直接渲染到 assistant 正文区域",
+        "userInputRequest": "Agent 请求用户输入，包含预定义选项",
+        "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
+        "messageEnd": "消息结束，包含 token 用量和耗时统计",
         "error": "错误信息"
       },
+      "messageEndExample": "message_end 事件数据示例：",
       "codeExamples": "代码示例",
       "multiTurn": {
         "title": "多轮对话",

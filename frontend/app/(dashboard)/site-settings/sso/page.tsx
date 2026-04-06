@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, TestTube2, Power, PowerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useCanPerform } from '@/components/permission-guard'
 import {
   Table,
   TableBody,
@@ -29,6 +30,8 @@ import { ProviderDialog } from './_components/provider-dialog'
 
 export default function SSOSettingsPage() {
   const t = useTranslations('sso')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:sso:update')
   const [providers, setProviders] = useState<SSOProviderAdmin[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -125,10 +128,12 @@ export default function SSOSettingsPage() {
           <h2 className="text-2xl font-bold tracking-tight">{t('title')}</h2>
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('addProvider')}
-        </Button>
+        {canUpdate && (
+          <Button onClick={handleCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('addProvider')}
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border">
@@ -183,48 +188,50 @@ export default function SSOSettingsPage() {
                     {provider.allow_signup ? t('yes') : t('no')}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleToggleEnabled(provider)}
-                        title={
-                          provider.is_enabled
-                            ? t('disable')
-                            : t('enable')
-                        }
-                      >
-                        {provider.is_enabled ? (
-                          <PowerOff className="h-4 w-4" />
-                        ) : (
-                          <Power className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleTest(provider.id)}
-                        title={t('testConnection')}
-                      >
-                        <TestTube2 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(provider)}
-                        title={t('editProvider')}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteId(provider.id)}
-                        title={t('deleteProvider')}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {canUpdate && (
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleToggleEnabled(provider)}
+                          title={
+                            provider.is_enabled
+                              ? t('disable')
+                              : t('enable')
+                          }
+                        >
+                          {provider.is_enabled ? (
+                            <PowerOff className="h-4 w-4" />
+                          ) : (
+                            <Power className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleTest(provider.id)}
+                          title={t('testConnection')}
+                        >
+                          <TestTube2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(provider)}
+                          title={t('editProvider')}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteId(provider.id)}
+                          title={t('deleteProvider')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

@@ -137,7 +137,21 @@
         "knowledgeBases": "Knowledge Bases",
         "knowledgeBasesDesc": "Total knowledge bases",
         "avgMessagesPerConv": "Avg Messages/Conv",
-        "avgTokensPerMessage": "Avg Tokens/Message"
+        "avgTokensPerMessage": "Avg Tokens/Message",
+        "twoFactorAuth": "Two-Factor Authentication",
+        "users": "users",
+        "adoptionRate": "adoption rate"
+      },
+      "passwordExpiration": {
+        "title": "Password Security",
+        "description": "Password expiration status",
+        "expired": "Expired",
+        "expiredDesc": "Passwords that have expired",
+        "expiringSoon": "Expiring Soon",
+        "expiringSoonDesc": "Passwords expiring within 7 days",
+        "forceChange": "Force Change",
+        "forceChangeDesc": "Users required to change password",
+        "allGood": "All passwords are up to date"
       }
     }
   }

@@ -131,7 +131,7 @@ class BenchmarkResult:
     results: list[RequestResult] = field(default_factory=list)
 
     def to_dict(self, include_raw: bool = False) -> dict:
-        data = {
+        data: dict[str, Any] = {
             "benchmark_id": self.benchmark_id,
             "status": self.status.value,
             "config": self.config.to_dict(),

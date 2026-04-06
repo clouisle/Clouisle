@@ -102,15 +102,15 @@ export function KnowledgeBasesClient() {
         page: number
         pageSize: number
         search?: string
-        status?: string
+        status?: string[]
       } = { page, pageSize }
       
       if (searchQuery) {
         params.search = searchQuery
       }
       
-      if (statusFilter.size === 1) {
-        params.status = Array.from(statusFilter)[0]
+      if (statusFilter.size > 0) {
+        params.status = Array.from(statusFilter)
       }
       
       const data = await knowledgeBasesApi.getKnowledgeBases(params)
@@ -405,8 +405,8 @@ export function KnowledgeBasesClient() {
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
+                                variant="destructive"
                                 onClick={() => handleDelete(kb)}
-                                className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 {commonT('delete')}

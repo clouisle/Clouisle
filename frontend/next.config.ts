@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname),
   },
   images: {
+    unoptimized: true,
     dangerouslyAllowSVG: true,
     remotePatterns: [
       {
@@ -47,6 +48,18 @@ const nextConfig: NextConfig = {
       {
         source: '/api/:path*',
         destination: `${backendUrl}/api/:path*`,
+      },
+    ];
+  },
+  // Allow iframe embedding for embed pages
+  async headers() {
+    return [
+      {
+        source: '/embed/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
+        ],
       },
     ];
   },

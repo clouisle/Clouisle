@@ -24,7 +24,7 @@ class ToolConfig(models.Model):
     )
 
     # Team association (NULL = global configuration)
-    team: fields.ForeignKeyRelation["Team"] = fields.ForeignKeyField(
+    team: fields.ForeignKeyRelation["Team"] | None = fields.ForeignKeyField(
         "models.Team",
         related_name="tool_configs",
         on_delete=fields.CASCADE,

@@ -24,7 +24,6 @@ class AgentVisibility:
 
     PRIVATE = "private"
     TEAM = "team"
-    PUBLIC = "public"
 
 
 class RAGMode:
@@ -63,6 +62,90 @@ class MemoryConfig(BaseModel):
     importance_threshold: Literal["low", "medium", "high"] = Field(
         default="medium",
         description="Minimum importance level for auto-extracted memories",
+    )
+
+
+class ImageGenerationConfig(BaseModel):
+    """Agent image generation configuration"""
+
+    default_model_ref: str | None = Field(
+        default=None,
+        description="Default image model reference (UUID or provider/model_id)",
+    )
+    default_width: int = Field(
+        default=1024,
+        ge=256,
+        le=4096,
+        description="Default generated image width",
+    )
+    default_height: int = Field(
+        default=1024,
+        ge=256,
+        le=4096,
+        description="Default generated image height",
+    )
+    max_images: int = Field(
+        default=4,
+        ge=1,
+        le=10,
+        description="Maximum number of images per tool call",
+    )
+    allow_reference_images: bool = Field(
+        default=True,
+        description="Allow reference images for edit/reference generation flows",
+    )
+    allowed_providers: list[str] = Field(
+        default_factory=list,
+        description="Optional allowlist of providers for image generation",
+    )
+    require_confirmation: bool = Field(
+        default=False,
+        description="Whether generation should require explicit confirmation before execution",
+    )
+
+
+class VideoGenerationConfig(BaseModel):
+    """Agent video generation configuration"""
+
+    default_model_ref: str | None = Field(
+        default=None,
+        description="Default video model reference (UUID or provider/model_id)",
+    )
+    default_duration: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=30.0,
+        description="Default generated video duration in seconds",
+    )
+    max_duration: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=30.0,
+        description="Maximum video duration per tool call",
+    )
+    default_aspect_ratio: str = Field(
+        default="16:9",
+        description="Default video aspect ratio",
+    )
+    poll_interval_ms: int = Field(
+        default=3000,
+        ge=500,
+        le=30000,
+        description="Polling interval for provider video task status",
+    )
+    poll_timeout_s: int = Field(
+        default=120,
+        ge=5,
+        le=600,
+        description="Maximum synchronous polling time before returning pending",
+    )
+    allowed_providers: list[str] = Field(
+        default_factory=list,
+        description="Optional allowlist of providers for video generation",
+    )
+    require_confirmation: bool = Field(
+        default=False,
+        description="Whether generation should require explicit confirmation before execution",
     )
 
 
@@ -155,8 +238,9 @@ class AgentKnowledgeBaseConfig(BaseModel):
     """Knowledge base configuration for agent"""
 
     knowledge_base_id: UUID
-    retrieval_top_k: int = Field(default=5, ge=1, le=20)
-    score_threshold: float = Field(default=0.5, ge=0, le=1)
+    retrieval_top_k: int = Field(default=5, ge=1, le=100)
+    score_threshold: float = Field(default=0.3, ge=0, le=1)
+    search_mode: str = Field(default="hybrid", pattern="^(vector|fulltext|hybrid)$")
 
 
 class FileUploadConfig(BaseModel):
@@ -254,6 +338,22 @@ class AgentCreate(AgentBase):
         default=None,
         description="Memory configuration (max_memories_per_retrieval, auto_extract)",
     )
+    enable_image_generation: bool = Field(
+        default=False,
+        description="Enable agent image generation tool",
+    )
+    image_generation_config: ImageGenerationConfig | None = Field(
+        default=None,
+        description="Agent image generation configuration",
+    )
+    enable_video_generation: bool = Field(
+        default=False,
+        description="Enable agent video generation tool",
+    )
+    video_generation_config: VideoGenerationConfig | None = Field(
+        default=None,
+        description="Agent video generation configuration",
+    )
     rag_mode: str = Field(
         default=RAGMode.AGENTIC, description="RAG mode: off, auto, or agentic"
     )
@@ -261,7 +361,7 @@ class AgentCreate(AgentBase):
     variables: list[VariableDefinition] = Field(default_factory=list)
     opening_message: str | None = None
     suggested_questions: list[str] = Field(default_factory=list)
-    visibility: str = Field(default=AgentVisibility.PRIVATE)
+    visibility: str = Field(default=AgentVisibility.TEAM)
 
 
 class AgentUpdate(BaseModel):
@@ -284,12 +384,17 @@ class AgentUpdate(BaseModel):
     enable_user_input_request: bool | None = None
     enable_memory: bool | None = None
     memory_config: MemoryConfig | None = None
+    enable_image_generation: bool | None = None
+    image_generation_config: ImageGenerationConfig | None = None
+    enable_video_generation: bool | None = None
+    video_generation_config: VideoGenerationConfig | None = None
     rag_mode: str | None = Field(None, description="RAG mode: off, auto, or agentic")
     knowledge_base_configs: list[AgentKnowledgeBaseConfig] | None = None
     variables: list[VariableDefinition] | None = None
     opening_message: str | None = None
     suggested_questions: list[str] | None = None
     visibility: str | None = None
+    embed_config: dict[str, Any] | None = None
 
 
 class AgentKnowledgeBaseOut(BaseModel):
@@ -299,6 +404,7 @@ class AgentKnowledgeBaseOut(BaseModel):
     knowledge_base: KnowledgeBaseInfo
     retrieval_top_k: int
     score_threshold: float
+    search_mode: str
 
     class Config:
         from_attributes = True
@@ -322,11 +428,16 @@ class AgentOut(AgentBase):
     enable_user_input_request: bool = False
     enable_memory: bool = False
     memory_config: MemoryConfig | None = None
+    enable_image_generation: bool = False
+    image_generation_config: ImageGenerationConfig | None = None
+    enable_video_generation: bool = False
+    video_generation_config: VideoGenerationConfig | None = None
     rag_mode: str = RAGMode.AGENTIC
     variables: list[VariableDefinition] = []
     opening_message: str | None = None
     suggested_questions: list[str] = []
     knowledge_bases: list[AgentKnowledgeBaseOut] = []
+    embed_config: dict[str, Any] = {}
     status: str
     visibility: str
     conversation_count: int = 0
@@ -354,6 +465,26 @@ class AgentPublicOut(BaseModel):
     enable_file_upload: bool = False
     file_upload_config: dict[str, Any] | None = None
     created_by: CreatorInfo | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class EmbedAgentInfo(BaseModel):
+    """Agent info for embed page (minimal, no auth-sensitive data)"""
+
+    id: UUID
+    name: str
+    description: str | None = None
+    icon: str | None = None
+    avatar_url: str | None = None
+    opening_message: str | None = None
+    suggested_questions: list[str] = []
+    variables: list[dict[str, Any]] = []
+    enable_vision: bool = False
+    enable_file_upload: bool = False
+    file_upload_config: dict[str, Any] | None = None
+    embed_config: dict[str, Any] = {}
 
     class Config:
         from_attributes = True
@@ -592,8 +723,10 @@ class SSEEventType:
     REASONING_END = "reasoning_end"  # 思维链结束
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    MEDIA_RESULT = "media_result"
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"
     USER_INPUT_REQUEST = "user_input_request"  # 用户输入请求
+    OUTPUT_TRUNCATED = "output_truncated"  # 输出被截断（达到max_tokens限制）
     MESSAGE_END = "message_end"
     ERROR = "error"

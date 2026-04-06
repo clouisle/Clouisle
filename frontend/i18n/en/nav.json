@@ -1,8 +1,10 @@
 {
   "nav": {
     "general": "General",
-    "admin": "Admin",
-    "other": "Other",
+    "system": "System",
+    "resources": "Resources",
+    "monitoring": "Monitoring",
+    "settings": "Settings",
     "dashboard": "Dashboard",
     "teams": "Teams",
     "knowledgeBases": "Knowledge Bases",
@@ -17,7 +19,6 @@
     "notifications": "Notifications",
     "workspace": "Workspace",
     "profile": "Profile",
-    "settings": "Settings",
     "siteSettings": "Site Settings",
     "helpCenter": "Help Center",
     "logout": "Log out",

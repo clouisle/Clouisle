@@ -68,7 +68,7 @@ def create_embedding_model(model_config: Model | ModelConfig) -> Embeddings:
 
         return GoogleGenerativeAIEmbeddings(
             model=model_id,
-            google_api_key=api_key,
+            api_key=api_key,
         )
 
     elif provider in [

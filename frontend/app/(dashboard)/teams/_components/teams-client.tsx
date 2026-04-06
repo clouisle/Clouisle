@@ -73,7 +73,20 @@ export function TeamsClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = React.useState('')
-  
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+
+  // 防抖搜索
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+      if (searchQuery !== debouncedSearchQuery) {
+        setPage(1) // 搜索时重置到第一页
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   // 选择状态
   const [selectedTeams, setSelectedTeams] = React.useState<Set<string>>(new Set())
   
@@ -88,7 +101,7 @@ export function TeamsClient() {
   const loadTeams = React.useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await teamsApi.getTeams(page, pageSize)
+      const data = await teamsApi.getTeams(page, pageSize, debouncedSearchQuery || undefined)
       setTeams(data.items)
       setPageData(data)
     } catch {
@@ -96,29 +109,16 @@ export function TeamsClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [page, pageSize])
-  
+  }, [page, pageSize, debouncedSearchQuery])
+
   React.useEffect(() => {
     loadTeams()
   }, [loadTeams])
-  
-  // 过滤团队
-  const filteredTeams = React.useMemo(() => {
-    return teams.filter(team => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
-        const matchName = team.name.toLowerCase().includes(query)
-        const matchDesc = team.description?.toLowerCase().includes(query) ?? false
-        if (!matchName && !matchDesc) return false
-      }
-      return true
-    })
-  }, [teams, searchQuery])
-  
+
   // 可选择的团队（非默认团队）
   const selectableTeams = React.useMemo(() => {
-    return filteredTeams.filter(team => !team.is_default)
-  }, [filteredTeams])
+    return teams.filter(team => !team.is_default)
+  }, [teams])
   
   const hasFilters = searchQuery !== ''
   
@@ -232,7 +232,7 @@ export function TeamsClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="team:create">
+          <PermissionGuard permission="admin:team:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createTeam')}
@@ -296,7 +296,7 @@ export function TeamsClient() {
             </div>
           ))}
         </div>
-      ) : filteredTeams.length === 0 ? (
+      ) : teams.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
           <UsersRound className="h-12 w-12 mb-4 opacity-50" />
           <p className="text-lg font-medium">{t('noTeams')}</p>
@@ -304,7 +304,7 @@ export function TeamsClient() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredTeams.map((team) => (
+          {teams.map((team) => (
             <div
               key={team.id}
               className={`group relative rounded-xl border bg-card p-5 cursor-pointer transition-all hover:shadow-md hover:border-primary/50 ${
@@ -326,7 +326,7 @@ export function TeamsClient() {
               )}
               
               {/* 操作菜单 */}
-              {(canPerform('team:update') || canPerform('team:delete')) && (
+              {(canPerform('admin:team:update') || canPerform('admin:team:delete')) && (
                 <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                   <DropdownMenu>
                     <DropdownMenuTrigger
@@ -336,16 +336,16 @@ export function TeamsClient() {
                       <MoreHorizontal className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {canPerform('team:update') && (
+                      {canPerform('admin:team:update') && (
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleEdit(team) }}>
                           <Pencil className="mr-2 h-4 w-4" />
                           {commonT('edit')}
                         </DropdownMenuItem>
                       )}
 
-                      {!team.is_default && canPerform('team:delete') && (
+                      {!team.is_default && canPerform('admin:team:delete') && (
                         <>
-                          {canPerform('team:update') && <DropdownMenuSeparator />}
+                          {canPerform('admin:team:update') && <DropdownMenuSeparator />}
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); handleDelete(team) }}
                             className="text-destructive focus:text-destructive"
@@ -503,7 +503,7 @@ export function TeamsClient() {
       </AlertDialog>
       
       {/* 批量操作浮动工具栏 */}
-      {selectedTeams.size > 0 && canPerform('team:delete') && (
+      {selectedTeams.size > 0 && canPerform('admin:team:delete') && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button

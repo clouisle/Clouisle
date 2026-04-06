@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import Request
@@ -122,13 +122,13 @@ class AuditLogService:
         return "unknown"
 
     @staticmethod
-    def sanitize_changes(changes: dict) -> dict:
+    def sanitize_changes(changes: dict) -> dict[str, object]:
         """
         清理敏感信息
 
         对密码、API密钥等敏感字段进行脱敏处理
         """
-        sanitized = {}
+        sanitized: dict[str, object] = {}
 
         for key, value in changes.items():
             if key in ("before", "after"):
@@ -143,9 +143,9 @@ class AuditLogService:
         return sanitized
 
     @staticmethod
-    def _sanitize_dict(data: dict) -> dict:
+    def _sanitize_dict(data: dict) -> dict[str, object]:
         """递归脱敏字典中的敏感字段"""
-        sanitized = {}
+        sanitized: dict[str, Any] = {}
 
         for key, value in data.items():
             # 检查是否是敏感字段

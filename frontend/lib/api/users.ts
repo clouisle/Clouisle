@@ -45,34 +45,36 @@ export interface ChangePasswordData {
   new_password: string
 }
 
+export interface PasswordStatus {
+  is_exempt: boolean
+  password_changed_at: string | null
+  password_expires_at: string | null
+  is_expired: boolean
+  days_until_expiration: number | null
+  force_change_required: boolean
+}
+
+export interface TOTPSetupResponse {
+  secret: string
+  qr_code: string
+  backup_codes: string[]
+}
+
+export interface TOTPStatusResponse {
+  enabled: boolean
+  enabled_at: string | null
+  remaining_backup_codes: number
+}
+
 export interface UserQueryParams {
   page?: number
   pageSize?: number
-  status?: 'active' | 'inactive' | 'pending'
+  status?: Array<'active' | 'inactive' | 'pending'>
+  roles?: string[]
   search?: string
 }
 
 export const usersApi = {
-  /**
-   * 获取用户列表（分页）
-   */
-  getUsers: async (params: UserQueryParams = {}): Promise<PageData<User>> => {
-    const { page = 1, pageSize = 20, status, search } = params
-    const queryParams = new URLSearchParams()
-    queryParams.append('page', String(page))
-    queryParams.append('page_size', String(pageSize))
-    if (status) queryParams.append('status', status)
-    if (search) queryParams.append('search', search)
-    return api.get<PageData<User>>(`/users?${queryParams.toString()}`)
-  },
-
-  /**
-   * 获取用户统计信息
-   */
-  getStats: async (): Promise<UserStats> => {
-    return api.get<UserStats>('/users/stats')
-  },
-
   /**
    * 获取当前用户信息
    */
@@ -95,62 +97,56 @@ export const usersApi = {
   },
 
   /**
+   * 获取密码过期状态
+   */
+  getPasswordStatus: async (): Promise<PasswordStatus> => {
+    return api.get<PasswordStatus>('/users/me/password-status')
+  },
+
+  /**
    * 删除当前用户账号
    */
   deleteAccount: async (password: string): Promise<void> => {
     await api.delete<null>('/users/me', { password })
   },
+}
 
+/**
+ * TOTP (Two-Factor Authentication) API
+ */
+export const totpApi = {
   /**
-   * 获取单个用户
+   * 生成 TOTP 密钥和二维码
    */
-  getUser: async (userId: string): Promise<User> => {
-    return api.get<User>(`/users/${userId}`)
+  setup: async (): Promise<TOTPSetupResponse> => {
+    return api.post<TOTPSetupResponse>('/totp/setup')
   },
 
   /**
-   * 创建用户
+   * 启用 TOTP 2FA
    */
-  createUser: async (data: UserCreateData): Promise<User> => {
-    return api.post<User>('/users', data)
+  enable: async (code: string): Promise<void> => {
+    await api.post<null>('/totp/enable', { code })
   },
 
   /**
-   * 更新用户
+   * 禁用 TOTP 2FA
    */
-  updateUser: async (userId: string, data: UserUpdateData): Promise<User> => {
-    return api.put<User>(`/users/${userId}`, data)
+  disable: async (password: string, code: string, isBackupCode: boolean = false): Promise<void> => {
+    await api.post<null>('/totp/disable', { password, code, is_backup_code: isBackupCode })
   },
 
   /**
-   * 删除用户
+   * 重新生成备份码
    */
-  deleteUser: async (userId: string): Promise<User> => {
-    return api.delete<User>(`/users/${userId}`)
+  regenerateBackupCodes: async (code: string): Promise<{ codes: string[] }> => {
+    return api.post<{ codes: string[] }>('/totp/regenerate-backup-codes', { code })
   },
 
   /**
-   * 激活用户
+   * 获取 TOTP 状态
    */
-  activateUser: async (userId: string): Promise<User> => {
-    return api.post<User>(`/users/${userId}/activate`)
-  },
-
-  /**
-   * 停用用户
-   */
-  deactivateUser: async (userId: string): Promise<User> => {
-    return api.post<User>(`/users/${userId}/deactivate`)
-  },
-
-  /**
-   * 发送邮件给用户
-   */
-  sendEmail: async (userIds: string[], subject: string, content: string): Promise<{ sent_count: number; skipped_count: number; total: number }> => {
-    return api.post<{ sent_count: number; skipped_count: number; total: number }>('/users/send-email', {
-      user_ids: userIds,
-      subject,
-      content,
-    })
+  getStatus: async (): Promise<TOTPStatusResponse> => {
+    return api.get<TOTPStatusResponse>('/totp/status')
   },
 }

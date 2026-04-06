@@ -4,12 +4,38 @@ from tortoise import Tortoise
 
 from app.models.user import Role, Permission
 from app.models.site_setting import init_default_settings
+from app.core.permissions import SystemPermissions
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # System role name constant
 SUPER_ADMIN_ROLE = "Super Admin"
+
+
+async def sync_role_permissions(
+    role: Role, target_permissions: list[str], role_name: str
+):
+    target_permission_set = set(target_permissions)
+
+    for perm_code in target_permissions:
+        perm = await Permission.filter(code=perm_code).first()
+        if not perm:
+            logger.warning(
+                f"Permission {perm_code} not found while syncing {role_name} role"
+            )
+            continue
+
+        existing = await role.permissions.filter(id=perm.id).exists()
+        if not existing:
+            await role.permissions.add(perm)
+            logger.info(f"Added permission {perm_code} to {role_name} role")
+
+    current_permissions = await role.permissions.all()
+    for permission in current_permissions:
+        if permission.code not in target_permission_set:
+            await role.permissions.remove(permission)
+            logger.info(f"Removed permission {permission.code} from {role_name} role")
 
 
 async def init_workflow_tables():
@@ -235,6 +261,38 @@ async def init_agent_tools_credentials():
     logger.info("Agent tools_credentials migration complete")
 
 
+async def init_agent_visibility_values():
+    """
+    Normalize legacy agent visibility values.
+    Convert deprecated public visibility to team.
+    """
+    logger.info("Normalizing agent visibility values...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping visibility normalization"
+        )
+        return
+
+    try:
+        await conn.execute_query("""
+            UPDATE agents
+            SET visibility = 'team'
+            WHERE visibility = 'public'
+        """)
+        logger.info("Normalized legacy public agent visibility to team")
+    except Exception as e:
+        logger.error(f"Could not normalize agent visibility values: {e}")
+        raise
+
+
 async def init_workflow_visibility_field():
     """
     Add visibility field to workflows table if it doesn't exist.
@@ -321,6 +379,51 @@ async def init_agent_streaming_config():
         logger.info("streaming_config column already exists")
 
     logger.info("Agent streaming_config migration complete")
+
+
+async def init_permission_is_system_field():
+    """
+    Add is_system field to permissions table if it doesn't exist.
+    This handles the migration for the system permission protection feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking permission is_system field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if permissions table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'permissions' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Permissions table does not exist yet, skipping is_system migration"
+        )
+        return
+
+    # Check if is_system column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'permissions' AND column_name = 'is_system'
+    """)
+
+    if not rows:
+        logger.info("Adding is_system column to permissions table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE permissions
+                ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT TRUE
+            """)
+            logger.info("Added is_system column to permissions table")
+        except Exception as e:
+            logger.error(f"Could not add is_system column: {e}")
+            raise
+    else:
+        logger.info("is_system column already exists")
+
+    logger.info("Permission is_system migration complete")
 
 
 async def init_agent_user_input_request():
@@ -1026,6 +1129,461 @@ async def init_agent_memory_fields():
     logger.info("Agent memory fields added successfully")
 
 
+async def init_agent_media_generation_fields():
+    """
+    Add media generation module fields to agents table.
+    """
+    logger.info("Initializing agent media generation fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping media generation migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_image_generation BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS image_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS enable_video_generation BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS video_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
+    """)
+
+    logger.info("Agent media generation fields added successfully")
+
+
+async def init_password_expiration():
+    """
+    Add password expiration fields to users table and create password_history table.
+    This handles the migration for the password expiration feature.
+    """
+    logger.info("Initializing password expiration...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if users table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Users table does not exist yet, skipping password expiration migration"
+        )
+        return
+
+    # Check if password_changed_at column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'password_changed_at'
+    """)
+
+    if not rows:
+        logger.info("Adding password expiration fields to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN password_changed_at TIMESTAMPTZ NULL,
+                ADD COLUMN password_expires_at TIMESTAMPTZ NULL,
+                ADD COLUMN force_password_change BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN password_expiration_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN password_expiration_notified_at TIMESTAMPTZ NULL
+            """)
+            logger.info("Added password expiration fields to users table")
+
+            # Initialize password_changed_at = created_at for existing users
+            await conn.execute_query("""
+                UPDATE users
+                SET password_changed_at = created_at
+                WHERE password_changed_at IS NULL AND auth_source = 'local'
+            """)
+            logger.info("Initialized password_changed_at for existing users")
+        except Exception as e:
+            logger.error(f"Could not add password expiration fields: {e}")
+            raise
+    else:
+        logger.info("Password expiration fields already exist")
+
+    # Check if password_history table exists
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'password_history' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Creating password_history table...")
+        try:
+            await conn.execute_query("""
+                CREATE TABLE IF NOT EXISTS password_history (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    hashed_password VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            logger.info("Created password_history table")
+
+            # Create index for better query performance
+            await conn.execute_query("""
+                CREATE INDEX IF NOT EXISTS idx_password_history_user_id
+                ON password_history(user_id, created_at DESC)
+            """)
+            logger.info("Created password_history index")
+        except Exception as e:
+            logger.error(f"Could not create password_history table: {e}")
+            raise
+    else:
+        logger.info("password_history table already exists")
+
+    logger.info("Password expiration migration complete")
+
+
+async def init_user_approval_status_field():
+    """
+    Add approval_status field to users table.
+    This distinguishes pending approval users from manually inactive users.
+    """
+    logger.info("Initializing user approval_status field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Users table does not exist yet, skipping approval_status migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'approval_status'
+    """)
+
+    if not rows:
+        logger.info("Adding approval_status field to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN approval_status VARCHAR(20) NOT NULL DEFAULT 'approved'
+            """)
+            logger.info("Added approval_status field to users table")
+        except Exception as e:
+            logger.error(f"Could not add approval_status field: {e}")
+            raise
+    else:
+        logger.info("approval_status field already exists")
+
+    await conn.execute_query("""
+        UPDATE users
+        SET approval_status = 'approved'
+        WHERE approval_status IS NULL OR approval_status = ''
+    """)
+
+    logger.info("User approval_status migration complete")
+
+
+async def init_totp_fields():
+    """
+    Add TOTP (Two-Factor Authentication) fields to users table.
+    This handles the migration for the TOTP 2FA feature.
+    """
+    logger.info("Initializing TOTP fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if users table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'users' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Users table does not exist yet, skipping TOTP migration")
+        return
+
+    # Check if totp_secret column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'totp_secret'
+    """)
+
+    if not rows:
+        logger.info("Adding TOTP fields to users table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE users
+                ADD COLUMN totp_secret VARCHAR(255) NULL,
+                ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN totp_enabled_at TIMESTAMPTZ NULL,
+                ADD COLUMN totp_backup_codes_hash TEXT NULL
+            """)
+            logger.info("Added TOTP fields to users table")
+        except Exception as e:
+            logger.error(f"Could not add TOTP fields: {e}")
+            raise
+    else:
+        logger.info("TOTP fields already exist")
+
+    logger.info("TOTP migration complete")
+
+
+async def init_agent_kb_search_mode():
+    """
+    Add search_mode field to agent_knowledge_bases table.
+    """
+    logger.info("Initializing agent knowledge base search_mode field...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if agent_knowledge_bases table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agent_knowledge_bases' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "agent_knowledge_bases table does not exist yet, skipping search_mode migration"
+        )
+        return
+
+    # Check if search_mode column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agent_knowledge_bases' AND column_name = 'search_mode'
+    """)
+
+    if rows:
+        logger.info("search_mode field already exists, skipping")
+        return
+
+    logger.info("Adding search_mode field to agent_knowledge_bases table...")
+
+    # Add search_mode field with default value 'hybrid'
+    await conn.execute_query("""
+        ALTER TABLE agent_knowledge_bases
+        ADD COLUMN IF NOT EXISTS search_mode VARCHAR(20) NOT NULL DEFAULT 'hybrid'
+    """)
+
+    logger.info("search_mode field added successfully")
+
+
+async def init_chunk_status():
+    """Add status and error_message fields to document_chunks table."""
+    logger.info("Initializing chunk status fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    # Check if document_chunks table exists first
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'document_chunks' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("document_chunks table does not exist yet, skipping migration")
+        return
+
+    # Check if status column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'document_chunks' AND column_name = 'status'
+    """)
+
+    if not rows:
+        logger.info("Adding status field to document_chunks table...")
+        # Default to 'embedded' for existing chunks (they were already processed)
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'embedded'
+        """)
+        # Change default for new rows to 'pending'
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ALTER COLUMN status SET DEFAULT 'pending'
+        """)
+        logger.info("status field added successfully")
+    else:
+        logger.info("status field already exists, skipping")
+
+    # Check if error_message column exists
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'document_chunks' AND column_name = 'error_message'
+    """)
+
+    if not rows:
+        logger.info("Adding error_message field to document_chunks table...")
+        await conn.execute_query("""
+            ALTER TABLE document_chunks
+            ADD COLUMN IF NOT EXISTS error_message TEXT
+        """)
+        logger.info("error_message field added successfully")
+    else:
+        logger.info("error_message field already exists, skipping")
+
+    logger.info("Chunk status migration complete")
+
+
+async def init_embed_config():
+    """Add embed_config field to agents and workflows tables."""
+    logger.info("Initializing embed_config fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    for table_name in ("agents", "workflows"):
+        _, tables = await conn.execute_query(
+            """
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = $1 AND table_schema = 'public'
+            """,
+            [table_name],
+        )
+
+        if not tables:
+            logger.info(f"{table_name} table does not exist yet, skipping migration")
+            continue
+
+        _, rows = await conn.execute_query(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = $1 AND column_name = 'embed_config'
+            """,
+            [table_name],
+        )
+
+        if rows:
+            logger.info(f"embed_config field already exists in {table_name}, skipping")
+            continue
+
+        logger.info(f"Adding embed_config field to {table_name} table...")
+        await conn.execute_query(f"""
+            ALTER TABLE {table_name}
+            ADD COLUMN IF NOT EXISTS embed_config JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        """)
+        logger.info(f"embed_config field added to {table_name} successfully")
+
+    logger.info("Embed config migration complete")
+
+
+async def init_model_type_unique_constraint():
+    """
+    Update models unique constraint to include model_type.
+    This allows the same provider/model_id to be configured for multiple model types.
+    """
+    logger.info("Initializing model unique constraint with model_type...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'models' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("models table does not exist yet, skipping constraint migration")
+        return
+
+    await conn.execute_query("""
+        DO $$
+        DECLARE old_constraint_name text;
+        BEGIN
+            SELECT c.conname
+            INTO old_constraint_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE t.relname = 'models'
+              AND n.nspname = 'public'
+              AND c.contype = 'u'
+              AND pg_get_constraintdef(c.oid) = 'UNIQUE (provider, model_id)';
+
+            IF old_constraint_name IS NOT NULL THEN
+                EXECUTE format(
+                    'ALTER TABLE models DROP CONSTRAINT %I',
+                    old_constraint_name
+                );
+            END IF;
+        END $$;
+    """)
+
+    await conn.execute_query("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE t.relname = 'models'
+                  AND n.nspname = 'public'
+                  AND c.contype = 'u'
+                  AND pg_get_constraintdef(c.oid) =
+                      'UNIQUE (provider, model_id, model_type)'
+            ) THEN
+                ALTER TABLE models
+                ADD CONSTRAINT models_provider_model_id_model_type_key
+                UNIQUE (provider, model_id, model_type);
+            END IF;
+        END $$;
+    """)
+
+    logger.info("Model unique constraint migration complete")
+
+
+async def init_kb_rerank_fields():
+    """Add rerank model support fields to knowledge_bases table."""
+    logger.info("Initializing knowledge base rerank fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'knowledge_bases' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("knowledge_bases table does not exist yet, skipping migration")
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'knowledge_bases' AND column_name = 'rerank_model_id'
+    """)
+
+    if rows:
+        logger.info("rerank_model_id field already exists, skipping")
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE knowledge_bases
+        ADD COLUMN IF NOT EXISTS rerank_model_id UUID NULL
+    """)
+
+    logger.info("Knowledge base rerank fields migration complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -1045,248 +1603,26 @@ async def init_db():
             f"Agent tools_credentials migration failed (may be first run): {e}"
         )
 
+    try:
+        await init_permission_is_system_field()
+    except Exception as e:
+        logger.warning(f"Permission is_system migration failed (may be first run): {e}")
+
+    try:
+        await init_model_type_unique_constraint()
+    except Exception as e:
+        logger.warning(
+            f"Model unique constraint migration failed (may be first run): {e}"
+        )
+
+    try:
+        await init_kb_rerank_fields()
+    except Exception as e:
+        logger.warning(f"KB rerank migration failed (may be first run): {e}")
+
     # 1. Initialize Permissions
-    permissions_data = [
-        # Dashboard access permission
-        {
-            "code": "dashboard:access",
-            "scope": "dashboard",
-            "description": "Access admin dashboard",
-        },
-        # User permissions
-        {"code": "user:read", "scope": "user", "description": "Read users"},
-        {"code": "user:create", "scope": "user", "description": "Create users"},
-        {"code": "user:update", "scope": "user", "description": "Update users"},
-        {"code": "user:delete", "scope": "user", "description": "Delete users"},
-        {
-            "code": "user:manage",
-            "scope": "user",
-            "description": "Manage users, roles, permissions",
-        },
-        # Role permissions
-        {"code": "role:read", "scope": "role", "description": "Read roles"},
-        {"code": "role:create", "scope": "role", "description": "Create roles"},
-        {"code": "role:update", "scope": "role", "description": "Update roles"},
-        {"code": "role:delete", "scope": "role", "description": "Delete roles"},
-        # Permission permissions
-        {
-            "code": "permission:read",
-            "scope": "permission",
-            "description": "Read permissions",
-        },
-        {
-            "code": "permission:create",
-            "scope": "permission",
-            "description": "Create permissions",
-        },
-        {
-            "code": "permission:update",
-            "scope": "permission",
-            "description": "Update permissions",
-        },
-        {
-            "code": "permission:delete",
-            "scope": "permission",
-            "description": "Delete permissions",
-        },
-        # Team permissions
-        {"code": "team:read", "scope": "team", "description": "Read teams"},
-        {"code": "team:create", "scope": "team", "description": "Create teams"},
-        {"code": "team:update", "scope": "team", "description": "Update teams"},
-        {"code": "team:delete", "scope": "team", "description": "Delete teams"},
-        {"code": "team:manage", "scope": "team", "description": "Manage team members"},
-        # Site settings permissions
-        {
-            "code": "settings:read",
-            "scope": "settings",
-            "description": "Read site settings",
-        },
-        {
-            "code": "settings:update",
-            "scope": "settings",
-            "description": "Update site settings",
-        },
-        # Audit log permissions
-        {
-            "code": "audit:read",
-            "scope": "audit",
-            "description": "Read audit logs",
-        },
-        {
-            "code": "audit:export",
-            "scope": "audit",
-            "description": "Export audit logs",
-        },
-        # Model permissions
-        {
-            "code": "model:read",
-            "scope": "model",
-            "description": "Read model configurations",
-        },
-        {
-            "code": "model:create",
-            "scope": "model",
-            "description": "Create model configurations",
-        },
-        {
-            "code": "model:update",
-            "scope": "model",
-            "description": "Update model configurations",
-        },
-        {
-            "code": "model:delete",
-            "scope": "model",
-            "description": "Delete model configurations",
-        },
-        # Agent permissions
-        {
-            "code": "agent:read",
-            "scope": "agent",
-            "description": "Read agents",
-        },
-        {
-            "code": "agent:create",
-            "scope": "agent",
-            "description": "Create agents",
-        },
-        {
-            "code": "agent:update",
-            "scope": "agent",
-            "description": "Update agents",
-        },
-        {
-            "code": "agent:delete",
-            "scope": "agent",
-            "description": "Delete agents",
-        },
-        {
-            "code": "agent:publish",
-            "scope": "agent",
-            "description": "Publish/unpublish agents",
-        },
-        {
-            "code": "agent:chat",
-            "scope": "agent",
-            "description": "Chat with agents",
-        },
-        # Workflow permissions
-        {
-            "code": "workflow:read",
-            "scope": "workflow",
-            "description": "Read workflows",
-        },
-        {
-            "code": "workflow:create",
-            "scope": "workflow",
-            "description": "Create workflows",
-        },
-        {
-            "code": "workflow:update",
-            "scope": "workflow",
-            "description": "Update workflows",
-        },
-        {
-            "code": "workflow:delete",
-            "scope": "workflow",
-            "description": "Delete workflows",
-        },
-        {
-            "code": "workflow:publish",
-            "scope": "workflow",
-            "description": "Publish/unpublish workflows",
-        },
-        {
-            "code": "workflow:run",
-            "scope": "workflow",
-            "description": "Run workflows",
-        },
-        # Knowledge Base permissions
-        {
-            "code": "kb:read",
-            "scope": "kb",
-            "description": "Read knowledge bases",
-        },
-        {
-            "code": "kb:create",
-            "scope": "kb",
-            "description": "Create knowledge bases",
-        },
-        {
-            "code": "kb:update",
-            "scope": "kb",
-            "description": "Update knowledge bases",
-        },
-        {
-            "code": "kb:delete",
-            "scope": "kb",
-            "description": "Delete knowledge bases",
-        },
-        # Tool permissions
-        {
-            "code": "tool:read",
-            "scope": "tool",
-            "description": "Read tools",
-        },
-        {
-            "code": "tool:create",
-            "scope": "tool",
-            "description": "Create custom tools",
-        },
-        {
-            "code": "tool:update",
-            "scope": "tool",
-            "description": "Update custom tools",
-        },
-        {
-            "code": "tool:delete",
-            "scope": "tool",
-            "description": "Delete custom tools",
-        },
-        {
-            "code": "tool:execute",
-            "scope": "tool",
-            "description": "Execute tools",
-        },
-        # API Key permissions
-        {"code": "apikey:read", "scope": "apikey", "description": "Read API keys"},
-        {"code": "apikey:create", "scope": "apikey", "description": "Create API keys"},
-        {"code": "apikey:update", "scope": "apikey", "description": "Update API keys"},
-        {"code": "apikey:delete", "scope": "apikey", "description": "Delete API keys"},
-        # Conversation permissions
-        {
-            "code": "conversation:read",
-            "scope": "conversation",
-            "description": "Read conversations",
-        },
-        {
-            "code": "conversation:delete",
-            "scope": "conversation",
-            "description": "Delete conversations",
-        },
-        # Memory permissions
-        {
-            "code": "memory:read",
-            "scope": "memory",
-            "description": "Read user memories",
-        },
-        {
-            "code": "memory:create",
-            "scope": "memory",
-            "description": "Create user memories",
-        },
-        {
-            "code": "memory:update",
-            "scope": "memory",
-            "description": "Update user memories",
-        },
-        {
-            "code": "memory:delete",
-            "scope": "memory",
-            "description": "Delete user memories",
-        },
-        # System wildcard permission
-        {"code": "*", "scope": "system", "description": "All permissions (superuser)"},
-    ]
+    logger.info("Initializing permissions from SystemPermissions...")
+    permissions_data = SystemPermissions.get_all_definitions()
 
     logger.info("Initializing permissions...")
     for perm_data in permissions_data:
@@ -1295,6 +1631,7 @@ async def init_db():
             defaults={
                 "scope": perm_data["scope"],
                 "description": perm_data["description"],
+                "is_system": True,
             },
         )
 
@@ -1314,300 +1651,140 @@ async def init_db():
         await super_admin_role.permissions.add(all_perm)
         logger.info(f"Created system role: {SUPER_ADMIN_ROLE}")
 
-    # Admin - can access dashboard and manage users/models, but data is team-isolated
+    admin_permissions = [
+        # Admin permissions (system-wide)
+        "admin:dashboard:access",
+        "admin:user:read",
+        "admin:user:create",
+        "admin:user:update",
+        "admin:user:delete",
+        "admin:role:read",
+        "admin:permission:read",
+        "admin:team:read",
+        "admin:team:create",
+        "admin:team:update",
+        "admin:team:delete",
+        "admin:model:read",
+        "admin:model:create",
+        "admin:model:update",
+        "admin:model:delete",
+        "admin:settings:read",
+        "admin:sso:read",
+        "audit:read",
+        "audit:export",
+        "admin:conversation:read",
+        "admin:conversation:delete",
+        "admin:notification:create",
+        "admin:notification:delete",
+        "admin:memory:read",
+        # Platform permissions (team-scoped)
+        "team:read",
+        "team:create",
+        "team:update",
+        "team:delete",
+        "team:manage",
+        "agent:read",
+        "agent:create",
+        "agent:update",
+        "agent:delete",
+        "agent:publish",
+        "agent:chat",
+        "workflow:read",
+        "workflow:create",
+        "workflow:update",
+        "workflow:delete",
+        "workflow:publish",
+        "workflow:run",
+        "kb:read",
+        "kb:create",
+        "kb:update",
+        "kb:delete",
+        "tool:read",
+        "tool:create",
+        "tool:update",
+        "tool:delete",
+        "tool:execute",
+        "apikey:read",
+        "apikey:create",
+        "apikey:update",
+        "apikey:delete",
+        "conversation:read",
+        "conversation:delete",
+    ]
+
+    # Admin - dashboard access with system read visibility and team-scoped resource management
     admin_role, created = await Role.get_or_create(
         name="Admin",
         defaults={
-            "description": "Admin role with dashboard access and user/model management",
+            "description": "Admin role with dashboard access, system read access, and team-scoped resource management",
             "is_system_role": True,
         },
     )
     if created:
-        admin_permissions = [
-            # Dashboard access
-            "dashboard:access",
-            # User management
-            "user:read",
-            "user:create",
-            "user:update",
-            "user:delete",
-            # Role management
-            "role:read",
-            "role:create",
-            "role:update",
-            "role:delete",
-            # Permission read
-            "permission:read",
-            # Model management
-            "model:read",
-            "model:create",
-            "model:update",
-            "model:delete",
-            # Site settings (read only)
-            "settings:read",
-            # Audit logs
-            "audit:read",
-            "audit:export",
-            # Team permissions (with data isolation)
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:delete",
-            "team:manage",
-            # Agent permissions (with data isolation)
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            # Workflow permissions (with data isolation)
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            # Knowledge Base permissions (with data isolation)
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            # Tool permissions (with data isolation)
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            # API Key permissions (with data isolation)
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            # Conversation permissions (with data isolation)
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in admin_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await admin_role.permissions.add(perm)
         logger.info("Created system role: Admin")
-    else:
-        # Ensure existing Admin role has all required permissions
-        admin_permissions = [
-            "dashboard:access",
-            "user:read",
-            "user:create",
-            "user:update",
-            "user:delete",
-            "role:read",
-            "role:create",
-            "role:update",
-            "role:delete",
-            "permission:read",
-            "model:read",
-            "model:create",
-            "model:update",
-            "model:delete",
-            "settings:read",
-            "audit:read",
-            "audit:export",
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:delete",
-            "team:manage",
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in admin_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await admin_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await admin_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Admin role")
 
-    # Member - default role for regular users with full resource access (no dashboard access)
+    await sync_role_permissions(admin_role, admin_permissions, "Admin")
+
+    member_permissions = [
+        "team:read",
+        "agent:read",
+        "agent:create",
+        "agent:update",
+        "agent:chat",
+        "workflow:read",
+        "workflow:create",
+        "workflow:update",
+        "workflow:run",
+        "kb:read",
+        "kb:create",
+        "kb:update",
+        "tool:read",
+        "tool:execute",
+        "apikey:read",
+        "apikey:create",
+        "apikey:update",
+        "apikey:delete",
+        "conversation:read",
+        "conversation:delete",
+    ]
+
+    # Member - collaborative contributor role without dashboard access
     member_role, created = await Role.get_or_create(
         name="Member",
         defaults={
-            "description": "Default role with full access to teams, agents, workflows, knowledge bases, and tools",
+            "description": "Collaborative member role for daily resource creation and editing without dashboard access",
             "is_system_role": True,
         },
     )
     if created:
-        # Add all resource permissions for Member role (no dashboard access, no team:delete)
-        member_permissions = [
-            # Team permissions (no team:delete)
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:manage",
-            # Agent permissions
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            # Workflow permissions
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            # Knowledge Base permissions
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            # Tool permissions
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            # API Key permissions (own keys)
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            # Conversation permissions
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in member_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await member_role.permissions.add(perm)
         logger.info("Created system role: Member")
-    else:
-        # Ensure existing Member role has correct permissions (remove team:delete if present)
-        member_permissions = [
-            "team:read",
-            "team:create",
-            "team:update",
-            "team:manage",
-            "agent:read",
-            "agent:create",
-            "agent:update",
-            "agent:delete",
-            "agent:publish",
-            "agent:chat",
-            "workflow:read",
-            "workflow:create",
-            "workflow:update",
-            "workflow:delete",
-            "workflow:publish",
-            "workflow:run",
-            "kb:read",
-            "kb:create",
-            "kb:update",
-            "kb:delete",
-            "tool:read",
-            "tool:create",
-            "tool:update",
-            "tool:delete",
-            "tool:execute",
-            "apikey:read",
-            "apikey:create",
-            "apikey:update",
-            "apikey:delete",
-            "conversation:read",
-            "conversation:delete",
-        ]
-        for perm_code in member_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await member_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await member_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Member role")
-        # Remove team:delete from Member role if present
-        team_delete_perm = await Permission.filter(code="team:delete").first()
-        if team_delete_perm:
-            existing = await member_role.permissions.filter(
-                id=team_delete_perm.id
-            ).exists()
-            if existing:
-                await member_role.permissions.remove(team_delete_perm)
-                logger.info("Removed team:delete permission from Member role")
 
-    # Viewer - read-only access plus execute permissions
+    await sync_role_permissions(member_role, member_permissions, "Member")
+
+    viewer_permissions = [
+        "team:read",
+        "agent:read",
+        "agent:chat",
+        "workflow:read",
+        "workflow:run",
+        "kb:read",
+        "tool:read",
+        "tool:execute",
+        "conversation:read",
+    ]
+
+    # Viewer - default read-only role with execute permissions
     viewer_role, created = await Role.get_or_create(
         name="Viewer",
         defaults={
-            "description": "Read-only access with execute permissions",
+            "description": "Default read-only role with execute permissions",
             "is_system_role": True,
         },
     )
     if created:
-        viewer_permissions = [
-            "team:read",
-            "agent:read",
-            "agent:chat",
-            "workflow:read",
-            "workflow:run",
-            "kb:read",
-            "tool:read",
-            "tool:execute",
-            "apikey:read",
-            "conversation:read",
-        ]
-        for perm_code in viewer_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                await viewer_role.permissions.add(perm)
         logger.info("Created system role: Viewer")
-    else:
-        # Ensure existing Viewer role has all required permissions
-        viewer_permissions = [
-            "team:read",
-            "agent:read",
-            "agent:chat",
-            "workflow:read",
-            "workflow:run",
-            "kb:read",
-            "tool:read",
-            "tool:execute",
-            "apikey:read",
-            "conversation:read",
-        ]
-        for perm_code in viewer_permissions:
-            perm = await Permission.filter(code=perm_code).first()
-            if perm:
-                existing = await viewer_role.permissions.filter(id=perm.id).exists()
-                if not existing:
-                    await viewer_role.permissions.add(perm)
-                    logger.info(f"Added permission {perm_code} to Viewer role")
+
+    await sync_role_permissions(viewer_role, viewer_permissions, "Viewer")
 
     # 3. Initialize Site Settings
     logger.info("Initializing site settings...")
@@ -1657,5 +1834,8 @@ async def init_db():
 
     # 11. Initialize agent memory fields
     await init_agent_memory_fields()
+
+    # 12. Initialize agent media generation fields
+    await init_agent_media_generation_fields()
 
     logger.info("Database initialization complete.")

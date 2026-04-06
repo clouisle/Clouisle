@@ -110,7 +110,6 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   // Use unified run hook
   const {
     messages,
-    executionState,
     isStreaming,
     isLoading: runLoading,
     sendMessage,
@@ -167,8 +166,6 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   }
 
   const isIconUrl = metadata.icon && (metadata.icon.startsWith('http') || metadata.icon.startsWith('/'))
-  const hasMessages = messages.length > 0
-
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       {/* Main Content */}

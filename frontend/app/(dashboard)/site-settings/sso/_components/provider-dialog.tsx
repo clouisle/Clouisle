@@ -25,6 +25,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ssoApi, type SSOProviderAdmin, type SSOProviderCreate } from '@/lib/api/admin/sso'
+import { useCanPerform } from '@/components/permission-guard'
 
 interface ProviderDialogProps {
   open: boolean
@@ -36,6 +37,8 @@ const PROVIDER_NAME_REGEX = /^[a-z][a-z0-9_-]*$/
 
 export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
   const t = useTranslations('sso')
+  const { canPerform } = useCanPerform()
+  const canUpdate = canPerform('admin:sso:update')
   const [loading, setLoading] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [formData, setFormData] = useState({
@@ -243,7 +246,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     }}
                     placeholder="google"
                     required
-                    disabled={!!provider}
+                    disabled={!!provider || !canUpdate}
                     aria-invalid={!!fieldErrors.name}
                   />
                   {fieldErrors.name ? (
@@ -260,7 +263,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   <Select
                     value={formData.protocol}
                     onValueChange={handleProtocolChange}
-                    disabled={!!provider}
+                    disabled={!!provider || !canUpdate}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -284,6 +287,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   }
                   placeholder="Google"
                   required
+                  disabled={!canUpdate}
                 />
               </div>
 
@@ -296,6 +300,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     setFormData({ ...formData, button_text: e.target.value })
                   }
                   placeholder="Sign in with Google"
+                  disabled={!canUpdate}
                 />
               </div>
 
@@ -316,6 +321,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   }}
                   placeholder="https://example.com/icon.png"
                   aria-invalid={!!fieldErrors.icon_url}
+                  disabled={!canUpdate}
                 />
                 {fieldErrors.icon_url && (
                   <p className="text-xs text-destructive">{fieldErrors.icon_url}</p>
@@ -335,6 +341,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     onCheckedChange={(checked) =>
                       setFormData({ ...formData, is_enabled: checked })
                     }
+                    disabled={!canUpdate}
                   />
                 </div>
 
@@ -350,6 +357,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     onCheckedChange={(checked) =>
                       setFormData({ ...formData, allow_signup: checked })
                     }
+                    disabled={!canUpdate}
                   />
                 </div>
 
@@ -365,6 +373,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     onCheckedChange={(checked) =>
                       setFormData({ ...formData, require_approval: checked })
                     }
+                    disabled={!canUpdate}
                   />
                 </div>
               </div>
@@ -383,6 +392,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   rows={15}
                   className="font-mono text-sm"
                   required
+                  disabled={!canUpdate}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('configurationHint')}
@@ -407,6 +417,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   placeholder="{}"
                   rows={10}
                   className="font-mono text-sm"
+                  disabled={!canUpdate}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t('attributeMappingHint')}
@@ -424,7 +435,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
             >
               {t('cancel')}
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || !canUpdate}>
               {loading ? t('saving') : t('save')}
             </Button>
           </DialogFooter>

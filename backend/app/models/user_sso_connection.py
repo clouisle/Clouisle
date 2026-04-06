@@ -1,14 +1,22 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from tortoise import fields, models
+
+if TYPE_CHECKING:
+    from app.models.sso_provider import SSOProvider
+    from app.models.user import User
 
 
 class UserSSOConnection(models.Model):
     """Links users to their SSO provider accounts"""
 
     id = fields.UUIDField(pk=True)
-    user = fields.ForeignKeyField(
+    user: fields.ForeignKeyRelation["User"] = fields.ForeignKeyField(
         "models.User", related_name="sso_connections", on_delete=fields.CASCADE
     )
-    provider = fields.ForeignKeyField(
+    provider: fields.ForeignKeyRelation["SSOProvider"] = fields.ForeignKeyField(
         "models.SSOProvider", related_name="user_connections", on_delete=fields.CASCADE
     )
 
@@ -20,9 +28,9 @@ class UserSSOConnection(models.Model):
     provider_email = fields.CharField(max_length=255, null=True)
 
     # Additional provider data (JSON)
-    provider_data = fields.JSONField(
+    provider_data: dict = fields.JSONField(
         default=dict, description="Store full profile data from provider"
-    )
+    )  # type: ignore[assignment]
 
     # Metadata
     first_login = fields.DatetimeField(auto_now_add=True)

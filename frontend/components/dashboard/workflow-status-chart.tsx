@@ -1,9 +1,11 @@
 'use client'
 
+import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { CheckCircle2 } from 'lucide-react'
+import { CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 
 interface StatusData {
   status: string
@@ -16,15 +18,9 @@ interface WorkflowStatusChartProps {
   isLoading?: boolean
 }
 
-const COLORS = [
-  'color-mix(in srgb, var(--chart-1) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-2) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-3) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-4) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-5) 70%, transparent)',
-]
+const COLORS = CHART_SURFACE_COLORS
 
-export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProps) {
+function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartProps) {
   const t = useTranslations('dashboard')
 
   const getStatusLabel = (status: string) => {
@@ -44,15 +40,15 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
   if (isLoading) {
     return (
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5" />
             {t('analytics.workflowStatus')}
           </CardTitle>
           <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="h-[300px] flex items-center justify-center">
+        <CardContent className="pt-0">
+          <div className="h-[240px] flex items-center justify-center">
             <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
@@ -63,15 +59,15 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
   if (!data || data.length === 0) {
     return (
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5" />
             {t('analytics.workflowStatus')}
           </CardTitle>
           <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="h-[300px] flex items-center justify-center">
+        <CardContent className="pt-0">
+          <div className="h-[240px] flex items-center justify-center">
             <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
@@ -81,21 +77,22 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5" />
           {t('analytics.workflowStatus')}
         </CardTitle>
         <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
-              outerRadius={100}
+              innerRadius={64}
+              outerRadius={84}
               fill="#8884d8"
               dataKey="count"
               nameKey="status"
@@ -110,7 +107,7 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
                   const data = payload[0].payload as StatusData
                   const percentage = totalCount > 0 ? ((data.count / totalCount) * 100).toFixed(2) : '0'
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="font-semibold mb-2">{getStatusLabel(data.status)}</div>
                       <div className="text-sm space-y-1">
                         <div>
@@ -132,3 +129,5 @@ export function WorkflowStatusChart({ data, isLoading }: WorkflowStatusChartProp
     </Card>
   )
 }
+
+export const WorkflowStatusChart = React.memo(WorkflowStatusChartComponent)

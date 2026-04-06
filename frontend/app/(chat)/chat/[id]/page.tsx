@@ -24,6 +24,7 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import {
+  ApiError,
   publicAgentsApi,
   uploadApi,
   type PublicAgent,
@@ -63,15 +64,29 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { toast } from 'sonner'
 
 interface PublicChatPageProps {
   params: Promise<{ id: string }>
+}
+
+function showUploadValidationError(error: unknown, tCommon: ReturnType<typeof useTranslations>) {
+  if (error instanceof ApiError && error.code === 1001) {
+    const payload = error.data as { allowed?: string[] } | undefined
+    const allowed = payload?.allowed?.join(', ')
+    toast.error(
+      allowed
+        ? tCommon('invalidFileTypeWithAllowed', { allowed })
+        : tCommon('invalidFileType')
+    )
+  }
 }
 
 export default function PublicChatPage({ params }: PublicChatPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const t = useTranslations('publicChat')
+  const tCommon = useTranslations('common')
   
   const [agent, setAgent] = React.useState<PublicAgent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -111,8 +126,6 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const {
     values: variableValues,
     setValues: setVariableValues,
-    needsInput: needsVariableInput,
-    isValid: variablesValid,
   } = useVariableForm(variables)
 
   React.useEffect(() => {
@@ -159,10 +172,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       console.log('New conversation created:', newConversationId)
       refreshConversations()
     },
-    onStreamEnd: () => {
-      // Refresh conversation list when message completes (to update title)
-      refreshConversations()
-    },
+    // Don't refresh on every message end - only on conversation creation
+    // This prevents unnecessary sidebar refreshes during chat
   })
   
   // Fetch agent and conversations when logged in
@@ -235,7 +246,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -441,6 +452,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
             fileUrls = await Promise.all(uploadPromises)
           } catch (err) {
             console.error('Failed to upload files:', err)
+            showUploadValidationError(err, tCommon)
             // Reset upload state on error
             setFiles(prev => prev.map(file => ({
               ...file,
@@ -527,7 +539,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               <div className="flex items-center gap-2">
                 {agent.icon ? (
                   isIconUrl ? (
-                    <div className="relative h-6 w-6 rounded overflow-hidden">
+                    <div className="relative h-6 w-6 overflow-hidden">
                       <Image
                         src={agent.icon}
                         alt={agent.name}
@@ -723,7 +735,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 <div className="mb-8">
                   {agent.icon ? (
                     isIconUrl ? (
-                      <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border">
+                      <div className="relative h-20 w-20 overflow-hidden">
                         <Image
                           src={agent.icon}
                           alt={agent.name}

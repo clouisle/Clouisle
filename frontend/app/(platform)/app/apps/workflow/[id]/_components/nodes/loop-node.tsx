@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { Handle, Position, NodeResizeControl } from '@xyflow/react'
 import { useTranslations } from 'next-intl'
-import { Infinity, MoreHorizontal, Play, LogOut } from 'lucide-react'
+import { Infinity, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ConditionRule } from './condition-node'
 
@@ -132,12 +132,6 @@ export function LoopNode({ selected, data, width, height }: LoopNodeProps) {
           <span className="text-[10px] text-cyan-500 bg-cyan-500/10 px-1.5 py-0.5 rounded mr-1">
             {t('nodesLoop.maxIterations', { count: config.maxIterations })}
           </span>
-          <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            <Play className="h-3 w-3" />
-          </button>
-          <button className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            <MoreHorizontal className="h-3 w-3" />
-          </button>
         </div>
       </div>
       

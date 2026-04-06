@@ -39,6 +39,8 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
   const closeConnectionRef = useRef<(() => void) | null>(null)
   const currentMessageRef = useRef<ChatMessage | null>(null)
   const handleWorkflowEventRef = useRef<((event: WorkflowEvent) => void) | null>(null)
+  // Track node types to determine token routing (answer vs LLM)
+  const nodeTypesRef = useRef<Map<string, string>>(new Map())
 
   const stop = useCallback(() => {
     if (closeConnectionRef.current) {
@@ -62,6 +64,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
       progress: { current: 0, total: 0 },
     })
     currentMessageRef.current = null
+    nodeTypesRef.current.clear()
   }, [stop])
 
   const start = useCallback(
@@ -85,6 +88,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
           progress: { current: 0, total: 0 },
         })
         currentMessageRef.current = null
+        nodeTypesRef.current.clear()
 
         // Start workflow run
         const runApi = isDebug ? workflowsApi.debugWorkflow : workflowsApi.runWorkflow
@@ -136,6 +140,9 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         const nodeType = data.node_type as string
         const nodeLabel = (data.node_label as string) || nodeType
         const isAnswerNode = nodeType === 'answer'
+
+        // Track node type for token routing
+        nodeTypesRef.current.set(nodeId, nodeType)
 
         const node: ExecutionNode = {
           id: nodeId,
@@ -208,7 +215,29 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
         const nodeId = data.node_id as string
         const token = data.token as string
 
-        // Append token to current message or create new one
+        // Only route answer node tokens to visible text output
+        // LLM node tokens are tracked in executionState only (like the debug drawer)
+        const nodeType = nodeTypesRef.current.get(nodeId)
+        if (nodeType !== 'answer') {
+          // Update execution state with streaming content for non-answer nodes
+          setExecutionState((prev) => {
+            const newNodes = new Map(prev.nodes)
+            const node = newNodes.get(nodeId)
+            if (node) {
+              newNodes.set(nodeId, {
+                ...node,
+                metadata: {
+                  ...node.metadata,
+                  streamingContent: ((node.metadata?.streamingContent as string) || '') + token,
+                },
+              })
+            }
+            return { ...prev, nodes: newNodes }
+          })
+          break
+        }
+
+        // Append answer token to current message text
         if (!currentMessageRef.current) {
           const newMessage: ChatMessage = {
             id: `msg-${Date.now()}`,
@@ -270,35 +299,22 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
           }
         })
 
-        // For answer nodes, add output as text content
-        if (isAnswerNode && outputs) {
-          // Extract text from outputs (usually has an 'answer' or 'output' field)
-          const outputsObj = outputs as Record<string, unknown>
-          const answerText = String(outputsObj.answer || outputsObj.output || outputsObj.text || JSON.stringify(outputs))
-
-          if (!currentMessageRef.current) {
-            const newMessage: ChatMessage = {
-              id: `msg-${Date.now()}`,
-              role: 'assistant',
-              parts: [{ type: 'text', text: answerText, state: 'done' }],
+        // For answer nodes, mark streaming text as done (tokens already pushed the content)
+        if (isAnswerNode) {
+          setMessages((prev) => {
+            const updated = [...prev]
+            const lastMsg = updated[updated.length - 1]
+            if (lastMsg && lastMsg.role === 'assistant') {
+              const parts = lastMsg.parts.map((part) => {
+                if (part.type === 'text' && part.state === 'streaming') {
+                  return { ...part, state: 'done' as const }
+                }
+                return part
+              })
+              updated[updated.length - 1] = { ...lastMsg, parts }
             }
-            currentMessageRef.current = newMessage
-            setMessages((prev) => [...prev, newMessage])
-          } else {
-            // Add text part to existing message
-            setMessages((prev) => {
-              const updated = [...prev]
-              const lastMsg = updated[updated.length - 1]
-              if (lastMsg && lastMsg.role === 'assistant') {
-                const parts = [
-                  ...lastMsg.parts,
-                  { type: 'text' as const, text: answerText, state: 'done' as const },
-                ]
-                updated[updated.length - 1] = { ...lastMsg, parts }
-              }
-              return updated
-            })
-          }
+            return updated
+          })
           break
         }
 

@@ -12,6 +12,10 @@ class Permission(models.Model):
         description="Unique permission code (e.g., user:create)",
     )
     description = fields.CharField(max_length=255, null=True)
+    is_system = fields.BooleanField(
+        default=True,
+        description="System permission (defined in code, cannot be deleted)",
+    )
 
     class Meta:
         table = "permissions"
@@ -115,6 +119,11 @@ class User(models.Model):
     email = fields.CharField(max_length=255, unique=True)
     hashed_password = fields.CharField(max_length=255)
     is_active = fields.BooleanField(default=True)
+    approval_status = fields.CharField(
+        max_length=20,
+        default="approved",
+        description="Approval status: approved, pending",
+    )
     is_superuser = fields.BooleanField(default=False)
     email_verified = fields.BooleanField(
         default=False, description="Email verification status"
@@ -143,6 +152,35 @@ class User(models.Model):
         max_length=255, null=True, description="ID from external auth provider"
     )
     avatar_url = fields.CharField(max_length=512, null=True)
+
+    # Password expiration fields
+    password_changed_at = fields.DatetimeField(
+        null=True, description="When password was last changed"
+    )
+    password_expires_at = fields.DatetimeField(
+        null=True, description="Calculated expiration date"
+    )
+    force_password_change = fields.BooleanField(
+        default=False, description="Force change on next login"
+    )
+    password_expiration_exempt = fields.BooleanField(
+        default=False, description="Exempt from password expiration policy"
+    )
+    password_expiration_notified_at = fields.DatetimeField(
+        null=True, description="Last notification timestamp"
+    )
+
+    # TOTP (Two-Factor Authentication) fields
+    totp_secret = fields.CharField(
+        max_length=255, null=True, description="Encrypted TOTP secret"
+    )
+    totp_enabled = fields.BooleanField(default=False, description="TOTP 2FA enabled")
+    totp_enabled_at = fields.DatetimeField(
+        null=True, description="When TOTP was enabled"
+    )
+    totp_backup_codes_hash = fields.TextField(
+        null=True, description="Hashed backup codes (JSON array)"
+    )
 
     roles = fields.ManyToManyField(
         "models.Role", related_name="users", through="user_roles"

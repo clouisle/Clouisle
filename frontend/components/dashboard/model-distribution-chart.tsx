@@ -4,20 +4,15 @@ import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Cpu } from 'lucide-react'
-import type { ModelDistribution } from '@/lib/api/dashboard'
+import type { ModelDistribution } from '@/lib/api/admin/dashboard'
+import { CHART_SURFACE_COLORS } from '@/lib/chart-theme'
 
 interface ModelDistributionChartProps {
   data: ModelDistribution[]
   isLoading?: boolean
 }
 
-const COLORS = [
-  'color-mix(in srgb, var(--chart-1) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-2) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-3) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-4) 70%, transparent)',
-  'color-mix(in srgb, var(--chart-5) 70%, transparent)',
-]
+const COLORS = CHART_SURFACE_COLORS
 
 export function ModelDistributionChart({ data, isLoading }: ModelDistributionChartProps) {
   const t = useTranslations('dashboard')
@@ -68,7 +63,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Cpu className="h-5 w-5" />
@@ -83,7 +78,8 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
               data={data as Array<ModelDistribution & Record<string, unknown>>}
               cx="50%"
               cy="50%"
-              outerRadius={100}
+              innerRadius={76}
+              outerRadius={96}
               fill="#8884d8"
               dataKey="count"
               nameKey="model"
@@ -97,8 +93,8 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
                 if (active && payload && payload.length) {
                   const data = payload[0].payload as ModelDistribution
                   return (
-                    <div className="rounded-lg border bg-background p-3 shadow-md">
-                      <div className="font-semibold mb-2">{data.model}</div>
+                    <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
+                      <div className="font-semibold mb-2">{data.model || 'Unknown'}</div>
                       <div className="text-sm space-y-1">
                         <div>
                           {t('common.usageCount')}: {formatNumber(data.count)}
