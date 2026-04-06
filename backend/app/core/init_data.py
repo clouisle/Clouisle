@@ -1270,7 +1270,9 @@ async def init_user_approval_status_field():
     """)
 
     if not tables:
-        logger.info("Users table does not exist yet, skipping approval_status migration")
+        logger.info(
+            "Users table does not exist yet, skipping approval_status migration"
+        )
         return
 
     _, rows = await conn.execute_query("""

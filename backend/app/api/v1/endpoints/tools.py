@@ -223,7 +223,9 @@ async def _get_accessible_teams(user: User) -> list[Team]:
         return await Team.all().order_by("name")
 
     memberships = await TeamMember.filter(user=user).prefetch_related("team")
-    return sorted([membership.team for membership in memberships], key=lambda team: team.name)
+    return sorted(
+        [membership.team for membership in memberships], key=lambda team: team.name
+    )
 
 
 async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[ToolOut]:
@@ -310,7 +312,9 @@ async def list_tools(
                 msg_key="not_team_member",
                 status_code=403,
             )
-        selected_teams = [team for team in accessible_teams if team.id in requested_team_ids]
+        selected_teams = [
+            team for team in accessible_teams if team.id in requested_team_ids
+        ]
     else:
         selected_teams = accessible_teams
 
@@ -334,9 +338,14 @@ async def list_tools(
             continue
         if not _matches_filter(tool.category.value, category_filter):
             continue
-        if not _matches_filter("enabled" if tool.is_enabled else "disabled", status_filter):
+        if not _matches_filter(
+            "enabled" if tool.is_enabled else "disabled", status_filter
+        ):
             continue
-        if not _matches_filter(str(tool.team_id) if tool.team_id else None, {str(v) for v in requested_team_ids} if team_id else set()):
+        if not _matches_filter(
+            str(tool.team_id) if tool.team_id else None,
+            {str(v) for v in requested_team_ids} if team_id else set(),
+        ):
             continue
         if not _matches_filter(tool.created_by_name, creator_filter):
             continue

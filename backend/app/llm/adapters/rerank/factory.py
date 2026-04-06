@@ -3,6 +3,7 @@ Rerank 适配器工厂
 """
 
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 from app.llm.adapters.chat import BaseChatAdapter
 
@@ -38,8 +39,16 @@ def _should_use_native_openai_compatible_rerank(
     if config.get("native_rerank") is True or config.get("rerank_api") == "native":
         return True
 
-    base_url = (getattr(model_config, "base_url", None) or "").lower()
-    if "siliconflow.cn" in base_url or "siliconflow.com" in base_url:
+    provider = getattr(model_config, "provider", None)
+    provider_value = (
+        provider.value if hasattr(provider, "value") else str(provider or "")
+    )
+    if provider_value == ModelProvider.SILICONFLOW.value:
+        return True
+
+    base_url = getattr(model_config, "base_url", None) or ""
+    hostname = (urlparse(base_url).hostname or "").lower()
+    if hostname in {"api.siliconflow.cn", "api.siliconflow.com"}:
         return True
 
     return False

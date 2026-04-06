@@ -9,7 +9,7 @@ from app.llm.adapters.rerank.openai_compatible_adapter import (
 )
 from app.llm.manager import ModelManager
 from app.llm.types import ChatResponse, FinishReason, Usage
-from app.models.model import ModelType
+from app.models.model import ModelProvider, ModelType
 
 
 def build_adapter() -> LLMRerankAdapter:
@@ -97,7 +97,7 @@ class TestModelManagerModelLookup:
 
 
 class TestRerankFactory:
-    def test_factory_uses_native_adapter_for_siliconflow(self):
+    def test_factory_uses_native_adapter_for_siliconflow_host(self):
         model_config = SimpleNamespace(
             provider="openai",
             model_id="netease-youdao/bce-reranker-base_v1",
@@ -111,3 +111,48 @@ class TestRerankFactory:
         adapter = create_rerank_adapter(model_config)
 
         assert isinstance(adapter, OpenAICompatibleRerankAdapter)
+
+    def test_factory_uses_native_adapter_for_siliconflow_provider(self):
+        model_config = SimpleNamespace(
+            provider=ModelProvider.SILICONFLOW,
+            model_id="netease-youdao/bce-reranker-base_v1",
+            api_key="test-key",
+            base_url="https://custom.example/v1",
+            default_params=None,
+            config=None,
+            max_output_tokens=None,
+        )
+
+        adapter = create_rerank_adapter(model_config)
+
+        assert isinstance(adapter, OpenAICompatibleRerankAdapter)
+
+    def test_factory_uses_native_adapter_for_explicit_native_flag(self):
+        model_config = SimpleNamespace(
+            provider="openai",
+            model_id="netease-youdao/bce-reranker-base_v1",
+            api_key="test-key",
+            base_url="https://custom.example/v1",
+            default_params=None,
+            config={"native_rerank": True},
+            max_output_tokens=None,
+        )
+
+        adapter = create_rerank_adapter(model_config)
+
+        assert isinstance(adapter, OpenAICompatibleRerankAdapter)
+
+    def test_factory_rejects_untrusted_url_with_siliconflow_substring(self):
+        model_config = SimpleNamespace(
+            provider="openai",
+            model_id="gpt-4o-mini",
+            api_key="test-key",
+            base_url="https://evil.example/?next=siliconflow.com",
+            default_params=None,
+            config=None,
+            max_output_tokens=None,
+        )
+
+        adapter = create_rerank_adapter(model_config)
+
+        assert isinstance(adapter, LLMRerankAdapter)

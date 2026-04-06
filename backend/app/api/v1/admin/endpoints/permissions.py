@@ -30,20 +30,13 @@ async def read_permission_scopes(
     """
     Retrieve stable permission scope options.
     """
-    db_scopes = set(
-        await Permission.all().distinct().values_list("scope", flat=True)
-    )
+    db_scopes = set(await Permission.all().distinct().values_list("scope", flat=True))
     system_scopes = {
         definition["scope"] for definition in SystemPermissions.get_all_definitions()
     }
     scopes = sorted(scope for scope in (db_scopes | system_scopes) if scope)
 
-    return success(
-        data=[
-            {"value": scope, "label": scope}
-            for scope in scopes
-        ]
-    )
+    return success(data=[{"value": scope, "label": scope} for scope in scopes])
 
 
 @router.get("", response_model=Response[PageData[PermissionSchema]])

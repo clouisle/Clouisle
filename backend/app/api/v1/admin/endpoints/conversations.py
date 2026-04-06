@@ -167,7 +167,9 @@ async def list_all_conversations(
                     "page_size": page_size,
                 }
             )
-        query = query.filter(agent_id__in=list(selected_agent_ids & accessible_agent_id_set))
+        query = query.filter(
+            agent_id__in=list(selected_agent_ids & accessible_agent_id_set)
+        )
 
     # user_id filter only applies for admins (members already filtered to own)
     if user_id and has_dashboard_access:

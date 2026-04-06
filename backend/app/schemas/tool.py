@@ -178,11 +178,19 @@ class ToolFilterOption(BaseModel):
 
 
 class ToolFilterOptionsOut(BaseModel):
-    types: list[ToolFilterOption] = Field(default_factory=list, description="工具类型选项")
-    categories: list[ToolFilterOption] = Field(default_factory=list, description="工具分类选项")
-    statuses: list[ToolFilterOption] = Field(default_factory=list, description="启用状态选项")
+    types: list[ToolFilterOption] = Field(
+        default_factory=list, description="工具类型选项"
+    )
+    categories: list[ToolFilterOption] = Field(
+        default_factory=list, description="工具分类选项"
+    )
+    statuses: list[ToolFilterOption] = Field(
+        default_factory=list, description="启用状态选项"
+    )
     teams: list[ToolFilterOption] = Field(default_factory=list, description="团队选项")
-    creators: list[ToolFilterOption] = Field(default_factory=list, description="创建者选项")
+    creators: list[ToolFilterOption] = Field(
+        default_factory=list, description="创建者选项"
+    )
 
 
 class ToolListPageOut(PageData[ToolOut]):

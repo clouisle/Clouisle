@@ -174,12 +174,8 @@ async def get_user_stats(
 ) -> Any:
     total = await User.all().count()
     active = await User.filter(is_active=True).count()
-    inactive = await User.filter(
-        is_active=False, approval_status="approved"
-    ).count()
-    pending = await User.filter(
-        is_active=False, approval_status="pending"
-    ).count()
+    inactive = await User.filter(is_active=False, approval_status="approved").count()
+    pending = await User.filter(is_active=False, approval_status="pending").count()
 
     return success(
         data={

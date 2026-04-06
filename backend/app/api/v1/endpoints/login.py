@@ -721,7 +721,9 @@ async def register(
         # First user is active and superuser
         # Others depend on require_approval setting
         is_active=is_first_user or not require_approval,
-        approval_status="approved" if is_first_user or not require_approval else "pending",
+        approval_status="approved"
+        if is_first_user or not require_approval
+        else "pending",
         is_superuser=is_first_user,
         # First user auto-verified, or if email verification is disabled
         email_verified=is_first_user or not email_verification,

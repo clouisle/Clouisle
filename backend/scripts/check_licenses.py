@@ -106,13 +106,15 @@ def parse_policy_file(text: str) -> dict[str, Any]:
 
         if not value:
             next_non_empty = None
-            for next_line in lines[index + 1:]:
+            for next_line in lines[index + 1 :]:
                 next_indent = len(next_line) - len(next_line.lstrip(" "))
                 if next_indent <= indent:
                     break
                 next_non_empty = next_line.strip()
                 break
-            container: dict[str, Any] | list[Any] = [] if next_non_empty and next_non_empty.startswith("- ") else {}
+            container: dict[str, Any] | list[Any] = (
+                [] if next_non_empty and next_non_empty.startswith("- ") else {}
+            )
             parent[key] = container
             stack.append((indent, container))
             continue
@@ -144,7 +146,9 @@ def load_policy() -> Policy:
         action_on_unknown=defaults.get("action_on_unknown", "deny"),
         fail_on_missing_license=bool(defaults.get("fail_on_missing_license", True)),
         allowed_licenses=set(data.get("allowed_licenses", [])),
-        conditionally_allowed_licenses=set(data.get("conditionally_allowed_licenses", [])),
+        conditionally_allowed_licenses=set(
+            data.get("conditionally_allowed_licenses", [])
+        ),
         denied_licenses=set(data.get("denied_licenses", [])),
         exceptions=exceptions,
     )
@@ -155,7 +159,12 @@ def normalize_token(token: str) -> str:
     token = re.sub(r"^\((.*)\)$", r"\1", token)
     token = re.sub(r"\s+", " ", token)
     token = token.split("\n", 1)[0].strip()
-    if " AND " not in token and " OR " not in token and ";" not in token and "," not in token:
+    if (
+        " AND " not in token
+        and " OR " not in token
+        and ";" not in token
+        and "," not in token
+    ):
         token = re.sub(r"\s*\([^)]*\)$", "", token).strip()
     mapping = {
         "Apache 2.0": "Apache-2.0",
@@ -187,15 +196,23 @@ def split_expression(license_value: str) -> tuple[str, list[str]]:
 
     inner = cleaned.strip("()").replace(";", " OR ").replace(",", " OR ")
     if " OR " in inner:
-        return "or", [normalize_token(part) for part in inner.split(" OR ") if part.strip()]
+        return "or", [
+            normalize_token(part) for part in inner.split(" OR ") if part.strip()
+        ]
     if " AND " in inner:
-        return "and", [normalize_token(part) for part in inner.split(" AND ") if part.strip()]
+        return "and", [
+            normalize_token(part) for part in inner.split(" AND ") if part.strip()
+        ]
     if "/" in inner and "http" not in inner:
-        return "or", [normalize_token(part) for part in inner.split("/") if part.strip()]
+        return "or", [
+            normalize_token(part) for part in inner.split("/") if part.strip()
+        ]
     return "single", [normalize_token(inner)]
 
 
-def is_exception_match(rule: ExceptionRule, package: str, version: str, license_value: str) -> bool:
+def is_exception_match(
+    rule: ExceptionRule, package: str, version: str, license_value: str
+) -> bool:
     if rule.ecosystem and rule.ecosystem != "python":
         return False
     if rule.package and rule.package != package:
@@ -209,7 +226,9 @@ def is_exception_match(rule: ExceptionRule, package: str, version: str, license_
     return True
 
 
-def find_exception(policy: Policy, package: str, version: str, license_value: str) -> ExceptionRule | None:
+def find_exception(
+    policy: Policy, package: str, version: str, license_value: str
+) -> ExceptionRule | None:
     normalized = normalize_token(license_value)
     for rule in policy.exceptions:
         if is_exception_match(rule, package, version, normalized):
@@ -231,7 +250,10 @@ def evaluate_license(policy: Policy, license_value: str) -> tuple[bool, str]:
     def classify(token: str) -> str:
         if token in policy.denied_licenses:
             return "denied"
-        if token in policy.allowed_licenses or token in policy.conditionally_allowed_licenses:
+        if (
+            token in policy.allowed_licenses
+            or token in policy.conditionally_allowed_licenses
+        ):
             return "allowed"
         return "unknown"
 
@@ -290,7 +312,9 @@ def main() -> int:
 
         allowed, reason = evaluate_license(policy, license_value)
         if not allowed:
-            failures.append(f"- {name}=={version}: {license_value or 'UNKNOWN'} ({reason})")
+            failures.append(
+                f"- {name}=={version}: {license_value or 'UNKNOWN'} ({reason})"
+            )
 
     if failures:
         print("License compliance check failed for backend dependencies:")
