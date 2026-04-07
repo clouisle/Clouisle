@@ -246,9 +246,21 @@ async def test_provider_connection(
         )
 
     except Exception as e:
+        if hasattr(current_user, "id"):
+            await AuditLogService.log(
+                user=current_user,
+                action="test_sso_provider_failed",
+                resource_type="sso_provider",
+                resource_id=provider.id,
+                resource_name=provider.name,
+                operation="read",
+                status="failed",
+                error_message=str(e),
+                metadata={"provider": provider.name},
+            )
         return success(
             data={
                 "status": "error",
-                "message": t("sso_provider_config_error", error=str(e)),
+                "message": t("sso_provider_config_error_generic"),
             }
         )

@@ -197,8 +197,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         field_parts = [str(part) for part in loc if part != "body"]
         field = ".".join(field_parts) if field_parts else "unknown"
 
-        # 获取错误消息
-        msg = err.get("msg", "Invalid value")
+        # 获取错误消息；如果 msg 是 i18n key，则在这里翻译
+        raw_msg = err.get("msg", "Invalid value")
+        msg = t(raw_msg) if isinstance(raw_msg, str) else str(raw_msg)
 
         # 如果同一字段有多个错误，用列表存储
         if field not in errors:

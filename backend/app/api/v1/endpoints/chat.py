@@ -1074,19 +1074,19 @@ async def execute_tool_call(
 
     try:
         if not tool_name:
-            return json.dumps({"error": "Tool name is required"}, ensure_ascii=False)
+            return json.dumps({"error": t("tool_name_required")}, ensure_ascii=False)
         # Handle knowledge_search - internal tool for RAG
         if tool_name == "knowledge_search":
             if not agent:
                 return json.dumps(
-                    {"error": "Agent context required for knowledge_search"},
+                    {"error": t("agent_context_required_for_knowledge_search")},
                     ensure_ascii=False,
                 )
 
             query = arguments.get("query", "")
             if not query:
                 return json.dumps(
-                    {"error": "Query parameter is required"}, ensure_ascii=False
+                    {"error": t("query_parameter_required")}, ensure_ascii=False
                 )
 
             # Use existing RAG retrieval function
@@ -1122,7 +1122,7 @@ async def execute_tool_call(
 
             if not user:
                 return json.dumps(
-                    {"error": "User context required for memory tools"},
+                    {"error": t("user_context_required_for_memory_tools")},
                     ensure_ascii=False,
                 )
 
@@ -1134,7 +1134,9 @@ async def execute_tool_call(
                     if not isinstance(name, str) or not isinstance(entity_type, str):
                         return json.dumps(
                             {
-                                "error": "name and entity_type are required for create_memory_entity"
+                                "error": t(
+                                    "memory_tool_create_entity_requires_name_and_entity_type"
+                                )
                             },
                             ensure_ascii=False,
                         )
@@ -1159,7 +1161,9 @@ async def execute_tool_call(
                     ):
                         return json.dumps(
                             {
-                                "error": "source_entity_name, target_entity_name, and relation_type are required for create_memory_relation"
+                                "error": t(
+                                    "memory_tool_create_relation_requires_fields"
+                                )
                             },
                             ensure_ascii=False,
                         )
@@ -1178,7 +1182,9 @@ async def execute_tool_call(
                     if not isinstance(entity_name, str):
                         return json.dumps(
                             {
-                                "error": "entity_name is required for update_memory_entity"
+                                "error": t(
+                                    "memory_tool_update_entity_requires_entity_name"
+                                )
                             },
                             ensure_ascii=False,
                         )
@@ -1194,7 +1200,7 @@ async def execute_tool_call(
                     query = arguments.get("query")
                     if not isinstance(query, str):
                         return json.dumps(
-                            {"error": "query is required for search_memory"},
+                            {"error": t("memory_tool_search_requires_query")},
                             ensure_ascii=False,
                         )
                     result = await MemoryService.handle_search_memory(
@@ -1205,9 +1211,9 @@ async def execute_tool_call(
 
                 return json.dumps(result, ensure_ascii=False)
             except Exception as e:
-                logger.error(f"Memory tool execution failed: {e}")
+                logger.error("Memory tool execution failed: %s", e)
                 return json.dumps(
-                    {"success": False, "error": str(e)},
+                    {"success": False, "error": t("memory_tool_execution_failed")},
                     ensure_ascii=False,
                 )
 
@@ -1221,7 +1227,7 @@ async def execute_tool_call(
             )  # Split into ["mcp", "<server_name>", "<tool_name>"]
             if len(parts) < 3:
                 return json.dumps(
-                    {"error": f"Invalid MCP tool name format: {tool_name}"},
+                    {"error": t("invalid_mcp_tool_name_format", tool_name=tool_name)},
                     ensure_ascii=False,
                 )
 
@@ -1231,7 +1237,7 @@ async def execute_tool_call(
             # Get MCP tool from database by name (need agent's team_id)
             if not agent:
                 return json.dumps(
-                    {"error": "Agent context required for MCP tool"}, ensure_ascii=False
+                    {"error": t("agent_context_required_for_mcp_tool")}, ensure_ascii=False
                 )
 
             mcp_tool = await Tool.filter(
@@ -1239,12 +1245,12 @@ async def execute_tool_call(
             ).first()
             if not mcp_tool:
                 return json.dumps(
-                    {"error": f"MCP tool not found: {server_name}"}, ensure_ascii=False
+                    {"error": t("mcp_tool_not_found", server_name=server_name)}, ensure_ascii=False
                 )
 
             if not mcp_tool.mcp_config:
                 return json.dumps(
-                    {"error": f"MCP tool has no configuration: {mcp_tool.name}"},
+                    {"error": t("mcp_tool_missing_configuration", tool_name=mcp_tool.name)},
                     ensure_ascii=False,
                 )
 
@@ -1262,7 +1268,7 @@ async def execute_tool_call(
                 return str(mcp_result.result) if mcp_result.result is not None else ""
             else:
                 return json.dumps(
-                    {"error": mcp_result.error or "MCP tool execution failed"},
+                    {"error": mcp_result.error or t("mcp_tool_execution_failed")},
                     ensure_ascii=False,
                 )
 
@@ -1274,7 +1280,7 @@ async def execute_tool_call(
             custom_tool = await Tool.filter(name=actual_name, is_enabled=True).first()
             if not custom_tool:
                 return json.dumps(
-                    {"error": f"Custom tool '{actual_name}' not found"},
+                    {"error": t("custom_tool_not_found", tool_name=actual_name)},
                     ensure_ascii=False,
                 )
 
@@ -1292,7 +1298,10 @@ async def execute_tool_call(
             else:
                 return json.dumps(
                     {
-                        "error": f"Unsupported custom tool type: {custom_tool.custom_type}"
+                        "error": t(
+                            "unsupported_custom_tool_type",
+                            tool_type=custom_tool.custom_type,
+                        )
                     },
                     ensure_ascii=False,
                 )
@@ -1332,8 +1341,8 @@ async def execute_tool_call(
                 return json.dumps(result, ensure_ascii=False)
             return str(result)
     except Exception as e:
-        logger.exception(f"Tool execution error: {e}")
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        logger.exception("Tool execution error: %s", e)
+        return json.dumps({"error": t("tool_execution_failed")}, ensure_ascii=False)
 
 
 async def execute_http_tool(
@@ -1378,7 +1387,7 @@ async def execute_code_tool(
 
     if not code:
         return json.dumps(
-            {"error": "No code defined for this tool"}, ensure_ascii=False
+            {"error": t("tool_code_not_defined")}, ensure_ascii=False
         )
 
     try:
@@ -1405,15 +1414,15 @@ async def execute_code_tool(
         else:
             return json.dumps(
                 {
-                    "error": exec_result.error or "Code execution failed",
+                    "error": exec_result.error or t("code_execution_failed"),
                     "logs": exec_result.stdout or "",
                 },
                 ensure_ascii=False,
             )
 
     except Exception as e:
-        logger.exception(f"Code tool execution error: {e}")
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        logger.exception("Code tool execution error: %s", e)
+        return json.dumps({"error": t("code_tool_execution_failed")}, ensure_ascii=False)
 
 
 async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
@@ -1886,10 +1895,10 @@ async def chat(
             data={"quota_type": e.quota_type},
         )
     except LLMError as e:
-        logger.exception(f"LLM error during chat: {e}")
+        logger.exception("LLM error during chat: %s", e)
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
-            msg=str(e),
+            msg_key="llm_processing_failed",
             status_code=500,
         )
 
@@ -2110,13 +2119,15 @@ async def chat_stream(
                                             parsed_files.append(parsed)
                                         except Exception as e:
                                             logger.warning(
-                                                f"Failed to parse file {f.filename}: {e}"
+                                                "Failed to parse file %s: %s",
+                                                f.filename,
+                                                e,
                                             )
                                             # Add error placeholder
                                             parsed_files.append(
                                                 ParsedFile(
                                                     filename=f.filename,
-                                                    content=f"[文件解析失败: {str(e)}]",
+                                                    content=t("file_parse_failed_placeholder"),
                                                     mime_type=f.mime_type,
                                                     size=f.size,
                                                 )
@@ -2153,11 +2164,11 @@ async def chat_stream(
                                                 )
                                             )
                                     except Exception as e:
-                                        logger.warning(f"Custom parser failed: {e}")
+                                        logger.warning("Custom parser failed: %s", e)
                                         parsed_files.append(
                                             ParsedFile(
-                                                filename="解析错误",
-                                                content=f"[自定义解析器失败: {str(e)}]",
+                                                filename=t("custom_parser_filename"),
+                                                content=t("custom_parser_failed_placeholder"),
                                                 mime_type="text/plain",
                                                 size=0,
                                             )
@@ -2804,16 +2815,17 @@ async def chat_stream(
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
                 except QuotaExceededError as e:
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
+                    logger.warning("Quota exceeded during stream: %s", e)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except ModelNotFoundError as e:
-                    logger.error(f"Model not found error: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': str(e)})}\n\n"
+                    logger.error("Model not found error during stream: %s", e)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('model_not_found')})}\n\n"
                 except AuthenticationError as e:
-                    logger.error(f"Authentication error: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': str(e)})}\n\n"
+                    logger.error("Authentication error during stream: %s", e)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': t('unauthorized')})}\n\n"
                 except RateLimitError as e:
-                    logger.warning(f"Rate limit error: {e}")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': str(e)})}\n\n"
+                    logger.warning("Rate limit error during stream: %s", e)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
                 except LLMError as e:
                     logger.exception(f"LLM error during stream: {e}")
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
@@ -2836,7 +2848,7 @@ async def chat_stream(
                 assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
                 await assistant_msg.save()
             # Send timeout error event
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': 'Stream timeout exceeded', 'timeout': global_timeout})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
 
         finally:
             # Resource cleanup and logging
@@ -3589,14 +3601,15 @@ async def regenerate_message(
                         await Message.filter(id=new_message_id).delete()
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': str(e), 'quota_type': e.quota_type})}\n\n"
+                    logger.warning("Quota exceeded during regenerate: %s", e)
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except LLMError as e:
                     # Rollback: delete new message and restore original
                     if new_message_id:
                         await Message.filter(id=new_message_id).delete()
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
-                    logger.exception(f"LLM error during regenerate: {e}")
+                    logger.exception("LLM error during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     # Rollback: delete new message and restore original
@@ -3604,7 +3617,7 @@ async def regenerate_message(
                         await Message.filter(id=new_message_id).delete()
                         # Restore original message as active
                         await Message.filter(id=message.id).update(is_active=True)
-                    logger.exception(f"Unexpected error during regenerate: {e}")
+                    logger.exception("Unexpected error during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
@@ -3622,7 +3635,7 @@ async def regenerate_message(
                 new_message.duration_ms = int((time.time() - start_time) * 1000)
                 await new_message.save()
             # Send timeout error event
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': 'Stream timeout exceeded', 'timeout': global_timeout})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
 
         finally:
             # Resource cleanup and logging

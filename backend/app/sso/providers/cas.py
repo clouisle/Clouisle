@@ -1,10 +1,14 @@
+import logging
 from typing import Any, Dict
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
 
 import httpx
 
+from app.core.i18n import t
 from app.sso.providers.base import BaseSSOProvider
+
+logger = logging.getLogger(__name__)
 
 
 class CASProvider(BaseSSOProvider):
@@ -42,7 +46,7 @@ class CASProvider(BaseSSOProvider):
         """
         ticket = callback_data.get("ticket")
         if not ticket:
-            raise ValueError("Missing CAS ticket")
+            raise ValueError(t("sso_missing_cas_ticket"))
 
         # Validate ticket
         user_info = await self._validate_ticket(ticket, redirect_uri)
@@ -110,7 +114,8 @@ class CASProvider(BaseSSOProvider):
                         "username": username,
                     }
                 else:
-                    raise ValueError("CAS validation failed")
+                    logger.warning("CAS validation failed without explicit error details")
+                    raise ValueError(t("sso_cas_validation_failed"))
 
             else:
                 # CAS 2.0/3.0: XML response
@@ -122,7 +127,8 @@ class CASProvider(BaseSSOProvider):
                         if failure is not None and failure.text is not None
                         else "Unknown error"
                     )
-                    raise ValueError(f"CAS validation failed: {error_msg}")
+                    logger.warning("CAS validation failed: %s", error_msg)
+                    raise ValueError(t("sso_cas_validation_failed"))
 
                 # Extract user
                 user_elem = success.find("cas:user", ns)
@@ -151,4 +157,5 @@ class CASProvider(BaseSSOProvider):
                 return user_info
 
         except ET.ParseError as e:
-            raise ValueError(f"Failed to parse CAS response: {e}")
+            logger.warning("Failed to parse CAS response: %s", e)
+            raise ValueError(t("sso_cas_response_parse_failed"))

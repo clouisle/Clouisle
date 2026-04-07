@@ -2,6 +2,7 @@
 通用文件上传接口
 """
 
+import logging
 import os
 import uuid
 import hashlib
@@ -11,17 +12,20 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api import deps
+from app.core.i18n import t
 from app.models.user import User
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.file_parser import (
     file_parser_service,
     FileParseConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -86,10 +90,18 @@ DEFAULT_BINARY_EXT = ".bin"
 def _validate_path_segment(value: str, field_name: str) -> str:
     """Allow only simple path segments to prevent traversal."""
     if not value or value in {".", ".."}:
-        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_upload_path_segment",
+            data={"field_name": field_name},
+        )
 
     if any(sep in value for sep in (os.sep, os.altsep) if sep):
-        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_upload_path_segment",
+            data={"field_name": field_name},
+        )
 
     return value
 
@@ -98,7 +110,11 @@ def _resolve_upload_path(*parts: str) -> Path:
     """Resolve a path under the upload root and reject traversal."""
     candidate = UPLOAD_ROOT.joinpath(*parts).resolve()
     if candidate != UPLOAD_ROOT and UPLOAD_ROOT not in candidate.parents:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="access_denied",
+            status_code=403,
+        )
     return candidate
 
 
@@ -325,7 +341,11 @@ async def get_file(
     )
 
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="file_not_found",
+            status_code=404,
+        )
 
     return FileResponse(file_path)
 
@@ -485,16 +505,16 @@ async def parse_file(
             config=config,
         )
     except ValueError as e:
+        logger.warning("Failed to parse file %s: %s", file.filename, e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="file_parse_error",
-            data={"error": str(e)},
         )
     except Exception as e:
+        logger.exception("Unexpected file parse error for %s", file.filename)
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="file_parse_error",
-            data={"error": str(e)},
         )
 
     return success(
@@ -551,13 +571,23 @@ async def parse_files_batch(
             continue
 
         if not file_parser_service.is_supported(file.filename):
-            errors.append({"filename": file.filename, "error": "Unsupported file type"})
+            errors.append(
+                {
+                    "filename": file.filename,
+                    "error": t("unsupported_file_type"),
+                }
+            )
             continue
 
         content = await file.read()
 
         if len(content) > MAX_PARSE_FILE_SIZE:
-            errors.append({"filename": file.filename, "error": "File too large"})
+            errors.append(
+                {
+                    "filename": file.filename,
+                    "error": t("file_too_large"),
+                }
+            )
             continue
 
         try:
@@ -578,7 +608,8 @@ async def parse_files_batch(
                 )
             )
         except Exception as e:
-            errors.append({"filename": file.filename, "error": str(e)})
+            logger.warning("Failed to parse file %s in batch: %s", file.filename, e)
+            errors.append({"filename": file.filename, "error": t("file_parse_error")})
 
     if errors and not results:
         raise BusinessError(

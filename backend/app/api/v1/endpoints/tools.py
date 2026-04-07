@@ -600,12 +600,11 @@ async def get_mcp_tools(
             msg_key="success",
         )
     except Exception as e:
-        logger.exception(f"Failed to list MCP tools: {e}")
+        logger.exception("Failed to list MCP tools: %s", e)
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="mcp_connection_failed",
             status_code=500,
-            detail=str(e),
         )
 
 
@@ -887,13 +886,13 @@ async def test_tool(
             )
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            logger.error(f"Builtin tool execution error: {e}")
+            logger.error("Builtin tool execution error: %s", e)
 
             return success(
                 data=ToolExecuteResponse(
                     name=request.name,
                     success=False,
-                    error=str(e),
+                    error=t("tool_execution_failed"),
                     duration_ms=duration_ms,
                 ),
                 msg_key="success",
@@ -913,7 +912,10 @@ async def test_tool(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error="MCP configuration is missing",
+                            error=t(
+                                "mcp_tool_missing_configuration",
+                                tool_name=request.name,
+                            ),
                             duration_ms=int((time.time() - start_time) * 1000),
                         ),
                         msg_key="success",
@@ -945,13 +947,13 @@ async def test_tool(
                         msg_key="success",
                     )
                 except Exception as e:
-                    logger.exception(f"MCP tool execution error: {e}")
+                    logger.exception("MCP tool execution error: %s", e)
                     duration_ms = int((time.time() - start_time) * 1000)
                     return success(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error=str(e),
+                            error=t("mcp_tool_execution_failed"),
                             duration_ms=duration_ms,
                         ),
                         msg_key="success",

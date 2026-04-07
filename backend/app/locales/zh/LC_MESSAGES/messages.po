@@ -1,0 +1,2087 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: clouisle-backend\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "access_denied"
+msgstr "访问被拒绝"
+
+msgid "account_deleted"
+msgstr "账号已删除"
+
+msgid "account_deletion_disabled"
+msgstr "管理员已禁用账号自主删除功能"
+
+msgid "account_locked"
+msgstr "账户已被锁定，请稍后再试。"
+
+msgid "account_locked_after_attempts"
+msgstr "登录失败次数过多，账户已被锁定。"
+
+msgid "agent_access_denied"
+msgstr "您无权访问此智能体"
+
+msgid "agent_created"
+msgstr "智能体创建成功"
+
+msgid "agent_deleted"
+msgstr "智能体删除成功"
+
+msgid "agent_duplicated"
+msgstr "智能体复制成功"
+
+msgid "agent_name_exists"
+msgstr "该智能体名称已存在"
+
+msgid "agent_not_found"
+msgstr "智能体未找到"
+
+msgid "agent_not_published"
+msgstr "智能体未发布"
+
+msgid "agent_published"
+msgstr "智能体发布成功"
+
+msgid "agent_unpublished"
+msgstr "智能体已取消发布"
+
+msgid "agent_updated"
+msgstr "智能体更新成功"
+
+msgid "all_chunks_failed_to_embed"
+msgstr "所有分块嵌入失败：{error}"
+
+msgid "all_files_failed"
+msgstr "所有文件解析失败"
+
+msgid "already_exists"
+msgstr "资源已存在"
+
+msgid "already_team_member"
+msgstr "用户已是该团队成员"
+
+msgid "api_key_activated"
+msgstr "API 密钥已激活"
+
+msgid "api_key_already_active"
+msgstr "API 密钥已经是激活状态"
+
+msgid "api_key_already_inactive"
+msgstr "API 密钥已经是禁用状态"
+
+msgid "api_key_authentication_failed"
+msgstr "API 密钥认证失败"
+
+msgid "api_key_created"
+msgstr "API 密钥创建成功"
+
+msgid "api_key_deactivated"
+msgstr "API 密钥已禁用"
+
+msgid "api_key_deleted"
+msgstr "API 密钥删除成功"
+
+msgid "api_key_expired"
+msgstr "API 密钥已过期"
+
+msgid "api_key_no_agent_access"
+msgstr "此 API 密钥无权访问请求的 Agent"
+
+msgid "api_key_no_workflow_access"
+msgstr "此 API 密钥无权访问请求的工作流"
+
+msgid "api_key_not_found"
+msgstr "API 密钥未找到"
+
+msgid "api_key_required"
+msgstr "Webhook 调用需要 API 密钥"
+
+msgid "api_key_updated"
+msgstr "API 密钥更新成功"
+
+msgid "archive_failed"
+msgstr "归档失败"
+
+msgid "archive_task_completed"
+msgstr "归档完成"
+
+msgid "archive_task_started"
+msgstr "归档任务已启动"
+
+msgid "audit_log_activate_user"
+msgstr "激活用户"
+
+msgid "audit_log_admin_disable_totp"
+msgstr "管理员禁用用户双因素认证"
+
+msgid "audit_log_agent_create_memory_entity"
+msgstr "Agent 创建记忆实体"
+
+msgid "audit_log_agent_create_memory_relation"
+msgstr "Agent 创建记忆关系"
+
+msgid "audit_log_agent_update_memory_entity"
+msgstr "Agent 更新记忆实体"
+
+msgid "audit_log_bulk_force_password_change"
+msgstr "批量强制修改密码"
+
+msgid "audit_log_change_password"
+msgstr "修改密码"
+
+msgid "audit_log_create_agent"
+msgstr "创建 Agent"
+
+msgid "audit_log_create_api_key"
+msgstr "创建 API 密钥"
+
+msgid "audit_log_create_kb"
+msgstr "创建知识库"
+
+msgid "audit_log_create_model"
+msgstr "创建模型配置"
+
+msgid "audit_log_create_permission"
+msgstr "创建权限"
+
+msgid "audit_log_create_role"
+msgstr "创建角色"
+
+msgid "audit_log_create_sso_provider"
+msgstr "创建 SSO 提供商"
+
+msgid "audit_log_create_team"
+msgstr "创建团队"
+
+msgid "audit_log_create_tool"
+msgstr "创建工具"
+
+msgid "audit_log_create_user"
+msgstr "创建用户"
+
+msgid "audit_log_create_workflow"
+msgstr "创建工作流"
+
+msgid "audit_log_deactivate_user"
+msgstr "停用用户"
+
+msgid "audit_log_delete_agent"
+msgstr "删除 Agent"
+
+msgid "audit_log_delete_api_key"
+msgstr "删除 API 密钥"
+
+msgid "audit_log_delete_kb"
+msgstr "删除知识库"
+
+msgid "audit_log_delete_memory_entity"
+msgstr "删除记忆实体"
+
+msgid "audit_log_delete_memory_relation"
+msgstr "删除记忆关系"
+
+msgid "audit_log_delete_model"
+msgstr "删除模型配置"
+
+msgid "audit_log_delete_permission"
+msgstr "删除权限"
+
+msgid "audit_log_delete_role"
+msgstr "删除角色"
+
+msgid "audit_log_delete_sso_provider"
+msgstr "删除 SSO 提供商"
+
+msgid "audit_log_delete_team"
+msgstr "删除团队"
+
+msgid "audit_log_delete_tool"
+msgstr "删除工具"
+
+msgid "audit_log_delete_user"
+msgstr "删除用户"
+
+msgid "audit_log_delete_workflow"
+msgstr "删除工作流"
+
+msgid "audit_log_disable_totp"
+msgstr "禁用双因素认证"
+
+msgid "audit_log_enable_totp"
+msgstr "启用双因素认证"
+
+msgid "audit_log_exempt_password_expiration"
+msgstr "豁免密码过期"
+
+msgid "audit_log_force_password_change"
+msgstr "强制修改密码"
+
+msgid "audit_log_login_failed"
+msgstr "登录失败"
+
+msgid "audit_log_login_success"
+msgstr "登录成功"
+
+msgid "audit_log_logout"
+msgstr "登出"
+
+msgid "audit_log_not_found"
+msgstr "审计日志未找到"
+
+msgid "audit_log_publish_agent"
+msgstr "发布 Agent"
+
+msgid "audit_log_regenerate_backup_codes"
+msgstr "重新生成备份码"
+
+msgid "audit_log_register"
+msgstr "用户注册"
+
+msgid "audit_log_reset_password"
+msgstr "重置密码"
+
+msgid "audit_log_reset_password_expiration"
+msgstr "重置密码过期时间"
+
+msgid "audit_log_sso_login_failed"
+msgstr "SSO 登录失败"
+
+msgid "audit_log_sso_login_success"
+msgstr "SSO 登录"
+
+msgid "audit_log_unpublish_agent"
+msgstr "取消发布 Agent"
+
+msgid "audit_log_update_agent"
+msgstr "更新 Agent"
+
+msgid "audit_log_update_auto_notification_config"
+msgstr "更新自动通知配置"
+
+msgid "audit_log_update_kb"
+msgstr "更新知识库"
+
+msgid "audit_log_update_memory_entity"
+msgstr "更新记忆实体"
+
+msgid "audit_log_update_model"
+msgstr "更新模型配置"
+
+msgid "audit_log_update_permission"
+msgstr "更新权限"
+
+msgid "audit_log_update_role"
+msgstr "更新角色"
+
+msgid "audit_log_update_settings"
+msgstr "更新站点设置"
+
+msgid "audit_log_update_sso_provider"
+msgstr "更新 SSO 提供商"
+
+msgid "audit_log_update_team"
+msgstr "更新团队"
+
+msgid "audit_log_update_tool"
+msgstr "更新工具"
+
+msgid "audit_log_update_user"
+msgstr "更新用户"
+
+msgid "audit_log_update_workflow"
+msgstr "更新工作流"
+
+msgid "audit_log_use_backup_code"
+msgstr "使用备份码"
+
+msgid "audit_log_verify_totp_failed"
+msgstr "验证 TOTP 码（失败）"
+
+msgid "audit_log_verify_totp_success"
+msgstr "验证 TOTP 码（成功）"
+
+msgid "backup_code_used"
+msgstr "备份码已使用，剩余 {remaining} 个。"
+
+msgid "backup_codes_regenerated"
+msgstr "备份码已重新生成"
+
+msgid "bad_request"
+msgstr "错误请求"
+
+msgid "builtin_tool_calculate"
+msgstr "数学计算"
+
+msgid "builtin_tool_fetch_webpage"
+msgstr "获取网页内容"
+
+msgid "builtin_tool_format_datetime"
+msgstr "格式化日期时间"
+
+msgid "builtin_tool_generate_image"
+msgstr "生成图片"
+
+msgid "builtin_tool_generate_video"
+msgstr "生成视频"
+
+msgid "builtin_tool_get_current_time"
+msgstr "获取当前时间"
+
+msgid "builtin_tool_markitdown"
+msgstr "MarkItDown 文件解析"
+
+msgid "builtin_tool_unit_convert"
+msgstr "单位转换"
+
+msgid "builtin_tool_web_search"
+msgstr "网页搜索"
+
+msgid "can_only_regenerate_assistant"
+msgstr "只能重新生成助手消息"
+
+msgid "code_execution_failed"
+msgstr "代码执行失败"
+
+msgid "cannot_add_as_owner"
+msgstr "不能将成员添加为所有者"
+
+msgid "cannot_change_owner_role"
+msgstr "不能更改所有者角色"
+
+msgid "cannot_deactivate_superuser"
+msgstr "不能禁用超级管理员"
+
+msgid "cannot_delete_default_team"
+msgstr "不能删除默认团队"
+
+msgid "cannot_delete_superuser"
+msgstr "超级管理员不能被删除"
+
+msgid "cannot_delete_superuser_account"
+msgstr "超级管理员不能删除自己的账号"
+
+msgid "cannot_delete_system_permission"
+msgstr "系统权限不能被删除"
+
+msgid "cannot_delete_system_role"
+msgstr "系统角色不能被删除"
+
+msgid "cannot_disconnect_only_auth_method"
+msgstr "无法解除唯一的认证方式。请先设置密码。"
+
+msgid "cannot_modify_system_role"
+msgstr "系统角色不能被修改"
+
+msgid "cannot_modify_system_role_permissions"
+msgstr "系统角色权限不能被修改"
+
+msgid "cannot_promote_to_owner"
+msgstr "不能提升为所有者，请使用转让所有权功能"
+
+msgid "cannot_remove_owner"
+msgstr "不能移除团队所有者，请先转让所有权或删除团队"
+
+msgid "cannot_share_to_own_team"
+msgstr "不能将工具共享给自己的团队"
+
+msgid "cannot_update_system_permission"
+msgstr "系统权限不能被修改"
+
+msgid "captcha_invalid"
+msgstr "验证码错误"
+
+msgid "captcha_required"
+msgstr "请输入验证码"
+
+msgid "chat_file_upload_instruction"
+msgstr "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"
+
+msgid "chat_success"
+msgstr "对话完成"
+
+msgid "chunk_created"
+msgstr "分块创建成功"
+
+msgid "chunk_deleted"
+msgstr "分块删除成功"
+
+msgid "chunk_not_found"
+msgstr "分块未找到"
+
+msgid "chunk_preview_failed"
+msgstr "生成分块预览失败"
+
+msgid "chunk_preview_generated"
+msgstr "分块预览生成成功"
+
+msgid "chunk_updated"
+msgstr "分块更新成功"
+
+msgid "chunks_failed_to_embed"
+msgstr "{failed_count}/{total_chunks} 个分块嵌入失败：{error}"
+
+msgid "chunks_still_failed_after_retry"
+msgstr "重试后仍有 {failed_count}/{total_chunks} 个分块失败：{error}"
+
+msgid "conversation_created"
+msgstr "对话创建成功"
+
+msgid "conversation_deleted"
+msgstr "对话删除成功"
+
+msgid "conversation_not_found"
+msgstr "对话未找到"
+
+msgid "conversation_updated"
+msgstr "对话更新成功"
+
+msgid "conversations_deleted"
+msgstr "对话批量删除成功"
+
+msgid "could_not_validate_credentials"
+msgstr "无法验证凭证"
+
+msgid "current_password_incorrect"
+msgstr "当前密码不正确"
+
+msgid "dingtalk_not_configured"
+msgstr "钉钉服务未配置"
+
+msgid "dingtalk_not_enabled"
+msgstr "钉钉服务未启用"
+
+msgid "dingtalk_send_failed"
+msgstr "钉钉消息发送失败"
+
+msgid "document_created"
+msgstr "文档创建成功"
+
+msgid "document_deleted"
+msgstr "文档删除成功"
+
+msgid "document_is_processing"
+msgstr "文档正在处理中，请稍候"
+
+msgid "document_no_source"
+msgstr "文档没有文件或URL来源"
+
+msgid "document_not_found"
+msgstr "文档未找到"
+
+msgid "document_not_in_error_state"
+msgstr "文档不在错误状态"
+
+msgid "document_not_pending"
+msgstr "文档不是待处理状态"
+
+msgid "document_process_failed"
+msgstr "文档处理失败"
+
+msgid "document_processed"
+msgstr "文档处理成功"
+
+msgid "document_processing"
+msgstr "文档正在处理中"
+
+msgid "document_processing_started"
+msgstr "文档处理已开始"
+
+msgid "document_rechunk_started"
+msgstr "文档重新分块已开始"
+
+msgid "document_reprocess_started"
+msgstr "文档重新处理已开始"
+
+msgid "document_updated"
+msgstr "文档更新成功"
+
+msgid "document_uploaded"
+msgstr "文档上传成功"
+
+msgid "email_already_registered"
+msgstr "邮箱已被注册"
+
+msgid "email_already_verified"
+msgstr "邮箱已验证"
+
+msgid "email_exists"
+msgstr "邮箱已存在"
+
+msgid "email_footer"
+msgstr "此邮件由 {site_name} 系统自动发送，请勿回复。"
+
+msgid "email_not_found"
+msgstr "邮箱未找到"
+
+msgid "email_not_verified"
+msgstr "请先验证您的邮箱"
+
+msgid "email_queued"
+msgstr "邮件已加入发送队列"
+
+msgid "email_quota_insufficient"
+msgstr "邮件配额不足，请减少收件人数量"
+
+msgid "email_rate_limit_exceeded"
+msgstr "邮件发送频率超限，请稍后再试"
+
+msgid "email_required"
+msgstr "SSO 注册需要邮箱地址"
+
+msgid "email_send_failed"
+msgstr "邮件发送失败"
+
+msgid "email_send_too_frequent"
+msgstr "请稍后再请求发送邮件"
+
+msgid "email_team_prefix"
+msgstr "团队"
+
+msgid "email_user_prefix"
+msgstr "用户"
+
+msgid "email_verified_success"
+msgstr "邮箱验证成功"
+
+msgid "email_view_details"
+msgstr "查看详情"
+
+msgid "email_code_body_text"
+msgstr "您的验证码是：{code}\n验证码 10 分钟内有效。"
+
+msgid "email_code_subject"
+msgstr "【{site_name}】验证码"
+
+msgid "email_code_validity"
+msgstr "验证码 10 分钟内有效。"
+
+msgid "email_greeting"
+msgstr "您好，"
+
+msgid "email_or_enter_code"
+msgstr "或手动输入验证码："
+
+msgid "email_reset_button"
+msgstr "重置密码"
+
+msgid "email_reset_link_text"
+msgstr "或点击链接重置密码：\n{verify_url}\n\n"
+
+msgid "email_reset_password_heading"
+msgstr "重置密码"
+
+msgid "email_reset_password_ignore_notice"
+msgstr "如非本人操作，请忽略此邮件并立即修改密码。"
+
+msgid "email_reset_password_intro"
+msgstr "您正在重置 {site_name} 的密码，请完成验证。"
+
+msgid "email_reset_password_subject"
+msgstr "【{site_name}】重置密码"
+
+msgid "email_verification_heading"
+msgstr "邮箱验证"
+
+msgid "email_verification_ignore_notice"
+msgstr "如非本人操作，请忽略此邮件。"
+
+msgid "email_verification_intro"
+msgstr "您正在注册 {site_name}，请完成邮箱验证。"
+
+msgid "email_verification_subject"
+msgstr "【{site_name}】邮箱验证"
+
+msgid "email_verify_button"
+msgstr "验证邮箱"
+
+msgid "email_verify_link_text"
+msgstr "或点击链接完成验证：\n{verify_url}\n\n"
+
+msgid "embed_api_key_required"
+msgstr "嵌入访问需要 API 密钥"
+
+msgid "embed_domain_not_allowed"
+msgstr "此域名不允许嵌入此资源"
+
+msgid "embed_not_enabled"
+msgstr "此资源未启用嵌入功能"
+
+msgid "feishu_not_configured"
+msgstr "飞书服务未配置"
+
+msgid "feishu_not_enabled"
+msgstr "飞书服务未启用"
+
+msgid "feishu_send_failed"
+msgstr "飞书消息发送失败"
+
+msgid "file_deleted"
+msgstr "文件删除成功"
+
+msgid "file_header"
+msgstr "## 文件: {filename}"
+
+msgid "file_header_indexed"
+msgstr "## 文件 {index}: {filename}"
+
+msgid "file_header_truncated_suffix"
+msgstr " (已截断，原始长度: {length} 字符)"
+
+msgid "file_name_required"
+msgstr "文件名不能为空"
+
+msgid "file_not_found"
+msgstr "文件不存在"
+
+msgid "file_parse_error"
+msgstr "文件解析失败"
+
+msgid "file_parse_failed_placeholder"
+msgstr "[文件解析失败]"
+
+msgid "file_parsed"
+msgstr "文件解析成功"
+
+msgid "file_required"
+msgstr "请上传文件"
+
+msgid "file_too_large"
+msgstr "文件过大"
+
+msgid "file_uploaded"
+msgstr "文件上传成功"
+
+msgid "files_parsed"
+msgstr "文件批量解析成功"
+
+msgid "force_password_change_required"
+msgstr "您需要先修改密码才能继续。"
+
+msgid "inactive_user"
+msgstr "用户未激活"
+
+msgid "image_to_video_removed_from_project"
+msgstr "项目已移除图生视频功能"
+
+msgid "invalid_tool_arguments"
+msgstr "无效的工具参数"
+
+msgid "incorrect_email_or_password"
+msgstr "邮箱或密码错误"
+
+msgid "insufficient_permission"
+msgstr "权限不足，无法访问此工具"
+
+msgid "insufficient_privileges"
+msgstr "权限不足"
+
+msgid "internal_server_error"
+msgstr "服务器内部错误"
+
+msgid "invalid_api_key"
+msgstr "无效的 API 密钥"
+
+msgid "invalid_api_key_format"
+msgstr "无效的 API 密钥格式。必须以 'clou_' 开头"
+
+msgid "invalid_credentials"
+msgstr "凭证无效"
+
+msgid "invalid_document_type"
+msgstr "不支持的文档类型。支持：PDF、DOCX、TXT、MD、HTML、CSV、XLSX、JSON"
+
+msgid "invalid_file_type"
+msgstr "不支持的文件类型"
+
+msgid "invalid_notification_scope"
+msgstr "通知范围无效"
+
+msgid "invalid_notification_type"
+msgstr "无效的通知类型：{type_key}"
+
+msgid "invalid_token"
+msgstr "无效的令牌"
+
+msgid "invalid_truncate_strategy"
+msgstr "无效的截断策略"
+
+msgid "invalid_webhook_token"
+msgstr "无效的 Webhook 令牌"
+
+msgid "kb_created"
+msgstr "知识库创建成功"
+
+msgid "kb_deleted"
+msgstr "知识库删除成功"
+
+msgid "kb_name_exists"
+msgstr "该团队中已存在同名知识库"
+
+msgid "kb_no_results"
+msgstr "知识库中未找到相关信息。"
+
+msgid "kb_not_found"
+msgstr "知识库未找到"
+
+msgid "kb_updated"
+msgstr "知识库更新成功"
+
+msgid "login_successful"
+msgstr "登录成功"
+
+msgid "login_successful_change_password_required"
+msgstr "登录成功。您必须先修改密码才能继续。"
+
+msgid "logout_successful"
+msgstr "登出成功"
+
+msgid "mcp_connection_failed"
+msgstr "连接 MCP 服务器失败"
+
+msgid "memory_entity_deleted"
+msgstr "记忆实体删除成功"
+
+msgid "memory_entity_not_found"
+msgstr "记忆实体未找到"
+
+msgid "memory_entity_updated"
+msgstr "记忆实体更新成功"
+
+msgid "memory_relation_deleted"
+msgstr "记忆关系删除成功"
+
+msgid "memory_relation_not_found"
+msgstr "记忆关系未找到"
+
+msgid "memory_entity_created_tool"
+msgstr "已创建记忆实体：{entity_name}"
+
+msgid "memory_entity_named_not_found"
+msgstr "未找到名为“{entity_name}”的实体"
+
+msgid "memory_entity_updated_tool"
+msgstr "已更新记忆实体：{entity_name}"
+
+msgid "memory_relation_created_tool"
+msgstr "已创建关系：{source_name} --[{relation_type}]--> {target_name}"
+
+msgid "memory_search_empty"
+msgstr "未找到记忆。这可能是第一次对话，或者相关信息尚未保存。"
+
+msgid "memory_search_results_found"
+msgstr "找到 {count} 条相关记忆。"
+
+msgid "memory_similar_entities_notice"
+msgstr "（注意：已存在相似实体：{similar_entities}。请确认您是否更想更新其中某个实体。）"
+
+msgid "memory_source_entity_not_found"
+msgstr "未找到源实体“{entity_name}”"
+
+msgid "memory_target_entity_not_found"
+msgstr "未找到目标实体“{entity_name}”"
+
+msgid "message_deleted"
+msgstr "消息删除成功"
+
+msgid "message_not_found"
+msgstr "消息未找到"
+
+msgid "missing_user_id"
+msgstr "SSO 提供商未返回用户 ID"
+
+msgid "model_already_exists"
+msgstr "该供应商的模型 ID 已存在"
+
+msgid "model_api_key_required"
+msgstr "测试连接需要 API Key"
+
+msgid "model_created"
+msgstr "模型创建成功"
+
+msgid "model_deleted"
+msgstr "模型删除成功"
+
+msgid "model_not_authorized"
+msgstr "该模型未被授权给此团队"
+
+msgid "model_not_found"
+msgstr "模型未找到"
+
+msgid "model_quota_exceeded"
+msgstr "模型配额已用尽"
+
+msgid "model_set_default"
+msgstr "已设为默认模型"
+
+msgid "model_test_failed"
+msgstr "连接测试失败：{error}"
+
+msgid "model_test_pending"
+msgstr "连接测试功能待实现"
+
+msgid "model_test_success"
+msgstr "连接测试成功"
+
+msgid "model_test_connection_successful"
+msgstr "连接成功"
+
+msgid "model_test_rate_limit_but_valid"
+msgstr "触发了速率限制，但 API Key 有效"
+
+msgid "model_test_invalid_api_key"
+msgstr "API Key 无效"
+
+msgid "model_test_model_not_accessible"
+msgstr "模型未找到或不可访问"
+
+msgid "model_test_connection_timeout"
+msgstr "连接超时"
+
+msgid "model_test_connection_failed_check_base_url"
+msgstr "连接失败，请检查 Base URL"
+
+msgid "model_type_not_supported"
+msgstr "不支持的模型类型"
+
+msgid "model_test_unexpected_error"
+msgstr "连接测试发生未知错误"
+
+msgid "model_test_empty_response"
+msgstr "模型返回了空响应"
+
+msgid "model_test_embedding_response_incompatible"
+msgstr "Embedding API 返回格式与 OpenAI 不兼容"
+
+msgid "model_test_empty_embedding_result"
+msgstr "Embedding 模型返回了空结果"
+
+msgid "model_test_empty_rerank_result"
+msgstr "Rerank 模型返回了空结果"
+
+msgid "node_not_found_in_execution_plan"
+msgstr "执行计划中未找到该节点"
+
+msgid "no_audio_data_provided"
+msgstr "未提供音频数据"
+
+msgid "no_enabled_video_model_configured"
+msgstr "未配置可用的视频模型"
+
+msgid "model_updated"
+msgstr "模型更新成功"
+
+msgid "no_changes"
+msgstr "无变更"
+
+msgid "no_chunks_to_embed"
+msgstr "没有可嵌入的分块"
+
+msgid "unknown_error_generic"
+msgstr "未知错误"
+
+msgid "document_missing_source"
+msgstr "文档缺少 file_path 和 source_url"
+
+msgid "document_no_chunks_generated"
+msgstr "文档未生成任何分块"
+
+msgid "kb_embedding_dimension_mismatch"
+msgstr "文档嵌入维度与当前知识库不匹配"
+
+msgid "document_processing_failed_generic"
+msgstr "文档处理失败"
+
+msgid "no_failed_chunks"
+msgstr "没有失败的分块需要重试"
+
+msgid "no_user_message_found"
+msgstr "未找到可用于重新生成的用户消息"
+
+msgid "node_label_start"
+msgstr "开始"
+
+msgid "node_type_agent"
+msgstr "Agent"
+
+msgid "node_type_answer"
+msgstr "回复"
+
+msgid "node_type_code"
+msgstr "代码执行"
+
+msgid "node_type_condition"
+msgstr "条件分支"
+
+msgid "node_type_end"
+msgstr "结束"
+
+msgid "node_type_http_request"
+msgstr "HTTP 请求"
+
+msgid "node_type_iteration"
+msgstr "迭代"
+
+msgid "node_type_llm"
+msgstr "LLM"
+
+msgid "node_type_parameter_extractor"
+msgstr "参数提取"
+
+msgid "node_type_question_classifier"
+msgstr "问题分类"
+
+msgid "node_type_sub_workflow"
+msgstr "子工作流"
+
+msgid "node_type_tool"
+msgstr "工具"
+
+msgid "node_type_trigger"
+msgstr "触发器"
+
+msgid "node_type_user_input"
+msgstr "开始"
+
+msgid "node_type_variable_aggregator"
+msgstr "变量聚合"
+
+msgid "node_type_variable_assignment"
+msgstr "变量赋值"
+
+msgid "not_authenticated"
+msgstr "未登录"
+
+msgid "not_found"
+msgstr "资源未找到"
+
+msgid "not_team_member"
+msgstr "您不是该团队成员"
+
+msgid "notification_created"
+msgstr "通知创建成功"
+
+msgid "notification_deleted"
+msgstr "通知删除成功"
+
+msgid "notification_not_found"
+msgstr "通知不存在"
+
+msgid "notification_read_updated"
+msgstr "通知已读状态已更新"
+
+msgid "notification_scope_requires_team"
+msgstr "团队范围必须提供 team_id"
+
+msgid "notification_scope_requires_user"
+msgstr "个人范围必须提供 user_id"
+
+msgid "notifications_created"
+msgstr "通知批量创建成功"
+
+msgid "notify_account_locked_content"
+msgstr "由于登录失败次数过多，您的账户已被锁定。将在 {lockout_minutes} 分钟后解锁。"
+
+msgid "notify_account_locked_title"
+msgstr "账户已锁定"
+
+msgid "notify_agent_published_content"
+msgstr "Agent **{agent_name}** 已发布，现在可以使用了。"
+
+msgid "notify_agent_published_title"
+msgstr "Agent 已发布"
+
+msgid "notify_agent_unpublished_content"
+msgstr "Agent **{agent_name}** 已下线。"
+
+msgid "notify_agent_unpublished_title"
+msgstr "Agent 已下线"
+
+msgid "notify_apikey_expired_content"
+msgstr "您的 API 密钥 **{key_name}** ({key_prefix}...) 已过期，无法继续使用。如需使用请创建新的 API 密钥。"
+
+msgid "notify_apikey_expired_title"
+msgstr "API 密钥已过期"
+
+msgid "notify_apikey_expiring_content"
+msgstr "您的 API 密钥 **{key_name}** ({key_prefix}...) 将在 {days} 天后过期。请及时续期以避免服务中断。"
+
+msgid "notify_apikey_expiring_title"
+msgstr "API 密钥即将过期"
+
+msgid "notify_kb_doc_failed_content"
+msgstr "知识库 **{kb_name}** 中的文档 **{doc_name}** 索引失败。错误：{error}"
+
+msgid "notify_kb_doc_failed_title"
+msgstr "文档索引失败"
+
+msgid "notify_kb_doc_indexed_content"
+msgstr "知识库 **{kb_name}** 中的文档 **{doc_name}** 已成功索引。分块数：{chunk_count}，Token 数：{token_count}。"
+
+msgid "notify_kb_doc_indexed_title"
+msgstr "文档索引成功"
+
+msgid "notify_login_anomaly_content"
+msgstr "检测到您的账户从异常位置或设备登录。\n\n- **IP 地址**: {ip_address}\n- **时间**: {login_time}\n- **设备信息**: {user_agent}\n\n如果这不是您本人的操作，请立即修改密码。"
+
+msgid "notify_login_anomaly_title"
+msgstr "检测到异常登录"
+
+msgid "notify_password_changed_content"
+msgstr "您的密码已成功修改。如果这不是您本人的操作，请立即联系管理员。"
+
+msgid "notify_password_changed_title"
+msgstr "密码已修改"
+
+msgid "notify_password_expired_content"
+msgstr "您的密码已过期，您必须修改密码才能再次登录。"
+
+msgid "notify_password_expired_title"
+msgstr "密码已过期"
+
+msgid "notify_password_expiring_content"
+msgstr "您的密码将在 {days} 天后过期，请及时修改以避免账户锁定。"
+
+msgid "notify_password_expiring_title"
+msgstr "密码即将过期"
+
+msgid "notify_password_force_change_content"
+msgstr "您需要修改密码，请登录并更新您的密码。"
+
+msgid "notify_password_force_change_title"
+msgstr "需要修改密码"
+
+msgid "notify_team_member_added_content"
+msgstr "您已被 **{operator}** 添加到团队 **{team_name}**，角色为 **{role}**。"
+
+msgid "notify_team_member_added_team_content"
+msgstr "**{username}** 已加入团队，角色为 **{role}**。"
+
+msgid "notify_team_member_added_team_title"
+msgstr "新成员加入"
+
+msgid "notify_team_member_added_title"
+msgstr "您已加入团队"
+
+msgid "notify_team_member_removed_content"
+msgstr "您已被从团队 **{team_name}** 中移除。"
+
+msgid "notify_team_member_removed_team_content"
+msgstr "**{username}** 已离开团队。"
+
+msgid "notify_team_member_removed_team_title"
+msgstr "成员离开"
+
+msgid "notify_team_member_removed_title"
+msgstr "您已离开团队"
+
+msgid "notify_team_model_granted_content"
+msgstr "模型 **{model_name}** 已授权给团队 **{team_name}**。"
+
+msgid "notify_team_model_granted_title"
+msgstr "模型已授权"
+
+msgid "notify_team_model_revoked_content"
+msgstr "团队 **{team_name}** 的模型 **{model_name}** 授权已被撤销。"
+
+msgid "notify_team_model_revoked_title"
+msgstr "模型授权已撤销"
+
+msgid "notify_team_ownership_received_content"
+msgstr "您已从 **{old_owner}** 处获得团队 **{team_name}** 的所有权。"
+
+msgid "notify_team_ownership_received_title"
+msgstr "获得团队所有权"
+
+msgid "notify_team_ownership_transferred_content"
+msgstr "您已将团队 **{team_name}** 的所有权转让给 **{new_owner}**。"
+
+msgid "notify_team_ownership_transferred_title"
+msgstr "团队所有权已转让"
+
+msgid "notify_team_role_changed_content"
+msgstr "您在团队 **{team_name}** 中的角色已从 **{old_role}** 变更为 **{new_role}**。"
+
+msgid "notify_team_role_changed_title"
+msgstr "团队角色变更"
+
+msgid "notify_user_activated_content"
+msgstr "您的账户已被管理员激活，现在可以正常使用系统了。"
+
+msgid "notify_user_activated_title"
+msgstr "账户已激活"
+
+msgid "notify_user_deactivated_content"
+msgstr "您的账户已被管理员停用，如有疑问请联系管理员。"
+
+msgid "notify_user_deactivated_title"
+msgstr "账户已停用"
+
+msgid "notify_user_password_reset_content"
+msgstr "您的密码已被管理员重置，请使用新密码登录。"
+
+msgid "notify_user_password_reset_title"
+msgstr "密码已重置"
+
+msgid "notify_user_pending_approval_content"
+msgstr "新用户 **{username}** ({email}) 已注册，等待审批。"
+
+msgid "notify_user_pending_approval_title"
+msgstr "新用户待审批"
+
+msgid "notify_workflow_run_failed_content"
+msgstr "工作流 **{workflow_name}** 运行失败。错误：{error}"
+
+msgid "notify_workflow_run_failed_title"
+msgstr "工作流运行失败"
+
+msgid "notify_workflow_run_success_content"
+msgstr "工作流 **{workflow_name}** 已成功完成。耗时：{duration}ms，执行节点数：{node_count}。"
+
+msgid "notify_workflow_run_success_title"
+msgstr "工作流运行完成"
+
+msgid "operation_not_permitted"
+msgstr "操作不允许。需要权限：{permission}"
+
+msgid "owner_cannot_leave"
+msgstr "团队所有者不能离开，请先转让所有权或删除团队"
+
+msgid "ownership_transferred"
+msgstr "团队所有权转让成功"
+
+msgid "password_changed"
+msgstr "密码修改成功"
+
+msgid "password_expired"
+msgstr "您的密码已过期，请修改密码后继续。"
+
+msgid "password_expiring_soon"
+msgstr "您的密码将在 {days} 天后过期，请尽快修改。"
+
+msgid "password_login_disabled"
+msgstr "密码登录已禁用。请使用 SSO 登录。"
+
+msgid "password_min_age_not_met"
+msgstr "密码最近已修改，您可以在 {days} 天后再次修改。"
+
+msgid "password_recently_used"
+msgstr "此密码最近已使用过，请选择其他密码。"
+
+msgid "password_reset_success"
+msgstr "密码重置成功"
+
+msgid "password_too_short"
+msgstr "密码长度至少为 6 个字符"
+
+msgid "password_too_weak"
+msgstr "密码不符合安全要求"
+
+msgid "pending_approval_user"
+msgstr "您的账户正在等待管理员审核"
+
+msgid "permission_code_exists"
+msgstr "权限代码已存在"
+
+msgid "permission_code_not_found"
+msgstr "权限 '{code}' 未找到"
+
+msgid "permission_created"
+msgstr "权限创建成功"
+
+msgid "permission_deleted"
+msgstr "权限删除成功"
+
+msgid "permission_denied"
+msgstr "权限被拒绝"
+
+msgid "permission_not_found"
+msgstr "权限未找到"
+
+msgid "permission_updated"
+msgstr "权限更新成功"
+
+msgid "permission_with_code_exists"
+msgstr "该权限代码已存在"
+
+msgid "profile_updated"
+msgstr "个人资料更新成功"
+
+msgid "registration_disabled"
+msgstr "注册功能已关闭"
+
+msgid "registration_pending_approval"
+msgstr "注册成功。您的账户正在等待管理员审核。"
+
+msgid "registration_pending_verification"
+msgstr "注册成功。请验证您的邮箱以激活账户。"
+
+msgid "registration_successful"
+msgstr "注册成功"
+
+msgid "request_timeout"
+msgstr "请求超时"
+
+msgid "rate_limit_exceeded"
+msgstr "触发速率限制"
+
+msgid "registration_successful_superadmin"
+msgstr "注册成功。您是第一个用户，已被提升为超级管理员！"
+
+msgid "require_superadmin_sso"
+msgstr "关闭密码登录前，至少需要一个超级管理员已绑定 SSO。"
+
+msgid "reset_password_email_sent"
+msgstr "如果邮箱存在，密码重置链接已发送"
+
+msgid "retry_failed_chunks_started"
+msgstr "重试失败分块已开始"
+
+msgid "role_created"
+msgstr "角色创建成功"
+
+msgid "role_deleted"
+msgstr "角色删除成功"
+
+msgid "role_in_use"
+msgstr "无法删除角色：有 {count} 个用户分配了此角色"
+
+msgid "role_name_exists"
+msgstr "角色名已存在"
+
+msgid "role_not_found"
+msgstr "角色未找到"
+
+msgid "role_permissions_updated"
+msgstr "角色权限更新成功"
+
+msgid "role_updated"
+msgstr "角色更新成功"
+
+msgid "role_with_name_exists"
+msgstr "该角色名已存在"
+
+msgid "pika_request_timeout"
+msgstr "Pika 请求超时"
+
+msgid "invalid_pika_api_key"
+msgstr "无效的 Pika API Key"
+
+msgid "pika_generation_not_found"
+msgstr "未找到 Pika 生成任务"
+
+msgid "pika_endpoint_not_found"
+msgstr "未找到 Pika 接口端点"
+
+msgid "pika_rate_limit_exceeded"
+msgstr "Pika 触发速率限制"
+
+msgid "pika_api_error"
+msgstr "Pika API 错误"
+
+msgid "pika_generation_polling_timed_out"
+msgstr "Pika 生成任务轮询超时"
+
+msgid "pika_generation_missing_id"
+msgstr "Pika 生成任务未返回 id"
+
+msgid "kling_request_timeout"
+msgstr "Kling 请求超时"
+
+msgid "invalid_kling_api_key"
+msgstr "无效的 Kling API Key"
+
+msgid "kling_task_not_found"
+msgstr "未找到 Kling 任务"
+
+msgid "kling_endpoint_not_found"
+msgstr "未找到 Kling 接口端点"
+
+msgid "kling_rate_limit_exceeded"
+msgstr "Kling 触发速率限制"
+
+msgid "kling_api_error"
+msgstr "Kling API 错误"
+
+msgid "kling_task_polling_timed_out"
+msgstr "Kling 任务轮询超时"
+
+msgid "kling_task_missing_id"
+msgstr "Kling 任务未返回 task_id"
+
+msgid "luma_request_timeout"
+msgstr "Luma 请求超时"
+
+msgid "invalid_luma_api_key"
+msgstr "无效的 Luma API Key"
+
+msgid "luma_generation_not_found"
+msgstr "未找到 Luma 生成任务"
+
+msgid "luma_endpoint_not_found"
+msgstr "未找到 Luma 接口端点"
+
+msgid "luma_rate_limit_exceeded"
+msgstr "Luma 触发速率限制"
+
+msgid "luma_api_error"
+msgstr "Luma API 错误"
+
+msgid "luma_generation_polling_timed_out"
+msgstr "Luma 生成任务轮询超时"
+
+msgid "luma_generation_missing_id"
+msgstr "Luma 生成任务未返回 id"
+
+msgid "luma_image_generation_missing_id"
+msgstr "Luma 图像生成任务未返回 id"
+
+msgid "luma_image_generation_missing_asset"
+msgstr "Luma 图像生成完成后未返回图像资源"
+
+msgid "runway_request_timeout"
+msgstr "Runway 请求超时"
+
+msgid "invalid_runway_api_key"
+msgstr "无效的 Runway API Key"
+
+msgid "runway_task_not_found"
+msgstr "未找到 Runway 任务"
+
+msgid "runway_endpoint_not_found"
+msgstr "未找到 Runway 接口端点"
+
+msgid "runway_rate_limit_exceeded"
+msgstr "Runway 触发速率限制"
+
+msgid "runway_api_error"
+msgstr "Runway API 错误"
+
+msgid "runway_task_polling_timed_out"
+msgstr "Runway 任务轮询超时"
+
+msgid "runway_video_task_missing_id"
+msgstr "Runway 视频任务未返回 id"
+
+msgid "runway_image_task_missing_id"
+msgstr "Runway 图像任务未返回 id"
+
+msgid "runway_image_task_missing_output"
+msgstr "Runway 图像任务完成后未返回图像输出"
+
+msgid "siliconflow_request_timeout"
+msgstr "SiliconFlow 请求超时"
+
+msgid "invalid_siliconflow_api_key"
+msgstr "无效的 SiliconFlow API Key"
+
+msgid "siliconflow_endpoint_not_found"
+msgstr "未找到 SiliconFlow 接口端点"
+
+msgid "siliconflow_rate_limit_exceeded"
+msgstr "SiliconFlow 触发速率限制"
+
+msgid "siliconflow_api_error"
+msgstr "SiliconFlow API 错误"
+
+msgid "siliconflow_task_polling_timed_out"
+msgstr "SiliconFlow 任务轮询超时"
+
+msgid "siliconflow_task_missing_request_id"
+msgstr "SiliconFlow 任务未返回 requestId"
+
+msgid "volcengine_request_timeout"
+msgstr "Volcengine 请求超时"
+
+msgid "invalid_volcengine_api_key"
+msgstr "无效的 Volcengine API Key"
+
+msgid "volcengine_task_not_found"
+msgstr "未找到 Volcengine 任务"
+
+msgid "volcengine_endpoint_not_found"
+msgstr "未找到 Volcengine 接口端点"
+
+msgid "volcengine_rate_limit_exceeded"
+msgstr "Volcengine 触发速率限制"
+
+msgid "volcengine_api_error"
+msgstr "Volcengine API 错误"
+
+msgid "volcengine_task_polling_timed_out"
+msgstr "Volcengine 任务轮询超时"
+
+msgid "volcengine_task_missing_id"
+msgstr "Volcengine 任务未返回 id"
+
+msgid "dashscope_request_timeout"
+msgstr "DashScope 请求超时"
+
+msgid "invalid_dashscope_api_key"
+msgstr "无效的 DashScope API Key"
+
+msgid "dashscope_task_not_found"
+msgstr "未找到 DashScope 任务"
+
+msgid "dashscope_endpoint_not_found"
+msgstr "未找到 DashScope 接口端点"
+
+msgid "dashscope_rate_limit_exceeded"
+msgstr "DashScope 触发速率限制"
+
+msgid "dashscope_api_error"
+msgstr "DashScope API 错误"
+
+msgid "dashscope_task_polling_timed_out"
+msgstr "DashScope 任务轮询超时"
+
+msgid "dashscope_task_missing_id"
+msgstr "DashScope 任务未返回 task_id"
+
+msgid "search_completed"
+msgstr "搜索完成"
+
+msgid "session_expired_new_login"
+msgstr "由于在其他设备登录，您的会话已过期"
+
+msgid "setting_not_found"
+msgstr "设置 '{key}' 未找到"
+
+msgid "slack_not_configured"
+msgstr "Slack 服务未配置"
+
+msgid "slack_not_enabled"
+msgstr "Slack 服务未启用"
+
+msgid "slack_send_failed"
+msgstr "Slack 消息发送失败"
+
+msgid "smtp_not_configured"
+msgstr "邮件服务未配置"
+
+msgid "smtp_not_enabled"
+msgstr "邮件服务未启用"
+
+msgid "some_users_not_found"
+msgstr "部分用户不存在"
+
+msgid "source_url_required"
+msgstr "源URL不能为空"
+
+msgid "sso_connection_not_found"
+msgstr "SSO 连接未找到"
+
+msgid "stream_timeout_exceeded"
+msgstr "流式响应超时"
+
+msgid "sso_invalid_icon_url"
+msgstr "图标 URL 必须以 http:// 或 https:// 开头"
+
+msgid "sso_invalid_provider_name"
+msgstr "提供商名称必须以小写字母开头，且只能包含小写字母、数字、连字符和下划线"
+
+msgid "sso_login_failed"
+msgstr "SSO 登录失败"
+
+msgid "sso_provider_config_error"
+msgstr "SSO 提供商配置错误：{error}"
+
+msgid "sso_provider_config_error_generic"
+msgstr "SSO 提供商配置无效"
+
+msgid "sso_provider_config_valid"
+msgstr "SSO 提供商配置有效"
+
+msgid "sso_missing_authorization_code"
+msgstr "缺少 authorization code"
+
+msgid "sso_missing_cas_ticket"
+msgstr "缺少 CAS ticket"
+
+msgid "sso_missing_saml_response"
+msgstr "缺少 SAMLResponse"
+
+msgid "sso_cas_validation_failed"
+msgstr "CAS 校验失败"
+
+msgid "sso_cas_response_parse_failed"
+msgstr "CAS 响应解析失败"
+
+msgid "sso_saml_authentication_failed"
+msgstr "SAML 认证失败"
+
+msgid "verification_email_code_or_token_required"
+msgstr "必须提供 email 和 code，或提供 token"
+msgstr "SSO 提供商配置有效"
+
+msgid "sso_provider_name_exists"
+msgstr "SSO 提供商名称已存在"
+
+msgid "sso_provider_not_found"
+msgstr "SSO 提供商不存在"
+
+msgid "sso_registration_disabled"
+msgstr "SSO 注册已禁用"
+
+msgid "sso_session_expired"
+msgstr "SSO 会话已过期"
+
+msgid "success"
+msgstr "成功"
+
+msgid "tavily_api_key_not_configured"
+msgstr "未配置 Tavily API Key，请在工具设置中完成配置。"
+
+msgid "task_dispatch_failed"
+msgstr "任务调度失败。请检查 Redis 是否正常运行。"
+
+msgid "team_admin_required"
+msgstr "需要团队所有者或管理员权限"
+
+msgid "team_created"
+msgstr "团队创建成功"
+
+msgid "team_deleted"
+msgstr "团队删除成功"
+
+msgid "team_left"
+msgstr "您已离开团队"
+
+msgid "team_member_added"
+msgstr "团队成员添加成功"
+
+msgid "team_member_not_found"
+msgstr "团队成员未找到"
+
+msgid "team_member_removed"
+msgstr "团队成员移除成功"
+
+msgid "team_member_updated"
+msgstr "团队成员更新成功"
+
+msgid "team_model_already_authorized"
+msgstr "该模型已被授权给此团队"
+
+msgid "team_model_authorized"
+msgstr "模型授权成功"
+
+msgid "team_model_not_found"
+msgstr "未找到团队模型授权"
+
+msgid "team_model_revoked"
+msgstr "模型授权已撤销"
+
+msgid "team_model_updated"
+msgstr "团队模型授权更新成功"
+
+msgid "team_models_authorized"
+msgstr "批量授权成功"
+
+msgid "team_models_revoked"
+msgstr "批量撤销授权成功"
+
+msgid "team_name_exists"
+msgstr "该团队名称已存在"
+
+msgid "team_not_found"
+msgstr "团队未找到"
+
+msgid "team_owner_required"
+msgstr "需要团队所有者权限"
+
+msgid "team_updated"
+msgstr "团队更新成功"
+
+msgid "test_dingtalk_content"
+msgstr "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。"
+
+msgid "test_dingtalk_sent"
+msgstr "测试钉钉消息发送成功"
+
+msgid "test_email_body_html"
+msgstr "\n<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"utf-8\">\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n    <h2 style=\"color: #333;\">✅ SMTP 配置测试成功</h2>\n    <p>这是一封来自 <strong>{site_name}</strong> 的测试邮件。</p>\n    <p style=\"color: #666;\">如果您收到了这封邮件，说明 SMTP 配置正确。</p>\n</body>\n</html>\n"
+
+msgid "test_email_body_text"
+msgstr "这是一封来自 {site_name} 的测试邮件。\n\n如果您收到了这封邮件，说明 SMTP 配置正确。"
+
+msgid "test_email_sent"
+msgstr "测试邮件发送成功"
+
+msgid "test_email_subject"
+msgstr "【{site_name}】测试邮件"
+
+msgid "test_feishu_content"
+msgstr "这是一条测试消息，如果您收到此消息，说明飞书通知配置正确。"
+
+msgid "test_feishu_sent"
+msgstr "测试飞书消息发送成功"
+
+msgid "test_notification_title"
+msgstr "【{site_name}】测试消息"
+
+msgid "test_slack_content"
+msgstr "这是一条测试消息，如果您收到此消息，说明 Slack 通知配置正确。"
+
+msgid "test_slack_sent"
+msgstr "测试 Slack 消息发送成功"
+
+msgid "test_webhook_content"
+msgstr "这是一条测试消息，如果您收到此消息，说明 Webhook 通知配置正确。"
+
+msgid "test_webhook_sent"
+msgstr "测试 Webhook 通知发送成功"
+
+msgid "test_wechat_content"
+msgstr "这是一条测试消息，如果您收到此消息，说明企业微信通知配置正确。"
+
+msgid "test_wechat_sent"
+msgstr "测试企业微信消息发送成功"
+
+msgid "token_expired"
+msgstr "令牌已过期"
+
+msgid "token_revoked"
+msgstr "令牌已被撤销"
+
+msgid "too_many_files"
+msgstr "上传文件数量过多"
+
+msgid "tool_already_shared"
+msgstr "工具已经共享给该团队"
+
+msgid "tool_code_not_defined"
+msgstr "该工具未定义代码"
+
+msgid "tool_config_already_exists"
+msgstr "工具配置已存在"
+
+msgid "tool_config_created"
+msgstr "工具配置创建成功"
+
+msgid "tool_config_deleted"
+msgstr "工具配置删除成功"
+
+msgid "tool_config_not_found"
+msgstr "工具配置不存在"
+
+msgid "tool_config_updated"
+msgstr "工具配置更新成功"
+
+msgid "tool_create_memory_entity"
+msgstr "创建记忆实体"
+
+msgid "tool_create_memory_relation"
+msgstr "创建记忆关系"
+
+msgid "tool_created"
+msgstr "工具创建成功"
+
+msgid "tool_deleted"
+msgstr "工具删除成功"
+
+msgid "tool_duplicated"
+msgstr "工具复制成功"
+
+msgid "tool_execute_error"
+msgstr "工具执行失败：{error}"
+
+msgid "tool_execute_success"
+msgstr "工具执行成功"
+
+msgid "tool_knowledge_search"
+msgstr "知识库搜索"
+
+msgid "tool_name_exists"
+msgstr "该工具名称已存在"
+
+msgid "tool_not_found"
+msgstr "工具未找到"
+
+msgid "tool_search_memory"
+msgstr "搜索记忆"
+
+msgid "tool_share_not_found"
+msgstr "工具共享记录不存在"
+
+msgid "tool_shared_successfully"
+msgstr "工具共享成功"
+
+msgid "tool_unshared_successfully"
+msgstr "工具共享已取消"
+
+msgid "tool_update_memory_entity"
+msgstr "更新记忆实体"
+
+msgid "tool_updated"
+msgstr "工具更新成功"
+
+msgid "tool_name_required"
+msgstr "工具名称不能为空"
+
+msgid "agent_context_required_for_knowledge_search"
+msgstr "knowledge_search 需要 Agent 上下文"
+
+msgid "query_parameter_required"
+msgstr "缺少 query 参数"
+
+msgid "user_context_required_for_memory_tools"
+msgstr "记忆工具需要用户上下文"
+
+msgid "memory_tool_create_entity_requires_name_and_entity_type"
+msgstr "create_memory_entity 需要 name 和 entity_type 参数"
+
+msgid "memory_tool_create_relation_requires_fields"
+msgstr "create_memory_relation 需要 source_entity_name、target_entity_name 和 relation_type 参数"
+
+msgid "memory_tool_update_entity_requires_entity_name"
+msgstr "update_memory_entity 需要 entity_name 参数"
+
+msgid "memory_tool_search_requires_query"
+msgstr "search_memory 需要 query 参数"
+
+msgid "invalid_mcp_tool_name_format"
+msgstr "无效的 MCP 工具名称格式：{tool_name}"
+
+msgid "agent_context_required_for_mcp_tool"
+msgstr "MCP 工具需要 Agent 上下文"
+
+msgid "mcp_tool_not_found"
+msgstr "未找到 MCP 工具：{server_name}"
+
+msgid "mcp_tool_missing_configuration"
+msgstr "MCP 工具缺少配置：{tool_name}"
+
+msgid "mcp_tool_execution_failed"
+msgstr "MCP 工具执行失败"
+
+msgid "custom_tool_not_found"
+msgstr "未找到自定义工具“{tool_name}”"
+
+msgid "custom_image_provider_requires_base_url"
+msgstr "自定义图像供应商需要配置 base_url"
+
+msgid "google_reference_image_missing_source"
+msgstr "Google 参考图像必须包含 url、base64 或 file_path"
+
+msgid "google_image_generation_blocked_by_safety_filters"
+msgstr "Google 图像生成被安全过滤器拦截"
+
+msgid "google_image_model_returned_no_image_output"
+msgstr "Google 图像模型未返回图像输出"
+
+msgid "stability_response_missing_image_data"
+msgstr "Stability 响应未包含图像数据"
+
+msgid "stability_response_missing_image_bytes"
+msgstr "Stability 响应未包含图像字节数据"
+
+msgid "stability_content_blocked_by_moderation"
+msgstr "内容被 Stability 审核拦截"
+
+msgid "invalid_stability_image_request"
+msgstr "无效的 Stability 图像请求"
+
+msgid "stability_image_generation_failed"
+msgstr "Stability 图像生成失败"
+
+msgid "unsupported_custom_tool_type"
+msgstr "不支持的自定义工具类型：{tool_type}"
+
+msgid "totp_already_enabled"
+msgstr "双因素认证已经启用"
+
+msgid "totp_disabled"
+msgstr "双因素认证已禁用"
+
+msgid "totp_enabled"
+msgstr "双因素认证已启用"
+
+msgid "totp_invalid"
+msgstr "验证码无效"
+
+msgid "totp_not_enabled"
+msgstr "双因素认证未启用"
+
+msgid "totp_rate_limited"
+msgstr "尝试次数过多，请在 {seconds} 秒后重试。"
+
+msgid "totp_required"
+msgstr "需要双因素认证"
+
+msgid "totp_setup_expired"
+msgstr "TOTP 设置会话已过期，请重新开始。"
+
+msgid "totp_setup_required"
+msgstr "管理员要求设置双因素认证"
+
+msgid "totp_verification_success"
+msgstr "双因素认证验证成功"
+
+msgid "truncation_marker"
+msgstr "...[内容已截断]..."
+
+msgid "truncation_middle_marker"
+msgstr "...[中间内容已截断，共 {count} 字符]..."
+
+msgid "unauthorized"
+msgstr "未授权"
+
+msgid "unknown"
+msgstr "未知"
+
+msgid "unknown_error"
+msgstr "未知错误"
+
+msgid "unsupported_file_type"
+msgstr "不支持的文件类型"
+
+msgid "unsupported_protocol"
+msgstr "不支持的 SSO 协议"
+
+msgid "user_activated"
+msgstr "用户激活成功"
+
+msgid "user_already_active"
+msgstr "用户已经是激活状态"
+
+msgid "user_already_inactive"
+msgstr "用户已经是禁用状态"
+
+msgid "user_created"
+msgstr "用户创建成功"
+
+msgid "user_deactivated"
+msgstr "用户已禁用"
+
+msgid "user_deleted"
+msgstr "用户删除成功"
+
+msgid "user_not_found"
+msgstr "用户未找到"
+
+msgid "user_updated"
+msgstr "用户更新成功"
+
+msgid "user_with_email_exists"
+msgstr "该邮箱已存在于系统中。"
+
+msgid "user_with_id_not_exists"
+msgstr "该ID的用户不存在于系统中"
+
+msgid "user_with_username_exists"
+msgstr "该用户名已存在于系统中。"
+
+msgid "username_already_registered"
+msgstr "用户名已被注册"
+
+msgid "username_exists"
+msgstr "用户名已存在"
+
+msgid "validation_error"
+msgstr "验证错误"
+
+msgid "vector_search_failed"
+msgstr "向量搜索失败：{error}"
+
+msgid "vector_update_failed"
+msgstr "向量存储更新失败"
+
+msgid "memory_tool_execution_failed"
+msgstr "Memory 工具执行失败"
+
+msgid "tool_execution_failed"
+msgstr "工具执行失败"
+
+msgid "code_tool_execution_failed"
+msgstr "代码工具执行失败"
+
+msgid "llm_processing_failed"
+msgstr "LLM 处理失败"
+
+msgid "custom_parser_failed_placeholder"
+msgstr "[自定义解析器失败]"
+
+msgid "custom_parser_filename"
+msgstr "解析错误"
+
+msgid "verification_code_invalid"
+msgstr "验证码无效"
+
+msgid "verification_email_sent"
+msgstr "验证邮件已发送"
+
+msgid "verification_token_invalid"
+msgstr "验证链接无效或已过期"
+
+msgid "version_not_found"
+msgstr "消息版本未找到"
+
+msgid "version_not_in_group"
+msgstr "消息版本不属于此分组"
+
+msgid "webhook_not_configured"
+msgstr "Webhook 未配置"
+
+msgid "webhook_not_enabled"
+msgstr "Webhook 未启用"
+
+msgid "webhook_send_failed"
+msgstr "Webhook 通知发送失败"
+
+msgid "webhook_token_regenerated"
+msgstr "Webhook 令牌重新生成成功"
+
+msgid "webhook_trigger_disabled"
+msgstr "此工作流未启用 Webhook 触发"
+
+msgid "wechat_not_configured"
+msgstr "企业微信服务未配置"
+
+msgid "wechat_not_enabled"
+msgstr "企业微信服务未启用"
+
+msgid "wechat_send_failed"
+msgstr "企业微信消息发送失败"
+
+msgid "welcome_message"
+msgstr "欢迎使用 Clouisle API"
+
+msgid "workflow_auto_saved_before_restore"
+msgstr "恢复到 v{version} 前自动保存"
+
+msgid "workflow_cache_cleared_entries"
+msgstr "已清除 {count} 条缓存记录"
+
+msgid "workflow_copy_suffix"
+msgstr "{name} (副本)"
+
+msgid "workflow_created"
+msgstr "工作流创建成功"
+
+msgid "workflow_debug_started"
+msgstr "工作流调试已开始"
+
+msgid "workflow_deleted"
+msgstr "工作流删除成功"
+
+msgid "workflow_duplicated"
+msgstr "工作流复制成功"
+
+msgid "workflow_execution_error"
+msgstr "工作流执行错误"
+
+msgid "workflow_name_exists"
+msgstr "该工作流名称已存在"
+
+msgid "workflow_not_found"
+msgstr "工作流未找到"
+
+msgid "workflow_not_published"
+msgstr "工作流未发布"
+
+msgid "workflow_published"
+msgstr "工作流发布成功"
+
+msgid "workflow_published_version_desc"
+msgstr "发布版本"
+
+msgid "workflow_restored_from_version"
+msgstr "从 v{version} 恢复"
+
+msgid "workflow_run_cancelled"
+msgstr "工作流运行已取消"
+
+msgid "workflow_run_deleted"
+msgstr "工作流运行记录删除成功"
+
+msgid "workflow_run_not_cancellable"
+msgstr "工作流运行无法取消"
+
+msgid "workflow_run_not_found"
+msgstr "工作流运行记录未找到"
+
+msgid "workflow_run_not_found_after_execution"
+msgstr "执行后未找到运行记录"
+
+msgid "workflow_run_started"
+msgstr "工作流运行已开始"
+
+msgid "workflow_run_stats_fetched"
+msgstr "工作流运行统计获取成功"
+
+msgid "workflow_runs_fetched"
+msgstr "工作流运行记录获取成功"
+
+msgid "workflow_triggered"
+msgstr "工作流触发成功"
+
+msgid "workflow_unpublished"
+msgstr "工作流已取消发布"
+
+msgid "workflow_updated"
+msgstr "工作流更新成功"
+
+msgid "workflow_version_created"
+msgstr "工作流版本创建成功"
+
+msgid "workflow_version_not_found"
+msgstr "工作流版本未找到"
+
+msgid "workflow_version_diff_not_found"
+msgstr "未找到工作流版本差异"
+
+msgid "workflow_version_restored"
+msgstr "工作流版本恢复成功"
+
+msgid "workflow_template_access_denied"
+msgstr "您没有权限访问此工作流模板"
+
+msgid "workflow_template_delete_failed"
+msgstr "删除工作流模板失败"
+
+msgid "workflow_template_not_found"
+msgstr "工作流模板未找到"
+
+msgid "workflow_template_instantiate_failed"
+msgstr "实例化工作流模板失败"
+
+msgid "workflow_template_rating_failed"
+msgstr "提交工作流模板评分失败"
+
+msgid "media_provider_not_allowed_for_agent"
+msgstr "当前智能体不允许使用提供商“{provider}”"
+
+msgid "image_generation_not_enabled_for_agent"
+msgstr "当前智能体未启用图片生成"
+
+msgid "image_generation_exceeds_agent_limit"
+msgstr "图片生成请求超出当前智能体限制（{max_images}）"
+
+msgid "image_reference_images_disabled"
+msgstr "当前智能体已禁用参考图"
+
+msgid "image_generation_failed"
+msgstr "图片生成失败：{error}"
+
+msgid "image_generation_succeeded"
+msgstr "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}"
+
+msgid "video_generation_not_enabled_for_agent"
+msgstr "当前智能体未启用视频生成"
+
+msgid "video_generation_duration_exceeds_agent_limit"
+msgstr "视频时长超出当前智能体限制（{max_duration}s）"
+
+msgid "video_generation_started"
+msgstr "视频生成已开始。任务 {task_id} 当前状态为 {status}。提示词：{prompt}"
+
+msgid "video_generation_failed"
+msgstr "视频生成失败：{error}"
+
+msgid "video_generation_succeeded"
+msgstr "视频生成成功。使用模型 {model}。提示词：{prompt}"
+
+msgid "invalid_upload_path_segment"
+msgstr "无效的上传路径片段：{field_name}"

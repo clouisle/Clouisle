@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import timedelta
 from typing import Optional
@@ -18,6 +19,8 @@ from app.schemas.response import BusinessError, Response, ResponseCode, success
 from app.schemas.sso import SSOProviderPublic
 from app.services.audit_log import AuditLogService
 from app.services.sso import SSOService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -138,10 +141,10 @@ async def sso_login(
         return RedirectResponse(url=auth_url)
 
     except Exception as e:
+        logger.exception("Failed to initialize SSO login for provider %s", provider_name)
         raise BusinessError(
             code=ResponseCode.SSO_AUTHENTICATION_FAILED,
             msg_key="sso_login_failed",
-            data={"error": str(e)},
         )
 
 
@@ -311,7 +314,6 @@ async def sso_callback(
         raise BusinessError(
             code=ResponseCode.SSO_AUTHENTICATION_FAILED,
             msg_key="sso_login_failed",
-            data={"error": str(e)},
         )
 
 

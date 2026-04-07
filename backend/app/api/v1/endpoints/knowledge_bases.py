@@ -1299,9 +1299,10 @@ async def update_document_chunk(
         )
         await vector_store.update_chunk_vector(chunk, kb_id=kb.id)
     except DimensionMismatchError as e:
+        logger.warning("Dimension mismatch for chunk %s: %s", chunk_id, e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=str(e),
+            msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
         logger.error(
@@ -1584,15 +1585,16 @@ async def search_knowledge_base(
             rerank_overrides=rerank_overrides or None,
         )
     except DimensionMismatchError as e:
+        logger.warning("Dimension mismatch during KB search: %s", e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=str(e),
+            msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
+        logger.exception("Vector search failed: %s", e)
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_search_failed",
-            error=str(e),
         )
 
     return success(
