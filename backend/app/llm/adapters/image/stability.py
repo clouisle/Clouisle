@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     ContentFilterError,
@@ -98,7 +99,7 @@ class StabilityImageAdapter(BaseImageAdapter):
             )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Request timeout",
+                message=t("request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -172,7 +173,7 @@ class StabilityImageAdapter(BaseImageAdapter):
             image_base64 = self._extract_base64_image(data)
             if not image_base64:
                 raise ProviderError(
-                    message="Stability response did not include image data",
+                    message=t("stability_response_missing_image_data"),
                     provider=self.provider,
                     model=self.model_id,
                 )
@@ -186,7 +187,7 @@ class StabilityImageAdapter(BaseImageAdapter):
 
         if not response.content:
             raise ProviderError(
-                message="Stability response did not include image bytes",
+                message=t("stability_response_missing_image_bytes"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -207,31 +208,31 @@ class StabilityImageAdapter(BaseImageAdapter):
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message=message or "Invalid API key",
+                message=message or t("invalid_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 403:
             raise ContentFilterError(
-                message=message or "Content blocked by Stability moderation",
+                message=message or t("stability_content_blocked_by_moderation"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message=message or "Rate limit exceeded",
+                message=message or t("rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code in {400, 413, 422}:
             raise InvalidRequestError(
-                message=message or "Invalid Stability image request",
+                message=message or t("invalid_stability_image_request"),
                 provider=self.provider,
                 model=self.model_id,
             )
 
         raise ProviderError(
-            message=message or "Stability image generation failed",
+            message=message or t("stability_image_generation_failed"),
             status_code=response.status_code,
             provider=self.provider,
             model=self.model_id,

@@ -6,6 +6,7 @@ import logging
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.adapters.media_utils import append_prompt_directives
 from app.llm.errors import (
     AuthenticationError,
@@ -39,7 +40,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
         )
         if self.provider == "custom" and not model_config.base_url:
             raise InvalidRequestError(
-                message="Custom image provider requires base_url",
+                message=t("custom_image_provider_requires_base_url"),
                 field="base_url",
                 provider=self.provider,
                 model=model_config.model_id,
@@ -78,20 +79,20 @@ class OpenAIImageAdapter(BaseImageAdapter):
 
                 if response.status_code == 401:
                     raise AuthenticationError(
-                        message="Invalid API key",
+                        message=t("invalid_api_key"),
                         provider=self.provider,
                         model=self.model_id,
                     )
                 elif response.status_code == 429:
                     raise RateLimitError(
-                        message="Rate limit exceeded",
+                        message=t("rate_limit_exceeded"),
                         provider=self.provider,
                         model=self.model_id,
                     )
                 elif response.status_code == 400:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get(
-                        "message", "Bad request"
+                        "message", t("bad_request")
                     )
                     if (
                         "content_policy" in error_msg.lower()
@@ -135,7 +136,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
 
             except httpx.TimeoutException:
                 raise ProviderError(
-                    message="Request timeout",
+                    message=t("request_timeout"),
                     provider=self.provider,
                     model=self.model_id,
                 )

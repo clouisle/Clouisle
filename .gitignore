@@ -40,6 +40,7 @@ bun.lockb
 # IDEs
 .vscode/
 .idea/
+.zed/
 *.swp
 *.swo
 

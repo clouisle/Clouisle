@@ -7,6 +7,7 @@ import base64
 import httpx
 from pathlib import Path
 
+from app.core.i18n import t
 from app.models.model import Model
 from app.llm.types import (
     STTRequest,
@@ -51,7 +52,7 @@ class OpenAISTTAdapter(BaseSTTAdapter):
         audio_data = await self._get_audio_data(request)
         if not audio_data:
             raise InvalidRequestError(
-                message="No audio data provided",
+                message=t("no_audio_data_provided"),
                 provider="openai",
                 model=self.model_id,
             )
@@ -94,20 +95,20 @@ class OpenAISTTAdapter(BaseSTTAdapter):
 
                 if response.status_code == 401:
                     raise AuthenticationError(
-                        message="Invalid API key",
+                        message=t("invalid_api_key"),
                         provider="openai",
                         model=self.model_id,
                     )
                 elif response.status_code == 429:
                     raise RateLimitError(
-                        message="Rate limit exceeded",
+                        message=t("rate_limit_exceeded"),
                         provider="openai",
                         model=self.model_id,
                     )
                 elif response.status_code == 400:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get(
-                        "message", "Bad request"
+                        "message", t("bad_request")
                     )
                     raise InvalidRequestError(
                         message=error_msg,
@@ -173,7 +174,7 @@ class OpenAISTTAdapter(BaseSTTAdapter):
 
             except httpx.TimeoutException:
                 raise ProviderError(
-                    message="Request timeout",
+                    message=t("request_timeout"),
                     provider="openai",
                     model=self.model_id,
                 )

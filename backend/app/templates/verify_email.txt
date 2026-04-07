@@ -1,9 +1,9 @@
-您好，
+{email_greeting}
 
-您正在注册 {site_name}，验证码为：
+{email_verification_intro}
 
     {code}
 
-验证码 10 分钟内有效。
+{email_code_validity}
 
-{verify_section}如非本人操作，请忽略此邮件。
+{verify_section}{email_verification_ignore_notice}

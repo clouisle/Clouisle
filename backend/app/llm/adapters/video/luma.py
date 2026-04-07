@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -36,7 +37,7 @@ class LumaVideoAdapter(BaseVideoAdapter):
         generation_id = generation.get("id")
         if not generation_id:
             raise ProviderError(
-                message="Luma generation did not return an id",
+                message=t("luma_generation_missing_id"),
                 provider="luma",
                 model=self.model_id,
             )

@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -65,7 +66,7 @@ class DashScopeVideoClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="DashScope request timeout",
+                message=t("dashscope_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -78,25 +79,25 @@ class DashScopeVideoClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid DashScope API key",
+                message=t("invalid_dashscope_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="DashScope task not found",
+                message=t("dashscope_task_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="DashScope endpoint not found",
+                message=t("dashscope_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="DashScope rate limit exceeded",
+                message=t("dashscope_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -109,7 +110,7 @@ class DashScopeVideoClient:
                 error_data.get("message")
                 or error_data.get("error")
                 or response.text
-                or "DashScope API error"
+                or t("dashscope_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -144,7 +145,7 @@ class DashScopeVideoClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="DashScope task polling timed out",
+            message=t("dashscope_task_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

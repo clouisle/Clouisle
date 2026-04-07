@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -45,7 +46,7 @@ class SiliconFlowVideoAdapter(BaseVideoAdapter):
         request_id = result.get("requestId")
         if not request_id:
             raise ProviderError(
-                message="SiliconFlow task did not return a requestId",
+                message=t("siliconflow_task_missing_request_id"),
                 provider="siliconflow",
                 model=self.model_id,
             )

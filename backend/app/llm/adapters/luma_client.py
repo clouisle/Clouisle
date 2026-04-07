@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -63,7 +64,7 @@ class LumaClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Luma request timeout",
+                message=t("luma_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -76,25 +77,25 @@ class LumaClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid Luma API key",
+                message=t("invalid_luma_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="Luma generation not found",
+                message=t("luma_generation_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="Luma endpoint not found",
+                message=t("luma_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="Luma rate limit exceeded",
+                message=t("luma_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -108,7 +109,7 @@ class LumaClient:
                 or error_data.get("detail")
                 or error_data.get("error")
                 or response.text
-                or "Luma API error"
+                or t("luma_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -139,7 +140,7 @@ class LumaClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="Luma generation polling timed out",
+            message=t("luma_generation_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

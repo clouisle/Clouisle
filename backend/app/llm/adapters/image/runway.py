@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import (
     GeneratedImage,
@@ -73,7 +74,7 @@ class RunwayImageAdapter(BaseImageAdapter):
         task_id = task.get("id")
         if not task_id:
             raise ProviderError(
-                message="Runway image task did not return an id",
+                message=t("runway_image_task_missing_id"),
                 provider="runway",
                 model=self.model_id,
             )
@@ -115,7 +116,7 @@ class RunwayImageAdapter(BaseImageAdapter):
 
         if not urls:
             raise InvalidRequestError(
-                message="Runway image task completed without image output",
+                message=t("runway_image_task_missing_output"),
                 provider="runway",
                 model=self.model_id,
             )

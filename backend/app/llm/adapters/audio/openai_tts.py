@@ -6,6 +6,7 @@ import logging
 import base64
 import httpx
 
+from app.core.i18n import t
 from app.models.model import Model
 from app.llm.types import TTSRequest, TTSResponse, AudioContent
 from app.llm.errors import (
@@ -76,20 +77,20 @@ class OpenAITTSAdapter(BaseTTSAdapter):
 
                 if response.status_code == 401:
                     raise AuthenticationError(
-                        message="Invalid API key",
+                        message=t("invalid_api_key"),
                         provider="openai",
                         model=self.model_id,
                     )
                 elif response.status_code == 429:
                     raise RateLimitError(
-                        message="Rate limit exceeded",
+                        message=t("rate_limit_exceeded"),
                         provider="openai",
                         model=self.model_id,
                     )
                 elif response.status_code == 400:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get(
-                        "message", "Bad request"
+                        "message", t("bad_request")
                     )
                     raise InvalidRequestError(
                         message=error_msg,
@@ -118,7 +119,7 @@ class OpenAITTSAdapter(BaseTTSAdapter):
 
             except httpx.TimeoutException:
                 raise ProviderError(
-                    message="Request timeout",
+                    message=t("request_timeout"),
                     provider="openai",
                     model=self.model_id,
                 )

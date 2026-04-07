@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -36,7 +37,7 @@ class PikaVideoAdapter(BaseVideoAdapter):
         generation_id = generation.get("id")
         if not generation_id:
             raise ProviderError(
-                message="Pika generation did not return an id",
+                message=t("pika_generation_missing_id"),
                 provider="pika",
                 model=self.model_id,
             )

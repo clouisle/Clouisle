@@ -11,11 +11,12 @@ Provides REST API for:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.schemas.response import BusinessError, ResponseCode
 from app.services.workflow.versioning import (
     get_version_manager,
     VersionStatus,
@@ -164,7 +165,11 @@ async def get_version(
     _ = workflow_id
     version = await manager.get_version(version_id)
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
 
     return version.to_dict()
 
@@ -181,7 +186,11 @@ async def publish_version(
     _ = workflow_id
     version = await manager.publish_version(version_id, current_user.id)
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
 
     return {"success": True, "status": version.status.value}
 
@@ -198,7 +207,11 @@ async def archive_version(
     _ = workflow_id
     version = await manager.archive_version(version_id)
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
 
     return {"success": True, "status": version.status.value}
 
@@ -216,7 +229,11 @@ async def get_version_diff(
     _ = workflow_id
     diff = await manager.diff(from_version, to_version)
     if not diff:
-        raise HTTPException(status_code=404, detail="Could not generate diff")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_diff_not_found",
+            status_code=404,
+        )
 
     return VersionDiffResponse(
         from_version=from_version,
@@ -393,7 +410,11 @@ async def get_template(
 
     template = await manager.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_template_not_found",
+            status_code=404,
+        )
 
     return template.to_dict()
 
@@ -455,8 +476,11 @@ async def instantiate_template(
             workflow_name=request.workflow_name,
         )
         return workflow_def
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_instantiate_failed",
+        )
 
 
 @template_router.post("/{template_id}/rate")
@@ -475,7 +499,10 @@ async def rate_template(
     )
 
     if not success:
-        raise HTTPException(status_code=400, detail="Rating failed")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_rating_failed",
+        )
 
     return {"success": True}
 
@@ -491,14 +518,25 @@ async def delete_template(
     # Check ownership (in production)
     template = await manager.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_template_not_found",
+            status_code=404,
+        )
 
     if template.author_id != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="workflow_template_access_denied",
+            status_code=403,
+        )
 
     success = await manager.delete_template(template_id)
     if not success:
-        raise HTTPException(status_code=400, detail="Cannot delete template")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_delete_failed",
+        )
 
     return {"success": True}
 

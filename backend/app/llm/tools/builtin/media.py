@@ -13,6 +13,7 @@ import logging
 import time
 from typing import Any
 
+from app.core.i18n import t
 from app.llm import model_manager
 from app.llm.types import (
     GeneratedImage,
@@ -46,7 +47,6 @@ def _get_agent_module_config(agent: Any, field_name: str) -> dict[str, Any]:
 def _validate_allowed_providers(
     model_ref: str | None,
     config: dict[str, Any],
-    feature_label: str,
 ) -> None:
     allowed_providers = config.get("allowed_providers") or []
     if not allowed_providers or not model_ref or "/" not in model_ref:
@@ -55,7 +55,7 @@ def _validate_allowed_providers(
     provider = model_ref.split("/", 1)[0]
     if provider not in allowed_providers:
         raise ValueError(
-            f"{feature_label} provider '{provider}' is not allowed for this agent"
+            t("media_provider_not_allowed_for_agent", provider=provider)
         )
 
 
@@ -172,15 +172,16 @@ def build_image_llm_result(
     error: str | None = None,
 ) -> str:
     if error:
-        return f"Image generation failed: {error}"
+        return t("image_generation_failed", error=error)
 
     count = len(response.images) if response and response.images else 0
     model = response.model if response else None
     prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
-    model_suffix = f" using model {model}" if model else ""
-    return (
-        f"Image generation succeeded. Generated {count} image"
-        f"{'s' if count != 1 else ''}{model_suffix}. Prompt: {prompt_excerpt}"
+    return t(
+        "image_generation_succeeded",
+        count=count,
+        model=model or "-",
+        prompt=prompt_excerpt,
     )
 
 
@@ -192,20 +193,27 @@ def build_video_llm_result(
 ) -> str:
     status = _normalize_status(response.status) if response else TaskStatus.FAILED.value
     if error or status == TaskStatus.FAILED.value:
-        message = error or (response.error if response else None) or "unknown error"
-        return f"Video generation failed: {message}"
+        message = (
+            error
+            or (response.error if response else None)
+            or t("unknown_error_generic")
+        )
+        return t("video_generation_failed", error=message)
 
     prompt_excerpt = prompt.strip().replace("\n", " ")[:120]
     if response is not None and status in PENDING_VIDEO_STATUSES:
-        return (
-            f"Video generation started. Task {response.task_id} is {status}. "
-            f"Prompt: {prompt_excerpt}"
+        return t(
+            "video_generation_started",
+            task_id=response.task_id,
+            status=status,
+            prompt=prompt_excerpt,
         )
 
-    model_suffix = (
-        f" using model {response.model}" if response and response.model else ""
+    return t(
+        "video_generation_succeeded",
+        model=(response.model if response and response.model else "-"),
+        prompt=prompt_excerpt,
     )
-    return f"Video generation succeeded{model_suffix}. Prompt: {prompt_excerpt}"
 
 
 def build_media_tool_execution_result(
@@ -232,19 +240,20 @@ async def generate_image(
     resolved_model_ref: str | None = None
     try:
         if agent and not getattr(agent, "enable_image_generation", False):
-            raise ValueError("Image generation is not enabled for this agent")
+            raise ValueError(t("image_generation_not_enabled_for_agent"))
 
         config = _get_agent_module_config(agent, "image_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
-        _validate_allowed_providers(resolved_model_ref, config, "Image generation")
+        _validate_allowed_providers(resolved_model_ref, config)
 
-        if num_images > int(config.get("max_images", 4)):
+        max_images = int(config.get("max_images", 4))
+        if num_images > max_images:
             raise ValueError(
-                f"Image generation request exceeds agent limit ({config.get('max_images', 4)})"
+                t("image_generation_exceeds_agent_limit", max_images=max_images)
             )
 
         if images and not config.get("allow_reference_images", True):
-            raise ValueError("Reference images are disabled for this agent")
+            raise ValueError(t("image_reference_images_disabled"))
 
         request = ImageGenerationRequest(
             prompt=prompt,
@@ -279,11 +288,14 @@ async def generate_image(
         display_result = build_image_tool_result(
             prompt,
             model_ref=resolved_model_ref,
-            error=str(exc),
+            error=str(exc) or t("unknown_error_generic"),
         )
         return build_media_tool_execution_result(
             display_result,
-            build_image_llm_result(prompt, error=str(exc)),
+            build_image_llm_result(
+                prompt,
+                error=str(exc) or t("unknown_error_generic"),
+            ),
         )
 
 
@@ -305,17 +317,20 @@ async def generate_video(
 
     try:
         if agent and not getattr(agent, "enable_video_generation", False):
-            raise ValueError("Video generation is not enabled for this agent")
+            raise ValueError(t("video_generation_not_enabled_for_agent"))
 
         config = _get_agent_module_config(agent, "video_generation_config")
         resolved_model_ref = config.get("default_model_ref") or None
-        _validate_allowed_providers(resolved_model_ref, config, "Video generation")
+        _validate_allowed_providers(resolved_model_ref, config)
 
         final_duration = duration or float(config.get("default_duration", 5.0))
         max_duration = float(config.get("max_duration", 10.0))
         if final_duration > max_duration:
             raise ValueError(
-                f"Video duration exceeds agent limit ({max_duration:.1f}s)"
+                t(
+                    "video_generation_duration_exceeds_agent_limit",
+                    max_duration=f"{max_duration:.1f}",
+                )
             )
 
         poll_interval_ms = int(config.get("poll_interval_ms", 3000))
@@ -369,11 +384,14 @@ async def generate_video(
             model_ref=resolved_model_ref,
             poll_interval_ms=poll_interval_ms,
             poll_timeout_s=poll_timeout_s,
-            error=str(exc),
+            error=str(exc) or t("unknown_error_generic"),
         )
         return build_media_tool_execution_result(
             display_result,
-            build_video_llm_result(prompt, error=str(exc)),
+            build_video_llm_result(
+                prompt,
+                error=str(exc) or t("unknown_error_generic"),
+            ),
         )
 
 

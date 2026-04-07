@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -61,7 +62,7 @@ class PikaClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Pika request timeout",
+                message=t("pika_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -74,25 +75,25 @@ class PikaClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid Pika API key",
+                message=t("invalid_pika_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="Pika generation not found",
+                message=t("pika_generation_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="Pika endpoint not found",
+                message=t("pika_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="Pika rate limit exceeded",
+                message=t("pika_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -105,7 +106,7 @@ class PikaClient:
                 error_data.get("message")
                 or error_data.get("error")
                 or response.text
-                or "Pika API error"
+                or t("pika_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -136,7 +137,7 @@ class PikaClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="Pika generation polling timed out",
+            message=t("pika_generation_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

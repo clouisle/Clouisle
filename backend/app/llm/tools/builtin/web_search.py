@@ -10,7 +10,7 @@ from html.parser import HTMLParser
 
 import httpx
 
-
+from app.core.i18n import t
 from ..registry import tool_registry, ToolParameter
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ async def _tavily_search(
         logger.error("No Tavily API key found in credentials")
         return {
             "query": query,
-            "error": "Tavily API key not configured. Please configure it in tool settings.",
+            "error": t("tavily_api_key_not_configured"),
             "success": False,
             "results": [],
         }

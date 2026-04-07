@@ -8,6 +8,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING, cast
 
+from app.core.i18n import t
 from app.llm import model_manager
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
@@ -371,7 +372,7 @@ class AgentService:
             logger.error(
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
-            return {"error": "Invalid tool arguments"}
+            return {"error": t("invalid_tool_arguments")}
 
         # Get credentials for builtin tools
         credentials = {}

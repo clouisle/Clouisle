@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -324,7 +326,7 @@ async def execute_http_tool(
             }
 
     except httpx.TimeoutException:
-        return {"success": False, "error": "Request timeout"}
+        return {"success": False, "error": t("request_timeout")}
     except Exception as e:
         logger.exception(f"HTTP tool execution error: {e}")
         return {"success": False, "error": str(e)}
@@ -345,7 +347,7 @@ def format_http_result_for_llm(result: dict) -> str:
     else:
         return json.dumps(
             {
-                "error": result.get("error", "Unknown error"),
+                "error": result.get("error", t("unknown_error")),
                 "status_code": result.get("status_code"),
             },
             ensure_ascii=False,

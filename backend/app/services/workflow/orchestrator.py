@@ -995,7 +995,7 @@ class WorkflowOrchestrator:
         node_info = plan.get_node(node_id)
         if not node_info:
             raise NodeExecutionError(
-                message="Node not found in execution plan",
+                message=t("node_not_found_in_execution_plan"),
                 node_id=node_id,
                 node_type="unknown",
             )

@@ -8,6 +8,8 @@ from celery import shared_task, group
 from uuid import UUID
 import logging
 
+from app.core.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,7 +117,11 @@ def execute_node_task(
         # Load run
         run = await WorkflowRun.filter(id=run_id).first()
         if not run:
-            return {"node_id": node_id, "status": "error", "error": "Run not found"}
+            return {
+                "node_id": node_id,
+                "status": "error",
+                "error": t("workflow_run_not_found"),
+            }
 
         # Execute
         result = await executor.execute(

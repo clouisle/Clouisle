@@ -11,6 +11,7 @@ from typing import Optional
 
 import aiosmtplib
 
+from app.core.i18n import t, normalize_language
 from app.core.redis import get_redis
 from app.models.site_setting import SiteSetting
 
@@ -212,7 +213,11 @@ async def set_email_cooldown(email: str, purpose: str = "register", seconds: int
 
 
 async def send_verification_email(
-    email: str, code: str, token: str, purpose: str = "register"
+    email: str,
+    code: str,
+    token: str,
+    purpose: str = "register",
+    locale: str | None = None,
 ):
     """
     发送验证码邮件
@@ -224,21 +229,31 @@ async def send_verification_email(
 
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
     site_url = await SiteSetting.get_value("site_url", "")
+    locale = normalize_language(locale or await SiteSetting.get_value("default_language", "en"))
 
     # 根据用途选择模板
     if purpose == "register":
-        subject = f"【{site_name}】邮箱验证"
+        subject = t("email_verification_subject", lang=locale, site_name=site_name)
         verify_url = f"{site_url}/verify?token={token}" if site_url else None
-        body_text, body_html = render_verification_email(site_name, code, verify_url)
+        body_text, body_html = render_verification_email(
+            site_name,
+            code,
+            verify_url,
+            locale=locale,
+        )
 
     elif purpose == "reset_password":
-        subject = f"【{site_name}】重置密码"
+        subject = t("email_reset_password_subject", lang=locale, site_name=site_name)
         verify_url = f"{site_url}/reset-password?token={token}" if site_url else None
-        body_text, body_html = render_reset_password_email(site_name, code, verify_url)
+        body_text, body_html = render_reset_password_email(
+            site_name,
+            code,
+            verify_url,
+            locale=locale,
+        )
     else:
-        # 通用模板
-        subject = f"【{site_name}】验证码"
-        body_text = f"您的验证码是：{code}\n验证码 10 分钟内有效。"
+        subject = t("email_code_subject", lang=locale, site_name=site_name)
+        body_text = t("email_code_body_text", lang=locale, code=code)
         body_html = None
 
     await send_email(email, subject, body_text, body_html)

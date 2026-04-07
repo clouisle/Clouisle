@@ -239,6 +239,15 @@ wheels = [
 ]
 
 [[package]]
+name = "babel"
+version = "2.18.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7d/b2/51899539b6ceeeb420d40ed3cd4b7a40519404f9baf3d4ac99dc413a834b/babel-2.18.0.tar.gz", hash = "sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d", size = 9959554, upload-time = "2026-02-01T12:30:56.078Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl", hash = "sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35", size = 10196845, upload-time = "2026-02-01T12:30:53.445Z" },
+]
+
+[[package]]
 name = "bcrypt"
 version = "5.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
@@ -517,6 +526,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "asyncpg" },
     { name = "authlib" },
+    { name = "babel" },
     { name = "bcrypt" },
     { name = "celery" },
     { name = "cryptography" },
@@ -572,6 +582,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.75.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "authlib", specifier = ">=1.6.9" },
+    { name = "babel", specifier = ">=2.17.0" },
     { name = "bcrypt", specifier = "==5.0.0" },
     { name = "celery", specifier = ">=5.3.6" },
     { name = "cryptography", specifier = ">=46.0.5" },

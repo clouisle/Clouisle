@@ -16,6 +16,7 @@ from uuid import UUID
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from app.core.i18n import t
 from app.models.model import Model, ModelType, TeamModel, ModelProvider
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
@@ -620,7 +621,7 @@ class ModelManager:
             request.get("image") is not None or request.get("end_image") is not None
         ):
             raise InvalidRequestError(
-                message="Image-to-video has been removed from the project",
+                message=t("image_to_video_removed_from_project"),
                 field="image",
             )
 
@@ -691,7 +692,7 @@ class ModelManager:
                 raise last_error
             raise last_error
 
-        raise ModelNotFoundError(message="No enabled video model configured")
+        raise ModelNotFoundError(message=t("no_enabled_video_model_configured"))
 
     # ==================== Audio 方法 ====================
 

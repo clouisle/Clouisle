@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -37,7 +38,7 @@ class DashScopeVideoAdapter(BaseVideoAdapter):
         task_id = output.get("task_id")
         if not task_id:
             raise ProviderError(
-                message="DashScope task did not return a task_id",
+                message=t("dashscope_task_missing_id"),
                 provider="qwen",
                 model=self.model_id,
             )

@@ -12,6 +12,7 @@ from uuid import UUID
 from app.models.memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from app.models.user import User
 from app.core.config import settings
+from app.core.i18n import t
 from app.services.audit_log import AuditLogService
 
 AsyncQdrantClient: Any = None
@@ -612,9 +613,12 @@ class MemoryService:
             )
 
             # Add warning if similar entities found
-            message = f"Created memory entity: {entity.name}"
+            message = t("memory_entity_created_tool", entity_name=entity.name)
             if similar_names:
-                message += f" (Note: Similar entities exist: {', '.join(similar_names)}. Consider if you meant to update one of them instead.)"
+                message += t(
+                    "memory_similar_entities_notice",
+                    similar_entities=", ".join(similar_names),
+                )
 
             return {
                 "success": True,
@@ -693,7 +697,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Source entity '{source_entity_name}' not found",
+                    "error": t(
+                        "memory_source_entity_not_found",
+                        entity_name=source_entity_name,
+                    ),
                 }
 
             if not target:
@@ -714,7 +721,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Target entity '{target_entity_name}' not found",
+                    "error": t(
+                        "memory_target_entity_not_found",
+                        entity_name=target_entity_name,
+                    ),
                 }
 
             relation = await MemoryService.create_relation(
@@ -746,7 +756,12 @@ class MemoryService:
             return {
                 "success": True,
                 "relation_id": str(relation.id),
-                "message": f"Created relation: {source.name} --[{relation_type}]--> {target.name}",
+                "message": t(
+                    "memory_relation_created_tool",
+                    source_name=source.name,
+                    relation_type=relation_type,
+                    target_name=target.name,
+                ),
             }
         except Exception as e:
             logger.error(f"Failed to create relation: {e}")
@@ -814,7 +829,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Entity '{entity_name}' not found",
+                    "error": t(
+                        "memory_entity_named_not_found",
+                        entity_name=entity_name,
+                    ),
                 }
 
             # Store old values for audit
@@ -859,7 +877,7 @@ class MemoryService:
             return {
                 "success": True,
                 "entity_id": str(entity.id),
-                "message": f"Updated memory entity: {entity.name}",
+                "message": t("memory_entity_updated_tool", entity_name=entity.name),
             }
         except Exception as e:
             logger.error(f"Failed to update entity: {e}")
@@ -918,14 +936,14 @@ class MemoryService:
                     "success": True,
                     "results": [],
                     "count": 0,
-                    "message": "No memories found. This might be the first conversation or the information hasn't been saved yet.",
+                    "message": t("memory_search_empty"),
                 }
 
             return {
                 "success": True,
                 "results": results,
                 "count": len(results),
-                "message": f"Found {len(results)} relevant memories.",
+                "message": t("memory_search_results_found", count=len(results)),
             }
         except Exception as e:
             logger.error(f"Failed to search memory: {e}")

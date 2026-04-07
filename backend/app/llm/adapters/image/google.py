@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.adapters.media_utils import append_prompt_directives
 from app.llm.errors import ContentFilterError, InvalidRequestError, ProviderError
 from app.llm.types import (
@@ -262,7 +263,7 @@ class GoogleImageAdapter(BaseImageAdapter):
             return types.Part.from_uri(file_uri=image.url, mime_type=mime_type)
 
         raise InvalidRequestError(
-            message="Google reference image must include url, base64, or file_path",
+            message=t("google_reference_image_missing_source"),
             field="images",
             provider=self.provider,
             model=self.model_id,
@@ -354,7 +355,7 @@ class GoogleImageAdapter(BaseImageAdapter):
             finish_reason = str(getattr(candidate, "finish_reason", "")).upper()
             if ("SAFETY" in finish_reason or "BLOCK" in finish_reason) and not images:
                 raise ContentFilterError(
-                    message="Google image generation was blocked by safety filters",
+                    message=t("google_image_generation_blocked_by_safety_filters"),
                     provider=self.provider,
                     model=self.model_id,
                 )
@@ -373,7 +374,7 @@ class GoogleImageAdapter(BaseImageAdapter):
                 )
 
         raise InvalidRequestError(
-            message="Google image model returned no image output",
+            message=t("google_image_model_returned_no_image_output"),
             provider=self.provider,
             model=self.model_id,
         )
