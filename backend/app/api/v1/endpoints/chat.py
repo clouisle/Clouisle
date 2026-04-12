@@ -115,7 +115,7 @@ class LLMMessage(BaseModel):
     """LLM chat message"""
 
     role: LLMMessageRole
-    content: str | None = None
+    content: str | list[dict[str, Any]] | None = None
     tool_call_id: str | None = None
     reasoning_content: str | None = None
     tool_calls: list[dict[str, Any]] | None = None
@@ -125,6 +125,163 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
 MEDIA_TOOL_KINDS = {"media.image", "media.video"}
+
+
+def get_item_value(item: Any, key: str, default: Any = None) -> Any:
+    if isinstance(item, dict):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
+def build_vision_content(text: str, images: list[Any]) -> list[dict[str, Any]]:
+    """Build multimodal content for vision-capable models."""
+    content_parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for img in images:
+        img_url = getattr(img, "url", None)
+        if not img_url and isinstance(img, dict):
+            img_url = img.get("url")
+        if not img_url:
+            continue
+
+        if img_url.startswith("data:"):
+            try:
+                _, data_part = img_url.split(",", 1)
+                content_parts.append(
+                    {"type": "image", "image": {"base64": data_part}}
+                )
+            except ValueError:
+                content_parts.append({"type": "image", "image": {"url": img_url}})
+        else:
+            content_parts.append({"type": "image", "image": {"url": img_url}})
+    return content_parts
+
+
+async def build_file_content_for_prompt(
+    agent: Agent,
+    file_urls: list[Any] | None,
+    legacy_files: list[Any] | None,
+    user_locale: str | None,
+    tool_timeouts: dict[str, Any] | None,
+    user: User | None,
+) -> str:
+    if not agent.enable_file_upload:
+        return ""
+
+    from app.services.file_parser import file_parser_service, ParsedFile, FileParseConfig
+
+    parsed_files: list[ParsedFile] = []
+    file_config = agent.file_upload_config or {}
+    parser_config = file_config.get("parser")
+    parse_config = FileParseConfig(
+        max_content_length=file_config.get("max_content_length", 100000),
+        truncate_strategy=file_config.get("truncate_strategy", "end"),
+    )
+
+    if file_urls and parser_config:
+        parser_type = parser_config.get("type", "builtin")
+        parser_name = parser_config.get("name", "markitdown")
+        parser_tool_id = parser_config.get("tool_id")
+
+        if parser_type == "builtin" and parser_name == "markitdown":
+            import httpx
+
+            download_timeout = (tool_timeouts or {}).get("download", 60)
+            async with httpx.AsyncClient(
+                timeout=download_timeout, follow_redirects=True
+            ) as client:
+                for f in file_urls:
+                    filename = get_item_value(f, "filename", "")
+                    mime_type = get_item_value(f, "mime_type", "application/octet-stream")
+                    size = get_item_value(f, "size", 0)
+                    url = get_item_value(f, "url", "")
+                    if not url:
+                        continue
+                    try:
+                        if url.startswith("/"):
+                            base_url = settings.API_BASE_URL.rstrip("/")
+                            url = f"{base_url}{url}"
+
+                        response = await client.get(url)
+                        response.raise_for_status()
+                        parsed_files.append(
+                            await file_parser_service.parse_file(
+                                response.content,
+                                filename,
+                                parse_config,
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to parse file %s: %s", filename, e)
+                        parsed_files.append(
+                            ParsedFile(
+                                filename=filename,
+                                content=t("file_parse_failed_placeholder"),
+                                mime_type=mime_type,
+                                size=size,
+                            )
+                        )
+        elif parser_type == "custom" and parser_tool_id:
+            from app.models.tool import Tool
+
+            custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
+            if custom_tool:
+                try:
+                    urls = [
+                        get_item_value(f, "url", "") for f in file_urls
+                    ]
+                    result = await execute_tool_call(
+                        f"custom_{custom_tool.name}",
+                        {"files_url": [url for url in urls if url]},
+                        agent=agent,
+                        tool_timeouts=tool_timeouts,
+                        user=user,
+                    )
+                    display_result, _ = get_tool_execution_payloads(result)
+                    if display_result:
+                        parsed_files.append(
+                            ParsedFile(
+                                filename=t("custom_parser_filename"),
+                                content=display_result,
+                                mime_type="text/plain",
+                                size=len(display_result),
+                            )
+                        )
+                except Exception as e:
+                    logger.warning("Custom parser failed: %s", e)
+                    parsed_files.append(
+                        ParsedFile(
+                            filename=t("custom_parser_filename"),
+                            content=t("custom_parser_failed_placeholder"),
+                            mime_type="text/plain",
+                            size=0,
+                        )
+                    )
+
+    if not parsed_files and legacy_files:
+        for f in legacy_files:
+            filename = get_item_value(f, "filename", "")
+            content = get_item_value(f, "content", "")
+            mime_type = get_item_value(f, "mime_type", "text/plain")
+            size = get_item_value(f, "size", 0)
+            truncated = get_item_value(f, "truncated", False)
+            original_length = get_item_value(f, "original_length")
+            parsed_files.append(
+                ParsedFile(
+                    filename=filename,
+                    content=content,
+                    mime_type=mime_type,
+                    size=size,
+                    truncated=bool(truncated),
+                    original_length=original_length,
+                )
+            )
+
+    if not parsed_files:
+        return ""
+
+    return file_parser_service.format_files_for_prompt(
+        parsed_files, locale=user_locale
+    )
 
 
 # ============ Helper Functions ============
@@ -559,39 +716,22 @@ async def build_messages(
     conversation: Conversation,
     user_message: str,
     file_content: str | None = None,
-    file_urls: list[dict] | None = None,
     user_locale: str | None = None,
+    history_override: list[Any] | None = None,
+    current_images: list[Any] | None = None,
+    model_supports_vision: bool = False,
+    current_user_message_id: UUID | None = None,
 ) -> list[LLMMessage]:
-    """Build message list for LLM call.
-
-    Args:
-        agent: The agent
-        conversation: The conversation
-        user_message: User's message text
-        file_content: Legacy file content to inject into {{fileContent}} variable
-        file_urls: List of file URLs for tool-based file processing
-        user_locale: User's locale from database for language instruction
-    """
+    """Build message list for LLM call."""
     messages: list[LLMMessage] = []
 
-    # System prompt - always add with language instruction
     system_prompt = agent.system_prompt or ""
     if system_prompt:
-        # Replace variables in system prompt
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-
-        # Inject {{query}} variable - user's current input
         system_prompt = system_prompt.replace("{{query}}", user_message)
+        system_prompt = system_prompt.replace("{{fileContent}}", file_content or "")
 
-        # Inject file content into {{fileContent}} variable (legacy)
-        if file_content:
-            system_prompt = system_prompt.replace("{{fileContent}}", file_content)
-        else:
-            # Remove the placeholder if no file content
-            system_prompt = system_prompt.replace("{{fileContent}}", "")
-
-    # Add memory instructions if enabled
     if agent.enable_memory:
         memory_instruction = """
 
@@ -639,70 +779,83 @@ Assistant: "Your name is Alice."
         system_prompt += memory_instruction
         logger.info(f"Added memory instructions to system prompt for agent {agent.id}")
 
-    # Build system prompt with language instruction (always added)
     system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
+    if agent.enable_user_input_request:
+        system_prompt = (
+            f"{system_prompt}\n\n"
+            f"{get_user_input_request_instruction(user_locale or 'en')}"
+        )
     messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
 
-    # Load conversation history (only active messages)
-    history = await Message.filter(
-        conversation_id=conversation.id, is_active=True
-    ).order_by("created_at")
     valid_tool_call_ids: set[str] = set()
-    for msg in history:
-        if msg.role == MessageRole.USER:
-            messages.append(LLMMessage(role=LLMMessageRole.USER, content=msg.content))
-        elif msg.role == MessageRole.ASSISTANT:
-            tool_calls = None
-            if msg.tool_calls:
-                tool_calls = []
-                for tc in msg.tool_calls:
-                    tc_id = tc.get("id", "")
-                    valid_tool_call_ids.add(tc_id)
-                    arguments = tc.get("arguments", {})
-                    if isinstance(arguments, dict):
-                        arguments = json.dumps(arguments)
-                    tool_calls.append(
-                        {
-                            "id": tc_id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.get("name", ""),
-                                "arguments": arguments,
-                            },
-                        }
-                    )
-            messages.append(
-                LLMMessage(
-                    role=LLMMessageRole.ASSISTANT,
-                    content=msg.content,
-                    reasoning_content=msg.reasoning_content,
-                    tool_calls=tool_calls,
-                )
-            )
-        elif msg.role == MessageRole.TOOL:
-            if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+    if history_override is not None:
+        for hist_msg in history_override:
+            role = getattr(hist_msg, "role", None)
+            content = getattr(hist_msg, "content", None)
+            if role == "user":
+                messages.append(LLMMessage(role=LLMMessageRole.USER, content=content))
+            elif role == "assistant":
                 messages.append(
                     LLMMessage(
-                        role=LLMMessageRole.TOOL,
-                        content=summarize_tool_result_for_llm(
-                            msg.tool_name,
-                            msg.content,
-                        ),
-                        tool_call_id=msg.tool_call_id,
+                        role=LLMMessageRole.ASSISTANT,
+                        content=content,
+                        reasoning_content=getattr(hist_msg, "reasoning_content", None),
                     )
                 )
+    else:
+        history = await Message.filter(
+            conversation_id=conversation.id, is_active=True
+        ).order_by("created_at")
+        for msg in history:
+            if msg.role == MessageRole.USER:
+                if current_user_message_id and msg.id == current_user_message_id:
+                    continue
+                messages.append(LLMMessage(role=LLMMessageRole.USER, content=msg.content))
+            elif msg.role == MessageRole.ASSISTANT:
+                tool_calls = None
+                if msg.tool_calls:
+                    tool_calls = []
+                    for tc in msg.tool_calls:
+                        tc_id = tc.get("id", "")
+                        valid_tool_call_ids.add(tc_id)
+                        arguments = tc.get("arguments", {})
+                        if isinstance(arguments, dict):
+                            arguments = json.dumps(arguments)
+                        tool_calls.append(
+                            {
+                                "id": tc_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.get("name", ""),
+                                    "arguments": arguments,
+                                },
+                            }
+                        )
+                messages.append(
+                    LLMMessage(
+                        role=LLMMessageRole.ASSISTANT,
+                        content=msg.content,
+                        reasoning_content=msg.reasoning_content,
+                        tool_calls=tool_calls,
+                    )
+                )
+            elif msg.role == MessageRole.TOOL:
+                if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
+                    messages.append(
+                        LLMMessage(
+                            role=LLMMessageRole.TOOL,
+                            content=summarize_tool_result_for_llm(
+                                msg.tool_name,
+                                msg.content,
+                            ),
+                            tool_call_id=msg.tool_call_id,
+                        )
+                    )
 
-    # Build current user message with file info
-    final_user_message = user_message
-    if file_urls:
-        # Add file info to the message so LLM knows to use markitdown tool
-        file_info_lines = [t("chat_file_upload_instruction")]
-        for f in file_urls:
-            file_info_lines.append(f"- {f['filename']} ({f['url']})")
-        file_info = "\n".join(file_info_lines)
-        final_user_message = f"{file_info}\n\n{user_message}"
-
-    messages.append(LLMMessage(role=LLMMessageRole.USER, content=final_user_message))
+    current_content: str | list[dict[str, Any]] = user_message
+    if current_images and model_supports_vision:
+        current_content = build_vision_content(user_message, current_images)
+    messages.append(LLMMessage(role=LLMMessageRole.USER, content=current_content))
 
     return messages
 
@@ -1649,7 +1802,7 @@ async def chat(
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
     # Save user message with images and file_urls
-    await Message.create(
+    user_msg = await Message.create(
         conversation=conversation,
         role=MessageRole.USER,
         content=chat_in.message,
@@ -1663,13 +1816,43 @@ async def chat(
     # Update message stats (user message, no tokens)
     await update_message_stats(agent, token_usage=None)
 
-    # Build messages for LLM
-    messages = await build_messages(
-        agent, conversation, final_message, user_locale=current_user.locale
-    )
-
     # Get model identifier
     model_id = await get_model_identifier(agent)
+
+    model_supports_vision = False
+    if chat_in.images and agent.enable_vision:
+        model_capabilities = await get_model_capabilities(agent)
+        model_supports_vision = model_capabilities.get("vision", False)
+        if not model_supports_vision:
+            raise BusinessError(
+                code=ResponseCode.MODEL_VISION_NOT_SUPPORTED,
+                msg_key="model_vision_not_supported",
+                status_code=400,
+            )
+
+    streaming_config = get_streaming_config(agent)
+    tool_timeouts = streaming_config["tool_timeouts"]
+    file_content_str = await build_file_content_for_prompt(
+        agent=agent,
+        file_urls=chat_in.file_urls,
+        legacy_files=chat_in.files,
+        user_locale=current_user.locale,
+        tool_timeouts=tool_timeouts,
+        user=current_user,
+    )
+
+    # Build messages for LLM
+    messages = await build_messages(
+        agent,
+        conversation,
+        final_message,
+        file_content=file_content_str,
+        user_locale=current_user.locale,
+        history_override=chat_in.history_override,
+        current_images=chat_in.images,
+        model_supports_vision=model_supports_vision,
+        current_user_message_id=user_msg.id,
+    )
 
     try:
         # Import here to avoid circular import
@@ -1679,6 +1862,7 @@ async def chat(
 
         # Build tool definitions
         tools_openai = await get_agent_tools(agent)
+        tool_display_names = await get_tool_display_names(agent, current_user.locale)
         tools: list[ToolDefinition] | None = None
         if tools_openai:
             tools = [
@@ -1729,6 +1913,9 @@ async def chat(
                     {
                         "id": tc.id,
                         "name": tc.function.name,
+                        "display_name": tool_display_names.get(
+                            tc.function.name, tc.function.name
+                        ),
                         "arguments": safe_parse_arguments(tc.function.arguments),
                     }
                     for tc in response.tool_calls
@@ -1773,7 +1960,11 @@ async def chat(
                         arguments = {}
 
                     result = await execute_tool_call(
-                        tool_name, arguments, agent=agent, user=current_user
+                        tool_name,
+                        arguments,
+                        agent=agent,
+                        tool_timeouts=tool_timeouts,
+                        user=current_user,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
 
@@ -1802,11 +1993,30 @@ async def chat(
 
         duration_ms = int((time.time() - start_time) * 1000)
 
+        clean_final_content = final_response.content or ""
+        if agent.enable_user_input_request and clean_final_content:
+            _, clean_final_content = parse_user_input_request(clean_final_content)
+
+        final_tool_calls = None
+        if final_response.tool_calls:
+            final_tool_calls = []
+            for tc in final_response.tool_calls:
+                final_tool_calls.append(
+                    {
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "display_name": tool_display_names.get(
+                            tc.function.name, tc.function.name
+                        ),
+                        "arguments": safe_parse_arguments(tc.function.arguments),
+                    }
+                )
+
         # Save assistant message (final response)
         assistant_msg = await Message.create(
             conversation=conversation,
             role=MessageRole.ASSISTANT,
-            content=final_response.content or "",
+            content=clean_final_content,
             reasoning_content=final_response.reasoning_content or None,
             model_used=final_response.model,
             token_usage={
@@ -1824,9 +2034,7 @@ async def chat(
                 ),
             },
             duration_ms=duration_ms,
-            tool_calls=[tc.model_dump() for tc in final_response.tool_calls]
-            if final_response.tool_calls
-            else None,
+            tool_calls=final_tool_calls,
         )
 
         # Update message stats with token usage
