@@ -18,6 +18,7 @@ import {
   type SSEToolCall,
   type SSEToolResult,
   type SSEMediaResult,
+  type SSECompression,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -129,7 +130,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     reasoningBlocks: [],
     currentReasoningIndex: -1,
     ragSources: [],
-    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
 
   const isLoading = status === 'loading' || status === 'streaming'
@@ -222,7 +223,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         // RAG sources
         let ragSources: SourceDocumentPart[] = []
         // Task state for showing progress
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
 
         // Helper to get or create current text segment
         const getCurrentTextSegment = (): ContentSegment => {
@@ -547,6 +548,24 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'compression': {
+              const data = event.data as SSECompression
+              taskState.compression = 'running'
+              taskState.compressionInfo = data as unknown as Record<string, unknown>
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'tool_call': {
               const data = event.data as SSEToolCall
               const toolCallPart: ToolCallPart = {
@@ -686,6 +705,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
+              if (taskState.compression === 'running') {
+                taskState.compression = 'completed'
+              }
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {
@@ -718,6 +740,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'error': {
+              if (taskState.compression === 'running') {
+                taskState.compression = 'error'
+                streamingStateRef.current.taskState = taskState
+              }
               const data = event.data as SSEError
               const chatError: ChatError = {
                 code: data.code,
@@ -793,7 +819,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           reasoningBlocks: [],
           currentReasoningIndex: -1,
           ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
         }
       }
     },
@@ -860,7 +886,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         reasoningBlocks: [],
         currentReasoningIndex: -1,
         ragSources: [],
-        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
       }
     }
 
@@ -1025,7 +1051,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
         let currentReasoningIndex = -1
         let ragSources: SourceDocumentPart[] = []
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
         let newMessageId = messageId  // May be updated by message_start
 
         // Helper functions
@@ -1320,6 +1346,24 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'compression': {
+              const data = event.data as SSECompression
+              taskState.compression = 'running'
+              taskState.compressionInfo = data as unknown as Record<string, unknown>
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'tool_call': {
               const data = event.data as SSEToolCall
               const toolCallPart: ToolCallPart = {
@@ -1418,6 +1462,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
+              if (taskState.compression === 'running') {
+                taskState.compression = 'completed'
+              }
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {
@@ -1460,6 +1507,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'error': {
+              if (taskState.compression === 'running') {
+                taskState.compression = 'error'
+                streamingStateRef.current.taskState = taskState
+              }
               const data = event.data as SSEError
               const chatError: ChatError = {
                 code: data.code,
@@ -1526,7 +1577,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           reasoningBlocks: [],
           currentReasoningIndex: -1,
           ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
         }
       }
     },
@@ -1566,8 +1617,10 @@ interface TaskState {
   rag: 'pending' | 'running' | 'completed' | 'error'
   generating: 'pending' | 'running' | 'completed' | 'error'
   toolCalling: 'pending' | 'running' | 'completed' | 'error'
+  compression: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
+  compressionInfo?: Record<string, unknown>
 }
 
 /**
@@ -1622,6 +1675,17 @@ function buildMessageParts(
 
     // Note: We no longer add aggregated tool calling task here
     // Individual tool calls are shown in the segments below
+
+    // Compression task - show if it ran (not pending)
+    if (taskState.compression !== 'pending') {
+      const compressionTask: TaskPart = {
+        type: 'task',
+        taskType: 'compression',
+        state: isStreaming ? taskState.compression : 'completed',
+        info: taskState.compressionInfo,
+      }
+      parts.push(compressionTask)
+    }
 
     // Generating task - show if it ran (not pending)
     if (taskState.generating !== 'pending') {

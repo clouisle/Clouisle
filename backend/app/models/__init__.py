@@ -15,6 +15,8 @@ from .agent import (
     AgentStatus,
     AgentVisibility,
     Conversation,
+    ConversationSessionMemory,
+    ConversationSessionMemoryStatus,
     Message,
     MessageRole,
 )
@@ -83,6 +85,8 @@ __all__ = [
     "AgentStatus",
     "AgentVisibility",
     "Conversation",
+    "ConversationSessionMemory",
+    "ConversationSessionMemoryStatus",
     "Message",
     "MessageRole",
     "Workflow",

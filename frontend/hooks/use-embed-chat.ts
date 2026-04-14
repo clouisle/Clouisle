@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { embedApi, type EmbedChatRequest } from '@/lib/api/embed'
-import { parseSSEStream, type SSEMessageEnd } from '@/lib/api/agents'
+import { parseSSEStream, type SSECompression, type SSEMessageEnd } from '@/lib/api/agents'
 import type {
   ChatMessage,
   MessagePart,
@@ -50,8 +50,10 @@ interface TaskState {
   rag: 'pending' | 'running' | 'completed' | 'error'
   generating: 'pending' | 'running' | 'completed' | 'error'
   toolCalling: 'pending' | 'running' | 'completed' | 'error'
+  compression: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
+  compressionInfo?: Record<string, unknown>
 }
 
 function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegment[] {
@@ -136,6 +138,17 @@ function buildMessageParts(
     parts.push(ragTask)
   }
 
+  // Compression task - show if it ran (not pending)
+  if (taskState.compression !== 'pending') {
+    const compressionTask: TaskPart = {
+      type: 'task',
+      taskType: 'compression',
+      state: isStreaming ? taskState.compression : 'completed',
+      info: taskState.compressionInfo,
+    }
+    parts.push(compressionTask)
+  }
+
   // Generating task - show if it ran (not pending)
   if (taskState.generating !== 'pending') {
     const generatingTask: TaskPart = {
@@ -209,7 +222,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
     reasoningBlocks: [],
     currentReasoningIndex: -1,
     ragSources: [],
-    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
 
   const isLoading = status === 'loading' || status === 'streaming'
@@ -246,7 +259,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
       state.reasoningBlocks = []
       state.currentReasoningIndex = -1
       state.ragSources = []
-      state.taskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+      state.taskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
 
       try {
         const chatRequest: EmbedChatRequest = {
@@ -361,6 +374,13 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
 
+            case 'compression': {
+              const compressionData = data as unknown as SSECompression
+              state.taskState.compression = 'running'
+              state.taskState.compressionInfo = compressionData as unknown as Record<string, unknown>
+              break
+            }
+
             case 'tool_call': {
               state.taskState.toolCalling = 'running'
               const toolData = data as { tool_name?: string; tool_call_id?: string; arguments?: Record<string, unknown> }
@@ -420,6 +440,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               const endData = data as unknown as SSEMessageEnd
               state.taskState.generating = 'completed'
               state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
+              state.taskState.compression = state.taskState.compression === 'running' ? 'completed' : state.taskState.compression
               if (state.assistantMessageId) {
                 const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
                 setMessages(prev =>
@@ -433,6 +454,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
             }
 
             case 'error': {
+              state.taskState.compression = state.taskState.compression === 'running' ? 'error' : state.taskState.compression
               const errorData = data as { code?: number; msg?: string }
               const errorObj = { code: errorData.code, message: errorData.msg || 'Unknown error' }
               onError?.(errorObj)

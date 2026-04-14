@@ -144,6 +144,12 @@ class Agent(models.Model):
         description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)",
     )  # type: ignore[assignment]
 
+    # Context compression configuration
+    context_compression_config: dict = fields.JSONField(
+        default=dict,
+        description="Context compression configuration (budget guard, compaction, retry, SSE emission)",
+    )  # type: ignore[assignment]
+
     # Embed configuration
     embed_config: dict = fields.JSONField(
         default=dict,
@@ -266,6 +272,15 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
+class ConversationSessionMemoryStatus(str, Enum):
+    """Conversation session-memory snapshot status."""
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    STALE = "stale"
+
+
 class Conversation(models.Model):
     """
     Conversation session.
@@ -310,6 +325,7 @@ class Conversation(models.Model):
 
     # Relations
     messages: fields.ReverseRelation["Message"]
+    session_memory_snapshots: fields.ReverseRelation["ConversationSessionMemory"]
 
     class Meta:
         table = "conversations"
@@ -398,3 +414,65 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
+
+
+class ConversationSessionMemory(models.Model):
+    """Conversation-scoped session memory snapshot used for context compaction."""
+
+    id = fields.UUIDField(pk=True)
+
+    conversation: fields.ForeignKeyRelation[Conversation] = fields.ForeignKeyField(
+        "models.Conversation",
+        related_name="session_memory_snapshots",
+        on_delete=fields.CASCADE,
+        unique=True,
+    )
+    conversation_id: UUID  # type: ignore[assignment]
+
+    source_message_id = fields.UUIDField(
+        null=True,
+        description="Latest assistant message used to produce this snapshot",
+    )
+    status = fields.CharEnumField(
+        ConversationSessionMemoryStatus,
+        default=ConversationSessionMemoryStatus.PENDING,
+        description="Snapshot extraction status",
+    )
+    summary_text = fields.TextField(
+        default="",
+        description="Rendered session memory summary for prompt injection",
+    )
+    snapshot_payload: dict = fields.JSONField(
+        default=dict,
+        description="Structured conversation-scoped memory payload",
+    )  # type: ignore[assignment]
+    token_estimate = fields.IntField(
+        default=0,
+        description="Estimated token count of the rendered summary",
+    )
+    extractor_model = fields.CharField(
+        max_length=255,
+        null=True,
+        description="Model identifier used for the latest extraction",
+    )
+    failure_count = fields.IntField(
+        default=0,
+        description="Consecutive extraction failures recorded on the snapshot",
+    )
+    last_error = fields.TextField(
+        null=True,
+        description="Last extractor error message",
+    )
+    last_extracted_at = fields.DatetimeField(
+        null=True,
+        description="When the snapshot was last refreshed",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "conversation_session_memories"
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"ConversationSessionMemory {self.conversation_id} ({self.status})"

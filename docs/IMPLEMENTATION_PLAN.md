@@ -2,7 +2,15 @@
 
 ## Active
 
+- **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
+  - [x] 1. Ratio-based thresholds and pressure states
+  - [x] 2. Selective micro compaction
+  - [x] 3. Compression observability and frontend messaging
+  - [x] 4. Phase 2 Session Memory / SM Compact design hooks
+
 ## History
+
+- **agent-context-compression** — Complete. Added shared agent context compression for non-stream, stream, and regenerate flows, with agent-level compression config and frontend-visible compression SSE events.
 
 - **agent-chat-parity** — Aligned non-streaming agent chat request semantics with the streaming path for file parsing, vision inputs, history overrides, user-input-request prompting, and tool metadata/timeouts.
 

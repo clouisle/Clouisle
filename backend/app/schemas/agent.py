@@ -65,6 +65,165 @@ class MemoryConfig(BaseModel):
     )
 
 
+class ContextCompressionConfig(BaseModel):
+    """Context compression configuration schema with validation"""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable request-time context compression before model calls",
+    )
+    micro_compaction_enabled: bool = Field(
+        default=True,
+        description="Enable lightweight reasoning/tool result compaction first",
+    )
+    macro_compaction_enabled: bool = Field(
+        default=True,
+        description="Enable synthetic summary compaction for older turn blocks",
+    )
+    preflight_guard_enabled: bool = Field(
+        default=True,
+        description="Enable preflight token budget guard before model calls",
+    )
+    reactive_retry_enabled: bool = Field(
+        default=True,
+        description="Enable one-shot aggressive retry on context length errors",
+    )
+    recent_raw_turns: int = Field(
+        default=3,
+        ge=1,
+        le=12,
+        description="Number of recent raw turn blocks to preserve during macro compaction",
+    )
+    recent_tool_turns: int = Field(
+        default=2,
+        ge=0,
+        le=8,
+        description="Number of recent tool turn blocks to preserve during macro compaction",
+    )
+    warning_ratio: float = Field(
+        default=0.7,
+        ge=0.1,
+        le=1.0,
+        description="Utilization ratio for warning-level context pressure",
+    )
+    auto_compact_trigger_ratio: float = Field(
+        default=0.8,
+        ge=0.1,
+        le=1.0,
+        description="Utilization ratio that proactively triggers selective compaction",
+    )
+    blocking_ratio: float = Field(
+        default=0.92,
+        ge=0.1,
+        le=1.0,
+        description="Utilization ratio that escalates to blocking-level macro compaction",
+    )
+    compaction_policy: Literal["staged", "hard_budget_only"] = Field(
+        default="staged",
+        description="How request-time compaction policy is selected",
+    )
+    macro_on_trigger: bool = Field(
+        default=False,
+        description="Allow macro compaction immediately when proactive trigger ratio is reached",
+    )
+    retention_strategy: Literal["recent_raw_and_tool_first"] = Field(
+        default="recent_raw_and_tool_first",
+        description="Retention strategy used during selective and macro compaction",
+    )
+    keep_recent_tool_results: int = Field(
+        default=2,
+        ge=0,
+        le=8,
+        description="Number of most recent tool results to keep raw during selective micro compaction",
+    )
+    keep_recent_tool_result_minutes: int = Field(
+        default=20,
+        ge=0,
+        le=1440,
+        description="Reserved window for keeping recent tool results raw; currently informational",
+    )
+    tool_result_compact_min_tokens: int = Field(
+        default=256,
+        ge=32,
+        le=16000,
+        description="Only compact older tool results at or above this estimated token size",
+    )
+    session_memory_enabled: bool = Field(
+        default=True,
+        description="Enable conversation-scoped session memory compaction when snapshots are available",
+    )
+    session_memory_async_extract: bool = Field(
+        default=True,
+        description="Enqueue async session memory extraction after final assistant replies",
+    )
+    session_memory_max_tokens: int = Field(
+        default=400,
+        ge=64,
+        le=4000,
+        description="Maximum token budget for injected session memory summary",
+    )
+    session_memory_min_turns: int = Field(
+        default=4,
+        ge=1,
+        le=50,
+        description="Minimum conversation turn blocks before async session memory extraction runs",
+    )
+    session_memory_failure_threshold: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Failures before opening the session memory extractor breaker",
+    )
+    session_memory_cooldown_seconds: int = Field(
+        default=600,
+        ge=60,
+        le=86400,
+        description="Cooldown window for session memory extractor failures",
+    )
+    legacy_compact_enabled: bool = Field(
+        default=True,
+        description="Enable last-resort LLM legacy compaction when deterministic compaction still exceeds budget",
+    )
+    legacy_compact_failure_threshold: int = Field(
+        default=2,
+        ge=1,
+        le=20,
+        description="Failures before opening the legacy compact breaker",
+    )
+    legacy_compact_cooldown_seconds: int = Field(
+        default=600,
+        ge=60,
+        le=86400,
+        description="Cooldown window for legacy compact failures",
+    )
+    output_token_reserve: int = Field(
+        default=4000,
+        ge=256,
+        le=32000,
+        description="Reserved output tokens when computing prompt budget",
+    )
+    safety_margin_tokens: int = Field(
+        default=1000,
+        ge=0,
+        le=16000,
+        description="Extra input safety margin kept below the model context window",
+    )
+    summary_max_tokens: int = Field(
+        default=1000,
+        ge=128,
+        le=8000,
+        description="Target token budget for synthetic summary content",
+    )
+    drop_historical_reasoning_first: bool = Field(
+        default=True,
+        description="Prefer dropping older reasoning content before heavier compaction",
+    )
+    emit_sse_events: bool = Field(
+        default=True,
+        description="Emit streaming compression SSE events when compaction is applied",
+    )
+
+
 class ImageGenerationConfig(BaseModel):
     """Agent image generation configuration"""
 
@@ -338,6 +497,10 @@ class AgentCreate(AgentBase):
         default=None,
         description="Memory configuration (max_memories_per_retrieval, auto_extract)",
     )
+    context_compression_config: ContextCompressionConfig | None = Field(
+        default=None,
+        description="Context compression configuration",
+    )
     enable_image_generation: bool = Field(
         default=False,
         description="Enable agent image generation tool",
@@ -384,6 +547,7 @@ class AgentUpdate(BaseModel):
     enable_user_input_request: bool | None = None
     enable_memory: bool | None = None
     memory_config: MemoryConfig | None = None
+    context_compression_config: ContextCompressionConfig | None = None
     enable_image_generation: bool | None = None
     image_generation_config: ImageGenerationConfig | None = None
     enable_video_generation: bool | None = None
@@ -428,6 +592,7 @@ class AgentOut(AgentBase):
     enable_user_input_request: bool = False
     enable_memory: bool = False
     memory_config: MemoryConfig | None = None
+    context_compression_config: ContextCompressionConfig | None = None
     enable_image_generation: bool = False
     image_generation_config: ImageGenerationConfig | None = None
     enable_video_generation: bool = False
@@ -668,11 +833,38 @@ class FileUrl(BaseModel):
     mime_type: str = Field(..., description="MIME type of the file")
 
 
+class HistoryToolCall(BaseModel):
+    """Tool call for history override assistant messages"""
+
+    id: str = Field(..., description="Tool call ID")
+    name: str = Field(..., description="Tool/function name")
+    arguments: dict[str, Any] | str = Field(
+        default_factory=dict,
+        description="Tool arguments payload",
+    )
+
+
 class HistoryMessage(BaseModel):
     """Message for history override"""
 
-    role: str = Field(..., description="Message role: user or assistant")
+    role: str = Field(..., description="Message role: user, assistant or tool")
     content: str = Field(..., description="Message content")
+    reasoning_content: str | None = Field(
+        default=None,
+        description="Assistant reasoning replay content",
+    )
+    tool_calls: list[HistoryToolCall] | None = Field(
+        default=None,
+        description="Assistant tool calls for replay",
+    )
+    tool_call_id: str | None = Field(
+        default=None,
+        description="Tool result tool_call_id",
+    )
+    tool_name: str | None = Field(
+        default=None,
+        description="Tool result tool name",
+    )
 
 
 class ChatRequest(BaseModel):
@@ -727,6 +919,7 @@ class SSEEventType:
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"
     USER_INPUT_REQUEST = "user_input_request"  # 用户输入请求
+    COMPRESSION = "compression"  # 上下文压缩事件
     OUTPUT_TRUNCATED = "output_truncated"  # 输出被截断（达到max_tokens限制）
     MESSAGE_END = "message_end"
     ERROR = "error"

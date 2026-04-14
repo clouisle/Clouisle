@@ -217,6 +217,9 @@ async def build_agent_out(agent: Agent) -> dict:
         "enable_user_input_request": agent.enable_user_input_request,
         "enable_memory": agent.enable_memory,
         "memory_config": agent.memory_config if agent.memory_config else None,
+        "context_compression_config": agent.context_compression_config
+        if agent.context_compression_config
+        else None,
         "enable_image_generation": agent.enable_image_generation,
         "image_generation_config": _sanitize_media_config(
             agent.image_generation_config
@@ -467,6 +470,9 @@ async def create_agent(
         memory_config=agent_in.memory_config.model_dump()
         if agent_in.memory_config
         else {},
+        context_compression_config=agent_in.context_compression_config.model_dump()
+        if agent_in.context_compression_config
+        else {},
         enable_image_generation=agent_in.enable_image_generation,
         image_generation_config=agent_in.image_generation_config.model_dump()
         if agent_in.image_generation_config
@@ -640,6 +646,11 @@ async def update_agent(
     if agent_in.memory_config is not None:
         agent.memory_config = agent_in.memory_config.model_dump()
         updated_fields.append("memory_config")
+    if agent_in.context_compression_config is not None:
+        agent.context_compression_config = (
+            agent_in.context_compression_config.model_dump()
+        )
+        updated_fields.append("context_compression_config")
 
     if agent_in.enable_image_generation is not None:
         agent.enable_image_generation = agent_in.enable_image_generation
@@ -848,6 +859,7 @@ async def duplicate_agent(
         enable_user_input_request=agent.enable_user_input_request,
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,
+        context_compression_config=agent.context_compression_config,
         enable_image_generation=agent.enable_image_generation,
         image_generation_config=(
             {

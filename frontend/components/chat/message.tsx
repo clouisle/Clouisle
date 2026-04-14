@@ -412,10 +412,46 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Render task title based on type and state
     const getTaskTitle = (taskPart: TaskPart) => {
       if (taskPart.taskType === 'rag') {
-        if (taskPart.state === 'completed' && taskPart.info) {
+        if (taskPart.state === 'completed' && typeof taskPart.info === 'number') {
           return tTask('foundSources', { count: taskPart.info })
         }
         return tTask('searchingKnowledge')
+      }
+      if (taskPart.taskType === 'compression') {
+        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
+        const beforeTokens = typeof info?.before_tokens === 'number' ? info.before_tokens : null
+        const afterTokens = typeof info?.after_tokens === 'number' ? info.after_tokens : null
+        const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
+        const trigger = typeof info?.trigger === 'string' ? info.trigger : null
+        const pressureLevel = typeof info?.pressure_level === 'string' ? info.pressure_level : null
+        const compactedBlocks = typeof info?.compacted_blocks === 'number' ? info.compacted_blocks : null
+
+        if (taskPart.state === 'completed' && beforeTokens && afterTokens) {
+          if (trigger === 'context_length_error') {
+            return tTask('compressionCompletedReactive', { before: beforeTokens, after: afterTokens })
+          }
+          if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
+            if (summaryTurns && summaryTurns > 0) {
+              return tTask('compressionCompletedBlockingSummary', { before: beforeTokens, after: afterTokens, count: summaryTurns })
+            }
+            return tTask('compressionCompletedBlocking', { before: beforeTokens, after: afterTokens })
+          }
+          if (summaryTurns && summaryTurns > 0) {
+            return tTask('compressionCompletedProactiveSummary', {
+              before: beforeTokens,
+              after: afterTokens,
+              count: compactedBlocks ?? summaryTurns,
+            })
+          }
+          return tTask('compressionCompletedProactive', { before: beforeTokens, after: afterTokens })
+        }
+        if (trigger === 'context_length_error') {
+          return tTask('compressingContextReactive')
+        }
+        if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
+          return tTask('compressingContextBlocking')
+        }
+        return tTask('compressingContextProactive')
       }
       if (taskPart.taskType === 'generating') {
         return tTask('generating')
@@ -434,6 +470,18 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
           <ChainOfThoughtStep
             key={`rag-${index}`}
             icon={SearchIcon}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
+          />
+        )
+      })
+
+      // 1.5 Compression steps after RAG and before reasoning/tool execution
+      taskParts.filter(t => t.taskType === 'compression').forEach((taskPart, index) => {
+        steps.push(
+          <ChainOfThoughtStep
+            key={`compression-${index}`}
+            icon={Timer}
             label={getTaskTitle(taskPart)}
             status={getStepStatus(taskPart.state)}
           />

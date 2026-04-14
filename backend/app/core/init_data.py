@@ -381,6 +381,89 @@ async def init_agent_streaming_config():
     logger.info("Agent streaming_config migration complete")
 
 
+async def init_agent_context_compression_config():
+    """
+    Add context_compression_config field to agents table if it doesn't exist.
+    This handles the migration for the context compression configuration feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent context_compression_config field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping context_compression_config migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'context_compression_config'
+    """)
+
+    if not rows:
+        logger.info("Adding context_compression_config column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN context_compression_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """)
+            logger.info("Added context_compression_config column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add context_compression_config column: {e}")
+            raise
+    else:
+        logger.info("context_compression_config column already exists")
+
+    logger.info("Agent context_compression_config migration complete")
+
+
+async def init_conversation_session_memory_table():
+    """Create the conversation_session_memories table if it does not exist."""
+    logger.info("Initializing conversation session memory table...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'conversation_session_memories' AND table_schema = 'public'
+    """)
+
+    if tables:
+        logger.info("conversation_session_memories table already exists")
+        return
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS conversation_session_memories (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
+            source_message_id UUID,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            summary_text TEXT NOT NULL DEFAULT '',
+            snapshot_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            token_estimate INT NOT NULL DEFAULT 0,
+            extractor_model VARCHAR(255),
+            failure_count INT NOT NULL DEFAULT 0,
+            last_error TEXT,
+            last_extracted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_conversation_session_memories_status_updated
+        ON conversation_session_memories(status, updated_at DESC)
+    """)
+
+    logger.info("Conversation session memory table initialization complete")
+
+
 async def init_permission_is_system_field():
     """
     Add is_system field to permissions table if it doesn't exist.

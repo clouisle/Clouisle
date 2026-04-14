@@ -9,7 +9,6 @@ import json
 import logging
 import re
 import time
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -20,7 +19,6 @@ from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from tortoise.expressions import F
 
 from app.api import deps
@@ -55,70 +53,17 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.llm.errors import ContextLengthError
 from app.llm.tools import tool_registry
 from app.llm.tools.builtin.media import ToolExecutionResult
+from app.llm.types import Message as LLMChatMessage
 from app.core.timezone import now_utc
-
-
-# Language instruction templates - must be strong and explicit
-LANGUAGE_INSTRUCTIONS = {
-    "en": "IMPORTANT: You MUST respond in English only. Do not use any other language.",
-    "zh": "重要：你必须使用中文回复。不要使用其他语言。",
-}
-
-
-def get_language_instruction(user_locale: str | None = None) -> str:
-    """Get language instruction based on user's locale setting.
-
-    Args:
-        user_locale: User's locale from database (e.g., "en", "zh")
-    """
-    lang = user_locale or "en"
-    # Normalize language code (e.g., "zh-CN" -> "zh")
-    lang = lang.lower().split("-")[0]
-    return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
-
-
-def build_system_prompt_with_language(
-    system_prompt: str | None, user_locale: str | None = None
-) -> str:
-    """Build system prompt with language instruction.
-
-    Always returns a system prompt with language instruction,
-    even if the original system prompt is empty.
-
-    Args:
-        system_prompt: The original system prompt (can be None or empty)
-        user_locale: User's locale from database (e.g., "en", "zh")
-    """
-    instruction = get_language_instruction(user_locale)
-    if not system_prompt:
-        return instruction
-    # Check if instruction already exists (avoid duplication)
-    if instruction in system_prompt:
-        return system_prompt
-    # Append instruction at the end
-    return f"{system_prompt}\n\n{instruction}"
-
-
-# Local message types to avoid circular import
-class LLMMessageRole(str, Enum):
-    """LLM message role"""
-
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-    TOOL = "tool"
-
-
-class LLMMessage(BaseModel):
-    """LLM chat message"""
-
-    role: LLMMessageRole
-    content: str | list[dict[str, Any]] | None = None
-    tool_call_id: str | None = None
-    reasoning_content: str | None = None
-    tool_calls: list[dict[str, Any]] | None = None
+from app.services.chat_context import (
+    build_model_messages,
+    get_context_compression_config,
+    prepare_model_context,
+    retry_prepare_model_context,
+)
 
 
 router = APIRouter()
@@ -131,29 +76,6 @@ def get_item_value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
-
-
-def build_vision_content(text: str, images: list[Any]) -> list[dict[str, Any]]:
-    """Build multimodal content for vision-capable models."""
-    content_parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
-    for img in images:
-        img_url = getattr(img, "url", None)
-        if not img_url and isinstance(img, dict):
-            img_url = img.get("url")
-        if not img_url:
-            continue
-
-        if img_url.startswith("data:"):
-            try:
-                _, data_part = img_url.split(",", 1)
-                content_parts.append(
-                    {"type": "image", "image": {"base64": data_part}}
-                )
-            except ValueError:
-                content_parts.append({"type": "image", "image": {"url": img_url}})
-        else:
-            content_parts.append({"type": "image", "image": {"url": img_url}})
-    return content_parts
 
 
 async def build_file_content_for_prompt(
@@ -332,44 +254,84 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _build_media_llm_summary(
-    tool_name: str | None, payload: dict[str, Any]
+def should_retry_context_length(agent: Agent) -> bool:
+    """Whether reactive context-length retry is enabled for the agent."""
+    return bool(get_context_compression_config(agent).get("reactive_retry_enabled", True))
+
+
+
+def get_compression_trigger(compression: Any) -> str:
+    pressure_level = getattr(compression, "pressure_level", None)
+    if pressure_level in {"blocking", "over_budget"} or getattr(compression, "stage", None) == "macro":
+        return "blocking_threshold"
+    return "proactive_threshold"
+
+
+
+def build_compression_event(
+    *,
+    agent: Agent,
+    compression: Any,
+    trigger: str,
+    retry_index: int = 0,
+    stage_override: str | None = None,
 ) -> str | None:
-    kind = payload.get("kind")
-    if kind not in MEDIA_TOOL_KINDS:
+    """Build SSE compression event payload when compression should be surfaced."""
+    config = get_context_compression_config(agent)
+    if not config.get("emit_sse_events", True):
         return None
 
-    if kind == "media.image":
-        if payload.get("error"):
-            return f"Image generation failed: {payload['error']}"
-        count = len(payload.get("images") or [])
-        model = payload.get("model")
-        model_suffix = f" using model {model}" if model else ""
-        return (
-            f"Image generation succeeded. Generated {count} image"
-            f"{'s' if count != 1 else ''}{model_suffix}."
-        )
+    stage = stage_override or compression.stage
+    if stage == "none":
+        return None
 
-    status = payload.get("status") or "unknown"
-    if payload.get("error") or status == "failed":
-        message = payload.get("error") or "unknown error"
-        return f"Video generation failed: {message}"
-    if status in {"pending", "processing"}:
-        task_id = payload.get("task_id") or "unknown"
-        return f"Video generation started. Task {task_id} is {status}."
-    model = payload.get("model")
-    model_suffix = f" using model {model}" if model else ""
-    return f"Video generation succeeded{model_suffix}."
+    note_parts: list[str] = []
+    if trigger == "context_length_error" or stage == "reactive_retry":
+        note_parts.append("Retried with more aggressive context compaction")
+    elif trigger == "blocking_threshold":
+        note_parts.append("Applied blocking-level compaction before the next model call")
+    else:
+        note_parts.append("Applied proactive context compaction before the next model call")
+    if compression.summary_turns:
+        note_parts.append(f"summarized {compression.summary_turns} older turns")
+    if compression.reasoning_trimmed:
+        note_parts.append("trimmed historical reasoning")
+    if compression.tool_results_trimmed:
+        note_parts.append("compacted older tool results")
+    if compression.file_content_trimmed:
+        note_parts.append("trimmed file content")
 
+    payload = {
+        "stage": stage,
+        "trigger": trigger,
+        "pressure_level": getattr(compression, "pressure_level", None),
+        "before_tokens": compression.before_tokens,
+        "after_tokens": compression.after_tokens,
+        "input_budget": compression.input_budget,
+        "trigger_ratio": getattr(compression, "trigger_ratio", None),
+        "warning_ratio": getattr(compression, "warning_ratio", None),
+        "blocking_ratio": getattr(compression, "blocking_ratio", None),
+        "trigger_budget": getattr(compression, "trigger_budget", None),
+        "hard_budget": getattr(compression, "hard_budget", compression.input_budget),
+        "utilization_before": getattr(compression, "utilization_before", None),
+        "utilization_after": getattr(compression, "utilization_after", None),
+        "policy_used": getattr(compression, "policy_used", None),
+        "actions": getattr(compression, "actions", None),
+        "retained_recent_turns": getattr(compression, "retained_recent_turns", None),
+        "retained_tool_turns": getattr(compression, "retained_tool_turns", None),
+        "compacted_blocks": getattr(compression, "compacted_blocks", None),
+        "summary_turns": compression.summary_turns,
+        "reasoning_dropped": compression.reasoning_trimmed,
+        "tool_results_trimmed": compression.tool_results_trimmed,
+        "file_content_trimmed": compression.file_content_trimmed,
+        "retry_index": retry_index,
+        "note": "; ".join(note_parts),
+    }
+    return (
+        f"event: {SSEEventType.COMPRESSION}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    )
 
-def summarize_tool_result_for_llm(
-    tool_name: str | None,
-    stored_content: str,
-) -> str:
-    payload = _safe_json_loads(stored_content)
-    if not payload:
-        return stored_content
-    return _build_media_llm_summary(tool_name, payload) or stored_content
 
 
 def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
@@ -589,62 +551,6 @@ def parse_user_input_request(content: str) -> tuple[dict | None, str]:
         return None, content
 
 
-def get_user_input_request_instruction(locale: str = "en") -> str:
-    """Get user input request instruction for system prompt."""
-    if locale == "zh":
-        return """## 用户输入请求功能
-
-当你需要用户从预定义选项中选择时，可以使用以下 XML 格式：
-
-<user_input_request>
-<question>你的问题文本</question>
-<options>
-<option>选项 1</option>
-<option>选项 2</option>
-<option>选项 3</option>
-</options>
-</user_input_request>
-
-**使用规则：**
-- 问题应该清晰简洁
-- 提供 2-6 个选项（超过 6 个也会显示，但建议控制数量以保持界面简洁）
-- 每个选项应该简短（建议不超过 50 字符）
-- 用户可以点击选项或输入自定义文本
-- 在一条消息中只使用一次
-- 不要在 user_input_request 标签外添加其他内容
-
-**使用场景：**
-- 需要用户做出选择时
-- 提供快捷操作选项时
-- 引导对话流程时"""
-    else:
-        return """## User Input Request Feature
-
-When you need the user to choose from predefined options, use this XML format:
-
-<user_input_request>
-<question>Your question text</question>
-<options>
-<option>Option 1</option>
-<option>Option 2</option>
-<option>Option 3</option>
-</options>
-</user_input_request>
-
-**Rules:**
-- Keep questions clear and concise
-- Provide 2-6 options
-- Keep each option short (recommended max 50 characters)
-- Users can click an option or type custom text
-- Use only once per message
-- Don't add other content outside the user_input_request tags
-
-**Use cases:**
-- When user needs to make a choice
-- Providing quick action options
-- Guiding conversation flow"""
-
-
 async def get_or_create_conversation(
     agent: Agent, user: User, conversation_id: UUID | None, variables: dict
 ) -> Conversation:
@@ -721,143 +627,19 @@ async def build_messages(
     current_images: list[Any] | None = None,
     model_supports_vision: bool = False,
     current_user_message_id: UUID | None = None,
-) -> list[LLMMessage]:
+) -> list[LLMChatMessage]:
     """Build message list for LLM call."""
-    messages: list[LLMMessage] = []
-
-    system_prompt = agent.system_prompt or ""
-    if system_prompt:
-        for key, value in conversation.variables.items():
-            system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
-        system_prompt = system_prompt.replace("{{query}}", user_message)
-        system_prompt = system_prompt.replace("{{fileContent}}", file_content or "")
-
-    if agent.enable_memory:
-        memory_instruction = """
-
-# Memory System
-You have access to a memory system with these tools:
-- search_memory(query): Search what you know about the user
-- create_memory_entity(name, entity_type, description): Save new information
-- update_memory_entity(entity_name, description): Update existing information
-- create_memory_relation(source, target, relation_type): Connect related information
-
-**CRITICAL MEMORY RULES - YOU MUST FOLLOW THESE STEPS:**
-
-RULE 1: Before ANY create_memory_entity() call, you MUST call search_memory() first!
-RULE 2: When user shares ANY information (name, preference, skill, etc.):
-   STEP 1: Call search_memory(query="keywords about the information")
-   STEP 2: Read the search results carefully
-   STEP 3: Decide based on results:
-      - Found similar entity? → Use update_memory_entity(entity_name="existing name", ...)
-      - Nothing found? → Use create_memory_entity(name="new name", ...)
-
-RULE 3: NEVER skip search_memory() - even if you think it's new information!
-RULE 4: NEVER say "I don't have access to memory" - you DO have these tools!
-
-WRONG Example (DO NOT DO THIS):
-User: "I'm Alice"
-❌ Assistant directly calls create_memory_entity(name="Alice", ...) ← WRONG! No search first!
-
-CORRECT Example (ALWAYS DO THIS):
-User: "I'm Alice"
-✓ Step 1: Assistant calls search_memory(query="user name")
-✓ Step 2: Check results → No "Alice" found
-✓ Step 3: Assistant calls create_memory_entity(name="Alice", entity_type="person", description="User's name")
-Assistant: "Nice to meet you, Alice! I've saved your name."
-
-User: "Actually, I'm Alice Smith"
-✓ Step 1: Assistant calls search_memory(query="user name Alice")
-✓ Step 2: Check results → Found entity "Alice"
-✓ Step 3: Assistant calls update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")
-Assistant: "Got it! I've updated your name to Alice Smith."
-
-User: "What's my name?"
-Assistant: [calls search_memory(query="user name")]
-Assistant: "Your name is Alice."
-"""
-        system_prompt += memory_instruction
-        logger.info(f"Added memory instructions to system prompt for agent {agent.id}")
-
-    system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
-    if agent.enable_user_input_request:
-        system_prompt = (
-            f"{system_prompt}\n\n"
-            f"{get_user_input_request_instruction(user_locale or 'en')}"
-        )
-    messages.append(LLMMessage(role=LLMMessageRole.SYSTEM, content=system_prompt))
-
-    valid_tool_call_ids: set[str] = set()
-    if history_override is not None:
-        for hist_msg in history_override:
-            role = getattr(hist_msg, "role", None)
-            content = getattr(hist_msg, "content", None)
-            if role == "user":
-                messages.append(LLMMessage(role=LLMMessageRole.USER, content=content))
-            elif role == "assistant":
-                messages.append(
-                    LLMMessage(
-                        role=LLMMessageRole.ASSISTANT,
-                        content=content,
-                        reasoning_content=getattr(hist_msg, "reasoning_content", None),
-                    )
-                )
-    else:
-        history = await Message.filter(
-            conversation_id=conversation.id, is_active=True
-        ).order_by("created_at")
-        for msg in history:
-            if msg.role == MessageRole.USER:
-                if current_user_message_id and msg.id == current_user_message_id:
-                    continue
-                messages.append(LLMMessage(role=LLMMessageRole.USER, content=msg.content))
-            elif msg.role == MessageRole.ASSISTANT:
-                tool_calls = None
-                if msg.tool_calls:
-                    tool_calls = []
-                    for tc in msg.tool_calls:
-                        tc_id = tc.get("id", "")
-                        valid_tool_call_ids.add(tc_id)
-                        arguments = tc.get("arguments", {})
-                        if isinstance(arguments, dict):
-                            arguments = json.dumps(arguments)
-                        tool_calls.append(
-                            {
-                                "id": tc_id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.get("name", ""),
-                                    "arguments": arguments,
-                                },
-                            }
-                        )
-                messages.append(
-                    LLMMessage(
-                        role=LLMMessageRole.ASSISTANT,
-                        content=msg.content,
-                        reasoning_content=msg.reasoning_content,
-                        tool_calls=tool_calls,
-                    )
-                )
-            elif msg.role == MessageRole.TOOL:
-                if msg.tool_call_id and msg.tool_call_id in valid_tool_call_ids:
-                    messages.append(
-                        LLMMessage(
-                            role=LLMMessageRole.TOOL,
-                            content=summarize_tool_result_for_llm(
-                                msg.tool_name,
-                                msg.content,
-                            ),
-                            tool_call_id=msg.tool_call_id,
-                        )
-                    )
-
-    current_content: str | list[dict[str, Any]] = user_message
-    if current_images and model_supports_vision:
-        current_content = build_vision_content(user_message, current_images)
-    messages.append(LLMMessage(role=LLMMessageRole.USER, content=current_content))
-
-    return messages
+    return await build_model_messages(
+        agent=agent,
+        conversation=conversation,
+        user_message=user_message,
+        file_content=file_content,
+        user_locale=user_locale,
+        history_override=history_override,
+        current_images=current_images,
+        model_supports_vision=model_supports_vision,
+        current_user_message_id=current_user_message_id,
+    )
 
 
 async def get_model_identifier(agent: Agent) -> str | None:
@@ -872,6 +654,43 @@ async def get_model_identifier(agent: Agent) -> str | None:
         return f"{team_model.model.provider}/{team_model.model.model_id}"
 
     return None
+
+
+async def get_agent_chat_model(agent: Agent) -> TeamModel | None:
+    """Get the chat TeamModel for an agent."""
+    if not agent.model_id:
+        return None
+
+    return await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
+
+
+def enqueue_session_memory_extraction(
+    agent: Agent,
+    conversation: Conversation,
+    assistant_message: Message,
+) -> None:
+    """Best-effort enqueue for async session memory extraction."""
+    compression_config = get_context_compression_config(agent)
+    if not compression_config.get("session_memory_enabled", True):
+        return
+    if not compression_config.get("session_memory_async_extract", True):
+        return
+
+    try:
+        from app.tasks.session_memory import extract_session_memory_task
+
+        extract_session_memory_task.delay(
+            str(conversation.id),
+            str(assistant_message.id),
+        )
+    except Exception as e:
+        logger.warning(
+            "Failed to enqueue session memory extraction for conversation %s "
+            "message %s: %s",
+            conversation.id,
+            assistant_message.id,
+            e,
+        )
 
 
 async def get_model_capabilities(agent: Agent) -> dict:
@@ -1817,7 +1636,10 @@ async def chat(
     await update_message_stats(agent, token_usage=None)
 
     # Get model identifier
-    model_id = await get_model_identifier(agent)
+    team_model = await get_agent_chat_model(agent)
+    model_id = (
+        f"{team_model.model.provider}/{team_model.model.model_id}" if team_model else None
+    )
 
     model_supports_vision = False
     if chat_in.images and agent.enable_vision:
@@ -1841,23 +1663,16 @@ async def chat(
         user=current_user,
     )
 
-    # Build messages for LLM
-    messages = await build_messages(
-        agent,
-        conversation,
-        final_message,
-        file_content=file_content_str,
-        user_locale=current_user.locale,
-        history_override=chat_in.history_override,
-        current_images=chat_in.images,
-        model_supports_vision=model_supports_vision,
-        current_user_message_id=user_msg.id,
+    working_history_override = (
+        [message.model_dump(exclude_none=True) for message in chat_in.history_override]
+        if chat_in.history_override
+        else None
     )
 
     try:
         # Import here to avoid circular import
         from app.llm import model_manager
-        from app.llm.errors import QuotaExceededError, LLMError
+        from app.llm.errors import ContextLengthError, QuotaExceededError, LLMError
         from app.llm.types import ToolDefinition, FunctionDefinition
 
         # Build tool definitions
@@ -1886,12 +1701,75 @@ async def chat(
 
         while iteration < max_iterations:
             iteration += 1
-            response = await model_manager.team_chat(
-                team_id=str(agent.team_id),
-                messages=[m.model_dump() for m in messages],
-                model_id=model_id,
-                tools=tools,
-            )
+            prepare_context = prepare_model_context
+            context_retry_used = False
+            try:
+                prepared_context = await prepare_context(
+                    agent=agent,
+                    conversation=conversation,
+                    user_message=final_message,
+                    model_id=model_id or "gpt-4",
+                    model_context_limit=team_model.model.context_length if team_model else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    provider=team_model.model.provider if team_model else None,
+                    file_content=file_content_str,
+                    user_locale=current_user.locale,
+                    history_override=working_history_override,
+                    current_images=chat_in.images,
+                    model_supports_vision=model_supports_vision,
+                    current_user_message_id=user_msg.id,
+                )
+            except ContextLengthError:
+                if not should_retry_context_length(agent):
+                    raise
+                prepared_context = await retry_prepare_model_context(
+                    agent=agent,
+                    conversation=conversation,
+                    user_message=final_message,
+                    model_id=model_id or "gpt-4",
+                    model_context_limit=team_model.model.context_length if team_model else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    provider=team_model.model.provider if team_model else None,
+                    file_content=file_content_str,
+                    user_locale=current_user.locale,
+                    history_override=working_history_override,
+                    current_images=chat_in.images,
+                    model_supports_vision=model_supports_vision,
+                    current_user_message_id=user_msg.id,
+                )
+                context_retry_used = True
+            try:
+                response = await model_manager.team_chat(
+                    team_id=str(agent.team_id),
+                    messages=[m.model_dump() for m in prepared_context.messages],
+                    model_id=model_id,
+                    tools=tools,
+                )
+            except ContextLengthError:
+                if context_retry_used or not should_retry_context_length(agent):
+                    raise
+                prepared_context = await retry_prepare_model_context(
+                    agent=agent,
+                    conversation=conversation,
+                    user_message=final_message,
+                    model_id=model_id or "gpt-4",
+                    model_context_limit=team_model.model.context_length if team_model else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    provider=team_model.model.provider if team_model else None,
+                    file_content=file_content_str,
+                    user_locale=current_user.locale,
+                    history_override=working_history_override,
+                    current_images=chat_in.images,
+                    model_supports_vision=model_supports_vision,
+                    current_user_message_id=user_msg.id,
+                )
+                context_retry_used = True
+                response = await model_manager.team_chat(
+                    team_id=str(agent.team_id),
+                    messages=[m.model_dump() for m in prepared_context.messages],
+                    model_id=model_id,
+                    tools=tools,
+                )
 
             if response.usage:
                 total_prompt_tokens += response.usage.prompt_tokens or 0
@@ -1931,24 +1809,15 @@ async def chat(
                     tool_calls=intermediate_tool_calls,
                 )
 
-                # Append assistant tool calls to LLM messages for next iteration
-                messages.append(
-                    LLMMessage(
-                        role=LLMMessageRole.ASSISTANT,
-                        content=response.content or "",
-                        reasoning_content=response.reasoning_content or None,
-                        tool_calls=[
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments,
-                                },
-                            }
-                            for tc in response.tool_calls
-                        ],
-                    )
+                if working_history_override is None:
+                    working_history_override = []
+                working_history_override.append(
+                    {
+                        "role": "assistant",
+                        "content": response.content or "",
+                        "reasoning_content": response.reasoning_content or None,
+                        "tool_calls": intermediate_tool_calls,
+                    }
                 )
 
                 # Execute tools and add tool results to message history
@@ -1975,13 +1844,15 @@ async def chat(
                         tool_call_id=tc.id,
                         tool_name=tool_name,
                     )
-
-                    messages.append(
-                        LLMMessage(
-                            role=LLMMessageRole.TOOL,
-                            content=llm_result,
-                            tool_call_id=tc.id,
-                        )
+                    if working_history_override is None:
+                        working_history_override = []
+                    working_history_override.append(
+                        {
+                            "role": "tool",
+                            "content": llm_result,
+                            "tool_call_id": tc.id,
+                            "tool_name": tool_name,
+                        }
                     )
                 continue
 
@@ -2078,6 +1949,8 @@ async def chat(
         # Update agent stats atomically
         await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
 
+        enqueue_session_memory_extraction(agent, conversation, assistant_msg)
+
         return success(
             data=ChatResponse(
                 conversation_id=conversation.id,
@@ -2163,15 +2036,8 @@ async def chat_stream(
             RateLimitError,
         )
         from app.llm.types import (
-            Message as LLMTypeMessage,
-            MessageRole as LLMTypeRole,
             ToolDefinition,
             FunctionDefinition,
-            ToolCall as LLMToolCall,
-            FunctionCall as LLMFunctionCall,
-            ContentPart,
-            ContentType,
-            ImageContent,
             FinishReason,
         )
 
@@ -2261,352 +2127,28 @@ async def chat_stream(
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
                     last_event_time = time.time()
 
-                    # Build messages for LLM using proper types
-                    messages_for_llm: list[LLMTypeMessage] = []
-
-                    # Build file content string for injection into {{fileContent}}
-                    file_content_str = ""
-                    if agent.enable_file_upload:
-                        from app.services.file_parser import (
-                            file_parser_service,
-                            ParsedFile,
-                            FileParseConfig,
-                        )
-
-                        parsed_files: list[ParsedFile] = []
-
-                        # Get file upload config
-                        file_config = agent.file_upload_config or {}
-                        parser_config = file_config.get("parser")
-                        parse_config = FileParseConfig(
-                            max_content_length=file_config.get(
-                                "max_content_length", 100000
-                            ),
-                            truncate_strategy=file_config.get(
-                                "truncate_strategy", "end"
-                            ),
-                        )
-
-                        # Handle file_urls: download and parse files
-                        if chat_in.file_urls and parser_config:
-                            import httpx
-
-                            # Check parser type
-                            parser_type = parser_config.get("type", "builtin")
-                            parser_name = parser_config.get("name", "markitdown")
-                            parser_tool_id = parser_config.get("tool_id")
-
-                            if parser_type == "builtin" and parser_name == "markitdown":
-                                # Use built-in file_parser_service with configurable timeout
-                                download_timeout = tool_timeouts.get("download", 60)
-                                async with httpx.AsyncClient(
-                                    timeout=download_timeout, follow_redirects=True
-                                ) as client:
-                                    for f in chat_in.file_urls:
-                                        try:
-                                            url = f.url
-                                            # Handle internal URLs - prepend API_BASE_URL
-                                            if url.startswith("/"):
-                                                base_url = settings.API_BASE_URL.rstrip(
-                                                    "/"
-                                                )
-                                                url = f"{base_url}{url}"
-
-                                            response = await client.get(url)
-                                            response.raise_for_status()
-                                            file_content = response.content
-
-                                            # Parse file
-                                            parsed = (
-                                                await file_parser_service.parse_file(
-                                                    file_content,
-                                                    f.filename,
-                                                    parse_config,
-                                                )
-                                            )
-                                            parsed_files.append(parsed)
-                                        except Exception as e:
-                                            logger.warning(
-                                                "Failed to parse file %s: %s",
-                                                f.filename,
-                                                e,
-                                            )
-                                            # Add error placeholder
-                                            parsed_files.append(
-                                                ParsedFile(
-                                                    filename=f.filename,
-                                                    content=t("file_parse_failed_placeholder"),
-                                                    mime_type=f.mime_type,
-                                                    size=f.size,
-                                                )
-                                            )
-
-                            elif parser_type == "custom" and parser_tool_id:
-                                # Use custom tool for parsing
-                                from app.models.tool import Tool
-
-                                custom_tool = await Tool.filter(
-                                    id=parser_tool_id, is_enabled=True
-                                ).first()
-                                if custom_tool:
-                                    try:
-                                        # Call custom tool with files_url parameter
-                                        urls = [f.url for f in chat_in.file_urls]
-                                        result = await execute_tool_call(
-                                            f"custom_{custom_tool.name}",
-                                            {"files_url": urls},
-                                            agent,
-                                            user=current_user,
-                                        )
-                                        display_result, _ = get_tool_execution_payloads(
-                                            result
-                                        )
-                                        # Custom tool returns parsed content as string
-                                        if display_result:
-                                            parsed_files.append(
-                                                ParsedFile(
-                                                    filename="自定义解析结果",
-                                                    content=display_result,
-                                                    mime_type="text/plain",
-                                                    size=len(display_result),
-                                                )
-                                            )
-                                    except Exception as e:
-                                        logger.warning("Custom parser failed: %s", e)
-                                        parsed_files.append(
-                                            ParsedFile(
-                                                filename=t("custom_parser_filename"),
-                                                content=t("custom_parser_failed_placeholder"),
-                                                mime_type="text/plain",
-                                                size=0,
-                                            )
-                                        )
-
-                            # Handle legacy files field (deprecated, frontend sends parsed content)
-                            elif chat_in.files:
-                                for f in chat_in.files:
-                                    parsed_files.append(
-                                        ParsedFile(
-                                            filename=f.filename,
-                                            content=f.content,
-                                            mime_type=f.mime_type,
-                                            size=f.size,
-                                            truncated=f.truncated,
-                                            original_length=f.original_length,
-                                        )
-                                    )
-
-                            if parsed_files:
-                                file_content_str = (
-                                    file_parser_service.format_files_for_prompt(
-                                        parsed_files, locale=current_user.locale
-                                    )
-                                )
-
-                    # System prompt - always add with language instruction
-                    system_prompt = agent.system_prompt or ""
-                    if system_prompt:
-                        for key, value in conversation.variables.items():
-                            system_prompt = system_prompt.replace(
-                                f"{{{{{key}}}}}", str(value)
-                            )
-
-                        # Inject {{query}} variable - user's current input
-                        system_prompt = system_prompt.replace(
-                            "{{query}}", chat_in.message
-                        )
-
-                        # Inject file content into {{fileContent}} variable
-                        if file_content_str:
-                            system_prompt = system_prompt.replace(
-                                "{{fileContent}}", file_content_str
-                            )
-                        else:
-                            system_prompt = system_prompt.replace("{{fileContent}}", "")
-
-                    # Build system prompt with language instruction (always added)
-                    system_prompt = build_system_prompt_with_language(
-                        system_prompt, current_user.locale
+                    file_content_str = await build_file_content_for_prompt(
+                        agent=agent,
+                        file_urls=chat_in.file_urls,
+                        legacy_files=chat_in.files,
+                        user_locale=current_user.locale,
+                        tool_timeouts=tool_timeouts,
+                        user=current_user,
                     )
 
-                    # Add user input request instructions if enabled
-                    if agent.enable_user_input_request:
-                        user_input_instruction = get_user_input_request_instruction(
-                            current_user.locale
-                        )
-                        system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
-
-                    messages_for_llm.append(
-                        LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
+                    team_model = await get_agent_chat_model(agent)
+                    model_id = (
+                        f"{team_model.model.provider}/{team_model.model.model_id}"
+                        if team_model
+                        else None
                     )
-
-                    # Helper function to build multimodal content for vision
-                    def build_vision_content(
-                        text: str, images: list
-                    ) -> list[ContentPart]:
-                        """Build multimodal content array for vision-enabled messages."""
-                        content_parts: list[ContentPart] = [
-                            ContentPart(type=ContentType.TEXT, text=text)
-                        ]
-                        for img in images:
-                            # Parse the image URL - could be data URL or remote URL
-                            img_url = img.url
-                            if img_url.startswith("data:"):
-                                # Extract base64 from data URL: data:image/png;base64,xxxxx
-                                # Format: data:<mediatype>;base64,<data>
-                                try:
-                                    _, data_part = img_url.split(",", 1)
-                                    content_parts.append(
-                                        ContentPart(
-                                            type=ContentType.IMAGE,
-                                            image=ImageContent(base64=data_part),
-                                        )
-                                    )
-                                except ValueError:
-                                    # Fallback: treat as URL
-                                    content_parts.append(
-                                        ContentPart(
-                                            type=ContentType.IMAGE,
-                                            image=ImageContent(url=img_url),
-                                        )
-                                    )
-                            else:
-                                # Remote URL
-                                content_parts.append(
-                                    ContentPart(
-                                        type=ContentType.IMAGE,
-                                        image=ImageContent(url=img_url),
-                                    )
-                                )
-                        return content_parts
-
-                    # Track which tool_call_ids have been seen from assistant messages
-                    valid_tool_call_ids: set[str] = set()
-
-                    # Check if history_override is provided (for version switching / regeneration)
-                    if chat_in.history_override is not None:
-                        # Use history from frontend instead of database
-                        for hist_msg in chat_in.history_override:
-                            if hist_msg.role == "user":
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.USER, content=hist_msg.content
-                                    )
-                                )
-                            elif hist_msg.role == "assistant":
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.ASSISTANT,
-                                        content=hist_msg.content,
-                                        reasoning_content=getattr(
-                                            hist_msg, "reasoning_content", None
-                                        ),
-                                    )
-                                )
-
-                        # Add current user message with RAG and vision support
-                        current_content: str | list = final_message
-                        if chat_in.images and model_supports_vision:
-                            current_content = build_vision_content(
-                                final_message, chat_in.images
-                            )
-                        messages_for_llm.append(
-                            LLMTypeMessage(
-                                role=LLMTypeRole.USER, content=current_content
-                            )
-                        )
-                    else:
-                        # Load history from database including the user message we just saved (only active messages)
-                        history = (
-                            await Message.filter(
-                                conversation_id=conversation.id,
-                                is_active=True,
-                            )
-                            .exclude(id=assistant_msg.id)
-                            .order_by("created_at")
-                        )
-
-                        for msg in history:
-                            if msg.role == MessageRole.USER:
-                                # Use RAG-enhanced message for the current user message (auto mode)
-                                text_content = (
-                                    final_message
-                                    if msg.id == user_msg.id
-                                    else msg.content
-                                )
-
-                                # Check if this is the current message with images and vision is enabled
-                                if (
-                                    msg.id == user_msg.id
-                                    and chat_in.images
-                                    and model_supports_vision
-                                ):
-                                    # Build multimodal content for vision
-                                    content = build_vision_content(
-                                        text_content, chat_in.images
-                                    )
-                                else:
-                                    content = text_content
-
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.USER, content=content
-                                    )
-                                )
-                            elif msg.role == MessageRole.ASSISTANT:
-                                # Include tool_calls if present
-                                llm_tool_calls = None
-                                if msg.tool_calls:
-                                    llm_tool_calls = []
-                                    for tc in msg.tool_calls:
-                                        tc_id = tc.get("id", "")
-                                        valid_tool_call_ids.add(tc_id)
-                                        llm_tool_calls.append(
-                                            LLMToolCall(
-                                                id=tc_id,
-                                                type="function",
-                                                function=LLMFunctionCall(
-                                                    name=tc.get("name", ""),
-                                                    arguments=json.dumps(
-                                                        tc.get("arguments", {})
-                                                    ),
-                                                ),
-                                            )
-                                        )
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.ASSISTANT,
-                                        content=msg.content,
-                                        reasoning_content=msg.reasoning_content,
-                                        tool_calls=llm_tool_calls
-                                        if llm_tool_calls
-                                        else None,
-                                    )
-                                )
-                            elif msg.role == MessageRole.TOOL:
-                                # Only include tool messages that have a corresponding tool_call
-                                if (
-                                    msg.tool_call_id
-                                    and msg.tool_call_id in valid_tool_call_ids
-                                ):
-                                    messages_for_llm.append(
-                                        LLMTypeMessage(
-                                            role=LLMTypeRole.TOOL,
-                                            content=summarize_tool_result_for_llm(
-                                                msg.tool_name,
-                                                msg.content,
-                                            ),
-                                            tool_call_id=msg.tool_call_id,
-                                        )
-                                    )
-                                else:
-                                    # Skip orphaned tool messages
-                                    logger.warning(
-                                        f"Skipping orphaned tool message with tool_call_id={msg.tool_call_id}"
-                                    )
+                    working_history_override = (
+                        [message.model_dump(exclude_none=True) for message in chat_in.history_override]
+                        if chat_in.history_override
+                        else None
+                    )
 
                     # Get model identifier
-                    model_id = await get_model_identifier(agent)
 
                     # Get agent tools
                     tools_openai = await get_agent_tools(agent)
@@ -2668,68 +2210,235 @@ async def chat_stream(
                         pending_tool_calls = []
                         collected_tool_calls = []  # For collecting tool calls from stream
 
+                        prepare_context = prepare_model_context
+                        context_retry_used = False
+                        try:
+                            prepared_context = await prepare_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                file_content=file_content_str,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_images=chat_in.images,
+                                model_supports_vision=model_supports_vision,
+                                current_user_message_id=user_msg.id,
+                                include_current_user_message=True,
+                                exclude_message_ids=[assistant_msg.id],
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger=get_compression_trigger(prepared_context.compression),
+                            )
+                            if compression_event:
+                                yield compression_event
+                                last_event_time = time.time()
+                        except ContextLengthError:
+                            if not should_retry_context_length(agent):
+                                raise
+                            prepared_context = await retry_prepare_model_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                file_content=file_content_str,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_images=chat_in.images,
+                                model_supports_vision=model_supports_vision,
+                                current_user_message_id=user_msg.id,
+                                include_current_user_message=True,
+                                exclude_message_ids=[assistant_msg.id],
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger="context_length_error",
+                                retry_index=1,
+                                stage_override="reactive_retry",
+                            )
+                            if compression_event:
+                                yield compression_event
+                                last_event_time = time.time()
+                            context_retry_used = True
+                        messages_for_llm = [
+                            message.model_dump(exclude_none=True)
+                            for message in prepared_context.messages
+                        ]
+
                         # Calculate input chars for this iteration
                         iteration_input_chars = sum(
-                            len(m.content or "") if isinstance(m.content, str) else 0
+                            len(m.get("content") or "")
+                            if isinstance(m.get("content"), str)
+                            else 0
                             for m in messages_for_llm
                         )
 
                         # Use streaming call - works for both with and without tools
                         emitted_any = False
                         client_disconnected = False
-                        async for chunk in model_manager.team_chat_stream(
-                            team_id=str(agent.team_id),
-                            messages=messages_for_llm,
-                            model_id=model_id,
-                            tools=tools,
-                        ):
-                            # Check if client disconnected - stop LLM generation to save tokens
-                            if await request.is_disconnected():
-                                client_disconnected = True
-                                logger.info(
-                                    f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
-                                )
-                                break
+                        try:
+                            async for chunk in model_manager.team_chat_stream(
+                                team_id=str(agent.team_id),
+                                messages=messages_for_llm,
+                                model_id=model_id,
+                                tools=tools,
+                            ):
+                                # Check if client disconnected - stop LLM generation to save tokens
+                                if await request.is_disconnected():
+                                    client_disconnected = True
+                                    logger.info(
+                                        f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
+                                    )
+                                    break
 
-                            # Handle reasoning content (思维链)
-                            if chunk.delta.reasoning_content:
-                                if not reasoning_started:
-                                    reasoning_started = True
-                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += chunk.delta.reasoning_content
-                                iteration_reasoning += chunk.delta.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                # Handle reasoning content (思维链)
+                                if chunk.delta.reasoning_content:
+                                    if not reasoning_started:
+                                        reasoning_started = True
+                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                    full_reasoning += chunk.delta.reasoning_content
+                                    iteration_reasoning += chunk.delta.reasoning_content
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                    last_event_time = time.time()
+                                    emitted_any = True
+
+                                # Handle content - stream it immediately
+                                if chunk.delta.content:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    full_content += chunk.delta.content
+                                    iteration_content += chunk.delta.content
+
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+                                    emitted_any = True
+
+                                # Collect tool calls when they arrive
+                                if chunk.delta.tool_calls:
+                                    collected_tool_calls = chunk.delta.tool_calls
+                                    emitted_any = True
+
+                                # Handle finish
+                                if chunk.finish_reason:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    if chunk.finish_reason == FinishReason.LENGTH:
+                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    break
+                        except ContextLengthError:
+                            if context_retry_used or not should_retry_context_length(agent):
+                                raise
+                            prepared_context = await retry_prepare_model_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                file_content=file_content_str,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_images=chat_in.images,
+                                model_supports_vision=model_supports_vision,
+                                current_user_message_id=user_msg.id,
+                                include_current_user_message=True,
+                                exclude_message_ids=[assistant_msg.id],
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger="context_length_error",
+                                retry_index=1,
+                                stage_override="reactive_retry",
+                            )
+                            if compression_event:
+                                yield compression_event
                                 last_event_time = time.time()
-                                emitted_any = True
+                            context_retry_used = True
+                            messages_for_llm = [
+                                message.model_dump(exclude_none=True)
+                                for message in prepared_context.messages
+                            ]
+                            iteration_input_chars = sum(
+                                len(m.get("content") or "")
+                                if isinstance(m.get("content"), str)
+                                else 0
+                                for m in messages_for_llm
+                            )
+                            emitted_any = False
+                            client_disconnected = False
+                            async for chunk in model_manager.team_chat_stream(
+                                team_id=str(agent.team_id),
+                                messages=messages_for_llm,
+                                model_id=model_id,
+                                tools=tools,
+                            ):
+                                if await request.is_disconnected():
+                                    client_disconnected = True
+                                    logger.info(
+                                        f"Client disconnected during stream, stopping LLM generation for conversation {conversation.id}"
+                                    )
+                                    break
 
-                            # Handle content - stream it immediately
-                            if chunk.delta.content:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                full_content += chunk.delta.content
-                                iteration_content += chunk.delta.content
+                                if chunk.delta.reasoning_content:
+                                    if not reasoning_started:
+                                        reasoning_started = True
+                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                    full_reasoning += chunk.delta.reasoning_content
+                                    iteration_reasoning += chunk.delta.reasoning_content
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                    last_event_time = time.time()
+                                    emitted_any = True
 
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                # Stream content normally
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
-                                last_event_time = time.time()
-                                emitted_any = True
+                                if chunk.delta.content:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    full_content += chunk.delta.content
+                                    iteration_content += chunk.delta.content
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+                                    emitted_any = True
 
-                            # Collect tool calls when they arrive
-                            if chunk.delta.tool_calls:
-                                collected_tool_calls = chunk.delta.tool_calls
-                                emitted_any = True
+                                if chunk.delta.tool_calls:
+                                    collected_tool_calls = chunk.delta.tool_calls
+                                    emitted_any = True
 
-                            # Handle finish
-                            if chunk.finish_reason:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                if chunk.finish_reason == FinishReason.LENGTH:
-                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                break
+                                if chunk.finish_reason:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    if chunk.finish_reason == FinishReason.LENGTH:
+                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    break
 
                         # Fallback: if stream yields nothing and no tool calls, do a non-stream call
                         if (
@@ -2912,6 +2621,16 @@ async def chat_stream(
                                 content=iteration_content,
                                 tool_calls=intermediate_tool_calls,
                             )
+                            if working_history_override is None:
+                                working_history_override = []
+                            working_history_override.append(
+                                {
+                                    "role": "assistant",
+                                    "content": iteration_content,
+                                    "reasoning_content": iteration_reasoning or None,
+                                    "tool_calls": intermediate_tool_calls,
+                                }
+                            )
 
                             # Save tool response messages to database
                             for tc_data in pending_tool_calls:
@@ -2922,36 +2641,13 @@ async def chat_stream(
                                     tool_call_id=tc_data["id"],
                                     tool_name=tc_data["name"],
                                 )
-
-                            # Add assistant message with tool calls to message history for LLM
-                            assistant_tool_calls = [
-                                LLMToolCall(
-                                    id=tc.id,
-                                    type="function",
-                                    function=LLMFunctionCall(
-                                        name=tc.function.name,
-                                        arguments=tc.function.arguments,
-                                    ),
-                                )
-                                for tc in collected_tool_calls
-                            ]
-                            messages_for_llm.append(
-                                LLMTypeMessage(
-                                    role=LLMTypeRole.ASSISTANT,
-                                    content=iteration_content,
-                                    reasoning_content=iteration_reasoning or None,
-                                    tool_calls=assistant_tool_calls,
-                                )
-                            )
-
-                            # Add tool results to message history
-                            for tc_data in pending_tool_calls:
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.TOOL,
-                                        content=tc_data["llm_result"],
-                                        tool_call_id=tc_data["id"],
-                                    )
+                                working_history_override.append(
+                                    {
+                                        "role": "tool",
+                                        "content": tc_data["llm_result"],
+                                        "tool_call_id": tc_data["id"],
+                                        "tool_name": tc_data["name"],
+                                    }
                                 )
 
                             # Continue the loop to get the final response
@@ -2974,8 +2670,37 @@ async def chat_stream(
                     # Ensure assistant message appears after tool calls/results in history
                     assistant_msg.created_at = now_utc()
                     # Estimate token usage
+                    final_prepared_context = await prepare_model_context(
+                        agent=agent,
+                        conversation=conversation,
+                        user_message=final_message,
+                        model_id=model_id or "gpt-4",
+                        model_context_limit=team_model.model.context_length
+                        if team_model
+                        else None,
+                        model_max_output_tokens=team_model.model.max_output_tokens
+                        if team_model
+                        else None,
+                        provider=team_model.model.provider if team_model else None,
+                        file_content=file_content_str,
+                        user_locale=current_user.locale,
+                        history_override=working_history_override,
+                        current_images=chat_in.images,
+                        model_supports_vision=model_supports_vision,
+                        current_user_message_id=user_msg.id,
+                        include_current_user_message=True,
+                        exclude_message_ids=[assistant_msg.id],
+                    )
                     input_tokens = sum(
-                        len(m.content or "") // 4 for m in messages_for_llm
+                        len(message_content or "") // 4
+                        for message_content in (
+                            message.get("content") if isinstance(message, dict) else None
+                            for message in [
+                                item.model_dump(exclude_none=True)
+                                for item in final_prepared_context.messages
+                            ]
+                        )
+                        if isinstance(message_content, str)
                     )
                     output_tokens = len(full_content) // 4
                     assistant_msg.token_usage = {
@@ -2983,6 +2708,7 @@ async def chat_stream(
                         "completion": output_tokens,
                     }
                     await assistant_msg.save()
+                    enqueue_session_memory_extraction(agent, conversation, assistant_msg)
 
                     # Update conversation stats atomically
                     title_update = {}
@@ -3357,12 +3083,8 @@ async def regenerate_message(
         from app.llm import model_manager
         from app.llm.errors import QuotaExceededError, LLMError
         from app.llm.types import (
-            Message as LLMTypeMessage,
-            MessageRole as LLMTypeRole,
             ToolDefinition,
             FunctionDefinition,
-            ToolCall as LLMToolCall,
-            FunctionCall as LLMFunctionCall,
             FinishReason,
         )
 
@@ -3443,106 +3165,15 @@ async def regenerate_message(
                                 rag_contexts, user_message.content
                             )
 
-                    # Build messages for LLM - only include ACTIVE messages before this one
-                    messages_for_llm: list[LLMTypeMessage] = []
-
-                    # System prompt - always add with language instruction
-                    system_prompt = agent.system_prompt or ""
-                    if system_prompt:
-                        for key, value in conversation.variables.items():
-                            system_prompt = system_prompt.replace(
-                                f"{{{{{key}}}}}", str(value)
-                            )
-                        # Inject {{query}} variable - user's current input
-                        system_prompt = system_prompt.replace(
-                            "{{query}}", user_message.content
-                        )
-
-                    # Build system prompt with language instruction (always added)
-                    system_prompt = build_system_prompt_with_language(
-                        system_prompt, current_user.locale
+                    team_model = await get_agent_chat_model(agent)
+                    model_id = (
+                        f"{team_model.model.provider}/{team_model.model.model_id}"
+                        if team_model
+                        else None
                     )
-
-                    # Add user input request instructions if enabled
-                    if agent.enable_user_input_request:
-                        user_input_instruction = get_user_input_request_instruction(
-                            current_user.locale
-                        )
-                        system_prompt = f"{system_prompt}\n\n{user_input_instruction}"
-
-                    messages_for_llm.append(
-                        LLMTypeMessage(role=LLMTypeRole.SYSTEM, content=system_prompt)
-                    )
-
-                    # Load active history before this message
-                    history = await Message.filter(
-                        conversation_id=conversation.id,
-                        created_at__lt=message.created_at,
-                        is_active=True,
-                    ).order_by("created_at")
-
-                    valid_tool_call_ids: set[str] = set()
-
-                    for msg in history:
-                        if msg.role == MessageRole.USER:
-                            # Use RAG-enhanced message for the trigger user message
-                            text_content = (
-                                final_message
-                                if msg.id == user_message.id
-                                else msg.content
-                            )
-                            messages_for_llm.append(
-                                LLMTypeMessage(
-                                    role=LLMTypeRole.USER, content=text_content
-                                )
-                            )
-                        elif msg.role == MessageRole.ASSISTANT:
-                            llm_tool_calls = None
-                            if msg.tool_calls:
-                                llm_tool_calls = []
-                                for tc in msg.tool_calls:
-                                    tc_id = tc.get("id", "")
-                                    valid_tool_call_ids.add(tc_id)
-                                    llm_tool_calls.append(
-                                        LLMToolCall(
-                                            id=tc_id,
-                                            type="function",
-                                            function=LLMFunctionCall(
-                                                name=tc.get("name", ""),
-                                                arguments=json.dumps(
-                                                    tc.get("arguments", {})
-                                                ),
-                                            ),
-                                        )
-                                    )
-                            messages_for_llm.append(
-                                LLMTypeMessage(
-                                    role=LLMTypeRole.ASSISTANT,
-                                    content=msg.content,
-                                    reasoning_content=msg.reasoning_content,
-                                    tool_calls=llm_tool_calls
-                                    if llm_tool_calls
-                                    else None,
-                                )
-                            )
-                        elif msg.role == MessageRole.TOOL:
-                            if (
-                                msg.tool_call_id
-                                and msg.tool_call_id in valid_tool_call_ids
-                            ):
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.TOOL,
-                                        content=summarize_tool_result_for_llm(
-                                            msg.tool_name,
-                                            msg.content,
-                                        ),
-                                        tool_call_id=msg.tool_call_id,
-                                    )
-                                )
+                    working_history_override = None
 
                     # Get model and tools
-                    model_id = await get_model_identifier(agent)
                     tools_openai = await get_agent_tools(agent)
                     tool_display_names = await get_tool_display_names(
                         agent, current_user.locale
@@ -3597,51 +3228,194 @@ async def regenerate_message(
                         reasoning_started = False
                         collected_tool_calls = []
                         client_disconnected = False
-
-                        async for chunk in model_manager.team_chat_stream(
-                            team_id=str(agent.team_id),
-                            messages=messages_for_llm,
-                            model_id=model_id,
-                            tools=tools,
-                        ):
-                            # Check if client disconnected - stop LLM generation to save tokens
-                            if await request.is_disconnected():
-                                client_disconnected = True
-                                logger.info(
-                                    f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
-                                )
-                                break
-
-                            if chunk.delta.reasoning_content:
-                                if not reasoning_started:
-                                    reasoning_started = True
-                                    yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
-                                full_reasoning += chunk.delta.reasoning_content
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                        context_retry_used = False
+                        try:
+                            prepared_context = await prepare_model_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_user_message_id=user_message.id,
+                                include_current_user_message=True,
+                                history_before_message_created_at=message.created_at,
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger=get_compression_trigger(prepared_context.compression),
+                            )
+                            if compression_event:
+                                yield compression_event
                                 last_event_time = time.time()
-
-                            if chunk.delta.content:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                full_content += chunk.delta.content
-
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                # Stream content normally
-                                yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                        except ContextLengthError:
+                            if not should_retry_context_length(agent):
+                                raise
+                            prepared_context = await retry_prepare_model_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_user_message_id=user_message.id,
+                                include_current_user_message=True,
+                                history_before_message_created_at=message.created_at,
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger="context_length_error",
+                                retry_index=1,
+                                stage_override="reactive_retry",
+                            )
+                            if compression_event:
+                                yield compression_event
                                 last_event_time = time.time()
+                            context_retry_used = True
+                        messages_for_llm = [
+                            item.model_dump(exclude_none=True)
+                            for item in prepared_context.messages
+                        ]
 
-                            if chunk.delta.tool_calls:
-                                collected_tool_calls = chunk.delta.tool_calls
+                        try:
+                            async for chunk in model_manager.team_chat_stream(
+                                team_id=str(agent.team_id),
+                                messages=messages_for_llm,
+                                model_id=model_id,
+                                tools=tools,
+                            ):
+                                # Check if client disconnected - stop LLM generation to save tokens
+                                if await request.is_disconnected():
+                                    client_disconnected = True
+                                    logger.info(
+                                        f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
+                                    )
+                                    break
 
-                            if chunk.finish_reason:
-                                if reasoning_started and not full_content:
-                                    yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
-                                if chunk.finish_reason == FinishReason.LENGTH:
-                                    yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
-                                break
+                                if chunk.delta.reasoning_content:
+                                    if not reasoning_started:
+                                        reasoning_started = True
+                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                    full_reasoning += chunk.delta.reasoning_content
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                    last_event_time = time.time()
+
+                                if chunk.delta.content:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    full_content += chunk.delta.content
+
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    # Stream content normally
+                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+
+                                if chunk.delta.tool_calls:
+                                    collected_tool_calls = chunk.delta.tool_calls
+
+                                if chunk.finish_reason:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    if chunk.finish_reason == FinishReason.LENGTH:
+                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    break
+                        except ContextLengthError:
+                            if context_retry_used or not should_retry_context_length(agent):
+                                raise
+                            prepared_context = await retry_prepare_model_context(
+                                agent=agent,
+                                conversation=conversation,
+                                user_message=final_message,
+                                model_id=model_id or "gpt-4",
+                                model_context_limit=team_model.model.context_length
+                                if team_model
+                                else None,
+                                model_max_output_tokens=team_model.model.max_output_tokens
+                                if team_model
+                                else None,
+                                provider=team_model.model.provider if team_model else None,
+                                user_locale=current_user.locale,
+                                history_override=working_history_override,
+                                current_user_message_id=user_message.id,
+                                include_current_user_message=True,
+                                history_before_message_created_at=message.created_at,
+                            )
+                            compression_event = build_compression_event(
+                                agent=agent,
+                                compression=prepared_context.compression,
+                                trigger="context_length_error",
+                                retry_index=1,
+                                stage_override="reactive_retry",
+                            )
+                            if compression_event:
+                                yield compression_event
+                                last_event_time = time.time()
+                            context_retry_used = True
+                            messages_for_llm = [
+                                item.model_dump(exclude_none=True)
+                                for item in prepared_context.messages
+                            ]
+                            async for chunk in model_manager.team_chat_stream(
+                                team_id=str(agent.team_id),
+                                messages=messages_for_llm,
+                                model_id=model_id,
+                                tools=tools,
+                            ):
+                                if await request.is_disconnected():
+                                    client_disconnected = True
+                                    logger.info(
+                                        f"Client disconnected during regenerate stream, stopping LLM generation for message {new_message_id}"
+                                    )
+                                    break
+
+                                if chunk.delta.reasoning_content:
+                                    if not reasoning_started:
+                                        reasoning_started = True
+                                        yield f"event: {SSEEventType.REASONING_START}\ndata: {json.dumps({})}\n\n"
+                                    full_reasoning += chunk.delta.reasoning_content
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.REASONING_DELTA}\ndata: {json.dumps({'delta': chunk.delta.reasoning_content})}\n\n"
+                                    last_event_time = time.time()
+
+                                if chunk.delta.content:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    full_content += chunk.delta.content
+
+                                    if first_token_time is None:
+                                        first_token_time = time.time()
+                                    yield f"event: {SSEEventType.CONTENT_DELTA}\ndata: {json.dumps({'delta': chunk.delta.content})}\n\n"
+                                    last_event_time = time.time()
+
+                                if chunk.delta.tool_calls:
+                                    collected_tool_calls = chunk.delta.tool_calls
+
+                                if chunk.finish_reason:
+                                    if reasoning_started and not full_content:
+                                        yield f"event: {SSEEventType.REASONING_END}\ndata: {json.dumps({})}\n\n"
+                                    if chunk.finish_reason == FinishReason.LENGTH:
+                                        yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
+                                    break
 
                         # If client disconnected, save partial content and exit
                         if client_disconnected:
@@ -3729,31 +3503,29 @@ async def regenerate_message(
                                     parent_id=new_message.parent_id or new_message.id,
                                     version_number=new_version_number,
                                 )
-
-                                # Add to message history for next iteration
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.ASSISTANT,
-                                        content="",
-                                        reasoning_content="",
-                                        tool_calls=[
-                                            LLMToolCall(
-                                                id=tc.id,
-                                                type="function",
-                                                function=LLMFunctionCall(
-                                                    name=tool_name,
-                                                    arguments=tc.function.arguments,
-                                                ),
-                                            )
+                                if working_history_override is None:
+                                    working_history_override = []
+                                working_history_override.append(
+                                    {
+                                        "role": "assistant",
+                                        "content": "",
+                                        "reasoning_content": "",
+                                        "tool_calls": [
+                                            {
+                                                "id": tc.id,
+                                                "name": tool_name,
+                                                "arguments": arguments,
+                                            }
                                         ],
-                                    )
+                                    }
                                 )
-                                messages_for_llm.append(
-                                    LLMTypeMessage(
-                                        role=LLMTypeRole.TOOL,
-                                        content=llm_result,
-                                        tool_call_id=tc.id,
-                                    )
+                                working_history_override.append(
+                                    {
+                                        "role": "tool",
+                                        "content": llm_result,
+                                        "tool_call_id": tc.id,
+                                        "tool_name": tool_name,
+                                    }
                                 )
                             continue
                         else:
@@ -3770,8 +3542,34 @@ async def regenerate_message(
                     new_message.duration_ms = duration_ms
                     # Ensure regenerated message appears after tool calls/results in history
                     new_message.created_at = now_utc()
+                    final_prepared_context = await prepare_model_context(
+                        agent=agent,
+                        conversation=conversation,
+                        user_message=final_message,
+                        model_id=model_id or "gpt-4",
+                        model_context_limit=team_model.model.context_length
+                        if team_model
+                        else None,
+                        model_max_output_tokens=team_model.model.max_output_tokens
+                        if team_model
+                        else None,
+                        provider=team_model.model.provider if team_model else None,
+                        user_locale=current_user.locale,
+                        history_override=working_history_override,
+                        current_user_message_id=user_message.id,
+                        include_current_user_message=True,
+                        history_before_message_created_at=message.created_at,
+                    )
                     input_tokens = sum(
-                        len(m.content or "") // 4 for m in messages_for_llm
+                        len(message_content or "") // 4
+                        for message_content in (
+                            message.get("content") if isinstance(message, dict) else None
+                            for message in [
+                                item.model_dump(exclude_none=True)
+                                for item in final_prepared_context.messages
+                            ]
+                        )
+                        if isinstance(message_content, str)
                     )
                     output_tokens = len(full_content) // 4
                     new_message.token_usage = {
@@ -3779,6 +3577,7 @@ async def regenerate_message(
                         "completion": output_tokens,
                     }
                     await new_message.save()
+                    enqueue_session_memory_extraction(agent, conversation, new_message)
 
                     # Update agent and team stats for regenerated message
                     total_tokens = input_tokens + output_tokens

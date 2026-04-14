@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
         init_workflow_visibility_field,
         init_agent_visibility_values,
         init_agent_streaming_config,
+        init_agent_context_compression_config,
+        init_conversation_session_memory_table,
         init_agent_user_input_request,
         init_agent_memory_fields,
         init_agent_media_generation_fields,
@@ -98,6 +100,16 @@ async def lifespan(app: FastAPI):
         await init_agent_streaming_config()
     except Exception as e:
         logger.warning(f"Agent streaming_config migration failed: {e}")
+
+    try:
+        await init_agent_context_compression_config()
+    except Exception as e:
+        logger.warning(f"Agent context_compression_config migration failed: {e}")
+
+    try:
+        await init_conversation_session_memory_table()
+    except Exception as e:
+        logger.warning(f"Conversation session memory migration failed: {e}")
 
     try:
         await init_agent_user_input_request()

@@ -111,7 +111,13 @@ export function useRun(options: UseRunOptions): UseRunReturn {
           nodes.set(nodeId, {
             id: nodeId,
             type: part.taskType,
-            label: part.taskType === 'rag' ? 'RAG Retrieval' : part.taskType === 'thinking' ? 'Thinking' : 'Generating',
+            label: part.taskType === 'rag'
+              ? 'RAG Retrieval'
+              : part.taskType === 'thinking'
+                ? 'Thinking'
+                : part.taskType === 'compression'
+                  ? 'Context Compression'
+                  : 'Generating',
             status: part.state === 'running' ? 'running' : part.state === 'error' ? 'error' : part.state === 'completed' ? 'completed' : 'pending',
             metadata: { info: part.info },
           })

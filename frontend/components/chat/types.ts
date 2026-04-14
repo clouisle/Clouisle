@@ -146,10 +146,10 @@ export interface StepStartPart {
  */
 export interface TaskPart {
   type: 'task'
-  taskType: 'rag' | 'thinking' | 'generating'
+  taskType: 'rag' | 'thinking' | 'generating' | 'compression'
   state: 'pending' | 'running' | 'completed' | 'error'
   /** Additional info, e.g., number of sources found */
-  info?: string | number
+  info?: string | number | Record<string, unknown>
 }
 
 /**
