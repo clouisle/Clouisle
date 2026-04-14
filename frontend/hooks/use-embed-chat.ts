@@ -374,9 +374,14 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
 
-            case 'compression': {
-              const compressionData = data as unknown as SSECompression
+            case 'compression_start': {
               state.taskState.compression = 'running'
+              break
+            }
+
+            case 'compression_end': {
+              const compressionData = data as unknown as SSECompression
+              state.taskState.compression = 'completed'
               state.taskState.compressionInfo = compressionData as unknown as Record<string, unknown>
               break
             }
@@ -440,7 +445,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               const endData = data as unknown as SSEMessageEnd
               state.taskState.generating = 'completed'
               state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
-              state.taskState.compression = state.taskState.compression === 'running' ? 'completed' : state.taskState.compression
+              // Note: compression state is now managed by compression_start/compression_end events
               if (state.assistantMessageId) {
                 const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
                 setMessages(prev =>

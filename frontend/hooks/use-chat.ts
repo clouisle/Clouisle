@@ -548,9 +548,25 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
-            case 'compression': {
-              const data = event.data as SSECompression
+            case 'compression_start': {
               taskState.compression = 'running'
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'compression_end': {
+              const data = event.data as SSECompression
+              taskState.compression = 'completed'
               taskState.compressionInfo = data as unknown as Record<string, unknown>
               streamingStateRef.current.taskState = taskState
               setMessages((prev) =>
@@ -705,9 +721,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
-              if (taskState.compression === 'running') {
-                taskState.compression = 'completed'
-              }
+              // Note: compression state is now managed by compression_start/compression_end events
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {
@@ -1346,9 +1360,25 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
-            case 'compression': {
-              const data = event.data as SSECompression
+            case 'compression_start': {
               taskState.compression = 'running'
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'compression_end': {
+              const data = event.data as SSECompression
+              taskState.compression = 'completed'
               taskState.compressionInfo = data as unknown as Record<string, unknown>
               streamingStateRef.current.taskState = taskState
               setMessages((prev) =>
@@ -1462,9 +1492,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
-              if (taskState.compression === 'running') {
-                taskState.compression = 'completed'
-              }
+              // Note: compression state is now managed by compression_start/compression_end events
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {

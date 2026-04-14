@@ -919,7 +919,8 @@ class SSEEventType:
     RAG_START = "rag_start"  # RAG检索开始
     RAG_CONTEXT = "rag_context"
     USER_INPUT_REQUEST = "user_input_request"  # 用户输入请求
-    COMPRESSION = "compression"  # 上下文压缩事件
+    COMPRESSION_START = "compression_start"  # 上下文压缩开始
+    COMPRESSION_END = "compression_end"  # 上下文压缩结束
     OUTPUT_TRUNCATED = "output_truncated"  # 输出被截断（达到max_tokens限制）
     MESSAGE_END = "message_end"
     ERROR = "error"

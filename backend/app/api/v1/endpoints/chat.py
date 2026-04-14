@@ -268,22 +268,26 @@ def get_compression_trigger(compression: Any) -> str:
 
 
 
-def build_compression_event(
+def build_compression_events(
     *,
     agent: Agent,
     compression: Any,
     trigger: str,
     retry_index: int = 0,
     stage_override: str | None = None,
-) -> str | None:
-    """Build SSE compression event payload when compression should be surfaced."""
+) -> tuple[str | None, str | None]:
+    """Build SSE compression start and end event payloads when compression should be surfaced.
+
+    Returns:
+        Tuple of (start_event, end_event). Either or both may be None if events should not be emitted.
+    """
     config = get_context_compression_config(agent)
     if not config.get("emit_sse_events", True):
-        return None
+        return None, None
 
     stage = stage_override or compression.stage
     if stage == "none":
-        return None
+        return None, None
 
     note_parts: list[str] = []
     if trigger == "context_length_error" or stage == "reactive_retry":
@@ -301,7 +305,18 @@ def build_compression_event(
     if compression.file_content_trimmed:
         note_parts.append("trimmed file content")
 
-    payload = {
+    # Start event - minimal info
+    start_payload = {
+        "stage": stage,
+        "trigger": trigger,
+    }
+    start_event = (
+        f"event: {SSEEventType.COMPRESSION_START}\n"
+        f"data: {json.dumps(start_payload, ensure_ascii=False)}\n\n"
+    )
+
+    # End event - full compression details
+    end_payload = {
         "stage": stage,
         "trigger": trigger,
         "pressure_level": getattr(compression, "pressure_level", None),
@@ -327,10 +342,12 @@ def build_compression_event(
         "retry_index": retry_index,
         "note": "; ".join(note_parts),
     }
-    return (
-        f"event: {SSEEventType.COMPRESSION}\n"
-        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    end_event = (
+        f"event: {SSEEventType.COMPRESSION_END}\n"
+        f"data: {json.dumps(end_payload, ensure_ascii=False)}\n\n"
     )
+
+    return start_event, end_event
 
 
 
@@ -2234,13 +2251,16 @@ async def chat_stream(
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger=get_compression_trigger(prepared_context.compression),
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                         except ContextLengthError:
                             if not should_retry_context_length(agent):
@@ -2266,15 +2286,18 @@ async def chat_stream(
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger="context_length_error",
                                 retry_index=1,
                                 stage_override="reactive_retry",
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                             context_retry_used = True
                         messages_for_llm = [
@@ -2370,15 +2393,18 @@ async def chat_stream(
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger="context_length_error",
                                 retry_index=1,
                                 stage_override="reactive_retry",
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                             context_retry_used = True
                             messages_for_llm = [
@@ -3248,13 +3274,16 @@ async def regenerate_message(
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger=get_compression_trigger(prepared_context.compression),
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                         except ContextLengthError:
                             if not should_retry_context_length(agent):
@@ -3277,15 +3306,18 @@ async def regenerate_message(
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger="context_length_error",
                                 retry_index=1,
                                 stage_override="reactive_retry",
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                             context_retry_used = True
                         messages_for_llm = [
@@ -3359,15 +3391,18 @@ async def regenerate_message(
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
                             )
-                            compression_event = build_compression_event(
+                            compression_start, compression_end = build_compression_events(
                                 agent=agent,
                                 compression=prepared_context.compression,
                                 trigger="context_length_error",
                                 retry_index=1,
                                 stage_override="reactive_retry",
                             )
-                            if compression_event:
-                                yield compression_event
+                            if compression_start:
+                                yield compression_start
+                                last_event_time = time.time()
+                            if compression_end:
+                                yield compression_end
                                 last_event_time = time.time()
                             context_retry_used = True
                             messages_for_llm = [
