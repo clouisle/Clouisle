@@ -1605,12 +1605,66 @@ async def prepare_model_context(
     )
 
     if compression.after_tokens > token_budget.input_budget:
-        raise ContextLengthError(
-            message="Context length exceeded after request-time compaction",
-            max_tokens=token_budget.input_budget,
-            actual_tokens=compression.after_tokens,
+        # Emergency fallback: keep only system prompt and current user message
+        logger.warning(
+            "Context still exceeds budget after all compression (%d > %d tokens). "
+            "Applying emergency fallback: keeping only system prompt and current user message.",
+            compression.after_tokens,
+            token_budget.input_budget,
+        )
+        emergency_messages = []
+        if compacted_messages and compacted_messages[0].role == MessageRole.SYSTEM:
+            emergency_messages.append(compacted_messages[0])
+        if compacted_messages and compacted_messages[-1].role == MessageRole.USER:
+            emergency_messages.append(compacted_messages[-1])
+
+        emergency_tokens = _estimate_message_tokens(
+            emergency_messages,
+            model_id=model_id,
             provider=provider,
-            model=model_id,
+        )
+
+        if emergency_tokens > token_budget.input_budget:
+            # Even system + user is too large - this shouldn't happen but handle it
+            raise ContextLengthError(
+                message="Context length exceeded even with emergency fallback (system + user only)",
+                max_tokens=token_budget.input_budget,
+                actual_tokens=emergency_tokens,
+                provider=provider,
+                model=model_id,
+            )
+
+        emergency_actions = list(compression.actions or [])
+        if "emergency_fallback" not in emergency_actions:
+            emergency_actions.append("emergency_fallback")
+
+        return PreparedModelContext(
+            messages=emergency_messages,
+            token_budget=token_budget,
+            compression=CompressionMeta(
+                stage="macro",
+                before_tokens=compression.before_tokens,
+                after_tokens=emergency_tokens,
+                input_budget=token_budget.input_budget,
+                reasoning_trimmed=compression.reasoning_trimmed,
+                tool_results_trimmed=compression.tool_results_trimmed,
+                file_content_trimmed=compression.file_content_trimmed,
+                summary_turns=len(compacted_messages) - len(emergency_messages),
+                pressure_level="over_budget",
+                trigger_ratio=compression.trigger_ratio,
+                warning_ratio=compression.warning_ratio,
+                blocking_ratio=compression.blocking_ratio,
+                trigger_budget=compression.trigger_budget,
+                hard_budget=token_budget.input_budget,
+                utilization_before=compression.utilization_before,
+                utilization_after=(emergency_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
+                policy_used=compression.policy_used,
+                actions=emergency_actions,
+                retained_recent_turns=0,
+                retained_tool_turns=0,
+                compacted_blocks=compression.compacted_blocks,
+                session_memory_compacted=compression.session_memory_compacted,
+            ),
         )
 
     return PreparedModelContext(
