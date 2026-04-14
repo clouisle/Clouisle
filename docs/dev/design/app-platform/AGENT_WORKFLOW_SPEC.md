@@ -444,6 +444,156 @@ POST /api/v1/agents/{id}/chat/stream (SSE)
 前端实时展示流式内容
 ```
 
+#### 2.5.3 上下文压缩机制
+
+为了支持长对话而不超出模型的上下文限制，系统实现了智能的上下文压缩机制。
+
+##### 2.5.3.1 Token 预算计算
+
+```
+input_budget = context_limit - output_token_reserve - safety_margin_tokens
+```
+
+**默认配置：**
+- `output_token_reserve`: 4000 tokens（为输出预留）
+- `safety_margin_tokens`: 1000 tokens（安全边际）
+
+**示例（GPT-4 128k）：**
+```
+input_budget = 128000 - 4000 - 1000 = 123000 tokens
+```
+
+##### 2.5.3.2 压力等级与触发阈值
+
+系统根据当前 token 使用量评估压力等级：
+
+| 压力等级 | 阈值比例 | 触发条件 | 压缩策略 |
+|---------|---------|---------|---------|
+| `normal` | < 70% | tokens < 86,100 | 无压缩 |
+| `warning` | 70% | tokens ≥ 86,100 | 仅警告，无压缩 |
+| `auto_compact` | 80% | tokens ≥ 98,400 | **Micro 压缩** |
+| `blocking` | 92% | tokens ≥ 113,160 | **Micro + Macro 压缩** |
+| `over_budget` | > 100% | tokens > 123,000 | **紧急回退** |
+
+##### 2.5.3.3 压缩策略
+
+**Micro Compaction（微压缩）**
+
+触发条件：token 使用率 ≥ 80%
+
+操作内容：
+1. **删除历史推理内容**：保留最近 2 条推理消息，删除更早的推理内容
+2. **压缩旧工具结果**：保留最近 2 个工具调用的完整结果，压缩更早的工具结果
+3. **会话内存压缩**：将旧对话轮次提取为结构化摘要（如启用）
+
+**Macro Compaction（宏压缩）**
+
+触发条件：
+- token 使用率 ≥ 92%
+- 或 micro 压缩后仍超出预算
+
+操作内容：
+1. **总结旧对话**：将旧的对话轮次总结为简短摘要
+2. **保留策略**：
+   - 保留最近 3 轮原始对话
+   - 保留最近 2 轮工具调用对话
+   - 保留包含图片/文件的对话
+3. **摘要格式**：
+   ```
+   Compressed earlier conversation summary:
+   - Turn 1: User asked: ... ; Assistant responded: ... ; Tools involved: ...
+   - Turn 2: ...
+   ```
+
+**Emergency Fallback（紧急回退）**
+
+触发条件：所有压缩后仍超出预算
+
+操作内容：
+- 只保留系统提示词
+- 只保留当前用户消息
+- 丢弃所有历史对话
+
+##### 2.5.3.4 配置参数
+
+Agent 可通过 `context_compression_config` 自定义压缩行为：
+
+```python
+class ContextCompressionConfig(BaseModel):
+    enabled: bool = True                      # 是否启用压缩
+    micro_compaction_enabled: bool = True     # 是否启用微压缩
+    macro_compaction_enabled: bool = True     # 是否启用宏压缩
+    preflight_guard_enabled: bool = True      # 是否启用预检查
+    reactive_retry_enabled: bool = True       # 是否启用响应式重试
+    
+    # 阈值配置
+    warning_ratio: float = 0.7                # 警告阈值（70%）
+    auto_compact_trigger_ratio: float = 0.8   # 自动压缩阈值（80%）
+    blocking_ratio: float = 0.92              # 阻塞阈值（92%）
+    
+    # 保留策略
+    recent_raw_turns: int = 3                 # 保留最近 N 轮原始对话
+    recent_tool_turns: int = 2                # 保留最近 N 轮工具对话
+    keep_recent_tool_results: int = 2         # 保留最近 N 个工具结果
+    
+    # Token 预算
+    output_token_reserve: int = 4000          # 输出预留
+    safety_margin_tokens: int = 1000          # 安全边际
+    
+    # 会话内存
+    session_memory_enabled: bool = True       # 是否启用会话内存
+    session_memory_async_extract: bool = True # 是否异步提取
+    session_memory_max_tokens: int = 400      # 会话内存最大 tokens
+    session_memory_min_turns: int = 4         # 最少对话轮次才提取
+    
+    # SSE 事件
+    emit_sse_events: bool = True              # 是否发送压缩事件
+```
+
+##### 2.5.3.5 SSE 事件
+
+压缩过程通过 SSE 事件通知前端：
+
+```
+event: compression_start
+data: {"stage": "micro", "trigger": "auto_compact"}
+
+event: compression_end
+data: {
+  "stage": "micro",
+  "trigger": "auto_compact",
+  "before_tokens": 100000,
+  "after_tokens": 80000,
+  "summary_turns": 5,
+  "actions": ["trim_reasoning", "compact_old_tool_results"],
+  "note": "Applied proactive context compaction; trimmed historical reasoning; compacted older tool results"
+}
+```
+
+**前端显示文案：**
+
+| 触发类型 | 进行中 | 完成 |
+|---------|--------|------|
+| 主动优化（80%） | 优化对话上下文 | 已优化对话上下文（X → Y tokens，整理 N 轮对话） |
+| 历史整理（92%） | 整理对话历史 | 已整理对话历史（X → Y tokens，摘要 N 轮对话） |
+| 深度整理（重试） | 深度整理对话历史 | 已深度整理对话历史（X → Y tokens） |
+
+##### 2.5.3.6 实现位置
+
+- **核心逻辑**：`backend/app/services/chat_context.py`
+  - `prepare_model_context()`: 主压缩入口
+  - `_apply_micro_compaction()`: 微压缩实现
+  - `_apply_macro_compaction()`: 宏压缩实现
+  - `_apply_session_memory_compaction()`: 会话内存压缩
+
+- **会话内存**：`backend/app/services/session_memory.py`
+  - `get_ready_session_memory()`: 获取会话内存快照
+  - `extract_session_memory_for_message()`: 异步提取会话内存
+
+- **调用位置**：`backend/app/api/v1/endpoints/chat.py`
+  - `chat_stream()`: 流式对话中调用
+  - `regenerate_message()`: 重新生成中调用
+
 ---
 
 ## 3. 工作流编排
