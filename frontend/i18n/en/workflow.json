@@ -173,7 +173,9 @@
     "apiPlayground": {
       "workflowStarted": "Workflow started",
       "workflowCompleted": "Workflow completed",
-      "workflowFailed": "Workflow failed"
+      "workflowFailed": "Workflow failed",
+      "nodeSkipped": "Node skipped: {reason}",
+      "nodeOutput": "Node output"
     },
     "editor": {
       "zoomIn": "Zoom in",
@@ -1118,11 +1120,7 @@
       "eventNodeError": "Node execution failed",
       "eventNodeSkip": "Node skipped (branch not taken)",
       "eventToken": "LLM streaming token output",
-      "eventChunk": "Generic streaming chunk output",
       "eventOutput": "Node final output",
-      "eventProgress": "Progress update",
-      "eventIterationStart": "Iteration started",
-      "eventIterationComplete": "Iteration completed",
       "eventFormat": "Event Format",
       "pythonStreamExample": "Python Stream Example",
       "javascriptStreamExample": "JavaScript Stream Example"

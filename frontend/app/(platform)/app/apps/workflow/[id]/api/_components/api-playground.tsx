@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Send, Loader2, AlertCircle, CheckCircle, XCircle, Clock, ExternalLink } from 'lucide-react'
+import { Send, Loader2, AlertCircle, CheckCircle, XCircle, Clock, ExternalLink, ArrowRight, SkipForward } from 'lucide-react'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -356,6 +356,45 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                 <div className="ml-5 text-xs text-red-600">{data.data.error}</div>
               )}
             </div>
+          </div>
+        )
+
+      case 'node_skip':
+        return (
+          <div key={index} className="flex items-start gap-2 text-sm ml-4">
+            <Badge variant="outline" className="shrink-0 text-xs">{time}</Badge>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <SkipForward className="h-3 w-3 text-amber-500" />
+                <span className="text-amber-700 text-xs">
+                  {data?.data?.node_label || data?.node_id}
+                </span>
+              </div>
+              {data?.data?.reason && (
+                <div className="ml-5 text-xs text-muted-foreground">{t('apiPlayground.nodeSkipped', { reason: String(data.data.reason) })}</div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'output':
+        return (
+          <div key={index} className="flex flex-col gap-2 text-sm ml-4">
+            <div className="flex items-start gap-2">
+              <Badge variant="outline" className="shrink-0 text-xs">{time}</Badge>
+              <div className="flex items-center gap-2">
+                <ArrowRight className="h-3 w-3 text-primary" />
+                <span className="text-primary text-xs">{t('apiPlayground.nodeOutput')}</span>
+                <span className="text-muted-foreground text-xs">
+                  {data?.node_id || '-'}
+                </span>
+              </div>
+            </div>
+            {data?.data?.output !== undefined && (
+              <pre className="ml-16 text-xs bg-muted p-2 rounded overflow-x-auto">
+                {JSON.stringify(data.data.output, null, 2)}
+              </pre>
+            )}
           </div>
         )
 

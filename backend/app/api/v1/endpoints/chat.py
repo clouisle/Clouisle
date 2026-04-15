@@ -2224,11 +2224,19 @@ async def chat_stream(
 
     Returns Server-Sent Events with the following event types:
     - message_start: {"conversation_id": "...", "message_id": "..."}
-    - content_delta: {"delta": "..."}
+    - rag_start: {}
     - rag_context: {"contexts": [...]}
+    - reasoning_start: {}
+    - reasoning_delta: {"delta": "..."}
+    - reasoning_end: {}
+    - content_delta: {"delta": "..."}
     - tool_call: {"tool_name": "...", "arguments": {...}}
     - tool_result: {"tool_name": "...", "result": {...}}
     - media_result: {"kind": "media.image"|"media.video", ...} (UI-only media payload for rendering in assistant body, not for LLM replay)
+    - compression_start: {"stage": "...", "trigger": "..."}
+    - compression_end: {"stage": "...", "trigger": "...", ...}
+    - output_truncated: {}
+    - iteration_cap_reached: {"content": "..."}
     - message_end: {"usage": {...}}
     - error: {"code": ..., "msg": "..."}
     """

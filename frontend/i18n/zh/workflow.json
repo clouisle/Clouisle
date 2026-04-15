@@ -173,7 +173,9 @@
     "apiPlayground": {
       "workflowStarted": "工作流开始执行",
       "workflowCompleted": "工作流执行完成",
-      "workflowFailed": "工作流执行失败"
+      "workflowFailed": "工作流执行失败",
+      "nodeSkipped": "节点已跳过：{reason}",
+      "nodeOutput": "节点输出"
     },
     "editor": {
       "zoomIn": "放大",
@@ -1118,11 +1120,7 @@
       "eventNodeError": "节点执行失败",
       "eventNodeSkip": "节点被跳过（分支未执行）",
       "eventToken": "LLM 流式输出 token",
-      "eventChunk": "通用流式输出块",
       "eventOutput": "节点最终输出",
-      "eventProgress": "进度更新",
-      "eventIterationStart": "迭代开始",
-      "eventIterationComplete": "迭代完成",
       "eventFormat": "事件格式",
       "pythonStreamExample": "Python 流式监控示例",
       "javascriptStreamExample": "JavaScript 流式监控示例"

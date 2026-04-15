@@ -190,8 +190,10 @@ while (true) {
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
     { event: 'media_result', description: t('events.mediaResult') },
-    { event: 'user_input_request', description: t('events.userInputRequest') },
+    { event: 'compression_start', description: t('events.compressionStart') },
+    { event: 'compression_end', description: t('events.compressionEnd') },
     { event: 'output_truncated', description: t('events.outputTruncated') },
+    { event: 'iteration_cap_reached', description: t('events.iterationCapReached') },
     { event: 'message_end', description: t('events.messageEnd') },
     { event: 'error', description: t('events.error') },
   ]

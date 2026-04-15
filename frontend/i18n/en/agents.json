@@ -451,8 +451,11 @@
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
         "mediaResult": "Media display payload for generated images/videos, used by the client to render content directly in the assistant body",
-        "userInputRequest": "Agent requests user input with predefined options",
+        "userInputRequest": "Structured user-input request. Current clients primarily parse this from XML embedded in content_delta rather than handling a dedicated SSE event.",
+        "compressionStart": "Historical context compaction started before the next model call",
+        "compressionEnd": "Historical context compaction finished with summary and token budget details",
         "outputTruncated": "Output was truncated due to max output token limit",
+        "iterationCapReached": "The round hit the maximum tool-call iterations and ended with a terminal notice",
         "messageEnd": "Message ended with token usage and timing statistics",
         "error": "Error message"
       },

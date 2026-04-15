@@ -451,8 +451,11 @@
         "toolCall": "工具调用，包含工具名称和参数",
         "toolResult": "工具执行结果",
         "mediaResult": "生成图片/视频的媒体展示载荷，前端使用该事件将内容直接渲染到 assistant 正文区域",
-        "userInputRequest": "Agent 请求用户输入，包含预定义选项",
+        "userInputRequest": "结构化用户输入请求。当前客户端主要从 content_delta 中内嵌的 XML 解析该能力，而不是单独处理一个 SSE 事件。",
+        "compressionStart": "下一次模型调用前开始对历史上下文进行压缩整理",
+        "compressionEnd": "历史上下文压缩完成，并返回摘要与 token 预算细节",
         "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
+        "iterationCapReached": "本轮已达到最大工具调用轮次，并以终止提示结束",
         "messageEnd": "消息结束，包含 token 用量和耗时统计",
         "error": "错误信息"
       },
