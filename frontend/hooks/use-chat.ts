@@ -789,7 +789,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                         parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
                         versionNumber: endData.version_number ?? 1,
                         versionCount: endData.version_count ?? 1,
-                        metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: false, usage: endData.usage, timing: endData.timing },
+                        metadata: {
+                          ...msg.metadata,
+                          isLoading: false,
+                          isManuallyStopped: false,
+                          isError: false,
+                          errorMessage: undefined,
+                          preservedPartialProgress: undefined,
+                          usage: endData.usage,
+                          timing: endData.timing,
+                        },
                       }
                     : msg
                 )
@@ -1110,15 +1119,20 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       // Update message to loading state
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                parts: [],
-                metadata: { ...msg.metadata, isLoading: true, isManuallyStopped: false },
-              }
-            : msg
-        )
+        prev.map((msg) => {
+          if (msg.id !== messageId) return msg
+
+          const nextMetadata = { ...msg.metadata }
+          delete nextMetadata.isError
+          delete nextMetadata.errorMessage
+          delete nextMetadata.preservedPartialProgress
+
+          return {
+            ...msg,
+            parts: [],
+            metadata: { ...nextMetadata, isLoading: true, isManuallyStopped: false },
+          }
+        })
       )
 
       streamingStateRef.current = {
@@ -1644,7 +1658,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                     parts: newParts,
                     versionNumber: finalVersionNumber,
                     versionCount: finalVersionCount,
-                    metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: false, usage: endData.usage, timing: endData.timing },
+                    metadata: {
+                      ...msg.metadata,
+                      isLoading: false,
+                      isManuallyStopped: false,
+                      isError: false,
+                      errorMessage: undefined,
+                      preservedPartialProgress: undefined,
+                      usage: endData.usage,
+                      timing: endData.timing,
+                    },
                   }
                 })
               )
