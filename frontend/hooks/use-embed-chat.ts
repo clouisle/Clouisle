@@ -45,6 +45,7 @@ type ContentSegment =
   | { type: 'reasoning'; index: number }
   | { type: 'user-input-request'; userInputRequest: UserInputRequestPart }
   | { type: 'truncated' }
+  | { type: 'iteration-cap-reached' }
 
 interface TaskState {
   rag: 'pending' | 'running' | 'completed' | 'error'
@@ -186,6 +187,8 @@ function buildMessageParts(
       parts.push(seg.userInputRequest)
     } else if (seg.type === 'truncated') {
       parts.push({ type: 'truncated' })
+    } else if (seg.type === 'iteration-cap-reached') {
+      parts.push({ type: 'iteration-cap-reached' })
     }
   }
 
@@ -280,6 +283,8 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
         }
 
         setStatus('streaming')
+
+        let receivedTerminalEvent = false
 
         for await (const event of parseSSEStream(response)) {
           const eventType = event.event as string
@@ -441,7 +446,23 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
 
+            case 'iteration_cap_reached': {
+              const iterationCapData = data as { content?: string }
+              state.segments.push({ type: 'iteration-cap-reached' })
+              if (iterationCapData.content) {
+                state.segments.push({ type: 'text', text: iterationCapData.content })
+              }
+              if (state.assistantMessageId) {
+                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
+                setMessages(prev =>
+                  prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
+                )
+              }
+              break
+            }
+
             case 'message_end': {
+              receivedTerminalEvent = true
               const endData = data as unknown as SSEMessageEnd
               state.taskState.generating = 'completed'
               state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
@@ -459,6 +480,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
             }
 
             case 'error': {
+              receivedTerminalEvent = true
               state.taskState.compression = state.taskState.compression === 'running' ? 'error' : state.taskState.compression
               const errorData = data as { code?: number; msg?: string }
               const errorObj = { code: errorData.code, message: errorData.msg || 'Unknown error' }
@@ -466,6 +488,22 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
           }
+        }
+
+        if (!receivedTerminalEvent && state.assistantMessageId) {
+          state.taskState.generating = state.taskState.generating === 'running' ? 'completed' : state.taskState.generating
+          state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
+          state.taskState.compression = state.taskState.compression === 'running' ? 'completed' : state.taskState.compression
+          state.reasoningBlocks.forEach((block) => {
+            if (block.state === 'streaming') {
+              block.state = 'done'
+              block.duration = Date.now() - block.startTime
+            }
+          })
+          const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
+          setMessages(prev =>
+            prev.map(m => m.id === state.assistantMessageId ? { ...m, parts, metadata: { ...m.metadata, isLoading: false } } : m)
+          )
         }
 
         setStatus('idle')

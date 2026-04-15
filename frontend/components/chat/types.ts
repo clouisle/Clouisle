@@ -171,6 +171,20 @@ export interface TruncatedPart {
 }
 
 /**
+ * Manually stopped marker part
+ */
+export interface StoppedPart {
+  type: 'stopped'
+}
+
+/**
+ * Maximum tool iteration cap reached marker part
+ */
+export interface IterationCapReachedPart {
+  type: 'iteration-cap-reached'
+}
+
+/**
  * All possible message parts
  */
 export type MessagePart =
@@ -189,6 +203,8 @@ export type MessagePart =
   | TaskPart
   | UserInputRequestPart
   | TruncatedPart
+  | StoppedPart
+  | IterationCapReachedPart
 
 /**
  * Chat message
@@ -291,6 +307,14 @@ export function isUserInputRequestPart(part: MessagePart): part is UserInputRequ
 
 export function isTruncatedPart(part: MessagePart): part is TruncatedPart {
   return part.type === 'truncated'
+}
+
+export function isStoppedPart(part: MessagePart): part is StoppedPart {
+  return part.type === 'stopped'
+}
+
+export function isIterationCapReachedPart(part: MessagePart): part is IterationCapReachedPart {
+  return part.type === 'iteration-cap-reached'
 }
 
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {

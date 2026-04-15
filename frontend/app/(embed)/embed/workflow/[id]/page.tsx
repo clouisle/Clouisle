@@ -270,7 +270,7 @@ function EmbedWorkflowContent() {
             />
           </div>
         ) : (
-          <span className="text-4xl">{workflow.icon}</span>
+          <span className="flex h-20 w-20 items-center justify-center leading-none text-4xl">{workflow.icon}</span>
         )
       ) : (
         <Bot className="h-10 w-10 text-muted-foreground" />
@@ -298,7 +298,7 @@ function EmbedWorkflowContent() {
                 />
               </div>
             ) : (
-              <span className="text-lg">{workflow.icon}</span>
+              <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{workflow.icon}</span>
             )
           )}
           <span className="font-medium text-sm">{workflow.name}</span>

@@ -399,6 +399,9 @@ msgstr "Captcha is required"
 msgid "chat_file_upload_instruction"
 msgstr "[The user uploaded the following files, please use the markitdown tool to parse the file content:]"
 
+msgid "chat_max_iterations_reached"
+msgstr "Reached the maximum tool-call iterations for this round."
+
 msgid "chat_success"
 msgstr "Chat completed successfully"
 

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Loader2, AlertCircle, Sparkles, GitBranch, ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
-import { publicAgentsApi, workflowsApi, type Agent, type Workflow } from '@/lib/api'
+import { publicAgentsApi, workflowsApi, type PublicAgent, type Workflow } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -25,7 +25,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   const tVars = useTranslations('chat.variables')
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
-  const [metadata, setMetadata] = React.useState<Agent | Workflow | null>(null)
+  const [metadata, setMetadata] = React.useState<PublicAgent | Workflow | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<Error | null>(null)
   const [input, setInput] = React.useState('')
@@ -50,7 +50,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
 
         if (type === 'agent') {
           const data = await publicAgentsApi.getPublicAgent(resolvedParams.id)
-          setMetadata(data as Agent)
+          setMetadata(data as PublicAgent)
         } else {
           const data = await workflowsApi.getWorkflow(resolvedParams.id)
           setMetadata(data as Workflow)
@@ -165,7 +165,9 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
     )
   }
 
-  const isIconUrl = metadata.icon && (metadata.icon.startsWith('http') || metadata.icon.startsWith('/'))
+  const avatarUrl = 'avatar_url' in metadata ? metadata.avatar_url : null
+  const displayIcon = metadata.icon || avatarUrl
+  const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       {/* Main Content */}
@@ -175,11 +177,11 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
           <div className="flex items-center gap-3">
             {/* Icon */}
             <div className="flex items-center gap-2">
-              {metadata.icon ? (
+              {displayIcon ? (
                 isIconUrl ? (
                   <div className="relative h-6 w-6 rounded overflow-hidden">
                     <Image
-                      src={metadata.icon}
+                      src={displayIcon}
                       alt={metadata.name}
                       fill
                       unoptimized
@@ -187,7 +189,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                     />
                   </div>
                 ) : (
-                  <span className="text-lg">{metadata.icon}</span>
+                  <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span>
                 )
               ) : type === 'agent' ? (
                 <Sparkles className="h-5 w-5 text-primary" />
@@ -218,11 +220,11 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Icon */}
                 <div className="mb-8">
-                  {metadata.icon ? (
+                  {displayIcon ? (
                     isIconUrl ? (
                       <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border">
                         <Image
-                          src={metadata.icon}
+                          src={displayIcon}
                           alt={metadata.name}
                           fill
                           unoptimized
@@ -231,7 +233,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                       </div>
                     ) : (
                       <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center ring-2 ring-border">
-                        <span className="text-4xl">{metadata.icon}</span>
+                        <span className="flex h-full w-full items-center justify-center leading-none text-4xl">{displayIcon}</span>
                       </div>
                     )
                   ) : (

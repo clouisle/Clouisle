@@ -1391,7 +1391,7 @@ function WorkflowEditorContent() {
                         unoptimized
                       />
                     ) : (
-                      <span className="text-base">{workflow.icon}</span>
+                      <span className="flex h-5 w-5 items-center justify-center leading-none text-base">{workflow.icon}</span>
                     )
                   ) : (
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10">

@@ -27,6 +27,7 @@ from app.models.api_key import APIKey
 from app.models.user import User
 from app.models.workflow import Workflow, WorkflowStatus
 from app.schemas.agent import ChatRequest, EmbedAgentInfo
+from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.schemas.response import BusinessError, ResponseCode, success
 
 logger = logging.getLogger(__name__)
@@ -252,7 +253,7 @@ async def get_embed_conversation_messages(
     ).order_by("created_at")
 
     return success(
-        data=[MessageOut.model_validate(msg) for msg in messages],
+        data=await build_message_round_payloads(messages),
     )
 
 

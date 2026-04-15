@@ -15,7 +15,7 @@ import type {
   SourceDocumentPart,
   UserInputRequestPart,
 } from '@/components/chat'
-import { isSourcePart, isTextPart } from '@/components/chat'
+import { isSourcePart } from '@/components/chat'
 import {
   isMediaImageToolResult,
   isMediaVideoToolResult,
@@ -25,6 +25,25 @@ import {
 /**
  * Backend Message format (from API response)
  */
+export interface BackendMessageStep {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  tool_calls?: Array<{
+    id: string
+    name: string
+    display_name?: string
+    arguments: Record<string, unknown>
+  }> | null
+  tool_call_id?: string | null
+  tool_name?: string | null
+  reasoning_content?: string | null
+  created_at: string
+  round_index?: number
+  round_role?: 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result' | null
+  iteration_index?: number | null
+}
+
 export interface BackendMessage {
   id: string
   conversation_id: string
@@ -68,6 +87,9 @@ export interface BackendMessage {
     completion: number
   } | null
   duration_ms?: number | null
+  is_manually_stopped?: boolean | null
+  round_status?: 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error' | null
+  steps?: BackendMessageStep[] | null
   created_at: string
   // Version info
   parent_id?: string | null
@@ -131,6 +153,51 @@ function parseUserInputRequest(content: string): {
   return { userInputRequest, cleanContent }
 }
 
+function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
+  return parts.some((part) => part.type === 'stopped') ? parts : [...parts, { type: 'stopped' }]
+}
+
+function appendIterationCapReachedPart(parts: MessagePart[]): MessagePart[] {
+  return parts.some((part) => part.type === 'iteration-cap-reached')
+    ? parts
+    : [...parts, { type: 'iteration-cap-reached' }]
+}
+
+function buildAssistantStepParts(step: BackendMessageStep): MessagePart[] {
+  const parts: MessagePart[] = []
+
+  if (step.reasoning_content) {
+    parts.push({
+      type: 'reasoning',
+      text: step.reasoning_content,
+      state: 'done',
+    } as ReasoningPart)
+  }
+
+  if (step.content) {
+    parts.push({
+      type: 'text',
+      text: step.content,
+      state: 'done',
+    } as TextPart)
+  }
+
+  if (step.tool_calls && Array.isArray(step.tool_calls)) {
+    for (const tc of step.tool_calls) {
+      parts.push({
+        type: 'tool-call',
+        toolCallId: tc.id,
+        toolName: tc.name,
+        toolDisplayName: tc.display_name,
+        input: tc.arguments || {},
+        state: 'done',
+      } as ToolCallPart)
+    }
+  }
+
+  return parts
+}
+
 /**
  * Convert a backend Message to a frontend ChatMessage
  * Handles all message parts: text, images, files, reasoning, tool calls, RAG context
@@ -138,6 +205,18 @@ function parseUserInputRequest(content: string): {
 export function convertBackendMessage(message: BackendMessage): ChatMessage | null {
   // Skip tool role messages (they are represented via tool_result parts in assistant messages)
   if (message.role === 'tool' || message.role === 'system') {
+    return null
+  }
+
+  const hasRenderableAssistantContent = Boolean(
+    message.content ||
+    message.reasoning_content ||
+    (message.tool_calls && message.tool_calls.length > 0) ||
+    (message.steps && message.steps.length > 0) ||
+    message.is_manually_stopped
+  )
+
+  if (message.role === 'assistant' && !hasRenderableAssistantContent) {
     return null
   }
 
@@ -176,10 +255,49 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       }
     }
   } else if (message.role === 'assistant') {
-    // Assistant message: reasoning + text + tool calls
+    // Assistant message: step traces first, then final reasoning/text
     // Note: RAG context is stored with user messages and attached in convertBackendMessages()
 
-    // Add reasoning content first (if exists)
+    if (message.steps && Array.isArray(message.steps) && message.steps.length > 0) {
+      const sortedSteps = [...message.steps].sort(
+        (a, b) => (a.round_index ?? 0) - (b.round_index ?? 0)
+      )
+      const toolResultMap = new Map<string, BackendMessageStep>()
+      for (const step of sortedSteps) {
+        if (step.role === 'tool' && step.tool_call_id) {
+          toolResultMap.set(step.tool_call_id, step)
+        }
+      }
+
+      for (const step of sortedSteps) {
+        if (step.role !== 'assistant') continue
+        const stepParts = buildAssistantStepParts(step)
+        for (const part of stepParts) {
+          parts.push(part)
+          if (part.type === 'tool-call') {
+            const toolResultMsg = toolResultMap.get(part.toolCallId)
+            if (toolResultMsg) {
+              const parsedOutput = parseToolResultOutput(toolResultMsg.content)
+              if (isMediaImageToolResult(parsedOutput) || isMediaVideoToolResult(parsedOutput)) {
+                parts.push({
+                  type: 'media-result',
+                  output: parsedOutput,
+                })
+              } else {
+                parts.push({
+                  type: 'tool-result',
+                  toolCallId: part.toolCallId,
+                  toolName: toolResultMsg.tool_name || part.toolName,
+                  output: parsedOutput,
+                  isError: false,
+                } as ToolResultPart)
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (message.reasoning_content) {
       parts.push({
         type: 'reasoning',
@@ -189,7 +307,6 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       } as ReasoningPart)
     }
 
-    // Parse user input request from content (if exists)
     let contentToAdd = message.content
     let userInputRequestPart: UserInputRequestPart | null = null
 
@@ -199,7 +316,6 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       contentToAdd = cleanContent
     }
 
-    // Add text content first (after removing XML)
     if (contentToAdd) {
       parts.push({
         type: 'text',
@@ -208,12 +324,10 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
       } as TextPart)
     }
 
-    // Add user input request part after text content
     if (userInputRequestPart) {
       parts.push(userInputRequestPart)
     }
 
-    // Add tool calls
     if (message.tool_calls && Array.isArray(message.tool_calls)) {
       for (const tc of message.tool_calls) {
         parts.push({
@@ -228,11 +342,30 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
     }
   }
 
+  let finalParts = parts
+  if (message.role === 'assistant' && message.round_status === 'max_iterations_reached') {
+    finalParts = appendIterationCapReachedPart(finalParts)
+  }
+  if (message.role === 'assistant' && message.is_manually_stopped) {
+    finalParts = appendStoppedPart(finalParts)
+  }
+
   return {
     id: message.id,
     role: message.role as 'user' | 'assistant',
-    parts,
+    parts: finalParts,
     createdAt: new Date(message.created_at),
+    metadata: message.role === 'assistant'
+      ? {
+          isManuallyStopped: Boolean(message.is_manually_stopped),
+          isError: message.round_status === 'error',
+          preservedPartialProgress: message.round_status === 'error' && Boolean(
+            message.reasoning_content ||
+            (message.steps && message.steps.length > 0)
+          ),
+          errorMessage: message.round_status === 'error' ? (message.content || undefined) : undefined,
+        }
+      : undefined,
     versionNumber: message.version_number,
     versionCount: message.version_count,
   }
@@ -245,7 +378,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
  */
 export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []
-  
+
   // Create a map for tool results by tool_call_id
   const toolResults = new Map<string, BackendMessage>()
   for (const msg of messages) {
@@ -256,8 +389,6 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
 
   // Track RAG context from user messages to attach to the following assistant message
   let pendingRagContext: BackendMessage['rag_context'] = null
-  // Track assistant tool-call messages to merge into the next assistant reply
-  let pendingToolParts: MessagePart[] = []
 
   const aggregateRagContext = (
     contexts: BackendMessage['rag_context']
@@ -309,22 +440,19 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
     const chatMessage = convertBackendMessage(message)
     if (!chatMessage) continue
 
-    const isToolCallAssistant =
-      message.role === 'assistant' &&
-      Array.isArray(message.tool_calls) &&
-      message.tool_calls.length > 0
-
     // If assistant message, add pending RAG context from previous user message
     if (message.role === 'assistant') {
-      // If assistant message has tool calls, add corresponding tool results
-      if (message.tool_calls && Array.isArray(message.tool_calls)) {
-        // Find tool call parts and add results after each
+      // Legacy flat tool-call message compatibility path
+      if (
+        (!message.steps || message.steps.length === 0) &&
+        message.tool_calls &&
+        Array.isArray(message.tool_calls)
+      ) {
         const partsWithResults: MessagePart[] = []
-        
+
         for (const part of chatMessage.parts) {
           partsWithResults.push(part)
-          
-          // If this is a tool-call part, add its result
+
           if (part.type === 'tool-call') {
             const toolCallPart = part as ToolCallPart
             const toolResultMsg = toolResults.get(toolCallPart.toolCallId)
@@ -347,61 +475,31 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
             }
           }
         }
-        
+
         chatMessage.parts = partsWithResults
       }
 
-      // Add RAG context as source documents (from pending user message)
-      if (!isToolCallAssistant && pendingRagContext && pendingRagContext.length > 0) {
-        for (const ctx of pendingRagContext) {
-          chatMessage.parts.push({
-            type: 'source-document',
-            sourceId: ctx.document_id,
-            documentId: ctx.document_id,
-            documentName: ctx.document_name,
-            content: ctx.content,
-            metadata: {
-              kb_id: ctx.kb_id,
-              kb_name: ctx.kb_name,
-              score: ctx.score,
-            },
-          } as SourceDocumentPart)
-        }
-        // Clear pending RAG context after attaching
+      if (pendingRagContext && pendingRagContext.length > 0) {
+        const sources = pendingRagContext.map((ctx) => ({
+          type: 'source-document',
+          sourceId: ctx.document_id,
+          documentId: ctx.document_id,
+          documentName: ctx.document_name,
+          content: ctx.content,
+          metadata: {
+            kb_id: ctx.kb_id,
+            kb_name: ctx.kb_name,
+            score: ctx.score,
+          },
+        } as SourceDocumentPart))
+        const nonSourceParts = chatMessage.parts.filter((part) => !isSourcePart(part))
+        const existingSources = chatMessage.parts.filter(isSourcePart)
+        chatMessage.parts = [...nonSourceParts, ...existingSources, ...sources]
         pendingRagContext = null
       }
     }
 
-    // Defer tool-call assistant messages so they can be merged
-    // into the following assistant response (matching call position).
-    if (isToolCallAssistant) {
-      pendingToolParts = pendingToolParts.concat(chatMessage.parts)
-      continue
-    }
-
-    if (pendingToolParts.length > 0 && message.role === 'assistant') {
-      const sources = chatMessage.parts.filter(isSourcePart)
-      const nonSourceParts: MessagePart[] = chatMessage.parts.filter((p) => !isSourcePart(p))
-      const insertIndex = nonSourceParts.findIndex(isTextPart)
-      if (insertIndex === -1) {
-        nonSourceParts.push(...pendingToolParts)
-      } else {
-        nonSourceParts.splice(insertIndex, 0, ...pendingToolParts)
-      }
-      chatMessage.parts = [...nonSourceParts, ...sources]
-      pendingToolParts = []
-    }
-
     result.push(chatMessage)
-  }
-
-  if (pendingToolParts.length > 0) {
-    result.push({
-      id: `assistant-tool-${Date.now()}`,
-      role: 'assistant',
-      parts: pendingToolParts,
-      createdAt: new Date(),
-    })
   }
 
   return result

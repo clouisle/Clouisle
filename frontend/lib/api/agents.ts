@@ -321,6 +321,30 @@ export interface ConversationUpdateInput {
 // ============ Message Types ============
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
+export type MessageRoundRole = 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result'
+export type MessageRoundStatus = 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error'
+
+export interface MessageRoundStep {
+  id: string
+  role: MessageRole
+  content: string
+  tool_calls?: Record<string, unknown>[] | null
+  tool_call_id?: string | null
+  tool_name?: string | null
+  reasoning_content?: string | null
+  model_used?: string | null
+  token_usage?: { prompt: number; completion: number } | null
+  duration_ms?: number | null
+  is_manually_stopped?: boolean
+  rag_context?: Record<string, unknown>[] | null
+  created_at: string
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
+}
 
 export interface Message {
   id: string
@@ -340,8 +364,16 @@ export interface Message {
   model_used?: string | null
   token_usage?: { prompt: number; completion: number } | null
   duration_ms?: number | null
+  is_manually_stopped?: boolean
   rag_context?: Record<string, unknown>[] | null
   created_at: string
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
+  steps?: MessageRoundStep[] | null
   // Version fields
   parent_id?: string | null
   is_active?: boolean
@@ -399,6 +431,12 @@ export interface HistoryMessage {
   tool_calls?: HistoryToolCall[] | null
   tool_call_id?: string | null
   tool_name?: string | null
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
 }
 
 export interface ChatRequest {
@@ -436,6 +474,7 @@ export type SSEEventType =
   | 'compression_start'
   | 'compression_end'
   | 'output_truncated'
+  | 'iteration_cap_reached'
   | 'message_end'
   | 'error'
 
@@ -502,6 +541,10 @@ export interface SSEMessageEnd {
     duration_ms: number
     tokens_per_second: number | null
   }
+}
+
+export interface SSEIterationCapReached {
+  content?: string
 }
 
 export interface SSEError {
@@ -813,34 +856,80 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
   let buffer = ''
   // Track event/data across chunks to handle TCP splitting
   let currentEvent: SSEEventType | null = null
-  let currentData = ''
+  let currentDataLines: string[] = []
+
+  const flushEvent = (): SSEEvent | null => {
+    if (!currentEvent || currentDataLines.length === 0) {
+      currentEvent = null
+      currentDataLines = []
+      return null
+    }
+
+    try {
+      return {
+        event: currentEvent,
+        data: JSON.parse(currentDataLines.join('\n')),
+      }
+    } catch {
+      return null
+    } finally {
+      currentEvent = null
+      currentDataLines = []
+    }
+  }
+
+  const processLine = (rawLine: string): SSEEvent | null => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+    if (line.startsWith('event:')) {
+      currentEvent = line.slice(6).trim() as SSEEventType
+      return null
+    }
+
+    if (line.startsWith('data:')) {
+      currentDataLines.push(line.slice(5).trimStart())
+      return null
+    }
+
+    if (line === '') {
+      return flushEvent()
+    }
+
+    return null
+  }
 
   while (true) {
     const { done, value } = await reader.read()
-    if (done) break
+
+    if (done) {
+      buffer += decoder.decode()
+      break
+    }
 
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = lines.pop() || ''
 
     for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim() as SSEEventType
-      } else if (line.startsWith('data: ')) {
-        currentData = line.slice(6)
-      } else if (line === '' && currentEvent && currentData) {
-        try {
-          yield {
-            event: currentEvent,
-            data: JSON.parse(currentData),
-          }
-        } catch {
-          // Ignore parse errors
-        }
-        currentEvent = null
-        currentData = ''
+      const event = processLine(line)
+      if (event) {
+        yield event
       }
     }
+  }
+
+  if (buffer) {
+    for (const line of buffer.split('\n')) {
+      const event = processLine(line)
+      if (event) {
+        yield event
+      }
+    }
+  }
+
+  const finalEvent = flushEvent()
+  if (finalEvent) {
+    yield finalEvent
   }
 }
 

@@ -19,6 +19,8 @@ from .agent import (
     ConversationSessionMemoryStatus,
     Message,
     MessageRole,
+    MessageRoundRole,
+    MessageRoundStatus,
 )
 from .workflow import (
     Workflow,
@@ -89,6 +91,8 @@ __all__ = [
     "ConversationSessionMemoryStatus",
     "Message",
     "MessageRole",
+    "MessageRoundRole",
+    "MessageRoundStatus",
     "Workflow",
     "WorkflowRun",
     "WorkflowVersion",

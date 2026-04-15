@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -141,6 +141,58 @@ class PreparedModelContext:
     messages: list[Message]
     token_budget: TokenBudget
     compression: CompressionMeta
+    protected_indexes: set[int] = field(default_factory=set)
+
+
+def _clone_messages(
+    messages: Sequence[Message],
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], set[int]]:
+    return [message.model_copy(deep=True) for message in messages], {
+        index
+        for index in (protected_indexes or set())
+        if 0 <= index < len(messages)
+    }
+
+
+def _matches_protected_round(
+    round_id: Any,
+    protected_round_id: UUID | str | None,
+) -> bool:
+    return (
+        protected_round_id is not None
+        and round_id is not None
+        and str(round_id) == str(protected_round_id)
+    )
+
+
+def _append_message(
+    messages: list[Message],
+    protected_indexes: set[int],
+    message: Message,
+    *,
+    protect: bool = False,
+) -> None:
+    messages.append(message)
+    if protect:
+        protected_indexes.add(len(messages) - 1)
+
+
+def _extend_with_original_indexes(
+    target_messages: list[Message],
+    target_protected_indexes: set[int],
+    source_messages: Sequence[Message],
+    original_indexes: Sequence[int],
+    protected_indexes: set[int] | None = None,
+) -> None:
+    protected_indexes = protected_indexes or set()
+    for message, original_index in zip(source_messages, original_indexes, strict=False):
+        _append_message(
+            target_messages,
+            target_protected_indexes,
+            message.model_copy(deep=True),
+            protect=original_index in protected_indexes,
+        )
 
 
 LANGUAGE_INSTRUCTIONS = {
@@ -593,23 +645,34 @@ def _assess_context_pressure(
 def _compact_message_reasoning(
     messages: Sequence[Message],
     keep_recent_reasoning_messages: int = DEFAULT_RECENT_REASONING_MESSAGES,
-) -> tuple[list[Message], bool]:
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], bool, set[int]]:
     kept_reasoning = 0
     compacted: list[Message] = []
     reasoning_trimmed = False
+    protected_indexes = protected_indexes or set()
+    compacted_protected_indexes: set[int] = set()
 
-    for message in reversed(messages):
-        message_copy = message.model_copy(deep=True)
+    for original_index in range(len(messages) - 1, -1, -1):
+        message_copy = messages[original_index].model_copy(deep=True)
+        is_protected = original_index in protected_indexes
         if message_copy.role == MessageRole.ASSISTANT and message_copy.reasoning_content:
-            if kept_reasoning < keep_recent_reasoning_messages:
-                kept_reasoning += 1
+            if is_protected or kept_reasoning < keep_recent_reasoning_messages:
+                if not is_protected:
+                    kept_reasoning += 1
             else:
                 message_copy.reasoning_content = None
                 reasoning_trimmed = True
         compacted.append(message_copy)
+        if is_protected:
+            compacted_protected_indexes.add(len(messages) - 1 - original_index)
 
     compacted.reverse()
-    return compacted, reasoning_trimmed
+    remapped_protected_indexes = {
+        len(messages) - 1 - reverse_index
+        for reverse_index in compacted_protected_indexes
+    }
+    return compacted, reasoning_trimmed, remapped_protected_indexes
 
 
 
@@ -676,18 +739,22 @@ def _apply_selective_tool_result_compaction(
     tool_result_compact_min_tokens: int,
     recent_raw_turns: int,
     recent_tool_turns: int,
-) -> tuple[list[Message], bool]:
-    prefix, blocks = _split_turn_blocks(messages)
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], bool, set[int]]:
+    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
     analyses = [
         _analyze_turn_block(block, model_id=model_id, provider=provider)
         for block in blocks
     ]
+    protected_indexes = protected_indexes or set()
 
     keep_block_indexes: set[int] = set(
         range(max(len(blocks) - recent_raw_turns, 0), len(blocks))
     )
     for index, analysis in enumerate(analyses):
         if analysis["contains_media"]:
+            keep_block_indexes.add(index)
+        if any(message_index in protected_indexes for message_index in block_indexes[index]):
             keep_block_indexes.add(index)
 
     tool_turns_kept = 0
@@ -708,14 +775,24 @@ def _apply_selective_tool_result_compaction(
                 tool_positions_from_end[(block_index, message_index)] = tool_result_index_from_end
                 tool_result_index_from_end += 1
 
-    compacted: list[Message] = list(prefix)
+    compacted: list[Message] = []
+    compacted_protected_indexes: set[int] = set()
+    _extend_with_original_indexes(
+        compacted,
+        compacted_protected_indexes,
+        prefix,
+        prefix_indexes,
+        protected_indexes,
+    )
     tool_results_trimmed = False
     for block_index, block in enumerate(blocks):
         keep_block_raw = block_index in keep_block_indexes
         for message_index, message in enumerate(block):
+            original_index = block_indexes[block_index][message_index]
             message_copy = message.model_copy(deep=True)
             if (
-                not keep_block_raw
+                original_index not in protected_indexes
+                and not keep_block_raw
                 and message_copy.role == MessageRole.TOOL
                 and isinstance(message_copy.content, str)
             ):
@@ -737,9 +814,14 @@ def _apply_selective_tool_result_compaction(
                     elif len(message_copy.content) > 1200:
                         message_copy.content = _truncate_text(message_copy.content, 1200)
                         tool_results_trimmed = True
-            compacted.append(message_copy)
+            _append_message(
+                compacted,
+                compacted_protected_indexes,
+                message_copy,
+                protect=original_index in protected_indexes,
+            )
 
-    return compacted, tool_results_trimmed
+    return compacted, tool_results_trimmed, compacted_protected_indexes
 
 
 
@@ -751,7 +833,8 @@ async def _apply_session_memory_compaction(
     provider: str | None,
     recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
     recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-) -> tuple[list[Message], bool]:
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], bool, set[int]]:
     """
     Apply conversation-scoped session memory compaction.
 
@@ -765,21 +848,31 @@ async def _apply_session_memory_compaction(
     """
     from app.services.session_memory import get_ready_session_memory
 
+    protected_indexes = protected_indexes or set()
     try:
         snapshot = await get_ready_session_memory(conversation.id)
         if not snapshot or not snapshot.summary_text:
-            return [message.model_copy(deep=True) for message in messages], False
+            cloned_messages, cloned_protected_indexes = _clone_messages(
+                messages, protected_indexes
+            )
+            return cloned_messages, False, cloned_protected_indexes
     except Exception as e:
         logger.warning(
             "Failed to retrieve session memory for conversation %s: %s",
             conversation.id,
             str(e),
         )
-        return [message.model_copy(deep=True) for message in messages], False
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
+        return cloned_messages, False, cloned_protected_indexes
 
-    prefix, blocks = _split_turn_blocks(messages)
+    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
     if len(blocks) <= recent_raw_turns:
-        return [message.model_copy(deep=True) for message in messages], False
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
+        return cloned_messages, False, cloned_protected_indexes
 
     analyses = [
         _analyze_turn_block(block, model_id=model_id, provider=provider)
@@ -792,6 +885,8 @@ async def _apply_session_memory_compaction(
 
     for index in range(len(blocks) - 1, -1, -1):
         if analyses[index]["contains_media"]:
+            keep_indexes.add(index)
+        if any(message_index in protected_indexes for message_index in block_indexes[index]):
             keep_indexes.add(index)
 
     tool_kept = 0
@@ -806,18 +901,35 @@ async def _apply_session_memory_compaction(
         blocks[index] for index in range(len(blocks)) if index not in keep_indexes
     ]
     if not summary_blocks:
-        return [message.model_copy(deep=True) for message in messages], False
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, False, cloned_protected_indexes
 
-    compacted: list[Message] = list(prefix)
-    compacted.append(
-        Message(role=MessageRole.ASSISTANT, content=snapshot.summary_text)
+    compacted: list[Message] = []
+    compacted_protected_indexes: set[int] = set()
+    _extend_with_original_indexes(
+        compacted,
+        compacted_protected_indexes,
+        prefix,
+        prefix_indexes,
+        protected_indexes,
+    )
+    _append_message(
+        compacted,
+        compacted_protected_indexes,
+        Message(role=MessageRole.ASSISTANT, content=snapshot.summary_text),
     )
 
     for index, block in enumerate(blocks):
         if index in keep_indexes:
-            compacted.extend(message.model_copy(deep=True) for message in block)
+            _extend_with_original_indexes(
+                compacted,
+                compacted_protected_indexes,
+                block,
+                block_indexes[index],
+                protected_indexes,
+            )
 
-    return compacted, True
+    return compacted, True, compacted_protected_indexes
 
 
 
@@ -835,8 +947,13 @@ async def _build_messages_with_file_content(
     include_current_user_message: bool,
     exclude_message_ids: Sequence[UUID] | None,
     history_before_message_created_at: datetime | None,
-) -> list[Message]:
-    messages: list[Message] = [
+    protected_round_id: UUID | str | None = None,
+) -> tuple[list[Message], set[int]]:
+    messages: list[Message] = []
+    protected_indexes: set[int] = set()
+    _append_message(
+        messages,
+        protected_indexes,
         Message(
             role=MessageRole.SYSTEM,
             content=_build_system_prompt(
@@ -846,8 +963,8 @@ async def _build_messages_with_file_content(
                 file_content=file_content,
                 user_locale=user_locale,
             ),
-        )
-    ]
+        ),
+    )
 
     current_content = _build_current_user_content(
         user_message=user_message,
@@ -857,17 +974,50 @@ async def _build_messages_with_file_content(
 
     if history_override is not None:
         valid_tool_call_ids: set[str] = set()
+        has_current_round_user_in_override = any(
+            _normalize_override_role(_get_override_value(hist_msg, "role")) == "user"
+            and _matches_protected_round(
+                _get_override_value(hist_msg, "round_id"),
+                protected_round_id,
+            )
+            for hist_msg in history_override
+        )
+        current_user_inserted = False
         for hist_msg in history_override:
             role = _normalize_override_role(_get_override_value(hist_msg, "role"))
             content = _get_override_value(hist_msg, "content")
+            protect = _matches_protected_round(
+                _get_override_value(hist_msg, "round_id"),
+                protected_round_id,
+            )
+            if (
+                protect
+                and role != "user"
+                and not current_user_inserted
+                and not has_current_round_user_in_override
+            ):
+                _append_message(
+                    messages,
+                    protected_indexes,
+                    Message(role=MessageRole.USER, content=current_content),
+                    protect=True,
+                )
+                current_user_inserted = True
             if role == "user":
-                messages.append(Message(role=MessageRole.USER, content=content))
+                _append_message(
+                    messages,
+                    protected_indexes,
+                    Message(role=MessageRole.USER, content=content),
+                    protect=protect,
+                )
             elif role == "assistant":
                 tool_calls, new_tool_call_ids = _build_assistant_tool_calls(
                     _get_override_value(hist_msg, "tool_calls")
                 )
                 valid_tool_call_ids.update(new_tool_call_ids)
-                messages.append(
+                _append_message(
+                    messages,
+                    protected_indexes,
                     Message(
                         role=MessageRole.ASSISTANT,
                         content=content,
@@ -876,12 +1026,15 @@ async def _build_messages_with_file_content(
                             "reasoning_content",
                         ),
                         tool_calls=tool_calls,
-                    )
+                    ),
+                    protect=protect,
                 )
             elif role == "tool":
                 tool_call_id = _get_override_value(hist_msg, "tool_call_id")
                 if tool_call_id and tool_call_id in valid_tool_call_ids:
-                    messages.append(
+                    _append_message(
+                        messages,
+                        protected_indexes,
                         Message(
                             role=MessageRole.TOOL,
                             content=summarize_tool_result_for_llm(
@@ -889,10 +1042,17 @@ async def _build_messages_with_file_content(
                                 content or "",
                             ),
                             tool_call_id=tool_call_id,
-                        )
+                        ),
+                        protect=protect,
                     )
-        messages.append(Message(role=MessageRole.USER, content=current_content))
-        return messages
+        if not current_user_inserted and not has_current_round_user_in_override:
+            _append_message(
+                messages,
+                protected_indexes,
+                Message(role=MessageRole.USER, content=current_content),
+                protect=protected_round_id is not None,
+            )
+        return messages, protected_indexes
 
     history_query = ConversationMessage.filter(
         conversation_id=conversation.id,
@@ -909,24 +1069,38 @@ async def _build_messages_with_file_content(
     valid_tool_call_ids: set[str] = set()
 
     for msg in history:
+        protect = _matches_protected_round(msg.round_id, protected_round_id)
         if msg.role == ConversationMessageRole.USER:
             if current_user_message_id and msg.id == current_user_message_id:
                 if include_current_user_message:
-                    messages.append(Message(role=MessageRole.USER, content=current_content))
+                    _append_message(
+                        messages,
+                        protected_indexes,
+                        Message(role=MessageRole.USER, content=current_content),
+                        protect=protect or protected_round_id is not None,
+                    )
                 continue
-            messages.append(Message(role=MessageRole.USER, content=msg.content))
+            _append_message(
+                messages,
+                protected_indexes,
+                Message(role=MessageRole.USER, content=msg.content),
+                protect=protect,
+            )
             continue
 
         if msg.role == ConversationMessageRole.ASSISTANT:
             tool_calls, new_tool_call_ids = _build_assistant_tool_calls(msg.tool_calls)
             valid_tool_call_ids.update(new_tool_call_ids)
-            messages.append(
+            _append_message(
+                messages,
+                protected_indexes,
                 Message(
                     role=MessageRole.ASSISTANT,
                     content=msg.content,
                     reasoning_content=msg.reasoning_content,
                     tool_calls=tool_calls,
-                )
+                ),
+                protect=protect,
             )
             continue
 
@@ -935,18 +1109,26 @@ async def _build_messages_with_file_content(
             and msg.tool_call_id
             and msg.tool_call_id in valid_tool_call_ids
         ):
-            messages.append(
+            _append_message(
+                messages,
+                protected_indexes,
                 Message(
                     role=MessageRole.TOOL,
                     content=summarize_tool_result_for_llm(msg.tool_name, msg.content),
                     tool_call_id=msg.tool_call_id,
-                )
+                ),
+                protect=protect,
             )
 
     if not include_current_user_message:
-        messages.append(Message(role=MessageRole.USER, content=current_content))
+        _append_message(
+            messages,
+            protected_indexes,
+            Message(role=MessageRole.USER, content=current_content),
+            protect=protected_round_id is not None,
+        )
 
-    return messages
+    return messages, protected_indexes
 
 
 
@@ -959,35 +1141,46 @@ def _is_tool_turn(messages: Sequence[Message]) -> bool:
 
 
 
-def _split_turn_blocks(messages: Sequence[Message]) -> tuple[list[Message], list[list[Message]]]:
+def _split_turn_blocks(
+    messages: Sequence[Message],
+) -> tuple[list[Message], list[int], list[list[Message]], list[list[int]]]:
     if not messages:
-        return [], []
+        return [], [], [], []
 
     start_index = 0
     prefix: list[Message] = []
+    prefix_indexes: list[int] = []
     if messages[0].role == MessageRole.SYSTEM:
         prefix = [messages[0].model_copy(deep=True)]
+        prefix_indexes = [0]
         start_index = 1
 
     blocks: list[list[Message]] = []
+    block_indexes: list[list[int]] = []
     current_block: list[Message] = []
+    current_block_indexes: list[int] = []
 
-    for message in messages[start_index:]:
+    for message_index, message in enumerate(messages[start_index:], start=start_index):
         message_copy = message.model_copy(deep=True)
         if message_copy.role == MessageRole.USER:
             if current_block:
                 blocks.append(current_block)
+                block_indexes.append(current_block_indexes)
             current_block = [message_copy]
+            current_block_indexes = [message_index]
         else:
             if not current_block:
                 current_block = [message_copy]
+                current_block_indexes = [message_index]
             else:
                 current_block.append(message_copy)
+                current_block_indexes.append(message_index)
 
     if current_block:
         blocks.append(current_block)
+        block_indexes.append(current_block_indexes)
 
-    return prefix, blocks
+    return prefix, prefix_indexes, blocks, block_indexes
 
 
 
@@ -1072,10 +1265,13 @@ def _apply_macro_compaction(
     recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
     summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
     block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-) -> tuple[list[Message], int, int, int, int]:
-    prefix, blocks = _split_turn_blocks(messages)
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], int, int, int, int, set[int]]:
+    prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
+    protected_indexes = protected_indexes or set()
     if len(blocks) <= recent_raw_turns:
-        return list(messages), 0, len(blocks), 0, 0
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, 0, len(blocks), 0, 0, cloned_protected_indexes
 
     analyses = [
         _analyze_turn_block(block, model_id=model_id, provider=provider)
@@ -1086,6 +1282,8 @@ def _apply_macro_compaction(
 
     for index in range(len(blocks) - 1, -1, -1):
         if analyses[index]["contains_media"]:
+            keep_indexes.add(index)
+        if any(message_index in protected_indexes for message_index in block_indexes[index]):
             keep_indexes.add(index)
 
     tool_kept = 0
@@ -1099,26 +1297,41 @@ def _apply_macro_compaction(
     summary_blocks = [blocks[index] for index in range(len(blocks)) if index not in keep_indexes]
     if not summary_blocks:
         retained_tool_turns = sum(1 for index in keep_indexes if analyses[index]["contains_tool"])
-        return list(messages), 0, len(keep_indexes), retained_tool_turns, 0
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, 0, len(keep_indexes), retained_tool_turns, 0, cloned_protected_indexes
 
-    compacted: list[Message] = list(prefix)
+    compacted: list[Message] = []
+    compacted_protected_indexes: set[int] = set()
+    _extend_with_original_indexes(
+        compacted,
+        compacted_protected_indexes,
+        prefix,
+        prefix_indexes,
+        protected_indexes,
+    )
     summary_message = _build_macro_summary_message(
         summary_blocks,
         summary_max_chars=summary_max_chars,
         block_summary_chars=block_summary_chars,
     )
     if summary_message is not None:
-        compacted.append(summary_message)
+        _append_message(compacted, compacted_protected_indexes, summary_message)
 
     for index, block in enumerate(blocks):
         if index in keep_indexes:
-            compacted.extend(message.model_copy(deep=True) for message in block)
+            _extend_with_original_indexes(
+                compacted,
+                compacted_protected_indexes,
+                block,
+                block_indexes[index],
+                protected_indexes,
+            )
 
     summary_turns = len(summary_blocks)
     retained_recent_turns = sum(1 for index in keep_indexes if index >= len(blocks) - recent_raw_turns)
     retained_tool_turns = sum(1 for index in keep_indexes if analyses[index]["contains_tool"])
     compacted_blocks = len(summary_blocks)
-    return compacted, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks
+    return compacted, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks, compacted_protected_indexes
 
 
 
@@ -1140,10 +1353,13 @@ async def _apply_micro_compaction(
     blocking_ratio: float = DEFAULT_BLOCKING_RATIO,
     policy_used: str = DEFAULT_COMPACTION_POLICY,
     trigger_budget: int | None = None,
-) -> tuple[list[Message], CompressionMeta]:
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], CompressionMeta, set[int]]:
+    protected_indexes = protected_indexes or set()
     before_tokens = _estimate_message_tokens(messages, model_id=model_id, provider=provider)
     if before_tokens < (trigger_budget or token_budget.input_budget):
-        return list(messages), CompressionMeta(
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, CompressionMeta(
             stage="none",
             before_tokens=before_tokens,
             after_tokens=before_tokens,
@@ -1158,13 +1374,14 @@ async def _apply_micro_compaction(
             utilization_after=(before_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
             policy_used=policy_used,
             actions=[],
-        )
+        ), cloned_protected_indexes
 
-    reasoning_compacted, reasoning_trimmed = _compact_message_reasoning(
+    reasoning_compacted, reasoning_trimmed, reasoning_protected_indexes = _compact_message_reasoning(
         messages,
         keep_recent_reasoning_messages=keep_recent_reasoning_messages,
+        protected_indexes=protected_indexes,
     )
-    tool_compacted, tool_results_trimmed = _apply_selective_tool_result_compaction(
+    tool_compacted, tool_results_trimmed, tool_protected_indexes = _apply_selective_tool_result_compaction(
         reasoning_compacted,
         model_id=model_id,
         provider=provider,
@@ -1172,10 +1389,12 @@ async def _apply_micro_compaction(
         tool_result_compact_min_tokens=tool_result_compact_min_tokens,
         recent_raw_turns=recent_raw_turns,
         recent_tool_turns=recent_tool_turns,
+        protected_indexes=reasoning_protected_indexes,
     )
     (
         session_memory_messages,
         session_memory_compacted,
+        session_memory_protected_indexes,
     ) = await _apply_session_memory_compaction(
         tool_compacted,
         conversation=conversation,
@@ -1183,6 +1402,7 @@ async def _apply_micro_compaction(
         provider=provider,
         recent_raw_turns=recent_raw_turns,
         recent_tool_turns=recent_tool_turns,
+        protected_indexes=tool_protected_indexes,
     )
     after_tokens = _estimate_message_tokens(
         session_memory_messages,
@@ -1219,7 +1439,7 @@ async def _apply_micro_compaction(
         policy_used=policy_used,
         actions=actions,
         session_memory_compacted=session_memory_compacted,
-    )
+    ), session_memory_protected_indexes
 
 
 
@@ -1242,11 +1462,14 @@ def _apply_budget_compaction(
     recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
     summary_max_chars: int = DEFAULT_SUMMARY_MAX_CHARS,
     block_summary_chars: int = DEFAULT_BLOCK_SUMMARY_CHARS,
-) -> tuple[list[Message], CompressionMeta]:
+    protected_indexes: set[int] | None = None,
+) -> tuple[list[Message], CompressionMeta, set[int]]:
+    protected_indexes = protected_indexes or set()
     if compression.after_tokens <= token_budget.input_budget and pressure_level != "blocking":
-        return list(messages), compression
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, compression, cloned_protected_indexes
 
-    macro_messages, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks = _apply_macro_compaction(
+    macro_messages, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks, macro_protected_indexes = _apply_macro_compaction(
         messages,
         model_id=model_id,
         provider=provider,
@@ -1254,6 +1477,7 @@ def _apply_budget_compaction(
         recent_tool_turns=(recent_tool_turns if not aggressive else min(recent_tool_turns, AGGRESSIVE_RECENT_TOOL_TURNS)),
         summary_max_chars=(summary_max_chars if not aggressive else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)),
         block_summary_chars=(block_summary_chars if not aggressive else AGGRESSIVE_BLOCK_SUMMARY_CHARS),
+        protected_indexes=protected_indexes,
     )
     macro_after_tokens = _estimate_message_tokens(
         macro_messages,
@@ -1261,7 +1485,8 @@ def _apply_budget_compaction(
         provider=provider,
     )
     if summary_turns <= 0:
-        return list(messages), compression
+        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        return cloned_messages, compression, cloned_protected_indexes
 
     actions = list(compression.actions or [])
     if "macro_summary" not in actions:
@@ -1290,7 +1515,7 @@ def _apply_budget_compaction(
         retained_tool_turns=retained_tool_turns,
         compacted_blocks=compacted_blocks,
         session_memory_compacted=compression.session_memory_compacted,
-    )
+    ), macro_protected_indexes
 
 
 async def build_model_messages(
@@ -1307,9 +1532,10 @@ async def build_model_messages(
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
+    protected_round_id: UUID | str | None = None,
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
-    return await _build_messages_with_file_content(
+    messages, _ = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -1322,7 +1548,9 @@ async def build_model_messages(
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        protected_round_id=protected_round_id,
     )
+    return messages
 
 
 async def prepare_model_context(
@@ -1344,6 +1572,7 @@ async def prepare_model_context(
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
     aggressive: bool = False,
+    protected_round_id: UUID | str | None = None,
 ) -> PreparedModelContext:
     compression_config = get_context_compression_config(agent)
     token_budget = _build_token_budget(
@@ -1406,7 +1635,7 @@ async def prepare_model_context(
         blocking_ratio=blocking_ratio,
     )
 
-    untrimmed_messages = await _build_messages_with_file_content(
+    untrimmed_messages, untrimmed_protected_indexes = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -1419,6 +1648,7 @@ async def prepare_model_context(
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        protected_round_id=protected_round_id,
     )
     untrimmed_tokens = _estimate_message_tokens(
         untrimmed_messages,
@@ -1458,6 +1688,7 @@ async def prepare_model_context(
                 policy_used=policy_used,
                 actions=[],
             ),
+            protected_indexes=untrimmed_protected_indexes,
         )
 
     needs_file_trim = bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
@@ -1469,10 +1700,11 @@ async def prepare_model_context(
             aggressive=aggressive,
         )
 
-    base_messages = (
-        untrimmed_messages
-        if not file_content_trimmed
-        else await _build_messages_with_file_content(
+    if not file_content_trimmed:
+        base_messages = untrimmed_messages
+        base_protected_indexes = set(untrimmed_protected_indexes)
+    else:
+        base_messages, base_protected_indexes = await _build_messages_with_file_content(
             agent=agent,
             conversation=conversation,
             user_message=user_message,
@@ -1485,8 +1717,8 @@ async def prepare_model_context(
             include_current_user_message=include_current_user_message,
             exclude_message_ids=exclude_message_ids,
             history_before_message_created_at=history_before_message_created_at,
+            protected_round_id=protected_round_id,
         )
-    )
 
     base_tokens = _estimate_message_tokens(
         base_messages,
@@ -1500,6 +1732,7 @@ async def prepare_model_context(
     )
 
     compacted_messages = base_messages
+    compacted_protected_indexes = set(base_protected_indexes)
     compression = CompressionMeta(
         stage="none",
         before_tokens=untrimmed_tokens,
@@ -1527,7 +1760,7 @@ async def prepare_model_context(
         )
         if not compression_config.get("drop_historical_reasoning_first", True):
             keep_recent_reasoning_messages = max(keep_recent_reasoning_messages, 9999)
-        compacted_messages, compression = await _apply_micro_compaction(
+        compacted_messages, compression, compacted_protected_indexes = await _apply_micro_compaction(
             messages=base_messages,
             conversation=conversation,
             model_id=model_id,
@@ -1544,6 +1777,7 @@ async def prepare_model_context(
             blocking_ratio=blocking_ratio,
             policy_used=policy_used,
             trigger_budget=thresholds.trigger_input_budget,
+            protected_indexes=base_protected_indexes,
         )
         compression.file_content_trimmed = file_content_trimmed
         if file_content_trimmed and "trim_file_content" not in (compression.actions or []):
@@ -1561,7 +1795,7 @@ async def prepare_model_context(
         summary_max_chars = int(
             compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
         ) * 4
-        compacted_messages, compression = _apply_budget_compaction(
+        compacted_messages, compression, compacted_protected_indexes = _apply_budget_compaction(
             messages=compacted_messages,
             model_id=model_id,
             provider=provider,
@@ -1591,6 +1825,7 @@ async def prepare_model_context(
                 if not aggressive
                 else AGGRESSIVE_BLOCK_SUMMARY_CHARS
             ),
+            protected_indexes=compacted_protected_indexes,
         )
 
     if file_content_trimmed:
@@ -1613,10 +1848,32 @@ async def prepare_model_context(
             token_budget.input_budget,
         )
         emergency_messages = []
+        emergency_protected_indexes: set[int] = set()
+        current_round_messages = [
+            compacted_messages[index].model_copy(deep=True)
+            for index in sorted(compacted_protected_indexes)
+            if 0 <= index < len(compacted_messages)
+        ]
         if compacted_messages and compacted_messages[0].role == MessageRole.SYSTEM:
-            emergency_messages.append(compacted_messages[0])
-        if compacted_messages and compacted_messages[-1].role == MessageRole.USER:
-            emergency_messages.append(compacted_messages[-1])
+            _append_message(
+                emergency_messages,
+                emergency_protected_indexes,
+                compacted_messages[0].model_copy(deep=True),
+            )
+        if current_round_messages:
+            for message in current_round_messages:
+                _append_message(
+                    emergency_messages,
+                    emergency_protected_indexes,
+                    message,
+                    protect=True,
+                )
+        elif compacted_messages and compacted_messages[-1].role == MessageRole.USER:
+            _append_message(
+                emergency_messages,
+                emergency_protected_indexes,
+                compacted_messages[-1].model_copy(deep=True),
+            )
 
         emergency_tokens = _estimate_message_tokens(
             emergency_messages,
@@ -1665,12 +1922,14 @@ async def prepare_model_context(
                 compacted_blocks=compression.compacted_blocks,
                 session_memory_compacted=compression.session_memory_compacted,
             ),
+            protected_indexes=emergency_protected_indexes,
         )
 
     return PreparedModelContext(
         messages=compacted_messages,
         token_budget=token_budget,
         compression=compression,
+        protected_indexes=compacted_protected_indexes,
     )
 
 
@@ -1692,6 +1951,7 @@ async def retry_prepare_model_context(
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
+    protected_round_id: UUID | str | None = None,
 ) -> PreparedModelContext:
     return await prepare_model_context(
         agent=agent,
@@ -1711,4 +1971,5 @@ async def retry_prepare_model_context(
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
         aggressive=True,
+        protected_round_id=protected_round_id,
     )

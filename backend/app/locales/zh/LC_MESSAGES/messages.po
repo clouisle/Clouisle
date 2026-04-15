@@ -399,6 +399,9 @@ msgstr "请输入验证码"
 msgid "chat_file_upload_instruction"
 msgstr "[用户上传了以下文件，请使用 markitdown 工具解析文件内容:]"
 
+msgid "chat_max_iterations_reached"
+msgstr "本轮已达到最大工具调用轮次。"
+
 msgid "chat_success"
 msgstr "对话完成"
 

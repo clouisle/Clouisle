@@ -8,6 +8,11 @@
   - [x] 3. Compression observability and frontend messaging
   - [x] 4. Phase 2 Session Memory / SM Compact design hooks
 
+- **agent-manual-stop-state** — Complete. Persisted manual stop state for interrupted agent replies so the current UI and reloaded history both show a stable stopped marker. See `docs/plan/agent-manual-stop-state.md`
+  - [x] 1. Backend persisted stop state
+  - [x] 2. Frontend stop finalization
+  - [x] 3. History rendering and verification
+
 ## History
 
 - **agent-context-compression** — Complete. Added shared agent context compression for non-stream, stream, and regenerate flows, with agent-level compression config and frontend-visible compression SSE events.

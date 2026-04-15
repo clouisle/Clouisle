@@ -7,7 +7,6 @@ import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import {
   Loader2,
-  Bot,
   LogIn,
   ArrowLeft,
   AlertCircle,
@@ -107,10 +106,13 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const [loadingMore, setLoadingMore] = React.useState(false)
   const [loadingConversation, setLoadingConversation] = React.useState(false)
   const loadMoreRef = React.useRef<HTMLDivElement>(null)
+  const suppressUrlConversationReloadRef = React.useRef(false)
 
   // Rename dialog state
   const [renamingConversation, setRenamingConversation] = React.useState<ConversationListItem | null>(null)
   const [renameDialogOpen, setRenameDialogOpen] = React.useState(false)
+  const [conversationPendingDelete, setConversationPendingDelete] = React.useState<ConversationListItem | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [newTitle, setNewTitle] = React.useState('')
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
@@ -167,15 +169,19 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   } = useChat({
     agentId: agent?.id || '',
     variables: variableValues,
-    onConversationChange: (newConversationId) => {
+    onConversationChange: () => {
       // Refresh conversation list when new conversation is created
-      console.log('New conversation created:', newConversationId)
       refreshConversations()
     },
     // Don't refresh on every message end - only on conversation creation
     // This prevents unnecessary sidebar refreshes during chat
   })
   
+  React.useEffect(() => {
+    if (!agent?.name) return
+    document.title = agent.name
+  }, [agent?.name])
+
   // Fetch agent and conversations when logged in
   React.useEffect(() => {
     const fetchData = async () => {
@@ -216,6 +222,25 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     fetchData()
   }, [resolvedParams, isLoggedIn, t])
 
+  const syncConversationUrl = React.useCallback(
+    (nextConversationId: string | null, mode: 'push' | 'replace' = 'push') => {
+      if (!resolvedParams) return
+
+      const nextParams = new URLSearchParams(searchParams.toString())
+      if (nextConversationId) {
+        nextParams.set('conversation', nextConversationId)
+      } else {
+        nextParams.delete('conversation')
+      }
+
+      const query = nextParams.toString()
+      const newUrl = query ? `/chat/${resolvedParams.id}?${query}` : `/chat/${resolvedParams.id}`
+      const historyMethod = mode === 'replace' ? window.history.replaceState : window.history.pushState
+      historyMethod.call(window.history, {}, '', newUrl)
+    },
+    [resolvedParams, searchParams]
+  )
+
   // Load conversation from URL parameter
   React.useEffect(() => {
     const loadConversationFromUrl = async () => {
@@ -223,6 +248,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
       const conversationParam = searchParams.get('conversation')
       if (!conversationParam) return
+
+      if (suppressUrlConversationReloadRef.current) {
+        suppressUrlConversationReloadRef.current = false
+        return
+      }
 
       // Don't reload if already loaded
       if (conversationParam === conversationId) return
@@ -236,17 +266,14 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       } catch (err) {
         console.error('Failed to load conversation from URL:', err)
         // If conversation not found, clear the URL parameter
-        if (resolvedParams) {
-          const newUrl = `/chat/${resolvedParams.id}`
-          window.history.replaceState({}, '', newUrl)
-        }
+        syncConversationUrl(null, 'replace')
       } finally {
         setLoadingConversation(false)
       }
     }
 
     loadConversationFromUrl()
-  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages])
+  }, [resolvedParams, agent, loadingConversations, searchParams, conversationId, setConversationId, setMessages, syncConversationUrl])
 
   // Load more conversations
   const loadMoreConversations = React.useCallback(async () => {
@@ -285,16 +312,14 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   }, [hasMoreConversations, loadingMore, loadingConversations, loadMoreConversations])
 
   const handleNewChat = () => {
+    suppressUrlConversationReloadRef.current = true
     resetChat()
     setInput('')
     setFiles([])
     setIsUploading(false)
+    setLoadingConversation(false)
 
-    // Clear conversation URL parameter
-    if (resolvedParams) {
-      const newUrl = `/chat/${resolvedParams.id}`
-      window.history.pushState({}, '', newUrl)
-    }
+    syncConversationUrl(null)
   }
 
   const handleSelectConversation = async (conv: ConversationListItem) => {
@@ -304,24 +329,14 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       setLoadingConversation(true)
       const data = await publicAgentsApi.getConversation(conv.id)
 
-      console.log('[handleSelectConversation] Loaded conversation:', data)
-      console.log('[handleSelectConversation] Messages count:', data.messages?.length)
-
       // Convert messages to ChatMessage format using unified converter
       // This handles text, images, files, reasoning, tool calls, and RAG context
       const chatMessages = convertBackendMessages(data.messages as BackendMessage[])
 
-      console.log('[handleSelectConversation] Converted messages count:', chatMessages.length)
-      console.log('[handleSelectConversation] Converted messages:', chatMessages)
-
       setMessages(chatMessages)
       setConversationId(conv.id)
 
-      // Update URL with conversation ID without page refresh
-      if (resolvedParams) {
-        const newUrl = `/chat/${resolvedParams.id}?conversation=${conv.id}`
-        window.history.pushState({}, '', newUrl)
-      }
+      syncConversationUrl(conv.id)
     } catch (err) {
       console.error('Failed to load conversation:', err)
     } finally {
@@ -329,19 +344,29 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     }
   }
 
-  const handleDeleteConversation = async (convId: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (conv: ConversationListItem, e: React.MouseEvent) => {
     e.stopPropagation()
+    setConversationPendingDelete(conv)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConversation = async () => {
+    if (!conversationPendingDelete) return
 
     try {
-      await publicAgentsApi.deleteConversation(convId)
-      setConversations(prev => prev.filter(c => c.id !== convId))
+      await publicAgentsApi.deleteConversation(conversationPendingDelete.id)
+      setConversations(prev => prev.filter(c => c.id !== conversationPendingDelete.id))
 
       // If deleting current conversation, start new chat and clear URL
-      if (convId === conversationId) {
+      if (conversationPendingDelete.id === conversationId) {
         handleNewChat()
       }
+
+      setDeleteDialogOpen(false)
+      setConversationPendingDelete(null)
     } catch (err) {
       console.error('Failed to delete conversation:', err)
+      toast.error(t('deleteConversationFailed'))
     }
   }
 
@@ -519,7 +544,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
     )
   }
 
-  const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
+  const displayIcon = agent.icon || agent.avatar_url
+  const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
   const hasMessages = messages.length > 0
   
   return (
@@ -537,11 +563,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
             <div className="flex items-center justify-between p-3 h-14 border-b">
               {/* Agent Info */}
               <div className="flex items-center gap-2">
-                {agent.icon ? (
+                {displayIcon ? (
                   isIconUrl ? (
                     <div className="relative h-6 w-6 overflow-hidden">
                       <Image
-                        src={agent.icon}
+                        src={displayIcon}
                         alt={agent.name}
                         fill
                         unoptimized
@@ -549,10 +575,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                       />
                     </div>
                   ) : (
-                    <span className="text-lg">{agent.icon}</span>
+                    <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span>
                   )
                 ) : (
-                  <Bot className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
                 )}
                 <span className="font-medium text-foreground text-sm truncate max-w-[120px]">{agent.name}</span>
               </div>
@@ -613,7 +641,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             variant="destructive"
-                            onClick={(e) => handleDeleteConversation(conv.id, e as unknown as React.MouseEvent)}
+                            onClick={(e) => handleDeleteClick(conv, e as unknown as React.MouseEvent)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
                             {t('delete')}
@@ -733,11 +761,11 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Agent Icon */}
                 <div className="mb-8">
-                  {agent.icon ? (
+                  {displayIcon ? (
                     isIconUrl ? (
                       <div className="relative h-20 w-20 overflow-hidden">
                         <Image
-                          src={agent.icon}
+                          src={displayIcon}
                           alt={agent.name}
                           fill
                           unoptimized
@@ -746,7 +774,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                       </div>
                     ) : (
                       <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center ring-2 ring-border">
-                        <span className="text-4xl">{agent.icon}</span>
+                        <span className="flex h-full w-full items-center justify-center leading-none text-4xl">{displayIcon}</span>
                       </div>
                     )
                   ) : (
@@ -869,7 +897,36 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
         </div>
       </div>
 
-      {/* Rename Dialog */}
+      {/* Delete Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) {
+            setConversationPendingDelete(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteConversation')}</DialogTitle>
+            <DialogDescription>
+              {t('deleteConversationDescription', {
+                title: conversationPendingDelete?.title || t('untitledChat'),
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConversation}>
+              {t('confirmDeleteConversation')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

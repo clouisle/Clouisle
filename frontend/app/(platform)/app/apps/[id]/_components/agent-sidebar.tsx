@@ -11,7 +11,7 @@ import {
   FileText,
   Activity,
   ArrowLeft,
-  Bot,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Agent } from '@/lib/api'
@@ -79,10 +79,10 @@ export function AgentSidebar({ agent, collapsed = false }: AgentSidebarProps) {
                     className="object-cover group-hover:opacity-0 transition-opacity"
                   />
                 ) : (
-                  <span className="text-xl group-hover:opacity-0 transition-opacity">{agent.icon}</span>
+                  <span className="flex h-full w-full items-center justify-center leading-none text-xl group-hover:opacity-0 transition-opacity">{agent.icon}</span>
                 )
               ) : (
-                <Bot className="h-5 w-5 text-primary group-hover:opacity-0 transition-opacity" />
+                <Sparkles className="h-5 w-5 text-primary group-hover:opacity-0 transition-opacity" />
               )}
               <ArrowLeft className="h-5 w-5 text-primary absolute opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>

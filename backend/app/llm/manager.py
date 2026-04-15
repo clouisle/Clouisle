@@ -48,6 +48,7 @@ from .errors import (
     ContextLengthError,
     ContentFilterError,
     InvalidRequestError,
+    InsufficientQuotaError,
     QuotaExceededError as LLMQuotaExceededError,
     TaskNotFoundError,
 )
@@ -258,6 +259,19 @@ class ModelManager:
             or "invalid_api_key" in error_msg
         ):
             return AuthenticationError(
+                message=str(e),
+                provider=provider,
+                model=model,
+            )
+        elif (
+            "insufficient balance" in error_msg
+            or "insufficient quota" in error_msg
+            or "quota exceeded" in error_msg
+            or "credit balance" in error_msg
+            or "payment required" in error_msg
+            or "402" in error_msg and "balance" in error_msg
+        ):
+            return InsufficientQuotaError(
                 message=str(e),
                 provider=provider,
                 model=model,

@@ -5,12 +5,13 @@ Provides streaming and non-streaming chat with AI agents.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     from app.models.api_key import APIKey
@@ -34,6 +35,8 @@ from app.models.agent import (
     Conversation,
     Message,
     MessageRole,
+    MessageRoundRole,
+    MessageRoundStatus,
 )
 
 from app.schemas.agent import (
@@ -53,7 +56,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.llm.errors import ContextLengthError
+from app.llm.errors import ContextLengthError, InsufficientQuotaError
 from app.llm.tools import tool_registry
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.types import Message as LLMChatMessage
@@ -634,6 +637,111 @@ async def update_message_stats(agent: Agent, token_usage: dict | None = None):
     )
 
 
+async def build_round_steps_map(messages: list[Message]) -> dict[UUID, list[dict[str, Any]]]:
+    """Group non-canonical round messages under their round_id for response payloads."""
+    round_ids = {
+        message.round_id
+        for message in messages
+        if message.round_id and message.is_round_canonical
+    }
+    if not round_ids:
+        return {}
+
+    step_messages = (
+        await Message.filter(
+            conversation_id=messages[0].conversation_id,
+            is_active=True,
+            round_id__in=list(round_ids),
+            is_round_canonical=False,
+        )
+        .order_by("created_at", "round_index")
+        .all()
+    )
+
+    grouped: dict[UUID, list[dict[str, Any]]] = {}
+    for step in step_messages:
+        grouped.setdefault(step.round_id, []).append(
+            {
+                "id": step.id,
+                "role": step.role.value,
+                "content": step.content,
+                "tool_calls": step.tool_calls,
+                "tool_call_id": step.tool_call_id,
+                "tool_name": step.tool_name,
+                "reasoning_content": step.reasoning_content,
+                "model_used": step.model_used,
+                "token_usage": step.token_usage,
+                "duration_ms": step.duration_ms,
+                "is_manually_stopped": step.is_manually_stopped,
+                "rag_context": step.rag_context,
+                "created_at": step.created_at,
+                "round_id": step.round_id,
+                "round_index": step.round_index,
+                "round_role": step.round_role.value if step.round_role else None,
+                "is_round_canonical": step.is_round_canonical,
+                "iteration_index": step.iteration_index,
+                "round_status": step.round_status.value if step.round_status else None,
+            }
+        )
+    return grouped
+
+
+async def build_message_round_payloads(messages: list[Message]) -> list[dict[str, Any]]:
+    """Serialize canonical round messages with nested non-canonical step payloads."""
+    steps_by_round = await build_round_steps_map(messages)
+    payloads: list[dict[str, Any]] = []
+    for message in messages:
+        if message.round_id and not message.is_round_canonical:
+            continue
+        msg_data = MessageOut.model_validate(message).model_dump()
+        if (
+            message.round_id
+            and message.round_role == MessageRoundRole.ASSISTANT_FINAL
+        ):
+            msg_data["steps"] = steps_by_round.get(message.round_id)
+        payloads.append(msg_data)
+    return payloads
+
+
+def append_round_history_entry(
+    history: list[dict[str, Any]],
+    *,
+    role: str,
+    content: str,
+    round_id: UUID,
+    round_index: int,
+    round_role: str,
+    is_round_canonical: bool,
+    iteration_index: int | None = None,
+    round_status: str | None = None,
+    reasoning_content: str | None = None,
+    tool_calls: list[dict[str, Any]] | None = None,
+    tool_call_id: str | None = None,
+    tool_name: str | None = None,
+) -> None:
+    entry: dict[str, Any] = {
+        "role": role,
+        "content": content,
+        "round_id": str(round_id),
+        "round_index": round_index,
+        "round_role": round_role,
+        "is_round_canonical": is_round_canonical,
+    }
+    if iteration_index is not None:
+        entry["iteration_index"] = iteration_index
+    if round_status is not None:
+        entry["round_status"] = round_status
+    if reasoning_content is not None:
+        entry["reasoning_content"] = reasoning_content
+    if tool_calls is not None:
+        entry["tool_calls"] = tool_calls
+    if tool_call_id is not None:
+        entry["tool_call_id"] = tool_call_id
+    if tool_name is not None:
+        entry["tool_name"] = tool_name
+    history.append(entry)
+
+
 async def build_messages(
     agent: Agent,
     conversation: Conversation,
@@ -708,6 +816,67 @@ def enqueue_session_memory_extraction(
             assistant_message.id,
             e,
         )
+
+
+def get_round_terminal_status(
+    *,
+    completed: bool,
+    manually_stopped: bool = False,
+    max_iterations_reached: bool = False,
+    errored: bool = False,
+) -> MessageRoundStatus:
+    if manually_stopped:
+        return MessageRoundStatus.MANUALLY_STOPPED
+    if max_iterations_reached:
+        return MessageRoundStatus.MAX_ITERATIONS_REACHED
+    if errored:
+        return MessageRoundStatus.ERROR
+    if completed:
+        return MessageRoundStatus.COMPLETED
+    return MessageRoundStatus.ERROR
+
+
+def build_max_iterations_terminal_content(user_locale: str | None = None) -> str:
+    return t("chat_max_iterations_reached", lang=user_locale)
+
+
+async def round_has_persisted_trace(message: Message | None) -> bool:
+    if message is None or message.round_id is None:
+        return False
+    return await Message.filter(
+        conversation_id=message.conversation_id,
+        round_id=message.round_id,
+        is_round_canonical=False,
+    ).exists()
+
+
+async def persist_partial_round_error(
+    message: Message | None,
+    *,
+    content: str,
+    reasoning: str,
+    model_id: str | None,
+    start_time: float,
+    fallback_content: str | None = None,
+) -> bool:
+    if message is None:
+        return False
+
+    has_progress = bool(content or reasoning)
+    if not has_progress:
+        has_progress = await round_has_persisted_trace(message)
+    if not has_progress and not fallback_content:
+        return False
+
+    message.content = content or (fallback_content or "")
+    message.reasoning_content = reasoning or None
+    message.model_used = model_id
+    message.duration_ms = int((time.time() - start_time) * 1000)
+    message.is_manually_stopped = False
+    message.round_status = MessageRoundStatus.ERROR
+    message.created_at = now_utc()
+    await message.save()
+    return True
 
 
 async def get_model_capabilities(agent: Agent) -> dict:
@@ -1637,6 +1806,9 @@ async def chat(
         rag_contexts = aggregate_rag_contexts(rag_contexts)
         final_message = build_rag_prompt(rag_contexts, chat_in.message)
 
+    round_id = uuid4()
+    next_round_index = 1
+
     # Save user message with images and file_urls
     user_msg = await Message.create(
         conversation=conversation,
@@ -1647,6 +1819,10 @@ async def chat(
         if chat_in.file_urls
         else None,
         rag_context=rag_contexts if rag_contexts else None,
+        round_id=round_id,
+        round_index=0,
+        round_role=MessageRoundRole.USER_INPUT,
+        is_round_canonical=True,
     )
 
     # Update message stats (user message, no tokens)
@@ -1715,6 +1891,7 @@ async def chat(
         final_response = None
         total_prompt_tokens = 0
         total_completion_tokens = 0
+        max_iterations_reached = False
 
         while iteration < max_iterations:
             iteration += 1
@@ -1735,6 +1912,7 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    protected_round_id=round_id,
                 )
             except ContextLengthError:
                 if not should_retry_context_length(agent):
@@ -1753,6 +1931,7 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    protected_round_id=round_id,
                 )
                 context_retry_used = True
             try:
@@ -1779,6 +1958,7 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    protected_round_id=round_id,
                 )
                 context_retry_used = True
                 response = await model_manager.team_chat(
@@ -1817,6 +1997,7 @@ async def chat(
                 ]
 
                 # Save intermediate assistant message with tool calls
+                assistant_step_index = next_round_index
                 await Message.create(
                     conversation=conversation,
                     role=MessageRole.ASSISTANT,
@@ -1824,17 +2005,27 @@ async def chat(
                     reasoning_content=response.reasoning_content or None,
                     model_used=response.model,
                     tool_calls=intermediate_tool_calls,
+                    round_id=round_id,
+                    round_index=assistant_step_index,
+                    round_role=MessageRoundRole.ASSISTANT_STEP,
+                    is_round_canonical=False,
+                    iteration_index=iteration,
                 )
+                next_round_index += 1
 
                 if working_history_override is None:
                     working_history_override = []
-                working_history_override.append(
-                    {
-                        "role": "assistant",
-                        "content": response.content or "",
-                        "reasoning_content": response.reasoning_content or None,
-                        "tool_calls": intermediate_tool_calls,
-                    }
+                append_round_history_entry(
+                    working_history_override,
+                    role="assistant",
+                    content=response.content or "",
+                    reasoning_content=response.reasoning_content or None,
+                    tool_calls=intermediate_tool_calls,
+                    round_id=round_id,
+                    round_index=assistant_step_index,
+                    round_role=MessageRoundRole.ASSISTANT_STEP.value,
+                    is_round_canonical=False,
+                    iteration_index=iteration,
                 )
 
                 # Execute tools and add tool results to message history
@@ -1854,39 +2045,61 @@ async def chat(
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
 
+                    tool_step_index = next_round_index
                     await Message.create(
                         conversation=conversation,
                         role=MessageRole.TOOL,
                         content=display_result,
                         tool_call_id=tc.id,
                         tool_name=tool_name,
+                        round_id=round_id,
+                        round_index=tool_step_index,
+                        round_role=MessageRoundRole.TOOL_RESULT,
+                        is_round_canonical=False,
+                        iteration_index=iteration,
                     )
+                    next_round_index += 1
                     if working_history_override is None:
                         working_history_override = []
-                    working_history_override.append(
-                        {
-                            "role": "tool",
-                            "content": llm_result,
-                            "tool_call_id": tc.id,
-                            "tool_name": tool_name,
-                        }
+                    append_round_history_entry(
+                        working_history_override,
+                        role="tool",
+                        content=llm_result,
+                        tool_call_id=tc.id,
+                        tool_name=tool_name,
+                        round_id=round_id,
+                        round_index=tool_step_index,
+                        round_role=MessageRoundRole.TOOL_RESULT.value,
+                        is_round_canonical=False,
+                        iteration_index=iteration,
                     )
+                if iteration >= max_iterations:
+                    max_iterations_reached = True
+                    break
                 continue
 
             final_response = response
             break
 
-        if final_response is None:
+        if final_response is None and not max_iterations_reached:
             final_response = response
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        clean_final_content = final_response.content or ""
-        if agent.enable_user_input_request and clean_final_content:
+        clean_final_content = (
+            build_max_iterations_terminal_content(current_user.locale)
+            if max_iterations_reached
+            else (final_response.content or "")
+        )
+        if (
+            not max_iterations_reached
+            and agent.enable_user_input_request
+            and clean_final_content
+        ):
             _, clean_final_content = parse_user_input_request(clean_final_content)
 
         final_tool_calls = None
-        if final_response.tool_calls:
+        if final_response and final_response.tool_calls:
             final_tool_calls = []
             for tc in final_response.tool_calls:
                 final_tool_calls.append(
@@ -1900,47 +2113,51 @@ async def chat(
                     }
                 )
 
+        prompt_tokens = total_prompt_tokens or (
+            final_response.usage.prompt_tokens
+            if final_response and final_response.usage
+            else 0
+        )
+        completion_tokens = total_completion_tokens or (
+            final_response.usage.completion_tokens
+            if final_response and final_response.usage
+            else 0
+        )
+        round_status = get_round_terminal_status(
+            completed=not max_iterations_reached,
+            max_iterations_reached=max_iterations_reached,
+        )
+
         # Save assistant message (final response)
         assistant_msg = await Message.create(
             conversation=conversation,
             role=MessageRole.ASSISTANT,
             content=clean_final_content,
-            reasoning_content=final_response.reasoning_content or None,
-            model_used=final_response.model,
+            reasoning_content=(
+                None
+                if max_iterations_reached
+                else (final_response.reasoning_content if final_response else None)
+            ),
+            model_used=(final_response.model if final_response else model_id),
             token_usage={
-                "prompt": total_prompt_tokens
-                if total_prompt_tokens
-                else (
-                    final_response.usage.prompt_tokens if final_response.usage else 0
-                ),
-                "completion": total_completion_tokens
-                if total_completion_tokens
-                else (
-                    final_response.usage.completion_tokens
-                    if final_response.usage
-                    else 0
-                ),
+                "prompt": prompt_tokens,
+                "completion": completion_tokens,
             },
             duration_ms=duration_ms,
             tool_calls=final_tool_calls,
+            round_id=round_id,
+            round_index=next_round_index,
+            round_role=MessageRoundRole.ASSISTANT_FINAL,
+            is_round_canonical=True,
+            round_status=round_status,
         )
 
         # Update message stats with token usage
         await update_message_stats(
             agent,
             token_usage={
-                "prompt": total_prompt_tokens
-                if total_prompt_tokens
-                else (
-                    final_response.usage.prompt_tokens if final_response.usage else 0
-                ),
-                "completion": total_completion_tokens
-                if total_completion_tokens
-                else (
-                    final_response.usage.completion_tokens
-                    if final_response.usage
-                    else 0
-                ),
+                "prompt": prompt_tokens,
+                "completion": completion_tokens,
             },
         )
 
@@ -1954,12 +2171,7 @@ async def chat(
 
         await Conversation.filter(id=conversation.id).update(
             message_count=F("message_count") + 2,
-            token_usage=F("token_usage")
-            + (
-                (total_prompt_tokens + total_completion_tokens)
-                if (total_prompt_tokens or total_completion_tokens)
-                else (final_response.usage.total_tokens if final_response.usage else 0)
-            ),
+            token_usage=F("token_usage") + (prompt_tokens + completion_tokens),
             **title_update,
         )
 
@@ -1973,19 +2185,15 @@ async def chat(
                 conversation_id=conversation.id,
                 message=MessageOut.model_validate(assistant_msg),
                 usage={
-                    "prompt_tokens": total_prompt_tokens,
-                    "completion_tokens": total_completion_tokens,
-                    "total_tokens": total_prompt_tokens + total_completion_tokens,
-                }
-                if (total_prompt_tokens or total_completion_tokens)
-                else (
-                    final_response.usage.model_dump() if final_response.usage else None
-                ),
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                },
             ),
             msg_key="chat_success",
         )
 
-    except QuotaExceededError as e:
+    except (QuotaExceededError, InsufficientQuotaError) as e:
         raise BusinessError(
             code=ResponseCode.MODEL_QUOTA_EXCEEDED,
             msg_key="model_quota_exceeded",
@@ -2071,6 +2279,8 @@ async def chat_stream(
         full_content = ""
         full_reasoning = ""
         message_id = None
+        assistant_msg: Message | None = None
+        model_id: str | None = None
 
         logger.info(
             f"Starting stream for conversation {conversation.id}, "
@@ -2118,6 +2328,9 @@ async def chat_stream(
                                 rag_contexts, chat_in.message
                             )
 
+                    round_id = uuid4()
+                    next_round_index = 1
+
                     # Save user message with images and file_urls
                     user_msg = await Message.create(
                         conversation=conversation,
@@ -2130,6 +2343,10 @@ async def chat_stream(
                         if chat_in.file_urls
                         else None,
                         rag_context=rag_contexts if rag_contexts else None,
+                        round_id=round_id,
+                        round_index=0,
+                        round_role=MessageRoundRole.USER_INPUT,
+                        is_round_canonical=True,
                     )
 
                     # Create placeholder for assistant message
@@ -2137,6 +2354,10 @@ async def chat_stream(
                         conversation=conversation,
                         role=MessageRole.ASSISTANT,
                         content="",  # Will be updated
+                        round_id=round_id,
+                        round_index=0,
+                        round_role=MessageRoundRole.ASSISTANT_FINAL,
+                        is_round_canonical=True,
                     )
                     message_id = str(assistant_msg.id)
 
@@ -2189,6 +2410,7 @@ async def chat_stream(
                     # Tool call loop
                     max_iterations = agent.max_iterations or 5
                     iteration = 0
+                    max_iterations_reached = False
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -2201,17 +2423,19 @@ async def chat_stream(
                             last_event_time, heartbeat_interval, request
                         )
                         if not should_continue:
-                            # Client disconnected, save partial content and exit
-                            if full_content or full_reasoning:
-                                assistant_msg.content = full_content
-                                assistant_msg.reasoning_content = (
-                                    full_reasoning if full_reasoning else None
-                                )
-                                assistant_msg.model_used = model_id
-                                assistant_msg.duration_ms = int(
-                                    (time.time() - start_time) * 1000
-                                )
-                                await assistant_msg.save()
+                            # Client disconnected, save current stopped state and exit
+                            assistant_msg.content = full_content
+                            assistant_msg.reasoning_content = (
+                                full_reasoning if full_reasoning else None
+                            )
+                            assistant_msg.model_used = model_id
+                            assistant_msg.duration_ms = int(
+                                (time.time() - start_time) * 1000
+                            )
+                            assistant_msg.is_manually_stopped = True
+                            assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            assistant_msg.created_at = now_utc()
+                            await assistant_msg.save()
                             return
 
                         # If we need to send heartbeat
@@ -2219,12 +2443,12 @@ async def chat_stream(
                             yield ": heartbeat\n\n"
                             last_event_time = new_last_event_time
 
-                        # Track reasoning state for this iteration
+                        # Track state for this iteration
                         reasoning_started = False
+                        full_content = ""
                         full_reasoning = ""
                         iteration_content = ""
                         iteration_reasoning = ""
-                        pending_tool_calls = []
                         collected_tool_calls = []  # For collecting tool calls from stream
 
                         prepare_context = prepare_model_context
@@ -2250,6 +2474,7 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -2285,6 +2510,7 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -2392,6 +2618,7 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -2506,17 +2733,18 @@ async def chat_stream(
                                     input_text_length=iteration_input_chars,
                                     output_text_length=iteration_output_chars,
                                 )
-                            # Save partial content if any was generated
-                            if full_content or full_reasoning:
-                                assistant_msg.content = full_content
-                                assistant_msg.reasoning_content = (
-                                    full_reasoning if full_reasoning else None
-                                )
-                                assistant_msg.model_used = model_id
-                                assistant_msg.duration_ms = int(
-                                    (time.time() - start_time) * 1000
-                                )
-                                await assistant_msg.save()
+                            assistant_msg.content = full_content
+                            assistant_msg.reasoning_content = (
+                                full_reasoning if full_reasoning else None
+                            )
+                            assistant_msg.model_used = model_id
+                            assistant_msg.duration_ms = int(
+                                (time.time() - start_time) * 1000
+                            )
+                            assistant_msg.is_manually_stopped = True
+                            assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            assistant_msg.created_at = now_utc()
+                            await assistant_msg.save()
                             return  # Exit generator - client is gone
 
                         # Record usage for this iteration (important: do this after each stream ends)
@@ -2532,6 +2760,7 @@ async def chat_stream(
 
                         # Check if there are tool calls to execute
                         if collected_tool_calls:
+                            pending_tool_calls = []
                             # Process each tool call
                             for tc in collected_tool_calls:
                                 # Check if client disconnected before tool execution
@@ -2539,16 +2768,20 @@ async def chat_stream(
                                     logger.info(
                                         "Client disconnected before tool execution"
                                     )
-                                    if full_content or full_reasoning:
-                                        assistant_msg.content = full_content
-                                        assistant_msg.reasoning_content = (
-                                            full_reasoning if full_reasoning else None
-                                        )
-                                        assistant_msg.model_used = model_id
-                                        assistant_msg.duration_ms = int(
-                                            (time.time() - start_time) * 1000
-                                        )
-                                        await assistant_msg.save()
+                                    assistant_msg.content = full_content
+                                    assistant_msg.reasoning_content = (
+                                        full_reasoning if full_reasoning else None
+                                    )
+                                    assistant_msg.model_used = model_id
+                                    assistant_msg.duration_ms = int(
+                                        (time.time() - start_time) * 1000
+                                    )
+                                    assistant_msg.is_manually_stopped = True
+                                    assistant_msg.round_status = (
+                                        MessageRoundStatus.MANUALLY_STOPPED
+                                    )
+                                    assistant_msg.created_at = now_utc()
+                                    await assistant_msg.save()
                                     return
 
                                 tool_name = tc.function.name
@@ -2578,22 +2811,36 @@ async def chat_stream(
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
                                 )
+                                pending_tool_calls.append(
+                                    {
+                                        "id": tc.id,
+                                        "name": tool_name,
+                                        "arguments": arguments,
+                                        "display_result": display_result,
+                                        "llm_result": llm_result,
+                                        "display_name": tool_display_name,
+                                    }
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
                                     logger.info(
                                         "Client disconnected after tool execution"
                                     )
-                                    if full_content or full_reasoning:
-                                        assistant_msg.content = full_content
-                                        assistant_msg.reasoning_content = (
-                                            full_reasoning if full_reasoning else None
-                                        )
-                                        assistant_msg.model_used = model_id
-                                        assistant_msg.duration_ms = int(
-                                            (time.time() - start_time) * 1000
-                                        )
-                                        await assistant_msg.save()
+                                    assistant_msg.content = full_content
+                                    assistant_msg.reasoning_content = (
+                                        full_reasoning if full_reasoning else None
+                                    )
+                                    assistant_msg.model_used = model_id
+                                    assistant_msg.duration_ms = int(
+                                        (time.time() - start_time) * 1000
+                                    )
+                                    assistant_msg.is_manually_stopped = True
+                                    assistant_msg.round_status = (
+                                        MessageRoundStatus.MANUALLY_STOPPED
+                                    )
+                                    assistant_msg.created_at = now_utc()
+                                    await assistant_msg.save()
                                     return
 
                                 # Send tool_result event
@@ -2604,17 +2851,6 @@ async def chat_stream(
                                 if media_payload:
                                     yield f"event: {SSEEventType.MEDIA_RESULT}\ndata: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
                                 last_event_time = time.time()
-
-                                # Add to pending tool calls for message building
-                                pending_tool_calls.append(
-                                    {
-                                        "id": tc.id,
-                                        "name": tool_name,
-                                        "arguments": arguments,
-                                        "display_result": display_result,
-                                        "llm_result": llm_result,
-                                    }
-                                )
 
                             # Helper to safely parse arguments
                             def safe_parse_arguments(args):
@@ -2630,69 +2866,111 @@ async def chat_stream(
                             # Save intermediate assistant message with tool_calls to database
                             intermediate_tool_calls = [
                                 {
-                                    "id": tc.id,
-                                    "name": tc.function.name,
-                                    "display_name": tool_display_names.get(
-                                        tc.function.name, tc.function.name
-                                    ),
-                                    "arguments": safe_parse_arguments(
-                                        tc.function.arguments
-                                    ),
+                                    "id": tc_data["id"],
+                                    "name": tc_data["name"],
+                                    "display_name": tc_data["display_name"],
+                                    "arguments": tc_data["arguments"],
                                 }
-                                for tc in collected_tool_calls
+                                for tc_data in pending_tool_calls
                             ]
+                            assistant_step_index = next_round_index
                             await Message.create(
                                 conversation=conversation,
                                 role=MessageRole.ASSISTANT,
                                 content=iteration_content,
+                                reasoning_content=iteration_reasoning or None,
                                 tool_calls=intermediate_tool_calls,
+                                round_id=round_id,
+                                round_index=assistant_step_index,
+                                round_role=MessageRoundRole.ASSISTANT_STEP,
+                                is_round_canonical=False,
+                                iteration_index=iteration,
                             )
+                            next_round_index += 1
                             if working_history_override is None:
                                 working_history_override = []
-                            working_history_override.append(
-                                {
-                                    "role": "assistant",
-                                    "content": iteration_content,
-                                    "reasoning_content": iteration_reasoning or None,
-                                    "tool_calls": intermediate_tool_calls,
-                                }
+                            append_round_history_entry(
+                                working_history_override,
+                                role="assistant",
+                                content=iteration_content,
+                                reasoning_content=iteration_reasoning or None,
+                                tool_calls=intermediate_tool_calls,
+                                round_id=round_id,
+                                round_index=assistant_step_index,
+                                round_role=MessageRoundRole.ASSISTANT_STEP.value,
+                                is_round_canonical=False,
+                                iteration_index=iteration,
                             )
 
                             # Save tool response messages to database
                             for tc_data in pending_tool_calls:
+                                tool_step_index = next_round_index
                                 await Message.create(
                                     conversation=conversation,
                                     role=MessageRole.TOOL,
                                     content=tc_data["display_result"],
                                     tool_call_id=tc_data["id"],
                                     tool_name=tc_data["name"],
+                                    round_id=round_id,
+                                    round_index=tool_step_index,
+                                    round_role=MessageRoundRole.TOOL_RESULT,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
                                 )
-                                working_history_override.append(
-                                    {
-                                        "role": "tool",
-                                        "content": tc_data["llm_result"],
-                                        "tool_call_id": tc_data["id"],
-                                        "tool_name": tc_data["name"],
-                                    }
+                                next_round_index += 1
+                                append_round_history_entry(
+                                    working_history_override,
+                                    role="tool",
+                                    content=tc_data["llm_result"],
+                                    tool_call_id=tc_data["id"],
+                                    tool_name=tc_data["name"],
+                                    round_id=round_id,
+                                    round_index=tool_step_index,
+                                    round_role=MessageRoundRole.TOOL_RESULT.value,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
                                 )
+
+                            if iteration >= max_iterations:
+                                max_iterations_reached = True
+                                yield f"event: {SSEEventType.ITERATION_CAP_REACHED}\ndata: {json.dumps({'content': build_max_iterations_terminal_content(current_user.locale)})}\n\n"
+                                last_event_time = time.time()
+                                full_content = ""
+                                full_reasoning = ""
+                                break
 
                             # Continue the loop to get the final response
                             pending_tool_calls = []
                             collected_tool_calls = []
+                            full_content = ""
+                            full_reasoning = ""
                             continue
                         else:
                             # No tool calls, we're done
                             break
 
                     duration_ms = int((time.time() - start_time) * 1000)
+                    terminal_content = (
+                        build_max_iterations_terminal_content(current_user.locale)
+                        if max_iterations_reached
+                        else full_content
+                    )
+                    terminal_round_status = get_round_terminal_status(
+                        completed=not max_iterations_reached,
+                        max_iterations_reached=max_iterations_reached,
+                    )
 
                     # Update assistant message (final response, no tool_calls)
-                    assistant_msg.content = full_content
+                    assistant_msg.content = terminal_content
                     assistant_msg.reasoning_content = (
-                        full_reasoning if full_reasoning else None
+                        None
+                        if max_iterations_reached
+                        else (full_reasoning if full_reasoning else None)
                     )
                     assistant_msg.model_used = model_id
                     assistant_msg.duration_ms = duration_ms
+                    assistant_msg.is_manually_stopped = False
+                    assistant_msg.round_status = terminal_round_status
                     # Ensure assistant message appears after tool calls/results in history
                     assistant_msg.created_at = now_utc()
                     # Estimate token usage
@@ -2716,6 +2994,7 @@ async def chat_stream(
                         current_user_message_id=user_msg.id,
                         include_current_user_message=True,
                         exclude_message_ids=[assistant_msg.id],
+                        protected_round_id=round_id,
                     )
                     input_tokens = sum(
                         len(message_content or "") // 4
@@ -2728,7 +3007,7 @@ async def chat_stream(
                         )
                         if isinstance(message_content, str)
                     )
-                    output_tokens = len(full_content) // 4
+                    output_tokens = len(terminal_content) // 4
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -2774,23 +3053,71 @@ async def chat_stream(
                     )
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': 1, 'version_count': 1})}\n\n"
 
-                except QuotaExceededError as e:
+                except (QuotaExceededError, InsufficientQuotaError) as e:
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     logger.warning("Quota exceeded during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except ModelNotFoundError as e:
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     logger.error("Model not found error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('model_not_found')})}\n\n"
                 except AuthenticationError as e:
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     logger.error("Authentication error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': t('unauthorized')})}\n\n"
                 except RateLimitError as e:
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     logger.warning("Rate limit error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
                 except LLMError as e:
                     logger.exception(f"LLM error during stream: {e}")
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
                     logger.exception(f"Unexpected error during stream: {e}")
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
 
         except TimeoutError:
@@ -2798,17 +3125,38 @@ async def chat_stream(
             logger.warning(
                 f"Stream global timeout ({global_timeout}s) for conversation {conversation.id}"
             )
-            # Save partial content
-            if full_content or full_reasoning:
-                assistant_msg.content = full_content
-                assistant_msg.reasoning_content = (
-                    full_reasoning if full_reasoning else None
-                )
-                assistant_msg.model_used = model_id
-                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
-                await assistant_msg.save()
+            await persist_partial_round_error(
+                assistant_msg,
+                content=full_content,
+                reasoning=full_reasoning,
+                model_id=model_id,
+                start_time=start_time,
+                fallback_content=t('stream_timeout_exceeded'),
+            )
             # Send timeout error event
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
+        except asyncio.CancelledError:
+            logger.info(
+                "Stream cancelled for conversation %s; persisting stopped assistant state",
+                conversation.id,
+            )
+            if assistant_msg:
+                assistant_msg.content = full_content
+                assistant_msg.reasoning_content = full_reasoning or None
+                assistant_msg.model_used = model_id
+                assistant_msg.duration_ms = int((time.time() - start_time) * 1000)
+                assistant_msg.is_manually_stopped = True
+                assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                assistant_msg.created_at = now_utc()
+                if (
+                    assistant_msg.content
+                    or assistant_msg.reasoning_content
+                    or assistant_msg.tool_calls
+                ):
+                    await assistant_msg.save()
+                else:
+                    await assistant_msg.delete()
+            raise
 
         finally:
             # Resource cleanup and logging
@@ -2882,11 +3230,19 @@ async def build_message_out_with_versions(
         tool_calls=message.tool_calls,
         tool_call_id=message.tool_call_id,
         tool_name=message.tool_name,
+        reasoning_content=message.reasoning_content,
         model_used=message.model_used,
         token_usage=message.token_usage,
         duration_ms=message.duration_ms,
+        is_manually_stopped=message.is_manually_stopped,
         rag_context=message.rag_context,
         created_at=message.created_at,
+        round_id=message.round_id,
+        round_index=message.round_index,
+        round_role=message.round_role.value if message.round_role else None,
+        is_round_canonical=message.is_round_canonical,
+        iteration_index=message.iteration_index,
+        round_status=message.round_status.value if message.round_status else None,
         parent_id=message.parent_id,
         is_active=message.is_active,
         version_number=message.version_number,
@@ -3127,6 +3483,8 @@ async def regenerate_message(
         full_content = ""
         full_reasoning = ""
         new_message_id = None
+        new_message: Message | None = None
+        model_id: str | None = None
 
         logger.info(
             f"Starting regenerate stream for message {message_id}, "
@@ -3154,6 +3512,9 @@ async def regenerate_message(
                     await Message.filter(id=root_id).update(is_active=False)
                     await Message.filter(parent_id=root_id).update(is_active=False)
 
+                    round_id = uuid4()
+                    next_round_index = 1
+
                     # Create new version message
                     new_message = await Message.create(
                         conversation=conversation,
@@ -3162,6 +3523,10 @@ async def regenerate_message(
                         parent_id=root_id,
                         is_active=True,
                         version_number=new_version_number,
+                        round_id=round_id,
+                        round_index=0,
+                        round_role=MessageRoundRole.ASSISTANT_FINAL,
+                        is_round_canonical=True,
                     )
                     new_message_id = str(new_message.id)
 
@@ -3221,9 +3586,12 @@ async def regenerate_message(
                     # Streaming generation (simplified - same as main chat)
                     max_iterations = agent.max_iterations or 5
                     iteration = 0
+                    max_iterations_reached = False
 
                     while iteration < max_iterations:
                         iteration += 1
+
+                        pending_tool_calls = []
 
                         # Heartbeat check and send
                         (
@@ -3233,17 +3601,19 @@ async def regenerate_message(
                             last_event_time, heartbeat_interval, request
                         )
                         if not should_continue:
-                            # Client disconnected, save partial content and exit
-                            if full_content or full_reasoning:
-                                new_message.content = full_content
-                                new_message.reasoning_content = (
-                                    full_reasoning if full_reasoning else None
-                                )
-                                new_message.model_used = model_id
-                                new_message.duration_ms = int(
-                                    (time.time() - start_time) * 1000
-                                )
-                                await new_message.save()
+                            # Client disconnected, save current stopped state and exit
+                            new_message.content = full_content
+                            new_message.reasoning_content = (
+                                full_reasoning if full_reasoning else None
+                            )
+                            new_message.model_used = model_id
+                            new_message.duration_ms = int(
+                                (time.time() - start_time) * 1000
+                            )
+                            new_message.is_manually_stopped = True
+                            new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            new_message.created_at = now_utc()
+                            await new_message.save()
                             return
 
                         # If we need to send heartbeat
@@ -3252,6 +3622,8 @@ async def regenerate_message(
                             last_event_time = new_last_event_time
 
                         reasoning_started = False
+                        full_content = ""
+                        full_reasoning = ""
                         collected_tool_calls = []
                         client_disconnected = False
                         context_retry_used = False
@@ -3273,6 +3645,7 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -3305,6 +3678,7 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -3390,6 +3764,7 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                protected_round_id=round_id,
                             )
                             compression_start, compression_end = build_compression_events(
                                 agent=agent,
@@ -3452,18 +3827,20 @@ async def regenerate_message(
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
 
-                        # If client disconnected, save partial content and exit
+                        # If client disconnected, save current stopped state and exit
                         if client_disconnected:
-                            if full_content or full_reasoning:
-                                new_message.content = full_content
-                                new_message.reasoning_content = (
-                                    full_reasoning if full_reasoning else None
-                                )
-                                new_message.model_used = model_id
-                                new_message.duration_ms = int(
-                                    (time.time() - start_time) * 1000
-                                )
-                                await new_message.save()
+                            new_message.content = full_content
+                            new_message.reasoning_content = (
+                                full_reasoning if full_reasoning else None
+                            )
+                            new_message.model_used = model_id
+                            new_message.duration_ms = int(
+                                (time.time() - start_time) * 1000
+                            )
+                            new_message.is_manually_stopped = True
+                            new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            new_message.created_at = now_utc()
+                            await new_message.save()
                             return  # Exit generator - client is gone
 
                         if collected_tool_calls:
@@ -3474,16 +3851,20 @@ async def regenerate_message(
                                     logger.info(
                                         "Client disconnected before tool execution in regenerate"
                                     )
-                                    if full_content or full_reasoning:
-                                        new_message.content = full_content
-                                        new_message.reasoning_content = (
-                                            full_reasoning if full_reasoning else None
-                                        )
-                                        new_message.model_used = model_id
-                                        new_message.duration_ms = int(
-                                            (time.time() - start_time) * 1000
-                                        )
-                                        await new_message.save()
+                                    new_message.content = full_content
+                                    new_message.reasoning_content = (
+                                        full_reasoning if full_reasoning else None
+                                    )
+                                    new_message.model_used = model_id
+                                    new_message.duration_ms = int(
+                                        (time.time() - start_time) * 1000
+                                    )
+                                    new_message.is_manually_stopped = True
+                                    new_message.round_status = (
+                                        MessageRoundStatus.MANUALLY_STOPPED
+                                    )
+                                    new_message.created_at = now_utc()
+                                    await new_message.save()
                                     return
 
                                 tool_name = tc.function.name
@@ -3508,27 +3889,65 @@ async def regenerate_message(
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
                                 )
+                                pending_tool_calls.append(
+                                    {
+                                        "id": tc.id,
+                                        "name": tool_name,
+                                        "arguments": arguments,
+                                        "display_result": display_result,
+                                        "llm_result": llm_result,
+                                        "display_name": tool_display_name,
+                                    }
+                                )
 
                                 # Check if client disconnected after tool execution
                                 if await request.is_disconnected():
                                     logger.info(
                                         "Client disconnected after tool execution in regenerate"
                                     )
-                                    if full_content or full_reasoning:
-                                        new_message.content = full_content
-                                        new_message.reasoning_content = (
-                                            full_reasoning if full_reasoning else None
-                                        )
-                                        new_message.model_used = model_id
-                                        new_message.duration_ms = int(
-                                            (time.time() - start_time) * 1000
-                                        )
-                                        await new_message.save()
+                                    new_message.content = full_content
+                                    new_message.reasoning_content = (
+                                        full_reasoning if full_reasoning else None
+                                    )
+                                    new_message.model_used = model_id
+                                    new_message.duration_ms = int(
+                                        (time.time() - start_time) * 1000
+                                    )
+                                    new_message.is_manually_stopped = True
+                                    new_message.round_status = (
+                                        MessageRoundStatus.MANUALLY_STOPPED
+                                    )
+                                    new_message.created_at = now_utc()
+                                    await new_message.save()
                                     return
 
                                 yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
                                 last_event_time = time.time()
 
+                                assistant_step_index = next_round_index
+                                await Message.create(
+                                    conversation=conversation,
+                                    role=MessageRole.ASSISTANT,
+                                    content=full_content,
+                                    reasoning_content=full_reasoning or None,
+                                    tool_calls=[
+                                        {
+                                            "id": tc.id,
+                                            "name": tool_name,
+                                            "display_name": tool_display_name,
+                                            "arguments": arguments,
+                                        }
+                                    ],
+                                    parent_id=new_message.parent_id or new_message.id,
+                                    version_number=new_version_number,
+                                    round_id=round_id,
+                                    round_index=assistant_step_index,
+                                    round_role=MessageRoundRole.ASSISTANT_STEP,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
+                                )
+                                next_round_index += 1
+                                tool_step_index = next_round_index
                                 await Message.create(
                                     conversation=conversation,
                                     role=MessageRole.TOOL,
@@ -3537,44 +3956,83 @@ async def regenerate_message(
                                     tool_name=tool_name,
                                     parent_id=new_message.parent_id or new_message.id,
                                     version_number=new_version_number,
+                                    round_id=round_id,
+                                    round_index=tool_step_index,
+                                    round_role=MessageRoundRole.TOOL_RESULT,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
                                 )
+                                next_round_index += 1
                                 if working_history_override is None:
                                     working_history_override = []
-                                working_history_override.append(
-                                    {
-                                        "role": "assistant",
-                                        "content": "",
-                                        "reasoning_content": "",
-                                        "tool_calls": [
-                                            {
-                                                "id": tc.id,
-                                                "name": tool_name,
-                                                "arguments": arguments,
-                                            }
-                                        ],
-                                    }
+                                append_round_history_entry(
+                                    working_history_override,
+                                    role="assistant",
+                                    content=full_content,
+                                    reasoning_content=full_reasoning or None,
+                                    tool_calls=[
+                                        {
+                                            "id": tc.id,
+                                            "name": tool_name,
+                                            "display_name": tool_display_name,
+                                            "arguments": arguments,
+                                        }
+                                    ],
+                                    round_id=round_id,
+                                    round_index=assistant_step_index,
+                                    round_role=MessageRoundRole.ASSISTANT_STEP.value,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
                                 )
-                                working_history_override.append(
-                                    {
-                                        "role": "tool",
-                                        "content": llm_result,
-                                        "tool_call_id": tc.id,
-                                        "tool_name": tool_name,
-                                    }
+                                append_round_history_entry(
+                                    working_history_override,
+                                    role="tool",
+                                    content=llm_result,
+                                    tool_call_id=tc.id,
+                                    tool_name=tool_name,
+                                    round_id=round_id,
+                                    round_index=tool_step_index,
+                                    round_role=MessageRoundRole.TOOL_RESULT.value,
+                                    is_round_canonical=False,
+                                    iteration_index=iteration,
                                 )
+                                full_content = ""
+                                full_reasoning = ""
+
+                            if iteration >= max_iterations:
+                                max_iterations_reached = True
+                                yield f"event: {SSEEventType.ITERATION_CAP_REACHED}\ndata: {json.dumps({'content': build_max_iterations_terminal_content(current_user.locale)})}\n\n"
+                                last_event_time = time.time()
+                                full_content = ""
+                                full_reasoning = ""
+                                break
+
                             continue
                         else:
                             break
 
                     duration_ms = int((time.time() - start_time) * 1000)
+                    terminal_content = (
+                        build_max_iterations_terminal_content(current_user.locale)
+                        if max_iterations_reached
+                        else full_content
+                    )
+                    terminal_round_status = get_round_terminal_status(
+                        completed=not max_iterations_reached,
+                        max_iterations_reached=max_iterations_reached,
+                    )
 
                     # Update new message
-                    new_message.content = full_content
+                    new_message.content = terminal_content
                     new_message.reasoning_content = (
-                        full_reasoning if full_reasoning else None
+                        None
+                        if max_iterations_reached
+                        else (full_reasoning if full_reasoning else None)
                     )
                     new_message.model_used = model_id
                     new_message.duration_ms = duration_ms
+                    new_message.is_manually_stopped = False
+                    new_message.round_status = terminal_round_status
                     # Ensure regenerated message appears after tool calls/results in history
                     new_message.created_at = now_utc()
                     final_prepared_context = await prepare_model_context(
@@ -3594,6 +4052,7 @@ async def regenerate_message(
                         current_user_message_id=user_message.id,
                         include_current_user_message=True,
                         history_before_message_created_at=message.created_at,
+                        protected_round_id=round_id,
                     )
                     input_tokens = sum(
                         len(message_content or "") // 4
@@ -3606,7 +4065,7 @@ async def regenerate_message(
                         )
                         if isinstance(message_content, str)
                     )
-                    output_tokens = len(full_content) // 4
+                    output_tokens = len(terminal_content) // 4
                     new_message.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -3637,27 +4096,54 @@ async def regenerate_message(
                     )
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': input_tokens + output_tokens}, 'timing': {'first_token_ms': first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'version_number': new_version_number, 'version_count': new_version_number})}\n\n"
 
-                except QuotaExceededError as e:
-                    # Rollback: delete new message and restore original
-                    if new_message_id:
-                        await Message.filter(id=new_message_id).delete()
-                        # Restore original message as active
+                except (QuotaExceededError, InsufficientQuotaError) as e:
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
+                    if preserved_partial:
+                        await Message.filter(id=message.id).update(is_active=False)
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.warning("Quota exceeded during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except LLMError as e:
-                    # Rollback: delete new message and restore original
-                    if new_message_id:
-                        await Message.filter(id=new_message_id).delete()
-                        # Restore original message as active
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
+                    if preserved_partial:
+                        await Message.filter(id=message.id).update(is_active=False)
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("LLM error during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
                 except Exception as e:
-                    # Rollback: delete new message and restore original
-                    if new_message_id:
-                        await Message.filter(id=new_message_id).delete()
-                        # Restore original message as active
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                    )
+                    if preserved_partial:
+                        await Message.filter(id=message.id).update(is_active=False)
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("Unexpected error during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
@@ -3667,17 +4153,44 @@ async def regenerate_message(
             logger.warning(
                 f"Regenerate stream global timeout ({global_timeout}s) for message {message_id}"
             )
-            # Save partial content
-            if full_content or full_reasoning:
-                new_message.content = full_content
-                new_message.reasoning_content = (
-                    full_reasoning if full_reasoning else None
-                )
-                new_message.model_used = model_id
-                new_message.duration_ms = int((time.time() - start_time) * 1000)
-                await new_message.save()
+            preserved_partial = await persist_partial_round_error(
+                new_message,
+                content=full_content,
+                reasoning=full_reasoning,
+                model_id=model_id,
+                start_time=start_time,
+                fallback_content=t('stream_timeout_exceeded'),
+            )
+            if preserved_partial:
+                await Message.filter(id=message.id).update(is_active=False)
+            elif new_message_id:
+                await Message.filter(id=new_message_id).delete()
+                await Message.filter(id=message.id).update(is_active=True)
             # Send timeout error event
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
+        except asyncio.CancelledError:
+            logger.info(
+                "Regenerate stream cancelled for message %s; persisting stopped assistant state",
+                message_id,
+            )
+            if new_message:
+                new_message.content = full_content
+                new_message.reasoning_content = full_reasoning or None
+                new_message.model_used = model_id
+                new_message.duration_ms = int((time.time() - start_time) * 1000)
+                new_message.is_manually_stopped = True
+                new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                new_message.created_at = now_utc()
+                if (
+                    new_message.content
+                    or new_message.reasoning_content
+                    or new_message.tool_calls
+                ):
+                    await new_message.save()
+                else:
+                    await Message.filter(id=new_message.id).delete()
+                    await Message.filter(id=message.id).update(is_active=True)
+            raise
 
         finally:
             # Resource cleanup and logging

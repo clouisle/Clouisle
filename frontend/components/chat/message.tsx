@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Streamdown } from 'streamdown'
 import { ImageLightbox, useLightbox } from './image-lightbox'
@@ -54,6 +54,8 @@ import {
   isTaskPart,
   isUserInputRequestPart,
   isTruncatedPart,
+  isStoppedPart,
+  isIterationCapReachedPart,
 } from './types'
 import { SourceContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
@@ -120,29 +122,31 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
     const documentSources = message.parts.filter(isSourceDocumentPart) as SourceDocumentPart[]
     const otherParts = message.parts.filter((p) => !isSourcePart(p))
+    const hasIterationCapMarker = otherParts.some(isIterationCapReachedPart)
+    const iterationCapLabel = t('iterationCapReached').trim()
 
     // Get text content for copying (strip citation markers)
-    const getTextContent = React.useCallback(() => {
-      return message.parts
-        .filter(isTextPart)
-        .map((part) => (part as TextPart).text.replace(/\[\[cite:\d+\]\]/g, ''))
-        .join('\n')
-        .trim()
-    }, [message.parts])
+    const textContent = message.parts
+      .filter((part): part is TextPart => (
+        isTextPart(part)
+        && !(hasIterationCapMarker && part.text.trim() === iterationCapLabel)
+      ))
+      .map((part) => part.text.replace(/\[\[cite:\d+\]\]/g, ''))
+      .join('\n')
+      .trim()
 
     // Handle copy
-    const handleCopy = React.useCallback(async () => {
-      const text = getTextContent()
-      if (!text) return
+    const handleCopy = async () => {
+      if (!textContent) return
 
       try {
-        await navigator.clipboard.writeText(text)
+        await navigator.clipboard.writeText(textContent)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       } catch (err) {
         console.error('Failed to copy:', err)
       }
-    }, [getTextContent])
+    }
 
     const renderToolResultContent = (output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
@@ -220,6 +224,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Render a single part
     const renderDefaultPart = (part: MessagePart, index: number) => {
       if (isTextPart(part)) {
+        if (hasIterationCapMarker && part.text.trim() === iterationCapLabel) {
+          return null
+        }
         return (
           <TextWithCitations
             key={index}
@@ -350,10 +357,36 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      if (isIterationCapReachedPart(part)) {
+        return (
+          <div
+            key={index}
+            className="flex items-start gap-2 mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-sm text-orange-800 dark:border-orange-800/50 dark:bg-orange-950/30 dark:text-orange-200"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{t('iterationCapReached')}</span>
+          </div>
+        )
+      }
+
+      // Manually stopped marker is rendered once at message level
+      if (isStoppedPart(part)) {
+        return null
+      }
+
       return null
     }
 
     // Get task parts and reasoning parts for ChainOfThought
+    const isManuallyStoppedMessage = Boolean(message.metadata?.isManuallyStopped) || otherParts.some(isStoppedPart)
+    const streamErrorMessage = typeof message.metadata?.errorMessage === 'string'
+      ? message.metadata.errorMessage
+      : null
+    const isErroredMessage = Boolean(isAssistant && message.metadata?.isError)
+    const preservedErrorNote = streamErrorMessage ?? t('partialResponseError')
+    const showPreservedErrorNote = Boolean(
+      isErroredMessage && message.metadata?.preservedPartialProgress
+    )
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
     const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
@@ -569,8 +602,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             steps.push(
               <ChainOfThoughtStep
                 key={`reasoning-${index}`}
+                icon={Brain}
                 label={reasoningPart.state === 'streaming'
-                  ? tReasoning('processing')
+                  ? tReasoning('thinking')
                   : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
                 }
                 status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
@@ -604,9 +638,23 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Filter parts for file attachments
     const fileParts = otherParts.filter(isFilePart)
     const contentParts = otherParts.filter((p) => !isFilePart(p) && !isToolResultPart(p) && !isMcpToolResultPart(p) && !isTaskPart(p) && !isReasoningPart(p))
+    const visibleContentParts = (
+      isErroredMessage
+      && !showPreservedErrorNote
+      && streamErrorMessage
+    )
+      ? contentParts.filter((part) => !(isTextPart(part) && part.text.trim() === streamErrorMessage.trim()))
+      : contentParts
 
     // Check if this is a loading placeholder message (only show if no ChainOfThought)
-    const isLoadingMessage = message.metadata?.isLoading && contentParts.length === 0 && !hasChainOfThought
+    const isLoadingMessage = message.metadata?.isLoading && visibleContentParts.length === 0 && !hasChainOfThought
+    const isStandaloneErrorMessage = Boolean(
+      isErroredMessage
+      && !showPreservedErrorNote
+      && visibleContentParts.length === 0
+      && !hasChainOfThought
+      && !isLoadingMessage
+    )
 
     return (
       <div
@@ -626,7 +674,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </MessageAttachments>
             )}
 
-            <MessageContent>
+            <MessageContent className={cn(isErroredMessage && 'rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2')}>
               {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought isStreaming={isChainOfThoughtStreaming}>
@@ -643,9 +691,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   <span className="text-sm">{t('thinking')}</span>
                 </div>
               ) : (
-                contentParts.map((part, index) =>
+                visibleContentParts.map((part, index) =>
                   renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
                 )
+              )}
+              {isErroredMessage && (
+                <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
+                  <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
+                  <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+                </div>
+              )}
+              {isAssistant && isManuallyStoppedMessage && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Square className="h-3 w-3 shrink-0 fill-current" />
+                  <span>{t('manuallyStopped')}</span>
+                </div>
               )}
             </MessageContent>
 
@@ -655,7 +715,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && getTextContent() && (
+            {isAssistant && !isStreaming && textContent && (
               <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (

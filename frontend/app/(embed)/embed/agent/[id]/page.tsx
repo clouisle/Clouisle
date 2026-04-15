@@ -253,7 +253,7 @@ function EmbedAgentChatContent() {
             />
           </div>
         ) : (
-          <span className="text-4xl">{agent.icon}</span>
+          <span className="flex h-20 w-20 items-center justify-center leading-none text-4xl">{agent.icon}</span>
         )
       ) : (
         <Bot className="h-10 w-10 text-muted-foreground" />
@@ -298,7 +298,7 @@ function EmbedAgentChatContent() {
                 />
               </div>
             ) : (
-              <span className="text-lg">{agent.icon}</span>
+              <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{agent.icon}</span>
             )
           )}
           <span className="font-medium text-sm">{agent.name}</span>

@@ -226,15 +226,18 @@ class InsufficientQuotaError(LLMError):
     def __init__(
         self,
         message: str = "Insufficient quota",
+        quota_type: str | None = None,
         provider: str | None = None,
         model: str | None = None,
         **kwargs,
     ):
+        self.quota_type = quota_type
         super().__init__(
             message=message,
             code="insufficient_quota",
             provider=provider,
             model=model,
+            details={"quota_type": quota_type} if quota_type else {},
             **kwargs,
         )
 

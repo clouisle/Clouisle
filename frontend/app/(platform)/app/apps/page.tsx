@@ -326,7 +326,7 @@ export default function AppsPage() {
                             className="object-cover"
                           />
                         ) : (
-                          <span className="text-base">{app.icon}</span>
+                          <span className="flex h-full w-full items-center justify-center leading-none text-base">{app.icon}</span>
                         )
                       ) : (
                         <AppIcon className="h-4 w-4" />

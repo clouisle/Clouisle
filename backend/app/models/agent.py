@@ -272,6 +272,24 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
+class MessageRoundRole(str, Enum):
+    """Round-level semantic role for persisted chat messages."""
+
+    USER_INPUT = "user_input"
+    ASSISTANT_FINAL = "assistant_final"
+    ASSISTANT_STEP = "assistant_step"
+    TOOL_RESULT = "tool_result"
+
+
+class MessageRoundStatus(str, Enum):
+    """Terminal status for a completed assistant round."""
+
+    COMPLETED = "completed"
+    MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    MANUALLY_STOPPED = "manually_stopped"
+    ERROR = "error"
+
+
 class ConversationSessionMemoryStatus(str, Enum):
     """Conversation session-memory snapshot status."""
 
@@ -388,6 +406,31 @@ class Message(models.Model):
         max_length=100, null=True, description="Tool name (for tool role messages)"
     )
 
+    # Round metadata
+    round_id = fields.UUIDField(null=True, description="Round ID shared by messages in the same agent execution round")
+    round_index = fields.IntField(
+        default=0,
+        description="Stable order of this message within its round",
+    )
+    round_role = fields.CharEnumField(
+        MessageRoundRole,
+        null=True,
+        description="Round semantic role for this message",
+    )
+    is_round_canonical = fields.BooleanField(
+        default=False,
+        description="Whether this message is the canonical visible message for its round",
+    )
+    iteration_index = fields.IntField(
+        null=True,
+        description="Tool-loop iteration index for step and tool result messages",
+    )
+    round_status = fields.CharEnumField(
+        MessageRoundStatus,
+        null=True,
+        description="Terminal round status recorded on canonical assistant messages",
+    )
+
     # Reasoning content (for assistant messages with chain-of-thought)
     reasoning_content = fields.TextField(
         null=True, description="Reasoning/thinking content from LLM"
@@ -399,6 +442,9 @@ class Message(models.Model):
         null=True, description='Token usage {"prompt": 100, "completion": 50}'
     )
     duration_ms = fields.IntField(null=True, description="Response duration in ms")
+    is_manually_stopped = fields.BooleanField(
+        default=False, description="Whether generation was manually stopped"
+    )
 
     # RAG context (for user messages that triggered retrieval)
     rag_context: list | None = fields.JSONField(

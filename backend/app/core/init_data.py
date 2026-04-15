@@ -424,6 +424,96 @@ async def init_agent_context_compression_config():
     logger.info("Agent context_compression_config migration complete")
 
 
+async def init_message_manual_stop_field():
+    """
+    Add is_manually_stopped field to messages table if it doesn't exist.
+    This handles the migration for persisted manual stop state on assistant messages.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking message is_manually_stopped field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping is_manually_stopped migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'messages' AND column_name = 'is_manually_stopped'
+    """)
+
+    if not rows:
+        logger.info("Adding is_manually_stopped column to messages table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE messages
+                ADD COLUMN is_manually_stopped BOOLEAN NOT NULL DEFAULT FALSE
+            """)
+            logger.info("Added is_manually_stopped column to messages table")
+        except Exception as e:
+            logger.error(f"Could not add is_manually_stopped column: {e}")
+            raise
+    else:
+        logger.info("is_manually_stopped column already exists")
+
+    logger.info("Message manual stop migration complete")
+
+
+async def init_message_round_fields():
+    """
+    Add round-aware metadata fields to messages table.
+    This handles the migration for first-class round tracking.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Initializing message round metadata fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info("Messages table does not exist yet, skipping round metadata migration")
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_id UUID NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_index INT NOT NULL DEFAULT 0
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_role VARCHAR(32) NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS is_round_canonical BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS iteration_index INT NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_status VARCHAR(32) NULL
+    """)
+
+    logger.info("Message round metadata migration complete")
+
+
 async def init_conversation_session_memory_table():
     """Create the conversation_session_memories table if it does not exist."""
     logger.info("Initializing conversation session memory table...")

@@ -86,6 +86,7 @@ export {
   type SSEContentDelta,
   type SSERagContext,
   type SSEMessageEnd,
+  type SSEIterationCapReached,
   type SSECompression,
   type SSEError,
   type SSEToolCall,

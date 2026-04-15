@@ -56,6 +56,8 @@ async def lifespan(app: FastAPI):
         init_agent_visibility_values,
         init_agent_streaming_config,
         init_agent_context_compression_config,
+        init_message_manual_stop_field,
+        init_message_round_fields,
         init_conversation_session_memory_table,
         init_agent_user_input_request,
         init_agent_memory_fields,
@@ -105,6 +107,16 @@ async def lifespan(app: FastAPI):
         await init_agent_context_compression_config()
     except Exception as e:
         logger.warning(f"Agent context_compression_config migration failed: {e}")
+
+    try:
+        await init_message_manual_stop_field()
+    except Exception as e:
+        logger.warning(f"Message manual stop migration failed: {e}")
+
+    try:
+        await init_message_round_fields()
+    except Exception as e:
+        logger.warning(f"Message round metadata migration failed: {e}")
 
     try:
         await init_conversation_session_memory_table()

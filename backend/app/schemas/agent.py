@@ -43,6 +43,24 @@ class MessageRole:
     TOOL = "tool"
 
 
+class MessageRoundRole:
+    """Round-level semantic role constants"""
+
+    USER_INPUT = "user_input"
+    ASSISTANT_FINAL = "assistant_final"
+    ASSISTANT_STEP = "assistant_step"
+    TOOL_RESULT = "tool_result"
+
+
+class MessageRoundStatus:
+    """Round terminal status constants"""
+
+    COMPLETED = "completed"
+    MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    MANUALLY_STOPPED = "manually_stopped"
+    ERROR = "error"
+
+
 # ============ Shared Schemas ============
 
 
@@ -747,6 +765,33 @@ class MessageVersion(BaseModel):
         from_attributes = True
 
 
+class MessageRoundStep(BaseModel):
+    """Nested internal step data for a canonical round message."""
+
+    id: UUID
+    role: str
+    content: str
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    tool_name: str | None = None
+    reasoning_content: str | None = None
+    model_used: str | None = None
+    token_usage: dict[str, int] | None = None
+    duration_ms: int | None = None
+    is_manually_stopped: bool = False
+    rag_context: list[dict[str, Any]] | None = None
+    created_at: datetime
+    round_id: UUID | None = None
+    round_index: int = 0
+    round_role: str | None = None
+    is_round_canonical: bool = False
+    iteration_index: int | None = None
+    round_status: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class MessageOut(BaseModel):
     """Message response schema"""
 
@@ -767,8 +812,16 @@ class MessageOut(BaseModel):
     model_used: str | None = None
     token_usage: dict[str, int] | None = None
     duration_ms: int | None = None
+    is_manually_stopped: bool = False
     rag_context: list[dict[str, Any]] | None = None
     created_at: datetime
+    round_id: UUID | None = None
+    round_index: int = 0
+    round_role: str | None = None
+    is_round_canonical: bool = False
+    iteration_index: int | None = None
+    round_status: str | None = None
+    steps: list[MessageRoundStep] | None = None
     # Version info
     parent_id: UUID | None = None
     is_active: bool = True
@@ -865,6 +918,30 @@ class HistoryMessage(BaseModel):
         default=None,
         description="Tool result tool name",
     )
+    round_id: UUID | None = Field(
+        default=None,
+        description="Round ID shared by messages in the same execution round",
+    )
+    round_index: int = Field(
+        default=0,
+        description="Stable order of the message within its round",
+    )
+    round_role: str | None = Field(
+        default=None,
+        description="Round semantic role for the history message",
+    )
+    is_round_canonical: bool = Field(
+        default=False,
+        description="Whether this message is the canonical visible message of its round",
+    )
+    iteration_index: int | None = Field(
+        default=None,
+        description="Tool-loop iteration index for this message",
+    )
+    round_status: str | None = Field(
+        default=None,
+        description="Terminal round status for canonical assistant messages",
+    )
 
 
 class ChatRequest(BaseModel):
@@ -922,5 +999,6 @@ class SSEEventType:
     COMPRESSION_START = "compression_start"  # 上下文压缩开始
     COMPRESSION_END = "compression_end"  # 上下文压缩结束
     OUTPUT_TRUNCATED = "output_truncated"  # 输出被截断（达到max_tokens限制）
+    ITERATION_CAP_REACHED = "iteration_cap_reached"
     MESSAGE_END = "message_end"
     ERROR = "error"
