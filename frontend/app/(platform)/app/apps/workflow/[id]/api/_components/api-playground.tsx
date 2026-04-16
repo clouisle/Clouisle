@@ -23,9 +23,12 @@ interface WorkflowEventData {
   data?: {
     duration_ms?: number
     outputs?: unknown
+    output?: unknown
     error?: string
     node_label?: string
     node_type?: string
+    reason?: unknown
+    [key: string]: unknown
   }
   node_id?: string
   event?: string
@@ -370,7 +373,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                   {data?.data?.node_label || data?.node_id}
                 </span>
               </div>
-              {data?.data?.reason && (
+              {data?.data?.reason != null && (
                 <div className="ml-5 text-xs text-muted-foreground">{t('apiPlayground.nodeSkipped', { reason: String(data.data.reason) })}</div>
               )}
             </div>
