@@ -3,9 +3,14 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square } from 'lucide-react'
+import { useTheme } from 'next-themes'
+import type { MermaidConfig } from 'mermaid'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, ZoomIn, ZoomOut, Download, Maximize2, Minimize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Streamdown } from 'streamdown'
+import {
+  Block,
+  Streamdown,
+} from 'streamdown'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Popover,
@@ -66,6 +71,715 @@ import {
   isMediaVideoToolResult,
   parseToolResultOutput,
 } from '@/lib/utils/tool-result'
+
+const MERMAID_FENCE_REGEX = /^```mermaid\r?\n([\s\S]*?)\r?\n```$/
+const MERMAID_PARTIAL_FENCE_REGEX = /^```mermaid\r?\n([\s\S]*)$/
+const MERMAID_PARTIAL_OPENING_REGEX = /```mermaid\r?\n([\s\S]*)$/
+const MERMAID_MIN_ZOOM = 0.5
+const MERMAID_MAX_ZOOM = 2
+const MERMAID_ZOOM_STEP = 0.1
+const mermaidSvgCache = new Map<string, string>()
+const mermaidStreamSessions = new Map<string, MermaidStreamSession>()
+let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
+let mermaidInitializedTheme: MermaidTheme | null = null
+
+type MermaidTheme = NonNullable<MermaidConfig['theme']>
+
+type MermaidStreamSession = {
+  committedCode: string
+  renderedSvg: string
+  animatedSvg: string
+  renderedTheme: MermaidTheme
+  error: string | null
+}
+
+function normalizeMermaidCode(content: string) {
+  return content.replace(/\r\n?/g, '\n')
+}
+
+function getMermaidRenderErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Failed to render Mermaid chart'
+}
+
+function getMermaidSession(streamKey: string) {
+  return mermaidStreamSessions.get(streamKey) ?? null
+}
+
+function isMermaidFence(content: string) {
+  return MERMAID_FENCE_REGEX.test(content)
+}
+
+function isPartialMermaidFence(content: string) {
+  if (!MERMAID_PARTIAL_FENCE_REGEX.test(content)) {
+    return false
+  }
+
+  return !content.trimEnd().endsWith('```')
+}
+
+function extractMermaidCode(content: string) {
+  const match = content.match(MERMAID_FENCE_REGEX) ?? content.match(MERMAID_PARTIAL_OPENING_REGEX)
+  return normalizeMermaidCode(match?.[1] ?? content)
+}
+
+function getMermaidCacheKey(code: string, theme: MermaidTheme) {
+  return `${theme}:${code}`
+}
+
+function isMermaidCommentLine(line: string) {
+  return line.trimStart().startsWith('%%')
+}
+
+function areMermaidDelimitersBalanced(line: string) {
+  if (!line.trim() || isMermaidCommentLine(line)) {
+    return true
+  }
+
+  let round = 0
+  let square = 0
+  let curly = 0
+  let quote: '"' | '\'' | null = null
+  let escaped = false
+
+  for (const char of line) {
+    if (quote) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+      if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (char === '"' || char === '\'') {
+      quote = char
+      continue
+    }
+
+    if (char === '(') round += 1
+    if (char === ')') round -= 1
+    if (char === '[') square += 1
+    if (char === ']') square -= 1
+    if (char === '{') curly += 1
+    if (char === '}') curly -= 1
+
+    if (round < 0 || square < 0 || curly < 0) {
+      return false
+    }
+  }
+
+  return quote === null && round === 0 && square === 0 && curly === 0
+}
+
+function hasDanglingMermaidConnector(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  return /(?:-->|---|==>|-\.->|--|==|~~>|~~~|->|=>)\s*$/.test(trimmed)
+    || /\|\s*$/.test(trimmed)
+}
+
+function hasUnbalancedMermaidEdgeLabel(line: string) {
+  const pipeCount = line.split('|').length - 1
+  return pipeCount % 2 === 1
+}
+
+function isIncompleteMermaidDirectiveLine(line: string, subgraphDepth: number) {
+  const trimmed = line.trim()
+  if (!trimmed || isMermaidCommentLine(line)) {
+    return false
+  }
+
+  if (/^end\b/i.test(trimmed)) {
+    return subgraphDepth === 0
+  }
+
+  if (/^(?:classDef|style|linkStyle|click|class)\b/i.test(trimmed)) {
+    return /(?:[:,=]|\.\.|->|=>|-)$/.test(trimmed)
+  }
+
+  return false
+}
+
+function getMermaidSubgraphDelta(line: string) {
+  const trimmed = line.trim()
+  if (/^subgraph\b/i.test(trimmed)) {
+    return 1
+  }
+  if (/^end\b/i.test(trimmed)) {
+    return -1
+  }
+  return 0
+}
+
+function getRenderableMermaidPrefix(code: string) {
+  const normalized = normalizeMermaidCode(code)
+  const lines = normalized.split('\n')
+  const completeLines = lines.slice(0, -1)
+
+  if (completeLines.length === 0) {
+    return ''
+  }
+
+  const safeLines: string[] = []
+  let committedLineCount = 0
+  let subgraphDepth = 0
+
+  for (const line of completeLines) {
+    if (!areMermaidDelimitersBalanced(line) || hasUnbalancedMermaidEdgeLabel(line) || hasDanglingMermaidConnector(line) || isIncompleteMermaidDirectiveLine(line, subgraphDepth)) {
+      break
+    }
+
+    const nextDepth = subgraphDepth + getMermaidSubgraphDelta(line)
+    if (nextDepth < 0) {
+      break
+    }
+
+    safeLines.push(line)
+    subgraphDepth = nextDepth
+
+    if (subgraphDepth === 0) {
+      committedLineCount = safeLines.length
+    }
+  }
+
+  return safeLines.slice(0, committedLineCount).join('\n').trimEnd()
+}
+
+function normalizeMermaidText(value: string | null | undefined) {
+  return value?.replace(/\s+/g, ' ').trim() ?? ''
+}
+
+function getMermaidNodeSignature(node: Element, index: number) {
+  const id = node.getAttribute('data-id') ?? node.getAttribute('id')
+  if (id) {
+    return `id:${id}`
+  }
+
+  const label = normalizeMermaidText(node.textContent)
+  if (label) {
+    return `label:${label}`
+  }
+
+  return `node:${index}`
+}
+
+function getMermaidEdgeSignature(edgePath: Element, edgeLabel: Element | undefined, index: number) {
+  const id = edgePath.getAttribute('id')
+  if (id) {
+    return `id:${id}`
+  }
+
+  const title = normalizeMermaidText(edgePath.querySelector('title')?.textContent)
+  if (title) {
+    return `title:${title}`
+  }
+
+  const label = normalizeMermaidText(edgeLabel?.textContent)
+  if (label) {
+    return `label:${label}`
+  }
+
+  return `edge:${index}`
+}
+
+function animateNewMermaidElements(previousSvg: string, nextSvg: string) {
+  if (!previousSvg || typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') {
+    return nextSvg
+  }
+
+  const parser = new DOMParser()
+  const previousDoc = parser.parseFromString(previousSvg, 'image/svg+xml')
+  const nextDoc = parser.parseFromString(nextSvg, 'image/svg+xml')
+
+  if (previousDoc.querySelector('parsererror') || nextDoc.querySelector('parsererror')) {
+    return nextSvg
+  }
+
+  const previousNodes = new Set(
+    Array.from(previousDoc.querySelectorAll('g.node')).map((node, index) => getMermaidNodeSignature(node, index))
+  )
+  const previousEdgePaths = Array.from(previousDoc.querySelectorAll('g.edgePath'))
+  const previousEdgeLabels = Array.from(previousDoc.querySelectorAll('g.edgeLabel'))
+  const previousEdges = new Set(
+    previousEdgePaths.map((edgePath, index) => getMermaidEdgeSignature(edgePath, previousEdgeLabels[index], index))
+  )
+
+  const nextNodes = Array.from(nextDoc.querySelectorAll('g.node'))
+  nextNodes.forEach((node, index) => {
+    if (!previousNodes.has(getMermaidNodeSignature(node, index))) {
+      node.classList.add('mermaid-stream-node-enter')
+    }
+  })
+
+  const nextEdgePaths = Array.from(nextDoc.querySelectorAll('g.edgePath'))
+  const nextEdgeLabels = Array.from(nextDoc.querySelectorAll('g.edgeLabel'))
+  nextEdgePaths.forEach((edgePath, index) => {
+    if (!previousEdges.has(getMermaidEdgeSignature(edgePath, nextEdgeLabels[index], index))) {
+      edgePath.classList.add('mermaid-stream-edge-enter')
+      nextEdgeLabels[index]?.classList.add('mermaid-stream-edge-enter')
+    }
+  })
+
+  return new XMLSerializer().serializeToString(nextDoc.documentElement)
+}
+
+async function getMermaidRenderer(theme: MermaidTheme) {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid')
+  }
+
+  const { default: mermaid } = await mermaidModulePromise
+  if (mermaidInitializedTheme !== theme) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme,
+    })
+    mermaidInitializedTheme = theme
+  }
+
+  return mermaid
+}
+
+function clampMermaidZoom(zoom: number) {
+  return Math.min(MERMAID_MAX_ZOOM, Math.max(MERMAID_MIN_ZOOM, zoom))
+}
+
+async function downloadMermaidSvg(svg: string) {
+  const blob = new Blob([svg], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'diagram.svg'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function MermaidToolbarButton({
+  onClick,
+  title,
+  disabled,
+  children,
+  iconOnly = false,
+  className,
+}: {
+  onClick: () => void
+  title: string
+  disabled?: boolean
+  children: React.ReactNode
+  iconOnly?: boolean
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center justify-center text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
+        iconOnly
+          ? 'h-8 w-8 rounded-full hover:bg-background/70'
+          : 'h-8 gap-1 rounded-xl px-1.5 text-xs font-medium hover:bg-background/70',
+        className
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function MermaidSegmentButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'rounded-sm px-3 py-1 text-xs font-medium transition-colors',
+        active
+          ? 'bg-background text-foreground shadow-sm'
+          : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function MermaidBlock({
+  code,
+  theme,
+  isComplete,
+  streamKey,
+}: {
+  code: string
+  theme: MermaidTheme
+  isComplete: boolean
+  streamKey: string
+}) {
+  const t = useTranslations('chat.message')
+  const initialSession = React.useMemo(() => getMermaidSession(streamKey), [streamKey])
+  const [mode, setMode] = React.useState<'diagram' | 'code'>('diagram')
+  const [svg, setSvg] = React.useState(initialSession?.animatedSvg ?? '')
+  const [error, setError] = React.useState<string | null>(initialSession?.error ?? null)
+  const [isRendering, setIsRendering] = React.useState(() => !initialSession?.animatedSvg && code.trim().length > 0)
+  const [zoom, setZoom] = React.useState(1)
+  const [pan, setPan] = React.useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = React.useState(false)
+  const [isFullscreen, setIsFullscreen] = React.useState(false)
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+  const diagramRef = React.useRef<HTMLDivElement>(null)
+  const renderVersionRef = React.useRef(0)
+  const committedCodeRef = React.useRef(initialSession?.committedCode ?? '')
+  const renderedSvgRef = React.useRef(initialSession?.renderedSvg ?? '')
+  const renderedThemeRef = React.useRef<MermaidTheme>(initialSession?.renderedTheme ?? theme)
+  const displayedSvgRef = React.useRef(initialSession?.animatedSvg ?? '')
+  const rawNormalizedCode = React.useMemo(() => normalizeMermaidCode(code), [code])
+  const normalizedCode = React.useMemo(() => rawNormalizedCode.trimEnd(), [rawNormalizedCode])
+  const renderableStreamingCode = React.useMemo(() => getRenderableMermaidPrefix(rawNormalizedCode), [rawNormalizedCode])
+  const codeToRender = isComplete ? normalizedCode : renderableStreamingCode
+
+  React.useEffect(() => {
+    const session = getMermaidSession(streamKey)
+    committedCodeRef.current = session?.committedCode ?? ''
+    renderedSvgRef.current = session?.renderedSvg ?? ''
+    renderedThemeRef.current = session?.renderedTheme ?? theme
+    displayedSvgRef.current = session?.animatedSvg ?? ''
+    setSvg(session?.animatedSvg ?? '')
+    setError(session?.error ?? null)
+    setIsRendering(!session?.animatedSvg && normalizedCode.trim().length > 0)
+  }, [normalizedCode, streamKey, theme])
+
+  React.useEffect(() => {
+    displayedSvgRef.current = svg
+  }, [svg])
+
+  React.useEffect(() => {
+    if (mode === 'code') {
+      return
+    }
+
+    if (!codeToRender) {
+      setIsRendering(!displayedSvgRef.current && normalizedCode.trim().length > 0)
+      if (!isComplete) {
+        setError(null)
+      }
+      return
+    }
+
+    const alreadyRendered = renderedThemeRef.current === theme
+      && committedCodeRef.current === codeToRender
+      && renderedSvgRef.current.length > 0
+
+    if (alreadyRendered) {
+      setError(null)
+      setIsRendering(false)
+      return
+    }
+
+    let cancelled = false
+    const requestVersion = ++renderVersionRef.current
+
+    const commitRenderedSvg = (renderedSvg: string) => {
+      const previousRenderedSvg = renderedThemeRef.current === theme ? renderedSvgRef.current : ''
+      const nextAnimatedSvg = previousRenderedSvg === renderedSvg
+        ? displayedSvgRef.current || renderedSvg
+        : animateNewMermaidElements(previousRenderedSvg, renderedSvg)
+
+      const nextSession: MermaidStreamSession = {
+        committedCode: codeToRender,
+        renderedSvg,
+        animatedSvg: nextAnimatedSvg,
+        renderedTheme: theme,
+        error: null,
+      }
+
+      mermaidStreamSessions.set(streamKey, nextSession)
+      committedCodeRef.current = codeToRender
+      renderedSvgRef.current = renderedSvg
+      renderedThemeRef.current = theme
+      displayedSvgRef.current = nextAnimatedSvg
+      setSvg((currentSvg) => currentSvg === nextAnimatedSvg ? currentSvg : nextAnimatedSvg)
+      setError(null)
+      setIsRendering(false)
+    }
+
+    const handleRenderError = (renderError: unknown) => {
+      if (!isComplete) {
+        setIsRendering(false)
+        return
+      }
+
+      const nextError = getMermaidRenderErrorMessage(renderError)
+      mermaidStreamSessions.set(streamKey, {
+        committedCode: committedCodeRef.current,
+        renderedSvg: renderedSvgRef.current,
+        animatedSvg: displayedSvgRef.current,
+        renderedTheme: renderedThemeRef.current,
+        error: nextError,
+      })
+      setError(nextError)
+      setIsRendering(false)
+    }
+
+    const cacheKey = getMermaidCacheKey(codeToRender, theme)
+    const cachedSvg = mermaidSvgCache.get(cacheKey)
+    if (cachedSvg) {
+      commitRenderedSvg(cachedSvg)
+      return
+    }
+
+    setIsRendering(!displayedSvgRef.current)
+
+    void (async () => {
+      try {
+        const mermaid = await getMermaidRenderer(theme)
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`
+        const { svg: renderedSvg } = await mermaid.render(id, codeToRender)
+        mermaidSvgCache.set(cacheKey, renderedSvg)
+        if (!cancelled && requestVersion === renderVersionRef.current) {
+          commitRenderedSvg(renderedSvg)
+        }
+      } catch (renderError) {
+        if (!cancelled && requestVersion === renderVersionRef.current) {
+          handleRenderError(renderError)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [codeToRender, isComplete, mode, normalizedCode, theme, streamKey])
+
+  React.useEffect(() => {
+    if (!isFullscreen) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsFullscreen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isFullscreen])
+
+  React.useEffect(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+  }, [mode, isFullscreen])
+
+  React.useEffect(() => {
+    if (!diagramRef.current) {
+      return
+    }
+
+    diagramRef.current.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
+  }, [pan, zoom])
+
+  const handleDownload = React.useCallback(() => {
+    if (!svg) {
+      return
+    }
+    void downloadMermaidSvg(svg)
+  }, [svg])
+
+  const handleDiagramPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (mode !== 'diagram' || !svg) {
+      return
+    }
+
+    dragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    }
+    setIsDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    if (diagramRef.current) {
+      diagramRef.current.style.transition = 'none'
+    }
+  }, [mode, pan.x, pan.y, svg])
+
+  const handleDiagramPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || !diagramRef.current) {
+      return
+    }
+
+    const deltaX = event.clientX - dragStartRef.current.x
+    const deltaY = event.clientY - dragStartRef.current.y
+    const nextPan = {
+      x: dragStartRef.current.panX + deltaX,
+      y: dragStartRef.current.panY + deltaY,
+    }
+
+    diagramRef.current.style.transform = `translate(${nextPan.x}px, ${nextPan.y}px) scale(${zoom})`
+  }, [isDragging, zoom])
+
+  const handleDiagramPointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) {
+      return
+    }
+
+    const deltaX = event.clientX - dragStartRef.current.x
+    const deltaY = event.clientY - dragStartRef.current.y
+    const nextPan = {
+      x: dragStartRef.current.panX + deltaX,
+      y: dragStartRef.current.panY + deltaY,
+    }
+
+    setPan(nextPan)
+    setIsDragging(false)
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (diagramRef.current) {
+      diagramRef.current.style.transition = ''
+    }
+  }, [isDragging])
+
+  const maxBodyHeight = isFullscreen ? 'calc(100vh - 120px)' : '420px'
+
+  const diagramContent = isRendering && !svg && !error
+    ? (
+      <div
+        className="flex min-h-[240px] items-center justify-center gap-2 text-sm text-muted-foreground"
+        style={{ maxHeight: maxBodyHeight }}
+      >
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{t('mermaidRendering')}</span>
+      </div>
+    )
+      : error
+        ? (
+          <div className="mx-6 mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/30">
+            <p className="font-mono text-red-700 text-sm dark:text-red-300">
+              {t('mermaidError', { error })}
+            </p>
+          </div>
+        )
+        : (
+          <div
+            className="mx-3 mb-3 mt-1.5 overflow-hidden rounded-xl bg-background px-4 py-4"
+            style={{ maxHeight: maxBodyHeight }}
+          >
+            <div
+              className={cn(
+                'flex min-h-[240px] items-center justify-center overflow-hidden select-none',
+                isDragging ? 'cursor-grabbing' : 'cursor-grab'
+              )}
+              onPointerDown={handleDiagramPointerDown}
+              onPointerMove={handleDiagramPointerMove}
+              onPointerUp={handleDiagramPointerUp}
+              onPointerCancel={handleDiagramPointerUp}
+            >
+              <div
+                ref={diagramRef}
+                className="origin-center transition-transform will-change-transform"
+                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+            </div>
+          </div>
+        )
+
+  const codeContent = (
+    <div className="mx-3 mb-3 mt-1.5 overflow-hidden rounded-xl bg-background" style={{ maxHeight: maxBodyHeight }}>
+      <pre className="h-full overflow-auto p-4 text-sm">
+        <code>{normalizedCode}</code>
+      </pre>
+    </div>
+  )
+
+  const content = (
+    <div className={cn(
+      'overflow-hidden rounded-xl border border-border/60 bg-muted/30',
+      isFullscreen ? 'h-full' : 'w-full'
+    )}>
+      <div className="flex items-center justify-between px-4 pb-1.5 pt-3">
+        <div className="inline-flex items-center gap-0.5 rounded-sm bg-muted p-0.5 shadow-sm">
+          <MermaidSegmentButton active={mode === 'diagram'} onClick={() => setMode('diagram')}>
+            {t('mermaidDiagram')}
+          </MermaidSegmentButton>
+          <MermaidSegmentButton active={mode === 'code'} onClick={() => setMode('code')}>
+            {t('mermaidCode')}
+          </MermaidSegmentButton>
+        </div>
+        <div className="flex items-center gap-0.5 text-muted-foreground">
+          <MermaidToolbarButton
+            iconOnly
+            onClick={() => setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))}
+            title={t('mermaidZoomOut')}
+            disabled={mode !== 'diagram' || zoom <= MERMAID_MIN_ZOOM}
+          >
+            <ZoomOut className="h-4 w-4" />
+          </MermaidToolbarButton>
+          <MermaidToolbarButton
+            iconOnly
+            onClick={() => setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))}
+            title={t('mermaidZoomIn')}
+            disabled={mode !== 'diagram' || zoom >= MERMAID_MAX_ZOOM}
+          >
+            <ZoomIn className="h-4 w-4" />
+          </MermaidToolbarButton>
+          <div className="mx-1.5 h-6 w-px bg-border" />
+          <MermaidToolbarButton
+            onClick={handleDownload}
+            title={t('mermaidDownload')}
+            disabled={mode !== 'diagram' || !svg}
+            className="px-1"
+          >
+            <Download className="h-4 w-4" />
+            <span>{t('mermaidDownloadLabel')}</span>
+          </MermaidToolbarButton>
+          <MermaidToolbarButton
+            onClick={() => setIsFullscreen((value) => !value)}
+            title={isFullscreen ? t('mermaidExitFullscreen') : t('mermaidEnterFullscreen')}
+            disabled={mode !== 'diagram'}
+            className="px-1"
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <span>{isFullscreen ? t('mermaidExitFullscreenLabel') : t('mermaidEnterFullscreenLabel')}</span>
+          </MermaidToolbarButton>
+        </div>
+      </div>
+      {mode === 'diagram' ? diagramContent : codeContent}
+    </div>
+  )
+
+  if (!isFullscreen) {
+    return content
+  }
+
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-50 bg-background/95 p-4 backdrop-blur-sm">
+      <div className="mx-auto h-full w-full max-w-[1400px]">{content}</div>
+    </div>,
+    document.body
+  )
+}
 
 export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
@@ -230,8 +944,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         return (
           <TextWithCitations
             key={index}
+            messageId={message.id}
+            partIndex={index}
             text={part.text}
             sources={documentSources}
+            isStreaming={isStreaming && part.state !== 'done'}
           />
         )
       }
@@ -904,13 +1621,54 @@ function CitationBadge({
  * Uses MutationObserver to detect when Streamdown finishes rendering,
  * then replaces citation markers with portal targets
  */
+function MermaidMarkdownBlock({
+  content,
+  index,
+  shouldParseIncompleteMarkdown,
+  mermaidTheme,
+  isStreaming,
+  streamKey,
+  ...props
+}: React.ComponentProps<typeof Block> & {
+  mermaidTheme: MermaidTheme
+  isStreaming: boolean
+  streamKey: string
+}) {
+  if (isMermaidFence(content) || (isStreaming && isPartialMermaidFence(content))) {
+    return (
+      <MermaidBlock
+        code={extractMermaidCode(content)}
+        theme={mermaidTheme}
+        isComplete={isMermaidFence(content)}
+        streamKey={streamKey}
+      />
+    )
+  }
+
+  return (
+    <Block
+      content={content}
+      index={index}
+      shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+      {...props}
+    />
+  )
+}
+
 function TextWithCitations({
+  messageId,
+  partIndex,
   text,
   sources,
+  isStreaming = false,
 }: {
+  messageId: string
+  partIndex: number
   text: string
   sources: SourceDocumentPart[]
+  isStreaming?: boolean
 }) {
+  const { resolvedTheme } = useTheme()
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [portalTargets, setPortalTargets] = React.useState<Array<{
     element: HTMLSpanElement
@@ -1008,6 +1766,33 @@ function TextWithCitations({
     setPortalTargets((prev) => [...prev, ...newTargets])
   }, [hasSources])
 
+  const mermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default'
+  const mermaidStreamKeyPrefix = React.useMemo(
+    () => `${messageId}:${partIndex}`,
+    [messageId, partIndex]
+  )
+
+  const components = React.useMemo(() => ({
+    p: ({ children, node, ...props }: React.ComponentProps<'p'> & {
+      node?: {
+        children?: Array<{ tagName?: string; type?: string }>
+      }
+    }) => {
+      const hasImgInNode = node?.children?.some(
+        (child) => child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
+      )
+      const hasBlockElements = React.Children.toArray(children).some(
+        (child) =>
+          React.isValidElement(child) &&
+          (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+      )
+      if (hasImgInNode || hasBlockElements) {
+        return <div className="my-4" {...props}>{children}</div>
+      }
+      return <p {...props}>{children}</p>
+    },
+  }), [])
+
   // Use MutationObserver to detect when Streamdown renders content
   React.useEffect(() => {
     if (!containerRef.current || !hasSources) {
@@ -1044,27 +1829,16 @@ function TextWithCitations({
       className="w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
     >
       <Streamdown
-        components={{
-          // Use div instead of p when paragraph contains block elements (like images)
-          // This prevents React hydration error: <div> cannot be a descendant of <p>
-          p: ({ children, node, ...props }) => {
-            // Check AST node for img elements (more reliable than checking React children)
-            const hasImgInNode = node?.children?.some(
-              (child: { tagName?: string; type?: string }) => 
-                child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
-            )
-            // Also check React children for any wrapper components
-            const hasBlockElements = React.Children.toArray(children).some(
-              (child) => 
-                React.isValidElement(child) && 
-                (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
-            )
-            if (hasImgInNode || hasBlockElements) {
-              return <div className="my-4" {...props}>{children}</div>
-            }
-            return <p {...props}>{children}</p>
-          },
-        }}
+        isAnimating={isStreaming}
+        components={components}
+        BlockComponent={(props) => (
+          <MermaidMarkdownBlock
+            {...props}
+            mermaidTheme={mermaidTheme}
+            isStreaming={isStreaming}
+            streamKey={`${mermaidStreamKeyPrefix}:${props.index}`}
+          />
+        )}
       >
         {processedText}
       </Streamdown>

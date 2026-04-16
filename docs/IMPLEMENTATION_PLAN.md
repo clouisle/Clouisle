@@ -2,6 +2,11 @@
 
 ## Active
 
+- **mermaid-streaming-growth** — In progress. Rework chat Mermaid streaming so diagrams advance only on stable render frontiers, preserve the last successful SVG during streaming, and animate only newly appeared nodes and edges. See `docs/plan/mermaid-streaming-growth.md`
+  - [ ] 1. Frontier-based Mermaid rendering
+  - [ ] 2. Stable session identity and visual continuity
+  - [ ] 3. Entry animation and verification
+
 - **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
   - [x] 1. Ratio-based thresholds and pressure states
   - [x] 2. Selective micro compaction

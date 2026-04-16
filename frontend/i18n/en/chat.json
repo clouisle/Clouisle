@@ -97,7 +97,19 @@
       "outputTokens": "Output Tokens",
       "firstTokenTime": "First Token",
       "totalTime": "Total Time",
-      "speed": "Speed"
+      "speed": "Speed",
+      "mermaidDiagram": "Diagram",
+      "mermaidCode": "Code",
+      "mermaidZoomIn": "Zoom in",
+      "mermaidZoomOut": "Zoom out",
+      "mermaidEnterFullscreen": "Enter fullscreen",
+      "mermaidExitFullscreen": "Exit fullscreen",
+      "mermaidDownload": "Download SVG",
+      "mermaidDownloadLabel": "Download",
+      "mermaidEnterFullscreenLabel": "Fullscreen",
+      "mermaidExitFullscreenLabel": "Exit fullscreen",
+      "mermaidRendering": "Rendering diagram...",
+      "mermaidError": "Mermaid Error: {error}"
     },
     "userInputRequest": {
       "pending": "Please select an option:",

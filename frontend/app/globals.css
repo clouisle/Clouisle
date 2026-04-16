@@ -193,3 +193,32 @@
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #3b82f6 !important;
 }
+
+@keyframes mermaid-stream-node-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mermaid-stream-edge-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mermaid-stream-node-enter {
+  animation: mermaid-stream-node-enter 180ms ease-out;
+  transform-origin: center;
+}
+
+.mermaid-stream-edge-enter {
+  animation: mermaid-stream-edge-enter 150ms ease-out;
+}

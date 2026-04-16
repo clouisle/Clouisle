@@ -97,7 +97,19 @@
       "outputTokens": "输出 Tokens",
       "firstTokenTime": "首 Token 耗时",
       "totalTime": "总耗时",
-      "speed": "生成速度"
+      "speed": "生成速度",
+      "mermaidDiagram": "图表",
+      "mermaidCode": "代码",
+      "mermaidZoomIn": "放大",
+      "mermaidZoomOut": "缩小",
+      "mermaidEnterFullscreen": "进入全屏",
+      "mermaidExitFullscreen": "退出全屏",
+      "mermaidDownload": "下载 SVG",
+      "mermaidDownloadLabel": "下载",
+      "mermaidEnterFullscreenLabel": "全屏",
+      "mermaidExitFullscreenLabel": "退出全屏",
+      "mermaidRendering": "正在渲染图表...",
+      "mermaidError": "Mermaid 错误：{error}"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",
