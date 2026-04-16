@@ -2065,6 +2065,9 @@ msgstr "图片生成请求超出当前智能体限制（{max_images}）"
 msgid "image_reference_images_disabled"
 msgstr "当前智能体已禁用参考图"
 
+msgid "image_generation_invalid_quality"
+msgstr "图片质量“{quality}”不受支持。支持的值：{supported}"
+
 msgid "image_generation_failed"
 msgstr "图片生成失败：{error}"
 

@@ -5,7 +5,6 @@ Provides streaming and non-streaming chat with AI agents.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -372,6 +371,48 @@ def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
     if payload.get("kind") not in MEDIA_TOOL_KINDS:
         return None
     return payload
+
+
+def infer_tool_result_is_error(display_result: str) -> bool:
+    payload = _safe_json_loads(display_result)
+    if not payload:
+        return False
+
+    if payload.get("success") is False:
+        return True
+
+    error = payload.get("error")
+    return isinstance(error, str) and bool(error.strip())
+
+
+def build_tool_result_sse_event(
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    tool_display_name: str,
+    display_result: str,
+) -> str:
+    payload = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_display_name": tool_display_name,
+        "result": display_result,
+        "is_error": infer_tool_result_is_error(display_result),
+    }
+    return (
+        f"event: {SSEEventType.TOOL_RESULT}\n"
+        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    )
+
+
+def build_media_result_sse_event(display_result: str) -> str | None:
+    media_payload = extract_media_display_payload(display_result)
+    if not media_payload:
+        return None
+    return (
+        f"event: {SSEEventType.MEDIA_RESULT}\n"
+        f"data: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
+    )
 
 
 async def send_heartbeat_if_needed(
@@ -2852,12 +2893,17 @@ async def chat_stream(
                                     return
 
                                 # Send tool_result event
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
-                                media_payload = extract_media_display_payload(
+                                yield build_tool_result_sse_event(
+                                    tool_call_id=tc.id,
+                                    tool_name=tool_name,
+                                    tool_display_name=tool_display_name,
+                                    display_result=display_result,
+                                )
+                                media_result_event = build_media_result_sse_event(
                                     display_result
                                 )
-                                if media_payload:
-                                    yield f"event: {SSEEventType.MEDIA_RESULT}\ndata: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
+                                if media_result_event:
+                                    yield media_result_event
                                 last_event_time = time.time()
 
                             # Helper to safely parse arguments
@@ -3929,7 +3975,17 @@ async def regenerate_message(
                                     await new_message.save()
                                     return
 
-                                yield f"event: {SSEEventType.TOOL_RESULT}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'result': display_result})}\n\n"
+                                yield build_tool_result_sse_event(
+                                    tool_call_id=tc.id,
+                                    tool_name=tool_name,
+                                    tool_display_name=tool_display_name,
+                                    display_result=display_result,
+                                )
+                                media_result_event = build_media_result_sse_event(
+                                    display_result
+                                )
+                                if media_result_event:
+                                    yield media_result_event
                                 last_event_time = time.time()
 
                                 assistant_step_index = next_round_index

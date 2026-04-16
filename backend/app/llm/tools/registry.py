@@ -40,15 +40,21 @@ class ToolInfo(BaseModel):
 
     def to_openai_schema(self) -> dict:
         """转换为 OpenAI 工具格式"""
-        properties: dict[str, dict[str, str | list[str]]] = {}
+        properties: dict[str, dict[str, Any]] = {}
         required: list[str] = []
 
         for param in self.parameters:
-            prop: dict[str, str | list[str]] = {"type": param.type}
+            prop: dict[str, Any] = {"type": param.type}
             if param.description:
                 prop["description"] = param.description
             if param.enum:
                 prop["enum"] = param.enum
+            if param.items is not None:
+                prop["items"] = param.items
+            elif param.type == "array":
+                prop["items"] = {}
+            if param.default is not None:
+                prop["default"] = param.default
             properties[param.name] = prop
 
             if param.required:

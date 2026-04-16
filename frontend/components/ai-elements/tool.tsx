@@ -155,7 +155,11 @@ export const ToolOutput = ({
             : "bg-muted/50 text-foreground"
         )}
       >
-        {errorText && <div>{errorText}</div>}
+        {errorText && (
+          <div className="px-4 py-3 whitespace-pre-wrap break-words">
+            {errorText}
+          </div>
+        )}
         {Output}
       </div>
     </div>

@@ -17,9 +17,9 @@ import type {
 } from '@/components/chat'
 import { isSourcePart } from '@/components/chat'
 import {
-  isMediaImageToolResult,
-  isMediaVideoToolResult,
+  inferToolResultIsError,
   parseToolResultOutput,
+  shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
 /**
@@ -278,7 +278,11 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
             const toolResultMsg = toolResultMap.get(part.toolCallId)
             if (toolResultMsg) {
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
-              if (isMediaImageToolResult(parsedOutput) || isMediaVideoToolResult(parsedOutput)) {
+              const isError = inferToolResultIsError(parsedOutput)
+              if (part.state !== 'error' && isError) {
+                part.state = 'error'
+              }
+              if (shouldDisplayMediaResultInBody(parsedOutput)) {
                 parts.push({
                   type: 'media-result',
                   output: parsedOutput,
@@ -289,7 +293,7 @@ export function convertBackendMessage(message: BackendMessage): ChatMessage | nu
                   toolCallId: part.toolCallId,
                   toolName: toolResultMsg.tool_name || part.toolName,
                   output: parsedOutput,
-                  isError: false,
+                  isError,
                 } as ToolResultPart)
               }
             }
@@ -458,7 +462,11 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
             const toolResultMsg = toolResults.get(toolCallPart.toolCallId)
             if (toolResultMsg) {
               const parsedOutput = parseToolResultOutput(toolResultMsg.content)
-              if (isMediaImageToolResult(parsedOutput) || isMediaVideoToolResult(parsedOutput)) {
+              const isError = inferToolResultIsError(parsedOutput)
+              if (toolCallPart.state !== 'error' && isError) {
+                toolCallPart.state = 'error'
+              }
+              if (shouldDisplayMediaResultInBody(parsedOutput)) {
                 partsWithResults.push({
                   type: 'media-result',
                   output: parsedOutput,
@@ -469,7 +477,7 @@ export function convertBackendMessages(messages: BackendMessage[]): ChatMessage[
                   toolCallId: toolCallPart.toolCallId,
                   toolName: toolResultMsg.tool_name || toolCallPart.toolName,
                   output: parsedOutput,
-                  isError: false,
+                  isError,
                 } as ToolResultPart)
               }
             }

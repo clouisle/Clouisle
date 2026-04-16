@@ -31,6 +31,13 @@ from ..registry import tool_registry, ToolParameter
 logger = logging.getLogger(__name__)
 
 PENDING_VIDEO_STATUSES = {TaskStatus.PENDING.value, TaskStatus.PROCESSING.value}
+OPENAI_COMPATIBLE_IMAGE_PROVIDERS = {"openai", "azure_openai", "custom"}
+OPENAI_COMPATIBLE_IMAGE_QUALITY_VALUES = ("standard", "hd")
+OPENAI_COMPATIBLE_IMAGE_QUALITY_MAP = {
+    "high": "hd",
+    "standard": "standard",
+    "hd": "hd",
+}
 
 
 def _normalize_status(status: TaskStatus | str) -> str:
@@ -57,6 +64,40 @@ def _validate_allowed_providers(
         raise ValueError(
             t("media_provider_not_allowed_for_agent", provider=provider)
         )
+
+
+def _get_provider_from_model_ref(model_ref: str | None) -> str | None:
+    if not model_ref or "/" not in model_ref:
+        return None
+    return model_ref.split("/", 1)[0]
+
+
+def _normalize_image_quality(
+    quality: str | None,
+    *,
+    model_ref: str | None,
+) -> str | None:
+    if quality is None:
+        return None
+
+    normalized_quality = quality.strip().lower()
+    if not normalized_quality:
+        return None
+
+    provider = _get_provider_from_model_ref(model_ref)
+    if provider not in OPENAI_COMPATIBLE_IMAGE_PROVIDERS:
+        return quality
+
+    mapped_quality = OPENAI_COMPATIBLE_IMAGE_QUALITY_MAP.get(normalized_quality)
+    if mapped_quality is None:
+        raise ValueError(
+            t(
+                "image_generation_invalid_quality",
+                quality=quality,
+                supported=", ".join(OPENAI_COMPATIBLE_IMAGE_QUALITY_VALUES),
+            )
+        )
+    return mapped_quality
 
 
 class ToolExecutionResult(dict):
@@ -255,6 +296,10 @@ async def generate_image(
         if images and not config.get("allow_reference_images", True):
             raise ValueError(t("image_reference_images_disabled"))
 
+        normalized_quality = _normalize_image_quality(
+            quality,
+            model_ref=resolved_model_ref,
+        )
         request = ImageGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -262,7 +307,7 @@ async def generate_image(
             height=height or int(config.get("default_height", 1024)),
             num_images=num_images,
             style=style,
-            quality=quality,
+            quality=normalized_quality,
             seed=seed,
             images=[ImageContent.model_validate(image) for image in images]
             if images
@@ -451,6 +496,7 @@ def register_media_tools() -> None:
                 name="images",
                 type="array",
                 description="Optional reference images for edit/reference generation",
+                items={"type": "object"},
             ),
             ToolParameter(
                 name="extra_params",

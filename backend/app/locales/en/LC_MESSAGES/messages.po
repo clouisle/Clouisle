@@ -2065,6 +2065,9 @@ msgstr "Image generation request exceeds the agent limit ({max_images})"
 msgid "image_reference_images_disabled"
 msgstr "Reference images are disabled for this agent"
 
+msgid "image_generation_invalid_quality"
+msgstr "Image quality '{quality}' is not supported. Supported values: {supported}"
+
 msgid "image_generation_failed"
 msgstr "Image generation failed: {error}"
 

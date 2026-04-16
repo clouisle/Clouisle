@@ -2,6 +2,12 @@
 
 ## Active
 
+- **agent-media-tool-failure-visibility** — Complete. Restored visible media success/failure rendering across live chat, regenerate, and history recovery, while normalizing unsupported image quality values before provider calls. See `docs/plan/agent-media-tool-failure-visibility.md`
+  - [x] 1. Backend media SSE parity and tool error flags
+  - [x] 2. Frontend history tool error restoration
+  - [x] 3. Image quality normalization and validation
+  - [x] 4. Targeted verification
+
 - **mermaid-streaming-growth** — In progress. Rework chat Mermaid streaming so diagrams advance only on stable render frontiers, preserve the last successful SVG during streaming, and animate only newly appeared nodes and edges. See `docs/plan/mermaid-streaming-growth.md`
   - [ ] 1. Frontier-based Mermaid rendering
   - [ ] 2. Stable session identity and visual continuity

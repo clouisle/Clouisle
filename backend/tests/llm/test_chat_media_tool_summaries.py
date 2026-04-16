@@ -1,7 +1,10 @@
 from app.api.v1.endpoints.chat import (
+    build_media_result_sse_event,
+    build_tool_result_sse_event,
     extract_media_display_payload,
-    summarize_tool_result_for_llm,
+    infer_tool_result_is_error,
 )
+from app.services.chat_context import summarize_tool_result_for_llm
 
 
 def test_summarize_tool_result_for_llm_compacts_media_image_payload():
@@ -50,3 +53,42 @@ def test_extract_media_display_payload_returns_none_for_non_media():
     payload = extract_media_display_payload(content)
 
     assert payload is None
+
+
+def test_infer_tool_result_is_error_detects_failed_media_payload():
+    content = '{"kind":"media.image","success":false,"images":[],"error":"provider rejected quality"}'
+
+    assert infer_tool_result_is_error(content) is True
+
+
+def test_build_tool_result_sse_event_includes_is_error_flag():
+    content = '{"kind":"media.image","success":false,"images":[],"error":"provider rejected quality"}'
+
+    event = build_tool_result_sse_event(
+        tool_call_id="call_123",
+        tool_name="generate_image",
+        tool_display_name="Generate Image",
+        display_result=content,
+    )
+
+    assert "event: tool_result" in event
+    assert '"tool_call_id": "call_123"' in event
+    assert '"is_error": true' in event
+
+
+def test_build_media_result_sse_event_returns_media_event_for_media_payload():
+    content = '{"kind":"media.image","success":false,"images":[],"error":"provider rejected quality"}'
+
+    event = build_media_result_sse_event(content)
+
+    assert event is not None
+    assert "event: media_result" in event
+    assert '"kind": "media.image"' in event
+
+
+def test_build_media_result_sse_event_returns_none_for_non_media_payload():
+    content = '{"result":"plain tool output"}'
+
+    event = build_media_result_sse_event(content)
+
+    assert event is None

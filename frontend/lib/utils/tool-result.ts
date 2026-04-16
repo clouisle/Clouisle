@@ -53,6 +53,34 @@ export function parseToolResultOutput(output: unknown): unknown {
   }
 }
 
+export function inferToolResultIsError(output: unknown): boolean {
+  const parsedOutput = parseToolResultOutput(output)
+
+  if (!parsedOutput || typeof parsedOutput !== 'object') {
+    return false
+  }
+
+  if ('success' in parsedOutput && parsedOutput.success === false) {
+    return true
+  }
+
+  if ('error' in parsedOutput) {
+    const error = parsedOutput.error
+    return typeof error === 'string' ? error.trim().length > 0 : Boolean(error)
+  }
+
+  return false
+}
+
+export function shouldDisplayMediaResultInBody(output: unknown): boolean {
+  const parsedOutput = parseToolResultOutput(output)
+
+  return (
+    (isMediaImageToolResult(parsedOutput) || isMediaVideoToolResult(parsedOutput))
+    && parsedOutput.success === true
+  )
+}
+
 export function isMediaImageToolResult(
   output: unknown
 ): output is MediaImageToolResult {

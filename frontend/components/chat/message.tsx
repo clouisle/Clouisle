@@ -70,6 +70,7 @@ import {
   isMediaImageToolResult,
   isMediaVideoToolResult,
   parseToolResultOutput,
+  shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
 
 const MERMAID_FENCE_REGEX = /^```mermaid\r?\n([\s\S]*?)\r?\n```$/
@@ -866,6 +867,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       const parsedOutput = parseToolResultOutput(output)
 
       if (isMediaImageToolResult(parsedOutput)) {
+        if (parsedOutput.success === false) {
+          return (
+            <ToolOutput
+              output={undefined}
+              errorText={parsedOutput.error || (isError ? 'Tool execution failed' : undefined)}
+            />
+          )
+        }
+
         return (
           <div className="space-y-3">
             {parsedOutput.images.length > 0 && (
@@ -898,6 +908,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
 
       if (isMediaVideoToolResult(parsedOutput)) {
+        if (parsedOutput.success === false) {
+          return (
+            <ToolOutput
+              output={undefined}
+              errorText={parsedOutput.error || (isError ? 'Tool execution failed' : undefined)}
+            />
+          )
+        }
+
         const videoUrl = getVideoAssetUrl(parsedOutput.video)
         return (
           <div className="space-y-3">
@@ -985,7 +1004,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <AIToolContent>
               <ToolInput input={toolPart.input} />
               {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                (isToolResultPart(result) && (isMediaImageToolResult(parseToolResultOutput(result.output)) || isMediaVideoToolResult(parseToolResultOutput(result.output))))
+                (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
                   ? null
                   : renderToolResultContent(result.output, result.isError)
               )}
@@ -1268,10 +1287,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   />
                   <AIToolContent>
                     <ToolInput input={toolPart.input} />
-                    {result && isToolResultPart(result) && !(
-                      isMediaImageToolResult(parseToolResultOutput(result.output)) ||
-                      isMediaVideoToolResult(parseToolResultOutput(result.output))
-                    ) && (
+                    {result && isToolResultPart(result) && !shouldDisplayMediaResultInBody(result.output) && (
                       renderToolResultContent(result.output, result.isError)
                     )}
                   </AIToolContent>

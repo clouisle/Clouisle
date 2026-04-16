@@ -234,3 +234,90 @@ def test_media_tools_do_not_expose_model_override_parameter():
     assert video_tool is not None
     assert all(param.name != "model_ref" for param in image_tool.parameters)
     assert all(param.name != "model_ref" for param in video_tool.parameters)
+
+
+@pytest.mark.anyio
+async def test_generate_image_normalizes_openai_compatible_quality_alias():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "openai/gpt-image-1",
+            "default_width": 1024,
+            "default_height": 1024,
+            "max_images": 4,
+            "allow_reference_images": True,
+        },
+    )
+    response = ImageGenerationResponse(
+        images=[
+            GeneratedImage(
+                image=ImageContent(url="https://example.com/cat.png", format="png"),
+            )
+        ],
+        model="gpt-image-1",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/2026/03/cat.png",
+                    format="png",
+                )
+            ),
+        ),
+    ):
+        result = await generate_image(
+            prompt="A cat portrait",
+            quality="high",
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert request.quality == "hd"
+    assert result.display_result["success"] is True
+
+
+@pytest.mark.anyio
+async def test_generate_image_rejects_invalid_openai_compatible_quality():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "openai/gpt-image-1",
+            "default_width": 1024,
+            "default_height": 1024,
+            "max_images": 4,
+            "allow_reference_images": True,
+        },
+    )
+
+    with patch(
+        "app.llm.tools.builtin.media.model_manager.generate_image",
+        AsyncMock(),
+    ) as mock_generate:
+        result = await generate_image(
+            prompt="A cat portrait",
+            quality="ultra",
+            agent=agent,
+        )
+
+    mock_generate.assert_not_awaited()
+    assert result.display_result["success"] is False
+    assert "Supported values: standard, hd" in result.display_result["error"]
+
+
+def test_generate_image_schema_includes_items_for_images_array():
+    register_media_tools()
+    image_tool = tool_registry.get_tool("generate_image")
+    assert image_tool is not None
+
+    schema = image_tool.to_openai_schema()
+    images_prop = schema["function"]["parameters"]["properties"]["images"]
+    assert images_prop["type"] == "array"
+    assert "items" in images_prop
+    assert images_prop["items"] == {"type": "object"}

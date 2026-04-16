@@ -33,7 +33,7 @@ import type {
   UserInputRequestPart,
   MediaResultPart,
 } from '@/components/chat'
-import { parseToolResultOutput } from '@/lib/utils/tool-result'
+import { parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -696,6 +696,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'media_result': {
               const data = event.data as SSEMediaResult
+              if (!shouldDisplayMediaResultInBody(data)) {
+                break
+              }
               segments.push({
                 type: 'media-result',
                 mediaResult: {
@@ -1563,6 +1566,33 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 taskState.toolCalling = 'completed'
                 streamingStateRef.current.taskState = taskState
               }
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'media_result': {
+              const data = event.data as SSEMediaResult
+              if (!shouldDisplayMediaResultInBody(data)) {
+                break
+              }
+              segments.push({
+                type: 'media-result',
+                mediaResult: {
+                  type: 'media-result',
+                  output: data,
+                },
+              })
+              streamingStateRef.current.segments = segments
+
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === messageId
