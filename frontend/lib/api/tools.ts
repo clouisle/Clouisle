@@ -51,10 +51,36 @@ export interface FormField {
   value?: string     // 文本值或变量引用 {{varName}}
 }
 
+export interface SandboxArtifactConfig {
+  path: string
+  optional?: boolean
+  description?: string
+  file_type?: string
+  size?: number
+  checksum?: string
+  content_type?: string
+  storage_path?: string
+  url?: string
+  filename?: string
+}
+
+export interface SandboxLimitsConfig {
+  timeout_seconds?: number
+  disk_mb?: number
+  max_stdout_kb?: number
+  max_stderr_kb?: number
+}
+
 export interface CodeConfig {
   language: 'javascript' | 'python'
   code: string
-  dependencies?: string[]
+  command?: string[]
+  python_packages?: string[]
+  js_packages?: string[]
+  python_package_index_url?: string
+  node_package_registry_url?: string
+  artifacts?: SandboxArtifactConfig[]
+  limits?: SandboxLimitsConfig
 }
 
 export type McpTransportType = 'stdio' | 'sse' | 'http'
@@ -173,6 +199,8 @@ export interface ToolExecuteResponse {
   success: boolean
   result?: unknown
   error?: string
+  logs?: string
+  artifacts?: SandboxArtifactConfig[]
   duration_ms?: number
 }
 
@@ -181,6 +209,14 @@ export interface CodeExecuteRequest {
   code: string
   params?: Record<string, unknown>
   timeout?: number
+  client_timeout_ms?: number
+  command?: string[]
+  python_packages?: string[]
+  js_packages?: string[]
+  python_package_index_url?: string
+  node_package_registry_url?: string
+  artifacts?: SandboxArtifactConfig[]
+  limits?: SandboxLimitsConfig
 }
 
 export interface CodeExecuteResponse {
@@ -188,6 +224,7 @@ export interface CodeExecuteResponse {
   result?: unknown
   error?: string
   logs?: string
+  artifacts?: SandboxArtifactConfig[]
   duration_ms?: number
 }
 
@@ -606,14 +643,20 @@ export const toolsApi = {
    */
   test: async (request: ToolExecuteRequest, teamId?: string): Promise<ToolExecuteResponse> => {
     const params = teamId ? { team_id: teamId } : {}
-    return api.post<ToolExecuteResponse>('/tools/test', request, { params })
+    return api.post<ToolExecuteResponse>('/tools/test', request, {
+      params,
+      timeout: 120000,
+    })
   },
 
   /**
    * 直接执行代码（不需要保存工具）
    */
   executeCode: async (request: CodeExecuteRequest): Promise<CodeExecuteResponse> => {
-    return api.post<CodeExecuteResponse>('/tools/execute-code', request)
+    const { client_timeout_ms, ...payload } = request
+    return api.post<CodeExecuteResponse>('/tools/execute-code', payload, {
+      timeout: client_timeout_ms ?? 120000,
+    })
   },
 
   /**

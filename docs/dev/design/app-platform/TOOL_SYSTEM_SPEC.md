@@ -77,9 +77,25 @@
 {
   "language": "javascript | python",
   "code": "// 代码内容\nreturn result;",
-  "dependencies": []  // 预留，暂未实现
+  "command": ["python"],
+  "python_packages": ["requests==2.32.3"],
+  "js_packages": [],
+  "python_package_index_url": "https://mirror.example.com/simple",
+  "node_package_registry_url": "https://registry.example.com/npm",
+  "artifacts": [],
+  "limits": {
+    "timeout_seconds": 30,
+    "disk_mb": 1024,
+    "max_stdout_kb": 256,
+    "max_stderr_kb": 256
+  }
 }
 ```
+
+说明：
+- `python_package_index_url` / `node_package_registry_url` 为可选字段，仅影响依赖安装阶段。
+- 这两个 URL 必须是绝对 `http(s)` 地址，且不能内嵌凭证。
+- 环境缓存键会包含镜像地址，因此不同镜像源不会复用同一安装缓存。
 
 **参数定义 (`parameters`)：**
 

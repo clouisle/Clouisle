@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from app.core.config import settings
+from app.services.sandbox.compiler import compile_legacy_code_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +46,8 @@ class CodeSandbox:
     def __init__(
         self,
         timeout: float = 30.0,
-        max_memory_mb: int = 128,
     ):
         self.timeout = timeout
-        self.max_memory_mb = max_memory_mb
 
     async def execute(
         self,
@@ -312,5 +315,39 @@ async def execute_code(
     Returns:
         执行结果
     """
+    if settings.SANDBOX_RUNTIME_ENABLED:
+        job = compile_legacy_code_job(
+            language=language,
+            code=code,
+            params=params,
+            timeout=timeout,
+            source=SandboxJobSource.LEGACY_SNIPPET,
+        )
+        try:
+            runtime_result = await sandbox_gateway.submit_and_wait(
+                job,
+                timeout_seconds=timeout + 5,
+            )
+            if runtime_result.success:
+                return ExecutionResult(
+                    success=True,
+                    result=runtime_result.result,
+                    error=runtime_result.error,
+                    stdout=runtime_result.stdout,
+                    stderr=runtime_result.stderr,
+                )
+            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+                return ExecutionResult(
+                    success=False,
+                    result=runtime_result.result,
+                    error=runtime_result.error,
+                    stdout=runtime_result.stdout,
+                    stderr=runtime_result.stderr,
+                )
+        except Exception as e:
+            logger.warning("Sandbox runtime gateway failed, falling back to legacy runner: %s", e)
+            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+                return ExecutionResult(success=False, error=str(e))
+
     sandbox = CodeSandbox(timeout=timeout)
     return await sandbox.execute(language, code, params)

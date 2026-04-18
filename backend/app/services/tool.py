@@ -13,7 +13,9 @@ from app.models.tool_config import ToolConfig
 from app.llm.tools import tool_registry
 from app.llm.tools.executors import execute_http_tool
 from app.llm.tools.mcp_client import execute_mcp_tool
-from app.llm.tools.sandbox import execute_code
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +127,24 @@ class ToolExecutor:
             if not tool.code_config:
                 raise ValueError("Code tool missing code_config")
 
-            return await execute_code(
-                language=tool.code_config.get("language", "python"),
-                code=tool.code_config.get("code", ""),
+            job = compile_code_config_job(
+                code_config=tool.code_config,
                 params=arguments,
+                timeout=float(tool.code_config.get("limits", {}).get("timeout_seconds", 30.0)),
+                source=SandboxJobSource.TOOL,
             )
+            result = await sandbox_gateway.submit_and_wait(
+                job,
+                timeout_seconds=job.limits.timeout_seconds + 5,
+            )
+            return {
+                "success": result.success,
+                "result": result.result,
+                "error": result.error,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "artifacts": [artifact.model_dump() for artifact in result.artifacts],
+            }
         else:
             raise ValueError(f"Unknown custom tool type: {tool.custom_type}")
 

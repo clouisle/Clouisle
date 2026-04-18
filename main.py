@@ -7,6 +7,7 @@ Usage:
     python main.py server    - Start the backend API server (dev, uvicorn)
     python main.py server --no-reload        - Start production (gunicorn)
     python main.py worker    - Start the Celery worker
+    python main.py sandbox-worker            - Start the sandbox worker
     python main.py beat      - Start the Celery beat scheduler
     python main.py flower    - Start the Flower monitoring (if installed)
 """
@@ -72,11 +73,18 @@ def start_server(
         subprocess.run(cmd)
 
 
-def start_worker(concurrency: int = 4, queues: str = "default,workflow"):
+def start_worker(
+    concurrency: int = 4,
+    queues: str = "default,workflow",
+    *,
+    pool: str | None = None,
+):
     """Start the Celery worker."""
     os.chdir(BACKEND_DIR)
-    
-    print(f"🔧 Starting Celery worker (concurrency={concurrency}, queues={queues})")
+
+    print(
+        f"🔧 Starting Celery worker (concurrency={concurrency}, queues={queues}, pool={pool or 'prefork'})"
+    )
     cmd = [
         sys.executable, "-m", "celery",
         "-A", "app.core.celery:celery_app",
@@ -85,7 +93,15 @@ def start_worker(concurrency: int = 4, queues: str = "default,workflow"):
         f"--concurrency={concurrency}",
         f"--queues={queues}",
     ]
+    if pool:
+        cmd.append(f"--pool={pool}")
     subprocess.run(cmd)
+
+
+def start_sandbox_worker(concurrency: int = 1):
+    """Start the dedicated sandbox worker."""
+    pool = "solo" if concurrency == 1 else None
+    start_worker(concurrency=concurrency, queues="sandbox", pool=pool)
 
 
 def start_beat():
@@ -128,6 +144,8 @@ Examples:
   python main.py server -p 8080            Start API server on port 8080
   python main.py worker                    Start Celery worker
   python main.py worker -c 8               Start worker with 8 processes
+  python main.py sandbox-worker            Start sandbox worker (solo pool by default)
+  python main.py sandbox-worker -c 2       Start sandbox worker with 2 prefork processes
   python main.py beat                      Start Celery beat scheduler
   python main.py flower                    Start Flower monitoring
         """
@@ -147,6 +165,10 @@ Examples:
     worker_parser.add_argument("-c", "--concurrency", type=int, default=4, help="Number of worker processes (default: 4)")
     worker_parser.add_argument("-Q", "--queues", default="default,workflow", help="Queues to consume (default: default,workflow)")
     
+    # Sandbox worker command
+    sandbox_worker_parser = subparsers.add_parser("sandbox-worker", help="Start the sandbox worker")
+    sandbox_worker_parser.add_argument("-c", "--concurrency", type=int, default=1, help="Number of sandbox worker processes (default: 1)")
+
     # Beat command
     subparsers.add_parser("beat", help="Start the Celery beat scheduler")
     
@@ -164,6 +186,8 @@ Examples:
         start_server(host=args.host, port=args.port, reload=not args.no_reload, workers=args.workers)
     elif args.command == "worker":
         start_worker(concurrency=args.concurrency, queues=args.queues)
+    elif args.command == "sandbox-worker":
+        start_sandbox_worker(concurrency=args.concurrency)
     elif args.command == "beat":
         start_beat()
     elif args.command == "flower":

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo } from '@/lib/api'
+import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo, SandboxArtifactConfig } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,18 @@ interface ToolTestPanelProps {
   tool: Tool | null
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+function formatResultPayload(result: ToolExecuteResponse): unknown {
+  if (!result.logs && !result.artifacts?.length) {
+    return result.result
+  }
+
+  return {
+    result: result.result,
+    ...(result.logs ? { logs: result.logs } : {}),
+    ...(result.artifacts?.length ? { artifacts: result.artifacts as SandboxArtifactConfig[] } : {}),
+  }
 }
 
 export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) {
@@ -155,7 +167,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
   const handleCopy = async () => {
     if (!result) return
     try {
-      await navigator.clipboard.writeText(JSON.stringify(result.result, null, 2))
+      await navigator.clipboard.writeText(JSON.stringify(formatResultPayload(result), null, 2))
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast.success(t('copied'))
@@ -165,6 +177,8 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
   }
 
   if (!tool) return null
+
+  const formattedResult = result ? formatResultPayload(result) : null
 
   // 判断图标是否为 URL
   const isIconUrl = tool.icon?.startsWith('http')
@@ -335,7 +349,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
                           )}
                         </Button>
                         <pre className="text-xs overflow-auto max-h-[300px] pr-8">
-                          {JSON.stringify(result.result, null, 2)}
+                          {JSON.stringify(formattedResult, null, 2)}
                         </pre>
                       </>
                     ) : (

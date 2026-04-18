@@ -6,8 +6,10 @@ import json
 from app.models.agent import Agent
 from app.models.tool import Tool
 from app.llm.tools.executors import execute_http_tool as shared_execute_http_tool
-from app.llm.tools.sandbox import execute_code
 from app.llm.tools.mcp_client import execute_mcp_tool
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 
 
 async def execute_tool_call(
@@ -60,11 +62,15 @@ async def execute_http_tool(tool: Tool, arguments: dict, timeout: float = 30.0) 
 
 async def execute_code_tool(tool: Tool, arguments: dict, timeout: float = 60.0) -> str:
     """Execute a code tool in sandbox."""
-    result = await execute_code(
-        language=tool.code_config.get("language", "python"),
-        code=tool.code_config.get("code", ""),
+    job = compile_code_config_job(
+        code_config=tool.code_config or {},
         params=arguments,
         timeout=timeout,
+        source=SandboxJobSource.CHAT,
+    )
+    result = await sandbox_gateway.submit_and_wait(
+        job,
+        timeout_seconds=job.limits.timeout_seconds + 5,
     )
     return json.dumps(
         {

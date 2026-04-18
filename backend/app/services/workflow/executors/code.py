@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
-from app.llm.tools.sandbox import CodeSandbox
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -54,7 +56,7 @@ class CodeNodeExecutor(NodeExecutor):
     """
 
     def __init__(self):
-        self.sandbox = CodeSandbox(timeout=CODE_TIMEOUT)
+        pass
 
     async def execute(
         self,
@@ -94,11 +96,18 @@ class CodeNodeExecutor(NodeExecutor):
             else:
                 return ExecutionResult(error=f"Unsupported language: {language}")
 
-            # Execute in sandbox
-            sandbox_result = await self.sandbox.execute(
-                language=language,
-                code=wrapped_code,
+            job = compile_code_config_job(
+                code_config={
+                    "language": language,
+                    "code": wrapped_code,
+                },
                 params=inputs,
+                timeout=CODE_TIMEOUT,
+                source=SandboxJobSource.WORKFLOW,
+            )
+            sandbox_result = await sandbox_gateway.submit_and_wait(
+                job,
+                timeout_seconds=CODE_TIMEOUT + 5,
             )
 
             logger.info(

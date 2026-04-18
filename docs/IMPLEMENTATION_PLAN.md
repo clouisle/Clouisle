@@ -2,6 +2,16 @@
 
 ## Active
 
+- **sandbox-runtime-migration** — In progress. Migrate subprocess-based code execution to a long-running sandbox worker runtime that supports Python/JS package installation, CLI and custom command execution, skill compilation, and compatibility bridges for tools, chat, and workflow code nodes. See `docs/plan/sandbox-runtime-migration.md`
+  - [ ] 1. Runtime contracts, policies, and compatibility schema
+  - [ ] 2. Queue, gateway, and result transport
+  - [ ] 3. Long-running worker, scheduler, and workspace/process isolation
+  - [ ] 4. Python environment cache and CLI execution
+  - [ ] 5. Node environment cache and CLI execution
+  - [ ] 6. Tool, chat, and workflow entry migration
+  - [ ] 7. Skill compilation and frontend editor/test path
+  - [ ] 8. Deployment rollout, observability, and legacy deprecation
+
 - **agent-media-tool-failure-visibility** — Complete. Restored visible media success/failure rendering across live chat, regenerate, and history recovery, while normalizing unsupported image quality values before provider calls. See `docs/plan/agent-media-tool-failure-visibility.md`
   - [x] 1. Backend media SSE parity and tool error flags
   - [x] 2. Frontend history tool error restoration

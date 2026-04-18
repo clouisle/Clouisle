@@ -23,9 +23,11 @@ from app.models.tool import (
     ToolCategory as DBToolCategory,
 )
 from app.llm.tools import tool_registry
-from app.llm.tools.sandbox import execute_code
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.llm.tools.executors import execute_http_tool
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 from app.schemas.response import (
     Response,
     ResponseCode,
@@ -65,6 +67,20 @@ from app.schemas.tool import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
+
+
+def _serialize_runtime_artifacts(artifacts: list[Any]) -> list[dict[str, Any]]:
+    return [
+        artifact.model_dump() if hasattr(artifact, "model_dump") else artifact
+        for artifact in artifacts
+    ]
+
+
+def _runtime_duration_ms(runtime_result: Any) -> int | None:
+    metadata = getattr(runtime_result, "metadata", None)
+    if metadata is None:
+        return None
+    return getattr(metadata, "duration_ms", None)
 
 
 # ============ Helper Functions ============
@@ -978,9 +994,7 @@ async def test_tool(
                     msg_key="success",
                 )
             elif custom_tool.custom_type == DBCustomToolType.CODE:
-                # 执行代码工具
                 code_config = custom_tool.code_config or {}
-                language = code_config.get("language", "javascript")
                 code = code_config.get("code", "")
 
                 if not code:
@@ -994,32 +1008,28 @@ async def test_tool(
                         msg_key="success",
                     )
 
-                exec_result = await execute_code(
-                    language=language,
-                    code=code,
+                job = compile_code_config_job(
+                    code_config=code_config,
                     params=request.arguments,
-                    timeout=30.0,
+                    timeout=float(code_config.get("limits", {}).get("timeout_seconds", 30.0)),
+                    source=SandboxJobSource.TOOL,
                 )
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                # 构建结果，包含 stdout 日志
-                result_data = exec_result.result
-                if exec_result.stdout:
-                    if isinstance(result_data, dict):
-                        result_data["__logs__"] = exec_result.stdout
-                    else:
-                        result_data = {
-                            "value": result_data,
-                            "__logs__": exec_result.stdout,
-                        }
+                exec_result = await sandbox_gateway.submit_and_wait(
+                    job,
+                    timeout_seconds=job.limits.timeout_seconds + 5,
+                )
 
                 return success(
                     data=ToolExecuteResponse(
                         name=request.name,
                         success=exec_result.success,
-                        result=result_data,
+                        result=exec_result.result,
                         error=exec_result.error,
-                        duration_ms=duration_ms,
+                        logs=exec_result.stdout or None,
+                        artifacts=_serialize_runtime_artifacts(
+                            getattr(exec_result, "artifacts", [])
+                        ),
+                        duration_ms=_runtime_duration_ms(exec_result),
                     ),
                     msg_key="success",
                 )
@@ -1064,22 +1074,40 @@ async def execute_code_directly(
             msg_key="success",
         )
 
-    # 执行代码
-    exec_result = await execute_code(
-        language=request.language,
-        code=request.code,
+    job = compile_code_config_job(
+        code_config={
+            "language": request.language,
+            "code": request.code,
+            "command": request.command,
+            "python_packages": request.python_packages,
+            "js_packages": request.js_packages,
+            "python_package_index_url": request.python_package_index_url,
+            "node_package_registry_url": request.node_package_registry_url,
+            "artifacts": [
+                artifact.model_dump(exclude_none=True) for artifact in request.artifacts
+            ],
+            "limits": request.limits.model_dump(),
+        },
         params=request.params,
         timeout=request.timeout,
+        source=SandboxJobSource.DEBUG,
     )
-    duration_ms = int((time.time() - start_time) * 1000)
+    exec_runtime_result = await sandbox_gateway.submit_and_wait(
+        job,
+        timeout_seconds=job.limits.timeout_seconds + 5,
+    )
+    artifacts = _serialize_runtime_artifacts(
+        getattr(exec_runtime_result, "artifacts", [])
+    )
 
     return success(
         data=CodeExecuteResponse(
-            success=exec_result.success,
-            result=exec_result.result,
-            error=exec_result.error,
-            logs=exec_result.stdout or None,
-            duration_ms=duration_ms,
+            success=exec_runtime_result.success,
+            result=exec_runtime_result.result,
+            error=exec_runtime_result.error,
+            logs=exec_runtime_result.stdout or None,
+            artifacts=artifacts,
+            duration_ms=_runtime_duration_ms(exec_runtime_result),
         ),
         msg_key="success",
     )

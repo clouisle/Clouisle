@@ -116,6 +116,7 @@ export {
   type HttpMethod,
   type ToolParameter,
   type HttpConfig,
+  type SandboxArtifactConfig,
   type ToolListResponse,
   type ToolFilterOption,
   type ToolFilterOptions,

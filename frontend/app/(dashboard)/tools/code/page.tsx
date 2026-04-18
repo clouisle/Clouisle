@@ -36,8 +36,8 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory } from '@/lib/api/tools'
-import { teamsApi, UserTeamInfo } from '@/lib/api'
+import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
+import { ApiError, teamsApi, UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
 import Editor from '@monaco-editor/react'
 
@@ -98,7 +98,88 @@ const DEFAULT_PARAM: ToolParameter = {
   required: false,
 }
 
+const PYTHON_PACKAGE_PATTERN = /^[A-Za-z0-9_.-]+==[^=].+$/
+const JS_PACKAGE_PATTERN = /^[^\s@][^\s]*@[^\s].+$/
+
+const normalizePackageSourceUrl = (value: string): string => value.trim().replace(/\/+$/, '')
+
+const isValidPackageSourceUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+  } catch {
+    return false
+  }
+}
+
+const parseRuntimeLines = (value: string): string[] =>
+  value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const findInvalidRuntimeValue = (values: string[], pattern: RegExp): string | null =>
+  values.find((value) => !pattern.test(value)) || null
+
+const DEFAULT_LIMITS: SandboxLimitsConfig = {
+  timeout_seconds: 30,
+  disk_mb: 1024,
+  max_stdout_kb: 256,
+  max_stderr_kb: 256,
+}
+
+const parsePositiveNumber = (value: string, fallback: number): number => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const parseArtifactConfig = (artifacts: SandboxArtifactConfig[]): SandboxArtifactConfig[] =>
+  artifacts
+    .map((artifact) => ({
+      path: artifact.path.trim(),
+      optional: artifact.optional,
+      description: artifact.description?.trim() || undefined,
+    }))
+    .filter((artifact) => artifact.path)
+
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
+const joinFieldErrorMessages = (fieldErrors: Record<string, string>): string => {
+  const messages = Object.values(fieldErrors).filter(Boolean)
+  return Array.from(new Set(messages)).join(', ')
+}
+
+const clearFieldError = (fieldErrors: Record<string, string>, field: string): Record<string, string> => {
+  if (!fieldErrors[field]) {
+    return fieldErrors
+  }
+
+  const next = { ...fieldErrors }
+  delete next[field]
+  return next
+}
+
+const INLINE_ERROR_FIELDS = new Set([
+  'name',
+  'display_name',
+  'description',
+  'code_config.python_packages',
+  'code_config.js_packages',
+  'code_config.python_package_index_url',
+  'code_config.node_package_registry_url',
+  'code_config.limits.timeout_seconds',
+  'code_config.limits.disk_mb',
+  'code_config.limits.max_stdout_kb',
+  'code_config.limits.max_stderr_kb',
+])
+
+const shouldShowSummaryFieldError = (field: string): boolean => {
+  if (INLINE_ERROR_FIELDS.has(field)) {
+    return false
+  }
+
+  return !/^code_config\.artifacts\.\d+\.(path|description)$/.test(field)
+}
 
 function CodeToolPageContent() {
   const router = useRouter()
@@ -119,7 +200,7 @@ function CodeToolPageContent() {
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('code')
   const [isEnabled, setIsEnabled] = useState(true)
-  const [nameError, setNameError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // 参数定义
   const [parameters, setParameters] = useState<ToolParameter[]>([
@@ -129,6 +210,16 @@ function CodeToolPageContent() {
   // 代码配置
   const [language, setLanguage] = useState<CodeLanguage>('javascript')
   const [code, setCode] = useState(DEFAULT_CODE.javascript)
+  const [pythonPackagesText, setPythonPackagesText] = useState('')
+  const [jsPackagesText, setJsPackagesText] = useState('')
+  const [pythonPackageIndexUrl, setPythonPackageIndexUrl] = useState('')
+  const [nodePackageRegistryUrl, setNodePackageRegistryUrl] = useState('')
+  const [commandText, setCommandText] = useState('')
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(DEFAULT_LIMITS.timeout_seconds))
+  const [diskMb, setDiskMb] = useState(String(DEFAULT_LIMITS.disk_mb))
+  const [maxStdoutKb, setMaxStdoutKb] = useState(String(DEFAULT_LIMITS.max_stdout_kb))
+  const [maxStderrKb, setMaxStderrKb] = useState(String(DEFAULT_LIMITS.max_stderr_kb))
+  const [artifacts, setArtifacts] = useState<SandboxArtifactConfig[]>([])
   const isCodeModified = useRef(false)
 
   // 测试
@@ -172,7 +263,7 @@ function CodeToolPageContent() {
       setIcon(tool.icon || '')
       setCategory(tool.category || 'code')
       setIsEnabled(tool.is_enabled)
-      setNameError('')
+      setFieldErrors({})
 
       // 加载参数
       if (tool.parameters && tool.parameters.length > 0) {
@@ -183,6 +274,16 @@ function CodeToolPageContent() {
         const loadedCode = tool.code_config.code || DEFAULT_CODE[tool.code_config.language as CodeLanguage]
         setLanguage(tool.code_config.language as CodeLanguage)
         setCode(loadedCode)
+        setPythonPackagesText((tool.code_config.python_packages || []).join('\n'))
+        setJsPackagesText((tool.code_config.js_packages || []).join('\n'))
+        setPythonPackageIndexUrl(tool.code_config.python_package_index_url || '')
+        setNodePackageRegistryUrl(tool.code_config.node_package_registry_url || '')
+        setCommandText((tool.code_config.command || []).join('\n'))
+        setTimeoutSeconds(String(tool.code_config.limits?.timeout_seconds ?? DEFAULT_LIMITS.timeout_seconds))
+        setDiskMb(String(tool.code_config.limits?.disk_mb ?? DEFAULT_LIMITS.disk_mb))
+        setMaxStdoutKb(String(tool.code_config.limits?.max_stdout_kb ?? DEFAULT_LIMITS.max_stdout_kb))
+        setMaxStderrKb(String(tool.code_config.limits?.max_stderr_kb ?? DEFAULT_LIMITS.max_stderr_kb))
+        setArtifacts(tool.code_config.artifacts || [])
         // 加载的代码如果不是默认代码，标记为已修改
         isCodeModified.current = loadedCode.trim() !== DEFAULT_CODE[tool.code_config.language as CodeLanguage].trim()
       }
@@ -258,18 +359,82 @@ function CodeToolPageContent() {
     isCodeModified.current = newCode.trim() !== '' && newCode.trim() !== DEFAULT_CODE[language].trim()
   }
 
+  const addArtifact = () => {
+    setArtifacts([...artifacts, { path: '', optional: false, description: '' }])
+  }
+
+  const removeArtifact = (index: number) => {
+    setArtifacts(artifacts.filter((_, i) => i !== index))
+  }
+
+  const updateArtifact = (index: number, field: keyof SandboxArtifactConfig, value: unknown) => {
+    const updated = [...artifacts]
+    updated[index] = { ...updated[index], [field]: value }
+    setArtifacts(updated)
+  }
+
+  const buildRuntimeConfig = () => {
+    const pythonPackages = parseRuntimeLines(pythonPackagesText)
+    const jsPackages = parseRuntimeLines(jsPackagesText)
+    const normalizedPythonPackageIndexUrl = normalizePackageSourceUrl(pythonPackageIndexUrl)
+    const normalizedNodePackageRegistryUrl = normalizePackageSourceUrl(nodePackageRegistryUrl)
+    const command = parseRuntimeLines(commandText)
+    const parsedArtifacts = parseArtifactConfig(artifacts)
+
+    const invalidPythonPackage = findInvalidRuntimeValue(pythonPackages, PYTHON_PACKAGE_PATTERN)
+    if (invalidPythonPackage) {
+      return { error: t('codeEditor.invalidPythonPackage', { value: invalidPythonPackage }) }
+    }
+
+    const invalidJsPackage = findInvalidRuntimeValue(jsPackages, JS_PACKAGE_PATTERN)
+    if (invalidJsPackage) {
+      return { error: t('codeEditor.invalidJsPackage', { value: invalidJsPackage }) }
+    }
+
+    const invalidArtifact = parsedArtifacts.find((artifact) => !artifact.path.startsWith('/workspace'))
+    if (invalidArtifact) {
+      return { error: t('codeEditor.invalidArtifactPath', { value: invalidArtifact.path }) }
+    }
+
+    if (normalizedPythonPackageIndexUrl && !isValidPackageSourceUrl(normalizedPythonPackageIndexUrl)) {
+      return { error: t('codeEditor.invalidPackageSourceUrl', { value: normalizedPythonPackageIndexUrl }) }
+    }
+
+    if (normalizedNodePackageRegistryUrl && !isValidPackageSourceUrl(normalizedNodePackageRegistryUrl)) {
+      return { error: t('codeEditor.invalidPackageSourceUrl', { value: normalizedNodePackageRegistryUrl }) }
+    }
+
+    const limits: SandboxLimitsConfig = {
+      timeout_seconds: parsePositiveNumber(timeoutSeconds, DEFAULT_LIMITS.timeout_seconds ?? 30),
+      disk_mb: parsePositiveNumber(diskMb, DEFAULT_LIMITS.disk_mb ?? 1024),
+      max_stdout_kb: parsePositiveNumber(maxStdoutKb, DEFAULT_LIMITS.max_stdout_kb ?? 256),
+      max_stderr_kb: parsePositiveNumber(maxStderrKb, DEFAULT_LIMITS.max_stderr_kb ?? 256),
+    }
+
+    return {
+      pythonPackages,
+      jsPackages,
+      pythonPackageIndexUrl: normalizedPythonPackageIndexUrl || undefined,
+      nodePackageRegistryUrl: normalizedNodePackageRegistryUrl || undefined,
+      command,
+      limits,
+      artifacts: parsedArtifacts,
+    }
+  }
+
   const handleSave = async () => {
     if (!name.trim()) {
+      setFieldErrors({ name: t('error.nameRequired') })
       toast.error(t('error.nameRequired'))
       return
     }
 
     if (!TOOL_NAME_PATTERN.test(name.trim())) {
-      setNameError(t('error.invalidName'))
+      setFieldErrors({ name: t('error.invalidName') })
       return
     }
 
-    setNameError('')
+    setFieldErrors({})
 
     if (!currentTeamId) {
       toast.error(t('error.noTeamSelected'))
@@ -286,10 +451,22 @@ function CodeToolPageContent() {
 
     setIsSaving(true)
     try {
+      const runtime = buildRuntimeConfig()
+      if ('error' in runtime) {
+        toast.error(runtime.error)
+        return
+      }
+
       const codeConfig: CodeConfig = {
         language,
         code,
-        dependencies: [],
+        python_packages: runtime.pythonPackages,
+        js_packages: runtime.jsPackages,
+        python_package_index_url: runtime.pythonPackageIndexUrl,
+        node_package_registry_url: runtime.nodePackageRegistryUrl,
+        command: runtime.command,
+        artifacts: runtime.artifacts,
+        limits: runtime.limits,
       }
 
       const data: ToolCreateInput | ToolUpdateInput = {
@@ -307,14 +484,19 @@ function CodeToolPageContent() {
 
       if (isEditing && toolId) {
         await toolsApi.update(toolId, data)
-        toast.success(t('successMessages.updated'))
+        toast.success(t('success.updated'))
       } else {
         await toolsApi.create(currentTeamId, data as ToolCreateInput)
-        toast.success(t('successMessages.created'))
+        toast.success(t('success.created'))
         router.push('/tools')
       }
-    } catch {
-      // toast handled by API interceptor
+    } catch (error) {
+      if (error instanceof ApiError && error.isValidationError()) {
+        const nextFieldErrors = error.getFieldErrors()
+        setFieldErrors(nextFieldErrors)
+        toast.error(joinFieldErrorMessages(nextFieldErrors) || error.message)
+      }
+      // other errors are handled by the API interceptor
     } finally {
       setIsSaving(false)
     }
@@ -330,38 +512,57 @@ function CodeToolPageContent() {
       try {
         params = JSON.parse(testInput)
       } catch {
-        setTestOutput('Error: Invalid JSON input')
+        setTestOutput(`${t('codeEditor.errorLabel')}: ${t('codeEditor.invalidJsonInput')}`)
         setIsRunning(false)
         return
       }
 
+      const runtime = buildRuntimeConfig()
+      if ('error' in runtime) {
+        setTestOutput(`${t('codeEditor.errorLabel')}: ${runtime.error}`)
+        setIsRunning(false)
+        return
+      }
+
+      const requestTimeoutSeconds = runtime.limits.timeout_seconds ?? 30
       const result = await toolsApi.executeCode({
         language,
         code,
         params,
-        timeout: 30,
+        timeout: requestTimeoutSeconds,
+        client_timeout_ms: Math.max(requestTimeoutSeconds * 1000 + 30000, 120000),
+        python_packages: runtime.pythonPackages,
+        js_packages: runtime.jsPackages,
+        python_package_index_url: runtime.pythonPackageIndexUrl,
+        node_package_registry_url: runtime.nodePackageRegistryUrl,
+        command: runtime.command,
+        artifacts: runtime.artifacts,
+        limits: runtime.limits,
       })
 
       let output = ''
       if (result.logs) {
-        output += `📝 Logs:\n${result.logs}\n\n`
+        output += `${t('codeEditor.logsLabel')}:\n${result.logs}\n\n`
       }
       if (result.success) {
         const resultStr =
           typeof result.result === 'string'
             ? result.result
             : JSON.stringify(result.result, null, 2)
-        output += `✅ Result:\n${resultStr}`
+        output += `${t('codeEditor.resultLabel')}:\n${resultStr}`
       } else {
-        output += `❌ Error:\n${result.error || 'Execution failed'}`
+        output += `${t('codeEditor.errorLabel')}:\n${result.error || 'Execution failed'}`
+      }
+      if (result.artifacts?.length) {
+        output += `\n\n${t('codeEditor.artifactsLabel')}:\n${JSON.stringify(result.artifacts, null, 2)}`
       }
       if (result.duration_ms !== undefined) {
-        output += `\n\n⏱️ Duration: ${result.duration_ms}ms`
+        output += `\n\n${t('codeEditor.durationLabel')}: ${result.duration_ms}ms`
       }
       setTestOutput(output)
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Execution failed'
-      setTestOutput(`❌ Error: ${message}`)
+      setTestOutput(`${t('codeEditor.errorLabel')}: ${message}`)
     } finally {
       setIsRunning(false)
     }
@@ -479,6 +680,17 @@ function CodeToolPageContent() {
         {/* 右侧：配置面板 - 绝对定位，独立滚动 */}
         <aside className="absolute top-0 right-0 bottom-0 w-80 overflow-y-auto bg-muted/10">
           <div className="p-4 space-y-1">
+            {Object.entries(fieldErrors).some(([field]) => shouldShowSummaryFieldError(field)) && (
+              <div className="mb-4 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                {Object.entries(fieldErrors)
+                  .filter(([field]) => shouldShowSummaryFieldError(field))
+                  .map(([field, message]) => (
+                    <p key={field} className="text-xs text-destructive">
+                      {`${field}: ${message}`}
+                    </p>
+                  ))}
+              </div>
+            )}
             {/* 基本信息 */}
             <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
               <CollapsibleTrigger className="flex items-center gap-2 w-full py-2 text-sm font-medium hover:text-foreground/80">
@@ -496,13 +708,13 @@ function CodeToolPageContent() {
                     value={name}
                     onChange={(e) => {
                       setName(e.target.value)
-                      if (nameError) setNameError('')
+                      setFieldErrors((current) => clearFieldError(current, 'name'))
                     }}
                     disabled={isEditing}
                     className="h-8 text-sm"
-                    aria-invalid={!!nameError}
+                    aria-invalid={!!fieldErrors.name}
                   />
-                  {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+                  {fieldErrors.name && <p className="text-xs text-destructive">{fieldErrors.name}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="displayName" className="text-xs text-muted-foreground">
@@ -512,9 +724,14 @@ function CodeToolPageContent() {
                     id="displayName"
                     placeholder="My Tool"
                     value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    onChange={(e) => {
+                      setDisplayName(e.target.value)
+                      setFieldErrors((current) => clearFieldError(current, 'display_name'))
+                    }}
                     className="h-8 text-sm"
+                    aria-invalid={!!fieldErrors.display_name}
                   />
+                  {fieldErrors.display_name && <p className="text-xs text-destructive">{fieldErrors.display_name}</p>}
                 </div>
                 <div className="flex gap-2">
                   <div className="space-y-1.5">
@@ -563,9 +780,14 @@ function CodeToolPageContent() {
                     id="description"
                     placeholder={t('descriptionPlaceholder')}
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => {
+                      setDescription(e.target.value)
+                      setFieldErrors((current) => clearFieldError(current, 'description'))
+                    }}
                     className="h-8 text-sm"
+                    aria-invalid={!!fieldErrors.description}
                   />
+                  {fieldErrors.description && <p className="text-xs text-destructive">{fieldErrors.description}</p>}
                 </div>
                 <div className="flex items-center justify-between pt-1">
                   <Label htmlFor="enabled" className="text-xs text-muted-foreground">
@@ -575,6 +797,208 @@ function CodeToolPageContent() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
+
+            <div className="space-y-3 py-2 border-t pt-4">
+              <div className="text-sm font-medium">{t('codeEditor.runtime')}</div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pythonPackages" className="text-xs text-muted-foreground">
+                  {t('codeEditor.pythonPackages')}
+                </Label>
+                <Textarea
+                  id="pythonPackages"
+                  placeholder={t('codeEditor.pythonPackagesPlaceholder')}
+                  value={pythonPackagesText}
+                  onChange={(e) => {
+                    setPythonPackagesText(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'code_config.python_packages'))
+                  }}
+                  className="min-h-20 text-xs"
+                  aria-invalid={!!fieldErrors['code_config.python_packages']}
+                />
+                {fieldErrors['code_config.python_packages'] && <p className="text-xs text-destructive">{fieldErrors['code_config.python_packages']}</p>}
+                <p className="text-xs text-muted-foreground">{t('codeEditor.pythonPackagesHint')}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="jsPackages" className="text-xs text-muted-foreground">
+                  {t('codeEditor.jsPackages')}
+                </Label>
+                <Textarea
+                  id="jsPackages"
+                  placeholder={t('codeEditor.jsPackagesPlaceholder')}
+                  value={jsPackagesText}
+                  onChange={(e) => {
+                    setJsPackagesText(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'code_config.js_packages'))
+                  }}
+                  className="min-h-20 text-xs"
+                  aria-invalid={!!fieldErrors['code_config.js_packages']}
+                />
+                {fieldErrors['code_config.js_packages'] && <p className="text-xs text-destructive">{fieldErrors['code_config.js_packages']}</p>}
+                <p className="text-xs text-muted-foreground">{t('codeEditor.jsPackagesHint')}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pythonPackageIndexUrl" className="text-xs text-muted-foreground">
+                  {t('codeEditor.pythonPackageIndexUrl')}
+                </Label>
+                <Input
+                  id="pythonPackageIndexUrl"
+                  placeholder={t('codeEditor.pythonPackageIndexUrlPlaceholder')}
+                  value={pythonPackageIndexUrl}
+                  onChange={(e) => {
+                    setPythonPackageIndexUrl(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'code_config.python_package_index_url'))
+                  }}
+                  className="h-8 text-xs"
+                  aria-invalid={!!fieldErrors['code_config.python_package_index_url']}
+                />
+                {fieldErrors['code_config.python_package_index_url'] && <p className="text-xs text-destructive">{fieldErrors['code_config.python_package_index_url']}</p>}
+                <p className="text-xs text-muted-foreground">{t('codeEditor.packageSourceUrlHint')}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nodePackageRegistryUrl" className="text-xs text-muted-foreground">
+                  {t('codeEditor.nodePackageRegistryUrl')}
+                </Label>
+                <Input
+                  id="nodePackageRegistryUrl"
+                  placeholder={t('codeEditor.nodePackageRegistryUrlPlaceholder')}
+                  value={nodePackageRegistryUrl}
+                  onChange={(e) => {
+                    setNodePackageRegistryUrl(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'code_config.node_package_registry_url'))
+                  }}
+                  className="h-8 text-xs"
+                  aria-invalid={!!fieldErrors['code_config.node_package_registry_url']}
+                />
+                {fieldErrors['code_config.node_package_registry_url'] && <p className="text-xs text-destructive">{fieldErrors['code_config.node_package_registry_url']}</p>}
+                <p className="text-xs text-muted-foreground">{t('codeEditor.packageSourceUrlHint')}</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="command" className="text-xs text-muted-foreground">
+                  {t('codeEditor.command')}
+                </Label>
+                <Textarea
+                  id="command"
+                  placeholder={t('codeEditor.commandPlaceholder')}
+                  value={commandText}
+                  onChange={(e) => setCommandText(e.target.value)}
+                  className="min-h-20 text-xs font-mono"
+                />
+                <p className="text-xs text-muted-foreground">{t('codeEditor.commandHint')}</p>
+              </div>
+              <div className="space-y-3 rounded-md border bg-background p-3">
+                <div className="text-xs font-medium text-muted-foreground">{t('codeEditor.limits')}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="timeoutSeconds" className="text-xs text-muted-foreground">{t('codeEditor.timeoutSeconds')}</Label>
+                    <Input
+                      id="timeoutSeconds"
+                      type="number"
+                      value={timeoutSeconds}
+                      onChange={(e) => {
+                        setTimeoutSeconds(e.target.value)
+                        setFieldErrors((current) => clearFieldError(current, 'code_config.limits.timeout_seconds'))
+                      }}
+                      className="h-8 text-xs"
+                      aria-invalid={!!fieldErrors['code_config.limits.timeout_seconds']}
+                    />
+                    {fieldErrors['code_config.limits.timeout_seconds'] && <p className="text-xs text-destructive">{fieldErrors['code_config.limits.timeout_seconds']}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="diskMb" className="text-xs text-muted-foreground">{t('codeEditor.diskMb')}</Label>
+                    <Input
+                      id="diskMb"
+                      type="number"
+                      value={diskMb}
+                      onChange={(e) => {
+                        setDiskMb(e.target.value)
+                        setFieldErrors((current) => clearFieldError(current, 'code_config.limits.disk_mb'))
+                      }}
+                      className="h-8 text-xs"
+                      aria-invalid={!!fieldErrors['code_config.limits.disk_mb']}
+                    />
+                    {fieldErrors['code_config.limits.disk_mb'] && <p className="text-xs text-destructive">{fieldErrors['code_config.limits.disk_mb']}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="maxStdoutKb" className="text-xs text-muted-foreground">{t('codeEditor.maxStdoutKb')}</Label>
+                    <Input
+                      id="maxStdoutKb"
+                      type="number"
+                      value={maxStdoutKb}
+                      onChange={(e) => {
+                        setMaxStdoutKb(e.target.value)
+                        setFieldErrors((current) => clearFieldError(current, 'code_config.limits.max_stdout_kb'))
+                      }}
+                      className="h-8 text-xs"
+                      aria-invalid={!!fieldErrors['code_config.limits.max_stdout_kb']}
+                    />
+                    {fieldErrors['code_config.limits.max_stdout_kb'] && <p className="text-xs text-destructive">{fieldErrors['code_config.limits.max_stdout_kb']}</p>}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="maxStderrKb" className="text-xs text-muted-foreground">{t('codeEditor.maxStderrKb')}</Label>
+                    <Input
+                      id="maxStderrKb"
+                      type="number"
+                      value={maxStderrKb}
+                      onChange={(e) => {
+                        setMaxStderrKb(e.target.value)
+                        setFieldErrors((current) => clearFieldError(current, 'code_config.limits.max_stderr_kb'))
+                      }}
+                      className="h-8 text-xs"
+                      aria-invalid={!!fieldErrors['code_config.limits.max_stderr_kb']}
+                    />
+                    {fieldErrors['code_config.limits.max_stderr_kb'] && <p className="text-xs text-destructive">{fieldErrors['code_config.limits.max_stderr_kb']}</p>}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3 rounded-md border bg-background p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium text-muted-foreground">{t('codeEditor.artifacts')}</div>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addArtifact}>
+                    <Plus className="mr-1 h-3 w-3" />
+                    {t('codeEditor.addArtifact')}
+                  </Button>
+                </div>
+                {artifacts.map((artifact, index) => (
+                  <div key={index} className="space-y-2 rounded-md border p-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder={t('codeEditor.artifactPathPlaceholder')}
+                        value={artifact.path || ''}
+                        onChange={(e) => {
+                          updateArtifact(index, 'path', e.target.value)
+                          setFieldErrors((current) => clearFieldError(current, `code_config.artifacts.${index}.path`))
+                        }}
+                        className="h-7 text-xs flex-1"
+                        aria-invalid={!!fieldErrors[`code_config.artifacts.${index}.path`]}
+                      />
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeArtifact(index)}>
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                    <Input
+                      placeholder={t('codeEditor.artifactDescription')}
+                      value={artifact.description || ''}
+                      onChange={(e) => {
+                        updateArtifact(index, 'description', e.target.value)
+                        setFieldErrors((current) => clearFieldError(current, `code_config.artifacts.${index}.description`))
+                      }}
+                      className="h-7 text-xs"
+                      aria-invalid={!!fieldErrors[`code_config.artifacts.${index}.description`]}
+                    />
+                    {fieldErrors[`code_config.artifacts.${index}.path`] && <p className="text-xs text-destructive">{fieldErrors[`code_config.artifacts.${index}.path`]}</p>}
+                    {fieldErrors[`code_config.artifacts.${index}.description`] && <p className="text-xs text-destructive">{fieldErrors[`code_config.artifacts.${index}.description`]}</p>}
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`artifact-optional-${index}`}
+                        checked={artifact.optional}
+                        onCheckedChange={(checked) => updateArtifact(index, 'optional', checked === true)}
+                      />
+                      <Label htmlFor={`artifact-optional-${index}`} className="text-xs text-muted-foreground">{t('codeEditor.artifactOptional')}</Label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* 参数定义 */}
             <Collapsible open={paramsOpen} onOpenChange={setParamsOpen}>

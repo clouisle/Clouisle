@@ -2,6 +2,7 @@
 Tests for the tool execution service.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -95,3 +96,44 @@ class TestToolExecutor:
             arguments={"q": "x"},
             credentials=tool.credentials,
         )
+
+    @pytest.mark.anyio
+    async def test_execute_custom_code_tool_routes_through_sandbox_gateway(self):
+        executor = ToolExecutor()
+        tool = MagicMock()
+        tool.custom_type = CustomToolType.CODE
+        tool.code_config = {
+            "language": "python",
+            "code": "return {'ok': True}",
+            "python_packages": ["requests==2.32.3"],
+            "python_package_index_url": " https://mirror.example.com/simple/ ",
+        }
+
+        with (
+            patch(
+                "app.services.tool.compile_code_config_job",
+                return_value=SimpleNamespace(
+                    limits=SimpleNamespace(timeout_seconds=30.0),
+                ),
+            ) as mock_compile,
+            patch(
+                "app.services.tool.sandbox_gateway.submit_and_wait",
+                new=AsyncMock(
+                    return_value=SimpleNamespace(
+                        success=True,
+                        result={"ok": True},
+                        error=None,
+                        stdout="log line",
+                        stderr="",
+                        artifacts=[],
+                    )
+                ),
+            ) as mock_submit,
+        ):
+            result = await executor._execute_custom_tool(tool=tool, arguments={"x": 1})
+
+        assert result["success"] is True
+        assert result["result"] == {"ok": True}
+        assert result["stdout"] == "log line"
+        mock_compile.assert_called_once()
+        mock_submit.assert_awaited_once()
