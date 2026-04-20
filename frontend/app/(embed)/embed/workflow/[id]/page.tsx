@@ -10,7 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ChatContainer, ChatInput, VariableForm, useVariableForm } from '@/components/chat'
 import type { ChatMessage } from '@/components/chat/types'
 import type { VariableDefinition, VariableType } from '@/lib/api'
-import { embedApi, type EmbedWorkflowInfo } from '@/lib/api/embed'
+import { embedApi, resolveEmbedMessage, type EmbedWorkflowInfo } from '@/lib/api/embed'
 import { Suspense } from 'react'
 
 function EmbedWorkflowContent() {
@@ -56,7 +56,10 @@ function EmbedWorkflowContent() {
     embedApi
       .getWorkflowInfo(workflowId, apiKey)
       .then(data => { setWorkflow(data); setError(null) })
-      .catch(err => setError(err.message || t('errorLoading')))
+      .catch(err => {
+        const message = err instanceof Error ? resolveEmbedMessage(err.message, t('errorLoading')) : t('errorLoading')
+        setError(message)
+      })
       .finally(() => setLoading(false))
   }, [workflowId, apiKey, t])
 
@@ -170,7 +173,7 @@ function EmbedWorkflowContent() {
         break
 
       case 'workflow_error': {
-        const errorMessage = data.error as string
+        const errorMessage = resolveEmbedMessage(data.error, t('errorLoading'))
         if (errorMessage) {
           const errorMsg: ChatMessage = { id: `error-${Date.now()}`, role: 'assistant', parts: [{ type: 'text', text: errorMessage }] }
           setMessages(prev => [...prev, errorMsg])
@@ -179,13 +182,13 @@ function EmbedWorkflowContent() {
         break
       }
     }
-  }, [])
+  }, [t])
 
 
   const handleRun = React.useCallback(async (query: string) => {
     if (!query.trim()) return
 
-    if (variableForm.needsInput && !variableForm.isValid) {
+    if (variableForm.needsInput && !variableForm.validate()) {
       setVariablesOpen(true)
       return
     }
@@ -215,9 +218,7 @@ function EmbedWorkflowContent() {
   }, [
     workflowId,
     apiKey,
-    variableForm.isValid,
-    variableForm.needsInput,
-    variableForm.values,
+    variableForm,
     handleWorkflowEvent,
   ])
 
@@ -341,6 +342,7 @@ function EmbedWorkflowContent() {
                       variables={formVariables}
                       values={variableForm.values}
                       onChange={variableForm.setValues}
+                      fieldErrors={variableForm.fieldErrors}
                       className="space-y-2"
                     />
                   </div>
@@ -357,7 +359,6 @@ function EmbedWorkflowContent() {
           isLoading={isStreaming}
           isStreaming={isStreaming}
           placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (workflow.description || undefined)}
-          disabled={variableForm.needsInput && !variableForm.isValid}
         />
       </div>
     </div>

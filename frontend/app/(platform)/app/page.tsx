@@ -175,6 +175,7 @@ function StatCard({
 }
 
 function RecentItemCard({ item }: { item: RecentItem }) {
+  const t = useTranslations('platform.home')
   const href = item.type === 'agent' ? `/app/apps/${item.id}` : `/app/apps/workflow/${item.id}`
   const Icon = item.type === 'agent' ? Bot : Workflow
 
@@ -198,7 +199,7 @@ function RecentItemCard({ item }: { item: RecentItem }) {
           </p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
-              {item.type === 'agent' ? 'Agent' : 'Workflow'}
+              {t(`recentItemTypes.${item.type}`)}
             </Badge>
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />

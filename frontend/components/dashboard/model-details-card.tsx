@@ -73,10 +73,10 @@ export function ModelDetailsCard({ data, isLoading }: ModelDetailsCardProps) {
               <div className="flex-1 min-w-0">
                 <Tooltip>
                   <TooltipTrigger className="block w-full text-left">
-                    <span className="block w-full font-medium truncate">{model.model || 'Unknown'}</span>
+                    <span className="block w-full font-medium truncate">{model.model || t('common.unknown')}</span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{model.model || 'Unknown'}</p>
+                    <p>{model.model || t('common.unknown')}</p>
                   </TooltipContent>
                 </Tooltip>
                 <div className="text-xs text-muted-foreground">{t('common.usageCount')}: {model.count.toLocaleString()}</div>

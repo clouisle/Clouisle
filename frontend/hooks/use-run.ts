@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import { useChat } from './use-chat'
 import { useWorkflowRun } from './use-workflow-run'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
@@ -45,6 +46,9 @@ export interface UseRunReturn {
  */
 export function useRun(options: UseRunOptions): UseRunReturn {
   const { id, type, conversationId, variables, isDebug, onConversationChange, onError, onStreamStart, onStreamEnd } = options
+  const tReasoning = useTranslations('chat.reasoning')
+  const tTask = useTranslations('chat.task')
+  const tAgents = useTranslations('agents.chat.messages')
 
   // Agent chat hook
   const agentChat = useChat({
@@ -82,7 +86,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
           nodes.set(nodeId, {
             id: nodeId,
             type: 'reasoning',
-            label: 'Reasoning',
+            label: tAgents('reasoning'),
             status: part.state === 'streaming' ? 'running' : 'completed',
             duration: part.duration,
             output: part.text,
@@ -112,12 +116,12 @@ export function useRun(options: UseRunOptions): UseRunReturn {
             id: nodeId,
             type: part.taskType,
             label: part.taskType === 'rag'
-              ? 'RAG Retrieval'
+              ? tTask('searchingKnowledge')
               : part.taskType === 'thinking'
-                ? 'Thinking'
+                ? tReasoning('thinking')
                 : part.taskType === 'compression'
-                  ? 'Context Compression'
-                  : 'Generating',
+                  ? tTask('compressingContext')
+                  : tTask('generating'),
             status: part.state === 'running' ? 'running' : part.state === 'error' ? 'error' : part.state === 'completed' ? 'completed' : 'pending',
             metadata: { info: part.info },
           })
@@ -129,7 +133,7 @@ export function useRun(options: UseRunOptions): UseRunReturn {
       nodes,
       progress: { current: nodes.size, total: nodes.size },
     }
-  }, [type, agentChat.messages])
+  }, [type, agentChat.messages, tAgents, tReasoning, tTask])
 
   if (type === 'agent') {
     return {

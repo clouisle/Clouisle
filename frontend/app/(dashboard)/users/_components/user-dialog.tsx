@@ -7,7 +7,14 @@ import { usersApi, type UserCreateData, type UserUpdateData, type User } from '@
 import { ssoApi } from '@/lib/api/admin/sso'
 import type { SSOConnection } from '@/lib/api/auth'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
-import { ApiError } from '@/lib/api'
+import {
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  normalizeValidationErrorsRaw,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { isValidEmail } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,12 +42,36 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Link as LinkIcon, Loader2, Unlink } from 'lucide-react'
 import { useCanPerform } from '@/components/permission-guard'
+import { FieldError } from '@/components/ui/field'
 
 interface UserDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   user?: User | null // 编辑时传入用户，创建时为 null
   onSuccess?: (user: User) => void
+}
+
+function translatePasswordValidationError(
+  error: string,
+  t: ReturnType<typeof useTranslations>
+): string {
+  const [key, param] = error.split(':')
+  if (key === 'password_min_length') {
+    return t('passwordMinLength', { length: param })
+  }
+  if (key === 'password_require_uppercase') {
+    return t('passwordRequireUppercase')
+  }
+  if (key === 'password_require_number') {
+    return t('passwordRequireNumber')
+  }
+  if (key === 'password_require_special') {
+    return t('passwordRequireSpecial')
+  }
+  if (key === 'password_recently_used') {
+    return t('passwordRecentlyUsed')
+  }
+  return error
 }
 
 export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogProps) {
@@ -66,6 +97,11 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'roles']),
+    [fieldErrors]
+  )
 
   // 加载角色列表
   React.useEffect(() => {
@@ -177,32 +213,13 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       onSuccess?.(result)
       onOpenChange(false)
     } catch (error) {
-      if (error instanceof ApiError && error.isValidationError()) {
-        const errors = error.getFieldErrors()
-        // 处理密码验证错误（后端返回的是数组格式）
-        if (error.data && typeof error.data === 'object' && 'errors' in error.data) {
-          const errorData = error.data as { errors: string[] }
-          if (Array.isArray(errorData.errors) && errorData.errors.length > 0) {
-            // 将密码错误数组转换为可读的错误消息
-            const passwordErrors = errorData.errors.map(err => {
-              // 处理带参数的错误消息，如 "password_min_length:8"
-              const [key, param] = err.split(':')
-              if (key === 'password_min_length') {
-                return authT('passwordMinLength', { length: param })
-              } else if (key === 'password_require_uppercase') {
-                return authT('passwordRequireUppercase')
-              } else if (key === 'password_require_number') {
-                return authT('passwordRequireNumber')
-              } else if (key === 'password_require_special') {
-                return authT('passwordRequireSpecial')
-              } else if (key === 'password_recently_used') {
-                return authT('passwordRecentlyUsed')
-              }
-              return err
-            }).join('; ')
-            setFieldErrors({ password: passwordErrors })
-            return
-          }
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        const rawErrors = normalizeValidationErrorsRaw(error)
+        if (rawErrors.password) {
+          errors.password = rawErrors.password
+            .map((item) => translatePasswordValidationError(item, authT))
+            .join('; ')
         }
         setFieldErrors(errors)
       }
@@ -222,19 +239,30 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="grid gap-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           <div className="grid gap-2">
             <Label htmlFor="username">{authT('username')}</Label>
             <Input
               id="username"
               value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, username: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'username'))
+              }}
               disabled={isEditing}
               required={!isEditing}
               autoFocus={!isEditing}
+              aria-invalid={!!fieldErrors.username}
             />
-            {fieldErrors.username && (
-              <p className="text-sm text-destructive">{fieldErrors.username}</p>
-            )}
+            <FieldError>{fieldErrors.username}</FieldError>
           </div>
           
           <div className="grid gap-2">
@@ -243,13 +271,15 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
               id="email"
               type="email"
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, email: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'email'))
+              }}
               required
               autoFocus={isEditing}
+              aria-invalid={!!fieldErrors.email}
             />
-            {fieldErrors.email && (
-              <p className="text-sm text-destructive">{fieldErrors.email}</p>
-            )}
+            <FieldError>{fieldErrors.email}</FieldError>
           </div>
           
           <div className="grid gap-2">
@@ -261,13 +291,15 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
               id="password"
               type="password"
               value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, password: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'password'))
+              }}
               required={!isEditing}
               minLength={6}
+              aria-invalid={!!fieldErrors.password}
             />
-            {fieldErrors.password && (
-              <p className="text-sm text-destructive">{fieldErrors.password}</p>
-            )}
+            <FieldError>{fieldErrors.password}</FieldError>
           </div>
           
           <div className="grid gap-2">
@@ -276,12 +308,14 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
               id="confirmPassword"
               type="password"
               value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, confirmPassword: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
+              }}
               required={!isEditing && !!formData.password}
+              aria-invalid={!!fieldErrors.confirmPassword}
             />
-            {fieldErrors.confirmPassword && (
-              <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-            )}
+            <FieldError>{fieldErrors.confirmPassword}</FieldError>
           </div>
 
           {isEditing && canManageSSO && currentUser?.sso_connections && currentUser.sso_connections.length > 0 && (
@@ -358,12 +392,14 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
             <div className="grid gap-2">
               <Label>{t('role')}</Label>
               <div className="space-y-2 max-h-40 overflow-y-auto rounded-md border p-3">
+                <FieldError>{fieldErrors.roles}</FieldError>
                 {roles.map((role) => (
                   <div key={role.id} className="flex items-center space-x-2">
                     <Checkbox
                       id={`role-${role.id}`}
                       checked={selectedRoles.includes(role.name)}
                       onCheckedChange={(checked) => {
+                        setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'roles'))
                         if (checked) {
                           setSelectedRoles([...selectedRoles, role.name])
                         } else {

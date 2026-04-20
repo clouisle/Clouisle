@@ -63,6 +63,8 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     setValues: setVariableValues,
     needsInput: needsVariableInput,
     isValid: variablesValid,
+    fieldErrors: variableFieldErrors,
+    validate: validateVariables,
     reset: resetVariables,
   } = useVariableForm(agent.variables || [])
 
@@ -88,8 +90,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
   // Handle submit - check if required variables are filled
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim()) return
-    if (needsVariableInput && !variablesValid) {
-      // Open the variable panel if required fields are not filled
+    if (needsVariableInput && !validateVariables()) {
       setVariablesOpen(true)
       return
     }
@@ -200,7 +201,12 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
     const msgKey = getErrorMsgKey(err)
     if (msgKey) {
       if (msgKey === 'quotaExceeded' && err.quotaType) {
-        return tError('quotaExceeded', { type: err.quotaType })
+        const quotaTypeKey = err.quotaType === 'input'
+          ? 'quotaTypeInput'
+          : err.quotaType === 'output'
+            ? 'quotaTypeOutput'
+            : 'quotaTypeUsage'
+        return tError('quotaExceeded', { type: tError(quotaTypeKey) })
       }
       return tError(msgKey)
     }
@@ -249,7 +255,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}
           onSelectOption={(option) => {
-            sendMessage(option, [])
+            void handleSubmit(option, [])
           }}
           emptyState={
             <div className="text-center text-muted-foreground py-8 px-4">
@@ -309,6 +315,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
                       variables={agent.variables || []}
                       values={variableValues}
                       onChange={setVariableValues}
+                      fieldErrors={variableFieldErrors}
                       className="space-y-2"
                     />
                   </div>
@@ -324,7 +331,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           onSubmit={handleSubmit}
           onStop={stop}
           placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : t('placeholder')}
-          disabled={(isLoading && !isStreaming) || (needsVariableInput && !variablesValid)}
+          disabled={isLoading && !isStreaming}
           isLoading={isLoading}
           isStreaming={isStreaming}
           allowAttachments={agent.enable_vision}

@@ -429,7 +429,7 @@ export function ToolNodeConfig({
                           handleUpdateMapping(mapping.name, {
                             source: 'variable',
                             variableRef: `{{${variable.id}}}`,
-                            variableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            variableRefNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                             constantValue: undefined,
                           })
                           onOpenVariablePopoverChange(null)

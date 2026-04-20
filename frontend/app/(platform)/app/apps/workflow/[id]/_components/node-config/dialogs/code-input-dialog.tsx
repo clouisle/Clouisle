@@ -185,7 +185,7 @@ export function CodeInputDialog({
                                   setForm({
                                     ...form,
                                     value: `{{${variable.name}}}`,
-                                    valueSource: variable.isSystem ? 'SYSTEM' : variable.groupLabel
+                                    valueSource: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
                                   })
                                   onOpenVariablePopoverChange(null)
                                   onVariableSearchChange('')

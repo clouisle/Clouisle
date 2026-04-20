@@ -476,7 +476,7 @@ export function LoopNodeConfig({
                                         // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                                         updateExitConditionRule(rule.id, {
                                           variable: `{{${variable.id}}}`,
-                                          variableSource: variable.isSystem ? 'SYSTEM' : variable.groupLabel
+                                          variableSource: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
                                         })
                                         onOpenVariablePopoverChange(null)
                                         onVariableSearchChange('')
@@ -694,7 +694,7 @@ export function LoopNodeConfig({
                     id="loopvar-default"
                     value={loopVarForm.defaultValue || ''}
                     onChange={(e) => setLoopVarForm({ ...loopVarForm, defaultValue: e.target.value })}
-                    placeholder='["item1", "item2"]'
+                    placeholder={t('configLoop.arrayExample')}
                     className="min-h-20 resize-none font-mono text-xs"
                   />
                   <p className="text-[10px] text-muted-foreground">{t('configLoop.jsonArrayFormatHint')}</p>
@@ -708,7 +708,7 @@ export function LoopNodeConfig({
                     id="loopvar-default"
                     value={loopVarForm.defaultValue || ''}
                     onChange={(e) => setLoopVarForm({ ...loopVarForm, defaultValue: e.target.value })}
-                    placeholder='{"key": "value"}'
+                    placeholder={t('configLoop.objectExample')}
                     className="min-h-20 resize-none font-mono text-xs"
                   />
                   <p className="text-[10px] text-muted-foreground">{t('configLoop.jsonObjectFormatHint')}</p>

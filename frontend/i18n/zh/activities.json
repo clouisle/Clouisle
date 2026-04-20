@@ -62,7 +62,8 @@
       "deleteSuccess": "运行记录删除成功",
       "deleteSelected": "删除 {count} 条记录",
       "loadFailed": "加载运行详情失败",
-      "deleteFailed": "删除运行记录失败"
+      "deleteFailed": "删除运行记录失败",
+      "noNodeExecutions": "暂无节点执行记录"
     },
     "searchPlaceholder": "搜索对话...",
     "agent": "智能体",

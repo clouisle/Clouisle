@@ -871,7 +871,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
           return (
             <ToolOutput
               output={undefined}
-              errorText={parsedOutput.error || (isError ? 'Tool execution failed' : undefined)}
+              errorText={parsedOutput.error || (isError ? t('toolExecutionFailed') : undefined)}
             />
           )
         }
@@ -892,7 +892,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                     >
                       <img
                         src={imageUrl}
-                        alt={parsedOutput.prompt || 'Generated image'}
+                        alt={parsedOutput.prompt || t('generatedImageAlt')}
                         className="h-auto w-full object-cover"
                       />
                     </button>
@@ -901,7 +901,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </div>
             )}
             {parsedOutput.error && (
-              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+              <div className="text-sm text-red-500">{t('error')}: {parsedOutput.error}</div>
             )}
           </div>
         )
@@ -912,7 +912,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
           return (
             <ToolOutput
               output={undefined}
-              errorText={parsedOutput.error || (isError ? 'Tool execution failed' : undefined)}
+              errorText={parsedOutput.error || (isError ? t('toolExecutionFailed') : undefined)}
             />
           )
         }
@@ -930,17 +930,17 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
                 {parsedOutput.status === 'completed'
-                  ? 'Video generated but no preview URL is available.'
+                  ? t('videoPreviewUnavailable')
                   : parsedOutput.status === 'processing' || parsedOutput.status === 'pending'
-                    ? 'Video is still being generated.'
-                    : 'Video is unavailable.'}
+                    ? t('videoProcessing')
+                    : t('videoUnavailable')}
                 {typeof parsedOutput.progress === 'number' && (
-                  <div className="mt-1">Progress: {Math.round(parsedOutput.progress * 100)}%</div>
+                  <div className="mt-1">{t('progress', { value: Math.round(parsedOutput.progress * 100) })}</div>
                 )}
               </div>
             )}
             {parsedOutput.error && (
-              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+              <div className="text-sm text-red-500">{t('error')}: {parsedOutput.error}</div>
             )}
           </div>
         )
@@ -1171,9 +1171,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const getToolCallLabel = (toolPart: ToolCallPart) => {
       const name = toolPart.toolDisplayName || toolPart.toolName
       switch (toolPart.state) {
-        case 'running': return `${name} 执行中`
-        case 'done': return `${name} 已完成`
-        case 'error': return `${name} 执行失败`
+        case 'running': return t('toolRunning', { name })
+        case 'done': return t('toolCompleted', { name })
+        case 'error': return t('toolFailed', { name })
         default: return name
       }
     }

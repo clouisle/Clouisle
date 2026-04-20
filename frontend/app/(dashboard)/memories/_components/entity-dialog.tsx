@@ -29,6 +29,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { useCanPerform } from '@/components/permission-guard'
 
 interface EntityDialogProps {
@@ -43,11 +50,27 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
 
+  const getEntityTypeLabel = (entityType: string) => {
+    const key = `types.${entityType}`
+    return t.has(key) ? t(key) : entityType
+  }
+
+  const getRelationTypeLabel = (relationType: string) => {
+    const key = `relationTypes.${relationType}`
+    return t.has(key) ? t(key) : relationType
+  }
+
   const [isLoading, setIsLoading] = React.useState(false)
   const [fullEntity, setFullEntity] = React.useState<MemoryEntity | null>(null)
   const [description, setDescription] = React.useState('')
   const [properties, setProperties] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [deleteRelationId, setDeleteRelationId] = React.useState<string | null>(null)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['description', 'properties']),
+    [fieldErrors]
+  )
 
   // Load full entity details
   React.useEffect(() => {
@@ -58,6 +81,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
           setFullEntity(data)
           setDescription(data.description || '')
           setProperties(JSON.stringify(data.properties, null, 2))
+          setFieldErrors({})
         } catch {
           // Error handled by API client
         }
@@ -70,15 +94,15 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
     e.preventDefault()
     if (!entity) return
 
+    setFieldErrors({})
     setIsLoading(true)
     try {
-      // Parse properties JSON
       let parsedProperties = {}
       if (properties.trim()) {
         try {
           parsedProperties = JSON.parse(properties)
         } catch {
-          toast.error(commonT('invalidJSON'))
+          setFieldErrors({ properties: commonT('invalidJSON') })
           setIsLoading(false)
           return
         }
@@ -91,8 +115,11 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
 
       toast.success(t('editEntity'))
       onSuccess()
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -142,6 +169,16 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
+
             {/* Read-only info */}
             <div className="space-y-3">
               <div className="flex items-center gap-3">
@@ -165,7 +202,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">{t('entityType')}</div>
                   <Badge className={getTypeBadgeColor(entity?.entity_type || '')}>
-                    {entity && t(`types.${entity.entity_type}`)}
+                    {entity && getEntityTypeLabel(entity.entity_type)}
                   </Badge>
                 </div>
               </div>
@@ -179,10 +216,15 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
                 placeholder={t('noDescription')}
                 rows={3}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -190,11 +232,16 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
               <Textarea
                 id="properties"
                 value={properties}
-                onChange={(e) => setProperties(e.target.value)}
+                onChange={(e) => {
+                  setProperties(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'properties'))
+                }}
                 placeholder="{}"
                 rows={5}
                 className="font-mono text-sm"
+                aria-invalid={!!fieldErrors.properties}
               />
+              <FieldError>{fieldErrors.properties}</FieldError>
               <p className="text-xs text-muted-foreground">
                 JSON format
               </p>
@@ -218,7 +265,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
                             <div className="flex-1">
                               <span className="font-medium">{rel.target_entity_name}</span>
                               <Badge variant="outline" className="ml-2">
-                                {t(`relationTypes.${rel.relation_type}`)}
+                                {getRelationTypeLabel(rel.relation_type)}
                               </Badge>
                               {rel.description && (
                                 <p className="text-xs text-muted-foreground mt-1">
@@ -257,7 +304,7 @@ export function EntityDialog({ entity, open, onOpenChange, onSuccess }: EntityDi
                             <div className="flex-1">
                               <span className="font-medium">{rel.source_entity_name}</span>
                               <Badge variant="outline" className="ml-2">
-                                {t(`relationTypes.${rel.relation_type}`)}
+                                {getRelationTypeLabel(rel.relation_type)}
                               </Badge>
                               {rel.description && (
                                 <p className="text-xs text-muted-foreground mt-1">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import type { BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
@@ -33,6 +34,7 @@ import type {
   UserInputRequestPart,
   MediaResultPart,
 } from '@/components/chat'
+import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import { parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -107,6 +109,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     onStreamEnd,
   } = options
 
+  const tError = useTranslations('errors')
+  const tAuth = useTranslations('auth')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [error, setError] = useState<ChatError | null>(null)
@@ -223,8 +227,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         if (!response.ok) {
           // Handle HTTP errors
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
         }
 
         // Update status to streaming
@@ -823,7 +827,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               }
               onError?.(chatError)
 
-              const errorText = getErrorMessage(chatError)
+              const errorText = getErrorMessage(chatError, tError, tAuth)
               const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
                 segments,
                 reasoningBlocks,
@@ -885,11 +889,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const chatError: ChatError = {
-          message: err instanceof Error ? err.message : 'Unknown error',
+          message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
 
-        const errorText = getErrorMessage(chatError)
+        const errorText = getErrorMessage(chatError, tError, tAuth)
         const state = streamingStateRef.current
         const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
           segments: state.segments,
@@ -942,6 +946,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       onError,
       onStreamStart,
       onStreamEnd,
+      tAuth,
+      tError,
     ]
   )
 
@@ -1157,8 +1163,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const response = await stream
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
         }
 
         setStatus('streaming')
@@ -1717,7 +1723,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               }
               onError?.(chatError)
 
-              const errorText = getErrorMessage(chatError)
+              const errorText = getErrorMessage(chatError, tError, tAuth)
               const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
                 segments,
                 reasoningBlocks,
@@ -1756,11 +1762,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const chatError: ChatError = {
-          message: err instanceof Error ? err.message : 'Unknown error',
+          message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
 
-        const errorText = getErrorMessage(chatError)
+        const errorText = getErrorMessage(chatError, tError, tAuth)
         const state = streamingStateRef.current
         const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
           segments: state.segments,
@@ -1811,6 +1817,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       onStreamStart,
       onStreamEnd,
       sendMessage,
+      tAuth,
+      tError,
     ]
   )
 
@@ -2070,67 +2078,98 @@ function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
  * Get user-friendly error message based on error type
  * Returns an object with message and optional i18n key
  */
-function getErrorMessage(error: ChatError): string {
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function shouldUseChatBackendMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return false
+  if (isLikelyMessageKey(trimmed)) return false
+  if (trimmed.includes('\n')) return false
+
+  return !(
+    trimmed.includes('Traceback')
+    || trimmed.includes('Exception')
+    || trimmed.includes('HTTP ')
+    || trimmed.includes('Failed to fetch')
+  )
+}
+
+function getHttpErrorMessage(
+  status: number,
+  tError: ReturnType<typeof useTranslations>,
+  tAuth: ReturnType<typeof useTranslations>
+): string {
+  if (status === 401 || status === 403) {
+    return tAuth('sessionExpired')
+  }
+  if (status === 404) {
+    return tError('resourceNotFound')
+  }
+  if (status >= 500 && status < 600) {
+    return tError('serverErrorDescription')
+  }
+  return getApiErrorMessage('requestFailed')
+}
+
+function getErrorMessage(
+  error: ChatError,
+  tError: ReturnType<typeof useTranslations>,
+  tAuth: ReturnType<typeof useTranslations>
+): string {
   const { code, message, quotaType } = error
 
-  // Network errors
   if (message?.includes('fetch') || message?.includes('network') || message?.includes('Failed to fetch')) {
-    return '抱歉，网络连接出现问题，请检查您的网络后重试。'
+    return tError('networkError')
   }
 
-  // Timeout errors
   if (message?.includes('timeout') || message?.includes('Timeout')) {
-    return '抱歉，请求超时了，可能是网络较慢或服务器繁忙，请稍后重试。'
+    return tError('timeout')
   }
 
-  // Quota exceeded (business code 6103 or HTTP 429)
   if (code === 6103 || code === 429 || quotaType) {
-    const type = quotaType === 'input' ? '输入' : quotaType === 'output' ? '输出' : '使用'
-    return `抱歉，${type}配额已用尽，请联系管理员或稍后重试。`
+    const quotaTypeKey = quotaType === 'input'
+      ? 'quotaTypeInput'
+      : quotaType === 'output'
+        ? 'quotaTypeOutput'
+        : 'quotaTypeUsage'
+    return tError('quotaExceeded', { type: tError(quotaTypeKey) })
   }
 
-  // Model vision not supported (business code 6105)
   if (code === 6105) {
-    return '当前模型不支持视觉功能，请更换支持视觉的模型'
+    return tError('modelVisionNotSupported')
   }
 
-  // Model not found (business code 6100 or specific error messages)
   if (code === 6100 || message?.includes('No model found') || message?.includes('no_default_model') || message?.includes('no_chat_model')) {
-    return '抱歉，尚未配置默认模型，请联系管理员在后台设置默认的聊天模型。'
+    return tError('modelNotFound')
   }
 
-  // Model not authorized (business code 6104)
   if (code === 6104) {
-    return '抱歉，当前团队未授权使用该模型，请联系管理员。'
+    return tError('modelNotAuthorized')
   }
 
-  // Authentication errors (business code 2000-2999 or HTTP 401/403)
   if ((code && code >= 2000 && code < 3000) || code === 401 || code === 403) {
-    return '抱歉，您的登录已过期或没有访问权限，请重新登录。'
+    return tAuth('sessionExpired')
   }
 
-  // Not found (business code 4000-4999 or HTTP 404)
   if ((code && code >= 4000 && code < 5000) || code === 404) {
-    return '抱歉，找不到相关资源，可能已被删除或移动。'
+    return tError('resourceNotFound')
   }
 
-  // HTTP Server errors (500-599 range only)
   if (code && code >= 500 && code < 600) {
-    return '抱歉，服务器出现了一些问题，我们正在处理中，请稍后重试。'
+    return tError('serverErrorDescription')
   }
 
-  // Model not configured
   if (message?.includes('model') && message?.includes('configured')) {
-    return '抱歉，当前 Agent 尚未配置模型，请先在设置中配置一个可用的模型。'
+    return tError('modelNotConfigured')
   }
 
-  // If there's a specific message from the server, use it
-  if (message && message.length > 0 && message.length < 200) {
-    return message
+  if (message && shouldUseChatBackendMessage(message)) {
+    return message.trim()
   }
 
-  // Default error message
-  return '抱歉，出现了一些问题，请稍后重试。如果问题持续存在，请联系管理员。'
+  return tError('unknown')
 }
 
 /**

@@ -302,7 +302,7 @@ export function ParameterEditDialog({
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder='["item1", "item2", "item3"]'
+                  placeholder={t('dialogs.parameterEdit.arrayExample')}
                   className="min-h-24 resize-none font-mono text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonArrayHint')}</p>
@@ -316,7 +316,7 @@ export function ParameterEditDialog({
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder='{"key": "value"}'
+                  placeholder={t('dialogs.parameterEdit.objectExample')}
                   className="min-h-24 resize-none font-mono text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonObjectHint')}</p>

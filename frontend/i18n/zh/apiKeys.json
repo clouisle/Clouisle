@@ -32,6 +32,8 @@
     "neverUsed": "从未使用",
     "createdAt": "创建时间",
     "noKeys": "暂无 API 密钥。",
+    "createKeyHint": "创建您的第一个 API 密钥以开始使用 API。",
+    "noKeysFound": "未找到匹配的 API 密钥。",
     "keysSelected": "个密钥已选中",
     "filterKeys": "搜索 API 密钥...",
     "rowsPerPage": "每页显示",

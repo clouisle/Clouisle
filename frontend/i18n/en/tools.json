@@ -17,6 +17,7 @@
     "pageInfo": "Page {page} of {total}",
     "toolCreated": "Tool created successfully",
     "toolUpdated": "Tool updated successfully",
+    "configSaved": "Configuration saved successfully",
     "toolDeleted": "Tool deleted successfully",
     "toolEnabled": "Tool enabled",
     "toolDisabled": "Tool disabled",
@@ -130,7 +131,9 @@
       "noParameters": "No parameters defined. Click the button above to add",
       "paramName": "Parameter name",
       "paramDescription": "Description (optional)",
-      "required": "Required"
+      "required": "Required",
+      "toolNamePlaceholder": "my_api_tool",
+      "urlPlaceholder": "https://api.example.com/endpoint"
     },
     "mcpDialog": {
       "createTitle": "Add MCP Server",
@@ -160,7 +163,15 @@
       "toolsLoaded": "Loaded {count} tools",
       "fetchToolsFailed": "Failed to fetch tools, please check configuration",
       "commandRequired": "Please enter command",
-      "urlRequired": "Please enter server URL"
+      "urlRequired": "Please enter server URL",
+      "serverNamePlaceholder": "my_mcp_server",
+      "commandPlaceholder": "npx",
+      "argumentPlaceholder": "arg {index}",
+      "headerKeyPlaceholder": "KEY",
+      "headerValuePlaceholder": "value",
+      "sseUrlPlaceholder": "http://localhost:3000/sse",
+      "headerNamePlaceholder": "Header-Name",
+      "httpUrlPlaceholder": "http://localhost:3000/mcp"
     },
     "codeEditor": {
       "newTitle": "New Code Tool",
@@ -217,7 +228,8 @@
       "artifactDescription": "Description",
       "artifactOptional": "Optional",
       "invalidArtifactPath": "Artifact path \"{value}\" must stay under /workspace",
-      "artifactsLabel": "Artifacts"
+      "artifactsLabel": "Artifacts",
+      "executionFailed": "Execution failed"
     },
     "createMenu": {
       "http": "HTTP API",

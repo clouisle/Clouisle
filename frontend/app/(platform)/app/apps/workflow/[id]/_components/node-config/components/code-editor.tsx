@@ -212,6 +212,9 @@ function CodeEditorComponent({
   showLanguageSelector = true,
 }: CodeEditorProps) {
   const t = useTranslations('workflow')
+  const languageLabel = language === 'python'
+    ? t('codeEditor.languagePython')
+    : t('codeEditor.languageJavaScript')
   const { resolvedTheme } = useTheme()
   const [copied, setCopied] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -307,12 +310,12 @@ function CodeEditorComponent({
             <Select value={language as CodeLanguage} onValueChange={handleLanguageSelect}>
               <SelectTrigger className="h-7 w-28 text-xs font-medium border-0 bg-transparent shadow-none">
                 <SelectValue>
-                  {language === 'python' ? 'Python' : 'JavaScript'}
+                  {languageLabel}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="python" className="text-xs">Python</SelectItem>
-                <SelectItem value="javascript" className="text-xs">JavaScript</SelectItem>
+                <SelectItem value="python" className="text-xs">{t('codeEditor.languagePython')}</SelectItem>
+                <SelectItem value="javascript" className="text-xs">{t('codeEditor.languageJavaScript')}</SelectItem>
               </SelectContent>
             </Select>
           ) : isJinja2 ? (
@@ -333,7 +336,7 @@ function CodeEditorComponent({
             </div>
           ) : (
             <div className="text-xs font-medium text-muted-foreground">
-              {language === 'python' ? 'Python' : 'JavaScript'}
+              {languageLabel}
             </div>
           )}
           
@@ -391,19 +394,19 @@ function CodeEditorComponent({
                 <Select value={language as CodeLanguage} onValueChange={handleLanguageSelect}>
                   <SelectTrigger className="h-8 w-32 text-sm font-medium">
                     <SelectValue>
-                      {language === 'python' ? 'Python' : 'JavaScript'}
+                      {languageLabel}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="python" className="text-sm">Python</SelectItem>
-                    <SelectItem value="javascript" className="text-sm">JavaScript</SelectItem>
+                    <SelectItem value="python" className="text-sm">{t('codeEditor.languagePython')}</SelectItem>
+                    <SelectItem value="javascript" className="text-sm">{t('codeEditor.languageJavaScript')}</SelectItem>
                   </SelectContent>
                 </Select>
               ) : isJinja2 ? (
-                <span className="text-sm text-muted-foreground">Jinja2</span>
+                <span className="text-sm text-muted-foreground">{t('codeEditor.languageJinja2')}</span>
               ) : (
                 <span className="text-sm font-medium">
-                  {language === 'python' ? 'Python' : 'JavaScript'}
+                  {languageLabel}
                 </span>
               )}
               <span className="text-xs text-muted-foreground">

@@ -181,7 +181,7 @@ export function VariableAggregatorNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateVariable(varMapping.id, {
                             sourceVariable: `{{${variable.id}}}`,
-                            sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            sourceNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                             // 如果是 object 模式且没有设置 targetKey，自动从变量名推断
                             targetKey: safeConfig.mode === 'object' && !varMapping.targetKey 
                               ? variable.name.split('.').pop() || variable.name

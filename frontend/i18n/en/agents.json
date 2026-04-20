@@ -174,12 +174,21 @@
           "paragraph": "Paragraph",
           "select": "Dropdown",
           "number": "Number",
-          "checkbox": "Checkbox"
+          "checkbox": "Checkbox",
+          "string": "Text",
+          "boolean": "Boolean",
+          "array": "Array",
+          "object": "Object",
+          "file": "File",
+          "image": "Image",
+          "files": "Files",
+          "images": "Images"
         },
         "dialog": {
           "title": "Edit Variable",
           "fieldType": "Field Type",
           "variableName": "Variable Name",
+          "variableNamePlaceholder": "name",
           "displayName": "Display Name",
           "displayNamePlaceholder": "Display name",
           "options": "Options",
@@ -223,6 +232,7 @@
           "searchModeHybrid": "Hybrid Search",
           "searchModeHint": "Choose how to search the knowledge base",
           "topK": "Top K",
+          "topKCompact": "Top {count}",
           "topKHint": "Number of most relevant chunks to retrieve",
           "threshold": "Similarity Threshold",
           "thresholdHint": "Only return results above this similarity score",
@@ -253,6 +263,7 @@
           "noSearchResults": "No tools found",
           "noTools": "No tools available",
           "requiresConfig": "Requires configuration",
+          "paramsCount": "{count} params",
           "filters": {
             "all": "All",
             "builtin": "Built-in",
@@ -461,6 +472,11 @@
       },
       "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
+      "tabs": {
+        "curl": "cURL",
+        "python": "Python",
+        "javascript": "JavaScript"
+      },
       "multiTurn": {
         "title": "Multi-turn Conversation",
         "description": "To maintain conversation context across multiple requests, use the conversation_id returned in the first response.",

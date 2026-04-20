@@ -3,6 +3,7 @@ import type { ExecutionNode } from '@/components/chat/types'
 import { CheckCircle2, Circle, Loader2, XCircle, SkipForward } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChevronDown } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 
 interface NodeCardProps {
@@ -11,6 +12,8 @@ interface NodeCardProps {
 }
 
 export function NodeCard({ node, compact = false }: NodeCardProps) {
+  const tCommon = useTranslations('common')
+  const tTool = useTranslations('chat.tool')
   const [isOpen, setIsOpen] = useState(false)
 
   const statusConfig: Record<string, {
@@ -86,13 +89,13 @@ export function NodeCard({ node, compact = false }: NodeCardProps) {
                 isOpen && 'rotate-180'
               )}
             />
-            {isOpen ? 'Hide details' : 'Show details'}
+            {isOpen ? tCommon('hideDetails') : tCommon('showDetails')}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 space-y-2">
             {node.input !== undefined && node.input !== null && (
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Input:
+                  {tTool('input')}
                 </div>
                 <pre className="text-xs bg-background/50 rounded p-2 overflow-x-auto">
                   {JSON.stringify(node.input, null, 2)}
@@ -102,7 +105,7 @@ export function NodeCard({ node, compact = false }: NodeCardProps) {
             {node.output !== undefined && node.output !== null && !node.error && (
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">
-                  Output:
+                  {tTool('output')}
                 </div>
                 <pre className="text-xs bg-background/50 rounded p-2 overflow-x-auto">
                   {typeof node.output === 'string'

@@ -1,4 +1,30 @@
-import { api } from './client'
+import { api, ApiError, getErrorMessage } from './client'
+
+function getPublicStatusErrorMessage(status: number): string {
+  if (status === 404) return getErrorMessage('resourceNotFound')
+  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  return getErrorMessage('requestFailed')
+}
+
+function resolvePublicApiErrorMessage(status: number, message: unknown): string {
+  if (typeof message === 'string') {
+    const trimmed = message.trim()
+    if (
+      trimmed
+      && trimmed.length <= 200
+      && !/^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(trimmed)
+      && !trimmed.includes('\n')
+      && !trimmed.includes('Traceback')
+      && !trimmed.includes('Exception')
+      && !trimmed.includes('HTTP ')
+      && !trimmed.includes('Failed to fetch')
+    ) {
+      return trimmed
+    }
+  }
+
+  return getPublicStatusErrorMessage(status)
+}
 
 // ============ Types ============
 
@@ -1185,8 +1211,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1208,8 +1234,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1230,8 +1256,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1253,8 +1279,8 @@ export const publicAgentsApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
   },
 
@@ -1277,8 +1303,8 @@ export const publicAgentsApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
 
     const result = await response.json()

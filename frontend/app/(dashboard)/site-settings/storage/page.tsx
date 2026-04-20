@@ -9,7 +9,15 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, Archive, Database } from 'lucide-react'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { useCanPerform } from '@/components/permission-guard'
 import {
   AlertDialog,
@@ -37,10 +45,16 @@ export default function SiteSettingsStoragePage() {
   const [saving, setSaving] = React.useState(false)
   const [archiving, setArchiving] = React.useState(false)
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<StorageSettings>({
     audit_log_retention_days: 365,
     audit_log_archive_path: '/var/log/clouisle/audit_archives',
   })
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['audit_log_retention_days', 'audit_log_archive_path']),
+    [fieldErrors]
+  )
 
   const loadSettings = React.useCallback(async () => {
     try {
@@ -62,6 +76,21 @@ export default function SiteSettingsStoragePage() {
   }, [loadSettings])
 
   const handleSave = async () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.audit_log_archive_path.trim()) {
+      nextErrors.audit_log_archive_path = t('required')
+    }
+    if (settings.audit_log_retention_days < 30 || settings.audit_log_retention_days > 3650) {
+      nextErrors.audit_log_retention_days = t('invalidRetentionDays')
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.bulkUpdate({
@@ -70,6 +99,15 @@ export default function SiteSettingsStoragePage() {
       })
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), {
+        audit_log_retention_days: 'audit_log_retention_days',
+        audit_log_archive_path: 'audit_log_archive_path',
+        'settings.audit_log_retention_days': 'audit_log_retention_days',
+        'settings.audit_log_archive_path': 'audit_log_archive_path',
+      })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save settings:', error)
     } finally {
       setSaving(false)
@@ -91,6 +129,7 @@ export default function SiteSettingsStoragePage() {
 
   const updateSetting = <K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => clearValidationError(prev, key))
   }
 
   if (loading) {
@@ -112,6 +151,13 @@ export default function SiteSettingsStoragePage() {
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -133,9 +179,11 @@ export default function SiteSettingsStoragePage() {
                 max={3650}
                 className="w-32"
                 disabled={!canUpdateSettings}
+                aria-invalid={!!fieldErrors.audit_log_retention_days}
               />
               <span className="text-sm text-muted-foreground">{t('days')}</span>
             </div>
+            <FieldError>{fieldErrors.audit_log_retention_days}</FieldError>
             <p className="text-xs text-muted-foreground">{t('auditLogRetentionDaysHint')}</p>
           </div>
 
@@ -147,7 +195,9 @@ export default function SiteSettingsStoragePage() {
               value={settings.audit_log_archive_path}
               onChange={(e) => updateSetting('audit_log_archive_path', e.target.value)}
               disabled={!canUpdateSettings}
+              aria-invalid={!!fieldErrors.audit_log_archive_path}
             />
+            <FieldError>{fieldErrors.audit_log_archive_path}</FieldError>
             <p className="text-xs text-muted-foreground">{t('auditLogArchivePathHint')}</p>
           </div>
         </CardContent>

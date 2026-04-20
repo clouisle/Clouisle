@@ -16,7 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type EmailSettings } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface EmailSettingsTabProps {
   settings: EmailSettings
@@ -29,17 +37,51 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
   const [saving, setSaving] = React.useState(false)
   const [testEmail, setTestEmail] = React.useState('')
   const [sendingTest, setSendingTest] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['smtp_host', 'email_from_address', 'testEmail']),
+    [fieldErrors]
+  )
 
   const updateSetting = <K extends keyof EmailSettings>(key: K, value: EmailSettings[K]) => {
     onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
   }
 
   const handleSave = async () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (settings.smtp_enabled) {
+      if (!settings.smtp_host.trim()) nextErrors.smtp_host = t('required')
+      if (!settings.email_from_address.trim()) nextErrors.email_from_address = t('required')
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateEmail(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save email settings:', error)
     } finally {
       setSaving(false)
@@ -47,15 +89,21 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
   }
 
   const handleSendTest = async () => {
-    if (!testEmail) {
-      toast.error(t('testEmailRequired'))
+    if (!testEmail.trim()) {
+      setFieldErrors((prev) => ({ ...clearValidationError(prev, 'testEmail'), testEmail: t('testEmailRequired') }))
       return
     }
+
+    setFieldErrors((prev) => clearValidationError(prev, 'testEmail'))
     try {
       setSendingTest(true)
       await siteSettingsApi.sendTestEmail(testEmail)
       toast.success(t('testEmailSent'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), { email: 'testEmail' })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
       console.error('Failed to send test email:', error)
     } finally {
       setSendingTest(false)
@@ -64,6 +112,13 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* 基础设置 */}
       <Card>
         <CardHeader>
@@ -101,7 +156,9 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
                 value={settings.smtp_host}
                 onChange={(e) => updateSetting('smtp_host', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.smtp_host}
               />
+              <FieldError>{fieldErrors.smtp_host}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -194,7 +251,9 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
                 value={settings.email_from_address}
                 onChange={(e) => updateSetting('email_from_address', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.email_from_address}
               />
+              <FieldError>{fieldErrors.email_from_address}</FieldError>
             </div>
           </div>
         </CardContent>
@@ -213,13 +272,18 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
                 type="email"
                 placeholder={t('email.testEmailPlaceholder')}
                 value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
+                onChange={(e) => {
+                  setTestEmail(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'testEmail'))
+                }}
+                aria-invalid={!!fieldErrors.testEmail}
               />
               <Button onClick={handleSendTest} disabled={sendingTest}>
                 {sendingTest && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('email.sendTest')}
               </Button>
             </div>
+            <FieldError>{fieldErrors.testEmail}</FieldError>
           </CardContent>
         </Card>
       )}

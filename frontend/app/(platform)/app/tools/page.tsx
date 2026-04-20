@@ -204,6 +204,7 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
+      throw error
     }
   }
 
@@ -224,6 +225,7 @@ export default function ToolsPage() {
       loadTools()
     } catch (error) {
       console.error('Failed to save tool:', error)
+      throw error
     }
   }
 
@@ -256,6 +258,7 @@ export default function ToolsPage() {
       setConfigDialogOpen(false)
     } catch (error) {
       console.error('Failed to save config:', error)
+      throw error
     }
   }
 

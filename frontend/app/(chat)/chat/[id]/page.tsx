@@ -128,6 +128,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   const {
     values: variableValues,
     setValues: setVariableValues,
+    fieldErrors: variableFieldErrors,
+    validate: validateVariables,
   } = useVariableForm(variables)
 
   React.useEffect(() => {
@@ -213,7 +215,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           setLoadingConversations(false)
         }
       } catch (err) {
-        setError((err as Error).message || t('loadError'))
+        const isNotFound = err instanceof ApiError && (err.code === 404 || (err.code >= 4000 && err.code < 5000))
+        setError(isNotFound ? t('agentNotFound') : t('loadError'))
       } finally {
         setIsLoading(false)
       }
@@ -408,7 +411,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
   
   const handleSubmit = async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim() || chatLoading) return
-    
+
+    if (!validateVariables()) {
+      setVariablesOpen(true)
+      return
+    }
+
     const filesToProcess = submittedFiles || files
     
     // Process images and files
@@ -754,8 +762,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               onRegenerate={regenerate}
               onSwitchVersion={switchVersion}
               onSelectOption={(option) => {
-                // Send the selected option as a new user message
-                sendMessage(option, [])
+                void handleSubmit(option, [])
               }}
               emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -863,6 +870,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                           variables={variables}
                           values={variableValues}
                           onChange={setVariableValues}
+                          fieldErrors={variableFieldErrors}
                           className="space-y-2"
                         />
                       </div>

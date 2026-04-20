@@ -99,6 +99,10 @@
         }
       },
       "recentItems": "最近项目",
+      "recentItemTypes": {
+        "agent": "智能体",
+        "workflow": "工作流"
+      },
       "noRecentItems": "暂无最近项目",
       "createFirst": "创建您的第一个应用",
       "quickStart": "快速开始",
@@ -177,6 +181,7 @@
       "toolDeleted": "工具删除成功",
       "configSaved": "配置保存成功",
       "configSaveFailed": "配置保存失败",
+      "selectTeam": "选择团队",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
       "filters": {
@@ -205,6 +210,8 @@
         "name": "名称",
         "nameHint": "唯一标识符，创建后不可修改",
         "displayName": "显示名称",
+        "displayNamePlaceholder": "请输入显示名称",
+        "displayNameRequired": "请输入显示名称",
         "description": "描述",
         "descriptionPlaceholder": "描述这个工具的功能",
         "icon": "图标",
@@ -213,6 +220,7 @@
         "httpConfig": "HTTP 配置",
         "httpMethod": "方法",
         "url": "URL",
+        "urlRequired": "请输入 URL",
         "urlHint": "支持 {{variable}} 占位符",
         "timeout": "超时 (秒)",
         "advancedSettings": "高级设置",
@@ -232,7 +240,9 @@
       },
       "configDialog": {
         "title": "配置 {name}",
-        "description": "配置工具所需的 API 密钥和凭证"
+        "description": "配置工具所需的 API 密钥和凭证",
+        "tavilyApiKeyLabel": "Tavily API Key",
+        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key"
       },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",
@@ -246,6 +256,7 @@
         "contentType": "内容类型",
         "bodyTemplate": "请求体模板",
         "bodyTemplateHint": "使用 '{{变量名}}' 作为占位符",
+        "multipartFormData": "multipart/form-data（文件上传）",
         "formFields": "表单字段",
         "formFieldsHint": "配置 multipart/form-data 的表单字段，文件字段引用文件类型的参数",
         "fieldName": "字段名",
@@ -260,7 +271,13 @@
         "paramName": "参数名",
         "paramDescription": "参数描述（可选）",
         "required": "必填",
-        "variableCompletion": "参数补全"
+        "variableCompletion": "参数补全",
+        "toolNamePlaceholder": "my_api_tool",
+        "urlPlaceholder": "https://api.example.com/{{id}}/data",
+        "keyPlaceholder": "键名",
+        "headerValuePlaceholder": "{{token}}",
+        "queryValuePlaceholder": "{{query}}",
+        "bodyTemplatePlaceholder": "{\"key\": \"{{value}}\"}"
       },
       "mcpDialog": {
         "createTitle": "添加 MCP 服务",
@@ -290,7 +307,19 @@
         "toolsLoaded": "已加载 {count} 个工具",
         "fetchToolsFailed": "获取工具列表失败，请检查配置",
         "commandRequired": "请输入命令",
-        "urlRequired": "请输入服务地址"
+        "urlRequired": "请输入服务地址",
+        "serverNamePlaceholder": "my_mcp_server",
+        "commandPlaceholder": "npx",
+        "argumentPlaceholder": "参数 {index}",
+        "headerKeyPlaceholder": "KEY",
+        "headerValuePlaceholder": "值",
+        "sseUrlPlaceholder": "http://localhost:3000/sse",
+        "headerNamePlaceholder": "请求头名称",
+        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+      },
+      "testPanel": {
+        "arrayPlaceholder": "[\"item1\", \"item2\"]",
+        "objectPlaceholder": "{\"key\": \"value\"}"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",
@@ -347,12 +376,25 @@
         "artifactDescription": "描述",
         "artifactOptional": "可选",
         "invalidArtifactPath": "产物路径 \"{value}\" 必须位于 /workspace 下",
-        "artifactsLabel": "产物"
+        "artifactsLabel": "产物",
+        "executionFailed": "执行失败",
+        "languageJavaScript": "JavaScript",
+        "languagePython": "Python",
+        "paramTypeString": "字符串",
+        "paramTypeNumber": "数字",
+        "paramTypeInteger": "整数",
+        "paramTypeBoolean": "布尔值",
+        "paramTypeArray": "数组",
+        "paramTypeObject": "对象",
+        "defaultInputDescription": "输入内容"
       },
       "error": {
         "loadFailed": "加载工具失败",
         "saveFailed": "保存失败",
         "nameRequired": "请输入工具名称",
+        "unknownToolType": "未知工具类型",
+        "cannotDeleteBuiltin": "无法删除内置工具",
+        "cannotShareBuiltin": "无法分享内置工具",
         "noTeamSelected": "未选择团队",
         "invalidName": "工具名称必须以字母开头，且只能包含字母、数字和下划线",
         "duplicateParamName": "参数名称不能重复"

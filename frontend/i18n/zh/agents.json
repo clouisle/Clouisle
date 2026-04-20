@@ -174,12 +174,21 @@
           "paragraph": "段落",
           "select": "下拉选项",
           "number": "数字",
-          "checkbox": "复选框"
+          "checkbox": "复选框",
+          "string": "文本",
+          "boolean": "布尔值",
+          "array": "数组",
+          "object": "对象",
+          "file": "文件",
+          "image": "图片",
+          "files": "多个文件",
+          "images": "多张图片"
         },
         "dialog": {
           "title": "编辑变量",
           "fieldType": "字段类型",
           "variableName": "变量名称",
+          "variableNamePlaceholder": "name",
           "displayName": "显示名称",
           "displayNamePlaceholder": "显示名称",
           "options": "选项列表",
@@ -223,6 +232,7 @@
           "searchModeHybrid": "混合检索",
           "searchModeHint": "选择知识库的检索方式",
           "topK": "召回数量 (Top K)",
+          "topKCompact": "Top {count}",
           "topKHint": "每次检索返回的最相关文档块数量",
           "threshold": "相似度阈值",
           "thresholdHint": "只返回相似度高于此阈值的结果",
@@ -253,6 +263,7 @@
           "noSearchResults": "未找到匹配的工具",
           "noTools": "暂无可用工具",
           "requiresConfig": "需要配置",
+          "paramsCount": "{count} 个参数",
           "filters": {
             "all": "全部",
             "builtin": "内置",
@@ -461,6 +472,11 @@
       },
       "messageEndExample": "message_end 事件数据示例：",
       "codeExamples": "代码示例",
+      "tabs": {
+        "curl": "cURL",
+        "python": "Python",
+        "javascript": "JavaScript"
+      },
       "multiTurn": {
         "title": "多轮对话",
         "description": "要在多次请求之间保持对话上下文，请使用第一次响应中返回的 conversation_id。",

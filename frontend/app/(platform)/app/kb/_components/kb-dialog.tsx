@@ -4,14 +4,16 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { useTeam } from '@/contexts/team-context'
-import { 
-  knowledgeBasesApi, 
-  teamModelsApi, 
-  type KnowledgeBase, 
-  type KnowledgeBaseCreateInput, 
-  type TeamModel, 
-  ApiError 
+import {
+  knowledgeBasesApi,
+  teamModelsApi,
+  type KnowledgeBase,
+  type KnowledgeBaseCreateInput,
+  type TeamModel,
 } from '@/lib/api'
+import { clearValidationError, getValidationSummaryEntries, mapValidationErrors, normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -33,6 +35,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { FieldError } from '@/components/ui/field'
 
 interface KnowledgeBaseDialogProps {
   open: boolean
@@ -40,6 +43,17 @@ interface KnowledgeBaseDialogProps {
   knowledgeBase: KnowledgeBase | null
   onSuccess: () => void
 }
+
+const KB_ERROR_PATH_MAP = {
+  team_id: 'team_id',
+  embedding_model_id: 'embedding_model_id',
+  rerank_model_id: 'rerank_model_id',
+  'settings.chunk_size': 'chunk_size',
+  'settings.chunk_overlap': 'chunk_overlap',
+  'settings.separator': 'separator',
+  'settings.rerank_candidate_k': 'rerank_candidate_k',
+  'settings.rerank_score_threshold': 'rerank_score_threshold',
+} as const
 
 export function KnowledgeBaseDialog({
   open,
@@ -206,8 +220,9 @@ export function KnowledgeBaseDialog({
       onOpenChange(false)
       onSuccess()
     } catch (error) {
-      if (error instanceof ApiError && error.isValidationError()) {
-        setFieldErrors(error.getFieldErrors())
+      const errors = mapValidationErrors(normalizeValidationErrors(error), KB_ERROR_PATH_MAP)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
       }
       // 其他错误已由 API 客户端处理
     } finally {
@@ -215,6 +230,22 @@ export function KnowledgeBaseDialog({
     }
   }
   
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, [
+      'name',
+      'team_id',
+      'description',
+      'embedding_model_id',
+      'rerank_model_id',
+      'chunk_size',
+      'chunk_overlap',
+      'separator',
+      'rerank_candidate_k',
+      'rerank_score_threshold',
+    ]),
+    [fieldErrors]
+  )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-125 max-h-[calc(100vh-2rem)] overflow-hidden p-0 gap-0">
@@ -232,18 +263,29 @@ export function KnowledgeBaseDialog({
           </DialogHeader>
           
           <div className="grid flex-1 gap-4 overflow-y-auto px-6 py-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
             {/* 名称 */}
             <div className="space-y-2">
               <Label htmlFor="name">{t('name')}</Label>
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'name'))
+                }}
                 placeholder={t('namePlaceholder')}
+                aria-invalid={!!fieldErrors.name}
               />
-              {fieldErrors.name && (
-                <p className="text-sm text-destructive">{fieldErrors.name}</p>
-              )}
+              <FieldError>{fieldErrors.name}</FieldError>
             </div>
             
             {/* 描述 */}
@@ -252,21 +294,26 @@ export function KnowledgeBaseDialog({
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
                 placeholder={t('descriptionPlaceholder')}
                 rows={3}
+                aria-invalid={!!fieldErrors.description}
               />
-              {fieldErrors.description && (
-                <p className="text-sm text-destructive">{fieldErrors.description}</p>
-              )}
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
             
             {/* Embedding 模型 */}
             <div className="space-y-2">
               <Label htmlFor="embeddingModel">{t('embeddingModel')}</Label>
-              <Select 
-                value={embeddingModelId ?? ''} 
-                onValueChange={(value) => setEmbeddingModelId(value || null)}
+              <Select
+                value={embeddingModelId ?? ''}
+                onValueChange={(value) => {
+                  setEmbeddingModelId(value || null)
+                  setFieldErrors((prev) => clearValidationError(prev, 'embedding_model_id'))
+                }}
                 disabled={isLoadingModels || isEditing}
               >
                 <SelectTrigger id="embeddingModel" className="w-full">
@@ -289,16 +336,17 @@ export function KnowledgeBaseDialog({
               <p className="text-xs text-muted-foreground">
                 {isEditing ? t('embeddingModelCannotChange') : t('embeddingModelHint')}
               </p>
-              {fieldErrors.embedding_model_id && (
-                <p className="text-sm text-destructive">{fieldErrors.embedding_model_id}</p>
-              )}
+              <FieldError>{fieldErrors.embedding_model_id}</FieldError>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="rerankModel">{t('rerankModel')}</Label>
               <Select
                 value={rerankModelId ?? '__none__'}
-                onValueChange={(value) => setRerankModelId(value === '__none__' ? null : value)}
+                onValueChange={(value) => {
+                  setRerankModelId(value === '__none__' ? null : value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'rerank_model_id'))
+                }}
                 disabled={isLoadingModels}
               >
                 <SelectTrigger id="rerankModel" className="w-full">
@@ -320,9 +368,7 @@ export function KnowledgeBaseDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">{t('rerankModelHint')}</p>
-              {fieldErrors.rerank_model_id && (
-                <p className="text-sm text-destructive">{fieldErrors.rerank_model_id}</p>
-              )}
+              <FieldError>{fieldErrors.rerank_model_id}</FieldError>
             </div>
             
             {/* 分块设置 */}
@@ -333,14 +379,16 @@ export function KnowledgeBaseDialog({
                   id="chunkSize"
                   type="number"
                   value={chunkSize}
-                  onChange={(e) => setChunkSize(Number(e.target.value))}
+                  onChange={(e) => {
+                    setChunkSize(Number(e.target.value))
+                    setFieldErrors((prev) => clearValidationError(prev, 'chunk_size'))
+                  }}
                   min={100}
                   max={2000}
+                  aria-invalid={!!fieldErrors.chunk_size}
                 />
                 <p className="text-xs text-muted-foreground">{t('chunkSizeHint')}</p>
-                {fieldErrors.chunk_size && (
-                  <p className="text-sm text-destructive">{fieldErrors.chunk_size}</p>
-                )}
+                <FieldError>{fieldErrors.chunk_size}</FieldError>
               </div>
               
               <div className="space-y-2">
@@ -349,14 +397,16 @@ export function KnowledgeBaseDialog({
                   id="chunkOverlap"
                   type="number"
                   value={chunkOverlap}
-                  onChange={(e) => setChunkOverlap(Number(e.target.value))}
+                  onChange={(e) => {
+                    setChunkOverlap(Number(e.target.value))
+                    setFieldErrors((prev) => clearValidationError(prev, 'chunk_overlap'))
+                  }}
                   min={0}
                   max={500}
+                  aria-invalid={!!fieldErrors.chunk_overlap}
                 />
                 <p className="text-xs text-muted-foreground">{t('chunkOverlapHint')}</p>
-                {fieldErrors.chunk_overlap && (
-                  <p className="text-sm text-destructive">{fieldErrors.chunk_overlap}</p>
-                )}
+                <FieldError>{fieldErrors.chunk_overlap}</FieldError>
               </div>
             </div>
             
@@ -366,13 +416,15 @@ export function KnowledgeBaseDialog({
               <Input
                 id="separator"
                 value={separator}
-                onChange={(e) => setSeparator(e.target.value)}
+                onChange={(e) => {
+                  setSeparator(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'separator'))
+                }}
                 placeholder={t('separatorPlaceholder')}
+                aria-invalid={!!fieldErrors.separator}
               />
               <p className="text-xs text-muted-foreground">{t('separatorHint')}</p>
-              {fieldErrors.separator && (
-                <p className="text-sm text-destructive">{fieldErrors.separator}</p>
-              )}
+              <FieldError>{fieldErrors.separator}</FieldError>
             </div>
 
             <div className="rounded-lg border p-4 space-y-4">
@@ -395,11 +447,16 @@ export function KnowledgeBaseDialog({
                     id="rerankCandidateK"
                     type="number"
                     value={rerankCandidateK}
-                    onChange={(e) => setRerankCandidateK(Number(e.target.value))}
+                    onChange={(e) => {
+                      setRerankCandidateK(Number(e.target.value))
+                      setFieldErrors((prev) => clearValidationError(prev, 'rerank_candidate_k'))
+                    }}
                     min={1}
                     max={100}
+                    aria-invalid={!!fieldErrors.rerank_candidate_k}
                   />
                   <p className="text-xs text-muted-foreground">{t('rerankCandidateKHint')}</p>
+                  <FieldError>{fieldErrors.rerank_candidate_k}</FieldError>
                 </div>
 
                 <div className="space-y-2">
@@ -411,10 +468,15 @@ export function KnowledgeBaseDialog({
                     min={0}
                     max={1}
                     value={rerankScoreThreshold}
-                    onChange={(e) => setRerankScoreThreshold(e.target.value)}
+                    onChange={(e) => {
+                      setRerankScoreThreshold(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'rerank_score_threshold'))
+                    }}
                     placeholder={t('rerankScoreThresholdPlaceholder')}
+                    aria-invalid={!!fieldErrors.rerank_score_threshold}
                   />
                   <p className="text-xs text-muted-foreground">{t('rerankScoreThresholdHint')}</p>
+                  <FieldError>{fieldErrors.rerank_score_threshold}</FieldError>
                 </div>
               </div>
 

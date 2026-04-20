@@ -99,7 +99,7 @@ export function AnswerNodeConfig({
           ? {
               ...o,
               sourceVariable: `{{${variable.id}}}`,
-              sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+              sourceNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
               sourceVariableName: variable.name,
             }
           : o

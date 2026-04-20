@@ -647,8 +647,8 @@ export function UsersClient() {
                 />
               </TableHead>
               <TableHead>{t('username')}</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>SSO</TableHead>
+              <TableHead>{t('email')}</TableHead>
+              <TableHead>{t('sso')}</TableHead>
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('role')}</TableHead>
               <TableHead>{t('passwordStatus')}</TableHead>

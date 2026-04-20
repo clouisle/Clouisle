@@ -6,6 +6,12 @@ import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import { notificationsApi } from '@/lib/api/admin/notifications'
 import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -25,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { FieldError } from '@/components/ui/field'
 
 interface SendNotificationDialogProps {
   open: boolean
@@ -44,20 +51,26 @@ export function SendNotificationDialog({
   const [title, setTitle] = React.useState('')
   const [content, setContent] = React.useState('')
   const [level, setLevel] = React.useState<'low' | 'medium' | 'high'>('medium')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
 
   const selectedUsers = users.filter((u) => userIds.includes(u.id))
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['title', 'content', 'level']),
+    [fieldErrors]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFieldErrors({})
 
     if (!title.trim()) {
-      toast.error(t('notificationTitleRequired'))
+      setFieldErrors({ title: t('notificationTitleRequired') })
       return
     }
 
     if (!content.trim()) {
-      toast.error(t('notificationContentRequired'))
+      setFieldErrors({ content: t('notificationContentRequired') })
       return
     }
 
@@ -71,15 +84,19 @@ export function SendNotificationDialog({
         title,
         content,
         level,
-      })
+      }, { silent: true })
 
       toast.success(t('notificationSent', { count: userIds.length }))
       setTitle('')
       setContent('')
       setLevel('medium')
+      setFieldErrors({})
       onOpenChange(false)
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setLoading(false)
     }
@@ -96,6 +113,16 @@ export function SendNotificationDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>{t('recipients')}</Label>
             <div className="flex flex-wrap gap-2 p-3 border rounded-md bg-muted/50 max-h-32 overflow-y-auto">
@@ -117,16 +144,26 @@ export function SendNotificationDialog({
             <Input
               id="title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'title'))
+              }}
               placeholder={t('notificationTitlePlaceholder')}
               required
+              disabled={loading}
+              aria-invalid={!!fieldErrors.title}
             />
+            <FieldError>{fieldErrors.title}</FieldError>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="level">{t('notificationLevel')}</Label>
-            <Select value={level} onValueChange={(v) => v && setLevel(v)}>
-              <SelectTrigger>
+            <Select value={level} onValueChange={(v) => {
+              if (!v) return
+              setLevel(v)
+              setFieldErrors((prev) => clearValidationError(prev, 'level'))
+            }}>
+              <SelectTrigger aria-invalid={!!fieldErrors.level}>
                 <SelectValue>
                   {level === 'low' && t('levelLow')}
                   {level === 'medium' && t('levelMedium')}
@@ -139,6 +176,7 @@ export function SendNotificationDialog({
                 <SelectItem value="high">{t('levelHigh')}</SelectItem>
               </SelectContent>
             </Select>
+            <FieldError>{fieldErrors.level}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -146,11 +184,17 @@ export function SendNotificationDialog({
             <Textarea
               id="content"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                setContent(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'content'))
+              }}
               placeholder={t('notificationContentPlaceholder')}
               rows={6}
               required
+              disabled={loading}
+              aria-invalid={!!fieldErrors.content}
             />
+            <FieldError>{fieldErrors.content}</FieldError>
           </div>
 
           <DialogFooter>

@@ -160,9 +160,10 @@ export function AuditLogsTable() {
             update: "bg-yellow-500",
             delete: "bg-red-500",
         };
+        const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
         return (
             <Badge className={colors[operation] || "bg-gray-500"}>
-                {t(`operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`)}
+                {t.has(key) ? t(key) : operation}
             </Badge>
         );
     };

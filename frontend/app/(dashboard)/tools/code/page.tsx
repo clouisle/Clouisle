@@ -35,6 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { formatValidationSummaryMessage } from '@/lib/validation'
 import { toast } from 'sonner'
 import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
 import { ApiError, teamsApi, UserTeamInfo } from '@/lib/api'
@@ -163,10 +164,12 @@ const INLINE_ERROR_FIELDS = new Set([
   'name',
   'display_name',
   'description',
+  'params',
   'code_config.python_packages',
   'code_config.js_packages',
   'code_config.python_package_index_url',
   'code_config.node_package_registry_url',
+  'code_config.command',
   'code_config.limits.timeout_seconds',
   'code_config.limits.disk_mb',
   'code_config.limits.max_stdout_kb',
@@ -179,6 +182,26 @@ const shouldShowSummaryFieldError = (field: string): boolean => {
   }
 
   return !/^code_config\.artifacts\.\d+\.(path|description)$/.test(field)
+}
+
+const getSummaryFieldLabel = (
+  t: ReturnType<typeof useTranslations<'tools'>>,
+  field: string
+): string | undefined => {
+  if (field === 'display_name') return t('displayName')
+  if (field === 'description') return t('descriptionLabel')
+  if (field === 'code_config.command') return t('codeEditor.command')
+  if (field === 'code_config.python_packages') return t('codeEditor.pythonPackages')
+  if (field === 'code_config.js_packages') return t('codeEditor.jsPackages')
+  if (field === 'code_config.python_package_index_url') return t('codeEditor.pythonPackageIndexUrl')
+  if (field === 'code_config.node_package_registry_url') return t('codeEditor.nodePackageRegistryUrl')
+  if (field === 'code_config.limits.timeout_seconds') return t('codeEditor.timeoutSeconds')
+  if (field === 'code_config.limits.disk_mb') return t('codeEditor.diskMb')
+  if (field === 'code_config.limits.max_stdout_kb') return t('codeEditor.maxStdoutKb')
+  if (field === 'code_config.limits.max_stderr_kb') return t('codeEditor.maxStderrKb')
+  if (field.startsWith('code_config.artifacts.')) return t('codeEditor.artifacts')
+  if (field.startsWith('parameters.') || field === 'params') return t('codeEditor.parameters')
+  return undefined
 }
 
 function CodeToolPageContent() {
@@ -506,6 +529,11 @@ function CodeToolPageContent() {
     setIsRunning(true)
     setTestOutput('')
     setOutputOpen(true)
+    setFieldErrors((current) => ({
+      ...Object.fromEntries(
+        Object.entries(current).filter(([field]) => !field.startsWith('params'))
+      ),
+    }))
 
     try {
       let params: Record<string, unknown>
@@ -551,7 +579,7 @@ function CodeToolPageContent() {
             : JSON.stringify(result.result, null, 2)
         output += `${t('codeEditor.resultLabel')}:\n${resultStr}`
       } else {
-        output += `${t('codeEditor.errorLabel')}:\n${result.error || 'Execution failed'}`
+        output += `${t('codeEditor.errorLabel')}:\n${result.error || t('codeEditor.executionFailed')}`
       }
       if (result.artifacts?.length) {
         output += `\n\n${t('codeEditor.artifactsLabel')}:\n${JSON.stringify(result.artifacts, null, 2)}`
@@ -561,8 +589,31 @@ function CodeToolPageContent() {
       }
       setTestOutput(output)
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Execution failed'
-      setTestOutput(`${t('codeEditor.errorLabel')}: ${message}`)
+      if (error instanceof ApiError && error.isValidationError()) {
+        const nextFieldErrors = Object.fromEntries(
+          Object.entries(error.getFieldErrors()).map(([field, message]) => {
+            if (field === 'params') {
+              return ['params', message]
+            }
+            if (field === 'command') {
+              return ['code_config.command', message]
+            }
+            if (field.startsWith('limits.')) {
+              return [`code_config.${field}`, message]
+            }
+            return [field, message]
+          })
+        )
+        setFieldErrors((current) => ({
+          ...Object.fromEntries(
+            Object.entries(current).filter(([field]) => !field.startsWith('params'))
+          ),
+          ...nextFieldErrors,
+        }))
+      } else {
+        const message = error instanceof Error ? error.message : t('codeEditor.executionFailed')
+        setTestOutput(`${t('codeEditor.errorLabel')}: ${message}`)
+      }
     } finally {
       setIsRunning(false)
     }
@@ -686,7 +737,7 @@ function CodeToolPageContent() {
                   .filter(([field]) => shouldShowSummaryFieldError(field))
                   .map(([field, message]) => (
                     <p key={field} className="text-xs text-destructive">
-                      {`${field}: ${message}`}
+                      {formatValidationSummaryMessage(field, message, { [field]: getSummaryFieldLabel(t, field) ?? '' })}
                     </p>
                   ))}
               </div>
@@ -880,9 +931,14 @@ function CodeToolPageContent() {
                   id="command"
                   placeholder={t('codeEditor.commandPlaceholder')}
                   value={commandText}
-                  onChange={(e) => setCommandText(e.target.value)}
+                  onChange={(e) => {
+                    setCommandText(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'code_config.command'))
+                  }}
                   className="min-h-20 text-xs font-mono"
+                  aria-invalid={!!fieldErrors['code_config.command']}
                 />
+                {fieldErrors['code_config.command'] && <p className="text-xs text-destructive">{fieldErrors['code_config.command']}</p>}
                 <p className="text-xs text-muted-foreground">{t('codeEditor.commandHint')}</p>
               </div>
               <div className="space-y-3 rounded-md border bg-background p-3">
@@ -1088,8 +1144,13 @@ function CodeToolPageContent() {
                   className="h-28 text-xs font-mono resize-none"
                   placeholder='{"input": "test value"}'
                   value={testInput}
-                  onChange={(e) => setTestInput(e.target.value)}
+                  onChange={(e) => {
+                    setTestInput(e.target.value)
+                    setFieldErrors((current) => clearFieldError(current, 'params'))
+                  }}
+                  aria-invalid={!!fieldErrors.params}
                 />
+                {fieldErrors.params && <p className="text-xs text-destructive">{fieldErrors.params}</p>}
                 <p className="text-xs text-muted-foreground">{t('codeEditor.inputHint')}</p>
               </CollapsibleContent>
             </Collapsible>

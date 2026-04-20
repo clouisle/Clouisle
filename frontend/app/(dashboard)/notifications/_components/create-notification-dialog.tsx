@@ -12,6 +12,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MarkdownEditor } from '@/components/ui/markdown-editor'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { toast } from 'sonner'
 import {
   Combobox,
@@ -56,7 +63,13 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
   const [formLink, setFormLink] = React.useState('')
   const [formExpiresAt, setFormExpiresAt] = React.useState('')
   const [notifyChannels, setNotifyChannels] = React.useState<NotificationChannel[]>([])
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['scope', 'team_id', 'user_id', 'title', 'content', 'type', 'level', 'link_url', 'expires_at', 'notify_channels']),
+    [fieldErrors]
+  )
 
   const fetchTeams = React.useCallback(async () => {
     try {
@@ -79,6 +92,11 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
       setFormUserId('')
       setUserSearch('')
       setDebouncedUserSearch('')
+      setFieldErrors((prev) => clearValidationError(clearValidationError(prev, 'user_id'), 'user_ids'))
+    }
+    if (formScope !== 'team') {
+      setFormTeamId(null)
+      setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
     }
   }, [formScope])
 
@@ -113,8 +131,25 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
   }, [debouncedUserSearch, formScope])
 
   const handleCreate = async () => {
-    if (!formTitle.trim() || !formContent.trim()) {
-      toast.error(tCommon('requiredFields'))
+    setFieldErrors({})
+
+    if (!formTitle.trim()) {
+      setFieldErrors({ title: tCommon('requiredFields') })
+      return
+    }
+
+    if (!formContent.trim()) {
+      setFieldErrors({ content: tCommon('requiredFields') })
+      return
+    }
+
+    if (formScope === 'team' && !formTeamId) {
+      setFieldErrors({ team_id: tCommon('requiredFields') })
+      return
+    }
+
+    if (formScope === 'user' && !formUserId) {
+      setFieldErrors({ user_id: tCommon('requiredFields') })
       return
     }
 
@@ -132,10 +167,9 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
         expires_at: formExpiresAt ? new Date(formExpiresAt).toISOString() : null,
         notify_channels: notifyChannels,
       }
-      await notificationsApi.adminCreate(payload)
+      await notificationsApi.adminCreate(payload, { silent: true })
       toast.success(t('toast.created'))
 
-      // Reset form
       setFormScope('global')
       setFormTeamId(null)
       setFormUserId('')
@@ -147,10 +181,17 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
       setFormLink('')
       setFormExpiresAt('')
       setNotifyChannels([])
+      setFieldErrors({})
 
       onSuccess()
+      onOpenChange(false)
     } catch (error) {
-      console.error('Failed to create notification:', error)
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      } else {
+        console.error('Failed to create notification:', error)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -164,11 +205,24 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
         </DialogHeader>
 
         <div className="grid gap-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-end gap-4">
             <div className="grid gap-2 flex-1">
               <label className="text-sm font-medium">{t('admin.createScope')}</label>
-              <Select value={formScope} onValueChange={(value) => setFormScope(value as NotificationScope)}>
-                <SelectTrigger>
+              <Select value={formScope} onValueChange={(value) => {
+                setFormScope(value as NotificationScope)
+                setFieldErrors((prev) => clearValidationError(prev, 'scope'))
+              }}>
+                <SelectTrigger aria-invalid={!!fieldErrors.scope}>
                   <span>{t(`scopeOptions.${formScope}`)}</span>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
@@ -179,13 +233,17 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                   ))}
                 </SelectContent>
               </Select>
+              <FieldError>{fieldErrors.scope}</FieldError>
             </div>
 
             {formScope === 'team' && (
               <div className="grid gap-2 flex-1">
                 <label className="text-sm font-medium">{t('admin.createTeam')}</label>
-                <Select value={formTeamId || ''} onValueChange={setFormTeamId}>
-                  <SelectTrigger>
+                <Select value={formTeamId || ''} onValueChange={(value) => {
+                  setFormTeamId(value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
+                }}>
+                  <SelectTrigger aria-invalid={!!fieldErrors.team_id}>
                     <span>
                       {formTeamId ? (teams.find((team) => team.id === formTeamId)?.name || formTeamId) : t('admin.selectTeam')}
                     </span>
@@ -198,6 +256,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError>{fieldErrors.team_id}</FieldError>
               </div>
             )}
 
@@ -211,6 +270,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                     const option = (value as { value: string; label: string } | null) || null
                     setSelectedUserOption(option)
                     setFormUserId(option?.value || '')
+                    setFieldErrors((prev) => clearValidationError(prev, 'user_id'))
                   }}
                   onInputValueChange={(value) => setUserSearch(value)}
                 >
@@ -238,6 +298,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                     </ComboboxList>
                   </ComboboxContent>
                 </Combobox>
+                <FieldError>{fieldErrors.user_id || fieldErrors.user_ids}</FieldError>
               </div>
             )}
 
@@ -245,8 +306,12 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
 
             <div className="grid gap-2 flex-1">
               <label className="text-sm font-medium">{t('admin.createType')}</label>
-              <Select value={formType} onValueChange={(value) => value && setFormType(value)}>
-                <SelectTrigger>
+              <Select value={formType} onValueChange={(value) => {
+                if (!value) return
+                setFormType(value)
+                setFieldErrors((prev) => clearValidationError(prev, 'type'))
+              }}>
+                <SelectTrigger aria-invalid={!!fieldErrors.type}>
                   <span>
                     {t(`admin.typeOptions.${formType}`)}
                   </span>
@@ -291,12 +356,16 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                   ))}
                 </SelectContent>
               </Select>
+              <FieldError>{fieldErrors.type}</FieldError>
             </div>
 
             <div className="grid gap-2 flex-1">
               <label className="text-sm font-medium">{t('admin.createLevel')}</label>
-              <Select value={formLevel} onValueChange={(value) => setFormLevel(value as NotificationLevel)}>
-                <SelectTrigger>
+              <Select value={formLevel} onValueChange={(value) => {
+                setFormLevel(value as NotificationLevel)
+                setFieldErrors((prev) => clearValidationError(prev, 'level'))
+              }}>
+                <SelectTrigger aria-invalid={!!fieldErrors.level}>
                   <span>{t(`levelOptions.${formLevel}`)}</span>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
@@ -307,23 +376,53 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                   ))}
                 </SelectContent>
               </Select>
+              <FieldError>{fieldErrors.level}</FieldError>
             </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="grid gap-2">
               <label className="text-sm font-medium">{t('admin.createTitle')}</label>
-              <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} />
+              <Input
+                value={formTitle}
+                onChange={(e) => {
+                  setFormTitle(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'title'))
+                }}
+                disabled={isSubmitting}
+                aria-invalid={!!fieldErrors.title}
+              />
+              <FieldError>{fieldErrors.title}</FieldError>
             </div>
 
             <div className="grid gap-2">
               <label className="text-sm font-medium">{t('admin.createLink')}</label>
-              <Input value={formLink} onChange={(e) => setFormLink(e.target.value)} placeholder="https://" />
+              <Input
+                value={formLink}
+                onChange={(e) => {
+                  setFormLink(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'link_url'))
+                }}
+                placeholder="https://"
+                disabled={isSubmitting}
+                aria-invalid={!!fieldErrors.link_url}
+              />
+              <FieldError>{fieldErrors.link_url}</FieldError>
             </div>
 
             <div className="grid gap-2">
               <label className="text-sm font-medium">{t('admin.createExpiresAt')}</label>
-              <Input type="datetime-local" value={formExpiresAt} onChange={(e) => setFormExpiresAt(e.target.value)} />
+              <Input
+                type="datetime-local"
+                value={formExpiresAt}
+                onChange={(e) => {
+                  setFormExpiresAt(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'expires_at'))
+                }}
+                disabled={isSubmitting}
+                aria-invalid={!!fieldErrors.expires_at}
+              />
+              <FieldError>{fieldErrors.expires_at}</FieldError>
             </div>
           </div>
 
@@ -331,16 +430,23 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
             <label className="text-sm font-medium">{t('admin.createContent')}</label>
             <MarkdownEditor
               value={formContent}
-              onChange={setFormContent}
+              onChange={(value) => {
+                setFormContent(value)
+                setFieldErrors((prev) => clearValidationError(prev, 'content'))
+              }}
               height={200}
               preview="live"
             />
+            <FieldError>{fieldErrors.content}</FieldError>
             <p className="text-xs text-muted-foreground">{t('admin.contentMarkdownHint')}</p>
           </div>
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium">{t('admin.notifyChannels')}</label>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">{t('admin.notifyChannels')}</label>
+                <FieldError>{fieldErrors.notify_channels}</FieldError>
+              </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <Checkbox
@@ -352,6 +458,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                       } else {
                         setNotifyChannels(notifyChannels.filter(c => c !== 'email'))
                       }
+                      setFieldErrors((prev) => clearValidationError(prev, 'notify_channels'))
                     }}
                   />
                   <label
@@ -371,6 +478,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
                       } else {
                         setNotifyChannels(notifyChannels.filter(c => c !== 'dingtalk'))
                       }
+                      setFieldErrors((prev) => clearValidationError(prev, 'notify_channels'))
                     }}
                   />
                   <label

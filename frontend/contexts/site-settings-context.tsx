@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 
 interface SiteSettingsContextType {
@@ -37,11 +38,12 @@ interface SiteSettingsProviderProps {
   skipFaviconUpdate?: boolean
 }
 
-export function SiteSettingsProvider({ 
-  children, 
+export function SiteSettingsProvider({
+  children,
   skipTitleUpdate = false,
   skipFaviconUpdate = false,
 }: SiteSettingsProviderProps) {
+  const tPlatform = useTranslations('platform')
   const [settings, setSettings] = React.useState<PublicSiteSettings>(defaultSettings)
   const [loading, setLoading] = React.useState(true)
 
@@ -52,7 +54,7 @@ export function SiteSettingsProvider({
       
       // 更新页面标题
       if (data.site_name && !skipTitleUpdate) {
-        document.title = `${data.site_name} - Admin Panel`
+        document.title = `${data.site_name} - ${tPlatform('admin')}`
       }
       
       // 更新 favicon - 有自定义图标用自定义的，否则用默认的 light icon
@@ -73,7 +75,7 @@ export function SiteSettingsProvider({
     } finally {
       setLoading(false)
     }
-  }, [skipTitleUpdate, skipFaviconUpdate])
+  }, [skipTitleUpdate, skipFaviconUpdate, tPlatform])
 
   React.useEffect(() => {
     loadSettings()

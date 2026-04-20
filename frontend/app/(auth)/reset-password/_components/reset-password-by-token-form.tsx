@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { authApi, ApiError } from '@/lib/api'
+import {
+  clearValidationError,
+  formatValidationSummaryMessage,
+  getValidationSummaryEntries,
+  normalizeValidationErrorsRaw,
+} from '@/lib/validation'
+import { FieldError } from '@/components/ui/field'
 import { Loader2, CheckCircle2, KeyRound } from 'lucide-react'
 
 interface ResetPasswordByTokenFormProps {
@@ -23,6 +30,19 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [loading, setLoading] = React.useState(false)
   const [success, setSuccess] = React.useState(false)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['newPassword', 'confirmPassword', 'token']),
+    [fieldErrors]
+  )
+  const summaryFieldLabels = React.useMemo(
+    () => ({
+      newPassword: t('newPassword'),
+      confirmPassword: t('confirmNewPassword'),
+      token: t('verificationCode'),
+    }),
+    [t]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,7 +67,11 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isValidationError()) {
-          setFieldErrors(err.getFieldErrors())
+          const rawErrors = normalizeValidationErrorsRaw(err)
+          const renamedErrors = Object.fromEntries(
+            Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
+          )
+          setFieldErrors(renamedErrors)
         } else if (err.code === 5005) {
           setFieldErrors({ token: t('verificationTokenInvalid') })
         }
@@ -79,9 +103,17 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {fieldErrors.token && (
-        <p className="text-sm text-destructive text-center">{fieldErrors.token}</p>
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>
+              {formatValidationSummaryMessage(field, message, summaryFieldLabels)}
+            </FieldError>
+          ))}
+        </div>
       )}
+
+      <FieldError className="text-center">{fieldErrors.token}</FieldError>
 
       <div className="space-y-2">
         <Label htmlFor="newPassword">{t('newPassword')}</Label>
@@ -91,17 +123,13 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
           value={newPassword}
           onChange={(e) => {
             setNewPassword(e.target.value)
-            if (fieldErrors.newPassword) {
-              setFieldErrors(prev => { const next = { ...prev }; delete next.newPassword; return next })
-            }
+            setFieldErrors((prev) => clearValidationError(prev, 'newPassword'))
           }}
           required
           disabled={loading}
           aria-invalid={!!fieldErrors.newPassword}
         />
-        {fieldErrors.newPassword && (
-          <p className="text-sm text-destructive">{fieldErrors.newPassword}</p>
-        )}
+        <FieldError>{fieldErrors.newPassword}</FieldError>
       </div>
 
       <div className="space-y-2">
@@ -112,17 +140,13 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
           value={confirmPassword}
           onChange={(e) => {
             setConfirmPassword(e.target.value)
-            if (fieldErrors.confirmPassword) {
-              setFieldErrors(prev => { const next = { ...prev }; delete next.confirmPassword; return next })
-            }
+            setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
           }}
           required
           disabled={loading}
           aria-invalid={!!fieldErrors.confirmPassword}
         />
-        {fieldErrors.confirmPassword && (
-          <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-        )}
+        <FieldError>{fieldErrors.confirmPassword}</FieldError>
       </div>
 
       <Button type="submit" className="w-full" disabled={loading}>

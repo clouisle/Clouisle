@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Loader2, AlertCircle, Sparkles, GitBranch, ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
-import { publicAgentsApi, workflowsApi, type PublicAgent, type Workflow } from '@/lib/api'
+import { ApiError, publicAgentsApi, workflowsApi, type PublicAgent, type Workflow } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -56,14 +56,15 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
           setMetadata(data as Workflow)
         }
       } catch (err) {
-        setError(err as Error)
+        const isNotFound = err instanceof ApiError && (err.code === 404 || (err.code >= 4000 && err.code < 5000))
+        setError(new Error(isNotFound ? t('notFound') : t('loadError')))
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchMetadata()
-  }, [resolvedParams, type])
+  }, [resolvedParams, type, t])
 
   // Extract variables from metadata (for workflow, we'll handle query separately)
   const variables = React.useMemo(() => {
@@ -78,6 +79,8 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
     setValues: setVariableValues,
     needsInput: needsVariableInput,
     isValid: variablesValid,
+    fieldErrors: variableFieldErrors,
+    validate: validateVariables,
   } = useVariableForm(variables)
 
   // Check if there are any visible variables
@@ -125,9 +128,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return
 
-    // Check if required variables are filled
-    if (needsVariableInput && !variablesValid) {
-      // Open the variable panel if required fields are not filled
+    if (needsVariableInput && !validateVariables()) {
       setVariablesOpen(true)
       return
     }
@@ -214,7 +215,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
             isStreaming={isStreaming}
             className="flex-1 min-h-0 overflow-y-auto"
             onSelectOption={(option) => {
-              sendMessage(option)
+              void handleSendMessage(option)
             }}
             emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -303,6 +304,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                           variables={variables}
                           values={variableValues}
                           onChange={setVariableValues}
+                          fieldErrors={variableFieldErrors}
                           className="space-y-2"
                         />
                       </div>
@@ -318,7 +320,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
               onSubmit={handleSendMessage}
               onStop={stop}
               placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : (type === 'workflow' ? t('workflowInputPlaceholder') : t('typePlaceholder'))}
-              disabled={(runLoading && !isStreaming) || (needsVariableInput && !variablesValid)}
+              disabled={runLoading && !isStreaming}
               isLoading={runLoading}
               isStreaming={isStreaming}
             />

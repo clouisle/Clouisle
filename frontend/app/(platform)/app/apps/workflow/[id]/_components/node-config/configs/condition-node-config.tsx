@@ -138,7 +138,7 @@ export function ConditionNodeConfig({
   const selectVariable = (branchId: string, ruleId: string, variableId: string, variableName: string, isSystem: boolean) => {
     updateConditionRule(branchId, ruleId, {
       variable: `{{${variableId}}}`,
-      variableSource: isSystem ? 'SYSTEM' : t('nodesCommon.start')
+      variableSource: isSystem ? t('nodesCommon.system') : t('nodesCommon.start')
     })
     onOpenVariablePopoverChange(null)
     onVariableSearchChange('')

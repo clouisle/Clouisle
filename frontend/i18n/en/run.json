@@ -2,6 +2,7 @@
   "run": {
     "title": "Run",
     "error": "Error",
+    "loadError": "Failed to load resource",
     "notFound": "Resource not found",
     "backToHome": "Back to Home",
     "executionFlow": "Execution Flow",

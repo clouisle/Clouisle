@@ -73,17 +73,14 @@ const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: strin
 }
 
 // 类型标签配置
-const typeConfig: Record<ToolType, { label: string; color: string }> = {
+const typeConfig: Record<ToolType, { color: string }> = {
   builtin: {
-    label: 'Built-in',
     color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300',
   },
   custom: {
-    label: 'Custom',
     color: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
   },
   mcp: {
-    label: 'MCP',
     color: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300',
   },
 }
@@ -99,6 +96,11 @@ interface AddToolButtonProps {
 
 export function AddToolButton({ availableTools, selectedToolNames, selectedToolIds, selectedMcpServerIds, onAdd, onRemove }: AddToolButtonProps) {
   const t = useTranslations('agents.orchestration.tools')
+  const typeLabels: Record<ToolType, string> = {
+    builtin: t('dialog.filters.builtin'),
+    custom: t('dialog.filters.custom'),
+    mcp: t('dialog.filters.mcp'),
+  }
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
   const [filter, setFilter] = React.useState<'all' | ToolType>('all')
@@ -246,6 +248,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                       }
                       const category = categoryConfig[tool.category] || categoryConfig.other
                       const type = typeConfig[tool.type]
+                      const typeLabel = typeLabels[tool.type]
 
                       return (
                         <div
@@ -284,11 +287,11 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                                 variant="outline"
                                 className={cn('text-[10px] px-1.5 py-0', type.color)}
                               >
-                                {type.label}
+                                {typeLabel}
                               </Badge>
                               {tool.parameters.length > 0 && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                  {tool.parameters.length} params
+                                  {t('dialog.paramsCount', { count: tool.parameters.length })}
                                 </Badge>
                               )}
                             </div>

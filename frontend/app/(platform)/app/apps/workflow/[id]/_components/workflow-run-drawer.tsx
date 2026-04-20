@@ -39,8 +39,16 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { FieldError } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
-import { ApiError } from '@/lib/api/client'
+import { ApiError, getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import {
   workflowsApi,
   Workflow,
@@ -173,6 +181,29 @@ const statusConfig: Record<
 
 // nodeStatusConfig is imported from node-output-renderer
 
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function resolveWorkflowUiError(message: unknown, fallback: string): string {
+  if (typeof message !== 'string') return fallback
+
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return fallback
+  if (isLikelyMessageKey(trimmed)) return fallback
+  if (
+    trimmed.includes('\n')
+    || trimmed.includes('Traceback')
+    || trimmed.includes('Exception')
+    || trimmed.includes('HTTP ')
+    || trimmed.includes('Failed to fetch')
+  ) {
+    return fallback
+  }
+
+  return trimmed
+}
+
 export function WorkflowRunDrawer({
   workflow,
   variables: propVariables,
@@ -181,6 +212,7 @@ export function WorkflowRunDrawer({
   onNodeTracesChange,
 }: WorkflowRunDrawerProps) {
   const t = useTranslations('workflow')
+  const commonT = useTranslations('common')
 
   // 从工作流节点中提取输入变量，优先级：节点 parameters > prop variables
   const variables = React.useMemo(() => {
@@ -193,6 +225,7 @@ export function WorkflowRunDrawer({
 
   // 输入值状态
   const [inputValues, setInputValues] = React.useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
   // 运行状态
   const [isRunning, setIsRunning] = React.useState(false)
@@ -224,6 +257,86 @@ export function WorkflowRunDrawer({
   // 使用 ref 存储节点类型映射，避免闭包问题
   const nodeTypesRef = React.useRef<Map<string, string>>(new Map())
 
+  const inlineFieldKeys = React.useMemo(
+    () => variables.map((variable) => variable.name),
+    [variables]
+  )
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, inlineFieldKeys),
+    [fieldErrors, inlineFieldKeys]
+  )
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(variables.flatMap((variable) => [
+      [variable.name, variable.name],
+      [`inputs.${variable.name}`, variable.name],
+    ])),
+    [variables]
+  )
+
+  const updateInputValue = React.useCallback((name: string, value: string) => {
+    setInputValues((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+    setFieldErrors((prev) => clearValidationError(prev, name))
+  }, [])
+
+  const buildInputs = React.useCallback(() => {
+    const inputs: Record<string, unknown> = {}
+    const nextErrors: Record<string, string> = {}
+
+    for (const variable of variables) {
+      const rawValue = inputValues[variable.name] ?? ''
+      const value = rawValue.trim()
+
+      if (!value) {
+        if (variable.required) {
+          nextErrors[variable.name] = t('required')
+        }
+        continue
+      }
+
+      switch (variable.type) {
+        case 'number':
+          inputs[variable.name] = Number(rawValue)
+          break
+        case 'boolean':
+          inputs[variable.name] = rawValue === 'true'
+          break
+        case 'array': {
+          try {
+            const parsed = JSON.parse(rawValue)
+            if (!Array.isArray(parsed)) {
+              nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.array') })
+              break
+            }
+            inputs[variable.name] = parsed
+          } catch {
+            nextErrors[variable.name] = t('invalidJSON')
+          }
+          break
+        }
+        case 'object': {
+          try {
+            const parsed = JSON.parse(rawValue)
+            if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+              nextErrors[variable.name] = t('runDrawer.inputJsonPlaceholder', { type: t('varTypes.object') })
+              break
+            }
+            inputs[variable.name] = parsed
+          } catch {
+            nextErrors[variable.name] = t('invalidJSON')
+          }
+          break
+        }
+        default:
+          inputs[variable.name] = rawValue
+      }
+    }
+
+    return { inputs, nextErrors }
+  }, [inputValues, t, variables])
+
   // 初始化输入值
   React.useEffect(() => {
     if (variables.length > 0) {
@@ -232,6 +345,7 @@ export function WorkflowRunDrawer({
         initialValues[variable.name] = variable.default?.toString() || ''
       }
       setInputValues(initialValues)
+      setFieldErrors({})
     }
   }, [variables])
 
@@ -280,7 +394,7 @@ export function WorkflowRunDrawer({
 
       case 'workflow_error':
         setRunStatus('failed')
-        setErrorMessage(data.error as string || t('runDrawer.unknownError'))
+        setErrorMessage(resolveWorkflowUiError(data.error, t('runDrawer.unknownError')))
         setIsRunning(false)
         // 失败时切换到详情标签页查看错误信息
         setActiveTab('detail')
@@ -373,7 +487,7 @@ export function WorkflowRunDrawer({
               nodeLabel: existing?.nodeLabel || nodeId,
               status: 'failed',
               endTime: event.timestamp,
-              error: data.error as string,
+              error: resolveWorkflowUiError(data.error, t('runDrawer.unknownError')),
             })
             return next
           })
@@ -441,50 +555,25 @@ export function WorkflowRunDrawer({
   const handleRun = async (isDebug: boolean = false) => {
     if (!workflow) return
 
+    const { inputs, nextErrors } = buildInputs()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      setActiveTab('input')
+      return
+    }
+
     try {
       resetState()
+      setFieldErrors({})
       setIsRunning(true)
       setRunStatus('pending')
 
-      // 构建输入参数
-      const inputs: Record<string, unknown> = {}
-      for (const variable of variables) {
-        const value = inputValues[variable.name]
-        if (value !== undefined && value !== '') {
-          switch (variable.type) {
-            case 'number':
-              inputs[variable.name] = Number(value)
-              break
-            case 'boolean':
-              inputs[variable.name] = value === 'true'
-              break
-            case 'array':
-            case 'object':
-              try {
-                inputs[variable.name] = JSON.parse(value)
-              } catch {
-                inputs[variable.name] = value
-              }
-              break
-            default:
-              inputs[variable.name] = value
-          }
-        } else if (variable.required) {
-          toast.error(t('runDrawer.fillRequiredParam', { name: variable.name }))
-          setIsRunning(false)
-          setRunStatus(null)
-          return
-        }
-      }
-
-      // 调用 API
       const response = isDebug
         ? await workflowsApi.debugWorkflow(workflow.id, { inputs })
         : await workflowsApi.runWorkflow(workflow.id, { inputs })
 
       setRunId(response.run_id)
 
-      // 连接 SSE
       closeStreamRef.current = workflowsApi.streamWorkflowRun(response.run_id, {
         onEvent: handleStreamEvent,
         onError: (error) => {
@@ -500,13 +589,20 @@ export function WorkflowRunDrawer({
       })
     } catch (error) {
       console.error('Run error:', error)
-      // ApiError already shows toast via interceptor, only show toast for non-API errors
-      if (!(error instanceof ApiError)) {
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setFieldErrors(validationErrors)
+        setActiveTab('input')
+      } else if (!(error instanceof ApiError)) {
         toast.error(isDebug ? t('runDrawer.debugFailed') : t('runDrawer.runFailed'))
       }
       setIsRunning(false)
       setRunStatus('failed')
-      setErrorMessage(error instanceof Error ? error.message : t('runDrawer.runFailed'))
+      setErrorMessage(
+        error instanceof Error
+          ? resolveWorkflowUiError(error.message, getApiErrorMessage('requestFailed'))
+          : t('runDrawer.runFailed')
+      )
     }
   }
 
@@ -600,6 +696,16 @@ export function WorkflowRunDrawer({
         <TabsContent value="input" className="flex-1 m-0 mt-3 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="space-y-4 p-4">
+              {summaryEntries.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                  {summaryEntries.map(([field, message]) => (
+                    <FieldError key={field}>
+                      {formatValidationSummaryMessage(field, message)}
+                    </FieldError>
+                  ))}
+                </div>
+              )}
+
               {variables.length > 0 ? (
                 variables.map((variable) => (
                   <div key={variable.name} className="space-y-2">
@@ -618,57 +724,42 @@ export function WorkflowRunDrawer({
                       <select
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         value={inputValues[variable.name] || 'false'}
-                        onChange={(e) =>
-                          setInputValues((prev) => ({
-                            ...prev,
-                            [variable.name]: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
+                        aria-invalid={!!fieldErrors[variable.name]}
                       >
-                        <option value="true">true</option>
-                        <option value="false">false</option>
+                        <option value="true">{commonT('yes')}</option>
+                        <option value="false">{commonT('no')}</option>
                       </select>
                     ) : variable.type === 'array' || variable.type === 'object' ? (
                       <Textarea
                         placeholder={t('runDrawer.inputJsonPlaceholder', { type: variable.type === 'array' ? t('varTypes.array') : t('varTypes.object') })}
                         value={inputValues[variable.name] || ''}
-                        onChange={(e) =>
-                          setInputValues((prev) => ({
-                            ...prev,
-                            [variable.name]: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         rows={3}
+                        aria-invalid={!!fieldErrors[variable.name]}
                       />
                     ) : variable.type === 'paragraph' ? (
                       <Textarea
                         placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
                         value={inputValues[variable.name] || ''}
-                        onChange={(e) =>
-                          setInputValues((prev) => ({
-                            ...prev,
-                            [variable.name]: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
                         rows={3}
+                        aria-invalid={!!fieldErrors[variable.name]}
                       />
                     ) : (
                       <Input
                         type={variable.type === 'number' ? 'number' : 'text'}
                         placeholder={t('runDrawer.inputPlaceholder', { name: variable.name })}
                         value={inputValues[variable.name] || ''}
-                        onChange={(e) =>
-                          setInputValues((prev) => ({
-                            ...prev,
-                            [variable.name]: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => updateInputValue(variable.name, e.target.value)}
                         disabled={isRunning}
+                        aria-invalid={!!fieldErrors[variable.name]}
                       />
                     )}
+                    <FieldError>{fieldErrors[variable.name]}</FieldError>
                   </div>
                 ))
               ) : (
@@ -824,7 +915,7 @@ export function WorkflowRunDrawer({
                         runStatus === 'cancelled' && 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
                       )}>
                         {statusConfig[runStatus].icon}
-                        {t('runDrawer.' + statusConfig[runStatus].label).toUpperCase()}
+                        {t('runDrawer.' + statusConfig[runStatus].label)}
                       </div>
                     </div>
                     <div>
@@ -836,7 +927,7 @@ export function WorkflowRunDrawer({
                     <div>
                       <div className="text-xs text-muted-foreground mb-1">{t('nodeConfig.totalTokens')}</div>
                       <div className="text-sm font-medium">
-                        {totalTokens > 0 ? `${totalTokens} Tokens` : '0 Tokens'}
+                        {totalTokens.toLocaleString()}
                       </div>
                     </div>
                   </div>
@@ -986,7 +1077,7 @@ export function WorkflowRunDrawer({
                                 trace.status === 'running' && 'text-blue-600',
                                 trace.status === 'skipped' && 'text-gray-400',
                               )}>
-                                {trace.status}
+                                {t(`runDrawer.status${trace.status.charAt(0).toUpperCase()}${trace.status.slice(1)}`)}
                               </span>
                             </div>
                             {trace.durationMs !== undefined && (
@@ -1001,15 +1092,15 @@ export function WorkflowRunDrawer({
                           {trace.tokens && (trace.tokens.total ?? 0) > 0 && (
                             <div className="flex items-center gap-4 text-xs">
                               <div>
-                                <span className="text-muted-foreground">Prompt：</span>
+                                <span className="text-muted-foreground">{t('runDrawer.tokenPrompt')}</span>
                                 <span>{trace.tokens.prompt || 0}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Completion：</span>
+                                <span className="text-muted-foreground">{t('runDrawer.tokenCompletion')}</span>
                                 <span>{trace.tokens.completion || 0}</span>
                               </div>
                               <div>
-                                <span className="text-muted-foreground">Total：</span>
+                                <span className="text-muted-foreground">{t('runDrawer.tokenTotal')}</span>
                                 <span className="font-medium">{trace.tokens.total || 0}</span>
                               </div>
                             </div>

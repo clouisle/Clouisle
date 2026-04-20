@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { embedApi, type EmbedChatRequest } from '@/lib/api/embed'
 import { parseSSEStream, type SSECompression, type SSEMessageEnd } from '@/lib/api/agents'
 import type {
@@ -14,6 +15,7 @@ import type {
   ToolResultPart,
   UserInputRequestPart,
 } from '@/components/chat'
+import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 export type EmbedChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -55,6 +57,16 @@ interface TaskState {
   ragSourceCount?: number
   toolCallCount?: number
   compressionInfo?: Record<string, unknown>
+}
+
+function getEmbedHttpErrorMessage(status: number, tError: ReturnType<typeof useTranslations>): string {
+  if (status === 404) {
+    return tError('resourceNotFound')
+  }
+  if (status >= 500 && status < 600) {
+    return tError('serverErrorDescription')
+  }
+  return getApiErrorMessage('requestFailed')
 }
 
 function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegment[] {
@@ -198,6 +210,7 @@ function buildMessageParts(
 export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
   const { agentId, apiKey, variables = {}, initialMessages = [], onConversationChange, onError } = options
 
+  const tError = useTranslations('errors')
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [status, setStatus] = useState<EmbedChatStatus>('idle')
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -278,8 +291,8 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
         const response = await stream
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ msg: 'Request failed' }))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getEmbedHttpErrorMessage(response.status, tError))
         }
 
         setStatus('streaming')
@@ -483,7 +496,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               receivedTerminalEvent = true
               state.taskState.compression = state.taskState.compression === 'running' ? 'error' : state.taskState.compression
               const errorData = data as { code?: number; msg?: string }
-              const errorObj = { code: errorData.code, message: errorData.msg || 'Unknown error' }
+              const errorObj = { code: errorData.code, message: errorData.msg || tError('unknown') }
               onError?.(errorObj)
               break
             }
@@ -512,14 +525,14 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
           setStatus('idle')
           return
         }
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        const errorMessage = err instanceof Error ? err.message : tError('unknown')
         onError?.({ message: errorMessage })
         setStatus('error')
       } finally {
         abortRef.current = null
       }
     },
-    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError]
+    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError, tError]
   )
 
   const stop = useCallback(() => {

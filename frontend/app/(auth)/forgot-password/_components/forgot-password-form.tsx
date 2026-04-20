@@ -9,7 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, ApiError } from '@/lib/api'
+import {
+  clearValidationError,
+  formatValidationSummaryMessage,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  normalizeValidationErrorsRaw,
+} from '@/lib/validation'
 import { isValidEmail } from '@/lib/utils'
+import { FieldError } from '@/components/ui/field'
 import { Loader2, Mail, CheckCircle2, ArrowLeft, KeyRound, ChevronDown } from 'lucide-react'
 
 type Step = 'email' | 'reset' | 'success'
@@ -27,6 +35,20 @@ export function ForgotPasswordForm() {
   const [loading, setLoading] = React.useState(false)
   const [resendCooldown, setResendCooldown] = React.useState(0)
   const [showCodeInput, setShowCodeInput] = React.useState(false)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['email', 'code', 'newPassword', 'confirmPassword']),
+    [fieldErrors]
+  )
+  const summaryFieldLabels = React.useMemo(
+    () => ({
+      email: t('email'),
+      code: t('verificationCode'),
+      newPassword: t('newPassword'),
+      confirmPassword: t('confirmNewPassword'),
+    }),
+    [t]
+  )
   
   // 倒计时
   React.useEffect(() => {
@@ -36,17 +58,6 @@ export function ForgotPasswordForm() {
     }
   }, [resendCooldown])
   
-  // 清除单个字段错误
-  const clearFieldError = (field: string) => {
-    if (fieldErrors[field]) {
-      setFieldErrors(prev => {
-        const next = { ...prev }
-        delete next[field]
-        return next
-      })
-    }
-  }
-
   // 步骤1：发送重置密码邮件
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,8 +81,9 @@ export function ForgotPasswordForm() {
       setStep('reset')
       toast.success(t('resetPasswordEmailSent'))
     } catch (err) {
-      if (err instanceof ApiError && err.isValidationError()) {
-        setFieldErrors(err.getFieldErrors())
+      const errors = normalizeValidationErrors(err)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
       }
     } finally {
       setLoading(false)
@@ -110,9 +122,12 @@ export function ForgotPasswordForm() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isValidationError()) {
-          setFieldErrors(err.getFieldErrors())
+          const rawErrors = normalizeValidationErrorsRaw(err)
+          const renamedErrors = Object.fromEntries(
+            Object.entries(rawErrors).map(([field, messages]) => [field === 'password' ? 'newPassword' : field, messages.join('; ')])
+          )
+          setFieldErrors(renamedErrors)
         } else if (err.code === 5005) {
-          // VERIFICATION_CODE_INVALID
           setFieldErrors({ code: t('verificationCodeInvalid') })
         }
       }
@@ -152,6 +167,16 @@ export function ForgotPasswordForm() {
   if (step === 'email') {
     return (
       <form onSubmit={handleSendEmail} className="space-y-4">
+        {summaryEntries.length > 0 && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+            {summaryEntries.map(([field, message]) => (
+              <FieldError key={field}>
+                {formatValidationSummaryMessage(field, message, summaryFieldLabels)}
+              </FieldError>
+            ))}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="email">{t('email')}</Label>
           <Input
@@ -160,16 +185,14 @@ export function ForgotPasswordForm() {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value)
-              clearFieldError('email')
+              setFieldErrors((prev) => clearValidationError(prev, 'email'))
             }}
             placeholder="john@example.com"
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.email}
           />
-          {fieldErrors.email && (
-            <p className="text-sm text-destructive">{fieldErrors.email}</p>
-          )}
+          <FieldError>{fieldErrors.email}</FieldError>
         </div>
         
         <Button type="submit" className="w-full" disabled={loading}>
@@ -231,6 +254,16 @@ export function ForgotPasswordForm() {
 
           {showCodeInput && (
             <form onSubmit={handleResetPassword} className="space-y-4">
+              {summaryEntries.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                  {summaryEntries.map(([field, message]) => (
+                    <FieldError key={field}>
+                      {formatValidationSummaryMessage(field, message, summaryFieldLabels)}
+                    </FieldError>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>{t('verificationCode')}</Label>
                 <div className="flex justify-center">
@@ -239,7 +272,7 @@ export function ForgotPasswordForm() {
                     value={verificationCode}
                     onChange={(value) => {
                       setVerificationCode(value)
-                      clearFieldError('code')
+                      setFieldErrors((prev) => clearValidationError(prev, 'code'))
                     }}
                     disabled={loading}
                   >
@@ -253,9 +286,7 @@ export function ForgotPasswordForm() {
                     </InputOTPGroup>
                   </InputOTP>
                 </div>
-                {fieldErrors.code && (
-                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
-                )}
+                <FieldError className="text-center">{fieldErrors.code}</FieldError>
               </div>
 
               <div className="space-y-2">
@@ -266,15 +297,13 @@ export function ForgotPasswordForm() {
                   value={newPassword}
                   onChange={(e) => {
                     setNewPassword(e.target.value)
-                    clearFieldError('newPassword')
+                    setFieldErrors((prev) => clearValidationError(prev, 'newPassword'))
                   }}
                   required
                   disabled={loading}
                   aria-invalid={!!fieldErrors.newPassword}
                 />
-                {fieldErrors.newPassword && (
-                  <p className="text-sm text-destructive">{fieldErrors.newPassword}</p>
-                )}
+                <FieldError>{fieldErrors.newPassword}</FieldError>
               </div>
 
               <div className="space-y-2">
@@ -285,15 +314,13 @@ export function ForgotPasswordForm() {
                   value={confirmPassword}
                   onChange={(e) => {
                     setConfirmPassword(e.target.value)
-                    clearFieldError('confirmPassword')
+                    setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
                   }}
                   required
                   disabled={loading}
                   aria-invalid={!!fieldErrors.confirmPassword}
                 />
-                {fieldErrors.confirmPassword && (
-                  <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-                )}
+                <FieldError>{fieldErrors.confirmPassword}</FieldError>
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>

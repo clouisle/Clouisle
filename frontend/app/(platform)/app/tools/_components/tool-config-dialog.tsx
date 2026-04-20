@@ -14,6 +14,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Tool } from '@/lib/api/tools'
 
 interface ToolConfigDialogProps {
@@ -38,9 +45,9 @@ const TOOL_CONFIG_INFO: Record<string, {
     fields: [
       {
         key: 'TAVILY_API_KEY',
-        label: 'Tavily API Key',
+        label: 'configDialog.tavilyApiKeyLabel',
         placeholder: 'tvly-xxxxxxxxxx',
-        description: 'Get your API key from Tavily',
+        description: 'configDialog.tavilyApiKeyDescription',
         link: 'https://tavily.com/',
       },
     ],
@@ -58,6 +65,7 @@ export function ToolConfigDialog({
   const tCommon = useTranslations('common')
 
   const [config, setConfig] = useState<Record<string, string>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(false)
   
@@ -77,6 +85,7 @@ export function ToolConfigDialog({
         initialConfig[field] = savedConfigRef.current[field] || ''
       })
       setConfig(initialConfig)
+      setFieldErrors({})
       setShowPasswords({})
     }
     
@@ -87,9 +96,27 @@ export function ToolConfigDialog({
   }, [tool, open])
 
   const handleSave = async () => {
+    setFieldErrors({})
+
+    const nextErrors = Object.fromEntries(
+      fields
+        .filter((field) => !(config[field.key] || '').trim())
+        .map((field) => [field.key, tCommon('required')])
+    )
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
     setIsLoading(true)
     try {
       await onSave(config)
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -108,6 +135,7 @@ export function ToolConfigDialog({
     placeholder: '',
     description: '',
   })) || []
+  const summaryEntries = getValidationSummaryEntries(fieldErrors, fields.map((field) => field.key))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,10 +151,20 @@ export function ToolConfigDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           {fields.map((field) => (
             <div key={field.key} className="space-y-2">
               <Label htmlFor={field.key} className="flex items-center gap-2">
-                {field.label}
+                {t.has(field.label) ? t(field.label) : field.label}
                 {field.link && (
                   <a
                     href={field.link}
@@ -144,10 +182,12 @@ export function ToolConfigDialog({
                   type={showPasswords[field.key] ? 'text' : 'password'}
                   placeholder={field.placeholder}
                   value={config[field.key] || ''}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))
-                  }
+                    setFieldErrors((prev) => clearValidationError(prev, field.key))
+                  }}
                   className="pr-10"
+                  aria-invalid={!!fieldErrors[field.key]}
                 />
                 <Button
                   type="button"
@@ -163,8 +203,9 @@ export function ToolConfigDialog({
                   )}
                 </Button>
               </div>
+              <FieldError>{fieldErrors[field.key]}</FieldError>
               {field.description && (
-                <p className="text-xs text-muted-foreground">{field.description}</p>
+                <p className="text-xs text-muted-foreground">{t.has(field.description) ? t(field.description) : field.description}</p>
               )}
             </div>
           ))}

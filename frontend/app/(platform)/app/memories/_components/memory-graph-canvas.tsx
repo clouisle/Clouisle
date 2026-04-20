@@ -33,9 +33,15 @@ interface Link extends d3.SimulationLinkDatum<Node> {
 
 export function MemoryGraphCanvas() {
   const t = useTranslations('memories')
+  const tCommon = useTranslations('common')
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const zoomBehaviorRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+
+  const getRelationTypeLabel = useCallback((relationType: string) => {
+    const key = `relationTypes.${relationType}`
+    return t.has(key) ? t(key) : relationType
+  }, [t])
 
   const [entities, setEntities] = useState<MemoryEntity[]>([])
   const [relations, setRelations] = useState<MemoryRelation[]>([])
@@ -240,7 +246,7 @@ export function MemoryGraphCanvas() {
       .attr('font-size', 10)
       .attr('fill', '#666')
       .attr('text-anchor', 'middle')
-      .text((d) => t(`relationTypes.${d.relation.relation_type}`))
+      .text((d) => getRelationTypeLabel(d.relation.relation_type))
 
     const node = g
       .append('g')
@@ -322,7 +328,7 @@ export function MemoryGraphCanvas() {
       simulation.stop()
       svgEl.removeEventListener('wheel', handleWheelPan)
     }
-  }, [nodes, links, t])
+  }, [nodes, links, t, getRelationTypeLabel])
 
   // Highlight selected entity node (separate effect to avoid rebuilding simulation)
   useEffect(() => {
@@ -561,7 +567,7 @@ export function MemoryGraphCanvas() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-muted-foreground">{tCommon('loading')}</div>
       </div>
     )
   }

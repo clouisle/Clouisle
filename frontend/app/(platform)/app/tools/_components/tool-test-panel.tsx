@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
 import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo, SandboxArtifactConfig } from '@/lib/api'
+import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { useTeam } from '@/contexts/team-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { FieldError } from '@/components/ui/field'
 import { 
   Sheet,
   SheetContent, 
@@ -50,6 +54,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
   const t = useTranslations('platform.tools')
   const [args, setArgs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [result, setResult] = useState<ToolExecuteResponse | null>(null)
   const [copied, setCopied] = useState(false)
   const { currentTeam } = useTeam()
@@ -92,6 +97,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       setArgs({})
+      setFieldErrors({})
       setResult(null)
       setMcpTools([])
       setSelectedMcpTool('')
@@ -104,6 +110,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
     if (!tool) return
 
     setLoading(true)
+    setFieldErrors({})
     setResult(null)
 
     try {
@@ -157,7 +164,12 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
       }, currentTeam?.id)
       setResult(response)
     } catch (error) {
-      console.error('Tool test error:', error)
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      } else {
+        console.error('Tool test error:', error)
+      }
     } finally {
       setLoading(false)
     }
@@ -179,6 +191,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
   if (!tool) return null
 
   const formattedResult = result ? formatResultPayload(result) : null
+  const summaryEntries = getValidationSummaryEntries(fieldErrors, Object.keys(args))
 
   // 判断图标是否为 URL
   const isIconUrl = tool.icon?.startsWith('http')
@@ -207,6 +220,13 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
         </SheetHeader>
 
         <div className="space-y-6 px-4 pb-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+              ))}
+            </div>
+          )}
           {/* MCP 工具选择 */}
           {tool.type === 'mcp' && (
             <div className="space-y-4">
@@ -264,7 +284,14 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
                 <McpParameterInputs
                   parameters={currentMcpToolParams}
                   args={args}
-                  onChange={setArgs}
+                  fieldErrors={fieldErrors}
+                  onChange={(nextArgs) => {
+                    setArgs(nextArgs)
+                    const changedKey = Object.keys(nextArgs).find((key) => nextArgs[key] !== args[key])
+                    if (changedKey) {
+                      setFieldErrors((prev) => clearValidationError(prev, changedKey))
+                    }
+                  }}
                 />
               )}
             </div>
@@ -279,7 +306,11 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
                   key={param.name}
                   parameter={param}
                   value={args[param.name] || ''}
-                  onChange={(value) => setArgs({ ...args, [param.name]: value })}
+                  error={fieldErrors[param.name]}
+                  onChange={(value) => {
+                    setArgs({ ...args, [param.name]: value })
+                    setFieldErrors((prev) => clearValidationError(prev, param.name))
+                  }}
                 />
               ))}
             </div>
@@ -370,14 +401,17 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
 function McpParameterInputs({
   parameters,
   args,
+  fieldErrors,
   onChange,
 }: {
   parameters: Record<string, unknown>
   args: Record<string, string>
+  fieldErrors: Record<string, string>
   onChange: (args: Record<string, string>) => void
 }) {
   const t = useTranslations('platform.tools')
-  
+  const commonT = useTranslations('common')
+
   // 解析 JSON Schema 参数
   const properties = (parameters as { properties?: Record<string, { type?: string; description?: string; enum?: string[] }> }).properties || {}
   const required = (parameters as { required?: string[] }).required || []
@@ -422,8 +456,8 @@ function McpParameterInputs({
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
         >
           <option value="">{t('selectOption')}</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
+          <option value="true">{commonT('yes')}</option>
+          <option value="false">{commonT('no')}</option>
         </select>
       )
     }
@@ -435,7 +469,7 @@ function McpParameterInputs({
           id={name}
           value={value}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder='["item1", "item2"]'
+          placeholder={t('testPanel.arrayPlaceholder')}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
           rows={3}
         />
@@ -449,7 +483,7 @@ function McpParameterInputs({
           id={name}
           value={value}
           onChange={(e) => handleChange(e.target.value)}
-          placeholder='{"key": "value"}'
+          placeholder={t('testPanel.objectPlaceholder')}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
           rows={3}
         />
@@ -497,6 +531,7 @@ function McpParameterInputs({
             <p className="text-xs text-muted-foreground">{schema.description}</p>
           )}
           {renderInput(name, schema)}
+          <FieldError>{fieldErrors[name]}</FieldError>
         </div>
       ))}
     </div>
@@ -507,13 +542,16 @@ function McpParameterInputs({
 function ParameterInput({
   parameter,
   value,
+  error,
   onChange,
 }: {
   parameter: ToolParameter
   value: string
+  error?: string
   onChange: (value: string) => void
 }) {
   const t = useTranslations('platform.tools')
+  const commonT = useTranslations('common')
 
   // 渲染输入控件
   const renderInput = () => {
@@ -546,8 +584,8 @@ function ParameterInput({
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
         >
           <option value="">{t('selectOption')}</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
+          <option value="true">{commonT('yes')}</option>
+          <option value="false">{commonT('no')}</option>
         </select>
       )
     }
@@ -559,7 +597,7 @@ function ParameterInput({
           id={parameter.name}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder='["item1", "item2"]'
+          placeholder={t('testPanel.arrayPlaceholder')}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
           rows={3}
         />
@@ -573,7 +611,7 @@ function ParameterInput({
           id={parameter.name}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder='{"key": "value"}'
+          placeholder={t('testPanel.objectPlaceholder')}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring font-mono"
           rows={3}
         />
@@ -624,6 +662,7 @@ function ParameterInput({
         <p className="text-xs text-muted-foreground">{parameter.description}</p>
       )}
       {renderInput()}
+      <FieldError>{error}</FieldError>
     </div>
   )
 }

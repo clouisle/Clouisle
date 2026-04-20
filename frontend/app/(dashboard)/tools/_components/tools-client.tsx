@@ -376,6 +376,7 @@ export function ToolsClient() {
             loadTools()
         } catch (error) {
             console.error('Failed to save tool:', error)
+            throw error
         }
     }
 
@@ -396,6 +397,7 @@ export function ToolsClient() {
             loadTools()
         } catch (error) {
             console.error('Failed to save tool:', error)
+            throw error
         }
     }
 
@@ -426,6 +428,7 @@ export function ToolsClient() {
             setConfiguringTool(null)
         } catch (error) {
             console.error('Failed to save config:', error)
+            throw error
         }
     }
 

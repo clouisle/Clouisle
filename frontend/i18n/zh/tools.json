@@ -17,6 +17,7 @@
     "pageInfo": "第 {page} 页，共 {total} 页",
     "toolCreated": "工具创建成功",
     "toolUpdated": "工具更新成功",
+    "configSaved": "配置保存成功",
     "toolDeleted": "工具删除成功",
     "toolEnabled": "工具已启用",
     "toolDisabled": "工具已禁用",
@@ -130,7 +131,9 @@
       "noParameters": "暂无参数，点击上方按钮添加",
       "paramName": "参数名",
       "paramDescription": "参数描述（可选）",
-      "required": "必填"
+      "required": "必填",
+      "toolNamePlaceholder": "my_api_tool",
+      "urlPlaceholder": "https://api.example.com/endpoint"
     },
     "mcpDialog": {
       "createTitle": "添加 MCP 服务",
@@ -160,7 +163,15 @@
       "toolsLoaded": "已加载 {count} 个工具",
       "fetchToolsFailed": "获取工具列表失败，请检查配置",
       "commandRequired": "请输入命令",
-      "urlRequired": "请输入服务地址"
+      "urlRequired": "请输入服务地址",
+      "serverNamePlaceholder": "my_mcp_server",
+      "commandPlaceholder": "npx",
+      "argumentPlaceholder": "参数 {index}",
+      "headerKeyPlaceholder": "KEY",
+      "headerValuePlaceholder": "值",
+      "sseUrlPlaceholder": "http://localhost:3000/sse",
+      "headerNamePlaceholder": "请求头名称",
+      "httpUrlPlaceholder": "http://localhost:3000/mcp"
     },
     "codeEditor": {
       "newTitle": "新建代码工具",
@@ -217,7 +228,8 @@
       "artifactDescription": "描述",
       "artifactOptional": "可选",
       "invalidArtifactPath": "产物路径 \"{value}\" 必须位于 /workspace 下",
-      "artifactsLabel": "产物"
+      "artifactsLabel": "产物",
+      "executionFailed": "执行失败"
     },
     "createMenu": {
       "http": "HTTP API",

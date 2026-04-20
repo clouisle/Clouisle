@@ -32,6 +32,8 @@
     "neverUsed": "Never used",
     "createdAt": "Created At",
     "noKeys": "No API keys found.",
+    "createKeyHint": "Create your first API key to start using the API.",
+    "noKeysFound": "No matching API keys found.",
     "keysSelected": "keys selected",
     "filterKeys": "Search API keys...",
     "rowsPerPage": "per page",

@@ -25,7 +25,11 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ssoApi, type SSOProviderAdmin, type SSOProviderCreate } from '@/lib/api/admin/sso'
+import { clearValidationError, clearValidationErrorsByPrefix, getValidationSummaryEntries, mapValidationErrors, normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { useCanPerform } from '@/components/permission-guard'
+import { FieldError } from '@/components/ui/field'
 
 interface ProviderDialogProps {
   open: boolean
@@ -34,6 +38,13 @@ interface ProviderDialogProps {
 }
 
 const PROVIDER_NAME_REGEX = /^[a-z][a-z0-9_-]*$/
+const PROVIDER_ERROR_PATH_MAP = {
+  config: 'config',
+  attribute_mapping: 'attribute_mapping',
+  display_name: 'display_name',
+  icon_url: 'icon_url',
+  button_text: 'button_text',
+} as const
 
 export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps) {
   const t = useTranslations('sso')
@@ -133,6 +144,11 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
     })
   }
 
+  const summaryEntries = getValidationSummaryEntries(
+    fieldErrors,
+    ['name', 'display_name', 'icon_url', 'button_text', 'config', 'attribute_mapping']
+  )
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFieldErrors({})
@@ -163,7 +179,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       try {
         config = JSON.parse(formData.config)
       } catch {
-        toast.error(t('invalidConfigJson') || 'Invalid configuration JSON')
+        setFieldErrors({ config: t('invalidConfigJson') || 'Invalid configuration JSON' })
         setLoading(false)
         return
       }
@@ -171,7 +187,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       try {
         attribute_mapping = JSON.parse(formData.attribute_mapping) as Record<string, string>
       } catch {
-        toast.error(t('invalidMappingJson') || 'Invalid attribute mapping JSON')
+        setFieldErrors({ attribute_mapping: t('invalidMappingJson') || 'Invalid attribute mapping JSON' })
         setLoading(false)
         return
       }
@@ -198,8 +214,11 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
       }
 
       onClose(true)
-    } catch {
-      // toast handled by API interceptor
+    } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), PROVIDER_ERROR_PATH_MAP)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setLoading(false)
     }
@@ -220,6 +239,15 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="basic">{t('basicInfo')}</TabsTrigger>
@@ -236,13 +264,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     value={formData.name}
                     onChange={(e) => {
                       setFormData({ ...formData, name: e.target.value })
-                      if (fieldErrors.name) {
-                        setFieldErrors((prev) => {
-                          const next = { ...prev }
-                          delete next.name
-                          return next
-                        })
-                      }
+                      setFieldErrors((prev) => clearValidationError(prev, 'name'))
                     }}
                     placeholder="google"
                     required
@@ -250,7 +272,7 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                     aria-invalid={!!fieldErrors.name}
                   />
                   {fieldErrors.name ? (
-                    <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                    <FieldError>{fieldErrors.name}</FieldError>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       {t('providerNameHint')}
@@ -282,13 +304,16 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <Input
                   id="display_name"
                   value={formData.display_name}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({ ...formData, display_name: e.target.value })
-                  }
+                    setFieldErrors((prev) => clearValidationError(prev, 'display_name'))
+                  }}
                   placeholder="Google"
                   required
                   disabled={!canUpdate}
+                  aria-invalid={!!fieldErrors.display_name}
                 />
+                <FieldError>{fieldErrors.display_name}</FieldError>
               </div>
 
               <div className="space-y-2">
@@ -296,12 +321,15 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <Input
                   id="button_text"
                   value={formData.button_text}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({ ...formData, button_text: e.target.value })
-                  }
+                    setFieldErrors((prev) => clearValidationError(prev, 'button_text'))
+                  }}
                   placeholder="Sign in with Google"
                   disabled={!canUpdate}
+                  aria-invalid={!!fieldErrors.button_text}
                 />
+                <FieldError>{fieldErrors.button_text}</FieldError>
               </div>
 
               <div className="space-y-2">
@@ -311,21 +339,13 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                   value={formData.icon_url}
                   onChange={(e) => {
                     setFormData({ ...formData, icon_url: e.target.value })
-                    if (fieldErrors.icon_url) {
-                      setFieldErrors((prev) => {
-                        const next = { ...prev }
-                        delete next.icon_url
-                        return next
-                      })
-                    }
+                    setFieldErrors((prev) => clearValidationError(prev, 'icon_url'))
                   }}
                   placeholder="https://example.com/icon.png"
                   aria-invalid={!!fieldErrors.icon_url}
                   disabled={!canUpdate}
                 />
-                {fieldErrors.icon_url && (
-                  <p className="text-xs text-destructive">{fieldErrors.icon_url}</p>
-                )}
+                <FieldError>{fieldErrors.icon_url}</FieldError>
               </div>
 
               <div className="space-y-4">
@@ -385,15 +405,18 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <Textarea
                   id="config"
                   value={formData.config}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({ ...formData, config: e.target.value })
-                  }
+                    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'config'))
+                  }}
                   placeholder="{}"
                   rows={15}
                   className="font-mono text-sm"
                   required
                   disabled={!canUpdate}
+                  aria-invalid={!!fieldErrors.config}
                 />
+                <FieldError>{fieldErrors.config}</FieldError>
                 <p className="text-xs text-muted-foreground">
                   {t('configurationHint')}
                 </p>
@@ -408,17 +431,20 @@ export function ProviderDialog({ open, provider, onClose }: ProviderDialogProps)
                 <Textarea
                   id="attribute_mapping"
                   value={formData.attribute_mapping}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData({
                       ...formData,
                       attribute_mapping: e.target.value,
                     })
-                  }
+                    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'attribute_mapping'))
+                  }}
                   placeholder="{}"
                   rows={10}
                   className="font-mono text-sm"
                   disabled={!canUpdate}
+                  aria-invalid={!!fieldErrors.attribute_mapping}
                 />
+                <FieldError>{fieldErrors.attribute_mapping}</FieldError>
                 <p className="text-xs text-muted-foreground">
                   {t('attributeMappingHint')}
                 </p>

@@ -18,7 +18,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { FieldError } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
+import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { agentsApi } from '@/lib/api/agents'
 import { workflowsApi } from '@/lib/api/workflows'
 import { useTeam } from '@/contexts/team-context'
@@ -41,7 +45,7 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
-  const [error, setError] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
   // Reset form when dialog opens
   React.useEffect(() => {
@@ -49,7 +53,7 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
       setAppType('agent')
       setName('')
       setDescription('')
-      setError('')
+      setFieldErrors({})
     }
   }, [open])
 
@@ -57,17 +61,17 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
     e.preventDefault()
     
     if (!name.trim()) {
-      setError(t('nameRequired'))
+      setFieldErrors({ name: t('nameRequired') })
       return
     }
 
     if (!currentTeam) {
-      setError(t('teamRequired'))
+      setFieldErrors({ __all__: t('teamRequired') })
       return
     }
 
     setIsSubmitting(true)
-    setError('')
+    setFieldErrors({})
 
     try {
       if (appType === 'agent') {
@@ -92,12 +96,20 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
         // Navigate to workflow editor page
         router.push(`/app/apps/workflow/${workflow.id}`)
       }
-    } catch {
-      // API client 已自动显示后端错误消息，这里不需要再显示
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsSubmitting(false)
     }
   }
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['name', 'description']),
+    [fieldErrors]
+  )
 
   const appTypes = [
     {
@@ -124,6 +136,15 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
           </DialogHeader>
 
           <div className="space-y-6 py-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
             {/* App Type Selection */}
             <div className="space-y-3">
               <Label>{t('selectType')}</Label>
@@ -176,11 +197,15 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'name'))
+                }}
                 placeholder={t('namePlaceholder')}
                 maxLength={100}
+                aria-invalid={!!fieldErrors.name}
               />
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              <FieldError>{fieldErrors.name}</FieldError>
             </div>
 
             {/* Description */}
@@ -192,11 +217,16 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
                 placeholder={t('descriptionPlaceholder')}
                 rows={3}
                 maxLength={500}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
           </div>
 

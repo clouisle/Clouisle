@@ -64,7 +64,7 @@ export function EntityDetailSheet({
   )
 
   const getEntityName = (entityId: string) => {
-    return entityMap.get(entityId)?.name || 'Unknown'
+    return entityMap.get(entityId)?.name || t('unknown')
   }
 
   const handleDeleteEntity = async () => {
@@ -97,6 +97,16 @@ export function EntityDetailSheet({
     }
   }
 
+  const getEntityTypeLabel = (entityType: string) => {
+    const key = `entityTypes.${entityType}`
+    return t.has(key) ? t(key) : entityType
+  }
+
+  const getRelationTypeLabel = (relationType: string) => {
+    const key = `relationTypes.${relationType}`
+    return t.has(key) ? t(key) : relationType
+  }
+
   const renderRelationItem = (rel: MemoryRelation, navigateToId: string) => (
     <div key={rel.id} className="flex items-center gap-1">
       <Button
@@ -110,7 +120,7 @@ export function EntityDetailSheet({
             <span className="text-muted-foreground">{getEntityName(rel.source_entity_id)}</span>
             {' → '}
             <span className="font-semibold text-primary">
-              {t(`relationTypes.${rel.relation_type}`)}
+              {getRelationTypeLabel(rel.relation_type)}
             </span>
             {' → '}
             <span className="font-medium">{getEntityName(rel.target_entity_id)}</span>
@@ -145,7 +155,7 @@ export function EntityDetailSheet({
             {/* Entity Name */}
             <div className="space-y-3">
               <h2 className="text-xl font-semibold pr-8">{entity.name}</h2>
-              <Badge variant="secondary">{t(`entityTypes.${entity.entity_type}`)}</Badge>
+              <Badge variant="secondary">{getEntityTypeLabel(entity.entity_type)}</Badge>
             </div>
 
             {/* Description */}

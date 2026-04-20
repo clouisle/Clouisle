@@ -31,6 +31,15 @@ import {
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField } from '@/lib/api/tools'
 import type { UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { cn } from '@/lib/utils'
 
 // 带变量补全的输入框组件
@@ -218,6 +227,18 @@ const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 const PARAM_TYPES = ['string', 'number', 'boolean', 'array', 'object', 'file', 'image'] as const
 
+const HTTP_TOOL_ERROR_PATH_MAP = {
+  display_name: 'displayName',
+  'http_config.url': 'url',
+  'http_config.body_template': 'bodyTemplate',
+  parameters: 'parameters',
+  'http_config.form_fields': 'formFields',
+  'http_config.headers': 'headers',
+  'http_config.query_params': 'queryParams',
+  'http_config.timeout': 'timeout',
+  'http_config.content_type': 'contentType',
+} as const
+
 interface KeyValuePair {
   key: string
   value: string
@@ -244,7 +265,7 @@ export function HttpToolDialog({
   const [icon, setIcon] = useState('')
   const [category, setCategory] = useState<ToolCategory>('api')
   const [isEnabled, setIsEnabled] = useState(true)
-  const [nameError, setNameError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // HTTP 配置
   const [method, setMethod] = useState<typeof HTTP_METHODS[number]>('GET')
@@ -276,7 +297,7 @@ export function HttpToolDialog({
         setIcon(tool.icon || '')
         setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
-        setNameError('')
+        setFieldErrors({})
         setParameters(tool.parameters || [])
 
         if (tool.http_config) {
@@ -305,7 +326,7 @@ export function HttpToolDialog({
         setIcon('')
         setCategory('api')
         setIsEnabled(true)
-        setNameError('')
+        setFieldErrors({})
         setMethod('GET')
         setUrl('')
         setHeaders([{ key: '', value: '' }])
@@ -320,12 +341,21 @@ export function HttpToolDialog({
   }, [tool, open])
 
   const handleSave = async () => {
-    if (!TOOL_NAME_PATTERN.test(name.trim())) {
-      setNameError(t('error.invalidName'))
+    const nextErrors: Record<string, string> = {}
+    if (!name.trim()) {
+      nextErrors.name = t('error.nameRequired')
+    } else if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      nextErrors.name = t('error.invalidName')
+    }
+    if (!displayName.trim()) nextErrors.displayName = t('form.displayNameRequired')
+    if (!url.trim()) nextErrors.url = t('form.urlRequired')
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
       return
     }
 
-    setNameError('')
+    setFieldErrors({})
 
     setIsLoading(true)
     try {
@@ -358,6 +388,13 @@ export function HttpToolDialog({
       }
 
       await onSave(data)
+    } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), HTTP_TOOL_ERROR_PATH_MAP)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      } else {
+        throw error
+      }
     } finally {
       setIsLoading(false)
     }
@@ -376,6 +413,7 @@ export function HttpToolDialog({
     const newParams = [...parameters]
     newParams[index] = { ...newParams[index], ...updates }
     setParameters(newParams)
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'parameters'), 'parameters'))
   }
 
   const addKeyValuePair = (
@@ -400,12 +438,16 @@ export function HttpToolDialog({
     field: 'key' | 'value',
     value: string,
     pairs: KeyValuePair[],
-    setPairs: (pairs: KeyValuePair[]) => void
+    setPairs: (pairs: KeyValuePair[]) => void,
+    errorKey: 'headers' | 'queryParams'
   ) => {
     const newPairs = [...pairs]
     newPairs[index][field] = value
     setPairs(newPairs)
+    setFieldErrors((prev) => clearValidationError(prev, errorKey))
   }
+
+  const summaryEntries = getValidationSummaryEntries(fieldErrors, ['name', 'displayName', 'url', 'bodyTemplate', 'parameters', 'formFields', 'headers', 'queryParams', 'timeout', 'contentType'])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -420,6 +462,15 @@ export function HttpToolDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
             {!isEditing && onSelectedTeamChange && teams.length > 0 && (
@@ -445,25 +496,30 @@ export function HttpToolDialog({
               <Label htmlFor="name">{t('form.name')}</Label>
               <Input
                 id="name"
-                placeholder="my_api_tool"
+                placeholder={t('httpDialog.toolNamePlaceholder')}
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value)
-                  if (nameError) setNameError('')
+                  setFieldErrors((prev) => clearValidationError(prev, 'name'))
                 }}
                 disabled={isEditing}
-                aria-invalid={!!nameError}
+                aria-invalid={!!fieldErrors.name}
               />
-              {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+              <FieldError>{fieldErrors.name}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="displayName">{t('form.displayName')}</Label>
               <Input
                 id="displayName"
-                placeholder="My API Tool"
+                placeholder={t('form.displayNamePlaceholder')}
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={(e) => {
+                  setDisplayName(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'displayName'))
+                }}
+                aria-invalid={!!fieldErrors.displayName}
               />
+              <FieldError>{fieldErrors.displayName}</FieldError>
             </div>
           </div>
 
@@ -531,14 +587,22 @@ export function HttpToolDialog({
                 </SelectContent>
               </Select>
               <VariableInput
-                placeholder="https://api.example.com/{{id}}/data"
+                placeholder={t('httpDialog.urlPlaceholder')}
                 value={url}
-                onChange={setUrl}
+                onChange={(value) => {
+                  setUrl(value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'url'))
+                }}
                 variables={parameters.map(p => p.name)}
                 className="flex-1"
                 suggestionTitle={t('httpDialog.variableCompletion')}
               />
             </div>
+            <FieldError>{fieldErrors.url}</FieldError>
+            <FieldError>{fieldErrors.headers}</FieldError>
+            <FieldError>{fieldErrors.queryParams}</FieldError>
+            <FieldError>{fieldErrors.timeout}</FieldError>
+            <FieldError>{fieldErrors.contentType}</FieldError>
 
             {/* Headers */}
             <Collapsible open={headersOpen} onOpenChange={setHeadersOpen}>
@@ -552,15 +616,15 @@ export function HttpToolDialog({
                 {headers.map((header, index) => (
                   <div key={index} className="flex gap-2">
                     <Input
-                      placeholder="Key"
+                      placeholder={t('httpDialog.keyPlaceholder')}
                       value={header.key}
-                      onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, headers, setHeaders)}
+                      onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, headers, setHeaders, 'headers')}
                       className="flex-1"
                     />
                     <VariableInput
-                      placeholder="{{token}}"
+                      placeholder={t('httpDialog.headerValuePlaceholder')}
                       value={header.value}
-                      onChange={(val) => updateKeyValuePair(index, 'value', val, headers, setHeaders)}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, headers, setHeaders, 'headers')}
                       variables={parameters.map(p => p.name)}
                       className="flex-1"
                       suggestionTitle={t('httpDialog.variableCompletion')}
@@ -598,15 +662,15 @@ export function HttpToolDialog({
                 {queryParams.map((param, index) => (
                   <div key={index} className="flex gap-2">
                     <Input
-                      placeholder="Key"
+                      placeholder={t('httpDialog.keyPlaceholder')}
                       value={param.key}
-                      onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, queryParams, setQueryParams)}
+                      onChange={(e) => updateKeyValuePair(index, 'key', e.target.value, queryParams, setQueryParams, 'queryParams')}
                       className="flex-1"
                     />
                     <VariableInput
-                      placeholder="{{query}}"
+                      placeholder={t('httpDialog.queryValuePlaceholder')}
                       value={param.value}
-                      onChange={(val) => updateKeyValuePair(index, 'value', val, queryParams, setQueryParams)}
+                      onChange={(val) => updateKeyValuePair(index, 'value', val, queryParams, setQueryParams, 'queryParams')}
                       variables={parameters.map(p => p.name)}
                       className="flex-1"
                       suggestionTitle={t('httpDialog.variableCompletion')}
@@ -638,13 +702,16 @@ export function HttpToolDialog({
                 {/* Content-Type 选择 */}
                 <div className="space-y-2">
                   <Label className="text-xs">{t('httpDialog.contentType')}</Label>
-                  <Select value={contentType} onValueChange={(v) => setContentType(v as typeof contentType)}>
+                  <Select value={contentType} onValueChange={(v) => {
+                    setContentType(v as typeof contentType)
+                    setFieldErrors((prev) => clearValidationError(prev, 'contentType'))
+                  }}>
                     <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="application/json">application/json</SelectItem>
-                      <SelectItem value="multipart/form-data">multipart/form-data (文件上传)</SelectItem>
+                      <SelectItem value="multipart/form-data">{t('httpDialog.multipartFormData')}</SelectItem>
                       <SelectItem value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</SelectItem>
                     </SelectContent>
                   </Select>
@@ -661,15 +728,19 @@ export function HttpToolDialog({
                     </CollapsibleTrigger>
                     <CollapsibleContent className="pt-2">
                       <VariableInput
-                        placeholder='{"key": "{{value}}"}'
+                        placeholder={t('httpDialog.bodyTemplatePlaceholder')}
                         value={bodyTemplate}
-                        onChange={setBodyTemplate}
+                        onChange={(value) => {
+                          setBodyTemplate(value)
+                          setFieldErrors((prev) => clearValidationError(prev, 'bodyTemplate'))
+                        }}
                         variables={parameters.map(p => p.name)}
                         multiline
                         rows={4}
                         className="font-mono text-sm"
                         suggestionTitle={t('httpDialog.variableCompletion')}
                       />
+                      <FieldError>{fieldErrors.bodyTemplate}</FieldError>
                       <p className="text-xs text-muted-foreground mt-1">
                         {t('httpDialog.bodyTemplateHint')}
                       </p>
@@ -696,6 +767,7 @@ export function HttpToolDialog({
                               const newFields = [...formFields]
                               newFields[index] = { ...newFields[index], name: e.target.value }
                               setFormFields(newFields)
+                                setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
                             }}
                             className="flex-1"
                           />
@@ -705,6 +777,7 @@ export function HttpToolDialog({
                               const newFields = [...formFields]
                               newFields[index] = { ...newFields[index], type: v as 'text' | 'file' }
                               setFormFields(newFields)
+                                setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
                             }}
                           >
                             <SelectTrigger className="w-24">
@@ -723,6 +796,7 @@ export function HttpToolDialog({
                                 const newFields = [...formFields]
                                 newFields[index] = { ...newFields[index], value: v }
                                 setFormFields(newFields)
+                                setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
                               }}
                               variables={parameters.map(p => p.name)}
                               className="flex-1"
@@ -737,6 +811,7 @@ export function HttpToolDialog({
                                 const newFields = [...formFields]
                                 newFields[index] = { ...newFields[index], value: v }
                                 setFormFields(newFields)
+                                setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
                               }}
                               variables={parameters.filter(p => p.type === 'file' || p.type === 'image').map(p => p.name)}
                               className="flex-1"
@@ -746,7 +821,10 @@ export function HttpToolDialog({
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setFormFields(formFields.filter((_, i) => i !== index))}
+                            onClick={() => {
+                              setFormFields(formFields.filter((_, i) => i !== index))
+                              setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
+                            }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -755,11 +833,15 @@ export function HttpToolDialog({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setFormFields([...formFields, { name: '', type: 'text', value: '' }])}
+                        onClick={() => {
+                          setFormFields([...formFields, { name: '', type: 'text', value: '' }])
+                          setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'formFields'), 'formFields'))
+                        }}
                       >
                         <Plus className="h-4 w-4 mr-1" />
                         {t('httpDialog.addField')}
                       </Button>
+                      <FieldError>{fieldErrors.formFields}</FieldError>
                       <p className="text-xs text-muted-foreground">
                         {t('httpDialog.formFieldsHint')}
                       </p>
@@ -778,10 +860,14 @@ export function HttpToolDialog({
                 id="timeout"
                 type="number"
                 value={timeout}
-                onChange={(e) => setTimeout(parseInt(e.target.value) || 30)}
+                onChange={(e) => {
+                  setTimeout(parseInt(e.target.value) || 30)
+                  setFieldErrors((prev) => clearValidationError(prev, 'timeout'))
+                }}
                 className="w-20"
                 min={1}
                 max={300}
+                aria-invalid={!!fieldErrors.timeout}
               />
               <span className="text-sm text-muted-foreground">s</span>
             </div>
@@ -800,6 +886,7 @@ export function HttpToolDialog({
                 {t('httpDialog.addParameter')}
               </Button>
             </div>
+            <FieldError>{fieldErrors.parameters}</FieldError>
             <p className="text-xs text-muted-foreground">
               {t('httpDialog.parametersHint')}
             </p>
@@ -876,7 +963,7 @@ export function HttpToolDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {tCommon('cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={isLoading || !name || !url}>
+          <Button onClick={handleSave} disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEditing ? tCommon('save') : tCommon('create')}
           </Button>

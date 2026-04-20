@@ -3,6 +3,7 @@
     "common": {
       "loading": "Loading...",
       "noData": "No data",
+      "unknown": "Unknown",
       "count": "Count",
       "percentage": "Percentage",
       "usageCount": "Usage count",

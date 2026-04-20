@@ -3,6 +3,7 @@
     "common": {
       "loading": "加载中...",
       "noData": "暂无数据",
+      "unknown": "未知",
       "count": "数量",
       "percentage": "占比",
       "usageCount": "使用次数",

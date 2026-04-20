@@ -69,6 +69,11 @@ export function MemoriesClient() {
     const commonT = useTranslations('common')
     const { canPerform } = useCanPerform()
 
+    const getEntityTypeLabel = (entityType: string) => {
+        const key = `types.${entityType}`
+        return t.has(key) ? t(key) : entityType
+    }
+
     // Data state
     const [entities, setEntities] = React.useState<MemoryEntity[]>([])
     const [isLoading, setIsLoading] = React.useState(true)
@@ -320,7 +325,7 @@ export function MemoriesClient() {
                                         <TableCell className="font-medium">{entity.name}</TableCell>
                                         <TableCell>
                                             <Badge className={getTypeBadgeColor(entity.entity_type)}>
-                                                {t(`types.${entity.entity_type}`)}
+                                                {getEntityTypeLabel(entity.entity_type)}
                                             </Badge>
                                         </TableCell>
                                         <TableCell>

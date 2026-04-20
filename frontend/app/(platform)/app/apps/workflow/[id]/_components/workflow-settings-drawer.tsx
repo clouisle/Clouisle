@@ -497,7 +497,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               {triggerType === 'webhook' && (
                 <div className="space-y-2 bg-muted/30 rounded-lg p-2.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs">Webhook URL</Label>
+                    <Label className="text-xs">{t('settings.webhookUrl')}</Label>
                     {!readOnly && (
                       <Button
                         variant="ghost"

@@ -12,8 +12,16 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2 } from 'lucide-react'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type GeneralSettings } from '@/lib/api/admin/site-settings'
 import { useSiteSettings } from '@/contexts/site-settings-context'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export default function SiteSettingsGeneralPage() {
@@ -24,6 +32,7 @@ export default function SiteSettingsGeneralPage() {
   
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<GeneralSettings>({
     site_name: 'Clouisle',
     site_description: '',
@@ -31,6 +40,21 @@ export default function SiteSettingsGeneralPage() {
     site_icon: '',
     default_language: 'en',
   })
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['site_name', 'site_description', 'site_url', 'site_icon', 'default_language']),
+    [fieldErrors]
+  )
 
   const loadSettings = React.useCallback(async () => {
     try {
@@ -49,13 +73,28 @@ export default function SiteSettingsGeneralPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.site_name.trim()) {
+      nextErrors.site_name = t('required')
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateGeneral(settings)
-      // 刷新全局站点设置
       await refreshSiteSettings()
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save settings:', error)
     } finally {
       setSaving(false)
@@ -64,6 +103,7 @@ export default function SiteSettingsGeneralPage() {
 
   const updateSetting = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => clearValidationError(prev, key))
   }
 
   if (loading) {
@@ -95,6 +135,13 @@ export default function SiteSettingsGeneralPage() {
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t('siteInfo')}</CardTitle>
@@ -109,7 +156,9 @@ export default function SiteSettingsGeneralPage() {
               value={settings.site_name}
               onChange={(e) => updateSetting('site_name', e.target.value)}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.site_name}
             />
+            <FieldError>{fieldErrors.site_name}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="siteDescription">{t('siteDescription')}</Label>
@@ -120,7 +169,9 @@ export default function SiteSettingsGeneralPage() {
               value={settings.site_description}
               onChange={(e) => updateSetting('site_description', e.target.value)}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.site_description}
             />
+            <FieldError>{fieldErrors.site_description}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="siteUrl">{t('siteUrl')}</Label>
@@ -130,7 +181,9 @@ export default function SiteSettingsGeneralPage() {
               value={settings.site_url}
               onChange={(e) => updateSetting('site_url', e.target.value)}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.site_url}
             />
+            <FieldError>{fieldErrors.site_url}</FieldError>
           </div>
         </CardContent>
       </Card>
@@ -152,6 +205,7 @@ export default function SiteSettingsGeneralPage() {
                 category="icons"
                 disabled={!canUpdate}
               />
+              <FieldError>{fieldErrors.site_icon}</FieldError>
               <p className="text-xs text-muted-foreground mt-2">{t('siteIconHint')}</p>
             </div>
           </div>
@@ -173,6 +227,7 @@ export default function SiteSettingsGeneralPage() {
                 <SelectItem value="zh">中文</SelectItem>
               </SelectContent>
             </Select>
+            <FieldError>{fieldErrors.default_language}</FieldError>
           </div>
         </CardContent>
       </Card>

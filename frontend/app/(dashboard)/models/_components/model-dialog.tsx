@@ -40,6 +40,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { cn } from '@/lib/utils'
 
 import { modelsApi, type Model, type ModelCreateInput } from '@/lib/api/admin/models'
@@ -108,6 +116,14 @@ export function ModelDialog({
 }: ModelDialogProps) {
   const t = useTranslations('models')
   const commonT = useTranslations('common')
+  const getProviderName = React.useCallback((code: string) => {
+    const key = `providers.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+  const getModelTypeName = React.useCallback((code: string) => {
+    const key = `modelTypes.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
   
   const isEditing = !!model
   
@@ -167,7 +183,40 @@ export function ModelDialog({
 
   const [isLoading, setIsLoading] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
-  
+
+  const errorPathMap = React.useMemo(() => ({
+    model_id: 'modelId',
+    model_type: 'modelType',
+    api_key: 'apiKey',
+    base_url: 'baseUrl',
+    context_length: 'contextLength',
+    max_output_tokens: 'maxOutputTokens',
+    input_price: 'inputPrice',
+    output_price: 'outputPrice',
+    api_version: 'apiVersion',
+    deployment_name: 'deploymentName',
+    'config.api_version': 'apiVersion',
+    'config.deployment_name': 'deploymentName',
+  }), [])
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(errors, [
+      'name',
+      'provider',
+      'modelId',
+      'modelType',
+      'baseUrl',
+      'apiKey',
+      'contextLength',
+      'maxOutputTokens',
+      'inputPrice',
+      'outputPrice',
+      'apiVersion',
+      'deploymentName',
+    ]),
+    [errors]
+  )
+
   // 测试状态
   const [isTesting, setIsTesting] = React.useState(false)
   const [testResult, setTestResult] = React.useState<{
@@ -277,25 +326,28 @@ export function ModelDialog({
   
   // 测试模型配置
   const handleTestConnection = async () => {
-    // 验证必填字段
-    if (
-      !provider ||
-      !modelId.trim() ||
-      !modelType ||
-      (requiresApiKey(provider) && !apiKey.trim())
-    ) {
-      toast.error(t('fillRequiredFieldsFirst'))
+    const newErrors: Record<string, string> = {}
+    if (!provider) newErrors.provider = t('providerRequired')
+    if (!modelId.trim()) newErrors.modelId = t('modelIdRequired')
+    if (!modelType) newErrors.modelType = t('modelTypeRequired')
+    if (requiresApiKey(provider) && !apiKey.trim()) {
+      newErrors.apiKey = t('apiKeyRequired')
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...newErrors }))
+      setTestResult(null)
       return
     }
-    
+
     setIsTesting(true)
     setTestResult(null)
-    
+
     try {
       const config: Record<string, unknown> = {}
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
-      
+
       const result = await modelsApi.testModelConfig({
         provider,
         model_id: modelId.trim(),
@@ -304,15 +356,22 @@ export function ModelDialog({
         api_key: apiKey || null,
         config: Object.keys(config).length > 0 ? config : null,
       })
-      
-      setTestResult(result)
-      
+
+      setTestResult({
+        ...result,
+        message: result.message ? result.message.trim() : t('testFailed'),
+      })
+
       if (result.success) {
         toast.success(t('testSuccess'))
       } else {
-        toast.error(result.message)
+        toast.error(result.message ? result.message.trim() : t('testFailed'))
       }
-    } catch {
+    } catch (error) {
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors((prev) => ({ ...prev, ...validationErrors }))
+      }
       setTestResult({
         success: false,
         message: t('testFailed'),
@@ -324,7 +383,8 @@ export function ModelDialog({
   
   const handleProviderChange = (value: string) => {
     setProvider(value)
-    setTestResult(null) // 重置测试结果
+    setErrors((prev) => clearValidationError(prev, 'provider'))
+    setTestResult(null)
     if (!baseUrl) {
       const providerInfo = providers.find(p => p.code === value)
       if (providerInfo?.base_url) setBaseUrl(providerInfo.base_url)
@@ -334,6 +394,7 @@ export function ModelDialog({
   const handleModelTypeChange = (value: string | null) => {
     if (value) {
       setModelType(value)
+      setErrors((prev) => clearValidationError(prev, 'modelType'))
       const newCategory = getModelCategory(value)
       const currentCategory = getModelCategory(modelType)
       if (newCategory !== currentCategory) {
@@ -479,8 +540,11 @@ export function ModelDialog({
       
       onOpenChange(false)
       onSuccess()
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -504,28 +568,32 @@ export function ModelDialog({
           <Input
             id="name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value)
+              setErrors((prev) => clearValidationError(prev, 'name'))
+            }}
             placeholder={t('modelNamePlaceholder')}
+            aria-invalid={!!errors.name}
           />
-          {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+          <FieldError>{errors.name}</FieldError>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>{t('modelType')} *</Label>
             <Select value={modelType} onValueChange={handleModelTypeChange} disabled={isEditing}>
-              <SelectTrigger>
-                <SelectValue>{modelType ? t(`modelTypes.${modelType}`) : t('selectModelType')}</SelectValue>
+              <SelectTrigger aria-invalid={!!errors.modelType}>
+                <SelectValue>{modelType ? getModelTypeName(modelType) : t('selectModelType')}</SelectValue>
               </SelectTrigger>
               <SelectContent side="bottom" alignItemWithTrigger={false}>
                 {modelTypes.map((mt) => (
                   <SelectItem key={mt.code} value={mt.code}>
-                    {t(`modelTypes.${mt.code}`)}
+                    {getModelTypeName(mt.code)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.modelType && <p className="text-sm text-destructive">{errors.modelType}</p>}
+            <FieldError>{errors.modelType}</FieldError>
           </div>
           
           <div className="space-y-2">
@@ -545,7 +613,7 @@ export function ModelDialog({
                     )}
                     disabled={isEditing || !modelType}
                   >
-                    {provider ? t(`providers.${provider}`) : t('selectProvider')}
+                    {provider ? getProviderName(provider) : t('selectProvider')}
                     <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -578,12 +646,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -615,12 +683,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -652,12 +720,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -667,7 +735,7 @@ export function ModelDialog({
                 </div>
               </PopoverContent>
             </Popover>
-            {errors.provider && <p className="text-sm text-destructive">{errors.provider}</p>}
+            <FieldError>{errors.provider}</FieldError>
             {!modelType && <p className="text-xs text-muted-foreground">{t('selectModelTypeFirst')}</p>}
           </div>
         </div>
@@ -677,11 +745,15 @@ export function ModelDialog({
           <Input
             id="modelId"
             value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
+            onChange={(e) => {
+              setModelId(e.target.value)
+              setErrors((prev) => clearValidationError(prev, 'modelId'))
+            }}
             placeholder={t('modelIdPlaceholder')}
             disabled={isEditing}
+            aria-invalid={!!errors.modelId}
           />
-          {errors.modelId && <p className="text-sm text-destructive">{errors.modelId}</p>}
+          <FieldError>{errors.modelId}</FieldError>
         </div>
       </div>
       
@@ -695,9 +767,14 @@ export function ModelDialog({
             <Input
               id="baseUrl"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e) => {
+                setBaseUrl(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'baseUrl'))
+              }}
               placeholder={t('baseUrlPlaceholder')}
+              aria-invalid={!!errors.baseUrl}
             />
+            <FieldError>{errors.baseUrl}</FieldError>
             <p className="text-xs text-muted-foreground">{t('baseUrlHint')}</p>
           </div>
           
@@ -710,9 +787,14 @@ export function ModelDialog({
                 id="apiKey"
                 type={showApiKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => { setApiKey(e.target.value); setTestResult(null) }}
+                onChange={(e) => {
+                  setApiKey(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'apiKey'))
+                  setTestResult(null)
+                }}
                 placeholder={isEditing ? t('apiKeyPlaceholderEdit') : t('apiKeyPlaceholder')}
                 className="pr-10"
+                aria-invalid={!!errors.apiKey}
               />
               <Button
                 type="button"
@@ -724,7 +806,7 @@ export function ModelDialog({
                 {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            {errors.apiKey && <p className="text-sm text-destructive">{errors.apiKey}</p>}
+            <FieldError>{errors.apiKey}</FieldError>
             {isEditing && model?.has_api_key && !errors.apiKey && (
               <p className="text-xs text-muted-foreground">{t('apiKeyConfigured')}</p>
             )}
@@ -945,9 +1027,14 @@ export function ModelDialog({
               id="contextLength"
               type="number"
               value={contextLength}
-              onChange={(e) => setContextLength(e.target.value)}
+              onChange={(e) => {
+                setContextLength(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'contextLength'))
+              }}
               placeholder="128000"
+              aria-invalid={!!errors.contextLength}
             />
+            <FieldError>{errors.contextLength}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="maxOutputTokens">{t('maxOutputTokens')}</Label>
@@ -955,9 +1042,14 @@ export function ModelDialog({
               id="maxOutputTokens"
               type="number"
               value={maxOutputTokens}
-              onChange={(e) => setMaxOutputTokens(e.target.value)}
+              onChange={(e) => {
+                setMaxOutputTokens(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'maxOutputTokens'))
+              }}
               placeholder="4096"
+              aria-invalid={!!errors.maxOutputTokens}
             />
+            <FieldError>{errors.maxOutputTokens}</FieldError>
           </div>
         </div>
       </div>
@@ -972,9 +1064,14 @@ export function ModelDialog({
               type="number"
               step="0.000001"
               value={inputPrice}
-              onChange={(e) => setInputPrice(e.target.value)}
+              onChange={(e) => {
+                setInputPrice(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'inputPrice'))
+              }}
               placeholder="0.0"
+              aria-invalid={!!errors.inputPrice}
             />
+            <FieldError>{errors.inputPrice}</FieldError>
             <p className="text-xs text-muted-foreground">{t('priceUnit')}</p>
           </div>
           <div className="space-y-2">
@@ -984,9 +1081,14 @@ export function ModelDialog({
               type="number"
               step="0.000001"
               value={outputPrice}
-              onChange={(e) => setOutputPrice(e.target.value)}
+              onChange={(e) => {
+                setOutputPrice(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'outputPrice'))
+              }}
               placeholder="0.0"
+              aria-invalid={!!errors.outputPrice}
             />
+            <FieldError>{errors.outputPrice}</FieldError>
             <p className="text-xs text-muted-foreground">{t('priceUnit')}</p>
           </div>
         </div>
@@ -1168,18 +1270,28 @@ export function ModelDialog({
               <Input
                 id="apiVersion"
                 value={apiVersion}
-                onChange={(e) => setApiVersion(e.target.value)}
+                onChange={(e) => {
+                  setApiVersion(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'apiVersion'))
+                }}
                 placeholder="2024-02-01"
+                aria-invalid={!!errors.apiVersion}
               />
+              <FieldError>{errors.apiVersion}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="deploymentName">{t('deploymentName')}</Label>
               <Input
                 id="deploymentName"
                 value={deploymentName}
-                onChange={(e) => setDeploymentName(e.target.value)}
+                onChange={(e) => {
+                  setDeploymentName(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'deploymentName'))
+                }}
                 placeholder={t('deploymentNamePlaceholder')}
+                aria-invalid={!!errors.deploymentName}
               />
+              <FieldError>{errors.deploymentName}</FieldError>
             </div>
           </div>
         </div>
@@ -1198,6 +1310,16 @@ export function ModelDialog({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           {showTabs ? (
             <Tabs defaultValue="basic" className="w-full">
               <TabsList className={`grid w-full grid-cols-${tabCount}`}>

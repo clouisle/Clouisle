@@ -4,6 +4,9 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { teamsApi, type Team } from '@/lib/api/admin'
+import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ImageUpload } from '@/components/ui/image-upload'
+import { FieldError } from '@/components/ui/field'
 
 interface TeamDialogProps {
   open: boolean
@@ -38,6 +42,7 @@ export function TeamDialog({
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
   const [avatarUrl, setAvatarUrl] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = React.useState(false)
 
   // 重置表单
@@ -52,6 +57,7 @@ export function TeamDialog({
         setDescription('')
         setAvatarUrl('')
       }
+      setFieldErrors({})
     }
   }, [open, team])
 
@@ -59,6 +65,7 @@ export function TeamDialog({
     e.preventDefault()
     if (!name.trim()) return
 
+    setFieldErrors({})
     setIsLoading(true)
     try {
       const payload = {
@@ -77,12 +84,20 @@ export function TeamDialog({
 
       onOpenChange(false)
       onSuccess?.()
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsLoading(false)
     }
   }
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['name', 'description', 'avatar_url']),
+    [fieldErrors]
+  )
 
   const getTeamInitials = (teamName: string) => {
     if (!teamName) return '?'
@@ -102,12 +117,24 @@ export function TeamDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           {/* 头像上传 */}
           <div className="flex flex-col items-center gap-2">
             <Label>{t('avatar')}</Label>
             <ImageUpload
               value={avatarUrl}
-              onChange={setAvatarUrl}
+              onChange={(value) => {
+                setAvatarUrl(value)
+                setFieldErrors((prev) => clearValidationError(prev, 'avatar_url'))
+              }}
               previewSize="lg"
               category="avatars"
               placeholder={
@@ -117,6 +144,7 @@ export function TeamDialog({
               }
             />
             <p className="text-xs text-muted-foreground">{t('avatarHint')}</p>
+            <FieldError>{fieldErrors.avatar_url}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -124,10 +152,15 @@ export function TeamDialog({
             <Input
               id="name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'name'))
+              }}
               placeholder={t('teamNamePlaceholder')}
               required
+              aria-invalid={!!fieldErrors.name}
             />
+            <FieldError>{fieldErrors.name}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -135,11 +168,16 @@ export function TeamDialog({
             <Textarea
               id="description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'description'))
+              }}
               placeholder={t('teamDescriptionPlaceholder')}
               className="resize-none"
               rows={3}
+              aria-invalid={!!fieldErrors.description}
             />
+            <FieldError>{fieldErrors.description}</FieldError>
           </div>
 
           <DialogFooter>

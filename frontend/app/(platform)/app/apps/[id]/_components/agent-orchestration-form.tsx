@@ -430,7 +430,10 @@ export function AgentOrchestrationForm({
             onChange={setSystemPrompt}
             variables={variables}
             onAddVariable={(name, type) => {
-              const newVar = createNewVariable(type, variables)
+              const newVar = createNewVariable(type, variables, [
+                t('variables.defaultOptions.option1'),
+                t('variables.defaultOptions.option2'),
+              ])
               newVar.name = name
               newVar.label = name
               setVariables([...variables, newVar])
@@ -465,7 +468,10 @@ export function AgentOrchestrationForm({
         action={
           <AddVariableButton
             onAdd={(type) => {
-              const newVar = createNewVariable(type, variables)
+              const newVar = createNewVariable(type, variables, [
+                t('variables.defaultOptions.option1'),
+                t('variables.defaultOptions.option2'),
+              ])
               const newVariables = [...variables, newVar]
               setVariables(newVariables)
               setVariableEditingIndex(newVariables.length - 1)

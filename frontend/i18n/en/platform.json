@@ -99,6 +99,10 @@
         }
       },
       "recentItems": "Recent Items",
+      "recentItemTypes": {
+        "agent": "Agent",
+        "workflow": "Workflow"
+      },
       "noRecentItems": "No recent items yet",
       "createFirst": "Create Your First App",
       "quickStart": "Quick Start",
@@ -177,6 +181,7 @@
       "toolDeleted": "Tool deleted successfully",
       "configSaved": "Configuration saved successfully",
       "configSaveFailed": "Failed to save configuration",
+      "selectTeam": "Select Team",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
       "filters": {
@@ -205,6 +210,8 @@
         "name": "Name",
         "nameHint": "Unique identifier, cannot be changed after creation",
         "displayName": "Display Name",
+        "displayNamePlaceholder": "Enter display name",
+        "displayNameRequired": "Display name is required",
         "description": "Description",
         "descriptionPlaceholder": "Describe what this tool does",
         "icon": "Icon",
@@ -213,6 +220,7 @@
         "httpConfig": "HTTP Configuration",
         "httpMethod": "Method",
         "url": "URL",
+        "urlRequired": "URL is required",
         "urlHint": "Supports {{variable}} placeholders",
         "timeout": "Timeout (s)",
         "advancedSettings": "Advanced Settings",
@@ -232,7 +240,9 @@
       },
       "configDialog": {
         "title": "Configure {name}",
-        "description": "Set up API keys and credentials for this tool"
+        "description": "Set up API keys and credentials for this tool",
+        "tavilyApiKeyLabel": "Tavily API Key",
+        "tavilyApiKeyDescription": "Get your API key from Tavily"
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",
@@ -246,6 +256,7 @@
         "contentType": "Content Type",
         "bodyTemplate": "Body Template",
         "bodyTemplateHint": "Use '{{variable}}' as placeholders",
+        "multipartFormData": "multipart/form-data (File Upload)",
         "formFields": "Form Fields",
         "formFieldsHint": "Configure multipart/form-data form fields. File fields reference file-type parameters",
         "fieldName": "Field Name",
@@ -260,7 +271,13 @@
         "paramName": "Parameter name",
         "paramDescription": "Description (optional)",
         "required": "Required",
-        "variableCompletion": "Parameter suggestions"
+        "variableCompletion": "Parameter suggestions",
+        "toolNamePlaceholder": "my_api_tool",
+        "urlPlaceholder": "https://api.example.com/{{id}}/data",
+        "keyPlaceholder": "Key",
+        "headerValuePlaceholder": "{{token}}",
+        "queryValuePlaceholder": "{{query}}",
+        "bodyTemplatePlaceholder": "{\"key\": \"{{value}}\"}"
       },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
@@ -290,7 +307,19 @@
         "toolsLoaded": "Loaded {count} tools",
         "fetchToolsFailed": "Failed to fetch tools, please check the configuration",
         "commandRequired": "Please enter a command",
-        "urlRequired": "Please enter server URL"
+        "urlRequired": "Please enter server URL",
+        "serverNamePlaceholder": "my_mcp_server",
+        "commandPlaceholder": "npx",
+        "argumentPlaceholder": "arg {index}",
+        "headerKeyPlaceholder": "KEY",
+        "headerValuePlaceholder": "value",
+        "sseUrlPlaceholder": "http://localhost:3000/sse",
+        "headerNamePlaceholder": "Header-Name",
+        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+      },
+      "testPanel": {
+        "arrayPlaceholder": "[\"item1\", \"item2\"]",
+        "objectPlaceholder": "{\"key\": \"value\"}"
       },
       "codeEditor": {
         "newTitle": "New Code Tool",
@@ -347,12 +376,25 @@
         "artifactDescription": "Description",
         "artifactOptional": "Optional",
         "invalidArtifactPath": "Artifact path \"{value}\" must stay under /workspace",
-        "artifactsLabel": "Artifacts"
+        "artifactsLabel": "Artifacts",
+        "executionFailed": "Execution failed",
+        "languageJavaScript": "JavaScript",
+        "languagePython": "Python",
+        "paramTypeString": "String",
+        "paramTypeNumber": "Number",
+        "paramTypeInteger": "Integer",
+        "paramTypeBoolean": "Boolean",
+        "paramTypeArray": "Array",
+        "paramTypeObject": "Object",
+        "defaultInputDescription": "Input content"
       },
       "error": {
         "loadFailed": "Failed to load tool",
         "saveFailed": "Failed to save",
         "nameRequired": "Tool name is required",
+        "unknownToolType": "Unknown tool type",
+        "cannotDeleteBuiltin": "Cannot delete built-in tools",
+        "cannotShareBuiltin": "Cannot share built-in tools",
         "noTeamSelected": "No team selected",
         "invalidName": "Tool name must start with a letter and contain only letters, numbers, and underscores",
         "duplicateParamName": "Parameter names must be unique"

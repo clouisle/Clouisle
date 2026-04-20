@@ -34,14 +34,15 @@ interface CodeNodeConfigProps {
   onAddInput: () => void
 }
 
-// 输出变量类型选项
-const outputTypeOptions: { value: OutputVariableType; label: string }[] = [
-  { value: 'string', label: 'String' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Boolean' },
-  { value: 'array', label: 'Array' },
-  { value: 'object', label: 'Object' },
-]
+function getOutputTypeOptions(t: ReturnType<typeof useTranslations<'workflow'>>): { value: OutputVariableType; label: string }[] {
+  return [
+    { value: 'string', label: t('dialogs.parameterEdit.typeText') },
+    { value: 'number', label: t('dialogs.parameterEdit.typeNumber') },
+    { value: 'boolean', label: t('varTypes.boolean') },
+    { value: 'array', label: t('dialogs.parameterEdit.typeArray') },
+    { value: 'object', label: t('dialogs.parameterEdit.typeObject') },
+  ]
+}
 
 // 异常处理类型选项
 function getErrorHandlingOptions(t: ReturnType<typeof useTranslations<'workflow'>>): { value: ErrorHandlingType; label: string; description: string }[] {
@@ -60,6 +61,7 @@ export function CodeNodeConfig({
   const t = useTranslations('workflow')
   const [retryOpen, setRetryOpen] = React.useState(config.retry?.enabled || false)
   const errorHandlingOptions = getErrorHandlingOptions(t)
+  const outputTypeOptions = getOutputTypeOptions(t)
 
   // 确保 config 有默认值
   const safeConfig: CodeConfig = {

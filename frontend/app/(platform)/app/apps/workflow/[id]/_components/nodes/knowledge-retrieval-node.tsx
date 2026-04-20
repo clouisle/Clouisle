@@ -92,7 +92,7 @@ export function KnowledgeRetrievalNode({ selected, data }: KnowledgeRetrievalNod
 
             {/* 配置参数 */}
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-              <span>Top {config.topK}</span>
+              <span>{t('configKnowledgeRetrieval.topKCompact', { count: config.topK })}</span>
               <span>•</span>
               <span>{t('configKnowledgeRetrieval.threshold')}: {config.threshold.toFixed(1)}</span>
             </div>

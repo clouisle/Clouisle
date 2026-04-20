@@ -265,7 +265,7 @@ export function VariableAssignmentNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateAssignment(assignment.id, {
                             variableRef: `{{${variable.id}}}`,
-                            variableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            variableRefNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')

@@ -253,11 +253,6 @@ export function PlatformHeader() {
                     {effectiveHeaderVariant !== 'minimal' && (
                       <span>{t(`nav.${item.key}`)}</span>
                     )}
-                    {item.key === 'notifications' && unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
                   </Button>
                 </Link>
               )
@@ -403,11 +398,6 @@ export function PlatformHeader() {
                   >
                     <Icon className="size-4" />
                     <span>{t(`nav.${item.key}`)}</span>
-                    {item.key === 'notifications' && unreadCount > 0 && (
-                      <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
                   </Button>
                 </Link>
               )

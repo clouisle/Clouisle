@@ -5,6 +5,14 @@ import { useTranslations } from 'next-intl'
 import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,6 +35,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { FieldError } from '@/components/ui/field'
 import {
   ToolCreateInput,
   ToolUpdateInput,
@@ -61,6 +70,15 @@ interface Header {
 
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
+const MCP_TOOL_ERROR_PATH_MAP = {
+  display_name: 'displayName',
+  'mcp_config.command': 'command',
+  'mcp_config.url': 'url',
+  'mcp_config.headers': 'headers',
+  'mcp_config.args': 'args',
+  'mcp_config.env': 'env',
+} as const
+
 export function McpToolDialog({
   tool,
   open,
@@ -80,7 +98,7 @@ export function McpToolDialog({
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
   const [isEnabled, setIsEnabled] = useState(true)
-  const [nameError, setNameError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // 传输类型
   const [transportType, setTransportType] = useState<McpTransportType>('stdio')
@@ -116,7 +134,8 @@ export function McpToolDialog({
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
         setIsEnabled(tool.is_enabled)
-        setNameError('')
+        setFieldErrors({})
+        setFieldErrors({})
 
         if (tool.mcp_config) {
           const transport = tool.mcp_config.transport || 'stdio'
@@ -152,7 +171,7 @@ export function McpToolDialog({
         setDisplayName('')
         setIcon('')
         setIsEnabled(true)
-        setNameError('')
+        setFieldErrors({})
         setTransportType('stdio')
         setCommand('')
         setArgs([''])
@@ -196,17 +215,21 @@ export function McpToolDialog({
   // 获取 MCP 工具列表
   const handleFetchTools = async () => {
     const config = buildMcpConfig()
-    
-    // 验证配置
-    if (transportType === 'stdio' && !command) {
-      toast.error(t('mcpDialog.commandRequired'))
-      return
+    const nextErrors: Record<string, string> = {}
+
+    if (transportType === 'stdio' && !command.trim()) {
+      nextErrors.command = t('mcpDialog.commandRequired')
     }
-    if ((transportType === 'sse' || transportType === 'http') && !url) {
-      toast.error(t('mcpDialog.urlRequired'))
+    if ((transportType === 'sse' || transportType === 'http') && !url.trim()) {
+      nextErrors.url = t('mcpDialog.urlRequired')
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
       return
     }
 
+    setFieldErrors({})
     setIsLoadingTools(true)
     try {
       const response = await toolsApi.listMcpTools(config)
@@ -220,6 +243,10 @@ export function McpToolDialog({
       }
     } catch (error) {
       console.error('Failed to fetch MCP tools:', error)
+      const errors = mapValidationErrors(normalizeValidationErrors(error), MCP_TOOL_ERROR_PATH_MAP)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       setMcpTools([])
       setToolsLoaded(false)
     } finally {
@@ -228,12 +255,22 @@ export function McpToolDialog({
   }
 
   const handleSave = async () => {
-    if (!TOOL_NAME_PATTERN.test(name.trim())) {
-      setNameError(t('error.invalidName'))
+    const nextErrors: Record<string, string> = {}
+    if (!name.trim()) {
+      nextErrors.name = t('error.nameRequired')
+    } else if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      nextErrors.name = t('error.invalidName')
+    }
+    if (!displayName.trim()) nextErrors.displayName = t('form.displayNameRequired')
+    if (transportType === 'stdio' && !command.trim()) nextErrors.command = t('mcpDialog.commandRequired')
+    if ((transportType === 'sse' || transportType === 'http') && !url.trim()) nextErrors.url = t('mcpDialog.urlRequired')
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
       return
     }
 
-    setNameError('')
+    setFieldErrors({})
 
     setIsLoading(true)
     try {
@@ -256,16 +293,20 @@ export function McpToolDialog({
       }
 
       await onSave(data)
+    } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), MCP_TOOL_ERROR_PATH_MAP)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      } else {
+        throw error
+      }
     } finally {
       setIsLoading(false)
     }
   }
 
   // 判断是否可以连接
-  const canConnect = transportType === 'stdio' ? !!command : !!url
-  
-  // 判断是否可以保存
-  const canSave = name && canConnect
+  const canConnect = transportType === 'stdio' ? !!command.trim() : !!url.trim()
 
   const addArg = () => {
     setArgs([...args, ''])
@@ -281,6 +322,7 @@ export function McpToolDialog({
     const newArgs = [...args]
     newArgs[index] = value
     setArgs(newArgs)
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'args'), 'args'))
   }
 
   const addEnvVar = () => {
@@ -297,6 +339,7 @@ export function McpToolDialog({
     const newEnvVars = [...envVars]
     newEnvVars[index][field] = value
     setEnvVars(newEnvVars)
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'env'), 'env'))
   }
 
   // Header 操作
@@ -314,7 +357,10 @@ export function McpToolDialog({
     const newHeaders = [...headers]
     newHeaders[index][field] = value
     setHeaders(newHeaders)
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(clearValidationError(prev, 'headers'), 'headers'))
   }
+
+  const summaryEntries = getValidationSummaryEntries(fieldErrors, ['name', 'displayName', 'command', 'url', 'headers', 'args', 'env'])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -329,6 +375,15 @@ export function McpToolDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
             {!isEditing && onSelectedTeamChange && teams.length > 0 && (
@@ -354,25 +409,30 @@ export function McpToolDialog({
               <Label htmlFor="name">{t('form.name')}</Label>
               <Input
                 id="name"
-                placeholder="my_mcp_server"
+                placeholder={t('mcpDialog.serverNamePlaceholder')}
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value)
-                  if (nameError) setNameError('')
+                  setFieldErrors((prev) => clearValidationError(prev, 'name'))
                 }}
                 disabled={isEditing}
-                aria-invalid={!!nameError}
+                aria-invalid={!!fieldErrors.name}
               />
-              {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+              <FieldError>{fieldErrors.name}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="displayName">{t('form.displayName')}</Label>
               <Input
                 id="displayName"
-                placeholder="My MCP Server"
+                placeholder={t('form.displayNamePlaceholder')}
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={(e) => {
+                  setDisplayName(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'displayName'))
+                }}
+                aria-invalid={!!fieldErrors.displayName}
               />
+              <FieldError>{fieldErrors.displayName}</FieldError>
             </div>
           </div>
 
@@ -434,11 +494,18 @@ export function McpToolDialog({
                   <Label htmlFor="command">{t('mcpDialog.command')}</Label>
                   <Input
                     id="command"
-                    placeholder="npx"
+                    placeholder={t('mcpDialog.commandPlaceholder')}
                     value={command}
-                    onChange={(e) => setCommand(e.target.value)}
+                    onChange={(e) => {
+                      setCommand(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'command'))
+                    }}
                     className="font-mono"
+                    aria-invalid={!!fieldErrors.command}
                   />
+                  <FieldError>{fieldErrors.command}</FieldError>
+                  <FieldError>{fieldErrors.args}</FieldError>
+                  <FieldError>{fieldErrors.env}</FieldError>
                 </div>
 
                 {/* Arguments */}
@@ -448,7 +515,7 @@ export function McpToolDialog({
                     {args.map((arg, index) => (
                       <div key={index} className="flex gap-2">
                         <Input
-                          placeholder={`arg ${index + 1}`}
+                          placeholder={t('mcpDialog.argumentPlaceholder', { index: index + 1 })}
                           value={arg}
                           onChange={(e) => updateArg(index, e.target.value)}
                           className="flex-1 font-mono"
@@ -480,13 +547,13 @@ export function McpToolDialog({
                     {envVars.map((envVar, index) => (
                       <div key={index} className="flex gap-2">
                         <Input
-                          placeholder="KEY"
+                          placeholder={t('mcpDialog.headerKeyPlaceholder')}
                           value={envVar.key}
                           onChange={(e) => updateEnvVar(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
                         <Input
-                          placeholder="value"
+                          placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={envVar.value}
                           onChange={(e) => updateEnvVar(index, 'value', e.target.value)}
                           className="flex-1 font-mono"
@@ -517,11 +584,17 @@ export function McpToolDialog({
                   <Label htmlFor="url">{t('mcpDialog.url')}</Label>
                   <Input
                     id="url"
-                    placeholder="http://localhost:3000/sse"
+                    placeholder={t('mcpDialog.sseUrlPlaceholder')}
                     value={url}
-                    onChange={(e) => setUrl(e.target.value)}
+                    onChange={(e) => {
+                      setUrl(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'url'))
+                    }}
                     className="font-mono"
+                    aria-invalid={!!fieldErrors.url}
                   />
+                  <FieldError>{fieldErrors.url}</FieldError>
+                  <FieldError>{fieldErrors.headers}</FieldError>
                   <p className="text-xs text-muted-foreground">
                     {t('mcpDialog.sseUrlHint')}
                   </p>
@@ -534,13 +607,13 @@ export function McpToolDialog({
                     {headers.map((header, index) => (
                       <div key={index} className="flex gap-2">
                         <Input
-                          placeholder="Header-Name"
+                          placeholder={t('mcpDialog.headerNamePlaceholder')}
                           value={header.key}
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
                         <Input
-                          placeholder="value"
+                          placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
                           onChange={(e) => updateHeader(index, 'value', e.target.value)}
                           className="flex-1 font-mono"
@@ -571,11 +644,17 @@ export function McpToolDialog({
                   <Label htmlFor="http-url">{t('mcpDialog.url')}</Label>
                   <Input
                     id="http-url"
-                    placeholder="http://localhost:3000/mcp"
+                    placeholder={t('mcpDialog.httpUrlPlaceholder')}
                     value={url}
-                    onChange={(e) => setUrl(e.target.value)}
+                    onChange={(e) => {
+                      setUrl(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'url'))
+                    }}
                     className="font-mono"
+                    aria-invalid={!!fieldErrors.url}
                   />
+                  <FieldError>{fieldErrors.url}</FieldError>
+                  <FieldError>{fieldErrors.headers}</FieldError>
                   <p className="text-xs text-muted-foreground">
                     {t('mcpDialog.httpUrlHint')}
                   </p>
@@ -588,13 +667,13 @@ export function McpToolDialog({
                     {headers.map((header, index) => (
                       <div key={index} className="flex gap-2">
                         <Input
-                          placeholder="Header-Name"
+                          placeholder={t('mcpDialog.headerNamePlaceholder')}
                           value={header.key}
                           onChange={(e) => updateHeader(index, 'key', e.target.value)}
                           className="flex-1 font-mono"
                         />
                         <Input
-                          placeholder="value"
+                          placeholder={t('mcpDialog.headerValuePlaceholder')}
                           value={header.value}
                           onChange={(e) => updateHeader(index, 'value', e.target.value)}
                           className="flex-1 font-mono"
@@ -680,7 +759,7 @@ export function McpToolDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {tCommon('cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={isLoading || !canSave}>
+          <Button onClick={handleSave} disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEditing ? tCommon('save') : tCommon('create')}
           </Button>

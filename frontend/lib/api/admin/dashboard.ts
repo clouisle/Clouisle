@@ -89,7 +89,7 @@ function normalizeModelDistribution(data: unknown): ModelDistribution[] {
       const percentageValue = Number(record.percentage ?? 0)
 
       return {
-        model: String(record.model ?? record.model_name ?? record.model_used ?? 'Unknown'),
+        model: String(record.model ?? record.model_name ?? record.model_used ?? '').trim(),
         count,
         percentage: Number.isFinite(percentageValue)
           ? percentageValue > 0 && percentageValue <= 1

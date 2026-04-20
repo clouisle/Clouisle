@@ -212,7 +212,7 @@ export function QuestionClassifierNodeConfig({
                           onConfigChange({
                             ...safeConfig,
                             sourceVariable: `{{${variable.id}}}`,
-                            sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            sourceNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')

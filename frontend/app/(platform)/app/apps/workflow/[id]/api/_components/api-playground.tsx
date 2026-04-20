@@ -12,6 +12,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { FieldError } from '@/components/ui/field'
+import { ApiError, getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { type VariableDefinition } from '@/lib/api/workflows'
 
 interface ApiPlaygroundProps {
@@ -41,12 +50,36 @@ interface WorkflowEvent {
   timestamp: number
 }
 
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function resolveWorkflowUiError(message: unknown, fallback: string): string {
+  if (typeof message !== 'string') return fallback
+
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return fallback
+  if (isLikelyMessageKey(trimmed)) return fallback
+  if (
+    trimmed.includes('\n')
+    || trimmed.includes('Traceback')
+    || trimmed.includes('Exception')
+    || trimmed.includes('HTTP ')
+    || trimmed.includes('Failed to fetch')
+  ) {
+    return fallback
+  }
+
+  return trimmed
+}
+
 export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
   const t = useTranslations('workflow')
   const [apiKey, setApiKey] = React.useState('')
   const [input, setInput] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [runId, setRunId] = React.useState<string | null>(null)
   const [events, setEvents] = React.useState<WorkflowEvent[]>([])
   const [status, setStatus] = React.useState<'idle' | 'running' | 'completed' | 'failed'>('idle')
@@ -98,21 +131,60 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
     }
   }, [events])
 
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['apiKey', 'input']),
+    [fieldErrors]
+  )
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      variables.flatMap((variable) => [
+        [variable.name, 'input'],
+        [`inputs.${variable.name}`, 'input'],
+      ])
+    ),
+    [variables]
+  )
+
+  const updateApiKey = React.useCallback((value: string) => {
+    setApiKey(value)
+    setFieldErrors((prev) => clearValidationError(prev, 'apiKey'))
+  }, [])
+
+  const updateInput = React.useCallback((value: string) => {
+    setInput(value)
+    setFieldErrors((prev) => clearValidationError(prev, 'input'))
+  }, [])
+
   const handleTest = async () => {
+    const nextFieldErrors: Record<string, string> = {}
+
+    if (!apiKey.trim()) {
+      nextFieldErrors.apiKey = t('required')
+    }
+
+    let parsedInput: unknown
+    try {
+      parsedInput = JSON.parse(input)
+    } catch {
+      nextFieldErrors.input = t('invalidJSON')
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors)
+      setError(null)
+      setStatus('idle')
+      return
+    }
+
     setLoading(true)
     setError(null)
+    setFieldErrors({})
     setEvents([])
     setRunId(null)
     setStatus('idle')
 
     try {
-      // Validate JSON
-      let parsedInput
-      try {
-        parsedInput = JSON.parse(input)
-      } catch {
-        throw new Error('Invalid JSON format')
-      }
 
       // Trigger workflow
       const response = await fetch(webhookUrl, {
@@ -134,7 +206,19 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.msg || 'Request failed')
+        const apiError = new ApiError(
+          result.code || response.status,
+          resolveWorkflowUiError(result.msg, getApiErrorMessage('requestFailed')),
+          result.data,
+        )
+        const validationErrors = mapValidationErrors(normalizeValidationErrors(apiError), errorPathMap)
+        if (Object.keys(validationErrors).length > 0) {
+          setFieldErrors(validationErrors)
+          setStatus('failed')
+          setLoading(false)
+          return
+        }
+        throw apiError
       }
 
       // Extract run_id and start SSE connection
@@ -184,7 +268,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
           } else if (data.event === 'workflow_error') {
             console.log('Workflow error')
             setStatus('failed')
-            setError(data.data?.error || 'Workflow execution failed')
+            setError(resolveWorkflowUiError(data.data?.error, t('runDrawer.executionFailed')))
             eventSource.close()
             setLoading(false)
           }
@@ -217,7 +301,7 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
           console.log('Showing error because workflow did not complete')
           setLoading(false)
           setStatus('failed')
-          setError('Connection to workflow stream lost')
+          setError(t('runDrawer.streamConnectionFailed'))
         } else {
           console.log('Workflow completed normally, not showing error')
           // Normal completion, just stop loading
@@ -226,8 +310,14 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
       }
 
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred'
-      setError(errorMessage)
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(err), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setFieldErrors(validationErrors)
+      }
+      const errorMessage = err instanceof Error
+        ? resolveWorkflowUiError(err.message, t('runDrawer.unknownError'))
+        : t('runDrawer.unknownError')
+      setError(Object.keys(validationErrors).length > 0 ? null : errorMessage)
       setStatus('failed')
       setLoading(false)
     }
@@ -308,7 +398,9 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                 <span className="text-red-600 font-medium">{t('apiPlayground.workflowFailed')}</span>
               </div>
               {data?.data?.error && (
-                <div className="ml-5 text-xs text-red-600">{data.data.error}</div>
+                <div className="ml-5 text-xs text-red-600">
+                  {resolveWorkflowUiError(data.data.error, t('runDrawer.executionFailed'))}
+                </div>
               )}
             </div>
           </div>
@@ -356,7 +448,9 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                 <span className="text-red-600 text-xs">{data?.data?.node_label || data?.node_id}</span>
               </div>
               {data?.data?.error && (
-                <div className="ml-5 text-xs text-red-600">{data.data.error}</div>
+                <div className="ml-5 text-xs text-red-600">
+                  {resolveWorkflowUiError(data.data.error, t('runDrawer.executionFailed'))}
+                </div>
               )}
             </div>
           </div>
@@ -424,6 +518,15 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
             <CardDescription>{t('requestBodyDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="api-key">{t('apiKey')}</Label>
@@ -438,26 +541,30 @@ export function ApiPlayground({ webhookUrl, variables }: ApiPlaygroundProps) {
                 id="api-key"
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                onChange={(e) => updateApiKey(e.target.value)}
                 placeholder="clou_xxxxxxxxxxxxx"
                 disabled={loading}
+                aria-invalid={!!fieldErrors.apiKey}
               />
               <p className="text-xs text-muted-foreground">
                 {t('apiKeyRequired')}
               </p>
+              {fieldErrors.apiKey && <FieldError>{fieldErrors.apiKey}</FieldError>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="request-body">{t('requestBody')}</Label>
               <Textarea
                 id="request-body"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => updateInput(e.target.value)}
                 placeholder="{}"
                 className="min-h-[200px] font-mono text-sm"
                 disabled={loading}
+                aria-invalid={!!fieldErrors.input}
               />
+              {fieldErrors.input && <FieldError>{fieldErrors.input}</FieldError>}
             </div>
-            <Button onClick={handleTest} disabled={loading || !apiKey} className="w-full">
+            <Button onClick={handleTest} disabled={loading} className="w-full">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -26,12 +26,72 @@ const errorMessages: Record<string, Record<string, string>> = {
     en: 'Request failed',
     zh: '请求失败',
   },
+  serverError: {
+    en: 'Something went wrong. Please try again later.',
+    zh: '出了点问题，请稍后重试。',
+  },
+  resourceNotFound: {
+    en: 'The requested resource could not be found',
+    zh: '请求的资源不存在或已被移除',
+  },
+  sessionExpired: {
+    en: 'Session expired. Please login again.',
+    zh: '会话已过期，请重新登录。',
+  },
 }
 
 /** 获取错误消息 */
-function getErrorMessage(key: string): string {
+export function getErrorMessage(key: string): string {
   const locale = getLocale()
   return errorMessages[key]?.[locale] || errorMessages[key]?.['en'] || key
+}
+
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function isLikelyTechnicalMessage(message: string): boolean {
+  const lowered = message.toLowerCase()
+  return (
+    message.includes('\n')
+    || lowered.startsWith('http ')
+    || lowered.includes('traceback')
+    || lowered.includes('exception')
+    || lowered.includes('stack')
+    || lowered.includes('failed to fetch')
+  )
+}
+
+function shouldUseBackendMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return false
+  if (isLikelyMessageKey(trimmed) || isLikelyTechnicalMessage(trimmed)) return false
+
+  const locale = getLocale().toLowerCase()
+  if (locale.startsWith('zh')) {
+    return /[\u4e00-\u9fff]/.test(trimmed)
+  }
+
+  return true
+}
+
+function getStatusErrorMessage(status: number): string {
+  if (isAuthErrorCode(status)) return getErrorMessage('sessionExpired')
+  if (status === 404) return getErrorMessage('resourceNotFound')
+  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  return getErrorMessage('requestFailed')
+}
+
+function resolveApiErrorMessage(code: number, message: unknown): string {
+  if (isAuthErrorCode(code)) return getErrorMessage('sessionExpired')
+  if (code === 404 || (code >= 4000 && code < 5000)) return getErrorMessage('resourceNotFound')
+  if (code >= 500 && code < 600) return getErrorMessage('serverError')
+
+  if (typeof message === 'string' && shouldUseBackendMessage(message)) {
+    return message.trim()
+  }
+
+  return getStatusErrorMessage(code)
 }
 
 function isAuthErrorCode(code: number): boolean {
@@ -182,7 +242,8 @@ axiosInstance.interceptors.response.use(
 
     // 业务错误
     if (data.code !== 0) {
-      const error = new ApiError(data.code, data.msg, data.data)
+      const resolvedMessage = resolveApiErrorMessage(data.code, data.msg)
+      const error = new ApiError(data.code, resolvedMessage, data.data)
       if (isAuthErrorCode(error.code) && !shouldSkipAuthRedirect(config)) {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('access_token')
@@ -193,7 +254,7 @@ axiosInstance.interceptors.response.use(
 
       // 非静默模式且非验证错误时显示 toast
       if (!config.silent && !error.isValidationError()) {
-        toast.error(data.msg)
+        toast.error(resolvedMessage)
       }
 
       return Promise.reject(error)
@@ -220,7 +281,8 @@ axiosInstance.interceptors.response.use(
     // 服务器返回的错误
     const responseData = error.response.data
     if (responseData && typeof responseData === 'object' && 'code' in responseData) {
-      const apiError = new ApiError(responseData.code, responseData.msg, responseData.data)
+      const resolvedMessage = resolveApiErrorMessage(responseData.code, responseData.msg)
+      const apiError = new ApiError(responseData.code, resolvedMessage, responseData.data)
       if (isAuthErrorCode(apiError.code) && !shouldSkipAuthRedirect(config)) {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('access_token')
@@ -231,9 +293,9 @@ axiosInstance.interceptors.response.use(
 
       // 非静默模式且非验证错误时显示 toast
       if (!config?.silent && !apiError.isValidationError()) {
-        toast.error(responseData.msg)
+        toast.error(resolvedMessage)
       }
-      
+
       return Promise.reject(apiError)
     }
     
@@ -243,14 +305,14 @@ axiosInstance.interceptors.response.use(
         localStorage.removeItem('access_token')
       }
       redirectToLogin()
-      return Promise.reject(new ApiError(error.response.status, 'Unauthorized'))
+      return Promise.reject(new ApiError(error.response.status, getErrorMessage('sessionExpired')))
     }
 
-    const message = `${getErrorMessage('requestFailed')}: ${error.response.status} ${error.response.statusText}`
+    const message = getStatusErrorMessage(error.response.status)
     if (!config?.silent) {
       toast.error(message)
     }
-    
+
     return Promise.reject(new ApiError(error.response.status, message))
   }
 )

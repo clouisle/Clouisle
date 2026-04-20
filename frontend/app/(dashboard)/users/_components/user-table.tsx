@@ -36,7 +36,7 @@ export function UserTable({ users, onEdit, onDelete, onStatusChange }: UserTable
         <thead>
           <tr className="border-b bg-muted/50">
             <th className="h-12 px-4 text-left align-middle font-medium">{t('allUsers')}</th>
-            <th className="h-12 px-4 text-left align-middle font-medium">Email</th>
+            <th className="h-12 px-4 text-left align-middle font-medium">{t('email')}</th>
             <th className="h-12 px-4 text-left align-middle font-medium">{t('status')}</th>
             <th className="h-12 px-4 text-left align-middle font-medium">{t('passwordStatus')}</th>
             <th className="h-12 px-4 text-left align-middle font-medium">{t('createdAt')}</th>

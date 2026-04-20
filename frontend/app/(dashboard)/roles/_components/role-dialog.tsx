@@ -4,6 +4,13 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { rolesApi, permissionsApi, type Role, type Permission } from '@/lib/api/admin/roles'
+import {
+  normalizeValidationErrors,
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
 import { Search, Shield, ChevronRight } from 'lucide-react'
 
 interface RoleDialogProps {
@@ -37,6 +45,7 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
   const [permissions, setPermissions] = React.useState<Permission[]>([])
   const [permissionSearch, setPermissionSearch] = React.useState('')
   const [expandedScopes, setExpandedScopes] = React.useState<Set<string>>(new Set())
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = React.useState(false)
   const [isLoadingPermissions, setIsLoadingPermissions] = React.useState(false)
   
@@ -75,6 +84,7 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
       }
       setPermissionSearch('')
       setExpandedScopes(new Set())
+      setFieldErrors({})
     }
   }, [open, role])
   
@@ -98,8 +108,14 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
     return groups
   }, [filteredPermissions])
   
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['name', 'description', 'permissions']),
+    [fieldErrors]
+  )
+
   // 切换权限选中
   const togglePermission = (code: string) => {
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'permissions'))
     const newSelected = new Set(selectedPermissions)
     if (newSelected.has(code)) {
       newSelected.delete(code)
@@ -111,9 +127,10 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
   
   // 切换整组权限
   const toggleScope = (scope: string, perms: Permission[]) => {
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'permissions'))
     const codes = perms.map(p => p.code)
     const allSelected = codes.every(c => selectedPermissions.has(c))
-    
+
     const newSelected = new Set(selectedPermissions)
     if (allSelected) {
       codes.forEach(c => newSelected.delete(c))
@@ -136,6 +153,7 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFieldErrors({})
     setIsLoading(true)
     
     try {
@@ -156,8 +174,11 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
       }
       onSuccess()
       onOpenChange(false)
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -174,6 +195,15 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col -mx-6">
+          {summaryEntries.length > 0 && (
+            <div className="mx-6 rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto space-y-6 py-4 px-6">
             {/* 基本信息 */}
             <div className="space-y-4">
@@ -182,10 +212,15 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
                 <Input
                   id="name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'name'))
+                  }}
                   placeholder={t('roleNamePlaceholder')}
                   required
+                  aria-invalid={!!fieldErrors.name}
                 />
+                <FieldError>{fieldErrors.name}</FieldError>
               </div>
               
               <div className="space-y-2">
@@ -193,20 +228,28 @@ export function RoleDialog({ open, onOpenChange, role, onSuccess }: RoleDialogPr
                 <Textarea
                   id="description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => {
+                    setDescription(e.target.value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                  }}
                   placeholder={t('descriptionPlaceholder')}
                   rows={2}
+                  aria-invalid={!!fieldErrors.description}
                 />
+                <FieldError>{fieldErrors.description}</FieldError>
               </div>
             </div>
             
             {/* 权限选择 */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>{t('permissions')}</Label>
-                <Badge variant="secondary">
-                  {selectedPermissions.size} {t('selected')}
-                </Badge>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>{t('permissions')}</Label>
+                  <Badge variant="secondary">
+                    {selectedPermissions.size} {t('selected')}
+                  </Badge>
+                </div>
+                <FieldError>{fieldErrors.permissions}</FieldError>
               </div>
               
               {/* 搜索 */}

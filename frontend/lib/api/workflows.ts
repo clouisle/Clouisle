@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, getErrorMessage } from './client'
 import { PageData } from './agents'
 
 // ============ Workflow Types ============
@@ -529,12 +529,12 @@ export const workflowsApi = {
         })
         
         if (!response.ok) {
-          throw new Error(`SSE connection failed: ${response.status}`)
+          throw new Error(`${getErrorMessage('requestFailed')}: ${response.status}`)
         }
-        
+
         const reader = response.body?.getReader()
         if (!reader) {
-          throw new Error('No response body')
+          throw new Error(getErrorMessage('requestFailed'))
         }
         
         const decoder = new TextDecoder()

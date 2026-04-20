@@ -4,6 +4,9 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { permissionsApi, type Permission } from '@/lib/api/admin/roles'
+import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
 
 interface PermissionDialogProps {
   open: boolean
@@ -31,6 +35,7 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
   const [scope, setScope] = React.useState('')
   const [code, setCode] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = React.useState(false)
   
   const isEdit = !!permission
@@ -47,11 +52,18 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
         setCode('')
         setDescription('')
       }
+      setFieldErrors({})
     }
   }, [open, permission])
   
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['scope', 'code', 'description']),
+    [fieldErrors]
+  )
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFieldErrors({})
     setIsLoading(true)
     
     try {
@@ -64,8 +76,11 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
       }
       onSuccess()
       onOpenChange(false)
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -82,16 +97,30 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
         </DialogHeader>
         
         <form onSubmit={handleSubmit}>
+          {summaryEntries.length > 0 && (
+            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="scope">{t('scope')} *</Label>
               <Input
                 id="scope"
                 value={scope}
-                onChange={(e) => setScope(e.target.value)}
+                onChange={(e) => {
+                  setScope(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'scope'))
+                }}
                 placeholder={t('scopePlaceholder')}
                 required
+                aria-invalid={!!fieldErrors.scope}
               />
+              <FieldError>{fieldErrors.scope}</FieldError>
               <p className="text-xs text-muted-foreground">{t('scopeHint')}</p>
             </div>
             
@@ -100,10 +129,15 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
               <Input
                 id="code"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'code'))
+                }}
                 placeholder={t('codePlaceholder')}
                 required
+                aria-invalid={!!fieldErrors.code}
               />
+              <FieldError>{fieldErrors.code}</FieldError>
               <p className="text-xs text-muted-foreground">{t('codeHint')}</p>
             </div>
             
@@ -112,10 +146,15 @@ export function PermissionDialog({ open, onOpenChange, permission, onSuccess }: 
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setFieldErrors((prev) => clearValidationError(prev, 'description'))
+                }}
                 placeholder={t('descriptionPlaceholder')}
                 rows={2}
+                aria-invalid={!!fieldErrors.description}
               />
+              <FieldError>{fieldErrors.description}</FieldError>
             </div>
           </div>
           

@@ -2,12 +2,12 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { FieldError } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
@@ -16,9 +16,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { ApiError, type VariableDefinition } from '@/lib/api'
+import { ApiError, type VariableDefinition as AgentVariableDefinition } from '@/lib/api'
+import { clearValidationError, getValidationSummaryEntries,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Upload, X, FileIcon, ImageIcon } from 'lucide-react'
 import { uploadApi } from '@/lib/api/upload'
+
+type VariableFieldErrors = Record<string, string>
+type VariableDefinition = Omit<AgentVariableDefinition, 'type'> & { type: AgentVariableDefinition['type'] | 'boolean' }
 
 interface VariableFormProps {
   variables: VariableDefinition[]
@@ -26,21 +32,125 @@ interface VariableFormProps {
   onChange: (values: Record<string, unknown>) => void
   onSubmit?: () => void
   className?: string
+  fieldErrors?: VariableFieldErrors
 }
 
-function showUploadValidationError(error: unknown, fallbackMessage: string, tCommon: ReturnType<typeof useTranslations>) {
+function getUploadValidationMessage(
+  error: unknown,
+  fallbackMessage: string,
+  tCommon: ReturnType<typeof useTranslations>
+): string {
   if (error instanceof ApiError && error.code === 1001) {
     const payload = error.data as { allowed?: string[] } | undefined
     const allowed = payload?.allowed?.join(', ')
-    toast.error(
-      allowed
-        ? tCommon('invalidFileTypeWithAllowed', { allowed })
-        : tCommon('invalidFileType')
-    )
-    return
+    return allowed
+      ? tCommon('invalidFileTypeWithAllowed', { allowed })
+      : tCommon('invalidFileType')
   }
 
-  toast.error(fallbackMessage)
+  return fallbackMessage
+}
+
+function validateVariableValue(
+  variable: VariableDefinition,
+  value: unknown,
+  requiredMessage: string,
+  invalidJsonMessage: string
+): string | null {
+  if (variable.type === 'checkbox') {
+    return null
+  }
+
+  const isEmpty = value === undefined || value === null || value === ''
+  if (isEmpty) {
+    return variable.required ? requiredMessage : null
+  }
+
+  if (variable.type === 'array') {
+    if (Array.isArray(value)) {
+      return value.length > 0 || !variable.required ? null : requiredMessage
+    }
+    if (typeof value === 'string') {
+      if (!value.trim()) {
+        return variable.required ? requiredMessage : null
+      }
+      try {
+        const parsed = JSON.parse(value)
+        if (!Array.isArray(parsed)) {
+          return invalidJsonMessage
+        }
+        if (variable.required && parsed.length === 0) {
+          return requiredMessage
+        }
+        return null
+      } catch {
+        return invalidJsonMessage
+      }
+    }
+    return invalidJsonMessage
+  }
+
+  if (variable.type === 'object') {
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      return Object.keys(value).length > 0 || !variable.required ? null : requiredMessage
+    }
+    if (typeof value === 'string') {
+      if (!value.trim()) {
+        return variable.required ? requiredMessage : null
+      }
+      try {
+        const parsed = JSON.parse(value)
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          return invalidJsonMessage
+        }
+        if (variable.required && Object.keys(parsed).length === 0) {
+          return requiredMessage
+        }
+        return null
+      } catch {
+        return invalidJsonMessage
+      }
+    }
+    return invalidJsonMessage
+  }
+
+  if (variable.type === 'file' || variable.type === 'image') {
+    return typeof value === 'string' && value.length > 0 ? null : (variable.required ? requiredMessage : null)
+  }
+
+  if (variable.type === 'files' || variable.type === 'images') {
+    return Array.isArray(value) && value.length > 0 ? null : (variable.required ? requiredMessage : null)
+  }
+
+  return null
+}
+
+function getVariableFormErrors(
+  variables: VariableDefinition[],
+  values: Record<string, unknown>,
+  requiredMessage: string,
+  invalidJsonMessage: string
+): VariableFieldErrors {
+  const errors: VariableFieldErrors = {}
+
+  for (const variable of variables) {
+    if (variable.hidden) {
+      continue
+    }
+
+    const error = validateVariableValue(
+      variable,
+      values[variable.name],
+      requiredMessage,
+      invalidJsonMessage
+    )
+
+    if (error) {
+      errors[variable.name] = error
+    }
+  }
+
+  return errors
 }
 
 export function VariableForm({
@@ -49,68 +159,26 @@ export function VariableForm({
   onChange,
   onSubmit,
   className,
+  fieldErrors,
 }: VariableFormProps) {
   const t = useTranslations('chat.variables')
+  const tCommon = useTranslations('common')
 
-  // Get visible variables (not hidden)
   const visibleVariables = variables.filter((v) => !v.hidden)
+  const effectiveFieldErrors = React.useMemo(() => fieldErrors ?? {}, [fieldErrors])
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(effectiveFieldErrors, visibleVariables.map((variable) => variable.name)),
+    [effectiveFieldErrors, visibleVariables]
+  )
+  const isValid = React.useMemo(
+    () => Object.keys(getVariableFormErrors(variables, values, tCommon('required'), tCommon('invalidJSON'))).length === 0,
+    [variables, values, tCommon]
+  )
 
-  // Check if all required variables are filled
-  const isValid = React.useMemo(() => {
-    return visibleVariables
-      .filter((v) => v.required)
-      .every((v) => {
-        const value = values[v.name]
-        if (v.type === 'checkbox') {
-          return true // Checkbox is always valid
-        }
-        if (v.type === 'array') {
-          // Array is valid if it's a non-empty array or valid JSON string
-          if (Array.isArray(value)) {
-            return value.length > 0
-          }
-          if (typeof value === 'string' && value.trim()) {
-            try {
-              const parsed = JSON.parse(value)
-              return Array.isArray(parsed) && parsed.length > 0
-            } catch {
-              return false
-            }
-          }
-          return false
-        }
-        if (v.type === 'object') {
-          // Object is valid if it's a non-empty object or valid JSON string
-          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-            return Object.keys(value).length > 0
-          }
-          if (typeof value === 'string' && value.trim()) {
-            try {
-              const parsed = JSON.parse(value)
-              return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-            } catch {
-              return false
-            }
-          }
-          return false
-        }
-        // File types validation
-        if (v.type === 'file' || v.type === 'image') {
-          return typeof value === 'string' && value.length > 0
-        }
-        if (v.type === 'files' || v.type === 'images') {
-          return Array.isArray(value) && value.length > 0
-        }
-        return value !== undefined && value !== null && value !== ''
-      })
-  }, [visibleVariables, values])
-
-  // Update a single variable value
   const updateValue = (name: string, value: unknown) => {
     onChange({ ...values, [name]: value })
   }
 
-  // Handle form submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (isValid && onSubmit) {
@@ -124,11 +192,22 @@ export function VariableForm({
 
   return (
     <form onSubmit={handleSubmit} className={cn('space-y-3', className)}>
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>
+              {formatValidationSummaryMessage(field, message)}
+            </FieldError>
+          ))}
+        </div>
+      )}
+
       {visibleVariables.map((variable) => (
         <VariableField
           key={variable.name}
           variable={variable}
           value={values[variable.name]}
+          error={effectiveFieldErrors[variable.name]}
           onChange={(value) => updateValue(variable.name, value)}
           compact
         />
@@ -146,19 +225,21 @@ export function VariableForm({
 interface VariableFieldProps {
   variable: VariableDefinition
   value: unknown
+  error?: string
   onChange: (value: unknown) => void
   compact?: boolean
 }
 
-function VariableField({ variable, value, onChange, compact = false }: VariableFieldProps) {
+function VariableField({ variable, value, error, onChange, compact = false }: VariableFieldProps) {
   const t = useTranslations('chat.variables')
+  const tCommon = useTranslations('common')
   const label = variable.label || variable.name
   const isRequired = variable.required
 
   // Initialize with default value if provided
   React.useEffect(() => {
     if (value === undefined && variable.default !== undefined && variable.default !== null) {
-      if (variable.type === 'checkbox') {
+      if (variable.type === 'checkbox' || variable.type === 'boolean') {
         onChange(variable.default === 'true')
       } else if (variable.type === 'number') {
         onChange(Number(variable.default))
@@ -182,6 +263,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             placeholder={variable.description || label}
             maxLength={variable.maxLength ?? undefined}
             className={inputClassName}
+            aria-invalid={!!error}
           />
         )
 
@@ -194,6 +276,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             maxLength={variable.maxLength ?? undefined}
             rows={compact ? 2 : 3}
             className={compact ? 'text-xs min-h-12' : ''}
+            aria-invalid={!!error}
           />
         )
 
@@ -203,7 +286,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             value={(value as string) ?? ''}
             onValueChange={(v) => onChange(v)}
           >
-            <SelectTrigger className={selectTriggerClassName}>
+            <SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}>
               <SelectValue>
                 {(value as string) || t('selectPlaceholder')}
               </SelectValue>
@@ -228,6 +311,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             min={variable.min ?? undefined}
             max={variable.max ?? undefined}
             className={inputClassName}
+            aria-invalid={!!error}
           />
         )
 
@@ -251,6 +335,22 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
           </div>
         )
 
+      case 'boolean':
+        return (
+          <Select
+            value={typeof value === 'boolean' ? String(value) : ((value as string) || 'false')}
+            onValueChange={(v) => onChange(v === 'true')}
+          >
+            <SelectTrigger className={selectTriggerClassName} aria-invalid={!!error}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="true" className={compact ? 'text-xs' : ''}>{tCommon('yes')}</SelectItem>
+              <SelectItem value="false" className={compact ? 'text-xs' : ''}>{tCommon('no')}</SelectItem>
+            </SelectContent>
+          </Select>
+        )
+
       case 'array':
         return (
           <Textarea
@@ -258,22 +358,20 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             onChange={(e) => {
               const text = e.target.value
               try {
-                // Try to parse as JSON array
                 const parsed = JSON.parse(text)
                 if (Array.isArray(parsed)) {
                   onChange(parsed)
                 } else {
-                  // If not an array, store as string for now
                   onChange(text)
                 }
               } catch {
-                // If invalid JSON, store as string
                 onChange(text)
               }
             }}
-            placeholder={variable.description || `${label} (JSON array format: ["item1", "item2"])`}
+            placeholder={variable.description || t('arrayPlaceholder')}
             rows={compact ? 3 : 4}
             className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
+            aria-invalid={!!error}
           />
         )
 
@@ -284,38 +382,38 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
             onChange={(e) => {
               const text = e.target.value
               try {
-                // Try to parse as JSON object
                 const parsed = JSON.parse(text)
                 if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
                   onChange(parsed)
                 } else {
-                  // If not an object, store as string for now
                   onChange(text)
                 }
               } catch {
-                // If invalid JSON, store as string
                 onChange(text)
               }
             }}
-            placeholder={variable.description || `${label} (JSON object format: {"key": "value"})`}
+            placeholder={variable.description || t('objectPlaceholder')}
             rows={compact ? 3 : 4}
             className={compact ? 'text-xs min-h-16 font-mono' : 'font-mono'}
+            aria-invalid={!!error}
           />
         )
 
       // File upload types
       case 'file':
       case 'image':
-        return <FileUploadInput variable={variable} value={value} onChange={onChange} compact={compact} />
+        return <FileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} />
 
       case 'files':
       case 'images':
-        return <MultiFileUploadInput variable={variable} value={value} onChange={onChange} compact={compact} />
+        return <MultiFileUploadInput variable={variable} value={value} error={error} onChange={onChange} compact={compact} />
 
       default:
         return null
     }
   }
+
+  const isUploadField = variable.type === 'file' || variable.type === 'image' || variable.type === 'files' || variable.type === 'images'
 
   return (
     <div className={compact ? "space-y-0.5" : "space-y-2"}>
@@ -324,6 +422,7 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
         {isRequired && <span className="text-destructive text-xs">*</span>}
       </Label>
       {renderField()}
+      {!isUploadField && <FieldError>{error}</FieldError>}
     </div>
   )
 }
@@ -332,8 +431,8 @@ function VariableField({ variable, value, onChange, compact = false }: VariableF
  * Hook to manage variable form state
  */
 export function useVariableForm(variables: VariableDefinition[]) {
+  const tCommon = useTranslations('common')
   const [values, setValues] = React.useState<Record<string, unknown>>(() => {
-    // Initialize with default values
     const initial: Record<string, unknown> = {}
     variables.forEach((v) => {
       if (v.default !== undefined && v.default !== null) {
@@ -349,65 +448,48 @@ export function useVariableForm(variables: VariableDefinition[]) {
     return initial
   })
 
-  // Check if form needs to be shown (has visible required variables without default)
+  const [fieldErrors, setFieldErrors] = React.useState<VariableFieldErrors>({})
+
   const needsInput = React.useMemo(() => {
     return variables.some((v) => {
       if (v.hidden) return false
       if (!v.required) return false
-      // Required and no default value
       return v.default === undefined || v.default === null || v.default === ''
     })
   }, [variables])
 
-  // Check if all required fields are filled
-  const isValid = React.useMemo(() => {
-    return variables
-      .filter((v) => !v.hidden && v.required)
-      .every((v) => {
-        const value = values[v.name]
-        if (v.type === 'checkbox') {
-          return true
+  const derivedErrors = React.useMemo(
+    () => getVariableFormErrors(variables, values, tCommon('required'), tCommon('invalidJSON')),
+    [variables, values, tCommon]
+  )
+
+  const mergedFieldErrors = React.useMemo(
+    () => ({ ...fieldErrors, ...derivedErrors }),
+    [fieldErrors, derivedErrors]
+  )
+
+  const isValid = Object.keys(mergedFieldErrors).length === 0
+
+  const updateValues = React.useCallback((nextValues: Record<string, unknown>) => {
+    setValues(nextValues)
+    setFieldErrors((prev) => {
+      let nextErrors = prev
+      for (const variable of variables) {
+        const nextValue = nextValues[variable.name]
+        const prevValue = values[variable.name]
+        if (nextValue !== prevValue) {
+          nextErrors = clearValidationError(nextErrors, variable.name)
         }
-        if (v.type === 'array') {
-          // Array is valid if it's a non-empty array or valid JSON string
-          if (Array.isArray(value)) {
-            return value.length > 0
-          }
-          if (typeof value === 'string' && value.trim()) {
-            try {
-              const parsed = JSON.parse(value)
-              return Array.isArray(parsed) && parsed.length > 0
-            } catch {
-              return false
-            }
-          }
-          return false
-        }
-        if (v.type === 'object') {
-          // Object is valid if it's a non-empty object or valid JSON string
-          if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-            return Object.keys(value).length > 0
-          }
-          if (typeof value === 'string' && value.trim()) {
-            try {
-              const parsed = JSON.parse(value)
-              return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-            } catch {
-              return false
-            }
-          }
-          return false
-        }
-        // File types validation
-        if (v.type === 'file' || v.type === 'image') {
-          return typeof value === 'string' && value.length > 0
-        }
-        if (v.type === 'files' || v.type === 'images') {
-          return Array.isArray(value) && value.length > 0
-        }
-        return value !== undefined && value !== null && value !== ''
-      })
+      }
+      return nextErrors
+    })
   }, [variables, values])
+
+  const validate = React.useCallback(() => {
+    const nextErrors = getVariableFormErrors(variables, values, tCommon('required'), tCommon('invalidJSON'))
+    setFieldErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }, [variables, values, tCommon])
 
   const reset = React.useCallback(() => {
     const initial: Record<string, unknown> = {}
@@ -423,13 +505,16 @@ export function useVariableForm(variables: VariableDefinition[]) {
       }
     })
     setValues(initial)
+    setFieldErrors({})
   }, [variables])
 
   return {
     values,
-    setValues,
+    setValues: updateValues,
     needsInput,
     isValid,
+    fieldErrors: mergedFieldErrors,
+    validate,
     reset,
   }
 }
@@ -440,14 +525,16 @@ export function useVariableForm(variables: VariableDefinition[]) {
 interface FileUploadInputProps {
   variable: VariableDefinition
   value: unknown
+  error?: string
   onChange: (value: unknown) => void
   compact?: boolean
 }
 
-function FileUploadInput({ variable, value, onChange, compact }: FileUploadInputProps) {
+function FileUploadInput({ variable, value, error, onChange, compact }: FileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
+  const [uploadError, setUploadError] = React.useState<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const isImage = variable.type === 'image'
@@ -470,20 +557,22 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
     // Validate file size
     if (file.size > maxSizeBytes) {
       const maxSizeMB = maxSizeBytes / (1024 * 1024)
-      alert(t('fileTooLarge', { maxSize: maxSizeMB }))
+      setUploadError(t('fileTooLarge', { maxSize: maxSizeMB }))
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
       return
     }
 
+    setUploadError(null)
     setUploading(true)
     try {
       const result = await uploadApi.uploadFile(file, 'workflow-input')
+      setUploadError(null)
       onChange(result.url)
     } catch (error) {
       console.error('File upload failed:', error)
-      showUploadValidationError(error, t('fileUploadFailed'), tCommon)
+      setUploadError(getUploadValidationMessage(error, t('fileUploadFailed'), tCommon))
     } finally {
       setUploading(false)
       if (fileInputRef.current) {
@@ -493,6 +582,7 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
   }
 
   const handleRemove = () => {
+    setUploadError(null)
     onChange(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -520,6 +610,7 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className="w-full"
+          aria-invalid={!!(error || uploadError)}
         >
           <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
           {uploading ? t('uploading') : t('selectFile')}
@@ -546,6 +637,7 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
           </Button>
         </div>
       )}
+      <FieldError>{uploadError || error}</FieldError>
     </div>
   )
 }
@@ -556,14 +648,16 @@ function FileUploadInput({ variable, value, onChange, compact }: FileUploadInput
 interface MultiFileUploadInputProps {
   variable: VariableDefinition
   value: unknown
+  error?: string
   onChange: (value: unknown) => void
   compact?: boolean
 }
 
-function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileUploadInputProps) {
+function MultiFileUploadInput({ variable, value, error, onChange, compact }: MultiFileUploadInputProps) {
   const t = useTranslations('chat.variables')
   const tCommon = useTranslations('common')
   const [uploading, setUploading] = React.useState(false)
+  const [uploadError, setUploadError] = React.useState<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const isImages = variable.type === 'images'
@@ -588,7 +682,7 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
 
     // Check max files limit
     if (fileUrls.length + files.length > maxFiles) {
-      alert(t('tooManyFiles', { maxFiles }))
+      setUploadError(t('tooManyFiles', { maxFiles }))
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -599,22 +693,24 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
     const oversizedFiles = files.filter(f => f.size > maxSizeBytes)
     if (oversizedFiles.length > 0) {
       const maxSizeMB = maxSizeBytes / (1024 * 1024)
-      alert(t('fileTooLarge', { maxSize: maxSizeMB }))
+      setUploadError(t('fileTooLarge', { maxSize: maxSizeMB }))
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
       return
     }
 
+    setUploadError(null)
     setUploading(true)
     try {
       const uploadPromises = files.map(file => uploadApi.uploadFile(file, 'workflow-input'))
       const results = await Promise.all(uploadPromises)
       const newUrls = results.map(r => r.url)
+      setUploadError(null)
       onChange([...fileUrls, ...newUrls])
     } catch (error) {
       console.error('File upload failed:', error)
-      showUploadValidationError(error, t('fileUploadFailed'), tCommon)
+      setUploadError(getUploadValidationMessage(error, t('fileUploadFailed'), tCommon))
     } finally {
       setUploading(false)
       if (fileInputRef.current) {
@@ -624,6 +720,7 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
   }
 
   const handleRemove = (index: number) => {
+    setUploadError(null)
     const newUrls = fileUrls.filter((_, i) => i !== index)
     onChange(newUrls.length > 0 ? newUrls : null)
   }
@@ -647,6 +744,7 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
         onClick={() => fileInputRef.current?.click()}
         disabled={uploading || fileUrls.length >= maxFiles}
         className="w-full"
+        aria-invalid={!!(error || uploadError)}
       >
         <Upload className={cn("mr-2", compact ? "h-3 w-3" : "h-4 w-4")} />
         {uploading ? t('uploading') : t('selectFiles')}
@@ -682,6 +780,7 @@ function MultiFileUploadInput({ variable, value, onChange, compact }: MultiFileU
           ))}
         </div>
       )}
+      <FieldError>{uploadError || error}</FieldError>
     </div>
   )
 }

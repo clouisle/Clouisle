@@ -71,9 +71,10 @@ export const usersApi = {
   sendEmail: async (
     userIds: string[],
     subject: string,
-    content: string
+    content: string,
+    options?: { silent?: boolean }
   ): Promise<{ sent_count: number; skipped_count: number; total: number }> =>
-    api.post('/admin/users/send-email', { user_ids: userIds, subject, content }),
+    api.post('/admin/users/send-email', { user_ids: userIds, subject, content }, { silent: options?.silent }),
 
   // Password expiration management
   forcePasswordChange: async (userId: string): Promise<void> =>

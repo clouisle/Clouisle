@@ -42,6 +42,7 @@
     "allRoles": "All Roles",
     "role": "Role",
     "username": "Username",
+    "email": "Email",
     "rowsPerPage": "Rows per page",
     "pageInfo": "Page {page} of {total}",
     "pendingApprovalNotice": "{count} user(s) are pending approval",

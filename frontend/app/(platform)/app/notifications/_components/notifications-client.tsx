@@ -154,7 +154,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('type')}
+            placeholder={t('searchPlaceholder')}
             className="pl-9 pr-9"
           />
           {searchQuery && (

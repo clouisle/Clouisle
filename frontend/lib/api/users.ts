@@ -85,15 +85,18 @@ export const usersApi = {
   /**
    * 更新当前用户资料
    */
-  updateProfile: async (data: UpdateProfileData, options?: { skipAuthRedirect?: boolean }): Promise<User> => {
-    return api.put<User>('/users/me', data, { skipAuthRedirect: options?.skipAuthRedirect })
+  updateProfile: async (data: UpdateProfileData, options?: { skipAuthRedirect?: boolean; silent?: boolean }): Promise<User> => {
+    return api.put<User>('/users/me', data, {
+      skipAuthRedirect: options?.skipAuthRedirect,
+      silent: options?.silent,
+    })
   },
 
   /**
    * 修改当前用户密码
    */
-  changePassword: async (data: ChangePasswordData): Promise<void> => {
-    await api.post<null>('/users/me/change-password', data)
+  changePassword: async (data: ChangePasswordData, options?: { silent?: boolean }): Promise<void> => {
+    await api.post<null>('/users/me/change-password', data, { silent: options?.silent })
   },
 
   /**
@@ -106,8 +109,8 @@ export const usersApi = {
   /**
    * 删除当前用户账号
    */
-  deleteAccount: async (password: string): Promise<void> => {
-    await api.delete<null>('/users/me', { password })
+  deleteAccount: async (password: string, options?: { silent?: boolean }): Promise<void> => {
+    await api.delete<null>('/users/me', { password }, { silent: options?.silent })
   },
 }
 
@@ -132,15 +135,15 @@ export const totpApi = {
   /**
    * 禁用 TOTP 2FA
    */
-  disable: async (password: string, code: string, isBackupCode: boolean = false): Promise<void> => {
-    await api.post<null>('/totp/disable', { password, code, is_backup_code: isBackupCode })
+  disable: async (password: string, code: string, isBackupCode: boolean = false, options?: { silent?: boolean }): Promise<void> => {
+    await api.post<null>('/totp/disable', { password, code, is_backup_code: isBackupCode }, { silent: options?.silent })
   },
 
   /**
    * 重新生成备份码
    */
-  regenerateBackupCodes: async (code: string): Promise<{ codes: string[] }> => {
-    return api.post<{ codes: string[] }>('/totp/regenerate-backup-codes', { code })
+  regenerateBackupCodes: async (code: string, options?: { silent?: boolean }): Promise<{ codes: string[] }> => {
+    return api.post<{ codes: string[] }>('/totp/regenerate-backup-codes', { code }, { silent: options?.silent })
   },
 
   /**

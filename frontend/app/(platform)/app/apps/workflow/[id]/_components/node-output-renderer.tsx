@@ -107,7 +107,7 @@ export function renderNodeOutput(
         )}
         {!!matchedHandle && (
           <div className="text-[10px] text-muted-foreground font-mono">
-            Handle: {String(matchedHandle)}
+            {t('runDrawer.handle')} {String(matchedHandle)}
           </div>
         )}
       </div>

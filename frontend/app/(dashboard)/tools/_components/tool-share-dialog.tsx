@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -34,6 +35,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { toolsApi, type Tool, type ToolShare, type ToolSharePermission, type UserTeamInfo } from '@/lib/api'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface ToolShareDialogProps {
   tool: Tool | null
@@ -56,10 +64,16 @@ export function ToolShareDialog({
   const [shares, setShares] = React.useState<ToolShare[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
   const [isSharing, setIsSharing] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [selectedTeamId, setSelectedTeamId] = React.useState<string>('')
   const [selectedPermission, setSelectedPermission] = React.useState<ToolSharePermission>('read_only')
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingShare, setDeletingShare] = React.useState<ToolShare | null>(null)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['team_id', 'permission']),
+    [fieldErrors]
+  )
 
   // 加载共享列表
   const loadShares = React.useCallback(async () => {
@@ -79,6 +93,7 @@ export function ToolShareDialog({
   React.useEffect(() => {
     if (open && tool?.id) {
       loadShares()
+      setFieldErrors({})
       setSelectedTeamId('')
       setSelectedPermission('read_only')
     }
@@ -100,8 +115,14 @@ export function ToolShareDialog({
 
   // 共享工具
   const handleShare = async () => {
-    if (!tool?.id || !selectedTeamId) return
+    if (!tool?.id) return
 
+    if (!selectedTeamId) {
+      setFieldErrors({ team_id: t('selectTeam') })
+      return
+    }
+
+    setFieldErrors({})
     setIsSharing(true)
     try {
       await toolsApi.shareTool(tool.id, {
@@ -114,6 +135,13 @@ export function ToolShareDialog({
       setSelectedPermission('read_only')
       onSuccess?.()
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), {
+        team_id: 'team_id',
+        permission: 'permission',
+      })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to share tool:', error)
     } finally {
       setIsSharing(false)
@@ -160,6 +188,14 @@ export function ToolShareDialog({
           </DialogHeader>
 
           <div className="space-y-6 py-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+                ))}
+              </div>
+            )}
+
             {/* 共享表单 */}
             {availableTeamsToShare.length > 0 && (
               <div className="space-y-4 pb-4 border-b">
@@ -168,7 +204,10 @@ export function ToolShareDialog({
                     <Label>{t('selectTeam')}</Label>
                     <Select
                       value={selectedTeamId || ''}
-                      onValueChange={(v) => setSelectedTeamId(v ?? '')}
+                      onValueChange={(v) => {
+                        setSelectedTeamId(v ?? '')
+                        setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
+                      }}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue>{selectedTeamName}</SelectValue>
@@ -181,6 +220,7 @@ export function ToolShareDialog({
                         ))}
                       </SelectContent>
                     </Select>
+                    <FieldError>{fieldErrors.team_id}</FieldError>
                   </div>
 
                   <div className="space-y-2">

@@ -38,6 +38,14 @@ import { AlertCircle, Clock } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { TOTPSetupWizard } from './totp-setup-wizard'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+import { ApiError } from '@/lib/api/client'
 
 interface SettingsDialogProps {
   open: boolean
@@ -64,6 +72,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     email: '',
     avatar_url: '',
   })
+  const [profileErrors, setProfileErrors] = React.useState<Record<string, string>>({})
 
   // Password form
   const [savingPassword, setSavingPassword] = React.useState(false)
@@ -72,6 +81,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     newPassword: '',
     confirmPassword: '',
   })
+  const [passwordErrors, setPasswordErrors] = React.useState<Record<string, string>>({})
 
   // SSO
   const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null)
@@ -80,6 +90,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [deleting, setDeleting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletePassword, setDeletePassword] = React.useState('')
+  const [deleteErrors, setDeleteErrors] = React.useState<Record<string, string>>({})
 
   // TOTP
   const [setupWizardOpen, setSetupWizardOpen] = React.useState(false)
@@ -88,9 +99,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [disableTotpCode, setDisableTotpCode] = React.useState('')
   const [useBackupCode, setUseBackupCode] = React.useState(false)
   const [disablingTotp, setDisablingTotp] = React.useState(false)
+  const [disableTotpErrors, setDisableTotpErrors] = React.useState<Record<string, string>>({})
   const [regeneratingCodes, setRegeneratingCodes] = React.useState(false)
   const [regenerateCodesDialogOpen, setRegenerateCodesDialogOpen] = React.useState(false)
   const [regenerateCode, setRegenerateCode] = React.useState('')
+  const [regenerateCodeErrors, setRegenerateCodeErrors] = React.useState<Record<string, string>>({})
   const [newBackupCodes, setNewBackupCodes] = React.useState<string[]>([])
 
   // Load user when dialog opens
@@ -135,11 +148,38 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }
 
+  const profileSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(profileErrors, ['username', 'email', 'avatar_url']),
+    [profileErrors]
+  )
+
+  const passwordSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(passwordErrors, ['currentPassword', 'newPassword', 'confirmPassword']),
+    [passwordErrors]
+  )
+
+  const deleteSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(deleteErrors, ['password']),
+    [deleteErrors]
+  )
+
+  const disableTotpSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(disableTotpErrors, ['password', 'code']),
+    [disableTotpErrors]
+  )
+
+  const regenerateCodeSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(regenerateCodeErrors, ['code']),
+    [regenerateCodeErrors]
+  )
+
   const handleSaveProfile = async () => {
     if (!user) return
 
+    setProfileErrors({})
+
     if (!isValidEmail(profileData.email)) {
-      toast.error(t('invalidEmail'))
+      setProfileErrors({ email: t('invalidEmail') })
       return
     }
 
@@ -162,11 +202,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         return
       }
 
-      const updatedUser = await usersApi.updateProfile(updateData)
+      const updatedUser = await usersApi.updateProfile(updateData, { silent: true })
       setUser(updatedUser)
       toast.success(t('profileUpdated'))
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setProfileErrors(errors)
+      } else if (error instanceof ApiError) {
+        if (error.code === 5002) {
+          setProfileErrors({ username: error.message })
+        } else if (error.code === 5003) {
+          setProfileErrors({ email: error.message })
+        }
+      }
     } finally {
       setSavingProfile(false)
     }
@@ -176,21 +225,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const hasPassword =
       user?.auth_source === 'local' || (user?.sso_connections && user.sso_connections.length === 0)
 
+    setPasswordErrors({})
+
     if (hasPassword && !passwordData.currentPassword) {
-      toast.error(t('currentPasswordRequired'))
+      setPasswordErrors({ currentPassword: t('currentPasswordRequired') })
       return
     }
 
     if (!passwordData.newPassword) {
-      toast.error(t('newPasswordRequired'))
+      setPasswordErrors({ newPassword: t('newPasswordRequired') })
       return
     }
     if (passwordData.newPassword.length < 6) {
-      toast.error(t('newPasswordTooShort'))
+      setPasswordErrors({ newPassword: t('newPasswordTooShort') })
       return
     }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error(t('passwordMismatch'))
+      setPasswordErrors({ confirmPassword: t('passwordMismatch') })
       return
     }
 
@@ -200,12 +251,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       if (!hasPassword) {
         await usersApi.updateProfile({
           password: passwordData.newPassword,
-        })
+        }, { silent: true })
       } else {
         await usersApi.changePassword({
           current_password: passwordData.currentPassword,
           new_password: passwordData.newPassword,
-        })
+        }, { silent: true })
       }
 
       toast.success(t('passwordUpdated'))
@@ -215,8 +266,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         confirmPassword: '',
       })
       await loadUser()
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setPasswordErrors(
+          Object.fromEntries(
+            Object.entries(errors).map(([field, message]) => [field === 'new_password' ? 'newPassword' : field, message])
+          )
+        )
+      } else if (error instanceof ApiError && error.code === 2003) {
+        setPasswordErrors({ currentPassword: error.message })
+      }
     } finally {
       setSavingPassword(false)
     }
@@ -236,20 +296,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   const handleDeleteAccount = async () => {
+    setDeleteErrors({})
+
     if (!deletePassword) {
-      toast.error(t('currentPasswordRequired'))
+      setDeleteErrors({ password: t('currentPasswordRequired') })
       return
     }
 
     try {
       setDeleting(true)
-      await usersApi.deleteAccount(deletePassword)
+      await usersApi.deleteAccount(deletePassword, { silent: true })
       toast.success(t('accountDeleted'))
       localStorage.removeItem('access_token')
       onOpenChange(false)
       router.push('/login')
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 2003) {
+        setDeleteErrors({ password: error.message })
+      } else if (error instanceof ApiError) {
+        setDeleteErrors({ __all__: error.message })
+      }
     } finally {
       setDeleting(false)
     }
@@ -260,48 +326,72 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   }
 
   const handleDisableTotp = async () => {
+    setDisableTotpErrors({})
+
     if (!disableTotpPassword || !disableTotpCode) {
+      setDisableTotpErrors({
+        ...(disableTotpPassword ? {} : { password: t('currentPasswordRequired') }),
+        ...(disableTotpCode ? {} : { code: t('disableTwoFactorCodeLabel') }),
+      })
       return
     }
 
-    // 处理备份码：去掉连字符
     const code = useBackupCode ? disableTotpCode.replace('-', '') : disableTotpCode
 
-    // 验证长度
     if ((useBackupCode && code.length !== 8) || (!useBackupCode && code.length !== 6)) {
+      setDisableTotpErrors({ code: tAuth('verificationCodeInvalid') })
       return
     }
 
     try {
       setDisablingTotp(true)
-      await totpApi.disable(disableTotpPassword, code, useBackupCode)
+      await totpApi.disable(disableTotpPassword, code, useBackupCode, { silent: true })
       toast.success(t('twoFactorDisabledSuccess'))
       setDisableTotpDialogOpen(false)
       setDisableTotpPassword('')
       setDisableTotpCode('')
       setUseBackupCode(false)
+      setDisableTotpErrors({})
       await loadUser()
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.code === 2003) {
+          setDisableTotpErrors({ password: error.message })
+        } else if (error.code === 5311) {
+          setDisableTotpErrors({ code: error.message })
+        } else {
+          setDisableTotpErrors({ __all__: error.message })
+        }
+      }
     } finally {
       setDisablingTotp(false)
     }
   }
 
   const handleRegenerateBackupCodes = async () => {
+    setRegenerateCodeErrors({})
+
     if (!regenerateCode || regenerateCode.length !== 6) {
+      setRegenerateCodeErrors({ code: tAuth('verificationCodeInvalid') })
       return
     }
 
     try {
       setRegeneratingCodes(true)
-      const result = await totpApi.regenerateBackupCodes(regenerateCode)
+      const result = await totpApi.regenerateBackupCodes(regenerateCode, { silent: true })
       setNewBackupCodes(result.codes)
       toast.success(t('backupCodesRegeneratedSuccess'))
       setRegenerateCode('')
+      setRegenerateCodeErrors({})
       await loadUser()
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.code === 5311) {
+          setRegenerateCodeErrors({ code: error.message })
+        } else {
+          setRegenerateCodeErrors({ __all__: error.message })
+        }
+      }
     } finally {
       setRegeneratingCodes(false)
     }
@@ -355,6 +445,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             {/* Profile Tab */}
             <TabsContent value="profile" className="space-y-6">
+              {profileSummaryEntries.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                  {profileSummaryEntries.map(([field, message]) => (
+                    <FieldError key={field}>
+                      {formatValidationSummaryMessage(field, message)}
+                    </FieldError>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>{t('avatar')}</Label>
                 <p className="text-sm text-muted-foreground">{t('avatarDescription')}</p>
@@ -374,8 +474,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   id="username"
                   placeholder={t('usernamePlaceholder')}
                   value={profileData.username}
-                  onChange={(e) => setProfileData((prev) => ({ ...prev, username: e.target.value }))}
+                  onChange={(e) => {
+                    setProfileData((prev) => ({ ...prev, username: e.target.value }))
+                    setProfileErrors((prev) => clearValidationError(prev, 'username'))
+                  }}
+                  aria-invalid={!!profileErrors.username}
                 />
+                <FieldError>{profileErrors.username}</FieldError>
               </div>
 
               <div className="space-y-2">
@@ -385,9 +490,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   type="email"
                   placeholder={t('emailPlaceholder')}
                   value={profileData.email}
-                  onChange={(e) => setProfileData((prev) => ({ ...prev, email: e.target.value }))}
+                  onChange={(e) => {
+                    setProfileData((prev) => ({ ...prev, email: e.target.value }))
+                    setProfileErrors((prev) => clearValidationError(prev, 'email'))
+                  }}
                   required
+                  aria-invalid={!!profileErrors.email}
                 />
+                <FieldError>{profileErrors.email}</FieldError>
               </div>
 
               <div className="flex justify-end">
@@ -562,6 +672,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {passwordSummaryEntries.length > 0 && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                      {passwordSummaryEntries.map(([field, message]) => (
+                        <FieldError key={field}>
+                          {formatValidationSummaryMessage(field, message)}
+                        </FieldError>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Password Status */}
                   {passwordStatus && !passwordStatus.is_exempt && (
                     <div className="space-y-3">
@@ -610,10 +730,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         type="password"
                         placeholder={t('currentPasswordPlaceholder')}
                         value={passwordData.currentPassword}
-                        onChange={(e) =>
+                        onChange={(e) => {
                           setPasswordData((prev) => ({ ...prev, currentPassword: e.target.value }))
-                        }
+                          setPasswordErrors((prev) => clearValidationError(prev, 'currentPassword'))
+                        }}
+                        aria-invalid={!!passwordErrors.currentPassword}
                       />
+                      <FieldError>{passwordErrors.currentPassword}</FieldError>
                     </div>
                   )}
                   <div className="space-y-2">
@@ -623,10 +746,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       type="password"
                       placeholder={t('newPasswordPlaceholder')}
                       value={passwordData.newPassword}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setPasswordData((prev) => ({ ...prev, newPassword: e.target.value }))
-                      }
+                        setPasswordErrors((prev) => clearValidationError(prev, 'newPassword'))
+                      }}
+                      aria-invalid={!!passwordErrors.newPassword}
                     />
+                    <FieldError>{passwordErrors.newPassword}</FieldError>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="confirm">{t('confirmNewPassword')}</Label>
@@ -635,10 +761,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       type="password"
                       placeholder={t('confirmNewPasswordPlaceholder')}
                       value={passwordData.confirmPassword}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setPasswordData((prev) => ({ ...prev, confirmPassword: e.target.value }))
-                      }
+                        setPasswordErrors((prev) => clearValidationError(prev, 'confirmPassword'))
+                      }}
+                      aria-invalid={!!passwordErrors.confirmPassword}
                     />
+                    <FieldError>{passwordErrors.confirmPassword}</FieldError>
                   </div>
                   <div className="flex justify-end">
                     <Button onClick={handleChangePassword} disabled={savingPassword}>
@@ -670,6 +799,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           <AlertDialogTitle>{t('deleteAccount')}</AlertDialogTitle>
                           <AlertDialogDescription>{t('deleteAccountConfirm')}</AlertDialogDescription>
                         </AlertDialogHeader>
+                        {deleteSummaryEntries.length > 0 && (
+                          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                            {deleteSummaryEntries.map(([field, message]) => (
+                              <FieldError key={field}>
+                                {formatValidationSummaryMessage(field, message)}
+                              </FieldError>
+                            ))}
+                          </div>
+                        )}
                         <div className="space-y-2">
                           <Label htmlFor="delete-password">{t('currentPassword')}</Label>
                           <Input
@@ -677,8 +815,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                             type="password"
                             placeholder={t('currentPasswordPlaceholder')}
                             value={deletePassword}
-                            onChange={(e) => setDeletePassword(e.target.value)}
+                            onChange={(e) => {
+                              setDeletePassword(e.target.value)
+                              setDeleteErrors((prev) => clearValidationError(prev, 'password'))
+                            }}
+                            aria-invalid={!!deleteErrors.password}
                           />
+                          <FieldError>{deleteErrors.password}</FieldError>
                         </div>
                         <AlertDialogFooter>
                           <AlertDialogCancel onClick={() => setDeletePassword('')}>
@@ -719,14 +862,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <AlertDialogDescription>{t('disableTwoFactorConfirm')}</AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-4">
+            {disableTotpSummaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {disableTotpSummaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="disable-password">{t('disableTwoFactorPasswordLabel')}</Label>
               <Input
                 id="disable-password"
                 type="password"
                 value={disableTotpPassword}
-                onChange={(e) => setDisableTotpPassword(e.target.value)}
+                onChange={(e) => {
+                  setDisableTotpPassword(e.target.value)
+                  setDisableTotpErrors((prev) => clearValidationError(prev, 'password'))
+                }}
+                aria-invalid={!!disableTotpErrors.password}
               />
+              <FieldError>{disableTotpErrors.password}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="disable-code">
@@ -738,15 +895,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   type="text"
                   placeholder={tAuth('backupCodePlaceholder')}
                   value={disableTotpCode}
-                  onChange={(e) => setDisableTotpCode(e.target.value)}
+                  onChange={(e) => {
+                    setDisableTotpCode(e.target.value)
+                    setDisableTotpErrors((prev) => clearValidationError(prev, 'code'))
+                  }}
                   maxLength={9}
+                  aria-invalid={!!disableTotpErrors.code}
                 />
               ) : (
                 <div className="flex justify-center">
                   <InputOTP
                     maxLength={6}
                     value={disableTotpCode}
-                    onChange={setDisableTotpCode}
+                    onChange={(value) => {
+                      setDisableTotpCode(value)
+                      setDisableTotpErrors((prev) => clearValidationError(prev, 'code'))
+                    }}
                   >
                     <InputOTPGroup>
                       <InputOTPSlot index={0} />
@@ -759,6 +923,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </InputOTP>
                 </div>
               )}
+              <FieldError className="text-center">{disableTotpErrors.code}</FieldError>
               <div className="flex justify-center">
                 <Button
                   type="button"
@@ -767,6 +932,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   onClick={() => {
                     setUseBackupCode(!useBackupCode)
                     setDisableTotpCode('')
+                    setDisableTotpErrors((prev) => clearValidationError(prev, 'code'))
                   }}
                   className="text-xs"
                 >
@@ -817,13 +983,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </AlertDialogHeader>
           {newBackupCodes.length === 0 ? (
             <>
+              {regenerateCodeSummaryEntries.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                  {regenerateCodeSummaryEntries.map(([field, message]) => (
+                    <FieldError key={field}>
+                      {formatValidationSummaryMessage(field, message)}
+                    </FieldError>
+                  ))}
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>{tAuth('verificationCode6Digit')}</Label>
                 <div className="flex justify-center">
                   <InputOTP
                     maxLength={6}
                     value={regenerateCode}
-                    onChange={setRegenerateCode}
+                    onChange={(value) => {
+                      setRegenerateCode(value)
+                      setRegenerateCodeErrors((prev) => clearValidationError(prev, 'code'))
+                    }}
                   >
                     <InputOTPGroup>
                       <InputOTPSlot index={0} />
@@ -835,6 +1013,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     </InputOTPGroup>
                   </InputOTP>
                 </div>
+                <FieldError className="text-center">{regenerateCodeErrors.code}</FieldError>
               </div>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setRegenerateCode('')}>

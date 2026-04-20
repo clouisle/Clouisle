@@ -9,7 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, ApiError, User } from '@/lib/api'
+import {
+  clearValidationError,
+  formatValidationSummaryMessage,
+  getValidationSummaryEntries,
+  normalizeValidationErrorsRaw,
+} from '@/lib/validation'
 import { isValidEmail } from '@/lib/utils'
+import { FieldError } from '@/components/ui/field'
 import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
 
 type Step = 'form' | 'verification' | 'success'
@@ -56,17 +63,6 @@ export function RegisterForm() {
     }
   }, [resendCooldown])
 
-  // 清除单个字段错误
-  const clearFieldError = (field: string) => {
-    if (fieldErrors[field]) {
-      setFieldErrors(prev => {
-        const next = { ...prev }
-        delete next[field]
-        return next
-      })
-    }
-  }
-
   // 翻译错误消息
   const translateErrors = (errors: Record<string, string[]>): Record<string, string> => {
     const result: Record<string, string> = {}
@@ -76,7 +72,6 @@ export function RegisterForm() {
         try {
           return t(key, params)
         } catch {
-          // 如果翻译不存在，返回原始 key
           return errorKey
         }
       })
@@ -84,6 +79,21 @@ export function RegisterForm() {
     }
     return result
   }
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'code']),
+    [fieldErrors]
+  )
+  const summaryFieldLabels = React.useMemo(
+    () => ({
+      username: t('username'),
+      email: t('email'),
+      password: t('password'),
+      confirmPassword: t('confirmPassword'),
+      code: t('verificationCode'),
+    }),
+    [t]
+  )
 
   // 步骤1：提交注册表单
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,8 +144,8 @@ export function RegisterForm() {
         }
       }
     } catch (err) {
-      if (err instanceof ApiError && err.isValidationError()) {
-        const rawErrors = err.getFieldErrorsRaw()
+      const rawErrors = normalizeValidationErrorsRaw(err)
+      if (Object.keys(rawErrors).length > 0) {
         setFieldErrors(translateErrors(rawErrors))
       }
     } finally {
@@ -192,6 +202,16 @@ export function RegisterForm() {
   if (step === 'form') {
     return (
       <form onSubmit={handleSubmit} className="space-y-4">
+        {summaryEntries.length > 0 && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+            {summaryEntries.map(([field, message]) => (
+              <FieldError key={field}>
+                {formatValidationSummaryMessage(field, message, summaryFieldLabels)}
+              </FieldError>
+            ))}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label htmlFor="username">{t('username')}</Label>
           <Input
@@ -200,16 +220,14 @@ export function RegisterForm() {
             value={username}
             onChange={(e) => {
               setUsername(e.target.value)
-              clearFieldError('username')
+              setFieldErrors((prev) => clearValidationError(prev, 'username'))
             }}
             placeholder="johndoe"
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.username}
           />
-          {fieldErrors.username && (
-            <p className="text-sm text-destructive">{fieldErrors.username}</p>
-          )}
+          <FieldError>{fieldErrors.username}</FieldError>
         </div>
         
         <div className="space-y-2">
@@ -220,18 +238,16 @@ export function RegisterForm() {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value)
-              clearFieldError('email')
+              setFieldErrors((prev) => clearValidationError(prev, 'email'))
             }}
             placeholder="john@example.com"
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.email}
           />
-          {fieldErrors.email && (
-            <p className="text-sm text-destructive">{fieldErrors.email}</p>
-          )}
+          <FieldError>{fieldErrors.email}</FieldError>
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="password">{t('password')}</Label>
           <Input
@@ -240,17 +256,15 @@ export function RegisterForm() {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value)
-              clearFieldError('password')
+              setFieldErrors((prev) => clearValidationError(prev, 'password'))
             }}
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.password}
           />
-          {fieldErrors.password && (
-            <p className="text-sm text-destructive">{fieldErrors.password}</p>
-          )}
+          <FieldError>{fieldErrors.password}</FieldError>
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
           <Input
@@ -259,15 +273,13 @@ export function RegisterForm() {
             value={confirmPassword}
             onChange={(e) => {
               setConfirmPassword(e.target.value)
-              clearFieldError('confirmPassword')
+              setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
             }}
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.confirmPassword}
           />
-          {fieldErrors.confirmPassword && (
-            <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-          )}
+          <FieldError>{fieldErrors.confirmPassword}</FieldError>
         </div>
         
         <Button type="submit" className="w-full" disabled={loading}>
@@ -317,13 +329,17 @@ export function RegisterForm() {
 
           {showCodeInput && (
             <>
+              <FieldError className="text-center">{fieldErrors.code}</FieldError>
               <div className="space-y-2">
                 <Label>{t('verificationCode')}</Label>
                 <div className="flex justify-center">
                   <InputOTP
                     maxLength={6}
                     value={verificationCode}
-                    onChange={setVerificationCode}
+                    onChange={(value) => {
+                      setVerificationCode(value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'code'))
+                    }}
                     disabled={loading}
                   >
                     <InputOTPGroup>
@@ -336,9 +352,6 @@ export function RegisterForm() {
                     </InputOTPGroup>
                   </InputOTP>
                 </div>
-                {fieldErrors.code && (
-                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
-                )}
               </div>
 
               <Button

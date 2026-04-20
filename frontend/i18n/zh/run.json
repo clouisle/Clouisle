@@ -2,6 +2,7 @@
   "run": {
     "title": "运行",
     "error": "错误",
+    "loadError": "加载资源失败",
     "notFound": "资源未找到",
     "backToHome": "返回首页",
     "executionFlow": "执行流程",

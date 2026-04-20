@@ -53,7 +53,7 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">{t("action")}</span>
                 <span className="text-sm font-medium">
-                  {t(`action${log.action}`) || log.action}
+                  {t.has(`action${log.action}`) ? t(`action${log.action}`) : log.action}
                 </span>
               </div>
               <div className="flex justify-between">

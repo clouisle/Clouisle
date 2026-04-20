@@ -298,7 +298,7 @@ export function AgentNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           onSelect(
                             `{{${variable.id}}}`,
-                            variable.isSystem ? 'SYSTEM' : variable.groupLabel
+                            variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
                           )
                           onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')

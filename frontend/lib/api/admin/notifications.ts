@@ -23,8 +23,8 @@ export const notificationsApi = {
     return api.get(`/admin/notifications?${queryParams.toString()}`)
   },
 
-  adminCreate: async (payload: NotificationAdminCreateInput): Promise<NotificationItem> =>
-    api.post('/admin/notifications', payload),
+  adminCreate: async (payload: NotificationAdminCreateInput, options?: { silent?: boolean }): Promise<NotificationItem> =>
+    api.post('/admin/notifications', payload, { silent: options?.silent }),
 
   adminDelete: async (id: string): Promise<{ id: string }> =>
     api.delete(`/admin/notifications/${id}`),

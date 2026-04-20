@@ -67,6 +67,7 @@ interface AppSidebarProps {
 
 export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'left' }: AppSidebarProps) {
   const t = useTranslations('nav')
+  const tPlatform = useTranslations('platform')
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = React.useState<UserType | null>(null)
@@ -258,7 +259,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                   <span className="font-semibold">{siteSettings.site_name || 'Clouisle'}</span>
-                  <span className="text-xs text-muted-foreground">Admin Panel</span>
+                  <span className="text-xs text-muted-foreground">{tPlatform('admin')}</span>
                 </div>
               </SidebarMenuButton>
             </Link>
