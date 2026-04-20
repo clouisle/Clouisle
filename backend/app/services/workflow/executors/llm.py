@@ -74,7 +74,7 @@ class LLMNodeExecutor(NodeExecutor):
             logger.error(
                 f"LLM node {node_id}: modelId not found in llmConfig. Available keys: {list(llm_config.keys())}"
             )
-            return ExecutionResult(error="Model ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # First try to find as TeamModel ID, then fallback to Model ID
         team_model = (
@@ -87,7 +87,7 @@ class LLMNodeExecutor(NodeExecutor):
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
             if model is None:
-                return ExecutionResult(error=f"Model not found: {team_model_id}")
+                return ExecutionResult(error="model_not_found")
             model_id = str(model.id)
 
         # Resolve prompts
@@ -216,7 +216,7 @@ class LLMNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"LLM execution error: {e}")
-            return ExecutionResult(error=f"LLM error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     async def _resolve_template(
         self,

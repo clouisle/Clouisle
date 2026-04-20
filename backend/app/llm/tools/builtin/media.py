@@ -15,6 +15,7 @@ from typing import Any
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
     GeneratedImage,
     ImageContent,
@@ -330,16 +331,20 @@ async def generate_image(
         )
     except Exception as exc:
         logger.exception("Image generation tool failed: %s", exc)
+        error_message = resolve_user_visible_error(
+            str(exc),
+            fallback_key="unknown_error_generic",
+        )
         display_result = build_image_tool_result(
             prompt,
             model_ref=resolved_model_ref,
-            error=str(exc) or t("unknown_error_generic"),
+            error=error_message,
         )
         return build_media_tool_execution_result(
             display_result,
             build_image_llm_result(
                 prompt,
-                error=str(exc) or t("unknown_error_generic"),
+                error=error_message,
             ),
         )
 
@@ -424,18 +429,22 @@ async def generate_video(
         )
     except Exception as exc:
         logger.exception("Video generation tool failed: %s", exc)
+        error_message = resolve_user_visible_error(
+            str(exc),
+            fallback_key="unknown_error_generic",
+        )
         display_result = build_video_tool_result(
             prompt,
             model_ref=resolved_model_ref,
             poll_interval_ms=poll_interval_ms,
             poll_timeout_s=poll_timeout_s,
-            error=str(exc) or t("unknown_error_generic"),
+            error=error_message,
         )
         return build_media_tool_execution_result(
             display_result,
             build_video_llm_result(
                 prompt,
-                error=str(exc) or t("unknown_error_generic"),
+                error=error_message,
             ),
         )
 

@@ -18,6 +18,7 @@ from uuid import uuid4
 from enum import Enum
 
 from app.core.redis import get_redis
+from app.services.error_messages import resolve_user_visible_error
 
 logger = logging.getLogger(__name__)
 
@@ -530,7 +531,13 @@ class WorkflowDebugger:
             result = eval(expression, {"__builtins__": allowed_builtins}, variables)
             return {"success": True, "result": result}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": resolve_user_visible_error(
+                    str(e),
+                    fallback_key="workflow_execution_error",
+                ),
+            }
 
     # Watch Expressions
 

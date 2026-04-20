@@ -89,13 +89,13 @@ class DocumentProcessor:
         root = Path(self.upload_dir).resolve()
         candidate = root.joinpath(*parts).resolve()
         if candidate != root and root not in candidate.parents:
-            raise ValueError("Invalid document storage path")
+            raise ValueError("validation_error")
         return candidate
 
     def _sanitize_filename(self, filename: str) -> str:
         safe_name = os.path.basename(filename).strip()
         if not safe_name or safe_name in {".", ".."}:
-            raise ValueError("Invalid document filename")
+            raise ValueError("validation_error")
         return safe_name
 
     def get_document_type(
@@ -249,7 +249,7 @@ class DocumentProcessor:
 
         except Exception as e:
             logger.error(f"Error extracting text from {resolved_path}: {e}")
-            raise ValueError(f"Failed to extract text: {e}")
+            raise ValueError("document_processing_failed_generic")
 
         # Clean up text
         text = self._clean_text(text, clean=clean_text)
@@ -310,10 +310,7 @@ class DocumentProcessor:
             return text, metadata
 
         except ImportError:
-            raise ValueError(
-                f"MarkItDown not installed. Install with: pip install 'markitdown[pdf,xlsx,xls]'. "
-                f"Required for {doc_type} files."
-            )
+            raise ValueError("document_processing_failed_generic")
 
     def _extract_csv_text(self, content: bytes) -> str:
         """Extract text from CSV content."""

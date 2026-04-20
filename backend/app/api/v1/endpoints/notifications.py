@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.i18n import has_translation, t
 from app.core.timezone import now_utc
 from app.models.notification import (
     Notification,
@@ -31,6 +32,19 @@ from app.services.notification import create_notification_audit, create_notifica
 logger = logging.getLogger(__name__)
 router = APIRouter()
 admin_router = APIRouter()  # kept for backward compatibility; mounted via admin router
+
+
+def serialize_delivery_error(
+    error_message: str | None,
+    status: NotificationDeliveryStatus,
+) -> str | None:
+    if not error_message:
+        return None
+    if has_translation(error_message):
+        return t(error_message)
+    if status == NotificationDeliveryStatus.SUCCESS:
+        return error_message
+    return t("unknown_error")
 
 
 async def check_team_admin_permission(team_id: UUID, user: User) -> Team:
@@ -307,7 +321,7 @@ async def admin_list_notifications(
                 NotificationDeliveryOut(
                     channel=d.channel,
                     status=d.status,
-                    error_message=d.error_message,
+                    error_message=serialize_delivery_error(d.error_message, d.status),
                     retry_count=d.retry_count,
                     sent_at=d.sent_at,
                     created_at=d.created_at,
@@ -754,7 +768,7 @@ async def admin_create_notification(
                 NotificationDeliveryOut(
                     channel=d.channel,
                     status=d.status,
-                    error_message=d.error_message,
+                    error_message=serialize_delivery_error(d.error_message, d.status),
                     retry_count=d.retry_count,
                     sent_at=d.sent_at,
                     created_at=d.created_at,

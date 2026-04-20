@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..errors import translate_public_workflow_error
+from app.core.i18n import t
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
@@ -78,7 +80,7 @@ class CodeNodeExecutor(NodeExecutor):
         logger.debug(f"Code node inputs: {input_mappings}")
 
         if not code:
-            return ExecutionResult(error="No code provided")
+            return ExecutionResult(error="tool_code_not_defined")
 
         # Resolve input variables
         inputs = await self.resolve_inputs(context, input_mappings)
@@ -94,7 +96,9 @@ class CodeNodeExecutor(NodeExecutor):
                 # JavaScript code should define main(params) function
                 wrapped_code = self._wrap_javascript_code(code)
             else:
-                return ExecutionResult(error=f"Unsupported language: {language}")
+                return ExecutionResult(
+                    error=t("unsupported_code_execution_language", language=language)
+                )
 
             job = compile_code_config_job(
                 code_config={
@@ -121,7 +125,9 @@ class CodeNodeExecutor(NodeExecutor):
 
             if not sandbox_result.success:
                 return ExecutionResult(
-                    error=f"Code execution error: {sandbox_result.error}"
+                    error=translate_public_workflow_error(
+                        sandbox_result.error or "code_execution_failed"
+                    )
                 )
 
             result = sandbox_result.result
@@ -138,7 +144,7 @@ class CodeNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Code execution error: {e}")
-            return ExecutionResult(error=f"Code execution error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def _wrap_python_code(self, code: str) -> str:
         """

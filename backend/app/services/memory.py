@@ -26,6 +26,10 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+
+def _memory_tool_error() -> str:
+    return t("memory_tool_execution_failed")
+
 _qdrant_client: Any = None
 _memory_collections: set[str] = set()
 
@@ -173,7 +177,7 @@ class MemoryService:
         """
         entity = await MemoryEntity.filter(id=entity_id, user_id=user_id).first()
         if not entity:
-            raise ValueError("Entity not found")
+            raise ValueError("memory_entity_not_found")
 
         # Merge description
         if description:
@@ -206,7 +210,7 @@ class MemoryService:
         """
         entity = await MemoryEntity.filter(id=entity_id, user_id=user_id).first()
         if not entity:
-            raise ValueError("Entity not found")
+            raise ValueError("memory_entity_not_found")
 
         # Delete embedding from Qdrant
         if entity.embedding_id:
@@ -254,8 +258,10 @@ class MemoryService:
         source = await MemoryEntity.filter(id=source_entity_id, user_id=user_id).first()
         target = await MemoryEntity.filter(id=target_entity_id, user_id=user_id).first()
 
-        if not source or not target:
-            raise ValueError("Source or target entity not found")
+        if not source:
+            raise ValueError("memory_source_entity_not_found")
+        if not target:
+            raise ValueError("memory_target_entity_not_found")
 
         # Check if relation already exists
         existing = await MemoryRelation.filter(
@@ -296,7 +302,7 @@ class MemoryService:
         """
         relation = await MemoryRelation.filter(id=relation_id, user_id=user_id).first()
         if not relation:
-            raise ValueError("Relation not found")
+            raise ValueError("memory_relation_not_found")
 
         await relation.delete()
         logger.info(f"Deleted memory relation for user {user_id}")
@@ -648,7 +654,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -785,7 +791,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -900,7 +906,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -949,5 +955,5 @@ class MemoryService:
             logger.error(f"Failed to search memory: {e}")
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }

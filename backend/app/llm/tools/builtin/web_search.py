@@ -63,7 +63,7 @@ async def web_search(
     else:
         return {
             "query": query,
-            "error": f"Unsupported search engine: {search_engine}",
+            "error": t("web_search_unsupported_engine", search_engine=search_engine),
             "success": False,
         }
 
@@ -131,7 +131,7 @@ async def _tavily_search(
         logger.error(f"Tavily search HTTP error: {e}")
         return {
             "query": query,
-            "error": f"Search API error: {e.response.status_code}",
+            "error": t("web_search_api_error", status_code=e.response.status_code),
             "success": False,
             "results": [],
         }
@@ -139,7 +139,7 @@ async def _tavily_search(
         logger.error(f"Tavily search error: {e}")
         return {
             "query": query,
-            "error": str(e),
+            "error": t("tool_execution_failed"),
             "success": False,
             "results": [],
         }
@@ -193,20 +193,23 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
             else:
                 return {
                     "url": url,
-                    "error": f"Unsupported content type: {content_type}",
+                    "error": t(
+                        "fetch_webpage_unsupported_content_type",
+                        content_type=content_type,
+                    ),
                     "success": False,
                 }
 
     except httpx.HTTPStatusError as e:
         return {
             "url": url,
-            "error": f"HTTP error: {e.response.status_code}",
+            "error": t("fetch_webpage_http_error", status_code=e.response.status_code),
             "success": False,
         }
     except Exception as e:
         return {
             "url": url,
-            "error": str(e),
+            "error": t("tool_execution_failed"),
             "success": False,
         }
 

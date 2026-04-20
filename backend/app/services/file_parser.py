@@ -76,9 +76,7 @@ class FileParserService:
 
                 self._md = MarkItDown()
             except ImportError:
-                raise ValueError(
-                    "MarkItDown not installed. Install with: pip install 'markitdown[pdf,xlsx,xls]'"
-                )
+                raise ValueError("document_processing_failed_generic")
         return self._md
 
     def is_supported(self, filename: str) -> bool:
@@ -165,10 +163,7 @@ class FileParserService:
         # Validate file type
         if not self.is_supported(filename):
             ext = Path(filename).suffix.lower()
-            raise ValueError(
-                f"Unsupported file type: {ext}. "
-                f"Supported: {', '.join(self.SUPPORTED_EXTENSIONS.keys())}"
-            )
+            raise ValueError("unsupported_file_type")
 
         mime_type = self.get_mime_type(filename)
         file_size = len(file_content)

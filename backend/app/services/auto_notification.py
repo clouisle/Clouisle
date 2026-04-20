@@ -194,7 +194,7 @@ class AutoNotificationService:
                         f"Failed to trigger {channel.value} notification task: {e}"
                     )
                     delivery.status = NotificationDeliveryStatus.FAILED
-                    delivery.error_message = str(e)
+                    delivery.error_message = "task_dispatch_failed"
                     await delivery.save()
 
     @classmethod

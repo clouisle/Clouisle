@@ -11,6 +11,7 @@ import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..errors import MaxDepthExceededError
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -69,7 +70,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         fail_on_error = config.get("failOnError", True)
 
         if not workflow_id:
-            return ExecutionResult(error="Sub-workflow ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Check depth to prevent infinite recursion
         current_depth = run.depth if hasattr(run, "depth") else 0
@@ -79,7 +80,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
         # Load sub-workflow
         sub_workflow = await Workflow.filter(id=workflow_id).first()
         if not sub_workflow:
-            return ExecutionResult(error=f"Sub-workflow not found: {workflow_id}")
+            return ExecutionResult(error="workflow_not_found")
 
         # Convert frontend inputMappings format to resolve_inputs format
         # Frontend format: {name, type, required, source, variableRef, constantValue}
@@ -123,7 +124,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             # Run sub-workflow
             triggered_by_id = run.triggered_by_id
             if triggered_by_id is None:
-                return ExecutionResult(error="Sub-workflow requires a triggering user")
+                return ExecutionResult(error="validation_error")
 
             sub_run_id = await orchestrator.run(
                 workflow_id=UUID(workflow_id),
@@ -136,7 +137,7 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             # Get sub-workflow results
             sub_run = await WorkflowRunModel.filter(id=sub_run_id).first()
             if sub_run is None:
-                return ExecutionResult(error="Sub-workflow run not found")
+                return ExecutionResult(error="workflow_run_not_found")
 
             # Update sub-run with parent info
             sub_run.parent_run_id = run.id
@@ -146,15 +147,14 @@ class SubWorkflowNodeExecutor(NodeExecutor):
 
             # Check sub-workflow result
             if sub_run.status == "failed":
+                public_error = translate_public_workflow_error(sub_run.error_message)
                 if fail_on_error:
-                    return ExecutionResult(
-                        error=f"Sub-workflow failed: {sub_run.error_message}"
-                    )
+                    return ExecutionResult(error=public_error)
                 else:
                     return ExecutionResult(
                         outputs={
                             "_status": "failed",
-                            "_error": sub_run.error_message,
+                            "_error": public_error,
                             "_sub_run_id": str(sub_run_id),
                         }
                     )
@@ -186,13 +186,14 @@ class SubWorkflowNodeExecutor(NodeExecutor):
             raise
         except Exception as e:
             logger.exception(f"Sub-workflow execution error: {e}")
+            public_error = translate_public_workflow_error(e)
             if fail_on_error:
-                return ExecutionResult(error=f"Sub-workflow error: {str(e)}")
+                return ExecutionResult(error=public_error)
             else:
                 return ExecutionResult(
                     outputs={
                         "_status": "error",
-                        "_error": str(e),
+                        "_error": public_error,
                     }
                 )
 
@@ -260,7 +261,7 @@ class FileToURLNodeExecutor(NodeExecutor):
         # Get input value
         input_value = await context.resolve_variable_ref(input_var)
         if not input_value:
-            return ExecutionResult(error="No input file provided")
+            return ExecutionResult(error="validation_error")
 
         try:
             if input_type == "path":
@@ -268,7 +269,7 @@ class FileToURLNodeExecutor(NodeExecutor):
                 file_path = str(input_value)
 
                 if not os.path.exists(file_path):
-                    return ExecutionResult(error=f"File not found: {file_path}")
+                    return ExecutionResult(error="file_not_found")
 
                 filename = os.path.basename(file_path)
                 mime_type, _ = mimetypes.guess_type(file_path)
@@ -326,16 +327,14 @@ class FileToURLNodeExecutor(NodeExecutor):
                 else:
                     # Would need to save to storage and generate URL
                     # This is a simplified implementation
-                    return ExecutionResult(
-                        error="Converting base64 to URL requires file storage (not implemented)"
-                    )
+                    return ExecutionResult(error="workflow_execution_error")
 
             else:
-                return ExecutionResult(error=f"Unknown input type: {input_type}")
+                return ExecutionResult(error="validation_error")
 
         except Exception as e:
             logger.exception(f"File conversion error: {e}")
-            return ExecutionResult(error=f"File conversion failed: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""

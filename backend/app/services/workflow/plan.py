@@ -167,11 +167,11 @@ class ExecutionPlan:
         for node_id, node in self.nodes.items():
             if node.node_type in start_types:
                 if self.start_node_id:
-                    raise WorkflowValidationError("Workflow has multiple start nodes")
+                    raise WorkflowValidationError()
                 self.start_node_id = node_id
 
         if not self.start_node_id:
-            raise WorkflowValidationError("Workflow has no start node")
+            raise WorkflowValidationError()
 
         logger.debug(f"Start node: {self.start_node_id}")
 
@@ -213,9 +213,9 @@ class ExecutionPlan:
 
         # Check for cycles
         if len(processed) != len(self.nodes):
-            unprocessed = set(self.nodes.keys()) - processed
             raise CyclicDependencyError(
-                f"Cyclic dependency detected involving nodes: {unprocessed}"
+                WorkflowValidationError().message,
+                msg_key="validation_error",
             )
 
         logger.debug(f"Built {len(self.stages)} execution stages")

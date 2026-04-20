@@ -294,7 +294,7 @@ class ToolCreateInput(BaseModel):
         """验证工具名称格式：只允许字母、数字、下划线，且必须以字母开头"""
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
             raise ValueError(
-                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+                "tool_name_invalid_format"
             )
         return v
 
@@ -321,7 +321,7 @@ class ToolUpdateInput(BaseModel):
         """验证工具名称格式"""
         if v is not None and not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
             raise ValueError(
-                "Tool name must start with a letter and contain only letters, numbers, and underscores"
+                "tool_name_invalid_format"
             )
         return v
 

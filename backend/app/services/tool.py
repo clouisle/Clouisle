@@ -8,11 +8,13 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from app.core.i18n import t
 from app.models.tool import Tool, ToolType, CustomToolType
 from app.models.tool_config import ToolConfig
 from app.llm.tools import tool_registry
 from app.llm.tools.executors import execute_http_tool
 from app.llm.tools.mcp_client import execute_mcp_tool
+from app.services.error_messages import resolve_user_visible_error
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
@@ -70,7 +72,7 @@ class ToolExecutor:
                 arguments=arguments,
             )
         else:
-            raise ValueError(f"Unknown tool type: {tool.type}")
+            raise ValueError(t("unsupported_custom_tool_type", tool_type=tool.type))
 
     @staticmethod
     def _get_tool_type_value(tool_type: Any) -> str:
@@ -106,7 +108,10 @@ class ToolExecutor:
             return result
         except Exception as e:
             logger.exception(f"Builtin tool execution error: {e}")
-            return {"error": str(e), "success": False}
+            return {
+                "error": resolve_user_visible_error(str(e)),
+                "success": False,
+            }
 
     async def _execute_custom_tool(
         self,
@@ -116,7 +121,7 @@ class ToolExecutor:
         """Execute a custom tool (HTTP or Code)."""
         if tool.custom_type == CustomToolType.HTTP:
             if not tool.http_config:
-                raise ValueError("HTTP tool missing http_config")
+                raise ValueError(t("tool_execution_failed"))
 
             return await execute_http_tool(
                 http_config=tool.http_config,
@@ -125,7 +130,7 @@ class ToolExecutor:
             )
         elif tool.custom_type == CustomToolType.CODE:
             if not tool.code_config:
-                raise ValueError("Code tool missing code_config")
+                raise ValueError(t("tool_execution_failed"))
 
             job = compile_code_config_job(
                 code_config=tool.code_config,
@@ -146,7 +151,9 @@ class ToolExecutor:
                 "artifacts": [artifact.model_dump() for artifact in result.artifacts],
             }
         else:
-            raise ValueError(f"Unknown custom tool type: {tool.custom_type}")
+            raise ValueError(
+                t("unsupported_custom_tool_type", tool_type=tool.custom_type)
+            )
 
     async def _execute_mcp_tool(
         self,
@@ -155,7 +162,9 @@ class ToolExecutor:
     ) -> Any:
         """Execute an MCP tool."""
         if not tool.mcp_config:
-            raise ValueError("MCP tool missing mcp_config")
+            raise ValueError(
+                t("mcp_tool_missing_configuration", tool_name=tool.name)
+            )
 
         return await execute_mcp_tool(
             tool_name=tool.name,

@@ -73,7 +73,7 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
         output_var = kr_config.get("outputVariable", "results")
 
         if not kb_id:
-            return ExecutionResult(error="Knowledge base ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Resolve query based on source
         if query_source == "variable":
@@ -83,12 +83,12 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             query = kr_config.get("queryConstantValue", "")
 
         if not query:
-            return ExecutionResult(error="Query is empty")
+            return ExecutionResult(error="query_parameter_required")
 
         # Load knowledge base
         kb = await KnowledgeBase.filter(id=kb_id).first()
         if not kb:
-            return ExecutionResult(error=f"Knowledge base not found: {kb_id}")
+            return ExecutionResult(error="not_found")
 
         try:
             # Get embedding model and team ID from KB for usage tracking
@@ -151,7 +151,7 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Knowledge retrieval error: {e}")
-            return ExecutionResult(error=f"Retrieval failed: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
@@ -209,7 +209,7 @@ class DocumentExtractorNodeExecutor(NodeExecutor):
         # Get input file path
         file_path = await context.resolve_variable_ref(input_var)
         if not file_path:
-            return ExecutionResult(error="No file provided for extraction")
+            return ExecutionResult(error="validation_error")
 
         try:
             extractor = DocumentExtractor()
@@ -231,7 +231,7 @@ class DocumentExtractorNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Document extraction error: {e}")
-            return ExecutionResult(error=f"Extraction failed: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""

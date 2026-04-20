@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+from app.core.i18n import t
+
 from .models import SandboxExecutionMetadata, SandboxJob, SandboxResult, SandboxTaskStatus
 from .policies import sandbox_policy_engine
 from .result_store import sandbox_result_store
@@ -59,7 +61,7 @@ class SandboxGateway:
                     job_id,
                     SandboxTaskStatus.FAILED,
                     metadata=metadata,
-                    error="Sandbox job timed out while waiting for result",
+                    error=t("request_timeout"),
                 )
             await asyncio.sleep(min(current_poll_interval, remaining))
             current_poll_interval = self._advance_poll_interval(current_poll_interval)
@@ -76,7 +78,7 @@ class SandboxGateway:
             timeout_seconds=timeout_seconds or job.limits.timeout_seconds + 5,
         )
 
-    async def cancel(self, job_id: str, reason: str = "Cancelled") -> SandboxResult:
+    async def cancel(self, job_id: str, reason: str | None = None) -> SandboxResult:
         existing = await sandbox_result_store.get_result(job_id)
         metadata = existing.metadata if existing else SandboxExecutionMetadata()
         metadata.mark_completed(datetime.now(UTC))
@@ -85,7 +87,7 @@ class SandboxGateway:
             SandboxTaskStatus.CANCELLED,
             metadata=metadata,
             success=False,
-            error=reason,
+            error=reason or t("workflow_run_cancelled"),
         )
 
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -307,12 +308,12 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             logger.error(
                 f"Question classifier node {node_id}: modelId not found. Config: {config}"
             )
-            return ExecutionResult(error="Model ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Get input value
         input_value = await context.resolve_variable_ref(input_var)
         if not input_value:
-            return ExecutionResult(error="No input provided for classification")
+            return ExecutionResult(error="validation_error")
 
         # First try to find as TeamModel ID, then fallback to Model ID
         team_model = (
@@ -325,7 +326,7 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
             if model is None:
-                return ExecutionResult(error=f"Model not found: {team_model_id}")
+                return ExecutionResult(error="model_not_found")
             model_id = str(model.id)
 
         # Build classification prompt
@@ -432,4 +433,4 @@ Respond in JSON format:
 
         except Exception as e:
             logger.exception(f"Question classifier error: {e}")
-            return ExecutionResult(error=f"Classification error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))

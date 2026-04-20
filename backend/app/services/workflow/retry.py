@@ -11,6 +11,8 @@ import asyncio
 import logging
 import random
 
+from .errors import translate_public_workflow_error
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -199,11 +201,11 @@ class RetryableExecutor:
                 else:
                     logger.error(f"All retries exhausted. Error: {e}")
                     return ExecutionResult(
-                        error=f"Failed after {self.attempts} attempts: {str(e)}"
+                        error=translate_public_workflow_error(e)
                     )
 
         return ExecutionResult(
-            error=f"Failed after {self.attempts} attempts: {self.last_error}"
+            error=translate_public_workflow_error(self.last_error)
         )
 
 

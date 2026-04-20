@@ -10,7 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
+from app.services.error_messages import resolve_user_visible_error
 
 from .artifacts import SandboxArtifactStore
 from .models import SandboxExecutionMetadata, SandboxJob, SandboxResult, SandboxTaskStatus
@@ -136,10 +138,11 @@ class SandboxManager:
             result_value = process_result.stdout.strip() or None
             error = None
             if process_result.timed_out:
-                error = process_result.stderr.strip() or "Execution timeout"
+                error = t("request_timeout")
             elif not success:
-                error = process_result.stderr.strip() or (
-                    f"Process exited with code {process_result.exit_code}"
+                error = process_result.stderr.strip() or t(
+                    "sandbox_process_exit_code",
+                    exit_code=process_result.exit_code,
                 )
             return LegacyExecutionResult(
                 success=success,
@@ -152,7 +155,7 @@ class SandboxManager:
         metadata.mark_execute_completed(datetime.now(UTC))
         return LegacyExecutionResult(
             success=False,
-            error="Sandbox job has no executable payload",
+            error=t("sandbox_missing_executable_payload"),
         )
 
     def _prepare_snippet_execution(
@@ -306,18 +309,34 @@ async function __execute__() {{
             return LegacyExecutionResult(
                 success=bool(payload.get("success", False)),
                 result=payload.get("result"),
-                error=payload.get("error"),
+                error=None
+                if payload.get("success", False)
+                else resolve_user_visible_error(
+                    payload.get("error"),
+                    fallback_key="code_tool_execution_failed",
+                ),
                 stdout="\n".join(logs) if logs else "",
                 stderr=stderr,
             )
 
         if process_result.timed_out:
-            return LegacyExecutionResult(success=False, error=stderr or stdout, stdout=stdout, stderr=stderr)
+            return LegacyExecutionResult(
+                success=False,
+                error=t("request_timeout"),
+                stdout=stdout,
+                stderr=stderr,
+            )
 
         return LegacyExecutionResult(
             success=process_result.exit_code == 0,
             result=stdout.strip() or None,
-            error=None if process_result.exit_code == 0 else (stderr.strip() or f"Process exited with code {process_result.exit_code}"),
+            error=None
+            if process_result.exit_code == 0
+            else resolve_user_visible_error(
+                stderr.strip()
+                or t("sandbox_process_exit_code", exit_code=process_result.exit_code),
+                fallback_key="code_tool_execution_failed",
+            ),
             stdout=stdout,
             stderr=stderr,
         )
@@ -451,7 +470,12 @@ async function __execute__() {{
         limit_bytes = job.limits.disk_mb * 1024 * 1024
         if usage_bytes > limit_bytes:
             raise RuntimeError(
-                f"Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}"
+                t(
+                    "sandbox_disk_limit_exceeded",
+                    stage=stage,
+                    usage_bytes=usage_bytes,
+                    limit_bytes=limit_bytes,
+                )
             )
 
     def _should_measure_workspace_usage(self, job: SandboxJob) -> bool:

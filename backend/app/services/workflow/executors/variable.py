@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -411,7 +412,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         # Get input value
         input_value = await context.resolve_variable_ref(source_var)
         if input_value is None:
-            return ExecutionResult(error="No input provided for extraction")
+            return ExecutionResult(error="validation_error")
 
         logger.info(f"Parameter extractor input: {str(input_value)[:200]}...")
         logger.info(f"Extraction method: {extraction_method}")
@@ -434,22 +435,18 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             import jsonpath_ng  # noqa: F401
             from jsonpath_ng import parse as jsonpath_parse
         except ImportError:
-            return ExecutionResult(
-                error="jsonpath-ng package not installed. Run: pip install jsonpath-ng"
-            )
+            return ExecutionResult(error="workflow_execution_error")
 
         # Parse input as JSON if it's a string
         if isinstance(input_value, str):
             try:
                 data = json.loads(input_value)
             except json.JSONDecodeError:
-                return ExecutionResult(error="Input is not valid JSON")
+                return ExecutionResult(error="validation_error")
         elif isinstance(input_value, (dict, list)):
             data = input_value
         else:
-            return ExecutionResult(
-                error=f"Input must be JSON string, dict, or list, got {type(input_value)}"
-            )
+            return ExecutionResult(error="validation_error")
 
         outputs: dict[str, Any] = {}
         for param in parameters:
@@ -480,18 +477,14 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                     # Try to parse default value based on type
                     outputs[name] = self._parse_default_value(default_value, param_type)
                 elif required:
-                    return ExecutionResult(
-                        error=f"Required parameter '{name}' not found at path: {json_path}"
-                    )
+                    return ExecutionResult(error="validation_error")
                 else:
                     outputs[name] = None
 
             except Exception as e:
                 logger.warning(f"JSONPath error for {name}: {e}")
                 if required:
-                    return ExecutionResult(
-                        error=f"JSONPath error for '{name}': {str(e)}"
-                    )
+                    return ExecutionResult(error="validation_error")
                 outputs[name] = (
                     self._parse_default_value(default_value, param_type)
                     if default_value is not None
@@ -536,18 +529,14 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
                 elif default_value is not None:
                     outputs[name] = self._parse_default_value(default_value, param_type)
                 elif required:
-                    return ExecutionResult(
-                        error=f"Required parameter '{name}' not found with pattern: {pattern}"
-                    )
+                    return ExecutionResult(error="validation_error")
                 else:
                     outputs[name] = None
 
             except re.error as e:
                 logger.warning(f"Regex error for {name}: {e}")
                 if required:
-                    return ExecutionResult(
-                        error=f"Invalid regex pattern for '{name}': {str(e)}"
-                    )
+                    return ExecutionResult(error="validation_error")
                 outputs[name] = (
                     self._parse_default_value(default_value, param_type)
                     if default_value is not None
@@ -570,7 +559,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         team_model_id = config.get("modelId")
 
         if not team_model_id:
-            return ExecutionResult(error="Model ID not configured for LLM extraction")
+            return ExecutionResult(error="validation_error")
 
         # First try to find as TeamModel ID, then fallback to Model ID
         team_model = (
@@ -583,7 +572,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
             if model is None:
-                return ExecutionResult(error=f"Model not found: {team_model_id}")
+                return ExecutionResult(error="model_not_found")
             model_id = str(model.id)
 
         # Build extraction prompt
@@ -646,9 +635,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
                     value = parsed.get(name)
 
                     if required and value is None:
-                        return ExecutionResult(
-                            error=f"Required parameter '{name}' could not be extracted"
-                        )
+                        return ExecutionResult(error="validation_error")
 
                     outputs[name] = value
 
@@ -660,11 +647,11 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
                 return ExecutionResult(outputs=outputs)
 
             except json.JSONDecodeError:
-                return ExecutionResult(error="Failed to parse LLM extraction result")
+                return ExecutionResult(error="workflow_execution_error")
 
         except Exception as e:
             logger.exception(f"LLM parameter extraction error: {e}")
-            return ExecutionResult(error=f"LLM extraction error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def _parse_default_value(self, value: str | None, param_type: str) -> Any:
         """Parse default value string to the appropriate type."""

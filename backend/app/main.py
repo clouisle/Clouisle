@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.init_data import init_db
-from app.core.i18n import set_language, t, get_code_message
+from app.core.i18n import set_language, t, get_code_message, has_translation, get_language
 from app.core.redis import close_redis
 from app.schemas.response import success, error, ResponseCode, BusinessError
 
@@ -221,9 +221,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         field_parts = [str(part) for part in loc if part != "body"]
         field = ".".join(field_parts) if field_parts else "unknown"
 
-        # 获取错误消息；如果 msg 是 i18n key，则在这里翻译
-        raw_msg = err.get("msg", "Invalid value")
-        msg = t(raw_msg) if isinstance(raw_msg, str) else str(raw_msg)
+        # 获取错误消息；只有在确认为翻译 key 时才翻译，否则回退到统一文案
+        raw_msg = err.get("msg", "validation_error")
+        if isinstance(raw_msg, str) and has_translation(raw_msg):
+            msg = t(raw_msg)
+        else:
+            msg = t("validation_error")
 
         # 如果同一字段有多个错误，用列表存储
         if field not in errors:
@@ -281,11 +284,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     }
     response_code = code_map.get(exc.status_code, ResponseCode.UNKNOWN_ERROR)
 
+    current_lang = get_language()
+    if isinstance(exc.detail, str) and has_translation(exc.detail, current_lang):
+        msg = t(exc.detail, lang=current_lang)
+    elif isinstance(response_code, ResponseCode):
+        msg = get_code_message(response_code, lang=current_lang)
+    else:
+        msg = t("unknown_error", lang=current_lang)
+
     return JSONResponse(
         status_code=exc.status_code,
         content=error(
             code=response_code,
-            msg=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+            msg=msg,
         ),
     )
 

@@ -8,8 +8,11 @@ from typing import TYPE_CHECKING, Any
 import logging
 import json
 
+from app.services.error_messages import resolve_user_visible_error
+
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..stream import StreamManager
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -74,7 +77,7 @@ class ToolNodeExecutor(NodeExecutor):
         output_var = config.get("outputVariable", "result")
 
         if not tool_id and not (tool_type == "builtin" and tool_name):
-            return ExecutionResult(error="Tool ID not configured")
+            return ExecutionResult(error="tool_not_found")
 
         # Resolve inputs
         inputs = await self.resolve_inputs(context, input_mappings)
@@ -98,7 +101,7 @@ class ToolNodeExecutor(NodeExecutor):
                 # Load tool
                 tool = await Tool.filter(id=tool_id).first()
                 if not tool:
-                    return ExecutionResult(error=f"Tool not found: {tool_id}")
+                    return ExecutionResult(error="tool_not_found")
 
                 result = await tool_executor.execute(
                     tool=tool,
@@ -122,17 +125,18 @@ class ToolNodeExecutor(NodeExecutor):
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.exception(f"Tool execution error: {e}")
+            public_error = translate_public_workflow_error(e)
             outputs = {
                 "result": None,
                 "status": "error",
-                "error": str(e),
+                "error": public_error,
                 "executionTime": duration_ms,
             }
             if output_var and output_var != "result":
                 outputs[output_var] = None
             return ExecutionResult(
                 outputs=outputs,
-                error=f"Tool execution failed: {str(e)}",
+                error=public_error,
             )
 
     def get_output_variables(self, config: dict) -> list[dict]:
@@ -196,12 +200,12 @@ class AgentNodeExecutor(NodeExecutor):
         max_turns = config.get("maxTurns", 10)
 
         if not agent_id:
-            return ExecutionResult(error="Agent ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Load agent
         agent = await Agent.filter(id=agent_id).first()
         if not agent:
-            return ExecutionResult(error=f"Agent not found: {agent_id}")
+            return ExecutionResult(error="agent_not_found")
 
         # Resolve message
         message = await self._resolve_template(message_template, context)
@@ -262,7 +266,7 @@ class AgentNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Agent execution error: {e}")
-            return ExecutionResult(error=f"Agent error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     async def _resolve_template(
         self,
@@ -338,7 +342,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
         timeout = config.get("timeout", 30)
 
         if not url_template:
-            return ExecutionResult(error="URL not configured")
+            return ExecutionResult(error="tool_execution_failed")
 
         # Resolve templates
         url = await self._resolve_template(url_template, context)
@@ -379,10 +383,17 @@ class HTTPRequestNodeExecutor(NodeExecutor):
                 )
 
         except httpx.TimeoutException:
-            return ExecutionResult(error=f"Request timed out after {timeout}s")
+            return ExecutionResult(
+                error=resolve_user_visible_error(
+                    f"Request timed out after {timeout}s",
+                    fallback_key="request_timeout",
+                )
+            )
         except Exception as e:
             logger.exception(f"HTTP request error: {e}")
-            return ExecutionResult(error=f"HTTP request failed: {str(e)}")
+            return ExecutionResult(
+                error=resolve_user_visible_error(str(e))
+            )
 
     async def _resolve_template(
         self,

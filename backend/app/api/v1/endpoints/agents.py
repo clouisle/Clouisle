@@ -920,7 +920,7 @@ async def get_agent_video_generation_status(
     if not agent.enable_video_generation:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
-            msg="Video generation is not enabled for this agent",
+            msg_key="video_generation_not_enabled_for_agent",
             status_code=400,
         )
 

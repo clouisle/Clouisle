@@ -21,6 +21,8 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 
+from app.services.error_messages import resolve_user_visible_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -192,7 +194,7 @@ class McpClient:
                                 error_text += content.text
                         return McpToolResult(
                             success=False,
-                            error=error_text or "Tool execution failed",
+                            error=resolve_user_visible_error(error_text),
                         )
 
                     # Extract result from content
@@ -214,13 +216,19 @@ class McpClient:
         except TimeoutError:
             return McpToolResult(
                 success=False,
-                error=f"Tool execution timed out after {timeout} seconds",
+                error=resolve_user_visible_error(
+                    f"Tool execution timed out after {timeout} seconds",
+                    fallback_key="request_timeout",
+                ),
             )
         except Exception as e:
             logger.exception(f"MCP tool execution error: {e}")
             return McpToolResult(
                 success=False,
-                error=str(e),
+                error=resolve_user_visible_error(
+                    str(e),
+                    fallback_key="mcp_tool_execution_failed",
+                ),
             )
 
 

@@ -32,6 +32,7 @@ from .errors import (
     NodeExecutionError,
     ExecutionTimeoutError,
     ExecutionCancelledError,
+    translate_public_workflow_error,
 )
 from .executor import NodeExecutorRegistry, ExecutionResult
 from .plan import ExecutionPlan
@@ -201,9 +202,7 @@ class WorkflowOrchestrator:
             # Validate plan
             errors = plan.validate()
             if errors:
-                raise WorkflowValidationError(
-                    message=f"Workflow validation failed: {', '.join(errors)}",
-                )
+                raise WorkflowValidationError(details={"errors": errors})
 
             # Publish workflow start event
             if stream_manager:
@@ -255,9 +254,9 @@ class WorkflowOrchestrator:
         except Exception as e:
             # Handle errors
             duration_ms = int((time.time() - start_time) * 1000)
-            error_msg = str(e)
+            public_error = translate_public_workflow_error(e)
 
-            await self._fail_run(run, error_msg, duration_ms)
+            await self._fail_run(run, public_error, duration_ms)
 
             # Record metrics - workflow failed
             if self._metrics:
@@ -267,7 +266,7 @@ class WorkflowOrchestrator:
                     duration_ms=duration_ms,
                     status="failed",
                     node_count=node_count,
-                    error=error_msg,
+                    error=public_error,
                 )
 
             # Finish profiling even on error
@@ -277,7 +276,7 @@ class WorkflowOrchestrator:
             if stream_manager:
                 node_id = getattr(e, "node_id", None)
                 await stream_manager.publish_workflow_error(
-                    error=error_msg,
+                    error=public_error,
                     node_id=node_id,
                 )
 
@@ -322,7 +321,9 @@ class WorkflowOrchestrator:
         # Load existing run record
         run = await WorkflowRun.filter(id=run_id).first()
         if not run:
-            raise WorkflowNotFoundError(f"Run {run_id} not found")
+            raise WorkflowNotFoundError(
+                t("workflow_run_not_found"), msg_key="workflow_run_not_found"
+            )
 
         # Update run status to running
         run.status = RunStatus.RUNNING
@@ -365,9 +366,7 @@ class WorkflowOrchestrator:
             # Validate plan
             errors = plan.validate()
             if errors:
-                raise WorkflowValidationError(
-                    message=f"Workflow validation failed: {', '.join(errors)}",
-                )
+                raise WorkflowValidationError(details={"errors": errors})
 
             # Publish workflow start event
             if stream_manager:
@@ -417,9 +416,9 @@ class WorkflowOrchestrator:
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            error_msg = str(e)
+            public_error = translate_public_workflow_error(e)
 
-            await self._fail_run(run, error_msg, duration_ms)
+            await self._fail_run(run, public_error, duration_ms)
 
             if self._metrics:
                 await self._metrics.record_workflow_complete(
@@ -428,7 +427,7 @@ class WorkflowOrchestrator:
                     duration_ms=duration_ms,
                     status="failed",
                     node_count=node_count,
-                    error=error_msg,
+                    error=public_error,
                 )
 
             if profiler:
@@ -437,7 +436,7 @@ class WorkflowOrchestrator:
             if stream_manager:
                 node_id = getattr(e, "node_id", None)
                 await stream_manager.publish_workflow_error(
-                    error=error_msg,
+                    error=public_error,
                     node_id=node_id,
                 )
 
@@ -447,7 +446,7 @@ class WorkflowOrchestrator:
         """Load workflow from database."""
         workflow = await Workflow.filter(id=workflow_id).first()
         if not workflow:
-            raise WorkflowNotFoundError(str(workflow_id))
+            raise WorkflowNotFoundError(t("workflow_not_found"), msg_key="workflow_not_found")
         return workflow
 
     async def _get_workflow_definition(self, workflow: Workflow) -> dict:
@@ -689,7 +688,7 @@ class WorkflowOrchestrator:
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error
-                            else "Unknown error",  # Truncate long errors
+                            else t("unknown_error"),  # Truncate long errors
                         ),
                         data={
                             "workflow_id": str(workflow.id),
@@ -712,7 +711,7 @@ class WorkflowOrchestrator:
                             workflow_name=workflow.name,
                             error=error[:200]
                             if error
-                            else "Unknown error",  # Truncate long errors
+                            else t("unknown_error"),  # Truncate long errors
                         ),
                         data={
                             "workflow_id": str(workflow.id),
@@ -760,14 +759,12 @@ class WorkflowOrchestrator:
         for stage in plan.stages:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(
-                    f"Execution timed out after {self.timeout} seconds"
-                )
+                raise ExecutionTimeoutError(self.timeout)
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError("Workflow execution was cancelled")
+                raise ExecutionCancelledError()
 
             # Filter nodes that should be executed in this stage
             nodes_to_execute = []
@@ -951,14 +948,12 @@ class WorkflowOrchestrator:
         for node_id in ordered_body_nodes:
             # Check timeout
             if time.time() - start_time > self.timeout:
-                raise ExecutionTimeoutError(
-                    f"Execution timed out after {self.timeout} seconds"
-                )
+                raise ExecutionTimeoutError(self.timeout)
 
             # Check if cancelled
             status = await context.get_status()
             if status == "cancelled":
-                raise ExecutionCancelledError("Workflow execution was cancelled")
+                raise ExecutionCancelledError()
 
             # Execute node
             result = await self._execute_node(
@@ -1125,33 +1120,43 @@ class WorkflowOrchestrator:
         except NodeExecutionError as e:
             # Update NodeExecution record - failed
             duration_ms = int((time.time() - start_time) * 1000)
+            public_error = translate_public_workflow_error(e)
             node_execution.status = NodeStatus.FAILED
             node_execution.finished_at = datetime.now(timezone.utc)
             node_execution.execution_duration_ms = duration_ms
-            node_execution.error_message = str(e)
+            node_execution.error_message = public_error
             node_execution.error_type = type(e).__name__
             await node_execution.save()
-            raise
-        except Exception as e:
-            # Update NodeExecution record - failed
-            duration_ms = int((time.time() - start_time) * 1000)
-            node_execution.status = NodeStatus.FAILED
-            node_execution.finished_at = datetime.now(timezone.utc)
-            node_execution.execution_duration_ms = duration_ms
-            node_execution.error_message = str(e)
-            node_execution.error_type = type(e).__name__
-            await node_execution.save()
-
-            error_msg = f"Node execution error: {str(e)}"
             if stream_manager:
                 await stream_manager.publish_node_error(
                     node_id=node_id,
-                    error=error_msg,
+                    error=public_error,
                 )
             raise NodeExecutionError(
                 node_id=node_id,
                 node_type=node_type,
-                message=error_msg,
+                message=public_error,
+            ) from e
+        except Exception as e:
+            # Update NodeExecution record - failed
+            duration_ms = int((time.time() - start_time) * 1000)
+            public_error = translate_public_workflow_error(e)
+            node_execution.status = NodeStatus.FAILED
+            node_execution.finished_at = datetime.now(timezone.utc)
+            node_execution.execution_duration_ms = duration_ms
+            node_execution.error_message = public_error
+            node_execution.error_type = type(e).__name__
+            await node_execution.save()
+
+            if stream_manager:
+                await stream_manager.publish_node_error(
+                    node_id=node_id,
+                    error=public_error,
+                )
+            raise NodeExecutionError(
+                node_id=node_id,
+                node_type=node_type,
+                message=public_error,
             ) from e
 
     async def cancel(self, run_id: str) -> bool:
@@ -1182,7 +1187,7 @@ class WorkflowOrchestrator:
 
         # Publish cancel event
         stream_manager = StreamManager(run_id)
-        await stream_manager.publish_workflow_error(error="Workflow cancelled by user")
+        await stream_manager.publish_workflow_error(error=t("workflow_run_cancelled"))
 
         logger.info(f"Cancelled workflow run {run_id}")
         return True

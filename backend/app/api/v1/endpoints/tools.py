@@ -25,6 +25,7 @@ from app.models.tool import (
 from app.llm.tools import tool_registry
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.llm.tools.executors import execute_http_tool
+from app.services.error_messages import resolve_user_visible_error
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
@@ -908,7 +909,7 @@ async def test_tool(
                 data=ToolExecuteResponse(
                     name=request.name,
                     success=False,
-                    error=t("tool_execution_failed"),
+                    error=resolve_user_visible_error(str(e)),
                     duration_ms=duration_ms,
                 ),
                 msg_key="success",
@@ -969,7 +970,10 @@ async def test_tool(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error=t("mcp_tool_execution_failed"),
+                            error=resolve_user_visible_error(
+                                str(e),
+                                fallback_key="mcp_tool_execution_failed",
+                            ),
                             duration_ms=duration_ms,
                         ),
                         msg_key="success",
@@ -1002,7 +1006,7 @@ async def test_tool(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error="No code defined for this tool",
+                            error=t("tool_code_not_defined"),
                             duration_ms=int((time.time() - start_time) * 1000),
                         ),
                         msg_key="success",
@@ -1038,7 +1042,10 @@ async def test_tool(
                     data=ToolExecuteResponse(
                         name=request.name,
                         success=False,
-                        error=f"Unsupported tool type: {custom_tool.custom_type}",
+                        error=t(
+                            "unsupported_custom_tool_type",
+                            tool_type=custom_tool.custom_type,
+                        ),
                         duration_ms=int((time.time() - start_time) * 1000),
                     ),
                     msg_key="success",
@@ -1068,7 +1075,10 @@ async def execute_code_directly(
         return success(
             data=CodeExecuteResponse(
                 success=False,
-                error=f"Unsupported language: {request.language}. Only 'javascript' and 'python' are supported.",
+                error=t(
+                    "unsupported_code_execution_language",
+                    language=request.language,
+                ),
                 duration_ms=int((time.time() - start_time) * 1000),
             ),
             msg_key="success",

@@ -750,6 +750,15 @@ msgstr "Memory entity deleted successfully"
 msgid "memory_entity_not_found"
 msgstr "Memory entity not found"
 
+msgid "memory_entity_create_failed"
+msgstr "Failed to create memory entity"
+
+msgid "memory_entity_update_failed"
+msgstr "Failed to update memory entity"
+
+msgid "memory_entity_delete_failed"
+msgstr "Failed to delete memory entity"
+
 msgid "memory_entity_updated"
 msgstr "Memory entity updated successfully"
 
@@ -758,6 +767,12 @@ msgstr "Memory relation deleted successfully"
 
 msgid "memory_relation_not_found"
 msgstr "Memory relation not found"
+
+msgid "memory_relation_create_failed"
+msgstr "Failed to create memory relation"
+
+msgid "memory_relation_delete_failed"
+msgstr "Failed to delete memory relation"
 
 msgid "memory_entity_created_tool"
 msgstr "Created memory entity: {entity_name}"
@@ -815,6 +830,9 @@ msgstr "Model not found"
 
 msgid "model_quota_exceeded"
 msgstr "Model quota exceeded"
+
+msgid "model_type_mismatch"
+msgstr "Model {model_name} is not a {model_type} model"
 
 msgid "model_set_default"
 msgstr "Model set as default successfully"
@@ -974,6 +992,12 @@ msgstr "Notification not found"
 
 msgid "notification_read_updated"
 msgstr "Notification read status updated"
+
+msgid "notification_delivery_partial_success"
+msgstr "Partially delivered: {success_count}/{total_count} recipients succeeded"
+
+msgid "notification_delivery_failed"
+msgstr "Notification delivery failed"
 
 msgid "notification_scope_requires_team"
 msgstr "Team scope requires team_id"
@@ -1657,6 +1681,9 @@ msgstr "Tool is already shared with this team"
 msgid "tool_code_not_defined"
 msgstr "No code defined for this tool"
 
+msgid "tool_name_invalid_format"
+msgstr "Tool name must start with a letter and contain only letters, numbers, and underscores"
+
 msgid "tool_config_already_exists"
 msgstr "Tool configuration already exists"
 
@@ -1792,6 +1819,9 @@ msgstr "Stability image generation failed"
 msgid "unsupported_custom_tool_type"
 msgstr "Unsupported custom tool type: {tool_type}"
 
+msgid "unsupported_code_execution_language"
+msgstr "Unsupported language: {language}. Only 'javascript' and 'python' are supported."
+
 msgid "totp_already_enabled"
 msgstr "Two-factor authentication is already enabled"
 
@@ -1911,6 +1941,30 @@ msgstr "Parser error"
 
 msgid "verification_code_invalid"
 msgstr "Invalid verification code"
+
+msgid "web_search_unsupported_engine"
+msgstr "Unsupported search engine: {search_engine}"
+
+msgid "web_search_api_error"
+msgstr "Search API error: {status_code}"
+
+msgid "fetch_webpage_unsupported_content_type"
+msgstr "Unsupported content type: {content_type}"
+
+msgid "fetch_webpage_http_error"
+msgstr "HTTP error: {status_code}"
+
+msgid "unit_convert_unsupported_units"
+msgstr "Cannot convert between {from_unit} and {to_unit}"
+
+msgid "sandbox_process_exit_code"
+msgstr "Process exited with code {exit_code}"
+
+msgid "sandbox_missing_executable_payload"
+msgstr "Sandbox job has no executable payload"
+
+msgid "sandbox_disk_limit_exceeded"
+msgstr "Sandbox disk limit exceeded during {stage}: {usage_bytes} > {limit_bytes}"
 
 msgid "verification_email_sent"
 msgstr "Verification email has been sent"
@@ -2076,6 +2130,12 @@ msgstr "Image generation succeeded. Generated {count} images using model {model}
 
 msgid "video_generation_not_enabled_for_agent"
 msgstr "Video generation is not enabled for this agent"
+
+msgid "embedding_model_locked_after_kb_creation"
+msgstr "Embedding model cannot be changed after knowledge base creation"
+
+msgid "no_chat_model_available"
+msgstr "No chat model available"
 
 msgid "video_generation_duration_exceeds_agent_limit"
 msgstr "Video duration exceeds the agent limit ({max_duration}s)"

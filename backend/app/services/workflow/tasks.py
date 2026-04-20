@@ -9,6 +9,7 @@ from uuid import UUID
 import logging
 
 from app.core.i18n import t
+from app.services.workflow.errors import translate_public_workflow_error
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,11 @@ def execute_workflow_task(
         return loop.run_until_complete(run())
     except Exception as e:
         logger.exception(f"Workflow execution failed: {e}")
-        return {"run_id": run_id, "status": "failed", "error": str(e)}
+        return {
+            "run_id": run_id,
+            "status": "failed",
+            "error": translate_public_workflow_error(e),
+        }
 
 
 @shared_task(

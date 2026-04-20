@@ -10,6 +10,7 @@ from typing import Any, TYPE_CHECKING, cast
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
 
@@ -434,7 +435,10 @@ class AgentService:
             return result
         except Exception as e:
             logger.exception(f"Tool execution error: {e}")
-            return {"error": str(e), "success": False}
+            return {
+                "error": resolve_user_visible_error(str(e)),
+                "success": False,
+            }
 
     async def _retrieve_rag_context(
         self,

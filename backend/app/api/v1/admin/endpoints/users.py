@@ -9,7 +9,7 @@ from tortoise.expressions import Q
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
-from app.core.password import validate_password
+from app.core.password import validate_password, translate_password_validation_errors
 from app.core.email import (
     send_email,
     check_bulk_email_rate,
@@ -469,7 +469,7 @@ async def update_user(
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="password_validation_failed",
-                data={"errors": errors},
+                data={"errors": {"password": errors}},
             )
 
         user_data["hashed_password"] = security.get_password_hash(password)

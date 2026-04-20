@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from celery import shared_task
 
+from app.core.i18n import t
 from app.services.sandbox.manager import SandboxManager
 from app.services.sandbox.models import SandboxExecutionMetadata, SandboxJob, SandboxTaskStatus
 from app.services.sandbox.result_store import sandbox_result_store
@@ -58,7 +59,7 @@ def run_sandbox_job_task(self, job_payload: dict) -> dict:
                 job_payload["job_id"],
                 SandboxTaskStatus.FAILED,
                 metadata=metadata,
-                error=str(e),
+                error=t("tool_execution_failed"),
             )
         )
         raise

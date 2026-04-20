@@ -256,7 +256,16 @@ async def create_relation(
         )
 
         return success(RelationResponse.model_validate(relation))
-    except ValueError:
+    except ValueError as e:
+        msg_key = str(e)
+        if msg_key in {
+            "memory_source_entity_not_found",
+            "memory_target_entity_not_found",
+        }:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key=msg_key,
+            )
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="memory_relation_create_failed",

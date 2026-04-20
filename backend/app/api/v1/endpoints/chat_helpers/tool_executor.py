@@ -3,6 +3,7 @@ Tool execution utilities for chat.
 """
 
 import json
+from app.core.i18n import t
 from app.models.agent import Agent
 from app.models.tool import Tool
 from app.llm.tools.executors import execute_http_tool as shared_execute_http_tool
@@ -33,7 +34,7 @@ async def execute_tool_call(
     # Get tool from database
     tool = await Tool.get_or_none(name=tool_name)
     if not tool:
-        return json.dumps({"error": f"Tool '{tool_name}' not found"})
+        return json.dumps({"error": t("tool_not_found")}, ensure_ascii=False)
 
     # Execute based on tool type
     if tool.type == "http":
@@ -46,7 +47,15 @@ async def execute_tool_call(
         timeout = tool_timeouts.get("mcp", 60.0)
         return await execute_mcp_tool_call(tool, arguments, timeout)
     else:
-        return json.dumps({"error": f"Unsupported tool type: {tool.type}"})
+        return json.dumps(
+            {
+                "error": t(
+                    "unsupported_custom_tool_type",
+                    tool_type=tool.type,
+                )
+            },
+            ensure_ascii=False,
+        )
 
 
 async def execute_http_tool(tool: Tool, arguments: dict, timeout: float = 30.0) -> str:

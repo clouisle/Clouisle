@@ -99,13 +99,13 @@ class TemplateNodeExecutor(NodeExecutor):
 
         except TemplateSyntaxError as e:
             logger.error(f"Template syntax error: {e}")
-            return ExecutionResult(error=f"Template syntax error: {str(e)}")
+            return ExecutionResult(error="validation_error")
         except UndefinedError as e:
             logger.error(f"Template undefined variable: {e}")
-            return ExecutionResult(error=f"Undefined variable: {str(e)}")
+            return ExecutionResult(error="validation_error")
         except Exception as e:
             logger.error(f"Template rendering error: {e}")
-            return ExecutionResult(error=f"Template error: {str(e)}")
+            return ExecutionResult(error="workflow_execution_error")
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""

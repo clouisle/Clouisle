@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from app.core.timezone import now_utc
+from app.core.i18n import t
 from app.llm import model_manager
 from app.llm.token_counter import count_tokens
 from app.llm.types import Message as LLMMessage
@@ -245,7 +246,7 @@ async def extract_session_memory_for_message(
             "status": "error",
             "conversation_id": str(conversation_uuid),
             "source_message_id": str(source_uuid),
-            "error": str(e),
+            "error": t("llm_processing_failed"),
         }
 
 

@@ -60,6 +60,7 @@ from app.llm.tools import tool_registry
 from app.llm.tools.builtin.media import ToolExecutionResult
 from app.llm.types import Message as LLMChatMessage
 from app.core.timezone import now_utc
+from app.services.error_messages import resolve_user_visible_error
 from app.services.chat_context import (
     build_model_messages,
     get_context_compression_config,
@@ -70,7 +71,7 @@ from app.services.chat_context import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
+GENERIC_STREAM_ERROR_KEY = "unknown_error"
 MEDIA_TOOL_KINDS = {"media.image", "media.video"}
 
 
@@ -1467,7 +1468,12 @@ async def execute_tool_call(
                 return str(mcp_result.result) if mcp_result.result is not None else ""
             else:
                 return json.dumps(
-                    {"error": mcp_result.error or t("mcp_tool_execution_failed")},
+                    {
+                        "error": resolve_user_visible_error(
+                            mcp_result.error,
+                            fallback_key="mcp_tool_execution_failed",
+                        )
+                    },
                     ensure_ascii=False,
                 )
 
@@ -1541,7 +1547,10 @@ async def execute_tool_call(
             return str(result)
     except Exception as e:
         logger.exception("Tool execution error: %s", e)
-        return json.dumps({"error": t("tool_execution_failed")}, ensure_ascii=False)
+        return json.dumps(
+            {"error": resolve_user_visible_error(str(e))},
+            ensure_ascii=False,
+        )
 
 
 async def execute_http_tool(
@@ -1621,7 +1630,15 @@ async def execute_code_tool(
 
     except Exception as e:
         logger.exception("Code tool execution error: %s", e)
-        return json.dumps({"error": t("code_tool_execution_failed")}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "error": resolve_user_visible_error(
+                    str(e),
+                    fallback_key="code_tool_execution_failed",
+                )
+            },
+            ensure_ascii=False,
+        )
 
 
 async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
@@ -2350,8 +2367,7 @@ async def chat_stream(
                         model_capabilities = await get_model_capabilities(agent)
                         model_supports_vision = model_capabilities.get("vision", False)
                         if not model_supports_vision:
-                            # Model doesn't support vision - send error event with i18n key
-                            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': 'model_vision_not_supported'})}\n\n"
+                            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': t('model_vision_not_supported')})}\n\n"
                             return
 
                     # Handle RAG based on mode
@@ -3114,7 +3130,7 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     logger.warning("Quota exceeded during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
@@ -3125,7 +3141,7 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     logger.error("Model not found error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('model_not_found')})}\n\n"
@@ -3136,7 +3152,7 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     logger.error("Authentication error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNAUTHORIZED, 'msg': t('unauthorized')})}\n\n"
@@ -3147,7 +3163,7 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     logger.warning("Rate limit error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
@@ -3159,9 +3175,9 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
                 except Exception as e:
                     logger.exception(f"Unexpected error during stream: {e}")
                     await persist_partial_round_error(
@@ -3170,9 +3186,9 @@ async def chat_stream(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         except TimeoutError:
             # Global timeout
@@ -4167,7 +4183,7 @@ async def regenerate_message(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     if preserved_partial:
                         await Message.filter(id=message.id).update(is_active=False)
@@ -4184,7 +4200,7 @@ async def regenerate_message(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     if preserved_partial:
                         await Message.filter(id=message.id).update(is_active=False)
@@ -4193,7 +4209,7 @@ async def regenerate_message(
                             await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("LLM error during regenerate: %s", e)
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
                 except Exception as e:
                     preserved_partial = await persist_partial_round_error(
                         new_message,
@@ -4201,7 +4217,7 @@ async def regenerate_message(
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=GENERIC_STREAM_ERROR_MSG,
+                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     if preserved_partial:
                         await Message.filter(id=message.id).update(is_active=False)
@@ -4210,7 +4226,7 @@ async def regenerate_message(
                             await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("Unexpected error during regenerate: %s", e)
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         except TimeoutError:
             # Global timeout

@@ -145,6 +145,29 @@ def t(key: str, lang: Optional[str] = None, **kwargs) -> str:
     return message
 
 
+def has_translation(key: str, lang: Optional[str] = None) -> bool:
+    """Return whether a translation key exists in Babel or legacy catalogs."""
+    if not key:
+        return False
+
+    if lang is None:
+        lang = get_language()
+
+    normalized_lang = normalize_language(lang)
+
+    if _get_babel_message(key, normalized_lang) is not None:
+        return True
+
+    if normalized_lang != Language.EN.value:
+        if _get_babel_message(key, Language.EN.value) is not None:
+            return True
+
+    translations = TRANSLATIONS.get(key, {})
+    return bool(
+        translations.get(normalized_lang) or translations.get(Language.EN.value)
+    )
+
+
 def get_code_message(code: int, lang: Optional[str] = None) -> str:
     """
     Get translated message for a ResponseCode.

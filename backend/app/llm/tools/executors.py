@@ -329,7 +329,7 @@ async def execute_http_tool(
         return {"success": False, "error": t("request_timeout")}
     except Exception as e:
         logger.exception(f"HTTP tool execution error: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": t("tool_execution_failed")}
 
 
 def format_http_result_for_llm(result: dict) -> str:
