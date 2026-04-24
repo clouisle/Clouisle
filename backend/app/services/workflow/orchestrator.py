@@ -547,6 +547,15 @@ class WorkflowOrchestrator:
         await run.save()
         logger.info(f"Completed workflow run {run.id}")
 
+        # Debug runs feed the per-node TypeSpec inference so the editor can
+        # surface field-level autocomplete after a single trial. Production
+        # runs intentionally skip this so live traffic shape doesn't drift
+        # the editor schema.
+        if run.is_debug and run.workflow_id:
+            from .schema_inference import merge_run_into_workflow
+
+            await merge_run_into_workflow(run.workflow_id, node_executions)
+
         # Update workflow statistics
         workflow = await Workflow.filter(id=run.workflow_id).first()
         if workflow:

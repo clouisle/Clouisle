@@ -6,7 +6,7 @@
   - [x] 1. TypeSpec 与 msgpack 序列化层
   - [x] 2. 节点 IO 摆脱字符串化
   - [x] 3. NodeExecutor 输出 schema 声明
-  - [ ] 4. 调试运行后的 schema 推断与持久化
+  - [x] 4. 调试运行后的 schema 推断与持久化
   - [ ] 5. 前端 TypeSpec 镜像与变量选择器
   - [ ] 6. 前端节点配置面板 schema UI
   - [ ] 7. 清理 Any 与文档
