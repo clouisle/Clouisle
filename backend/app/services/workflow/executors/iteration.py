@@ -215,18 +215,10 @@ class IterationNodeExecutor(NodeExecutor):
                 }
             )
 
-        # Try to parse JSON string
-        if isinstance(items, str):
-            import json
-
-            try:
-                parsed = json.loads(items)
-                if isinstance(parsed, (list, tuple)):
-                    items = parsed
-                    logger.info(f"Parsed JSON string to array: {items}")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
+        # Variables now travel as native types end-to-end; if the source produced a
+        # string here it really is a string, not a serialised array. Wrap any
+        # non-collection input in a single-element list so the iteration still
+        # runs once instead of failing silently.
         if not isinstance(items, (list, tuple)):
             items = [items]
 
@@ -307,28 +299,18 @@ class IterationNodeExecutor(NodeExecutor):
         context: "ExecutionContext",
     ) -> ExecutionResult:
         """Execute object iteration (key-value pairs)."""
-        if items is None or not isinstance(items, dict):
-            # Try to parse JSON string
-            if isinstance(items, str):
-                import json
-
-                try:
-                    parsed = json.loads(items)
-                    if isinstance(parsed, dict):
-                        items = parsed
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            if not isinstance(items, dict):
-                return ExecutionResult(
-                    outputs={
-                        key_var: None,
-                        value_var: None,
-                        "total": 0,
-                        "results": [],
-                        "_iteration_complete": True,
-                    }
-                )
+        if not isinstance(items, dict):
+            # Native-type passthrough: a string here is a string, not a JSON object.
+            # Object iteration over a non-dict input is a no-op.
+            return ExecutionResult(
+                outputs={
+                    key_var: None,
+                    value_var: None,
+                    "total": 0,
+                    "results": [],
+                    "_iteration_complete": True,
+                }
+            )
 
         # Convert dict to list of (key, value) pairs
         pairs = list(items.items())

@@ -108,9 +108,14 @@ class LLMNodeExecutor(NodeExecutor):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
-        # Include resolved inputs in user prompt if any
+        # Include resolved inputs in user prompt if any. Use to_text so dict/list
+        # render as JSON instead of Python repr ("{'a': 1}").
         if resolved_inputs:
-            input_context = "\n".join([f"{k}: {v}" for k, v in resolved_inputs.items()])
+            from ..types import to_text
+
+            input_context = "\n".join(
+                f"{k}: {to_text(v)}" for k, v in resolved_inputs.items()
+            )
             user_prompt = (
                 f"{input_context}\n\n{user_prompt}" if user_prompt else input_context
             )

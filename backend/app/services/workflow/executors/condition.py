@@ -9,6 +9,7 @@ import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..errors import translate_public_workflow_error
+from ..types import to_text
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -352,7 +353,7 @@ Respond in JSON format:
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(input_value)},
+            {"role": "user", "content": to_text(input_value)},
         ]
 
         try:

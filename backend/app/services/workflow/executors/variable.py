@@ -429,21 +429,16 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         self, input_value: Any, parameters: list[dict]
     ) -> ExecutionResult:
         """Extract parameters using JSONPath expressions."""
-        import json
-
         try:
             import jsonpath_ng  # noqa: F401
             from jsonpath_ng import parse as jsonpath_parse
         except ImportError:
             return ExecutionResult(error="workflow_execution_error")
 
-        # Parse input as JSON if it's a string
-        if isinstance(input_value, str):
-            try:
-                data = json.loads(input_value)
-            except json.JSONDecodeError:
-                return ExecutionResult(error="validation_error")
-        elif isinstance(input_value, (dict, list)):
+        # Native-type passthrough: upstream nodes deliver real dict/list now, so we
+        # only accept structured input here. A string at this boundary is a misuse
+        # rather than an opaque blob to coerce.
+        if isinstance(input_value, (dict, list)):
             data = input_value
         else:
             return ExecutionResult(error="validation_error")
@@ -598,9 +593,11 @@ Respond in JSON format with the extracted values. If a parameter cannot be found
 Example response: {{"date": "2024-01-15", "location": null}}"""
         )
 
+        from ..types import to_text
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(input_value)},
+            {"role": "user", "content": to_text(input_value)},
         ]
 
         try:
