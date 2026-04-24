@@ -186,6 +186,13 @@ export interface NodeData {
   type: string
   label: string
   config: Record<string, unknown>
+  /**
+   * Per-output structural TypeSpecs auto-inferred from the node's actual
+   * outputs during debug runs (see backend `schema_inference.py`). Optional —
+   * absent until the workflow has been debug-run at least once. Used by the
+   * variable picker for field-level autocomplete.
+   */
+  inferredSchema?: Record<string, import('@/lib/workflow/type-spec').TypeSpec>
 }
 
 export interface WorkflowEdge {

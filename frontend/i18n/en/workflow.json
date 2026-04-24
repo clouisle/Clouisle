@@ -652,6 +652,7 @@
       "selectVariable": "Select variable...",
       "searchVariable": "Search variables",
       "noMatchingVariables": "No matching variables found",
+      "typeMismatch": "Type mismatch: expected {expected}, got {actual}",
       "invalidVariableName": "Invalid variable name format",
       "invalidVariableNameFormat": "Invalid variable name format (only letters, numbers, underscores; cannot start with a number)",
       "duplicateVariableName": "Duplicate variable names exist",

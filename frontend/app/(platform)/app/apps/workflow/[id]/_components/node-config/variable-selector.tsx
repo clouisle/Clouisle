@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { describeTypeSpec, isAssignable, type TypeSpec } from '@/lib/workflow/type-spec'
 import type { AvailableVariable } from './types'
 
 interface VariableSelectorProps {
@@ -18,6 +19,14 @@ interface VariableSelectorProps {
   onSelect: (variable: AvailableVariable) => void
   filterType?: 'iterable' | 'all'
   triggerClassName?: string
+  /**
+   * Optional structural type the consuming input expects. When provided,
+   * variables whose `typeSpec` is not assignable to it are rendered greyed
+   * out (still selectable so users can override deliberately) and a small
+   * tooltip explains the mismatch. Variables without typeSpec info are
+   * never gated — they remain fully enabled.
+   */
+  acceptType?: TypeSpec
 }
 
 export function VariableSelector({
@@ -28,6 +37,7 @@ export function VariableSelector({
   placeholder,
   onSelect,
   triggerClassName,
+  acceptType,
 }: VariableSelectorProps) {
   const t = useTranslations('workflow')
   const [search, setSearch] = React.useState('')
@@ -110,26 +120,51 @@ export function VariableSelector({
                   <div className="px-2 py-1 text-xs text-muted-foreground font-medium">
                     {group.label}
                   </div>
-                  {group.items.map(variable => (
-                    <button
-                      key={variable.id}
-                      className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md"
-                      onClick={() => {
-                        onSelect(variable)
-                        onOpenChange(false)
-                        setSearch('')
-                      }}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span className={cn(
-                          'font-mono',
-                          variable.isSystem ? 'text-orange-500' : 'text-primary/80'
-                        )}>{'{x}'}</span>
-                        <span>{variable.name}</span>
-                      </span>
-                      <span className="text-muted-foreground">{variable.type}</span>
-                    </button>
-                  ))}
+                  {group.items.map(variable => {
+                    const compatible =
+                      !acceptType || !variable.typeSpec
+                        ? true
+                        : isAssignable(variable.typeSpec, acceptType)
+                    const typeLabel =
+                      describeTypeSpec(variable.typeSpec) || variable.type
+                    return (
+                      <button
+                        key={variable.id}
+                        className={cn(
+                          'w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted rounded-md',
+                          !compatible && 'opacity-50',
+                        )}
+                        title={
+                          !compatible
+                            ? t('configCommon.typeMismatch', {
+                                expected: describeTypeSpec(acceptType),
+                                actual: typeLabel,
+                              })
+                            : undefined
+                        }
+                        onClick={() => {
+                          onSelect(variable)
+                          onOpenChange(false)
+                          setSearch('')
+                        }}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={cn(
+                              'font-mono',
+                              variable.isSystem
+                                ? 'text-orange-500'
+                                : 'text-primary/80',
+                            )}
+                          >
+                            {'{x}'}
+                          </span>
+                          <span>{variable.name}</span>
+                        </span>
+                        <span className="text-muted-foreground">{typeLabel}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               ))
             )}

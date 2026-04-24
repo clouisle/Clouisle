@@ -652,6 +652,7 @@
       "selectVariable": "选择变量...",
       "searchVariable": "搜索变量",
       "noMatchingVariables": "未找到匹配的变量",
+      "typeMismatch": "类型不匹配：期望 {expected}，实际 {actual}",
       "invalidVariableName": "变量名格式无效",
       "invalidVariableNameFormat": "变量名格式无效（只能包含字母、数字、下划线，不能以数字开头）",
       "duplicateVariableName": "存在重复的变量名",

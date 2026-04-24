@@ -52,6 +52,10 @@ export interface AvailableVariable {
   isArray: boolean
   isIterable: boolean
   isFile?: boolean  // 文件类型标记
+  // Structural type description, populated when the upstream node has a
+  // declared output spec or an inferredSchema entry. When absent the variable
+  // picker falls back to legacy string-based filtering only.
+  typeSpec?: import('@/lib/workflow/type-spec').TypeSpec
 }
 /**
  * 从变量引用中提取显示名称
