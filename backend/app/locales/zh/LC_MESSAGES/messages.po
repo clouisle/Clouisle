@@ -2154,3 +2154,15 @@ msgstr "无效的上传路径片段：{field_name}"
 
 msgid "duplicate_input_parameter_names"
 msgstr "发现重复的输入参数名称：{names}"
+
+msgid "workflow_validation_no_start_node"
+msgstr "未找到开始节点"
+
+msgid "workflow_validation_no_answer_node"
+msgstr "未找到输出（answer）节点"
+
+msgid "workflow_validation_node_no_upstream"
+msgstr "节点 {node_id} 没有上游连接"
+
+msgid "workflow_validation_failed_with_errors"
+msgstr "工作流校验失败：{errors}"

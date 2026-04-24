@@ -33,7 +33,7 @@ def _get_worker_loop() -> asyncio.AbstractEventLoop:
     return loop
 
 
-@shared_task(bind=True, max_retries=0, ignore_result=True)
+@shared_task(bind=True, max_retries=0, ignore_result=True, queue="sandbox")
 def run_sandbox_job_task(self, job_payload: dict) -> dict:
     async def _run() -> dict:
         job = SandboxJob.model_validate(job_payload)

@@ -19,6 +19,7 @@ from app.models.workflow import (
     NodeExecution,
     NodeStatus,
 )
+from app.models.user import Team
 from app.models.notification import AutoNotificationType
 from app.core.redis import get_redis
 from app.core.i18n import t, get_default_language
@@ -202,6 +203,9 @@ class WorkflowOrchestrator:
             # Validate plan
             errors = plan.validate()
             if errors:
+                logger.error(
+                    f"Workflow {workflow_id} validation failed with {len(errors)} error(s): {errors}"
+                )
                 raise WorkflowValidationError(details={"errors": errors})
 
             # Publish workflow start event
@@ -366,6 +370,9 @@ class WorkflowOrchestrator:
             # Validate plan
             errors = plan.validate()
             if errors:
+                logger.error(
+                    f"Workflow {workflow_id} validation failed with {len(errors)} error(s): {errors}"
+                )
                 raise WorkflowValidationError(details={"errors": errors})
 
             # Publish workflow start event
@@ -446,7 +453,9 @@ class WorkflowOrchestrator:
         """Load workflow from database."""
         workflow = await Workflow.filter(id=workflow_id).first()
         if not workflow:
-            raise WorkflowNotFoundError(t("workflow_not_found"), msg_key="workflow_not_found")
+            raise WorkflowNotFoundError(
+                t("workflow_not_found"), msg_key="workflow_not_found"
+            )
         return workflow
 
     async def _get_workflow_definition(self, workflow: Workflow) -> dict:
@@ -558,9 +567,10 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await Workflow.filter(id=workflow.id).update(
-                team__total_tokens=F("team__total_tokens") + total_tokens
-            )
+            if workflow.team_id and total_tokens > 0:
+                await Team.filter(id=workflow.team_id).update(
+                    total_tokens=F("total_tokens") + total_tokens
+                )
 
             # Send workflow run success notification
             try:
@@ -664,9 +674,10 @@ class WorkflowOrchestrator:
             )
 
             # Update team stats atomically
-            await Workflow.filter(id=workflow.id).update(
-                team__total_tokens=F("team__total_tokens") + total_tokens
-            )
+            if workflow.team_id and total_tokens > 0:
+                await Team.filter(id=workflow.team_id).update(
+                    total_tokens=F("total_tokens") + total_tokens
+                )
 
             # Send workflow run failed notification
             try:
@@ -1161,7 +1172,7 @@ class WorkflowOrchestrator:
 
     async def cancel(self, run_id: str) -> bool:
         """
-        Cancel a running workflow.
+        Cancel a running or pending workflow.
 
         Args:
             run_id: Run ID to cancel
@@ -1173,17 +1184,20 @@ class WorkflowOrchestrator:
         if not run:
             return False
 
-        if run.status != RunStatus.RUNNING:
+        if run.status not in (RunStatus.RUNNING, RunStatus.PENDING):
             return False
 
         run.status = RunStatus.CANCELLED
         run.finished_at = datetime.now(timezone.utc)
         await run.save()
 
-        # Set cancelled status in context
+        # Set cancelled status in context (may not exist yet for PENDING runs)
         redis_client = await get_redis()
-        context = await ExecutionContext.load(run_id, redis_client)
-        await context.set_status("cancelled")
+        try:
+            context = await ExecutionContext.load(run_id, redis_client)
+            await context.set_status("cancelled")
+        except Exception as e:
+            logger.warning(f"Could not load context for cancellation: {e}")
 
         # Publish cancel event
         stream_manager = StreamManager(run_id)

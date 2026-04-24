@@ -86,8 +86,24 @@ class WorkflowNotPublishedError(WorkflowError):
 class WorkflowValidationError(WorkflowError):
     """Workflow definition is invalid."""
 
-    def __init__(self, message: str | None = None, details: dict[str, Any] | None = None):
-        super().__init__(message or t("validation_error"), details, msg_key="validation_error")
+    def __init__(
+        self, message: str | None = None, details: dict[str, Any] | None = None
+    ):
+        errors = (details or {}).get("errors") or []
+        if message is not None:
+            super().__init__(message, details, msg_key="validation_error")
+            return
+
+        if errors:
+            joined = "; ".join(str(e) for e in errors)
+            super().__init__(
+                t("workflow_validation_failed_with_errors", errors=joined),
+                details,
+                msg_key="workflow_validation_failed_with_errors",
+                errors=joined,
+            )
+        else:
+            super().__init__(t("validation_error"), details, msg_key="validation_error")
 
 
 class NodeExecutionError(WorkflowError):

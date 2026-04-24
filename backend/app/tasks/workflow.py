@@ -14,7 +14,7 @@ from app.services.workflow.errors import translate_public_workflow_error
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@shared_task(bind=True, max_retries=0)
 def run_workflow_task(
     self,
     run_id: str,
@@ -87,10 +87,6 @@ def run_workflow_task(
                 run.status = RunStatus.FAILED
                 run.error_message = public_error
                 await run.save()
-
-            # Re-raise for retry if applicable
-            if self.request.retries < self.max_retries:
-                raise self.retry(exc=e)
 
             return {"status": "error", "message": public_error}
 
