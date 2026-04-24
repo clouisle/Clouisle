@@ -1085,6 +1085,9 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               setEditingCodeInput(null)
               setIsCodeInputDialogOpen(true)
             }}
+            inferredSchema={
+              (node?.data as { inferredSchema?: Record<string, import('@/lib/workflow/type-spec').TypeSpec> } | undefined)?.inferredSchema
+            }
           />
         )
       

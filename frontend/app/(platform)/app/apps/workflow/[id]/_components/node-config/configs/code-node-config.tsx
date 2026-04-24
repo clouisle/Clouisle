@@ -16,13 +16,15 @@ import { cn } from '@/lib/utils'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import { CodeEditor } from '../components/code-editor'
-import { 
-  CodeConfig, 
+import { TypeSpecEditor } from '../type-spec-editor'
+import { describeTypeSpec, type TypeSpec } from '@/lib/workflow/type-spec'
+import {
+  CodeConfig,
   CodeLanguage,
   CodeOutputVariable,
   OutputVariableType,
   ErrorHandlingType,
-  pythonTemplate, 
+  pythonTemplate,
   javascriptTemplate,
   defaultRetryConfig,
   defaultErrorHandlingConfig,
@@ -32,6 +34,12 @@ interface CodeNodeConfigProps {
   config: CodeConfig
   onConfigChange: (config: CodeConfig) => void
   onAddInput: () => void
+  /**
+   * Per-output TypeSpecs auto-inferred from the most recent debug run.
+   * When provided, rendered read-only beneath the output editor so users can
+   * see what fields downstream nodes will see.
+   */
+  inferredSchema?: Record<string, TypeSpec>
 }
 
 function getOutputTypeOptions(t: ReturnType<typeof useTranslations<'workflow'>>): { value: OutputVariableType; label: string }[] {
@@ -57,6 +65,7 @@ export function CodeNodeConfig({
   config,
   onConfigChange,
   onAddInput,
+  inferredSchema,
 }: CodeNodeConfigProps) {
   const t = useTranslations('workflow')
   const [retryOpen, setRetryOpen] = React.useState(config.retry?.enabled || false)
@@ -230,44 +239,78 @@ export function CodeNodeConfig({
             const isDuplicateInNode = output.name && safeConfig.outputs.filter(o => o.name === output.name).length > 1
             const hasError = !output.name || !isValidVariableName(output.name) || isDuplicateInNode
             return (
-              <div key={output.id} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
-                <Input
-                  value={output.name}
-                  onChange={(e) => handleUpdateOutput(output.id, { name: e.target.value })}
-                  placeholder={t('configCommon.variableNamePlaceholder')}
-                  className={cn(
-                    'h-8 text-xs font-mono border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 flex-1',
-                    hasError && 'text-destructive'
-                  )}
-                />
-                <Select 
-                  value={output.type}
-                  onValueChange={(v) => handleUpdateOutput(output.id, { type: v as OutputVariableType })}
-                >
-                  <SelectTrigger className="h-7 w-22 text-xs bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {outputTypeOptions.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  onClick={() => handleDeleteOutput(output.id)}
-                  disabled={safeConfig.outputs.length <= 1}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+              <div key={output.id} className="space-y-1.5">
+                <div className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
+                  <Input
+                    value={output.name}
+                    onChange={(e) => handleUpdateOutput(output.id, { name: e.target.value })}
+                    placeholder={t('configCommon.variableNamePlaceholder')}
+                    className={cn(
+                      'h-8 text-xs font-mono border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 flex-1',
+                      hasError && 'text-destructive'
+                    )}
+                  />
+                  <Select
+                    value={output.type}
+                    onValueChange={(v) => handleUpdateOutput(output.id, { type: v as OutputVariableType })}
+                  >
+                    <SelectTrigger className="h-7 w-22 text-xs bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {outputTypeOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteOutput(output.id)}
+                    disabled={safeConfig.outputs.length <= 1}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+                {(output.type === 'object' || output.type === 'array') && (
+                  <div className="ml-1 rounded-md bg-background/60 p-2">
+                    <div className="text-[10px] text-muted-foreground mb-1">
+                      {t('configCode.outputStructure')}
+                    </div>
+                    <TypeSpecEditor
+                      value={output.typeSpec ?? { kind: output.type }}
+                      onChange={(typeSpec) =>
+                        handleUpdateOutput(output.id, { typeSpec })
+                      }
+                      lockKind
+                    />
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
+        {inferredSchema && Object.keys(inferredSchema).length > 0 && (
+          <div className="mt-2 rounded-md border border-dashed bg-muted/30 px-3 py-2">
+            <div className="text-[10px] text-muted-foreground mb-1">
+              {t('configCommon.inferredSchema')}
+            </div>
+            <div className="space-y-0.5">
+              {Object.entries(inferredSchema).map(([k, v]) => (
+                <div
+                  key={k}
+                  className="flex items-center justify-between text-[11px] font-mono"
+                >
+                  <span>{k}</span>
+                  <span className="text-muted-foreground">{describeTypeSpec(v)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {safeConfig.outputs.some(o => !o.name) && (
           <p className="text-[10px] text-destructive">{t('configCode.outputNameRequired')}</p>
         )}

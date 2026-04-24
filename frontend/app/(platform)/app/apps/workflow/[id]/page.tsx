@@ -1702,6 +1702,20 @@ function WorkflowEditorContent() {
             open={testRunDrawerOpen}
             onClose={() => setTestRunDrawerOpen(false)}
             onNodeTracesChange={handleNodeTracesChange}
+            onDebugRunComplete={async () => {
+              // Backend writes inferredSchema during debug runs (see
+              // backend `schema_inference.merge_run_into_workflow`).
+              // Refetch so the editor shows the freshly inferred fields.
+              try {
+                const fresh = await workflowsApi.getWorkflow(workflowId)
+                setWorkflow(fresh)
+                if (fresh.definition?.nodes) {
+                  setNodes(fresh.definition.nodes as unknown as WorkflowNode[])
+                }
+              } catch {
+                /* refetch is best-effort; failures don't break the run */
+              }
+            }}
           />
         </div>
       </div>

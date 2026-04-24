@@ -8,7 +8,7 @@
   - [x] 3. NodeExecutor 输出 schema 声明
   - [x] 4. 调试运行后的 schema 推断与持久化
   - [x] 5. 前端 TypeSpec 镜像与变量选择器
-  - [ ] 6. 前端节点配置面板 schema UI
+  - [x] 6. 前端节点配置面板 schema UI
   - [ ] 7. 清理 Any 与文档
   - [ ] 8. 硬切换执行
 

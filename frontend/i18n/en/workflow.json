@@ -653,6 +653,9 @@
       "searchVariable": "Search variables",
       "noMatchingVariables": "No matching variables found",
       "typeMismatch": "Type mismatch: expected {expected}, got {actual}",
+      "inferredSchema": "Inferred fields (from debug run)",
+      "inferredSchemaEmpty": "Not inferred yet — fields appear after the first debug run.",
+      "clearInferred": "Clear inferred",
       "invalidVariableName": "Invalid variable name format",
       "invalidVariableNameFormat": "Invalid variable name format (only letters, numbers, underscores; cannot start with a number)",
       "duplicateVariableName": "Duplicate variable names exist",
@@ -755,6 +758,10 @@
       "outputVariableHint": "Select upstream variables as output; all values are concatenated and streamed"
     },
     "configCode": {
+      "outputStructure": "Output structure",
+      "itemType": "Item type",
+      "objectFields": "Fields",
+      "noFields": "No fields yet — click + above to add",
       "errorHandlingNone": "None",
       "errorHandlingNoneDesc": "When an exception occurs and is not handled, the node will stop running",
       "errorHandlingDefault": "Default value",

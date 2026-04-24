@@ -653,6 +653,9 @@
       "searchVariable": "搜索变量",
       "noMatchingVariables": "未找到匹配的变量",
       "typeMismatch": "类型不匹配：期望 {expected}，实际 {actual}",
+      "inferredSchema": "调试运行推断字段",
+      "inferredSchemaEmpty": "尚未推断（首次调试运行后会自动填充）",
+      "clearInferred": "清空推断",
       "invalidVariableName": "变量名格式无效",
       "invalidVariableNameFormat": "变量名格式无效（只能包含字母、数字、下划线，不能以数字开头）",
       "duplicateVariableName": "存在重复的变量名",
@@ -755,6 +758,10 @@
       "outputVariableHint": "选择上游节点的变量作为输出，所有值将拼接后流式输出"
     },
     "configCode": {
+      "outputStructure": "输出结构",
+      "itemType": "元素类型",
+      "objectFields": "字段",
+      "noFields": "暂无字段，点击右上角 + 新增",
       "errorHandlingNone": "无",
       "errorHandlingNoneDesc": "当发生异常且未处理时，节点将停止运行",
       "errorHandlingDefault": "默认值",

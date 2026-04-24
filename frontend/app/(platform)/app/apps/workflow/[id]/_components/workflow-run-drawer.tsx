@@ -63,6 +63,14 @@ interface WorkflowRunDrawerProps {
   open: boolean
   onClose: () => void
   onNodeTracesChange?: (traces: Map<string, NodeTrace>) => void
+  /**
+   * Called after a debug run completes so the parent can refetch the workflow
+   * definition. The backend writes inferred TypeSpecs onto each node's
+   * `data.inferredSchema` during debug runs (see backend
+   * `schema_inference.merge_run_into_workflow`); without a refetch the editor
+   * would not show the freshly inferred fields until next page load.
+   */
+  onDebugRunComplete?: () => void
 }
 
 // 从工作流定义中提取开始节点的输入参数
@@ -210,6 +218,7 @@ export function WorkflowRunDrawer({
   open,
   onClose,
   onNodeTracesChange,
+  onDebugRunComplete,
 }: WorkflowRunDrawerProps) {
   const t = useTranslations('workflow')
   const commonT = useTranslations('common')
@@ -585,6 +594,9 @@ export function WorkflowRunDrawer({
         },
         onComplete: () => {
           setIsRunning(false)
+          if (isDebug) {
+            onDebugRunComplete?.()
+          }
         },
       })
     } catch (error) {
