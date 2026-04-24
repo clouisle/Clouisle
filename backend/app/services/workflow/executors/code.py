@@ -82,12 +82,12 @@ class CodeNodeExecutor(NodeExecutor):
         if not code:
             return ExecutionResult(error="tool_code_not_defined")
 
-        # Resolve input variables
-        inputs = await self.resolve_inputs(context, input_mappings)
-
-        logger.info(f"Code node resolved inputs: {inputs}")
-
         try:
+            # Resolve input variables
+            inputs = await self.resolve_inputs(context, input_mappings)
+
+            logger.info(f"Code node resolved inputs: {inputs}")
+
             # Prepare code based on language
             if language == "python":
                 # Python code should define main(inputs) function
@@ -211,6 +211,20 @@ return main(params);
             errors.append(
                 f"Unsupported language: {language}. Use 'python' or 'javascript'"
             )
+
+        # Check for duplicate input parameter names
+        input_mappings = config.get("inputs", [])
+        names = [m.get("name") for m in input_mappings if m.get("name")]
+        seen = set()
+        duplicates = set()
+        for name in names:
+            if name in seen:
+                duplicates.add(name)
+            seen.add(name)
+
+        if duplicates:
+            duplicate_list = ", ".join(sorted(duplicates))
+            errors.append(f"Duplicate input parameter names found: {duplicate_list}")
 
         return errors
 

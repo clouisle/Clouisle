@@ -290,6 +290,7 @@
       "codeEmpty": "代码不能为空",
       "inputsMissingSource": "{count} 个输入变量未设置来源",
       "inputVariableRefNotExist": "输入变量 \"{name}\" 引用的 \"{ref}\" 不存在",
+      "duplicateInputNames": "存在重复的输入变量名：{names}",
       "templateEmpty": "模板内容不能为空",
       "templateVarsMissingSource": "{count} 个模板变量未设置来源",
       "templateVarRefNotExist": "模板变量 \"{name}\" 引用的 \"{ref}\" 不存在",
@@ -1017,6 +1018,7 @@
       },
       "codeInput": {
         "nameFormatError": "变量名格式无效",
+        "duplicateNameError": "变量名已存在，请使用其他名称",
         "editTitle": "编辑输入变量",
         "addTitle": "添加输入变量",
         "nameLabel": "变量名 *",

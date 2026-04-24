@@ -116,6 +116,26 @@ class NodeExecutor(ABC):
         Returns:
             Dictionary of resolved input values
         """
+        from app.core.i18n import t
+
+        # Check for duplicate parameter names
+        names: list[str] = []
+        for m in input_mappings:
+            name = m.get("name")
+            if name and isinstance(name, str):
+                names.append(name)
+
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for name in names:
+            if name in seen:
+                duplicates.add(name)
+            seen.add(name)
+
+        if duplicates:
+            duplicate_list = ", ".join(sorted(duplicates))
+            raise ValueError(t("duplicate_input_parameter_names", names=duplicate_list))
+
         inputs = {}
 
         for mapping in input_mappings:

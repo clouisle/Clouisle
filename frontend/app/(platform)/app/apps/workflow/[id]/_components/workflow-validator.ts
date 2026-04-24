@@ -610,9 +610,28 @@ export function validateWorkflow(nodes: WorkflowNode[], edges: Edge[]): Validati
             issues.push(createIssue(node, 'warning', 'inputsMissingSource', 'inputs', { count: missingInputs.length }))
           }
 
-          // 检查输入变量是否存在
+          // 检查输入变量名是否重复
+          const inputNameSeen = new Set<string>()
+          const inputNameDuplicates = new Set<string>()
+          for (const input of config.inputs) {
+            if (input.name) {
+              if (inputNameSeen.has(input.name)) {
+                inputNameDuplicates.add(input.name)
+              }
+              inputNameSeen.add(input.name)
+            }
+          }
+          if (inputNameDuplicates.size > 0) {
+            issues.push(createIssue(node, 'error', 'duplicateInputNames', 'inputs', { names: Array.from(inputNameDuplicates).sort().join(', ') }))
+          }
+
+          // 检查输入变量是否存在（按引用去重，避免同名输入重复报错）
+          const reportedRefs = new Set<string>()
           for (const input of config.inputs) {
             if (input.value && !isVariableAvailable(input.value, availableVars)) {
+              const dedupeKey = `${input.name}::${input.value}`
+              if (reportedRefs.has(dedupeKey)) continue
+              reportedRefs.add(dedupeKey)
               issues.push(createIssue(node, 'error', 'inputVariableRefNotExist', 'inputs', { name: input.name, ref: extractVariableName(input.value) }))
             }
           }

@@ -290,6 +290,7 @@
       "codeEmpty": "Code cannot be empty",
       "inputsMissingSource": "{count} input variable(s) missing source",
       "inputVariableRefNotExist": "Input variable \"{name}\" references \"{ref}\" which does not exist",
+      "duplicateInputNames": "Duplicate input variable names found: {names}",
       "templateEmpty": "Template content cannot be empty",
       "templateVarsMissingSource": "{count} template variable(s) missing source",
       "templateVarRefNotExist": "Template variable \"{name}\" references \"{ref}\" which does not exist",
@@ -1017,6 +1018,7 @@
       },
       "codeInput": {
         "nameFormatError": "Invalid variable name format",
+        "duplicateNameError": "Variable name already exists, please use a different name",
         "editTitle": "Edit Input Variable",
         "addTitle": "Add Input Variable",
         "nameLabel": "Variable Name *",

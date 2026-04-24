@@ -2151,3 +2151,6 @@ msgstr "Video generation succeeded using model {model}. Prompt: {prompt}"
 
 msgid "invalid_upload_path_segment"
 msgstr "Invalid upload path segment: {field_name}"
+
+msgid "duplicate_input_parameter_names"
+msgstr "Duplicate input parameter names found: {names}"

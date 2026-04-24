@@ -18,6 +18,7 @@ interface CodeInputDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   editingInput: CodeInput | null
+  existingInputs?: CodeInput[]
   variables: AvailableVariable[]
   variableSearch: string
   openVariablePopover: string | null
@@ -30,6 +31,7 @@ export function CodeInputDialog({
   open,
   onOpenChange,
   editingInput,
+  existingInputs = [],
   variables,
   variableSearch,
   openVariablePopover,
@@ -78,24 +80,34 @@ export function CodeInputDialog({
     return entries
   }
 
+  const trimmedName = form.name?.trim() || ''
+  const isDuplicateName = trimmedName !== '' && existingInputs.some(
+    (i) => i.name === trimmedName && i.id !== editingInput?.id
+  )
+
   const handleSave = () => {
-    const name = form.name?.trim()
+    const name = trimmedName
     const value = form.value
     if (!name || !value) return
     if (!isValidVariableName(name)) return
-    
+    if (isDuplicateName) return
+
     const input: CodeInput = {
       id: editingInput?.id || `input_${Date.now()}`,
       name,
       value,
       valueSource: form.valueSource,
     }
-    
+
     onSave(input)
     onOpenChange(false)
   }
 
-  const nameError = form.name && !isValidVariableName(form.name) ? t('dialogs.codeInput.nameFormatError') : null
+  const nameError = form.name && !isValidVariableName(form.name)
+    ? t('dialogs.codeInput.nameFormatError')
+    : isDuplicateName
+      ? t('dialogs.codeInput.duplicateNameError')
+      : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -184,7 +196,7 @@ export function CodeInputDialog({
                                 onClick={() => {
                                   setForm({
                                     ...form,
-                                    value: `{{${variable.name}}}`,
+                                    value: `{{${variable.id}}}`,
                                     valueSource: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
                                   })
                                   onOpenVariablePopoverChange(null)
@@ -215,10 +227,10 @@ export function CodeInputDialog({
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             {t('dialogs.codeInput.cancel')}
           </Button>
-          <Button 
-            size="sm" 
-            onClick={handleSave} 
-            disabled={!form.name?.trim() || !form.value || !!nameError}
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={!form.name?.trim() || !form.value || !!nameError || isDuplicateName}
           >
             {editingInput ? t('dialogs.codeInput.save') : t('dialogs.codeInput.add')}
           </Button>

@@ -1390,6 +1390,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         open={isCodeInputDialogOpen}
         onOpenChange={setIsCodeInputDialogOpen}
         editingInput={editingCodeInput}
+        existingInputs={codeConfig.inputs}
         variables={getAvailableVariables()}
         variableSearch={variableSearch}
         openVariablePopover={openVariablePopover}

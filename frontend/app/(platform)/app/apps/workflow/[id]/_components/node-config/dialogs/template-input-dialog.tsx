@@ -184,7 +184,7 @@ export function TemplateInputDialog({
                                 onClick={() => {
                                   setForm({
                                     ...form,
-                                    value: `{{${variable.name}}}`,
+                                    value: `{{${variable.id}}}`,
                                     valueSource: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel
                                   })
                                   onOpenVariablePopoverChange(null)

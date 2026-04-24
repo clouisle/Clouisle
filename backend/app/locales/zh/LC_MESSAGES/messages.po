@@ -2151,3 +2151,6 @@ msgstr "视频生成成功。使用模型 {model}。提示词：{prompt}"
 
 msgid "invalid_upload_path_segment"
 msgstr "无效的上传路径片段：{field_name}"
+
+msgid "duplicate_input_parameter_names"
+msgstr "发现重复的输入参数名称：{names}"

@@ -29,6 +29,12 @@
   - [x] 3. Compression observability and frontend messaging
   - [x] 4. Phase 2 Session Memory / SM Compact design hooks
 
+- **workflow-duplicate-input-params** — Complete. Prevented duplicate input parameter names in workflow code nodes via runtime executor validation, config-time validation, and frontend dialog guards. Tracked as GitHub issue #99. See `docs/plan/fix-duplicate-input-params.md`
+  - [x] 1. Add runtime validation in base executor
+  - [x] 2. Add config validation in code node
+  - [x] 3. Add i18n error messages
+  - [x] 4. Add frontend dialog duplicate detection
+
 - **agent-manual-stop-state** — Complete. Persisted manual stop state for interrupted agent replies so the current UI and reloaded history both show a stable stopped marker. See `docs/plan/agent-manual-stop-state.md`
   - [x] 1. Backend persisted stop state
   - [x] 2. Frontend stop finalization
