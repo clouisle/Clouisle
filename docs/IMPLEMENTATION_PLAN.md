@@ -9,7 +9,7 @@
   - [x] 4. 调试运行后的 schema 推断与持久化
   - [x] 5. 前端 TypeSpec 镜像与变量选择器
   - [x] 6. 前端节点配置面板 schema UI
-  - [ ] 7. 清理 Any 与文档
+  - [x] 7. 清理 Any 与文档
   - [ ] 8. 硬切换执行
 
 - **sandbox-runtime-migration** — In progress. Migrate subprocess-based code execution to a long-running sandbox worker runtime that supports Python/JS package installation, CLI and custom command execution, skill compilation, and compatibility bridges for tools, chat, and workflow code nodes. See `docs/plan/sandbox-runtime-migration.md`

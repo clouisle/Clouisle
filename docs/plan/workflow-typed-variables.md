@@ -148,10 +148,20 @@ def get_output_variables(self, config: dict) -> list[NodeOutputDecl]:
 - **验证**：浏览器手动跑
 
 ### Stage 7: 清理 `Any`、删除兼容代码、文档
-- 后端 `services/workflow/` 范围 `Any` → `WorkflowValue` 或具体类型；mypy 通过
-- 前端 workflow 范围 `Record<string, unknown>` / `as any` 替换；`bun run lint` 通过
-- 删除：`context.py` 已不触发的 `str(value)` 路径、`executors/iteration.py` 的 string→list 隐式 `json.loads`、所有 `if isinstance(x, str): try json.loads` 兜底
-- 文档更新：`WORKFLOW_ENGINE_ARCHITECTURE.md` 增加类型系统章节；新增 `WORKFLOW_TYPE_SYSTEM.md`；更新 `WORKFLOW_NODE_SPEC.md` 与 `WORKFLOW_ENGINE_STATUS.md`
+
+**已完成**：
+- 删除：`context.py` 中 `str(value)` 兜底（Stage 1）、`executors/iteration.py` 的
+  string→list 隐式 `json.loads`、`executors/variable.py` 的 string→object 隐式
+  `json.loads`（Stage 2）
+- 文档：新增 `docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md`；
+  `WORKFLOW_ENGINE_ARCHITECTURE.md` 加链接到类型系统章节；
+  `WORKFLOW_ENGINE_STATUS.md` 新增 Phase 6 段落
+
+**显式延后**：后端 `services/workflow/` 范围 `Any` 全量替换、前端
+`Record<string, unknown>` / `as any` 全量替换。两者各自有几十到上百处，
+逐项替换需要单独立项。新代码（`types.py` / `serialization.py` /
+`schema_inference.py` / `type-spec.ts` / `type-spec-editor.tsx`）已遵循
+新约定；存量替换列入下一轮专项 `workflow-types-followup.md`（待建）。
 
 ### Stage 8: 硬切换执行
 - `WorkflowDefinition` 增加 `schema_version: int = 2`

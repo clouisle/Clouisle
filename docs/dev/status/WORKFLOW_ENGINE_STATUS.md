@@ -2,6 +2,22 @@
 
 ## Phase 1, 2, 3, 4 & 5 Complete ✅
 
+## Phase 6 — Typed Variables (in progress) ✨
+
+Native object/array passthrough between nodes plus a structural TypeSpec
+system that auto-infers from debug runs. See
+`docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md` and tracker
+`docs/plan/workflow-typed-variables.md`.
+
+- `types.py` — TypeSpec / WorkflowValue / NodeOutputDecl / `to_text` /
+  `infer_type_spec` / `merge_type_spec`
+- `serialization.py` — msgpack-in-base64 (`mp1:` frame) replacing
+  per-write `json.dumps` in ExecutionContext + WorkflowCache
+- `schema_inference.py` — debug-run schema inference + per-node
+  `inferredSchema` merge
+- Frontend mirror in `frontend/lib/workflow/type-spec.ts` plus
+  `node-config/type-spec-editor.tsx` and `variable-selector.tsx` filtering
+
 ### Core Components Created
 
 ```
@@ -22,6 +38,9 @@ backend/app/services/workflow/
 ├── debugger.py           # Advanced debugging ✨ (Phase 5)
 ├── templates.py          # Workflow templates ✨ (Phase 5)
 ├── benchmark.py          # Load testing tools ✨ (Phase 5)
+├── types.py              # TypeSpec / WorkflowValue ✨ (Phase 6)
+├── serialization.py      # msgpack runtime serialisation ✨ (Phase 6)
+├── schema_inference.py   # Debug-run TypeSpec inference ✨ (Phase 6)
 └── executors/
     ├── __init__.py       # Auto-imports all executors
     ├── start.py          # user_input, trigger nodes
