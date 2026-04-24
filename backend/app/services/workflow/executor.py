@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from .context import ExecutionContext
     from .stream import StreamEvent
+    from .types import NodeOutputDecl
 
 logger = logging.getLogger(__name__)
 
@@ -171,16 +172,46 @@ class NodeExecutor(ABC):
         """
         Get the list of output variables this node produces.
 
-        Override in subclasses to define outputs.
+        Legacy form: `[{"name": "response", "type": "string"}]`. Prefer
+        `get_output_specs()` for new code — it carries structural TypeSpec
+        info (object fields, array item types). Both are kept until callers
+        finish migrating; the default `get_output_specs` reads from this
+        method when a subclass has not overridden it.
 
-        Args:
-            config: Node configuration
-
-        Returns:
-            List of output variable definitions
-            [{"name": "response", "type": "string"}]
+        Override either method in subclasses; if you only override
+        `get_output_variables`, structural type info defaults to a flat
+        scalar/`any` TypeSpec derived from the legacy type string.
         """
         return []
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """
+        Structural output declarations for this node.
+
+        Default implementation lifts the legacy `get_output_variables`
+        dict-list, converting each `type` string to a flat `TypeSpec`. Override
+        directly when the executor knows richer structure (object fields,
+        array item types, user-declared schema in `config`).
+        """
+        from .types import NodeOutputDecl, legacy_type_to_spec
+
+        decls: list[NodeOutputDecl] = []
+        for entry in self.get_output_variables(config):
+            name = entry.get("name")
+            if not name or not isinstance(name, str):
+                continue
+            type_str = entry.get("type") if isinstance(entry, dict) else None
+            description = entry.get("description") if isinstance(entry, dict) else None
+            decls.append(
+                NodeOutputDecl(
+                    name=name,
+                    type=legacy_type_to_spec(type_str)
+                    if isinstance(type_str, str)
+                    else legacy_type_to_spec(None),
+                    description=description if isinstance(description, str) else None,
+                )
+            )
+        return decls
 
 
 class NodeExecutorRegistry:

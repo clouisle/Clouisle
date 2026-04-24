@@ -18,6 +18,7 @@ from app.services.sandbox.models import SandboxJobSource
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from ..context import ExecutionContext
+    from ..types import NodeOutputDecl
 
 logger = logging.getLogger(__name__)
 
@@ -229,5 +230,37 @@ return main(params);
         return errors
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables from config."""
+        """Get output variables from config (legacy form)."""
         return config.get("outputs", [{"name": "result", "type": "any"}])
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Build TypeSpec output decls.
+
+        Honours a user-declared structural `typeSpec` on each output entry
+        when present (set by the frontend type-spec editor for object/array
+        outputs). Falls back to the legacy type-string conversion otherwise.
+        """
+        from ..types import NodeOutputDecl, TypeSpec, legacy_type_to_spec
+
+        outputs = config.get("outputs") or [{"name": "result", "type": "any"}]
+        decls: list[NodeOutputDecl] = []
+        for entry in outputs:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            type_spec_raw = entry.get("typeSpec")
+            if isinstance(type_spec_raw, dict):
+                spec = TypeSpec.model_validate(type_spec_raw)
+            else:
+                spec = legacy_type_to_spec(entry.get("type"))
+            description = entry.get("description")
+            decls.append(
+                NodeOutputDecl(
+                    name=name,
+                    type=spec,
+                    description=description if isinstance(description, str) else None,
+                )
+            )
+        return decls

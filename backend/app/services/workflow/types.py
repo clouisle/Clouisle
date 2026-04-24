@@ -171,11 +171,63 @@ def to_text(value: Any) -> str:
     return str(value)
 
 
+# Legacy type-string aliases used historically across node configs.
+_LEGACY_TYPE_ALIASES: dict[str, TypeKind] = {
+    "string": "string",
+    "text": "string",
+    "paragraph": "string",
+    "select": "string",
+    "number": "number",
+    "integer": "number",
+    "float": "number",
+    "boolean": "boolean",
+    "checkbox": "boolean",
+    "object": "object",
+    "array": "array",
+    "list": "array",
+    "file": "file",
+    "image": "image",
+    "files": "files",
+    "images": "images",
+    "any": "any",
+    "null": "null",
+}
+
+
+def legacy_type_to_spec(type_str: str | None) -> TypeSpec:
+    """Translate a legacy node-config type string into a TypeSpec.
+
+    Used by NodeExecutor.get_output_specs default to upgrade existing
+    `get_output_variables` returns without touching every executor.
+    """
+    if not type_str:
+        return TypeSpec(kind="any")
+    kind = _LEGACY_TYPE_ALIASES.get(type_str.lower(), "any")
+    return TypeSpec(kind=kind)
+
+
+class NodeOutputDecl(BaseModel):
+    """A single output variable produced by a node, with structural type info.
+
+    Each NodeExecutor.get_output_specs() returns a list of these. Consumers
+    (variable picker, schema inference merger, prompt-hint generator) read the
+    `type` field to reason about the value the downstream nodes will see.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    type: TypeSpec
+    description: str | None = None
+
+
 __all__ = [
     "TypeSpec",
     "TypeKind",
     "WorkflowValue",
+    "NodeOutputDecl",
     "infer_type_spec",
     "merge_type_spec",
     "to_text",
+    "legacy_type_to_spec",
 ]

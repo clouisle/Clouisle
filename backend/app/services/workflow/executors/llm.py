@@ -11,6 +11,9 @@ from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..lazy_stream import LazyStreamResult
 
 if TYPE_CHECKING:
+    from ..types import NodeOutputDecl
+
+if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from ..context import ExecutionContext
 
@@ -256,9 +259,26 @@ class LLMNodeExecutor(NodeExecutor):
         return errors
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables."""
+        """Get output variables (legacy form; see get_output_specs for structure)."""
         return [
             {"name": "response", "type": "string"},
             {"name": "reasoning", "type": "string"},
             {"name": "usage", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        from ..types import NodeOutputDecl, TypeSpec
+
+        usage_fields = {
+            "prompt_tokens": TypeSpec(kind="number"),
+            "completion_tokens": TypeSpec(kind="number"),
+            "total_tokens": TypeSpec(kind="number"),
+        }
+        return [
+            NodeOutputDecl(name="response", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="reasoning", type=TypeSpec(kind="string")),
+            NodeOutputDecl(
+                name="usage",
+                type=TypeSpec(kind="object", fields=usage_fields),
+            ),
         ]

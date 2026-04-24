@@ -13,6 +13,7 @@ from ..errors import translate_public_workflow_error
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from ..context import ExecutionContext
+    from ..types import NodeOutputDecl
 
 logger = logging.getLogger(__name__)
 
@@ -682,7 +683,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
             return value
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables from config."""
+        """Get output variables from config (legacy form)."""
         parameters = config.get("parameters", [])
         result = [
             {"name": p.get("name"), "type": p.get("type", "string")}
@@ -691,3 +692,29 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
         ]
         result.append({"name": "_extraction_confidence", "type": "number"})
         return result
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        from ..types import NodeOutputDecl, TypeSpec, legacy_type_to_spec
+
+        decls: list[NodeOutputDecl] = []
+        for param in config.get("parameters", []) or []:
+            name = param.get("name") if isinstance(param, dict) else None
+            if not isinstance(name, str) or not name:
+                continue
+            type_spec_raw = param.get("typeSpec") if isinstance(param, dict) else None
+            if isinstance(type_spec_raw, dict):
+                spec = TypeSpec.model_validate(type_spec_raw)
+            else:
+                spec = legacy_type_to_spec(param.get("type"))
+            description = param.get("description") if isinstance(param, dict) else None
+            decls.append(
+                NodeOutputDecl(
+                    name=name,
+                    type=spec,
+                    description=description if isinstance(description, str) else None,
+                )
+            )
+        decls.append(
+            NodeOutputDecl(name="_extraction_confidence", type=TypeSpec(kind="number"))
+        )
+        return decls

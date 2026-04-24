@@ -5,7 +5,7 @@
 - **workflow-typed-variables** — In progress. Replace JSON-stringified variable passing with native object/array passthrough across the workflow engine, introduce a TypeSpec system declared per node and auto-inferred from debug runs, swap Redis context serialization to msgpack, and remove `Any` / `unknown` from workflow IO front and back. Hard cutover, no backward compatibility for existing workflow definitions. See `docs/plan/workflow-typed-variables.md`
   - [x] 1. TypeSpec 与 msgpack 序列化层
   - [x] 2. 节点 IO 摆脱字符串化
-  - [ ] 3. NodeExecutor 输出 schema 声明
+  - [x] 3. NodeExecutor 输出 schema 声明
   - [ ] 4. 调试运行后的 schema 推断与持久化
   - [ ] 5. 前端 TypeSpec 镜像与变量选择器
   - [ ] 6. 前端节点配置面板 schema UI
