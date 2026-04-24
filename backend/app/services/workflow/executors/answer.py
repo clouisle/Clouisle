@@ -7,11 +7,11 @@ Streaming is the default: LazyStreamResult triggers real streaming,
 other values are pushed as pseudo-stream tokens.
 """
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..types import to_text
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -22,13 +22,7 @@ logger = logging.getLogger(__name__)
 
 def _value_to_str(value: object) -> str:
     """Convert any value to a string for output."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value)
+    return to_text(value)
 
 
 @NodeExecutorRegistry.register("answer")

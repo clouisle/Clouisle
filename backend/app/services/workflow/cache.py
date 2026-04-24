@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 from app.core.redis import get_redis
+from .serialization import dumps_value, loads_value
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ class WorkflowCache:
             redis = await self._get_redis()
             data = await redis.get(key)
             if data:
-                definition = json.loads(data)
+                definition = loads_value(data)
                 self._set_local(key, definition, self.config.workflow_definition_ttl)
                 logger.debug(f"Workflow cache hit (redis): {workflow_id}")
                 return definition
@@ -214,7 +215,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(definition))
+            await redis.setex(key, ttl, dumps_value(definition))
             self._set_local(key, definition, ttl)
             logger.debug(f"Workflow cached: {workflow_id}")
         except Exception as e:
@@ -268,7 +269,7 @@ class WorkflowCache:
             redis = await self._get_redis()
             data = await redis.get(key)
             if data:
-                plan = json.loads(data)
+                plan = loads_value(data)
                 self._set_local(key, plan, self.config.execution_plan_ttl)
                 logger.debug(f"Plan cache hit (redis): {workflow_id}")
                 return plan
@@ -291,7 +292,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(plan))
+            await redis.setex(key, ttl, dumps_value(plan))
             self._set_local(key, plan, ttl)
             logger.debug(f"Plan cached: {workflow_id}")
         except Exception as e:
@@ -330,7 +331,7 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"Node cache hit: {node_id}")
-                return json.loads(data)
+                return loads_value(data)
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -355,7 +356,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(outputs))
+            await redis.setex(key, ttl, dumps_value(outputs))
             logger.debug(f"Node result cached: {node_id}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -388,7 +389,7 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"LLM cache hit: {model}")
-                return json.loads(data)
+                return loads_value(data)
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -410,7 +411,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(response))
+            await redis.setex(key, ttl, dumps_value(response))
             logger.debug(f"LLM response cached: {model}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -431,7 +432,7 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"Tool cache hit: {tool_id}")
-                return json.loads(data)
+                return loads_value(data)
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -451,7 +452,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(outputs))
+            await redis.setex(key, ttl, dumps_value(outputs))
             logger.debug(f"Tool result cached: {tool_id}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -531,7 +532,7 @@ def cached(
                 redis = await get_redis()
                 data = await redis.get(full_key)
                 if data is not None:
-                    return json.loads(data)
+                    return loads_value(data)
             except Exception:
                 pass
 
@@ -542,7 +543,7 @@ def cached(
             if result is not None or cache_none:
                 try:
                     redis = await get_redis()
-                    await redis.setex(full_key, ttl, json.dumps(result, default=str))
+                    await redis.setex(full_key, ttl, dumps_value(result))
                 except Exception:
                     pass
 

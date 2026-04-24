@@ -18,6 +18,9 @@ from uuid import UUID
 
 import redis.asyncio as redis
 
+from .serialization import dumps_value, loads_value
+from .types import to_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,7 +58,8 @@ class ExecutionContext:
         self.run_id = str(run_id)
         self.redis = redis_client
         self._system_variables: dict[str, Any] = {}
-        # 内存缓存：存储无法 JSON 序列化的对象（如 LazyStreamResult）
+        # In-memory cache for values that cannot cross the Redis boundary
+        # (e.g. LazyStreamResult holds an open generator).
         self._memory_cache: dict[str, dict[str, Any]] = {}
 
     # ==================== Factory Methods ====================
@@ -166,15 +170,13 @@ class ExecutionContext:
     async def set_variable(self, name: str, value: Any):
         """Set a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
-        await _resolve_redis_result(
-            self.redis.hset(key, name, json.dumps(value, ensure_ascii=False))
-        )
+        await _resolve_redis_result(self.redis.hset(key, name, dumps_value(value)))
 
     async def get_variable(self, name: str) -> Any:
         """Get a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
         value = await _resolve_redis_result(self.redis.hget(key, name))
-        return json.loads(value) if value else None
+        return loads_value(value) if value else None
 
     async def get_all_variables(self) -> dict[str, Any]:
         """Get all global variables."""
@@ -182,7 +184,7 @@ class ExecutionContext:
         data = cast(
             dict[str, str], await _resolve_redis_result(self.redis.hgetall(key))
         )
-        return {k: json.loads(v) for k, v in data.items()}
+        return {k: loads_value(v) for k, v in data.items()}
 
     # ==================== Node Output Management ====================
 
@@ -210,9 +212,7 @@ class ExecutionContext:
         # Store serializable outputs in Redis
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
         await _resolve_redis_result(
-            self.redis.hset(
-                key, node_id, json.dumps(serializable_outputs, ensure_ascii=False)
-            )
+            self.redis.hset(key, node_id, dumps_value(serializable_outputs))
         )
 
         # Store lazy outputs in memory
@@ -236,7 +236,7 @@ class ExecutionContext:
         if not value:
             return None
 
-        outputs = json.loads(value)
+        outputs = loads_value(value)
 
         # Merge lazy outputs from memory cache
         if node_id in self._memory_cache:
@@ -251,7 +251,7 @@ class ExecutionContext:
         data = cast(
             dict[str, str], await _resolve_redis_result(self.redis.hgetall(key))
         )
-        return {k: json.loads(v) for k, v in data.items()}
+        return {k: loads_value(v) for k, v in data.items()}
 
     # ==================== Variable Resolution ====================
 
@@ -289,20 +289,13 @@ class ExecutionContext:
             var_path = single_match.group(1).strip()
             return await self._resolve_single_variable(var_path, stream_to_node_id)
 
-        # Multiple references or embedded in text - do string replacement
-        async def replace_var(match: re.Match) -> str:
-            var_path = match.group(1).strip()
-            value = await self._resolve_single_variable(var_path, stream_to_node_id)
-            return str(value) if value is not None else ""
-
-        # Process all matches
+        # Multiple references or embedded in text - render via to_text so dict/list
+        # become readable JSON instead of the Python repr "{'a': 1}".
         result = ref
         for match in re.finditer(pattern, ref):
             var_path = match.group(1).strip()
             value = await self._resolve_single_variable(var_path, stream_to_node_id)
-            result = result.replace(
-                match.group(0), str(value) if value is not None else ""
-            )
+            result = result.replace(match.group(0), to_text(value))
 
         return result
 
@@ -403,7 +396,7 @@ class ExecutionContext:
             return template
 
         result = await self.resolve_variable_ref(template)
-        return str(result) if result is not None else ""
+        return to_text(result)
 
     # ==================== Branch Management ====================
 
@@ -426,7 +419,7 @@ class ExecutionContext:
             handles: List of active source handle IDs
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        await _resolve_redis_result(self.redis.hset(key, node_id, json.dumps(handles)))
+        await _resolve_redis_result(self.redis.hset(key, node_id, dumps_value(handles)))
 
     async def get_active_branches(self, node_id: str) -> list[str] | None:
         """
@@ -440,7 +433,7 @@ class ExecutionContext:
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
         value = await _resolve_redis_result(self.redis.hget(key, node_id))
-        return json.loads(value) if value else None
+        return loads_value(value) if value else None
 
     async def should_execute_node(
         self,
