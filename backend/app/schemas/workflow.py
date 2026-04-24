@@ -5,7 +5,7 @@ Workflow schemas for API request/response validation.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -373,8 +373,24 @@ class NodeData(BaseModel):
 
 
 class WorkflowDefinition(BaseModel):
-    """Complete workflow definition (ReactFlow format)"""
+    """Complete workflow definition (ReactFlow format).
 
+    `schema_version` tracks the on-disk shape so the editor and runtime can
+    refuse to operate on definitions that predate the typed-variable system
+    (see `docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md`). Bump on
+    breaking shape changes; keep stable for additive ones.
+
+    Versions:
+      1 — implicit JSON-string passthrough between nodes (legacy).
+      2 — native dict / list passthrough; per-node `inferredSchema` and
+          per-output `typeSpec` recognised.
+    """
+
+    WORKFLOW_SCHEMA_VERSION: ClassVar[int] = 2
+
+    schema_version: int = Field(
+        default=2, description="Workflow definition schema version"
+    )
     nodes: list[dict] = Field(default_factory=list)
     edges: list[dict] = Field(default_factory=list)
     viewport: dict = Field(default_factory=lambda: {"x": 0, "y": 0, "zoom": 1})

@@ -13,6 +13,7 @@
     "saveFailed": "保存工作流失败",
     "noDescription": "无描述",
     "run": "运行",
+    "legacyDefinitionPleaseResave": "此工作流由旧版本创建，请重新保存以适配新类型系统",
     "runWorkflow": "运行工作流",
     "publish": "发布",
     "embed": "嵌入",

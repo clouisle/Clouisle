@@ -13,6 +13,7 @@
     "saveFailed": "Failed to save workflow",
     "noDescription": "No description",
     "run": "Run",
+    "legacyDefinitionPleaseResave": "This workflow was created by an older version — please re-save to adopt the new type system.",
     "runWorkflow": "Run Workflow",
     "publish": "Publish",
     "embed": "Embed",
