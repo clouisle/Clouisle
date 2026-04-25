@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
-from ..types import to_text
+from ..types import NodeOutputDecl, to_text, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _value_to_str(value: object) -> str:
+def _value_to_str(value: WorkflowValue) -> str:
     """Convert any value to a string for output."""
     return to_text(value)
 
@@ -168,3 +168,12 @@ class AnswerNodeExecutor(NodeExecutor):
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables from config."""
         return [{"name": "answer", "type": "string"}]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(
+                name="answer",
+                type=TypeSpec(kind="string"),
+            )
+        ]

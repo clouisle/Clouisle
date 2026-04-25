@@ -4,14 +4,15 @@ LLM node executor.
 Handles AI model inference calls.
 """
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..lazy_stream import LazyStreamResult
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
-    from ..types import NodeOutputDecl
+    from ..types import NodeOutputDecl, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -107,7 +108,7 @@ class LLMNodeExecutor(NodeExecutor):
         resolved_inputs = await self.resolve_inputs(context, inputs)
 
         # Build messages
-        messages = []
+        messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
@@ -134,7 +135,7 @@ class LLMNodeExecutor(NodeExecutor):
         )  # Frontend uses "streaming", default to non-streaming
 
         # Response format configuration
-        response_format = None
+        response_format: dict[str, WorkflowValue] | None = None
         response_format_type = llm_config.get("responseFormat", "text")
         logger.info(f"LLM node {node_id}: responseFormat={response_format_type}")
         logger.info(f"LLM node {node_id}: Full llmConfig={llm_config}")
@@ -150,17 +151,14 @@ class LLMNodeExecutor(NodeExecutor):
                     import json
 
                     schema = json.loads(json_schema_str)
-                    response_format = cast(
-                        dict[str, Any],
-                        {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "response",
-                                "strict": True,
-                                "schema": schema,
-                            },
+                    response_format = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "response",
+                            "strict": True,
+                            "schema": schema,
                         },
-                    )
+                    }
                     logger.info(
                         f"LLM node {node_id}: Constructed response_format={json.dumps(response_format, ensure_ascii=False)}"
                     )
@@ -187,8 +185,8 @@ class LLMNodeExecutor(NodeExecutor):
                 logger.info(f"LLM node {node_id} returning lazy stream result")
 
                 return ExecutionResult(
-                    outputs={
-                        "response": lazy_result,  # Lazy result, will be executed when referenced
+                    outputs={  # type: ignore[dict-item]
+                        "response": lazy_result,  # type: ignore[dict-item]  # Lazy result, will be executed when referenced
                         "reasoning": "",  # Will be populated after lazy execution
                         "usage": {},  # Will be populated after lazy execution
                     }
@@ -196,7 +194,7 @@ class LLMNodeExecutor(NodeExecutor):
             else:
                 # Non-streaming mode
                 result = await model_manager.chat(
-                    messages=cast(list[Any], messages),
+                    messages=messages,  # type: ignore[arg-type]
                     model_id=str(model_id),
                     temperature=temperature,
                     max_tokens=max_tokens,

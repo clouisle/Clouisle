@@ -9,7 +9,7 @@ import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..errors import translate_public_workflow_error
-from ..types import to_text
+from ..types import NodeOutputDecl, TypeSpec, to_text, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -191,9 +191,9 @@ class ConditionNodeExecutor(NodeExecutor):
         await context.set_branch(node_id, matched_handle)
 
         return ExecutionResult(
-            outputs={
+            outputs={  # type: ignore[dict-item]
                 "matched_branch": matched_handle,
-                "condition_results": condition_results,
+                "condition_results": cast(dict[str, WorkflowValue], condition_results),
             },
             next_handles=[matched_handle],
         )
@@ -232,6 +232,19 @@ class ConditionNodeExecutor(NodeExecutor):
         return [
             {"name": "matched_branch", "type": "string"},
             {"name": "condition_results", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(
+                name="matched_branch",
+                type=TypeSpec(kind="string"),
+            ),
+            NodeOutputDecl(
+                name="condition_results",
+                type=TypeSpec(kind="object"),
+            ),
         ]
 
 
@@ -435,3 +448,28 @@ Respond in JSON format:
         except Exception as e:
             logger.exception(f"Question classifier error: {e}")
             return ExecutionResult(error=translate_public_workflow_error(e))
+
+    def get_output_variables(self, config: dict) -> list[dict]:
+        """Get output variables."""
+        return [
+            {"name": "category", "type": "string"},
+            {"name": "confidence", "type": "number"},
+            {"name": "reasoning", "type": "string"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(
+                name="category",
+                type=TypeSpec(kind="string"),
+            ),
+            NodeOutputDecl(
+                name="confidence",
+                type=TypeSpec(kind="number"),
+            ),
+            NodeOutputDecl(
+                name="reasoning",
+                type=TypeSpec(kind="string"),
+            ),
+        ]

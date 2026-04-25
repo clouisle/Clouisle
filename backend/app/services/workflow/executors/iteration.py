@@ -4,11 +4,12 @@ Iteration and loop node executors.
 Handles iterative execution patterns in workflows.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..stream import StreamManager
+from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -197,7 +198,7 @@ class IterationNodeExecutor(NodeExecutor):
     async def _execute_array_iteration(
         self,
         node_id: str,
-        items: Any,
+        items: WorkflowValue | None,
         item_var: str,
         index_var: str,
         max_iterations: int,
@@ -234,10 +235,11 @@ class IterationNodeExecutor(NodeExecutor):
 
         if iteration_state is None:
             current_index = 0
-            results = []
+            results: list[WorkflowValue] = []
         else:
-            current_index = iteration_state.get("index", 0) + 1
-            results = iteration_state.get("results", [])
+            state_dict = cast(dict[str, WorkflowValue], iteration_state)
+            current_index = cast(int, state_dict.get("index", 0)) + 1
+            results = cast(list[WorkflowValue], state_dict.get("results", []))
 
         # Check if iteration is complete
         if current_index >= len(items):
@@ -292,7 +294,7 @@ class IterationNodeExecutor(NodeExecutor):
     async def _execute_object_iteration(
         self,
         node_id: str,
-        items: Any,
+        items: WorkflowValue | None,
         key_var: str,
         value_var: str,
         max_iterations: int,
@@ -327,10 +329,11 @@ class IterationNodeExecutor(NodeExecutor):
 
         if iteration_state is None:
             current_index = 0
-            results = []
+            results: list[WorkflowValue] = []
         else:
-            current_index = iteration_state.get("index", 0) + 1
-            results = iteration_state.get("results", [])
+            state_dict = cast(dict[str, WorkflowValue], iteration_state)
+            current_index = cast(int, state_dict.get("index", 0)) + 1
+            results = cast(list[WorkflowValue], state_dict.get("results", []))
 
         # Check if iteration is complete
         if current_index >= len(pairs):
@@ -353,12 +356,15 @@ class IterationNodeExecutor(NodeExecutor):
         # Store iteration state
         await context.set_variable(
             f"{node_id}._iteration_state",
-            {
-                "index": current_index,
-                "total": len(pairs),
-                "results": results,
-                "pairs": pairs,
-            },
+            cast(  # type: ignore[arg-type]
+                dict[str, WorkflowValue],
+                {
+                    "index": current_index,
+                    "total": len(pairs),
+                    "results": results,
+                    "pairs": pairs,
+                },
+            ),
         )
 
         # Publish iteration event
@@ -403,6 +409,31 @@ class IterationNodeExecutor(NodeExecutor):
                 {"name": "total", "type": "number"},
                 {"name": "results", "type": "array"},
             ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        iterator_type = config.get("iteratorType", "array")
+        specs: list["NodeOutputDecl"] = [
+            NodeOutputDecl(
+                name="total",
+                type=TypeSpec(kind="number"),
+            ),
+            NodeOutputDecl(
+                name="results",
+                type=TypeSpec(kind="array"),
+            ),
+        ]
+        if iterator_type == "object":
+            key_var = config.get("keyVariable", "key")
+            value_var = config.get("valueVariable", "value")
+            specs.insert(0, NodeOutputDecl(name=value_var, type=TypeSpec(kind="any")))
+            specs.insert(0, NodeOutputDecl(name=key_var, type=TypeSpec(kind="string")))
+        else:
+            item_var = config.get("itemVariable", "item")
+            index_var = config.get("indexVariable", "index")
+            specs.insert(0, NodeOutputDecl(name=index_var, type=TypeSpec(kind="number")))
+            specs.insert(0, NodeOutputDecl(name=item_var, type=TypeSpec(kind="any")))
+        return specs
 
 
 @NodeExecutorRegistry.register("loop")
@@ -459,11 +490,12 @@ class LoopNodeExecutor(NodeExecutor):
 
         if loop_state is None:
             current_count = 0
-            results = []
+            results: list[WorkflowValue] = []
             logger.info(f"Loop node {node_id}: first iteration, count={current_count}")
         else:
-            current_count = loop_state.get("count", 0) + 1
-            results = loop_state.get("results", [])
+            state_dict = cast(dict[str, WorkflowValue], loop_state)
+            current_count = cast(int, state_dict.get("count", 0)) + 1
+            results = cast(list[WorkflowValue], state_dict.get("results", []))
             logger.info(
                 f"Loop node {node_id}: continuing iteration, count={current_count}, results_count={len(results)}"
             )
@@ -472,7 +504,7 @@ class LoopNodeExecutor(NodeExecutor):
         # This allows child nodes to modify the results array
         updated_results = await context.get_variable(f"{node_id}.{output_var}")
         if updated_results is not None:
-            results = updated_results
+            results = cast(list[WorkflowValue], updated_results)
             logger.info(
                 f"Loop node {node_id}: loaded updated results from context, count={len(results)}"
             )
@@ -570,7 +602,7 @@ class LoopNodeExecutor(NodeExecutor):
 
         # Add loop variables (for custom variables defined in config)
         for var in loop_variables:
-            var_name = var.get("name")
+            var_name: str | None = var.get("name")
             if var_name:
                 # Try to get existing value from context
                 existing_value = await context.get_variable(f"{node_id}.{var_name}")
@@ -578,7 +610,7 @@ class LoopNodeExecutor(NodeExecutor):
                     outputs[var_name] = existing_value
 
         logger.info(f"Loop node {node_id}: continuing loop, outputs={outputs}")
-        return ExecutionResult(outputs=outputs)
+        return ExecutionResult(outputs=cast(dict[str, WorkflowValue], outputs))
 
     async def _evaluate_condition(
         self,
@@ -592,17 +624,19 @@ class LoopNodeExecutor(NodeExecutor):
 
         # Resolve compare value if it's a reference
         if compare_value.startswith("{{"):
-            compare_value = await context.resolve_variable_ref(compare_value)
+            resolved_compare = await context.resolve_variable_ref(compare_value)
+        else:
+            resolved_compare = compare_value
 
         try:
             if operator == "equals":
-                return str(actual_value) == str(compare_value)
+                return str(actual_value) == str(resolved_compare)
             elif operator == "not_equals":
-                return str(actual_value) != str(compare_value)
+                return str(actual_value) != str(resolved_compare)
             elif operator == "greater_than":
-                return float(actual_value) > float(compare_value)
+                return float(cast(float, actual_value)) > float(cast(float, resolved_compare))
             elif operator == "less_than":
-                return float(actual_value) < float(compare_value)
+                return float(cast(float, actual_value)) < float(cast(float, resolved_compare))
             elif operator == "is_true":
                 return bool(actual_value)
             elif operator == "is_false":
@@ -619,4 +653,14 @@ class LoopNodeExecutor(NodeExecutor):
         counter_var = config.get("counterVariable", "loopCount")
         return [
             {"name": counter_var, "type": "number"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        counter_var = config.get("counterVariable", "loopCount")
+        return [
+            NodeOutputDecl(
+                name=counter_var,
+                type=TypeSpec(kind="number"),
+            ),
         ]
