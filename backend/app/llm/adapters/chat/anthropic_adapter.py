@@ -374,7 +374,10 @@ class AnthropicAdapter(BaseChatAdapter):
                 )
 
             # Regular response
-            response = await client.messages.create(**request_params)
+            response = await client.messages.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             # 提取内容
             content, reasoning_content, tool_calls = self._extract_response(response)
@@ -479,13 +482,17 @@ class AnthropicAdapter(BaseChatAdapter):
                     thinking_config["budget_tokens"] = self.thinking_budget
                 request_params["thinking"] = thinking_config
 
+            extra_body = self.get_passthrough_body() or None
             response_id = str(uuid.uuid4())
 
             # 用于累积工具调用
             current_tool_use: dict[str, Any] | None = None
             tool_calls: list[ToolCall] = []
 
-            async with client.messages.stream(**request_params) as stream:
+            async with client.messages.stream(
+                **request_params,
+                extra_body=extra_body,
+            ) as stream:
                 async for event in stream:
                     event_type = getattr(event, "type", None)
 

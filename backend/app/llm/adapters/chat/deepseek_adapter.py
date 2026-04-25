@@ -150,12 +150,24 @@ class DeepSeekAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+            thinking = self.get_effective_thinking()
+            if self.thinking_enabled:
+                request_params["thinking"] = (
+                    thinking if isinstance(thinking, dict) else {"type": "enabled"}
+                )
+            if self.reasoning_effort:
+                request_params["reasoning_effort"] = self.reasoning_effort
 
-            response = await client.chat.completions.create(**request_params)
+            response = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             choice = response.choices[0]
             message = choice.message
@@ -237,12 +249,24 @@ class DeepSeekAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+            thinking = self.get_effective_thinking()
+            if self.thinking_enabled:
+                request_params["thinking"] = (
+                    thinking if isinstance(thinking, dict) else {"type": "enabled"}
+                )
+            if self.reasoning_effort:
+                request_params["reasoning_effort"] = self.reasoning_effort
 
-            stream = await client.chat.completions.create(**request_params)
+            stream = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             response_id = str(uuid.uuid4())
             tool_accumulator = ToolCallAccumulator()

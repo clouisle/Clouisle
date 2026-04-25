@@ -301,7 +301,8 @@ class GeminiAdapter(BaseChatAdapter):
         if self.max_tokens is not None:
             generation_config["max_output_tokens"] = self.max_tokens
         # Gemini 2.0 Flash Thinking 需要设置 thinking_config
-        if self.thinking_enabled:
+        thinking = self.get_effective_thinking()
+        if thinking is not None and self.thinking_enabled:
             generation_config["thinking_config"] = {
                 "thinking_budget": self.thinking_budget or 8192
             }
@@ -403,7 +404,8 @@ class GeminiAdapter(BaseChatAdapter):
         if self.max_tokens is not None:
             generation_config["max_output_tokens"] = self.max_tokens
         # Gemini 2.0 Flash Thinking 需要设置 thinking_config
-        if self.thinking_enabled:
+        thinking = self.get_effective_thinking()
+        if thinking is not None and self.thinking_enabled:
             generation_config["thinking_config"] = {
                 "thinking_budget": self.thinking_budget or 8192
             }

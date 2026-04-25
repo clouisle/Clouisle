@@ -200,12 +200,18 @@ async def test_model_connection(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_type_not_supported",
         ) from exc
+    default_params = model.default_params or {}
     config = model.config or {}
 
     try:
         if model_type == ModelType.CHAT:
             await _test_chat_model(
-                provider, model.model_id, model.api_key, model.base_url, config
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
             )
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(
@@ -315,13 +321,21 @@ async def test_model_config(
     model_type = test_request.model_type
     api_key = test_request.api_key
     base_url = test_request.base_url
+    default_params = test_request.default_params or {}
     config = test_request.config or {}
 
     start_time = time.time()
 
     try:
         if model_type == ModelType.CHAT:
-            await _test_chat_model(provider, model_id, api_key, base_url, config)
+            await _test_chat_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.RERANK:
@@ -411,6 +425,7 @@ async def _test_chat_model(
     model_id: str,
     api_key: str | None,
     base_url: Optional[str],
+    default_params: dict,
     config: dict,
 ) -> None:
     from app.llm.types import Message, MessageRole
@@ -429,7 +444,8 @@ async def _test_chat_model(
             self.model_id = model_id
             self.api_key = api_key
             self.base_url = base_url
-            self.default_params = {}
+            self.default_params = default_params
+            self.max_output_tokens = default_params.get("max_tokens")
             self.config = config
 
     temp_model = TempModel()
