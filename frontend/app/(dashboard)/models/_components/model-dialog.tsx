@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Tabs,
   TabsContent,
@@ -86,6 +87,63 @@ function requiresApiKey(provider: string): boolean {
   return provider !== 'ollama'
 }
 
+const MANAGED_DEFAULT_PARAM_KEYS = new Set([
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'max_tokens',
+  'size',
+  'style',
+  'quality',
+  'duration',
+  'aspect_ratio',
+  'voice',
+  'speed',
+  'thinking',
+  'reasoning_effort',
+  'extra_body',
+])
+
+const MANAGED_CONFIG_KEYS = new Set([
+  'api_version',
+  'deployment_name',
+  'thinking',
+])
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function omitManagedKeys(
+  source: Record<string, unknown> | null | undefined,
+  managedKeys: Set<string>,
+): Record<string, unknown> {
+  if (!source) return {}
+  return Object.fromEntries(
+    Object.entries(source).filter(([key]) => !managedKeys.has(key))
+  )
+}
+
+function parseJsonObject(
+  value: string,
+  errorMessage: string,
+): { data: Record<string, unknown> | null; error?: string } {
+  if (!value.trim()) {
+    return { data: null }
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    if (!isPlainObject(parsed)) {
+      return { data: null, error: errorMessage }
+    }
+    return { data: parsed }
+  } catch {
+    return { data: null, error: errorMessage }
+  }
+}
+
 // 分隔线组件 - 移到组件外部避免重新创建
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -124,7 +182,31 @@ export function ModelDialog({
     const key = `modelTypes.${code}`
     return t.has(key) ? t(key) : code
   }, [t])
-  
+  const getReasoningEffortLabel = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'openai') return t('openaiReasoningEffort')
+    if (currentProvider === 'deepseek') return t('deepseekReasoningEffort')
+    if (currentProvider === 'xai') return t('xaiReasoningEffort')
+    return t('reasoningEffort')
+  }, [t])
+  const getReasoningEffortHint = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'openai') return t('openaiReasoningEffortHint')
+    if (currentProvider === 'deepseek') return t('deepseekReasoningEffortHint')
+    if (currentProvider === 'xai') return t('xaiReasoningEffortHint')
+    return t('reasoningEffortHint')
+  }, [t])
+  const getThinkingTitle = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'anthropic') return t('anthropicThinkingConfig')
+    if (currentProvider === 'google') return t('geminiThinkingConfig')
+    if (currentProvider === 'deepseek') return t('deepseekThinkingConfig')
+    return t('thinkingConfig')
+  }, [t])
+  const getThinkingHint = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'anthropic') return t('anthropicThinkingEnabledHint')
+    if (currentProvider === 'google') return t('geminiThinkingEnabledHint')
+    if (currentProvider === 'deepseek') return t('deepseekThinkingEnabledHint')
+    return t('thinkingEnabledHint')
+  }, [t])
+
   const isEditing = !!model
   
   // 基本信息
@@ -135,7 +217,13 @@ export function ModelDialog({
   const [baseUrl, setBaseUrl] = React.useState('')
   const [apiKey, setApiKey] = React.useState('')
   const [showApiKey, setShowApiKey] = React.useState(false)
-  
+  const reasoningEffortOptions = React.useMemo(() => {
+    if (provider === 'openai') {
+      return ['minimal', 'low', 'medium', 'high'] as const
+    }
+    return ['low', 'medium', 'high'] as const
+  }, [provider])
+
   // 参数
   const [contextLength, setContextLength] = React.useState('')
   const [maxOutputTokens, setMaxOutputTokens] = React.useState('')
@@ -180,6 +268,9 @@ export function ModelDialog({
   const [thinkingEnabled, setThinkingEnabled] = React.useState(false)
   const [thinkingBudget, setThinkingBudget] = React.useState('')
   const [reasoningEffort, setReasoningEffort] = React.useState('')
+  const [extraBodyText, setExtraBodyText] = React.useState('')
+  const [defaultParamsExtensionText, setDefaultParamsExtensionText] = React.useState('')
+  const [configExtensionText, setConfigExtensionText] = React.useState('')
 
   const [isLoading, setIsLoading] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -195,6 +286,9 @@ export function ModelDialog({
     output_price: 'outputPrice',
     api_version: 'apiVersion',
     deployment_name: 'deploymentName',
+    default_params: 'defaultParamsExtension',
+    config: 'configExtension',
+    'default_params.extra_body': 'extraBody',
     'config.api_version': 'apiVersion',
     'config.deployment_name': 'deploymentName',
   }), [])
@@ -254,7 +348,21 @@ export function ModelDialog({
       setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
       setDefaultVoice((params.voice as string) || '')
       setDefaultSpeed((params.speed as number)?.toString() || '')
-      
+      setReasoningEffort(
+        (params.reasoning_effort as string)
+        || ((params.thinking as Record<string, unknown> | undefined)?.effort as string)
+        || ((params.thinking as Record<string, unknown> | undefined)?.reasoning_effort as string)
+        || ''
+      )
+      setExtraBodyText(
+        params.extra_body && isPlainObject(params.extra_body)
+          ? JSON.stringify(params.extra_body, null, 2)
+          : ''
+      )
+      setDefaultParamsExtensionText(
+        JSON.stringify(omitManagedKeys(params, MANAGED_DEFAULT_PARAM_KEYS), null, 2)
+      )
+
       const caps = model.capabilities || {}
       setSupportsVision(!!caps.vision)
       setSupportsFunctionCall(!!caps.function_call)
@@ -264,21 +372,21 @@ export function ModelDialog({
       const config = model.config || {}
       setApiVersion((config.api_version as string) || '')
       setDeploymentName((config.deployment_name as string) || '')
+      setConfigExtensionText(
+        JSON.stringify(omitManagedKeys(config, MANAGED_CONFIG_KEYS), null, 2)
+      )
 
       // Thinking 配置
-      const thinking = config.thinking as Record<string, unknown> | boolean | undefined
+      const thinking = (params.thinking ?? config.thinking) as Record<string, unknown> | boolean | undefined
       if (typeof thinking === 'boolean') {
         setThinkingEnabled(thinking)
         setThinkingBudget('')
-        setReasoningEffort('')
       } else if (thinking && typeof thinking === 'object') {
         setThinkingEnabled(thinking.enabled !== false)
         setThinkingBudget((thinking.budget_tokens as number)?.toString() || (thinking.budget as number)?.toString() || '')
-        setReasoningEffort((thinking.effort as string) || (thinking.reasoning_effort as string) || '')
       } else {
         setThinkingEnabled(false)
         setThinkingBudget('')
-        setReasoningEffort('')
       }
     } else {
       setName('')
@@ -314,6 +422,9 @@ export function ModelDialog({
       setThinkingEnabled(false)
       setThinkingBudget('')
       setReasoningEffort('')
+      setExtraBodyText('')
+      setDefaultParamsExtensionText('')
+      setConfigExtensionText('')
     }
     setShowApiKey(false)
     setErrors({})
@@ -340,13 +451,46 @@ export function ModelDialog({
       return
     }
 
+    const extraBodyResult = parseJsonObject(extraBodyText, commonT('invalidJSON'))
+    const defaultParamsExtensionResult = parseJsonObject(defaultParamsExtensionText, commonT('invalidJSON'))
+    const configExtensionResult = parseJsonObject(configExtensionText, commonT('invalidJSON'))
+
+    if (extraBodyResult.error || defaultParamsExtensionResult.error || configExtensionResult.error) {
+      setErrors((prev) => ({
+        ...prev,
+        ...(extraBodyResult.error ? { extraBody: extraBodyResult.error } : {}),
+        ...(defaultParamsExtensionResult.error ? { defaultParamsExtension: defaultParamsExtensionResult.error } : {}),
+        ...(configExtensionResult.error ? { configExtension: configExtensionResult.error } : {}),
+      }))
+      setTestResult(null)
+      return
+    }
+
     setIsTesting(true)
     setTestResult(null)
 
     try {
-      const config: Record<string, unknown> = {}
+      const defaultParams: Record<string, unknown> = {
+        ...(defaultParamsExtensionResult.data || {}),
+      }
+      const config: Record<string, unknown> = {
+        ...(configExtensionResult.data || {}),
+      }
+
+      if (temperature) defaultParams.temperature = parseFloat(temperature)
+      if (topP) defaultParams.top_p = parseFloat(topP)
+      if (frequencyPenalty) defaultParams.frequency_penalty = parseFloat(frequencyPenalty)
+      if (presencePenalty) defaultParams.presence_penalty = parseFloat(presencePenalty)
+      if (maxTokens) defaultParams.max_tokens = parseInt(maxTokens)
+      if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
+      if (supportsThinking && thinkingEnabled) {
+        const thinkingConfig: Record<string, unknown> = { enabled: true }
+        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+        config.thinking = thinkingConfig
+      }
 
       const result = await modelsApi.testModelConfig({
         provider,
@@ -354,6 +498,7 @@ export function ModelDialog({
         model_type: modelType,
         base_url: baseUrl.trim() || null,
         api_key: apiKey || null,
+        default_params: Object.keys(defaultParams).length > 0 ? defaultParams : null,
         config: Object.keys(config).length > 0 ? config : null,
       })
 
@@ -449,17 +594,27 @@ export function ModelDialog({
       newErrors.apiKey = t('apiKeyRequired')
     }
     
+    const extraBodyResult = parseJsonObject(extraBodyText, commonT('invalidJSON'))
+    const defaultParamsExtensionResult = parseJsonObject(defaultParamsExtensionText, commonT('invalidJSON'))
+    const configExtensionResult = parseJsonObject(configExtensionText, commonT('invalidJSON'))
+
+    if (extraBodyResult.error) newErrors.extraBody = extraBodyResult.error
+    if (defaultParamsExtensionResult.error) newErrors.defaultParamsExtension = defaultParamsExtensionResult.error
+    if (configExtensionResult.error) newErrors.configExtension = configExtensionResult.error
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
-    
+
     setIsLoading(true)
-    
+
     try {
-      const defaultParams: Record<string, unknown> = {}
+      const defaultParams: Record<string, unknown> = {
+        ...(defaultParamsExtensionResult.data || {}),
+      }
       const category = getModelCategory(modelType)
-      
+
       if (category === 'text') {
         if (temperature) defaultParams.temperature = parseFloat(temperature)
         if (topP) defaultParams.top_p = parseFloat(topP)
@@ -477,7 +632,9 @@ export function ModelDialog({
         if (defaultVoice) defaultParams.voice = defaultVoice
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
       }
-      
+      if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
+
       let capabilities: Record<string, boolean> | null = null
       if (modelType === 'chat') {
         capabilities = {}
@@ -487,16 +644,17 @@ export function ModelDialog({
         if (supportsJsonMode) capabilities.json_mode = true
         if (Object.keys(capabilities).length === 0) capabilities = null
       }
-      
-      const config: Record<string, unknown> = {}
+
+      const config: Record<string, unknown> = {
+        ...(configExtensionResult.data || {}),
+      }
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
 
       // Thinking 配置
-      if (thinkingEnabled) {
+      if (supportsThinking && thinkingEnabled) {
         const thinkingConfig: Record<string, unknown> = { enabled: true }
         if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
-        if (reasoningEffort) thinkingConfig.effort = reasoningEffort
         config.thinking = thinkingConfig
       }
 
@@ -555,6 +713,9 @@ export function ModelDialog({
   const showParamsTab = category === 'text'
   const tabCount = 1 + (showParamsTab ? 1 : 0) + (showAdvancedTab ? 1 : 0)
   const showTabs = tabCount > 1
+  const showReasoningEffort = ['openai', 'xai', 'deepseek'].includes(provider)
+  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+  const showExtraBody = ['openai', 'anthropic', 'xai'].includes(provider)
   
   // ========== 基本信息内容 ==========
   const basicInfoContent = (
@@ -1161,6 +1322,69 @@ export function ModelDialog({
               placeholder={t('maxTokensPlaceholder')}
             />
           </div>
+
+          {(showReasoningEffort || showExtraBody) && (
+            <div className="grid grid-cols-2 gap-4">
+              {showReasoningEffort && (
+                <div className="space-y-2">
+                  <Label>{getReasoningEffortLabel(provider)}</Label>
+                  <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      {reasoningEffortOptions.map((option) => (
+                        <SelectItem key={option} value={option}>{t(`reasoningEffort${option.charAt(0).toUpperCase()}${option.slice(1)}`)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{getReasoningEffortHint(provider)}</p>
+                </div>
+              )}
+
+              {showExtraBody && (
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="extraBody">{t('extraBody')}</Label>
+                  <Textarea
+                    id="extraBody"
+                    value={extraBodyText}
+                    onChange={(e) => {
+                      setExtraBodyText(e.target.value)
+                      setErrors((prev) => clearValidationError(prev, 'extraBody'))
+                    }}
+                    placeholder={`{
+  "thinking": {
+    "type": "enabled"
+  }
+}`}
+                    className="font-mono text-sm"
+                    rows={6}
+                    aria-invalid={!!errors.extraBody}
+                  />
+                  <FieldError>{errors.extraBody}</FieldError>
+                  <p className="text-xs text-muted-foreground">{t('extraBodyHint')}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="defaultParamsExtension">{t('defaultParamsExtension')}</Label>
+            <Textarea
+              id="defaultParamsExtension"
+              value={defaultParamsExtensionText}
+              onChange={(e) => {
+                setDefaultParamsExtensionText(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'defaultParamsExtension'))
+              }}
+              placeholder="{}"
+              className="font-mono text-sm"
+              rows={6}
+              aria-invalid={!!errors.defaultParamsExtension}
+            />
+            <FieldError>{errors.defaultParamsExtension}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('defaultParamsExtensionHint')}</p>
+          </div>
         </div>
       )}
     </>
@@ -1168,9 +1392,7 @@ export function ModelDialog({
   
   // ========== 高级内容 ==========
   // 支持 thinking 的供应商
-  const supportsThinking = ['anthropic', 'google', 'xai', 'deepseek', 'openai'].includes(provider)
-  const showReasoningEffort = provider === 'xai'
-  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+  const supportsThinking = ['anthropic', 'google', 'deepseek'].includes(provider)
 
   const advancedContent = (
     <>
@@ -1213,12 +1435,12 @@ export function ModelDialog({
       {/* Thinking/Reasoning 配置 */}
       {isChatOnly(modelType) && supportsThinking && (
         <div className="space-y-4">
-          <SectionTitle>{t('thinkingConfig')}</SectionTitle>
+          <SectionTitle>{getThinkingTitle(provider)}</SectionTitle>
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
               <div className="space-y-0.5">
                 <Label className="text-sm font-medium">{t('thinkingEnabled')}</Label>
-                <p className="text-xs text-muted-foreground">{t('thinkingEnabledHint')}</p>
+                <p className="text-xs text-muted-foreground">{getThinkingHint(provider)}</p>
               </div>
               <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
             </div>
@@ -1239,22 +1461,6 @@ export function ModelDialog({
                   </div>
                 )}
 
-                {showReasoningEffort && (
-                  <div className="space-y-2">
-                    <Label>{t('reasoningEffort')}</Label>
-                    <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
-                      <SelectTrigger>
-                        <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent side="bottom" alignItemWithTrigger={false}>
-                        <SelectItem value="low">{t('reasoningEffortLow')}</SelectItem>
-                        <SelectItem value="medium">{t('reasoningEffortMedium')}</SelectItem>
-                        <SelectItem value="high">{t('reasoningEffortHigh')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">{t('reasoningEffortHint')}</p>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1296,6 +1502,24 @@ export function ModelDialog({
           </div>
         </div>
       )}
+
+      <div className="space-y-2">
+        <Label htmlFor="configExtension">{t('configExtension')}</Label>
+        <Textarea
+          id="configExtension"
+          value={configExtensionText}
+          onChange={(e) => {
+            setConfigExtensionText(e.target.value)
+            setErrors((prev) => clearValidationError(prev, 'configExtension'))
+          }}
+          placeholder="{}"
+          className="font-mono text-sm"
+          rows={6}
+          aria-invalid={!!errors.configExtension}
+        />
+        <FieldError>{errors.configExtension}</FieldError>
+        <p className="text-xs text-muted-foreground">{t('configExtensionHint')}</p>
+      </div>
     </>
   )
   

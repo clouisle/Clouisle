@@ -1,0 +1,40 @@
+// GENERATED — 2026-04-25T17:26:26.898Z
+// Source: i18n/en/roles.json
+export type RolesMessages = {
+  roles: {
+    common: {
+      openMenu: string
+    }
+    title: string
+    description: string
+    createRole: string
+    editRole: string
+    deleteRole: string
+    createRoleDescription: string
+    editRoleDescription: string
+    roleName: string
+    roleNamePlaceholder: string
+    descriptionPlaceholder: string
+    permissions: string
+    permissionCount: string
+    systemRole: string
+    customRole: string
+    type: string
+    assignedUsers: string
+    noRoles: string
+    filterRoles: string
+    rowsPerPage: string
+    pageInfo: string
+    roleCreated: string
+    roleUpdated: string
+    roleDeleted: string
+    deleteRoleConfirm: string
+    confirmDelete: string
+    confirmBulkDelete: string
+    rolesSelected: string
+    bulkDeleted: string
+    searchPermissions: string
+    selected: string
+    noPermissions: string
+  }
+}

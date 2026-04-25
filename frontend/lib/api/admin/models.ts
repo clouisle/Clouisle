@@ -43,6 +43,7 @@ export const modelsApi = {
     model_type: string
     base_url?: string | null
     api_key?: string | null
+    default_params?: Record<string, unknown> | null
     config?: Record<string, unknown> | null
   }): Promise<{ success: boolean; message: string; latency_ms?: number }> =>
     api.post('/admin/models/test', data),
