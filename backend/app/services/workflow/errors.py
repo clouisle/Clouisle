@@ -14,7 +14,7 @@ class WorkflowError(Exception):
     def __init__(
         self,
         message: str,
-        details: dict[str, Any] | None = None,
+        details: dict | None = None,
         msg_key: str | None = None,
         **kwargs: Any,
     ):
@@ -87,7 +87,7 @@ class WorkflowValidationError(WorkflowError):
     """Workflow definition is invalid."""
 
     def __init__(
-        self, message: str | None = None, details: dict[str, Any] | None = None
+        self, message: str | None = None, details: dict | None = None
     ):
         errors = (details or {}).get("errors") or []
         if message is not None:
@@ -114,7 +114,7 @@ class NodeExecutionError(WorkflowError):
         message: str,
         node_id: str,
         node_type: str,
-        details: dict[str, Any] | None = None,
+        details: dict | None = None,
     ):
         self.node_id = node_id
         self.node_type = node_type
