@@ -366,7 +366,7 @@ export function VariableAssignmentNodeConfig({
                         handleUpdateAssignment(assignment.id, updates)
                       }}
                     >
-                      <SelectTrigger className="w-full h-9 text-xs">
+                      <SelectTrigger size="default" className="w-full text-xs">
                         <SelectValue>
                           <span className="flex items-center gap-2">
                             <OpIcon className="h-3.5 w-3.5" />

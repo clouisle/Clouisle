@@ -308,7 +308,7 @@ function CodeEditorComponent({
         <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/50">
           {showLanguageSelector && !isJinja2 ? (
             <Select value={language as CodeLanguage} onValueChange={handleLanguageSelect}>
-              <SelectTrigger className="h-7 w-28 text-xs font-medium border-0 bg-transparent shadow-none">
+              <SelectTrigger size="xs" className="w-28 text-xs font-medium border-0 bg-transparent shadow-none">
                 <SelectValue>
                   {languageLabel}
                 </SelectValue>
@@ -392,7 +392,7 @@ function CodeEditorComponent({
               </h2>
               {showLanguageSelector && !isJinja2 ? (
                 <Select value={language as CodeLanguage} onValueChange={handleLanguageSelect}>
-                  <SelectTrigger className="h-8 w-32 text-sm font-medium">
+                  <SelectTrigger size="sm" className="w-32 text-sm font-medium">
                     <SelectValue>
                       {languageLabel}
                     </SelectValue>

@@ -236,7 +236,6 @@ function WorkflowEditorContent() {
   // Loading them is fine — we still render the canvas — but running them is
   // disabled until the user re-saves so the new definition stamps the
   // version. This is a hard cutover; no in-place migration.
-  const REQUIRED_WORKFLOW_SCHEMA_VERSION = 2
 
   // State
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
@@ -1440,34 +1439,15 @@ function WorkflowEditorContent() {
             {/* Right - Action Buttons */}
             <div className="flex items-center gap-2 pointer-events-auto h-8">
               {/* Test Run Button */}
-              {(() => {
-                const defSchemaVersion =
-                  (workflow?.definition as { schema_version?: number } | undefined)
-                    ?.schema_version ?? 0
-                const isLegacyDefinition =
-                  workflow !== null && defSchemaVersion < REQUIRED_WORKFLOW_SCHEMA_VERSION
-                const runButton = (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="bg-card shadow-sm h-8"
-                    onClick={openRunDrawer}
-                    disabled={isLegacyDefinition}
-                  >
-                    <Play className="h-4 w-4 mr-1" />
-                    {t('run')}
-                  </Button>
-                )
-                if (!isLegacyDefinition) return runButton
-                return (
-                  <Tooltip>
-                    <TooltipTrigger render={runButton} />
-                    <TooltipContent side="bottom">
-                      {t('legacyDefinitionPleaseResave')}
-                    </TooltipContent>
-                  </Tooltip>
-                )
-              })()}
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-card shadow-sm h-8"
+                onClick={openRunDrawer}
+              >
+                <Play className="h-4 w-4 mr-1" />
+                {t('run')}
+              </Button>
               {/* Validation Checklist Button */}
               {canUpdateWorkflow && (
                 <Tooltip>

@@ -366,7 +366,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
                   value={safeConfig.memoryConfig?.mode || 'window'}
                   onValueChange={(v) => handleMemoryChange({ mode: v as MemoryMode })}
                 >
-                  <SelectTrigger className="h-8 text-xs">
+                  <SelectTrigger size="sm" className="text-xs">
                     <SelectValue>
                       {safeConfig.memoryConfig?.mode === 'token_limit' ? t('configLlm.tokenLimit') : t('configLlm.windowMode')}
                     </SelectValue>
@@ -598,7 +598,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
               value={safeConfig.responseFormat || 'text'}
               onValueChange={(v) => handleChange({ responseFormat: v as ResponseFormat })}
             >
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger size="sm" className="text-xs">
                 <SelectValue>
                   {safeConfig.responseFormat === 'json' ? 'JSON' :
                    safeConfig.responseFormat === 'json_schema' ? 'JSON Schema' : t('configLlm.formatText')}

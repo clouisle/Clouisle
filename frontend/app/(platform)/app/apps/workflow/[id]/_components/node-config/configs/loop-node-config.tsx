@@ -506,7 +506,7 @@ export function LoopNodeConfig({
                         value={rule.operator}
                         onValueChange={(v) => updateExitConditionRule(rule.id, { operator: v as ConditionOperator })}
                       >
-                        <SelectTrigger className="h-7 w-24 text-xs">
+                        <SelectTrigger size="xs" className="w-24 text-xs">
                           <SelectValue>{conditionOperatorShortLabels[rule.operator]}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
@@ -547,7 +547,7 @@ export function LoopNodeConfig({
                     value={config.exitLogicOperator || 'and'}
                     onValueChange={(v) => onConfigChange({ ...config, exitLogicOperator: v as 'and' | 'or' })}
                   >
-                    <SelectTrigger className="h-7 w-16">
+                    <SelectTrigger size="xs" className="w-16">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -617,7 +617,7 @@ export function LoopNodeConfig({
                   value={loopVarForm.type || 'string'}
                   onValueChange={(v) => setLoopVarForm({ ...loopVarForm, type: v as LoopVariableType, defaultValue: '' })}
                 >
-                  <SelectTrigger id="loopvar-type" className="h-9 w-full">
+                  <SelectTrigger id="loopvar-type" size="default" className="w-full">
                     <SelectValue>
                       {(() => {
                         const currentType = loopVarForm.type || 'string'

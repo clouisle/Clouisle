@@ -249,7 +249,7 @@ export function ConditionNodeConfig({
                       value={branch.logicOperator}
                       onValueChange={(v) => updateBranchLogicOperator(branch.id, v as 'and' | 'or')}
                     >
-                      <SelectTrigger className="h-7 w-16">
+                      <SelectTrigger size="xs" className="w-16">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -356,7 +356,7 @@ export function ConditionNodeConfig({
                           value={rule.operator}
                           onValueChange={(v) => updateConditionRule(branch.id, rule.id, { operator: v as ConditionOperator })}
                         >
-                          <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectTrigger size="xs" className="w-24 text-xs">
                             <SelectValue>{conditionOperatorShortLabels[rule.operator]}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>

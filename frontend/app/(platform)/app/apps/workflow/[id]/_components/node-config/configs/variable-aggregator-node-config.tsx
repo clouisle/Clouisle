@@ -233,7 +233,7 @@ export function VariableAggregatorNodeConfig({
               : safeConfig.variables,
           })}
         >
-          <SelectTrigger className="h-9 text-xs">
+          <SelectTrigger size="default" className="text-xs">
             <SelectValue>
               {modeConfig.label}
             </SelectValue>
@@ -349,7 +349,7 @@ export function VariableAggregatorNodeConfig({
             value={safeConfig.mergeStrategy || 'shallow'}
             onValueChange={(v) => onConfigChange({ ...safeConfig, mergeStrategy: v as 'shallow' | 'deep' })}
           >
-            <SelectTrigger className="h-9 text-xs">
+            <SelectTrigger size="default" className="text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

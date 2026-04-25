@@ -955,12 +955,12 @@
       "sourceVariable": "源变量",
       "constantValue": "常量值",
       "setValuePlaceholder": "输入要设置的值...",
-      "jsonFormatHint": "支持 JSON 格式，如：字符串 \"hello\"、数字 123、数组 [1,2,3]、对象 {\"key\":\"value\"}",
-      "clearHint": "将清空目标变量的值（字符串→\"\"，数字→0，数组→[]，对象→{}）",
-      "hintOverwrite": "• **覆盖**：用另一个变量的值替换目标变量",
-      "hintClear": "• **清空**：将目标变量重置为空值",
-      "hintSet": "• **设置**：将目标变量设为指定的常量",
-      "hintAppend": "• **追加**：数组追加元素、对象合并键值、字符串拼接、数字累加"
+      "jsonFormatHint": "支持 JSON 格式，如：字符串 \"hello\"、数字 123、数组 [1, 2, 3]、对象 键值对",
+      "clearHint": "将清空目标变量的值。字符串清空为 \"\"，数字清空为 0，数组清空为 []，对象清空为 '{ }'",
+      "hintOverwrite": "• 覆盖：用另一个变量的值替换目标变量",
+      "hintClear": "• 清空：将目标变量重置为空值",
+      "hintSet": "• 设置：将目标变量设为指定的常量",
+      "hintAppend": "• 追加：数组追加元素、对象合并键值、字符串拼接、数字累加"
     },
     "codeEditor": {
       "jinja2Only": "只支持 Jinja2",

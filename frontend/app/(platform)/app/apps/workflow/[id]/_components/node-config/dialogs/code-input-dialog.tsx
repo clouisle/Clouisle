@@ -151,7 +151,7 @@ export function CodeInputDialog({
                       <span className="text-primary/80 font-mono text-xs">{'{x}'}</span>
                       <span className="text-xs">
                         {form.valueSource && <span className="text-muted-foreground">{form.valueSource} / </span>}
-                        {form.value.replace(/\{\{|\}\}/g, '')}
+                        {form.value.replace(/\{\{|\}\}/g, '').split('.').pop()}
                       </span>
                     </span>
                   ) : (

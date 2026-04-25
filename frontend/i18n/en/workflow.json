@@ -955,12 +955,12 @@
       "sourceVariable": "Source variable",
       "constantValue": "Constant value",
       "setValuePlaceholder": "Enter the value to set...",
-      "jsonFormatHint": "Supports JSON format, e.g.: string \"hello\", number 123, array [1,2,3], object {\"key\":\"value\"}",
-      "clearHint": "Will clear the target variable's value (string→\"\", number→0, array→[], object→{})",
-      "hintOverwrite": "**Overwrite**: Replace target variable with another variable's value",
-      "hintClear": "**Clear**: Reset target variable to empty value",
-      "hintSet": "**Set**: Set target variable to a specified constant",
-      "hintAppend": "**Append**: Append elements to arrays, merge keys for objects, concatenate strings, accumulate numbers"
+      "jsonFormatHint": "Supports JSON format, e.g.: string \"hello\", number 123, array [1, 2, 3], object key-value pairs",
+      "clearHint": "Will clear the target variable's value. Strings become \"\", numbers become 0, arrays become [], objects become '{ }'",
+      "hintOverwrite": "Overwrite: Replace target variable with another variable's value",
+      "hintClear": "Clear: Reset target variable to empty value",
+      "hintSet": "Set: Set target variable to a specified constant",
+      "hintAppend": "Append: Append elements to arrays, merge keys for objects, concatenate strings, accumulate numbers"
     },
     "codeEditor": {
       "jinja2Only": "Only Jinja2 supported",

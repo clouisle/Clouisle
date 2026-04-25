@@ -442,7 +442,7 @@ export function KnowledgeRetrievalNodeConfig({
                   }
                 }}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger size="sm" className="text-xs">
                   <SelectValue>
                     {safeConfig.searchMode === 'vector' && t('configKnowledgeRetrieval.searchModeVector')}
                     {safeConfig.searchMode === 'fulltext' && t('configKnowledgeRetrieval.searchModeFulltext')}

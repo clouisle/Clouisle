@@ -122,7 +122,7 @@ export function ParameterEditDialog({
                 value={paramForm.type || 'text'}
                 onValueChange={(value) => setParamForm({ ...paramForm, type: value as ParameterType, fileConfig: undefined })}
               >
-                <SelectTrigger className="h-9 w-full">
+                <SelectTrigger size="default" className="w-full">
                   <SelectValue>
                     {paramForm.type && (
                       <span className="flex items-center gap-2">
@@ -255,7 +255,7 @@ export function ParameterEditDialog({
                     value={paramForm.defaultValue || ''}
                     onValueChange={(value) => setParamForm({ ...paramForm, defaultValue: value ?? undefined })}
                   >
-                    <SelectTrigger className="h-9 w-full">
+                    <SelectTrigger size="default" className="w-full">
                       <SelectValue>{paramForm.defaultValue || t('dialogs.parameterEdit.defaultSelectPlaceholder')}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>

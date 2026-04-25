@@ -278,7 +278,7 @@ export function ParameterExtractorNodeConfig({
             })
           }}
         >
-          <SelectTrigger className="w-full h-9 text-xs">
+          <SelectTrigger size="default" className="w-full text-xs">
             <SelectValue>
               <span className="flex items-center gap-2">
                 {React.createElement(methodConfig.icon, { className: "h-3.5 w-3.5" })}
@@ -327,7 +327,7 @@ export function ParameterExtractorNodeConfig({
               }}
               disabled={isLoadingModels}
             >
-              <SelectTrigger className="w-full h-9 text-xs">
+              <SelectTrigger size="default" className="w-full text-xs">
                 <SelectValue>
                   {isLoadingModels ? (
                     <span className="flex items-center gap-2 text-muted-foreground">
@@ -430,7 +430,7 @@ export function ParameterExtractorNodeConfig({
                       value={param.type}
                       onValueChange={(v) => handleUpdateParameter(param.id, { type: v as ExtractedParamType })}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger size="sm" className="text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -482,7 +482,7 @@ export function ParameterExtractorNodeConfig({
                           value={param.arrayItemType || 'string'}
                           onValueChange={(v) => handleUpdateParameter(param.id, { arrayItemType: v as ExtractedParamType })}
                         >
-                          <SelectTrigger className="h-8 text-xs">
+                          <SelectTrigger size="sm" className="text-xs">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

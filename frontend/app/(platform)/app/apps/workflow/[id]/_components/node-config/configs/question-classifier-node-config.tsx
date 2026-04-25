@@ -258,7 +258,7 @@ export function QuestionClassifierNodeConfig({
           }}
           disabled={isLoadingModels}
         >
-          <SelectTrigger className="w-full h-9 text-xs">
+          <SelectTrigger size="default" className="w-full text-xs">
             <SelectValue>
               {isLoadingModels ? (
                 <span className="flex items-center gap-2 text-muted-foreground">

@@ -301,7 +301,7 @@ export default function WorkflowMonitorPage() {
 
         {/* Period Selector */}
         <Select value={period} onValueChange={(v) => setPeriod(v as '7d' | '30d')}>
-          <SelectTrigger className="w-[120px] h-9 bg-card shadow-sm">
+          <SelectTrigger className="w-[120px] bg-card shadow-sm" size="default">
             <SelectValue>
               {period === '7d' ? tMonitor('last7Days') : tMonitor('last30Days')}
             </SelectValue>

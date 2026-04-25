@@ -57,7 +57,7 @@ export function TypeSpecEditor({
     <div className={cn('space-y-2', className)}>
       {!lockKind && (
         <Select value={spec.kind} onValueChange={(v) => handleKindChange(v as TypeKind)}>
-          <SelectTrigger className="h-7 text-xs">
+          <SelectTrigger size="xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
