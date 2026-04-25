@@ -420,7 +420,7 @@ export function TeamDetailDialog({
                                 <div className="flex items-center gap-2">
                                   <span className="text-sm">{t('role')}:</span>
                                   <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as AddableRole)}>
-                                    <SelectTrigger className="flex-1 h-8">
+                                    <SelectTrigger size="sm" className="flex-1">
                                       <SelectValue>
                                         <div className="flex items-center gap-2">
                                           <RoleIcon role={selectedRole} />

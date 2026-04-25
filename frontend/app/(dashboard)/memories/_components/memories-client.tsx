@@ -418,7 +418,7 @@ export function MemoriesClient() {
                                     setPage(1)
                                 }}
                             >
-                                <SelectTrigger className="h-8 w-16">
+                                <SelectTrigger size="sm" className="w-16">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

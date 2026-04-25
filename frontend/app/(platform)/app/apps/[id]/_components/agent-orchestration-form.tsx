@@ -513,7 +513,7 @@ export function AgentOrchestrationForm({
             {/* RAG Mode Selection */}
             {knowledgeBaseConfigs.length > 0 && (
               <Select value={ragMode} onValueChange={(value) => setRagMode(value as RAGMode)}>
-                <SelectTrigger className="h-7 text-xs w-[120px] gap-1 px-2 bg-background">
+                <SelectTrigger size="xs" className="text-xs w-[120px] gap-1 px-2 bg-background">
                   <SelectValue>
                     {ragMode === 'agentic' && t('knowledgeBase.ragMode.agenticShort')}
                     {ragMode === 'auto' && t('knowledgeBase.ragMode.autoShort')}
@@ -696,7 +696,7 @@ export function AgentOrchestrationForm({
                     }
                   }}
                 >
-                  <SelectTrigger className="w-full h-8 text-sm bg-background">
+                  <SelectTrigger size="sm" className="w-full text-sm bg-background">
                     <SelectValue>
                       {(value: string) => {
                         if (!value) {
@@ -779,7 +779,7 @@ export function AgentOrchestrationForm({
                     }
                   }}
                 >
-                  <SelectTrigger className="w-48 h-8 text-sm bg-background">
+                  <SelectTrigger size="sm" className="w-48 text-sm bg-background">
                     <SelectValue>
                       {(value: string) => {
                         if (value === 'end') return t('fileUpload.truncateEnd')
@@ -937,7 +937,7 @@ export function AgentOrchestrationForm({
                     })
                   }}
                 >
-                  <SelectTrigger className="h-8 text-sm bg-background">
+                  <SelectTrigger size="sm" className="w-56 text-sm bg-background">
                     <SelectValue>{imageDefaultModelLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -1069,7 +1069,7 @@ export function AgentOrchestrationForm({
                     })
                   }}
                 >
-                  <SelectTrigger className="h-8 text-sm bg-background">
+                  <SelectTrigger size="sm" className="w-56 text-sm bg-background">
                     <SelectValue>{videoDefaultModelLabel}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -1141,7 +1141,7 @@ export function AgentOrchestrationForm({
                     })
                   }}
                 >
-                  <SelectTrigger className="h-8 w-36 text-sm bg-background">
+                  <SelectTrigger size="sm" className="w-36 text-sm bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

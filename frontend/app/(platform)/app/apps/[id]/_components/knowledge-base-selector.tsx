@@ -132,7 +132,7 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
               value={searchMode}
               onValueChange={(value) => setSearchMode(value || 'hybrid')}
             >
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger size="default" className="text-sm">
                 <SelectValue>
                   {searchMode === 'vector' && t('dialog.searchModeVector')}
                   {searchMode === 'fulltext' && t('dialog.searchModeFulltext')}
