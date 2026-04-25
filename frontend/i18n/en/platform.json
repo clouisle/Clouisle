@@ -280,11 +280,11 @@
         "required": "Required",
         "variableCompletion": "Parameter suggestions",
         "toolNamePlaceholder": "my_api_tool",
-        "urlPlaceholder": "https://api.example.com/{{id}}/data",
+        "urlPlaceholder": "https://api.example.com/｛｛id｝｝/data",
         "keyPlaceholder": "Key",
-        "headerValuePlaceholder": "{{token}}",
-        "queryValuePlaceholder": "{{query}}",
-        "bodyTemplatePlaceholder": "{\"key\": \"{{value}}\"}"
+        "headerValuePlaceholder": "｛｛token｝｝",
+        "queryValuePlaceholder": "｛｛query｝｝",
+        "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
       },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
