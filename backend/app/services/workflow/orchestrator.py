@@ -6,7 +6,7 @@ node executors, and stream events.
 """
 
 from datetime import datetime, timezone
-from typing import Any
+from .types import WorkflowValue
 from uuid import UUID
 import logging
 import time
@@ -129,7 +129,7 @@ class WorkflowOrchestrator:
     async def run(
         self,
         workflow_id: UUID,
-        inputs: dict[str, Any],
+        inputs: dict[str, WorkflowValue],
         user_id: UUID,
         team_id: UUID | None = None,
         stream: bool = True,
@@ -290,7 +290,7 @@ class WorkflowOrchestrator:
         self,
         run_id: UUID,
         workflow_id: UUID,
-        inputs: dict[str, Any],
+        inputs: dict[str, WorkflowValue],
         user_id: UUID,
         team_id: UUID | None = None,
         stream: bool = True,
@@ -753,7 +753,7 @@ class WorkflowOrchestrator:
         stream_manager: StreamManager | None,
         start_time: float,
         profiler: ExecutionProfiler | None = None,
-    ) -> tuple[dict[str, Any], int]:
+    ) -> tuple[dict[str, WorkflowValue], int]:
         """
         Execute the workflow according to the plan.
 
@@ -771,7 +771,7 @@ class WorkflowOrchestrator:
         executed_nodes: set[str] = set()
         skipped_nodes: set[str] = set()
         node_count = 0
-        final_outputs: dict[str, Any] = {}
+        final_outputs: dict[str, WorkflowValue] = {}
 
         # Track iteration state for loop/iteration nodes
 

@@ -11,12 +11,12 @@ Provides advanced debugging capabilities for workflow development:
 import json
 import logging
 import asyncio
-from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 from enum import Enum
 
+from app.services.workflow.types import WorkflowValue
 from app.core.redis import get_redis
 from app.services.error_messages import resolve_user_visible_error
 
@@ -508,7 +508,7 @@ class WorkflowDebugger:
         session_id: str,
         expression: str,
         frame_index: int | None = None,
-    ) -> Any:
+    ) -> dict:
         """
         Evaluate an expression in the context of a frame.
 
@@ -572,13 +572,13 @@ class WorkflowDebugger:
         self,
         session_id: str,
         frame_index: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, WorkflowValue]:
         """Evaluate all watch expressions."""
         session = self._sessions.get(session_id)
         if not session:
             return {}
 
-        results = {}
+        results: dict[str, WorkflowValue] = {}
         for expr in session.watches:
             result = await self.evaluate_expression(session_id, expr, frame_index)
             results[expr] = result

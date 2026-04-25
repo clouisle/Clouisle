@@ -6,12 +6,13 @@ and determining execution order.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import cast
 import logging
 
 from app.core.i18n import t
 
 from .errors import CyclicDependencyError, WorkflowValidationError
+from .types import WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +354,7 @@ class ExecutionPlan:
 
         return errors
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, WorkflowValue]:
         """
         Serialize execution plan to dictionary.
 
@@ -364,12 +365,15 @@ class ExecutionPlan:
             "start_node_id": self.start_node_id,
             "node_count": len(self.nodes),
             "stage_count": len(self.stages),
-            "stages": [
-                {
-                    "index": stage.stage_index,
-                    "nodes": stage.node_ids,
-                }
-                for stage in self.stages
-            ],
-            "execution_order": self.get_execution_order(),
+            "stages": cast(
+                list[WorkflowValue],
+                [
+                    {
+                        "index": stage.stage_index,
+                        "nodes": stage.node_ids,
+                    }
+                    for stage in self.stages
+                ],
+            ),
+            "execution_order": cast(list[WorkflowValue], self.get_execution_order()),
         }

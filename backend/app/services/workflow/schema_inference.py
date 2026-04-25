@@ -19,7 +19,6 @@ user-set schema is never silently overwritten.
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import UUID
 
 from .types import TypeSpec, infer_type_spec, merge_type_spec
@@ -35,7 +34,7 @@ def _is_user_visible(key: str) -> bool:
 
 
 def infer_run_schemas(
-    node_executions: list[Any],
+    node_executions: list,
 ) -> dict[str, dict[str, TypeSpec]]:
     """Build {node_id: {output_name: TypeSpec}} from a run's NodeExecution rows.
 
@@ -63,11 +62,11 @@ def infer_run_schemas(
     return by_node
 
 
-def _spec_to_dict(spec: TypeSpec) -> dict[str, Any]:
+def _spec_to_dict(spec: TypeSpec) -> dict:
     return spec.model_dump(exclude_none=True)
 
 
-def _dict_to_spec(raw: Any) -> TypeSpec | None:
+def _dict_to_spec(raw: dict | None) -> TypeSpec | None:
     if not isinstance(raw, dict):
         return None
     try:
@@ -78,9 +77,9 @@ def _dict_to_spec(raw: Any) -> TypeSpec | None:
 
 
 def merge_into_definition(
-    definition: dict[str, Any],
+    definition: dict,
     inferred: dict[str, dict[str, TypeSpec]],
-) -> dict[str, Any]:
+) -> dict:
     """Return a new definition with each node's `data.inferredSchema` union-merged.
 
     Pure function — does not touch the database. Stage 4's orchestrator hook
@@ -93,7 +92,7 @@ def merge_into_definition(
     if not isinstance(nodes, list):
         return definition
 
-    new_nodes: list[Any] = []
+    new_nodes: list = []
     for node in nodes:
         if not isinstance(node, dict):
             new_nodes.append(node)
@@ -105,7 +104,7 @@ def merge_into_definition(
 
         data = dict(node.get("data") or {})
         existing_raw = data.get("inferredSchema") or {}
-        merged: dict[str, dict[str, Any]] = {}
+        merged: dict = {}
 
         keys = set(existing_raw.keys()) | set(inferred[node_id].keys())
         for key in keys:
@@ -126,7 +125,7 @@ def merge_into_definition(
 
 async def merge_run_into_workflow(
     workflow_id: UUID | str,
-    node_executions: list[Any],
+    node_executions: list,
 ) -> None:
     """End-to-end: infer schemas from a run's NodeExecutions and persist them
     onto the workflow definition.
