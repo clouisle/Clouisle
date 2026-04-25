@@ -13,18 +13,24 @@ import json
 import re
 import logging
 from datetime import datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast, TypeVar
 from uuid import UUID
 
 import redis.asyncio as redis
 
 from .serialization import dumps_value, loads_value
-from .types import to_text
+from .types import to_text, WorkflowValue
+
+if TYPE_CHECKING:
+    pass  # LazyStreamResult is imported inside set_node_outputs for runtime isinstance check
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
 
-async def _resolve_redis_result(result: Any) -> Any:
+
+async def _resolve_redis_result(result: T) -> T:
+    """Unwrap an awaited Redis result (sync or async)."""
     if asyncio.iscoroutine(result):
         return await result
     return result
@@ -57,10 +63,11 @@ class ExecutionContext:
     def __init__(self, run_id: str | UUID, redis_client: redis.Redis):
         self.run_id = str(run_id)
         self.redis = redis_client
-        self._system_variables: dict[str, Any] = {}
+        self._system_variables: dict[str, WorkflowValue] = {}
         # In-memory cache for values that cannot cross the Redis boundary
         # (e.g. LazyStreamResult holds an open generator).
-        self._memory_cache: dict[str, dict[str, Any]] = {}
+        # Type is object because LazyStreamResult is not a WorkflowValue.
+        self._memory_cache: dict[str, dict[str, object]] = {}
 
     # ==================== Factory Methods ====================
 
@@ -133,7 +140,7 @@ class ExecutionContext:
         # Load system variables from metadata
         meta_key = cls.META_KEY.format(run_id=ctx.run_id)
         meta = cast(
-            dict[str, Any], await _resolve_redis_result(redis_client.hgetall(meta_key))
+            dict[str, WorkflowValue], await _resolve_redis_result(redis_client.hgetall(meta_key))
         )
 
         if meta:
@@ -148,7 +155,7 @@ class ExecutionContext:
 
     # ==================== Variable Management ====================
 
-    async def set_inputs(self, inputs: dict[str, Any]):
+    async def set_inputs(self, inputs: dict[str, WorkflowValue]):
         """
         Set workflow input variables.
 
@@ -163,22 +170,24 @@ class ExecutionContext:
         for key, value in inputs.items():
             await self.set_variable(f"sys.inputs.{key}", value)
 
-    async def get_inputs(self) -> dict[str, Any]:
+    async def get_inputs(self) -> dict[str, WorkflowValue]:
         """Get workflow input variables."""
         return await self.get_node_outputs("_inputs") or {}
 
-    async def set_variable(self, name: str, value: Any):
+    async def set_variable(self, name: str, value: WorkflowValue):
         """Set a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
         await _resolve_redis_result(self.redis.hset(key, name, dumps_value(value)))
 
-    async def get_variable(self, name: str) -> Any:
+    async def get_variable(self, name: str) -> WorkflowValue:
         """Get a global variable."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
-        value = await _resolve_redis_result(self.redis.hget(key, name))
-        return loads_value(value) if value else None
+        raw_value = await _resolve_redis_result(self.redis.hget(key, name))
+        if raw_value is None:
+            return None
+        return loads_value(raw_value)  # type: ignore[arg-type]
 
-    async def get_all_variables(self) -> dict[str, Any]:
+    async def get_all_variables(self) -> dict[str, WorkflowValue]:
         """Get all global variables."""
         key = self.VARIABLES_KEY.format(run_id=self.run_id)
         data = cast(
@@ -188,7 +197,7 @@ class ExecutionContext:
 
     # ==================== Node Output Management ====================
 
-    async def set_node_outputs(self, node_id: str, outputs: dict[str, Any]):
+    async def set_node_outputs(self, node_id: str, outputs: dict[str, WorkflowValue]):
         """
         Save node outputs.
 
@@ -199,8 +208,8 @@ class ExecutionContext:
         from .lazy_stream import LazyStreamResult
 
         # Separate serializable and non-serializable (lazy) outputs
-        serializable_outputs = {}
-        lazy_outputs = {}
+        serializable_outputs: dict[str, WorkflowValue] = {}
+        lazy_outputs: dict[str, LazyStreamResult] = {}
 
         for key, value in outputs.items():
             if isinstance(value, LazyStreamResult):
@@ -217,11 +226,11 @@ class ExecutionContext:
 
         # Store lazy outputs in memory
         if lazy_outputs:
-            self._memory_cache[node_id] = lazy_outputs
+            self._memory_cache[node_id] = cast(dict[str, object], lazy_outputs)
 
         logger.debug(f"Set outputs for node {node_id}: {list(outputs.keys())}")
 
-    async def get_node_outputs(self, node_id: str) -> dict[str, Any] | None:
+    async def get_node_outputs(self, node_id: str) -> dict[str, WorkflowValue] | None:
         """
         Get node outputs.
 
@@ -232,36 +241,44 @@ class ExecutionContext:
             Output variables dictionary or None if not found
         """
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
-        value = await _resolve_redis_result(self.redis.hget(key, node_id))
-        if not value:
+        raw_value = await _resolve_redis_result(self.redis.hget(key, node_id))
+        if not raw_value:
             return None
 
-        outputs = loads_value(value)
+        outputs: dict[str, WorkflowValue] = {}
+        raw_result = loads_value(cast(bytes | str, raw_value))
+        if isinstance(raw_result, dict):
+            outputs = raw_result
 
         # Merge lazy outputs from memory cache
         if node_id in self._memory_cache:
-            for key, lazy_value in self._memory_cache[node_id].items():
-                outputs[key] = lazy_value
+            for k, lazy_value in self._memory_cache[node_id].items():
+                outputs[k] = lazy_value  # type: ignore[assignment]
 
         return outputs
 
-    async def get_all_node_outputs(self) -> dict[str, dict[str, Any]]:
+    async def get_all_node_outputs(self) -> dict[str, dict[str, WorkflowValue]]:
         """Get all node outputs."""
         key = self.OUTPUTS_KEY.format(run_id=self.run_id)
         data = cast(
             dict[str, str], await _resolve_redis_result(self.redis.hgetall(key))
         )
-        return {k: loads_value(v) for k, v in data.items()}
+        result: dict[str, dict[str, WorkflowValue]] = {}
+        for k, v in data.items():
+            loaded = loads_value(v)
+            if isinstance(loaded, dict):
+                result[k] = loaded
+        return result
 
     # ==================== Variable Resolution ====================
 
-    def _get_system_variable(self, name: str) -> Any:
+    def _get_system_variable(self, name: str) -> WorkflowValue:
         """Get a system variable value."""
         return self._system_variables.get(name)
 
     async def resolve_variable_ref(
         self, ref: str, stream_to_node_id: str | None = None
-    ) -> Any:
+    ) -> WorkflowValue:
         """
         Resolve a variable reference.
 
@@ -301,7 +318,7 @@ class ExecutionContext:
 
     async def _resolve_single_variable(
         self, var_path: str, stream_to_node_id: str | None = None
-    ) -> Any:
+    ) -> WorkflowValue:
         """
         Resolve a single variable path.
 
@@ -419,7 +436,7 @@ class ExecutionContext:
             handles: List of active source handle IDs
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        await _resolve_redis_result(self.redis.hset(key, node_id, dumps_value(handles)))
+        await _resolve_redis_result(self.redis.hset(key, node_id, dumps_value(cast("WorkflowValue", handles))))
 
     async def get_active_branches(self, node_id: str) -> list[str] | None:
         """
@@ -432,8 +449,13 @@ class ExecutionContext:
             List of active handle IDs or None
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        value = await _resolve_redis_result(self.redis.hget(key, node_id))
-        return loads_value(value) if value else None
+        raw_value = await _resolve_redis_result(self.redis.hget(key, node_id))
+        if not raw_value:
+            return None
+        loaded = loads_value(cast("str | None", raw_value))
+        if isinstance(loaded, list):
+            return loaded  # type: ignore[return-value]
+        return None
 
     async def should_execute_node(
         self,
