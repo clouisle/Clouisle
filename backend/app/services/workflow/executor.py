@@ -4,16 +4,19 @@ Node executor base class and registry.
 Provides the foundation for implementing node type executors.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import logging
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from .context import ExecutionContext
     from .stream import StreamEvent
-    from .types import NodeOutputDecl
+
+from .types import NodeInputMapping, NodeOutputDecl, WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ class ExecutionResult:
         error: Error message if execution failed
     """
 
-    outputs: dict[str, Any] = field(default_factory=dict)
+    outputs: dict[str, WorkflowValue] = field(default_factory=dict)
     next_handles: list[str] | None = None
     stream_events: list["StreamEvent"] = field(default_factory=list)
     error: str | None = None
@@ -93,8 +96,8 @@ class NodeExecutor(ABC):
     async def resolve_inputs(
         self,
         context: "ExecutionContext",
-        input_mappings: list[dict],
-    ) -> dict[str, Any]:
+        input_mappings: list[NodeInputMapping],
+    ) -> dict[str, WorkflowValue]:
         """
         Resolve input variable mappings.
 
@@ -102,16 +105,8 @@ class NodeExecutor(ABC):
             context: Execution context
             input_mappings: List of input mappings
                 [
-                    {
-                        "name": "query",
-                        "source": "variable",
-                        "variableRef": "{{start.query}}",
-                    },
-                    {
-                        "name": "limit",
-                        "source": "constant",
-                        "constantValue": "10",
-                    }
+                    NodeInputMapping(name="query", source="variable", variableRef="{{start.query}}"),
+                    NodeInputMapping(name="limit", source="constant", constantValue="10"),
                 ]
 
         Returns:
@@ -122,7 +117,7 @@ class NodeExecutor(ABC):
         # Check for duplicate parameter names
         names: list[str] = []
         for m in input_mappings:
-            name = m.get("name")
+            name = m.name if isinstance(m, NodeInputMapping) else m.get("name")
             if name and isinstance(name, str):
                 names.append(name)
 
@@ -137,20 +132,29 @@ class NodeExecutor(ABC):
             duplicate_list = ", ".join(sorted(duplicates))
             raise ValueError(t("duplicate_input_parameter_names", names=duplicate_list))
 
-        inputs = {}
+        inputs: dict[str, WorkflowValue] = {}
 
         for mapping in input_mappings:
-            name = mapping.get("name")
-            if not name:
-                continue
+            if isinstance(mapping, NodeInputMapping):
+                name = mapping.name
+                source = mapping.source
 
-            source = mapping.get("source", "variable")
+                if source == "variable" and mapping.variableRef:
+                    inputs[name] = await context.resolve_variable_ref(mapping.variableRef)
+                else:  # constant
+                    inputs[name] = mapping.constantValue if mapping.constantValue is not None else ""
+            else:
+                # Handle raw dict for backward compatibility
+                name = mapping.get("name")
+                if not name:
+                    continue
 
-            if source == "variable":
-                ref = mapping.get("variableRef", mapping.get("value", ""))
-                inputs[name] = await context.resolve_variable_ref(ref)
-            else:  # constant
-                inputs[name] = mapping.get("constantValue", "")
+                source = mapping.get("source", "variable")
+                if source == "variable":
+                    variable_ref = mapping.get("variableRef") or mapping.get("value", "")
+                    inputs[name] = await context.resolve_variable_ref(variable_ref)
+                else:
+                    inputs[name] = mapping.get("constantValue", "")
 
         return inputs
 

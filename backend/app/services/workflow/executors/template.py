@@ -11,6 +11,7 @@ from jinja2 import BaseLoader, UndefinedError, TemplateSyntaxError
 from jinja2.sandbox import SandboxedEnvironment
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..types import NodeOutputDecl, TypeSpec
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -111,3 +112,8 @@ class TemplateNodeExecutor(NodeExecutor):
         """Get output variables."""
         output_var = config.get("outputVariable", "output")
         return [{"name": output_var, "type": "string"}]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        output_var = config.get("outputVariable", "output")
+        return [NodeOutputDecl(name=output_var, type=TypeSpec(kind="string"))]

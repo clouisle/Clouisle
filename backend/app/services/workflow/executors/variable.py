@@ -9,8 +9,10 @@ import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..errors import translate_public_workflow_error
+from ..types import NodeInputMapping, NodeOutputDecl, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
+    from app.llm.types.chat import Message
     from app.models.workflow import WorkflowRun
     from ..context import ExecutionContext
     from ..types import NodeOutputDecl
@@ -125,7 +127,8 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                             f"{target_node_id}._iteration_state"
                         )
                         if iteration_state:
-                            current_value = iteration_state.get("results")
+                            state_dict = cast(dict[str, WorkflowValue], iteration_state)
+                            current_value = state_dict.get("results")
                     # Fallback to node outputs
                     if current_value is None:
                         node_outputs = await context.get_node_outputs(target_node_id)
@@ -172,7 +175,7 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
             # Update the target location
             if target_node_id:
                 # Update specific node's outputs
-                node_outputs = await context.get_node_outputs(target_node_id) or {}
+                node_outputs = cast(dict[str, WorkflowValue], await context.get_node_outputs(target_node_id) or {})
                 node_outputs[name] = value
                 await context.set_node_outputs(target_node_id, node_outputs)
                 logger.info(f"Updated {target_node_id}.{name} = {value}")
@@ -184,9 +187,10 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                         f"{target_node_id}._iteration_state"
                     )
                     if iteration_state:
-                        iteration_state["results"] = value
+                        state_dict = cast(dict[str, WorkflowValue], iteration_state)
+                        state_dict["results"] = value
                         await context.set_variable(
-                            f"{target_node_id}._iteration_state", iteration_state
+                            f"{target_node_id}._iteration_state", state_dict
                         )
 
                     # Update loop state
@@ -194,9 +198,10 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
                         f"{target_node_id}._loop_state"
                     )
                     if loop_state:
-                        loop_state["results"] = value
+                        state_dict = cast(dict[str, WorkflowValue], loop_state)
+                        state_dict["results"] = value
                         await context.set_variable(
-                            f"{target_node_id}._loop_state", loop_state
+                            f"{target_node_id}._loop_state", state_dict
                         )
                         logger.info(
                             f"Updated {target_node_id}._loop_state.results = {value}"
@@ -225,6 +230,15 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
         assignments = config.get("assignments", [])
         return [
             {"name": a.get("name"), "type": "any"} for a in assignments if a.get("name")
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        assignments = config.get("assignments", [])
+        return [
+            NodeOutputDecl(name=a.get("name"), type=TypeSpec(kind="any"))
+            for a in assignments
+            if a.get("name")
         ]
 
 
@@ -292,11 +306,11 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
                 }
             )
 
-        resolved = await self.resolve_inputs(context, input_mappings)
+        resolved = await self.resolve_inputs(context, cast(list[NodeInputMapping], input_mappings))
 
         logger.info(f"Variable aggregator resolved: {resolved}")
 
-        result: Any
+        result: WorkflowValue
         # Aggregate based on mode
         if mode == "array":
             # Return values as array, maintaining order
@@ -309,7 +323,7 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
             result = separator.join(str(v) for v in resolved.values() if v is not None)
         elif mode == "merge":
             # Deep merge objects
-            merged_result: dict[str, Any] = {}
+            merged_result: dict[str, WorkflowValue] = {}
             for value in resolved.values():
                 if isinstance(value, dict):
                     merged_result = self._deep_merge(merged_result, value)
@@ -323,16 +337,13 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
 
         return ExecutionResult(outputs={output_var: result})
 
-    def _deep_merge(self, base: dict, override: dict) -> dict:
+    def _deep_merge(self, base: dict[str, WorkflowValue], override: dict[str, WorkflowValue]) -> dict[str, WorkflowValue]:
         """Deep merge two dictionaries."""
         result = base.copy()
         for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
-                result[key] = self._deep_merge(result[key], value)
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                # Cast to dict since we've verified both are dicts
+                result[key] = self._deep_merge(cast(dict[str, WorkflowValue], result[key]), value)
             else:
                 result[key] = value
         return result
@@ -349,6 +360,20 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
             else "string"
         )
         return [{"name": output_var, "type": var_type}]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        from ..types import TypeKind
+
+        output_var = config.get("outputVariable", "result")
+        mode = config.get("mode", "array")
+        if mode == "array":
+            kind: TypeKind = "array"
+        elif mode in ("object", "merge"):
+            kind = "object"
+        else:
+            kind = "string"
+        return [NodeOutputDecl(name=output_var, type=TypeSpec(kind=kind))]
 
 
 @NodeExecutorRegistry.register("parameter_extractor")
@@ -427,7 +452,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
             return await self._extract_with_llm(input_value, parameters, config, run)
 
     async def _extract_with_jsonpath(
-        self, input_value: Any, parameters: list[dict]
+        self, input_value: WorkflowValue, parameters: list[dict]
     ) -> ExecutionResult:
         """Extract parameters using JSONPath expressions."""
         try:
@@ -444,7 +469,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         else:
             return ExecutionResult(error="validation_error")
 
-        outputs: dict[str, Any] = {}
+        outputs: dict[str, WorkflowValue] = {}
         for param in parameters:
             name = param.get("name")
             json_path = param.get("jsonPath", "")
@@ -497,7 +522,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         """Extract parameters using regex patterns."""
         import re
 
-        outputs: dict[str, Any] = {}
+        outputs: dict[str, WorkflowValue] = {}
         for param in parameters:
             name = param.get("name")
             pattern = param.get("pattern", "")
@@ -544,7 +569,7 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         return ExecutionResult(outputs=outputs)
 
     async def _extract_with_llm(
-        self, input_value: Any, parameters: list[dict], config: dict, run: "WorkflowRun"
+        self, input_value: WorkflowValue, parameters: list[dict], config: dict, run: "WorkflowRun"
     ) -> ExecutionResult:
         """Extract parameters using LLM."""
         from app.llm import model_manager
@@ -603,7 +628,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
 
         try:
             result = await model_manager.chat(
-                messages=cast(list[Any], messages),
+                messages=cast("list[Message | dict[Any, Any]]", messages),
                 model_id=str(model_id),
                 temperature=0.1,
                 max_tokens=512,
@@ -624,7 +649,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
                     parsed = json.loads(response_text)
 
                 # Validate required parameters
-                outputs: dict[str, Any] = {}
+                outputs: dict[str, WorkflowValue] = {}
                 for param in parameters:
                     name = param.get("name")
                     required = param.get("required", False)
@@ -651,7 +676,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
             logger.exception(f"LLM parameter extraction error: {e}")
             return ExecutionResult(error=translate_public_workflow_error(e))
 
-    def _parse_default_value(self, value: str | None, param_type: str) -> Any:
+    def _parse_default_value(self, value: str | None, param_type: str) -> WorkflowValue:
         """Parse default value string to the appropriate type."""
         if value is None:
             return None
@@ -670,7 +695,7 @@ Example response: {{"date": "2024-01-15", "location": null}}"""
         except (ValueError, json.JSONDecodeError):
             return value
 
-    def _convert_value(self, value: str, param_type: str) -> Any:
+    def _convert_value(self, value: str, param_type: str) -> WorkflowValue:
         """Convert extracted string value to the appropriate type."""
         if param_type == "number":
             try:

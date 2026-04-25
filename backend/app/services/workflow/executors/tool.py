@@ -13,6 +13,7 @@ from app.services.error_messages import resolve_user_visible_error
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..stream import StreamManager
 from ..errors import translate_public_workflow_error
+from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -150,6 +151,18 @@ class ToolNodeExecutor(NodeExecutor):
         if output_var and output_var != "result":
             variables.insert(0, {"name": output_var, "type": "any"})
         return variables
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        output_var = config.get("outputVariable", "result")
+        specs = [
+            NodeOutputDecl(name="result", type=TypeSpec(kind="any")),
+            NodeOutputDecl(name="status", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="executionTime", type=TypeSpec(kind="number")),
+        ]
+        if output_var and output_var != "result":
+            specs.insert(0, NodeOutputDecl(name=output_var, type=TypeSpec(kind="any")))
+        return specs
 
 
 @NodeExecutorRegistry.register("agent")
@@ -296,6 +309,14 @@ class AgentNodeExecutor(NodeExecutor):
             {"name": "usage", "type": "object"},
         ]
 
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="response", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="toolCalls", type=TypeSpec(kind="array")),
+            NodeOutputDecl(name="usage", type=TypeSpec(kind="object")),
+        ]
+
 
 @NodeExecutorRegistry.register("http_request")
 class HTTPRequestNodeExecutor(NodeExecutor):
@@ -350,7 +371,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
         for key, value in headers_template.items():
             headers[key] = await self._resolve_template(str(value), context)
 
-        body: Any = None
+        body: WorkflowValue | None = None
         if body_template:
             if isinstance(body_template, str):
                 body = await self._resolve_template(body_template, context)
@@ -446,4 +467,12 @@ class HTTPRequestNodeExecutor(NodeExecutor):
             {"name": "statusCode", "type": "number"},
             {"name": "body", "type": "any"},
             {"name": "headers", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="statusCode", type=TypeSpec(kind="number")),
+            NodeOutputDecl(name="body", type=TypeSpec(kind="any")),
+            NodeOutputDecl(name="headers", type=TypeSpec(kind="object")),
         ]
