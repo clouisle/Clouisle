@@ -47,7 +47,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 
 ---
 
-<img src"./imgs/clouisle.png" />
+<img src="./imgs/clouisle.png" />
 
 ---
 
