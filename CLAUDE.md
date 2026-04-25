@@ -48,6 +48,15 @@ docker-compose -f deploy/docker-compose.dev.yml up -d
 - Dashboard/admin and platform/user routes remain isolated on both backend and frontend.
 - When behavior or conventions change, update the relevant docs under `docs/`.
 
+## i18n tooling (frontend)
+
+- **生成类型**：`node scripts/gen-i18n-types.ts` — 从 `i18n/en/*.json` 生成 `i18n/types/*.ts` 类型定义
+- **检查翻译**：`node scripts/lint-translations.ts [--strict]` — 检查缺失键 + ICU 格式 + 类型对齐
+- 类型文件（`i18n/types/`）是自动生成的，**不要手动编辑**
+- 代码中引用 i18n 文本使用生成的类型：`t('workflow.run')` → typed, 无需手动写字符串字面量
+- **新增翻译时，`en/` 和 `zh/` 必须同步添加**（不是只改 en 然后期待自动同步），改完重新生成类型
+- `zh/` 的翻译为中文，`en/` 的翻译为英文，不要出现中文 key 或英文 key
+
 ## Read these docs for details
 
 ### General developer docs
