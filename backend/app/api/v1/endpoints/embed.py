@@ -232,7 +232,6 @@ async def get_embed_conversation_messages(
     agent = await _get_embed_agent(agent_id, api_key, request)
 
     from app.models.agent import Message
-    from app.schemas.agent import MessageOut
 
     conversation = await Conversation.filter(
         id=conversation_id,

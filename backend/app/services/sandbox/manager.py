@@ -166,7 +166,7 @@ class SandboxManager:
     ) -> tuple[Path, list[str]]:
         script_name = "snippet.py" if job.language == "python" else "snippet.js"
         script_path = workspace.root / script_name
-        params = job.metadata.get("params") if isinstance(job.metadata, dict) else {}
+        params: dict[str, Any] = (job.metadata.get("params") or {}) if isinstance(job.metadata, dict) else {}
 
         if job.language == "python":
             wrapper = self._build_python_snippet_wrapper(job.code or "", params)

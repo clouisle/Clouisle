@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-import markdown
+import markdown  # type: ignore[import-untyped]
 
 from app.core.celery import celery_app
 from app.core.email import send_email

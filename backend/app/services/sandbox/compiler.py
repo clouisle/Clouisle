@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .cache import normalize_package_source_url
-from .models import SandboxArtifactSpec, SandboxJob, SandboxJobSource
+from .models import SandboxArtifactSpec, SandboxJob, SandboxJobSource, SandboxLimits
 
 
 def normalize_code_config(code_config: dict[str, Any]) -> dict[str, Any]:
@@ -48,7 +48,7 @@ def compile_legacy_code_job(
         language=language,
         code=code,
         command=[language],
-        limits={"timeout_seconds": timeout},
+        limits=SandboxLimits(timeout_seconds=timeout),
         metadata={"params": params or {}},
     )
 
@@ -61,8 +61,10 @@ def compile_code_config_job(
     source: SandboxJobSource = SandboxJobSource.TOOL,
 ) -> SandboxJob:
     normalized_code_config = normalize_code_config(code_config)
-    limits = dict(normalized_code_config.get("limits") or {})
-    limits.setdefault("timeout_seconds", timeout)
+    limits_data = normalized_code_config.get("limits") or {}
+    if "timeout_seconds" not in limits_data:
+        limits_data["timeout_seconds"] = timeout
+    limits = SandboxLimits.model_validate(limits_data)
 
     artifacts = [
         artifact

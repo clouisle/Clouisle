@@ -206,7 +206,7 @@ async def fetch_webpage(url: str, max_length: int = 5000) -> dict:
             "error": t("fetch_webpage_http_error", status_code=e.response.status_code),
             "success": False,
         }
-    except Exception as e:
+    except Exception:
         return {
             "url": url,
             "error": t("tool_execution_failed"),

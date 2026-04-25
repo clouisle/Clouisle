@@ -40,9 +40,10 @@ def _should_use_native_openai_compatible_rerank(
         return True
 
     provider = getattr(model_config, "provider", None)
-    provider_value = (
-        provider.value if hasattr(provider, "value") else str(provider or "")
-    )
+    if provider is not None and hasattr(provider, "value"):
+        provider_value = provider.value
+    else:
+        provider_value = str(provider) if provider else ""
     if provider_value == ModelProvider.SILICONFLOW.value:
         return True
 

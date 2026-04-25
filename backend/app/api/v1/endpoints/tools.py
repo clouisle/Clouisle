@@ -8,6 +8,8 @@ import logging
 import time
 from collections.abc import Iterable
 from typing import Any
+
+from app.services.sandbox.models import SandboxArtifact
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -59,6 +61,7 @@ from app.schemas.tool import (
     McpToolInfoOut,
     McpToolsListRequest,
     McpToolsListResponse,
+    SandboxArtifactSchema,
     ToolShareInput,
     ToolShareOut,
     ToolShareListOut,
@@ -70,9 +73,9 @@ logger = logging.getLogger(__name__)
 AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
 
 
-def _serialize_runtime_artifacts(artifacts: list[Any]) -> list[dict[str, Any]]:
+def _serialize_runtime_artifacts(artifacts: list[SandboxArtifact | Any]) -> list[SandboxArtifactSchema]:
     return [
-        artifact.model_dump() if hasattr(artifact, "model_dump") else artifact
+        artifact if isinstance(artifact, SandboxArtifactSchema) else SandboxArtifactSchema.model_validate(artifact)
         for artifact in artifacts
     ]
 
@@ -250,8 +253,8 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
     deduped_tools: dict[str, ToolOut] = {}
 
     builtin_tools = get_builtin_tools(user.locale)
-    for tool in builtin_tools:
-        deduped_tools[f"builtin:{tool.name}"] = tool
+    for builtin_tool in builtin_tools:
+        deduped_tools[f"builtin:{builtin_tool.name}"] = builtin_tool
 
     for team in accessible_teams:
         custom_db_tools = (
@@ -259,42 +262,42 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             .prefetch_related("created_by")
             .order_by("-updated_at")
         )
-        for tool in custom_db_tools:
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+        for db_tool in custom_db_tools:
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
-            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            deduped_tools[f"custom:{tool.id}"] = tool_out
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            deduped_tools[f"custom:{db_tool.id}"] = tool_out
 
         mcp_db_tools = (
             await Tool.filter(team_id=team.id, type=DBToolType.MCP)
             .prefetch_related("created_by")
             .order_by("-updated_at")
         )
-        for tool in mcp_db_tools:
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+        for db_tool in mcp_db_tools:
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
-            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            deduped_tools[f"mcp:{tool.id}"] = tool_out
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            deduped_tools[f"mcp:{db_tool.id}"] = tool_out
 
         shares = await ToolShare.filter(shared_with_team_id=team.id).prefetch_related(
             "tool", "tool__team", "tool__created_by"
         )
         for share in shares:
-            tool = share.tool
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+            db_tool = share.tool
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = False
-            tool_out.owner_team_id = tool.team_id
-            tool_out.owner_team_name = tool.team.name
+            tool_out.owner_team_id = db_tool.team_id
+            tool_out.owner_team_name = db_tool.team.name
             tool_out.share_permission = ToolSharePermission(share.permission)
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            unique_key = f"{tool.type.value}:{tool.id}"
+            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            unique_key = f"{db_tool.type.value}:{db_tool.id}"
             existing = deduped_tools.get(unique_key)
             if existing is None or (tool_out.is_owned and not existing.is_owned):
                 deduped_tools[unique_key] = tool_out

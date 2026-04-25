@@ -9,7 +9,7 @@ from tortoise.expressions import Q
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
-from app.core.password import validate_password, translate_password_validation_errors
+from app.core.password import validate_password
 from app.core.email import (
     send_email,
     check_bulk_email_rate,

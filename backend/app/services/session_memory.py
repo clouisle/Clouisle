@@ -177,7 +177,7 @@ async def extract_session_memory_for_message(
                 previous_payload=previous_payload,
                 previous_summary=previous_summary,
                 transcript=transcript,
-            ),
+            ),  # type: ignore[arg-type]
             response_format={"type": "json_object"},
         )
         payload = _normalize_snapshot_payload(
@@ -206,7 +206,7 @@ async def extract_session_memory_for_message(
         snapshot.token_estimate = token_estimate
         snapshot.extractor_model = response.model or model_identifier
         snapshot.failure_count = 0
-        snapshot.last_error = None
+        snapshot.last_error = None  # type: ignore[assignment]
         snapshot.last_extracted_at = now_utc()
         await snapshot.save()
 
@@ -419,8 +419,8 @@ def _render_transcript(blocks: list[list[Message]]) -> str:
             if content:
                 lines.append(f"{role}: {content}")
             if message.role == MessageRole.ASSISTANT and message.tool_calls:
-                tool_names = [
-                    call.get("name")
+                tool_names: list[str] = [
+                    call["name"]
                     for call in message.tool_calls
                     if isinstance(call, dict) and call.get("name")
                 ]

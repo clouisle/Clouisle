@@ -38,7 +38,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationUpdate,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,
@@ -789,7 +788,7 @@ async def publish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_PUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_published_title"),
             content=t("notify_agent_published_content", agent_name=agent.name),
         )
@@ -826,7 +825,7 @@ async def unpublish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_unpublished_title"),
             content=t("notify_agent_unpublished_content", agent_name=agent.name),
         )

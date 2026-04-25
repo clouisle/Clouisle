@@ -169,7 +169,7 @@ async def calculate(expression: str) -> dict:
             "result": result,
             "success": True,
         }
-    except Exception as e:
+    except Exception:
         return {
             "expression": expression,
             "error": t("tool_execution_failed"),

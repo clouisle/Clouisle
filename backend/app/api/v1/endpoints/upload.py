@@ -510,7 +510,7 @@ async def parse_file(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="file_parse_error",
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected file parse error for %s", file.filename)
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,

@@ -951,6 +951,7 @@ async def _build_messages_with_file_content(
 ) -> tuple[list[Message], set[int]]:
     messages: list[Message] = []
     protected_indexes: set[int] = set()
+    valid_tool_call_ids: set[str] = set()
     _append_message(
         messages,
         protected_indexes,
@@ -973,7 +974,6 @@ async def _build_messages_with_file_content(
     )
 
     if history_override is not None:
-        valid_tool_call_ids: set[str] = set()
         has_current_round_user_in_override = any(
             _normalize_override_role(_get_override_value(hist_msg, "role")) == "user"
             and _matches_protected_round(
@@ -1066,7 +1066,6 @@ async def _build_messages_with_file_content(
         history_query = history_query.exclude(id__in=list(exclude_message_ids))
 
     history = await history_query.order_by("created_at")
-    valid_tool_call_ids: set[str] = set()
 
     for msg in history:
         protect = _matches_protected_round(msg.round_id, protected_round_id)
@@ -1847,7 +1846,7 @@ async def prepare_model_context(
             compression.after_tokens,
             token_budget.input_budget,
         )
-        emergency_messages = []
+        emergency_messages: list[Message] = []
         emergency_protected_indexes: set[int] = set()
         current_round_messages = [
             compacted_messages[index].model_copy(deep=True)

@@ -5,7 +5,7 @@ Provides administrative access to all conversations across the system.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -22,7 +22,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationOut,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,
@@ -390,13 +389,13 @@ async def get_conversation_trends(
             created_at__gte=start_time_utc,
         ).values("created_at", "token_usage")
 
-    conv_counts_by_date: dict[datetime.date, int] = {}
+    conv_counts_by_date: dict[date, int] = {}
     for row in conversations:
         date_key = to_local(row["created_at"]).date()
         conv_counts_by_date[date_key] = conv_counts_by_date.get(date_key, 0) + 1
 
-    msg_counts_by_date: dict[datetime.date, int] = {}
-    token_counts_by_date: dict[datetime.date, int] = {}
+    msg_counts_by_date: dict[date, int] = {}
+    token_counts_by_date: dict[date, int] = {}
     for row in message_rows:
         date_key = to_local(row["created_at"]).date()
         msg_counts_by_date[date_key] = msg_counts_by_date.get(date_key, 0) + 1

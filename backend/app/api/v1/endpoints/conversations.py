@@ -22,7 +22,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationOut,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,

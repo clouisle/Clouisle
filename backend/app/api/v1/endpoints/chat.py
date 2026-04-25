@@ -702,7 +702,8 @@ async def build_round_steps_map(messages: list[Message]) -> dict[UUID, list[dict
 
     grouped: dict[UUID, list[dict[str, Any]]] = {}
     for step in step_messages:
-        grouped.setdefault(step.round_id, []).append(
+        if step.round_id:
+            grouped.setdefault(step.round_id, []).append(
             {
                 "id": step.id,
                 "role": step.role.value,
@@ -910,8 +911,16 @@ async def persist_partial_round_error(
     if not has_progress and not fallback_content:
         return False
 
-    message.content = content or (fallback_content or "")
-    message.reasoning_content = reasoning or None
+    final_content: str
+    if content:
+        final_content = content
+    elif fallback_content:
+        final_content = fallback_content
+    else:
+        final_content = ""
+    message.content = final_content
+    message.reasoning_content = reasoning if reasoning else None  # type: ignore[assignment]
+    message.model_used = model_id  # type: ignore[assignment]
     message.model_used = model_id
     message.duration_ms = int((time.time() - start_time) * 1000)
     message.is_manually_stopped = False
@@ -2147,7 +2156,7 @@ async def chat(
         clean_final_content = (
             build_max_iterations_terminal_content(current_user.locale)
             if max_iterations_reached
-            else (final_response.content or "")
+            else (final_response.content if final_response else "")
         )
         if (
             not max_iterations_reached

@@ -20,7 +20,6 @@ from tortoise import Tortoise
 from app.core.config import settings
 from app.models.knowledge_base import DocumentChunk, Document, KnowledgeBase
 from app.services.usage_tracker import QuotaExceededError
-from app.core.i18n import t
 
 try:
     from qdrant_client import AsyncQdrantClient as _AsyncQdrantClient
