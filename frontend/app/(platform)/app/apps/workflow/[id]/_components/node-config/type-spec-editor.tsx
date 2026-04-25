@@ -29,6 +29,12 @@ const ALL_KINDS: TypeKind[] = [
   'images',
 ]
 
+function getKindLabelKey(kind: TypeKind): string {
+  if (kind === 'files') return 'dialogs.parameterEdit.kindFiles'
+  if (kind === 'images') return 'dialogs.parameterEdit.kindImages'
+  return `dialogs.parameterEdit.type${kind.charAt(0).toUpperCase() + kind.slice(1)}`
+}
+
 interface TypeSpecEditorProps {
   /** Current spec; undefined renders as `any`. */
   value: TypeSpec | undefined
@@ -58,12 +64,12 @@ export function TypeSpecEditor({
       {!lockKind && (
         <Select value={spec.kind} onValueChange={(v) => handleKindChange(v as TypeKind)}>
           <SelectTrigger size="xs">
-            <SelectValue />
+            <SelectValue>{t(getKindLabelKey(spec.kind))}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {ALL_KINDS.map((k) => (
               <SelectItem key={k} value={k} className="text-xs">
-                {k}
+                {t(getKindLabelKey(k))}
               </SelectItem>
             ))}
           </SelectContent>

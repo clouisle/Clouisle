@@ -631,8 +631,8 @@ export default function CodeToolPage() {
 
         <div className="flex items-center gap-2">
           <Select value={language} onValueChange={(v) => handleLanguageChange(v as CodeLanguage)}>
-            <SelectTrigger className="w-28 h-8">
-              <SelectValue />
+            <SelectTrigger size="sm" className="w-28">
+              <SelectValue>{t(CODE_LANGUAGES.find((l) => l.value === language)?.labelKey || '')}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {CODE_LANGUAGES.map((lang) => (
@@ -1045,7 +1045,7 @@ export default function CodeToolPage() {
                         onValueChange={(v) => updateParameter(index, 'type', v)}
                       >
                         <SelectTrigger size="xs" className="w-24">
-                          <SelectValue />
+                          <SelectValue>{t(PARAM_TYPES.find(p => p.value === param.type)?.labelKey || param.type || '')}</SelectValue>
                         </SelectTrigger>
                         <SelectContent side="bottom" alignItemWithTrigger={false}>
                           {PARAM_TYPES.map((type) => (

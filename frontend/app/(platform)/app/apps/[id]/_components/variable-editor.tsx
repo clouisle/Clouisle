@@ -164,8 +164,8 @@ function VariableEditDialog({ variable, open, onOpenChange, onSave, onCancel }: 
               <span className="text-sm">{getVariableTypeLabel(t, draft.type)}</span>
               <div className="ml-auto">
                 <Select value={typeToDataType[draft.type]} disabled>
-                  <SelectTrigger className="h-7 w-24 text-xs">
-                    <SelectValue />
+                  <SelectTrigger size="xs" className="w-24 text-xs">
+                    <SelectValue>{getTranslatedTypeLabel(t, typeToDataType[draft.type])}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="string">{getTranslatedTypeLabel(t, 'string')}</SelectItem>

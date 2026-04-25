@@ -548,7 +548,9 @@ export function LoopNodeConfig({
                     onValueChange={(v) => onConfigChange({ ...config, exitLogicOperator: v as 'and' | 'or' })}
                   >
                     <SelectTrigger size="xs" className="w-16">
-                      <SelectValue />
+                      <SelectValue>
+                        {config.exitLogicOperator === 'or' ? t('configLoop.logicAny') : t('configLoop.logicAll')}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="and" className="text-xs">{t('configLoop.logicAll')}</SelectItem>

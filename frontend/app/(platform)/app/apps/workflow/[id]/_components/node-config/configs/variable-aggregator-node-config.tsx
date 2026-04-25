@@ -350,7 +350,9 @@ export function VariableAggregatorNodeConfig({
             onValueChange={(v) => onConfigChange({ ...safeConfig, mergeStrategy: v as 'shallow' | 'deep' })}
           >
             <SelectTrigger size="default" className="text-xs">
-              <SelectValue />
+              <SelectValue>
+                {safeConfig.mergeStrategy === 'deep' ? t('configVariableAggregator.deepMerge') : t('configVariableAggregator.shallowMerge')}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="shallow" className="text-xs">{t('configVariableAggregator.shallowMerge')}</SelectItem>

@@ -223,9 +223,24 @@ interface HttpToolDialogProps {
 }
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
-const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
-const PARAM_TYPES = ['string', 'number', 'boolean', 'array', 'object', 'file', 'image'] as const
+// HTTP工具参数字段类型
+const HTTP_PARAM_TYPES = ['string', 'number', 'boolean', 'array', 'object', 'file', 'image'] as const
+type HttpParamType = typeof HTTP_PARAM_TYPES[number]
+
+function getHttpParamTypeLabel(t: (key: string) => string, type: string): string {
+  const labels: Record<string, string> = {
+    string: t('httpDialog.paramTypeString'),
+    number: t('httpDialog.paramTypeNumber'),
+    boolean: t('httpDialog.paramTypeBoolean'),
+    array: t('httpDialog.paramTypeArray'),
+    object: t('httpDialog.paramTypeObject'),
+    file: t('httpDialog.paramTypeFile'),
+    image: t('httpDialog.paramTypeImage'),
+  }
+  return labels[type] || type
+}
+const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 const HTTP_TOOL_ERROR_PATH_MAP = {
   display_name: 'displayName',
@@ -706,7 +721,7 @@ export function HttpToolDialog({
                     setContentType(v as typeof contentType)
                     setFieldErrors((prev) => clearValidationError(prev, 'contentType'))
                   }}>
-                    <SelectTrigger className="h-9">
+                    <SelectTrigger size="default">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -781,7 +796,7 @@ export function HttpToolDialog({
                             }}
                           >
                             <SelectTrigger className="w-24">
-                              <SelectValue />
+                              <SelectValue>{field.type === 'file' ? t('httpDialog.fieldTypeFile') : t('httpDialog.fieldTypeText')}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="text">{t('httpDialog.fieldTypeText')}</SelectItem>
@@ -911,12 +926,12 @@ export function HttpToolDialog({
                         onValueChange={(v) => v && updateParameter(index, { type: v })}
                       >
                         <SelectTrigger className="w-28">
-                          <SelectValue />
+                          <SelectValue>{getHttpParamTypeLabel(t, param.type)}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          {PARAM_TYPES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
+                          {HTTP_PARAM_TYPES.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {getHttpParamTypeLabel(t, type)}
                             </SelectItem>
                           ))}
                         </SelectContent>

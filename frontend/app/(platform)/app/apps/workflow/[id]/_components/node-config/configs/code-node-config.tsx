@@ -255,7 +255,7 @@ export function CodeNodeConfig({
                     onValueChange={(v) => handleUpdateOutput(output.id, { type: v as OutputVariableType })}
                   >
                     <SelectTrigger size="xs" className="w-22 text-xs bg-background">
-                      <SelectValue />
+                      <SelectValue>{outputTypeOptions.find(o => o.value === output.type)?.label}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {outputTypeOptions.map(opt => (

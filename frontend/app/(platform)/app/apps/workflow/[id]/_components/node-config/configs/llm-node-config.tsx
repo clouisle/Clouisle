@@ -600,14 +600,14 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
             >
               <SelectTrigger size="sm" className="text-xs">
                 <SelectValue>
-                  {safeConfig.responseFormat === 'json' ? 'JSON' :
-                   safeConfig.responseFormat === 'json_schema' ? 'JSON Schema' : t('configLlm.formatText')}
+                  {safeConfig.responseFormat === 'json' ? t('configLlm.formatJson') :
+                   safeConfig.responseFormat === 'json_schema' ? t('configLlm.formatJsonSchema') : t('configLlm.formatText')}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="text" className="text-xs">{t('configLlm.formatText')}</SelectItem>
-                <SelectItem value="json" className="text-xs">JSON</SelectItem>
-                <SelectItem value="json_schema" className="text-xs">JSON Schema</SelectItem>
+                <SelectItem value="json" className="text-xs">{t('configLlm.formatJson')}</SelectItem>
+                <SelectItem value="json_schema" className="text-xs">{t('configLlm.formatJsonSchema')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -615,7 +615,7 @@ export function LLMNodeConfig({ config = defaultLLMNodeConfig, onChange, getAvai
           {/* JSON Schema（当响应格式为 json_schema 时） */}
           {safeConfig.responseFormat === 'json_schema' && (
             <div className="space-y-2">
-              <Label className="text-xs">JSON Schema</Label>
+              <Label className="text-xs">{t('configLlm.formatJsonSchema')}</Label>
               <Textarea
                 placeholder='{"type": "object", "properties": {...}}'
                 className="min-h-20 text-xs font-mono resize-none"

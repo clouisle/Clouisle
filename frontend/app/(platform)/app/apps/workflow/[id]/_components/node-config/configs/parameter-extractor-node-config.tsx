@@ -431,7 +431,7 @@ export function ParameterExtractorNodeConfig({
                       onValueChange={(v) => handleUpdateParameter(param.id, { type: v as ExtractedParamType })}
                     >
                       <SelectTrigger size="sm" className="text-xs">
-                        <SelectValue />
+                        <SelectValue>{t(extractedParamTypeConfig[param.type]?.labelKey || param.type)}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {methodConfig.supportedTypes.map((typeKey) => (
@@ -483,7 +483,7 @@ export function ParameterExtractorNodeConfig({
                           onValueChange={(v) => handleUpdateParameter(param.id, { arrayItemType: v as ExtractedParamType })}
                         >
                           <SelectTrigger size="sm" className="text-xs">
-                            <SelectValue />
+                            <SelectValue>{t(extractedParamTypeConfig[param.arrayItemType || 'string']?.labelKey || (param.arrayItemType || 'string'))}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="string" className="text-xs">{t(extractedParamTypeConfig.string.labelKey)}</SelectItem>

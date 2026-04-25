@@ -250,7 +250,9 @@ export function ConditionNodeConfig({
                       onValueChange={(v) => updateBranchLogicOperator(branch.id, v as 'and' | 'or')}
                     >
                       <SelectTrigger size="xs" className="w-16">
-                        <SelectValue />
+                        <SelectValue>
+                          {branch.logicOperator === 'or' ? t('configCondition.logicAny') : t('configCondition.logicAll')}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="and" className="text-xs">{t('configCondition.logicAll')}</SelectItem>

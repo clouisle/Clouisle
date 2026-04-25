@@ -168,7 +168,7 @@ export function AgentConfigForm({ agent, onSubmit }: AgentConfigFormProps) {
                 <Label htmlFor="visibility">{t('visibility')}</Label>
                 <Select value={visibility} onValueChange={(v) => setVisibility(v as typeof visibility)}>
                   <SelectTrigger id="visibility" className="w-full">
-                    <SelectValue />
+                    <SelectValue>{visibility === 'team' ? t('visibilityTeam') : t('visibilityPrivate')}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>

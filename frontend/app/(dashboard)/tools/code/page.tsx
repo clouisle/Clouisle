@@ -652,7 +652,7 @@ function CodeToolPageContent() {
           {/* 团队选择 (仅创建时显示) */}
           {!isEditing && teams.length > 1 && (
             <Select value={currentTeamId} onValueChange={(v) => v && setCurrentTeamId(v)}>
-              <SelectTrigger className="w-32 h-8">
+              <SelectTrigger size="sm" className="w-32">
                 <SelectValue>
                   {teams.find((team) => team.id === currentTeamId)?.name || t('selectTeam')}
                 </SelectValue>
@@ -668,7 +668,7 @@ function CodeToolPageContent() {
           )}
 
           <Select value={language} onValueChange={(v) => handleLanguageChange(v as CodeLanguage)}>
-            <SelectTrigger className="w-28 h-8">
+            <SelectTrigger size="sm" className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
