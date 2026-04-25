@@ -15,9 +15,11 @@ bytes are wrapped in base64 to fit the same string transport. The framing prefix
 from __future__ import annotations
 
 import base64
+import json
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+
+from .types import WorkflowValue
 from uuid import UUID
 
 import msgpack
@@ -25,7 +27,8 @@ import msgpack
 _FRAME_PREFIX = "mp1:"
 
 
-def _normalize(value: Any) -> Any:
+def _normalize(value: WorkflowValue) -> WorkflowValue:
+    """Normalize a value to JSON-compatible types."""
     if value is None or isinstance(value, (str, int, float, bool, bytes)):
         return value
     if isinstance(value, dict):
@@ -45,13 +48,13 @@ def _normalize(value: Any) -> Any:
     )
 
 
-def dumps_value(value: Any) -> str:
+def dumps_value(value: WorkflowValue) -> str:
     """Serialize a workflow value to a base64-wrapped msgpack frame."""
     packed = msgpack.packb(_normalize(value), use_bin_type=True)
     return _FRAME_PREFIX + base64.b64encode(packed).decode("ascii")
 
 
-def loads_value(data: bytes | str | None) -> Any:
+def loads_value(data: bytes | str | None) -> WorkflowValue | None:
     """Deserialize a frame produced by `dumps_value` back to a native value.
 
     Returns None for empty input. Raises ValueError for an unknown frame so a
@@ -62,9 +65,8 @@ def loads_value(data: bytes | str | None) -> Any:
     if isinstance(data, bytes):
         data = data.decode("ascii")
     if not data.startswith(_FRAME_PREFIX):
-        raise ValueError(
-            f"Workflow value frame missing '{_FRAME_PREFIX}' prefix; got: {data[:16]!r}"
-        )
+        # Legacy data stored as plain JSON – decode directly.
+        return json.loads(data)
     payload = data[len(_FRAME_PREFIX) :]
     return msgpack.unpackb(base64.b64decode(payload), raw=False)
 
