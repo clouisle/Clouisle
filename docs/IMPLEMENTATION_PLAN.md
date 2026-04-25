@@ -33,6 +33,13 @@
   - [ ] 2. Stable session identity and visual continuity
   - [ ] 3. Entry animation and verification
 
+- **model-provider-params-extension** — In progress. Extend admin model management so known provider-specific params get dedicated controls, unknown params can be attached via JSON extension areas, runtime defaults survive edit/save, and adapter test/use paths honor `default_params`. See `docs/plan/model-provider-params-extension.md`
+  - [ ] 1. Admin test API and base adapter param helpers
+  - [ ] 2. OpenAI-like adapter passthrough and reasoning params
+  - [ ] 3. Anthropic and Gemini normalization
+  - [ ] 4. Admin model dialog known params + JSON extension
+  - [ ] 5. Regression and verification
+
 - **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
   - [x] 1. Ratio-based thresholds and pressure states
   - [x] 2. Selective micro compaction
