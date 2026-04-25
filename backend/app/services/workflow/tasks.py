@@ -274,7 +274,7 @@ def check_scheduled_workflows() -> dict:
     """
     import asyncio
     from datetime import datetime
-    from croniter import croniter
+    from croniter import croniter  # type: ignore[import-untyped]
     from app.models.workflow import Workflow, WorkflowStatus, TriggerType
 
     async def check():

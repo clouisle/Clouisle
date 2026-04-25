@@ -7,12 +7,13 @@ Handles streaming output to clients via SSE (Server-Sent Events).
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, AsyncIterator, cast
+from typing import AsyncIterator, cast
 import asyncio
 import json
 import logging
 
 from app.core.redis import get_redis
+from .types import WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class StreamEvent:
     """
 
     event_type: StreamEventType
-    data: dict[str, Any] = field(default_factory=dict)
+    data: dict[str, WorkflowValue] = field(default_factory=dict)
     node_id: str | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
     sequence: int = 0
@@ -301,7 +302,7 @@ class StreamManager:
     async def publish_output(
         self,
         node_id: str,
-        output: Any,
+        output: WorkflowValue,
         output_name: str = "result",
     ) -> None:
         """Publish final output event."""
@@ -341,7 +342,7 @@ class StreamManager:
         iteration: int,
         total: int,
         is_start: bool = True,
-        item: Any = None,
+        item: WorkflowValue | None = None,
     ) -> None:
         """Publish iteration event."""
         event_type = (
@@ -349,7 +350,7 @@ class StreamManager:
             if is_start
             else StreamEventType.ITERATION_COMPLETE
         )
-        data = {
+        data: dict[str, WorkflowValue] = {
             "iteration": iteration,
             "total": total,
         }

@@ -7,13 +7,20 @@ the LLM execution is triggered and tokens are streamed directly to the Answer no
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
+from .types import WorkflowValue
+
 if TYPE_CHECKING:
+    from app.llm.types.chat import Message
     from app.services.workflow.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
+
+
+# Message type for chat API
+ChatMessage = dict[str, str]  # {"role": "system|user|assistant", "content": "..."}
 
 
 @dataclass
@@ -27,14 +34,14 @@ class LazyStreamResult:
 
     # LLM execution parameters
     model_id: str
-    messages: list[dict[str, Any]]
+    messages: list[ChatMessage]
     temperature: float
     max_tokens: int | None
     top_p: float
-    response_format: dict[str, Any] | None = None
+    response_format: dict[str, WorkflowValue] | None = None
 
     # Context for execution
-    context: "ExecutionContext" = None  # type: ignore
+    context: "ExecutionContext" = field(default=None)  # type: ignore[assignment]
     source_node_id: str = ""
 
     # State
@@ -72,7 +79,7 @@ class LazyStreamResult:
         last_usage = None
 
         async for chunk in model_manager.chat_stream(
-            messages=cast(list[Any], self.messages),
+            messages=cast("list[Message | dict[Any, Any]]", self.messages),
             model_id=self.model_id,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
