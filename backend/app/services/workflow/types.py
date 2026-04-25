@@ -16,6 +16,10 @@ from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Recursive native type alias for workflow values
+# Used for variables, inputs, outputs, and samples throughout the system
+# Note: Defined without quotes to work with Pydantic schema generation
+# The type alias pattern allows self-reference at type-check time
 WorkflowValue = Union[
     str,
     int,
@@ -25,6 +29,22 @@ WorkflowValue = Union[
     list["WorkflowValue"],
     dict[str, "WorkflowValue"],
 ]
+
+# Type for input mappings from frontend (variable/constant source)
+
+
+class NodeInputMapping(BaseModel):
+    """Input mapping from a node configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    source: Literal["variable", "constant"] = "variable"
+    variableRef: str | None = None  # e.g., "{{start.query}}"
+    # Note: WorkflowValue is used for type hints and runtime validation,
+    # but Any is used here to avoid Pydantic's recursive schema generation
+    constantValue: Any = None
+
 
 TypeKind = Literal[
     "string",
@@ -56,7 +76,8 @@ class TypeSpec(BaseModel):
     fields: dict[str, TypeSpec] | None = None
     nullable: bool = False
     source: Literal["declared", "inferred"] = "declared"
-    sample: Any | None = Field(default=None, exclude=False)
+    # Note: Any is used instead of WorkflowValue to avoid Pydantic's recursive schema generation
+    sample: Any = Field(default=None, exclude=False)
 
 
 TypeSpec.model_rebuild()
@@ -65,14 +86,14 @@ TypeSpec.model_rebuild()
 _SAMPLE_STR_LIMIT = 200
 
 
-def _trim_sample(value: Any) -> Any:
+def _trim_sample(value: WorkflowValue) -> WorkflowValue:
     if isinstance(value, str) and len(value) > _SAMPLE_STR_LIMIT:
         return value[:_SAMPLE_STR_LIMIT] + "..."
     return value
 
 
 def infer_type_spec(
-    value: Any, *, source: Literal["inferred"] = "inferred"
+    value: WorkflowValue, *, source: Literal["inferred"] = "inferred"
 ) -> TypeSpec:
     """Best-effort recursive inference of a TypeSpec from a real runtime value.
 
@@ -157,7 +178,7 @@ def merge_type_spec(a: TypeSpec | None, b: TypeSpec | None) -> TypeSpec:
     return TypeSpec(kind=a.kind, nullable=nullable, source=source)
 
 
-def to_text(value: Any) -> str:
+def to_text(value: WorkflowValue) -> str:
     """Deterministic stringification for the text-only boundaries.
 
     - dict / list → JSON (ensure_ascii=False) so users see structure, not Python repr
@@ -225,6 +246,7 @@ __all__ = [
     "TypeSpec",
     "TypeKind",
     "WorkflowValue",
+    "NodeInputMapping",
     "NodeOutputDecl",
     "infer_type_spec",
     "merge_type_spec",
