@@ -1343,7 +1343,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                 status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
               >
                 {reasoningPart.text && (
-                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
+                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap break-words font-sans">
                     {reasoningPart.text}
                   </pre>
                 )}

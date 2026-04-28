@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-25T17:26:26.898Z
+// GENERATED — 2026-04-28T13:20:22.606Z
 // Source: i18n/en/publicChat.json
 export type PublicChatMessages = {
   publicChat: {

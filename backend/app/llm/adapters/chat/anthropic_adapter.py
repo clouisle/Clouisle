@@ -362,11 +362,14 @@ class AnthropicAdapter(BaseChatAdapter):
                         )
 
             # 启用 thinking (only if not using output_config)
-            if self.thinking_enabled and not has_output_config:
-                thinking_config: dict[str, Any] = {"type": "enabled"}
-                if self.thinking_budget:
-                    thinking_config["budget_tokens"] = self.thinking_budget
-                request_params["thinking"] = thinking_config
+            if not has_output_config:
+                if self.thinking_enabled:
+                    thinking_config: dict[str, Any] = {"type": "enabled"}
+                    if self.thinking_budget:
+                        thinking_config["budget_tokens"] = self.thinking_budget
+                    request_params["thinking"] = thinking_config
+                else:
+                    request_params["thinking"] = {"type": "disabled"}
                 logger.info("Anthropic adapter: Enabled thinking")
             elif self.thinking_enabled and has_output_config:
                 logger.warning(
@@ -481,6 +484,8 @@ class AnthropicAdapter(BaseChatAdapter):
                 if self.thinking_budget:
                     thinking_config["budget_tokens"] = self.thinking_budget
                 request_params["thinking"] = thinking_config
+            else:
+                request_params["thinking"] = {"type": "disabled"}
 
             extra_body = self.get_passthrough_body() or None
             response_id = str(uuid.uuid4())

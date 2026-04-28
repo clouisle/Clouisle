@@ -210,7 +210,18 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-            if self.reasoning_effort:
+            if self._provider_hint == "zhipu":
+                thinking = self.get_effective_thinking()
+                if self.thinking_enabled:
+                    request_params["thinking"] = (
+                        thinking
+                        if isinstance(thinking, dict) and "type" in thinking
+                        else {"type": "enabled"}
+                    )
+                else:
+                    request_params["thinking"] = {"type": "disabled"}
+            # Reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs
@@ -315,7 +326,20 @@ class OpenAICompatibleAdapter(BaseChatAdapter):
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-            if self.reasoning_effort:
+                if self._provider_hint == "zhipu":
+                    request_params["tool_stream"] = True
+            if self._provider_hint == "zhipu":
+                thinking = self.get_effective_thinking()
+                if self.thinking_enabled:
+                    request_params["thinking"] = (
+                        thinking
+                        if isinstance(thinking, dict) and "type" in thinking
+                        else {"type": "enabled"}
+                    )
+                else:
+                    request_params["thinking"] = {"type": "disabled"}
+            # Reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs

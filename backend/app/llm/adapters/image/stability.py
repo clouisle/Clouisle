@@ -141,8 +141,14 @@ class StabilityImageAdapter(BaseImageAdapter):
 
         if request.negative_prompt:
             payload["negative_prompt"] = request.negative_prompt
-        if request.style:
-            payload["style_preset"] = request.style
+
+        style_preset = self._get_effective_param(
+            request,
+            field_name="style",
+            param_key="style_preset",
+        )
+        if style_preset:
+            payload["style_preset"] = style_preset
 
         if request.width > 0 and request.height > 0:
             payload["aspect_ratio"] = self._closest_aspect_ratio(
@@ -157,6 +163,8 @@ class StabilityImageAdapter(BaseImageAdapter):
             payload["model"] = self.model_id
 
         extra_params = dict(request.extra_params or {})
+        for managed_key in {"style_preset", "output_format", "seed", "aspect_ratio", "model"}:
+            extra_params.pop(managed_key, None)
         payload.update(extra_params)
         return payload
 
@@ -305,8 +313,10 @@ class StabilityImageAdapter(BaseImageAdapter):
         return None
 
     def _get_output_format(self, request: ImageGenerationRequest) -> str:
-        extra_params = request.extra_params or {}
-        output_format = extra_params.get("output_format")
+        output_format = self._get_effective_param(
+            request,
+            param_key="output_format",
+        )
         if isinstance(output_format, str) and output_format:
             return output_format
 

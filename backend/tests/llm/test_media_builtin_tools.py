@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from app.models.model import ModelType
+
 import pytest
 
 from app.llm.tools import tool_registry
@@ -147,6 +149,51 @@ async def test_generate_video_polls_until_completed():
 
 
 @pytest.mark.anyio
+async def test_generate_image_uses_legacy_size_default_when_width_height_missing():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "openai/gpt-image-1",
+            "size": "1792x1024",
+            "max_images": 4,
+            "allow_reference_images": True,
+        },
+    )
+    response = ImageGenerationResponse(
+        images=[
+            GeneratedImage(
+                image=ImageContent(url="https://example.com/cat.png", format="png"),
+            )
+        ],
+        model="gpt-image-1",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/2026/03/cat.png",
+                    format="png",
+                )
+            ),
+        ),
+    ):
+        await generate_image(
+            prompt="A cat portrait",
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert request.width == 1792
+    assert request.height == 1024
+
+
+@pytest.mark.anyio
 async def test_generate_image_normalizes_inline_base64_to_backend_url():
     agent = SimpleNamespace(
         enable_image_generation=True,
@@ -263,6 +310,15 @@ async def test_generate_image_normalizes_openai_compatible_quality_alias():
             AsyncMock(return_value=response),
         ) as mock_generate,
         patch(
+            "app.llm.tools.builtin.media.model_manager._get_model_config",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    model_id="gpt-image-1",
+                    model_type=ModelType.TEXT_TO_IMAGE,
+                )
+            ),
+        ),
+        patch(
             "app.llm.tools.builtin.media.media_asset_service.normalize_image",
             AsyncMock(
                 return_value=ImageContent(
@@ -279,7 +335,7 @@ async def test_generate_image_normalizes_openai_compatible_quality_alias():
         )
 
     request = mock_generate.await_args.args[0]
-    assert request.quality == "hd"
+    assert request.quality == "high"
     assert result.display_result["success"] is True
 
 
@@ -296,10 +352,21 @@ async def test_generate_image_rejects_invalid_openai_compatible_quality():
         },
     )
 
-    with patch(
-        "app.llm.tools.builtin.media.model_manager.generate_image",
-        AsyncMock(),
-    ) as mock_generate:
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.model_manager._get_model_config",
+            AsyncMock(
+                return_value=SimpleNamespace(
+                    model_id="dall-e-3",
+                    model_type=ModelType.TEXT_TO_IMAGE,
+                )
+            ),
+        ),
+    ):
         result = await generate_image(
             prompt="A cat portrait",
             quality="ultra",
@@ -309,6 +376,56 @@ async def test_generate_image_rejects_invalid_openai_compatible_quality():
     mock_generate.assert_not_awaited()
     assert result.display_result["success"] is False
     assert "Supported values: standard, hd" in result.display_result["error"]
+
+
+@pytest.mark.anyio
+async def test_generate_image_gpt_image_quality_falls_back_to_model_ref_suffix():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "openai/gpt-image-1",
+            "default_width": 1024,
+            "default_height": 1024,
+            "max_images": 4,
+            "allow_reference_images": True,
+        },
+    )
+    response = ImageGenerationResponse(
+        images=[
+            GeneratedImage(
+                image=ImageContent(url="https://example.com/cat.png", format="png"),
+            )
+        ],
+        model="gpt-image-1",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.model_manager._get_model_config",
+            AsyncMock(side_effect=RuntimeError("lookup failed")),
+        ),
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/2026/03/cat.png",
+                    format="png",
+                )
+            ),
+        ),
+    ):
+        await generate_image(
+            prompt="A cat portrait",
+            quality="medium",
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert request.quality == "medium"
 
 
 def test_generate_image_schema_includes_items_for_images_array():

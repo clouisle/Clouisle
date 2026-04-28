@@ -10,6 +10,7 @@ from .google import GoogleImageAdapter
 from .luma import LumaImageAdapter
 from .openai import OpenAIImageAdapter
 from .runway import RunwayImageAdapter
+from .siliconflow import SiliconFlowImageAdapter
 from .stability import StabilityImageAdapter
 
 
@@ -32,6 +33,8 @@ def create_image_adapter(model_config: Model) -> BaseImageAdapter:
         return OpenAIImageAdapter(model_config)
     elif provider == ModelProvider.CUSTOM:
         return OpenAIImageAdapter(model_config)
+    elif provider == ModelProvider.SILICONFLOW:
+        return SiliconFlowImageAdapter(model_config)
     elif provider == ModelProvider.GOOGLE:
         return GoogleImageAdapter(model_config)
     elif provider == ModelProvider.RUNWAY:
@@ -55,5 +58,6 @@ __all__ = [
     "GoogleImageAdapter",
     "RunwayImageAdapter",
     "LumaImageAdapter",
+    "SiliconFlowImageAdapter",
     "StabilityImageAdapter",
 ]

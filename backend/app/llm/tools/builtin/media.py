@@ -11,10 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.models.model import ModelType
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
     GeneratedImage,
@@ -33,9 +35,18 @@ logger = logging.getLogger(__name__)
 
 PENDING_VIDEO_STATUSES = {TaskStatus.PENDING.value, TaskStatus.PROCESSING.value}
 OPENAI_COMPATIBLE_IMAGE_PROVIDERS = {"openai", "azure_openai", "custom"}
-OPENAI_COMPATIBLE_IMAGE_QUALITY_VALUES = ("standard", "hd")
-OPENAI_COMPATIBLE_IMAGE_QUALITY_MAP = {
+OPENAI_DALLE_IMAGE_QUALITY_VALUES: Sequence[str] = ("standard", "hd")
+OPENAI_DALLE_IMAGE_QUALITY_MAP = {
     "high": "hd",
+    "standard": "standard",
+    "hd": "hd",
+}
+OPENAI_GPT_IMAGE_QUALITY_VALUES: Sequence[str] = ("low", "medium", "high", "auto", "standard", "hd")
+OPENAI_GPT_IMAGE_QUALITY_MAP = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "auto": "auto",
     "standard": "standard",
     "hd": "hd",
 }
@@ -43,6 +54,21 @@ OPENAI_COMPATIBLE_IMAGE_QUALITY_MAP = {
 
 def _normalize_status(status: TaskStatus | str) -> str:
     return status.value if hasattr(status, "value") else str(status)
+
+
+async def _get_image_model_id(model_ref: str | None) -> str | None:
+    if not model_ref:
+        return None
+
+    try:
+        model_config = await model_manager._get_model_config(
+            model_ref,
+            ModelType.TEXT_TO_IMAGE,
+        )
+    except Exception:
+        return model_ref.split("/", 1)[1] if "/" in model_ref else None
+
+    return getattr(model_config, "model_id", None)
 
 
 def _get_agent_module_config(agent: Any, field_name: str) -> dict[str, Any]:
@@ -73,7 +99,7 @@ def _get_provider_from_model_ref(model_ref: str | None) -> str | None:
     return model_ref.split("/", 1)[0]
 
 
-def _normalize_image_quality(
+async def _normalize_image_quality(
     quality: str | None,
     *,
     model_ref: str | None,
@@ -89,13 +115,20 @@ def _normalize_image_quality(
     if provider not in OPENAI_COMPATIBLE_IMAGE_PROVIDERS:
         return quality
 
-    mapped_quality = OPENAI_COMPATIBLE_IMAGE_QUALITY_MAP.get(normalized_quality)
+    model_id = await _get_image_model_id(model_ref)
+    if model_id and model_id.startswith("gpt-image"):
+        mapped_quality = OPENAI_GPT_IMAGE_QUALITY_MAP.get(normalized_quality)
+        supported_values = OPENAI_GPT_IMAGE_QUALITY_VALUES
+    else:
+        mapped_quality = OPENAI_DALLE_IMAGE_QUALITY_MAP.get(normalized_quality)
+        supported_values = OPENAI_DALLE_IMAGE_QUALITY_VALUES
+
     if mapped_quality is None:
         raise ValueError(
             t(
                 "image_generation_invalid_quality",
                 quality=quality,
-                supported=", ".join(OPENAI_COMPATIBLE_IMAGE_QUALITY_VALUES),
+                supported=", ".join(supported_values),
             )
         )
     return mapped_quality
@@ -297,15 +330,27 @@ async def generate_image(
         if images and not config.get("allow_reference_images", True):
             raise ValueError(t("image_reference_images_disabled"))
 
-        normalized_quality = _normalize_image_quality(
+        normalized_quality = await _normalize_image_quality(
             quality,
             model_ref=resolved_model_ref,
         )
+        default_width = config.get("default_width")
+        default_height = config.get("default_height")
+        legacy_size = config.get("size")
+        if (default_width is None or default_height is None) and isinstance(legacy_size, str):
+            size_parts = legacy_size.split("x", 1)
+            if len(size_parts) == 2:
+                parsed_width, parsed_height = size_parts
+                if default_width is None and parsed_width.isdigit():
+                    default_width = int(parsed_width)
+                if default_height is None and parsed_height.isdigit():
+                    default_height = int(parsed_height)
+
         request = ImageGenerationRequest(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            width=width or int(config.get("default_width", 1024)),
-            height=height or int(config.get("default_height", 1024)),
+            width=width or int(default_width or 1024),
+            height=height or int(default_height or 1024),
             num_images=num_images,
             style=style,
             quality=normalized_quality,

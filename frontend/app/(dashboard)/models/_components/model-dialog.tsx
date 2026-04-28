@@ -61,6 +61,23 @@ const PROVIDER_GROUPS = {
   other: ['ollama', 'custom'],
 }
 
+const DEFAULT_IMAGE_SIZE_OPTIONS = [
+  { value: '1024x1024', label: '1024×1024' },
+  { value: '1792x1024', label: '1792×1024' },
+  { value: '1024x1792', label: '1024×1792' },
+  { value: '512x512', label: '512×512' },
+  { value: '256x256', label: '256×256' },
+] as const
+
+const RUNWAY_LUMA_IMAGE_SIZE_OPTIONS = [
+  { value: '1080x1080', label: '1080×1080 (1:1)' },
+  { value: '1920x1080', label: '1920×1080 (16:9)' },
+  { value: '1080x1920', label: '1080×1920 (9:16)' },
+  { value: '1440x1080', label: '1440×1080 (4:3)' },
+  { value: '1080x1440', label: '1080×1440 (3:4)' },
+  { value: '2112x912', label: '2112×912 (21:9)' },
+] as const
+
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
   text: ['chat', 'embedding'],
@@ -94,10 +111,21 @@ const MANAGED_DEFAULT_PARAM_KEYS = new Set([
   'presence_penalty',
   'max_tokens',
   'size',
+  'default_width',
+  'default_height',
   'style',
   'quality',
-  'duration',
+  'background',
+  'output_format',
+  'output_compression',
+  'style_preset',
+  'image_size',
   'aspect_ratio',
+  'person_generation',
+  'prominent_people',
+  'output_mime_type',
+  'output_compression_quality',
+  'duration',
   'voice',
   'speed',
   'thinking',
@@ -141,6 +169,16 @@ function parseJsonObject(
     return { data: parsed }
   } catch {
     return { data: null, error: errorMessage }
+  }
+}
+
+function parseImageSize(size: string | null | undefined): { width: number; height: number } | null {
+  if (!size) return null
+  const match = size.match(/^(\d+)x(\d+)$/)
+  if (!match) return null
+  return {
+    width: parseInt(match[1], 10),
+    height: parseInt(match[2], 10),
   }
 }
 
@@ -198,12 +236,16 @@ export function ModelDialog({
     if (currentProvider === 'anthropic') return t('anthropicThinkingConfig')
     if (currentProvider === 'google') return t('geminiThinkingConfig')
     if (currentProvider === 'deepseek') return t('deepseekThinkingConfig')
+    if (currentProvider === 'moonshot') return t('moonshotThinkingConfig')
+    if (currentProvider === 'ollama') return t('ollamaThinkingConfig')
     return t('thinkingConfig')
   }, [t])
   const getThinkingHint = React.useCallback((currentProvider: string) => {
     if (currentProvider === 'anthropic') return t('anthropicThinkingEnabledHint')
     if (currentProvider === 'google') return t('geminiThinkingEnabledHint')
     if (currentProvider === 'deepseek') return t('deepseekThinkingEnabledHint')
+    if (currentProvider === 'moonshot') return t('moonshotThinkingEnabledHint')
+    if (currentProvider === 'ollama') return t('ollamaThinkingEnabledHint')
     return t('thinkingEnabledHint')
   }, [t])
 
@@ -220,6 +262,9 @@ export function ModelDialog({
   const reasoningEffortOptions = React.useMemo(() => {
     if (provider === 'openai') {
       return ['minimal', 'low', 'medium', 'high'] as const
+    }
+    if (provider === 'deepseek') {
+      return ['high', 'max'] as const
     }
     return ['low', 'medium', 'high'] as const
   }, [provider])
@@ -251,6 +296,17 @@ export function ModelDialog({
   const [defaultImageSize, setDefaultImageSize] = React.useState('')
   const [defaultImageStyle, setDefaultImageStyle] = React.useState('')
   const [defaultImageQuality, setDefaultImageQuality] = React.useState('')
+  const [openaiImageBackground, setOpenaiImageBackground] = React.useState('')
+  const [openaiImageOutputFormat, setOpenaiImageOutputFormat] = React.useState('')
+  const [openaiImageOutputCompression, setOpenaiImageOutputCompression] = React.useState('')
+  const [googleImageAspectRatio, setGoogleImageAspectRatio] = React.useState('')
+  const [googleImageSize, setGoogleImageSize] = React.useState('')
+  const [googlePersonGeneration, setGooglePersonGeneration] = React.useState('')
+  const [googleProminentPeople, setGoogleProminentPeople] = React.useState('')
+  const [googleOutputMimeType, setGoogleOutputMimeType] = React.useState('')
+  const [googleOutputCompressionQuality, setGoogleOutputCompressionQuality] = React.useState('')
+  const [stabilityStylePreset, setStabilityStylePreset] = React.useState('')
+  const [stabilityOutputFormat, setStabilityOutputFormat] = React.useState('')
 
   // 视频生成参数
   const [defaultVideoDuration, setDefaultVideoDuration] = React.useState('')
@@ -268,6 +324,7 @@ export function ModelDialog({
   const [thinkingEnabled, setThinkingEnabled] = React.useState(false)
   const [thinkingBudget, setThinkingBudget] = React.useState('')
   const [reasoningEffort, setReasoningEffort] = React.useState('')
+  const [qwenEnableSearch, setQwenEnableSearch] = React.useState(false)
   const [extraBodyText, setExtraBodyText] = React.useState('')
   const [defaultParamsExtensionText, setDefaultParamsExtensionText] = React.useState('')
   const [configExtensionText, setConfigExtensionText] = React.useState('')
@@ -336,14 +393,30 @@ export function ModelDialog({
       setIsDefault(model.is_default)
       
       const params = model.default_params || {}
+      const defaultImageDimensions = (
+        typeof params.default_width === 'number' && typeof params.default_height === 'number'
+      )
+        ? `${params.default_width}x${params.default_height}`
+        : ((params.size as string) || '')
       setTemperature((params.temperature as number)?.toString() || '')
       setTopP((params.top_p as number)?.toString() || '')
       setFrequencyPenalty((params.frequency_penalty as number)?.toString() || '')
       setPresencePenalty((params.presence_penalty as number)?.toString() || '')
       setMaxTokens((params.max_tokens as number)?.toString() || '')
-      setDefaultImageSize((params.size as string) || '')
+      setDefaultImageSize(defaultImageDimensions)
       setDefaultImageStyle((params.style as string) || '')
       setDefaultImageQuality((params.quality as string) || '')
+      setOpenaiImageBackground((params.background as string) || '')
+      setOpenaiImageOutputFormat((params.output_format as string) || '')
+      setOpenaiImageOutputCompression((params.output_compression as number)?.toString() || '')
+      setGoogleImageAspectRatio((params.aspect_ratio as string) || '')
+      setGoogleImageSize((params.image_size as string) || '')
+      setGooglePersonGeneration((params.person_generation as string) || '')
+      setGoogleProminentPeople((params.prominent_people as string) || '')
+      setGoogleOutputMimeType((params.output_mime_type as string) || '')
+      setGoogleOutputCompressionQuality((params.output_compression_quality as number)?.toString() || '')
+      setStabilityStylePreset((params.style_preset as string) || '')
+      setStabilityOutputFormat((params.output_format as string) || '')
       setDefaultVideoDuration((params.duration as number)?.toString() || '')
       setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
       setDefaultVoice((params.voice as string) || '')
@@ -354,6 +427,7 @@ export function ModelDialog({
         || ((params.thinking as Record<string, unknown> | undefined)?.reasoning_effort as string)
         || ''
       )
+      setQwenEnableSearch(!!params.enable_search)
       setExtraBodyText(
         params.extra_body && isPlainObject(params.extra_body)
           ? JSON.stringify(params.extra_body, null, 2)
@@ -413,6 +487,17 @@ export function ModelDialog({
       setDefaultImageSize('')
       setDefaultImageStyle('')
       setDefaultImageQuality('')
+      setOpenaiImageBackground('')
+      setOpenaiImageOutputFormat('')
+      setOpenaiImageOutputCompression('')
+      setGoogleImageAspectRatio('')
+      setGoogleImageSize('')
+      setGooglePersonGeneration('')
+      setGoogleProminentPeople('')
+      setGoogleOutputMimeType('')
+      setGoogleOutputCompressionQuality('')
+      setStabilityStylePreset('')
+      setStabilityOutputFormat('')
       setDefaultVideoDuration('')
       setDefaultVideoAspectRatio('')
       setDefaultVoice('')
@@ -422,6 +507,7 @@ export function ModelDialog({
       setThinkingEnabled(false)
       setThinkingBudget('')
       setReasoningEffort('')
+      setQwenEnableSearch(false)
       setExtraBodyText('')
       setDefaultParamsExtensionText('')
       setConfigExtensionText('')
@@ -473,6 +559,7 @@ export function ModelDialog({
       const defaultParams: Record<string, unknown> = {
         ...(defaultParamsExtensionResult.data || {}),
       }
+      const category = getModelCategory(modelType)
       const config: Record<string, unknown> = {
         ...(configExtensionResult.data || {}),
       }
@@ -482,13 +569,40 @@ export function ModelDialog({
       if (frequencyPenalty) defaultParams.frequency_penalty = parseFloat(frequencyPenalty)
       if (presencePenalty) defaultParams.presence_penalty = parseFloat(presencePenalty)
       if (maxTokens) defaultParams.max_tokens = parseInt(maxTokens)
+      if (category === 'image') {
+        const parsedImageSize = parseImageSize(defaultImageSize)
+        if (parsedImageSize) {
+          defaultParams.default_width = parsedImageSize.width
+          defaultParams.default_height = parsedImageSize.height
+        }
+        if (defaultImageStyle) defaultParams.style = defaultImageStyle
+        if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+        if (isOpenAIImageProvider) {
+          if (openaiImageBackground) defaultParams.background = openaiImageBackground
+          if (openaiImageOutputFormat) defaultParams.output_format = openaiImageOutputFormat
+          if (openaiImageOutputCompression) defaultParams.output_compression = parseInt(openaiImageOutputCompression)
+        }
+        if (isGoogleImageProvider) {
+          if (googleImageAspectRatio) defaultParams.aspect_ratio = googleImageAspectRatio
+          if (googleImageSize) defaultParams.image_size = googleImageSize
+          if (googlePersonGeneration) defaultParams.person_generation = googlePersonGeneration
+          if (googleProminentPeople) defaultParams.prominent_people = googleProminentPeople
+          if (googleOutputMimeType) defaultParams.output_mime_type = googleOutputMimeType
+          if (googleOutputCompressionQuality) defaultParams.output_compression_quality = parseInt(googleOutputCompressionQuality)
+        }
+        if (isStabilityImageProvider) {
+          if (stabilityStylePreset) defaultParams.style_preset = stabilityStylePreset
+          if (stabilityOutputFormat) defaultParams.output_format = stabilityOutputFormat
+        }
+      }
       if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
       if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
-      if (supportsThinking && thinkingEnabled) {
-        const thinkingConfig: Record<string, unknown> = { enabled: true }
-        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+      if (supportsThinking) {
+        const thinkingConfig: Record<string, unknown> = { enabled: thinkingEnabled }
+        if (thinkingEnabled && thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
         config.thinking = thinkingConfig
       }
 
@@ -558,7 +672,7 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'google', 'azure_openai', 'custom', 'runway', 'luma', 'stability'],
+      image: ['openai', 'google', 'azure_openai', 'custom', 'siliconflow', 'runway', 'luma', 'stability'],
       video: ['runway', 'luma'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -622,9 +736,30 @@ export function ModelDialog({
         if (presencePenalty) defaultParams.presence_penalty = parseFloat(presencePenalty)
         if (maxTokens) defaultParams.max_tokens = parseInt(maxTokens)
       } else if (category === 'image') {
-        if (defaultImageSize) defaultParams.size = defaultImageSize
+        const parsedImageSize = parseImageSize(defaultImageSize)
+        if (parsedImageSize) {
+          defaultParams.default_width = parsedImageSize.width
+          defaultParams.default_height = parsedImageSize.height
+        }
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+        if (isOpenAIImageProvider) {
+          if (openaiImageBackground) defaultParams.background = openaiImageBackground
+          if (openaiImageOutputFormat) defaultParams.output_format = openaiImageOutputFormat
+          if (openaiImageOutputCompression) defaultParams.output_compression = parseInt(openaiImageOutputCompression)
+        }
+        if (isGoogleImageProvider) {
+          if (googleImageAspectRatio) defaultParams.aspect_ratio = googleImageAspectRatio
+          if (googleImageSize) defaultParams.image_size = googleImageSize
+          if (googlePersonGeneration) defaultParams.person_generation = googlePersonGeneration
+          if (googleProminentPeople) defaultParams.prominent_people = googleProminentPeople
+          if (googleOutputMimeType) defaultParams.output_mime_type = googleOutputMimeType
+          if (googleOutputCompressionQuality) defaultParams.output_compression_quality = parseInt(googleOutputCompressionQuality)
+        }
+        if (isStabilityImageProvider) {
+          if (stabilityStylePreset) defaultParams.style_preset = stabilityStylePreset
+          if (stabilityOutputFormat) defaultParams.output_format = stabilityOutputFormat
+        }
       } else if (category === 'video') {
         if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
         if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
@@ -633,6 +768,7 @@ export function ModelDialog({
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
       }
       if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
       if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
 
       let capabilities: Record<string, boolean> | null = null
@@ -652,9 +788,9 @@ export function ModelDialog({
       if (deploymentName) config.deployment_name = deploymentName
 
       // Thinking 配置
-      if (supportsThinking && thinkingEnabled) {
-        const thinkingConfig: Record<string, unknown> = { enabled: true }
-        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+      if (supportsThinking) {
+        const thinkingConfig: Record<string, unknown> = { enabled: thinkingEnabled }
+        if (thinkingEnabled && thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
         config.thinking = thinkingConfig
       }
 
@@ -713,9 +849,16 @@ export function ModelDialog({
   const showParamsTab = category === 'text'
   const tabCount = 1 + (showParamsTab ? 1 : 0) + (showAdvancedTab ? 1 : 0)
   const showTabs = tabCount > 1
-  const showReasoningEffort = ['openai', 'xai', 'deepseek'].includes(provider)
+  const showReasoningEffort = ['openai', 'xai', 'deepseek', 'volcengine', 'siliconflow'].includes(provider)
   const showThinkingBudget = ['anthropic', 'google'].includes(provider)
   const showExtraBody = ['openai', 'anthropic', 'xai'].includes(provider)
+  const isOpenAIImageProvider = ['openai', 'azure_openai', 'custom', 'siliconflow'].includes(provider)
+  const isGoogleImageProvider = provider === 'google'
+  const isStabilityImageProvider = provider === 'stability'
+  const isRunwayOrLumaImageProvider = ['runway', 'luma'].includes(provider)
+  const imageSizeOptions = isRunwayOrLumaImageProvider
+    ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
+    : DEFAULT_IMAGE_SIZE_OPTIONS
   
   // ========== 基本信息内容 ==========
   const basicInfoContent = (
@@ -1048,15 +1191,13 @@ export function ModelDialog({
                   <SelectValue>{defaultImageSize || t('selectSize')}</SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
-                  <SelectItem value="1024x1024">1024×1024</SelectItem>
-                  <SelectItem value="1792x1024">1792×1024</SelectItem>
-                  <SelectItem value="1024x1792">1024×1792</SelectItem>
-                  <SelectItem value="512x512">512×512</SelectItem>
-                  <SelectItem value="256x256">256×256</SelectItem>
+                  {imageSizeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>{t('defaultImageStyle')}</Label>
               <Select value={defaultImageStyle} onValueChange={(v) => v && setDefaultImageStyle(v)}>
@@ -1069,7 +1210,7 @@ export function ModelDialog({
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>{t('defaultImageQuality')}</Label>
               <Select value={defaultImageQuality} onValueChange={(v) => v && setDefaultImageQuality(v)}>
@@ -1079,10 +1220,197 @@ export function ModelDialog({
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
                   <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
                   <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                  <SelectItem value="low">{t('qualityLow')}</SelectItem>
+                  <SelectItem value="medium">{t('qualityMedium')}</SelectItem>
+                  <SelectItem value="high">{t('qualityHigh')}</SelectItem>
+                  <SelectItem value="auto">{t('qualityAuto')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {isOpenAIImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('openaiImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('imageBackground')}</Label>
+                  <Select value={openaiImageBackground} onValueChange={(v) => v && setOpenaiImageBackground(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{openaiImageBackground || t('selectImageBackground')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="transparent">{t('imageBackgroundTransparent')}</SelectItem>
+                      <SelectItem value="opaque">{t('imageBackgroundOpaque')}</SelectItem>
+                      <SelectItem value="auto">{t('imageBackgroundAuto')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('imageOutputFormat')}</Label>
+                  <Select value={openaiImageOutputFormat} onValueChange={(v) => v && setOpenaiImageOutputFormat(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{openaiImageOutputFormat || t('selectOutputFormat')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                      <SelectItem value="webp">WebP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="openaiImageOutputCompression">{t('imageOutputCompression')}</Label>
+                  <Input
+                    id="openaiImageOutputCompression"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={openaiImageOutputCompression}
+                    onChange={(e) => setOpenaiImageOutputCompression(e.target.value)}
+                    placeholder="100"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isGoogleImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('googleImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('defaultGoogleAspectRatio')}</Label>
+                  <Select value={googleImageAspectRatio} onValueChange={(v) => v && setGoogleImageAspectRatio(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleImageAspectRatio || t('selectAspectRatio')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="21:9">21:9</SelectItem>
+                      <SelectItem value="16:9">16:9</SelectItem>
+                      <SelectItem value="4:3">4:3</SelectItem>
+                      <SelectItem value="3:2">3:2</SelectItem>
+                      <SelectItem value="1:1">1:1</SelectItem>
+                      <SelectItem value="2:3">2:3</SelectItem>
+                      <SelectItem value="3:4">3:4</SelectItem>
+                      <SelectItem value="9:16">9:16</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('defaultGoogleImageSize')}</Label>
+                  <Select value={googleImageSize} onValueChange={(v) => v && setGoogleImageSize(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleImageSize || t('selectGoogleImageSize')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="1K">1K</SelectItem>
+                      <SelectItem value="2K">2K</SelectItem>
+                      <SelectItem value="4K">4K</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googlePersonGeneration')}</Label>
+                  <Select value={googlePersonGeneration} onValueChange={(v) => v && setGooglePersonGeneration(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googlePersonGeneration || t('selectGooglePersonGeneration')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="ALLOW_ALL">{t('googlePersonGenerationAllowAll')}</SelectItem>
+                      <SelectItem value="ALLOW_ADULT">{t('googlePersonGenerationAllowAdult')}</SelectItem>
+                      <SelectItem value="DONT_ALLOW">{t('googlePersonGenerationDontAllow')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googleProminentPeople')}</Label>
+                  <Select value={googleProminentPeople} onValueChange={(v) => v && setGoogleProminentPeople(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleProminentPeople || t('selectGoogleProminentPeople')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="ALLOW_ALL">{t('googleProminentPeopleAllowAll')}</SelectItem>
+                      <SelectItem value="ALLOW_ADULT">{t('googleProminentPeopleAllowAdult')}</SelectItem>
+                      <SelectItem value="DONT_ALLOW">{t('googleProminentPeopleDontAllow')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googleOutputMimeType')}</Label>
+                  <Select value={googleOutputMimeType} onValueChange={(v) => v && setGoogleOutputMimeType(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleOutputMimeType || t('selectGoogleOutputMimeType')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="image/png">PNG</SelectItem>
+                      <SelectItem value="image/jpeg">JPEG</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="googleOutputCompressionQuality">{t('googleOutputCompressionQuality')}</Label>
+                  <Input
+                    id="googleOutputCompressionQuality"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={googleOutputCompressionQuality}
+                    onChange={(e) => setGoogleOutputCompressionQuality(e.target.value)}
+                    placeholder="90"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isStabilityImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('stabilityImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('stabilityStylePreset')}</Label>
+                  <Select value={stabilityStylePreset} onValueChange={(v) => v && setStabilityStylePreset(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{stabilityStylePreset || t('selectStabilityStylePreset')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="3d-model">3D Model</SelectItem>
+                      <SelectItem value="analog-film">Analog Film</SelectItem>
+                      <SelectItem value="anime">Anime</SelectItem>
+                      <SelectItem value="cinematic">Cinematic</SelectItem>
+                      <SelectItem value="comic-book">Comic Book</SelectItem>
+                      <SelectItem value="digital-art">Digital Art</SelectItem>
+                      <SelectItem value="enhance">Enhance</SelectItem>
+                      <SelectItem value="fantasy-art">Fantasy Art</SelectItem>
+                      <SelectItem value="isometric">Isometric</SelectItem>
+                      <SelectItem value="line-art">Line Art</SelectItem>
+                      <SelectItem value="low-poly">Low Poly</SelectItem>
+                      <SelectItem value="modeling-compound">Modeling Compound</SelectItem>
+                      <SelectItem value="neon-punk">Neon Punk</SelectItem>
+                      <SelectItem value="origami">Origami</SelectItem>
+                      <SelectItem value="photographic">Photographic</SelectItem>
+                      <SelectItem value="pixel-art">Pixel Art</SelectItem>
+                      <SelectItem value="tile-texture">Tile Texture</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('imageOutputFormat')}</Label>
+                  <Select value={stabilityOutputFormat} onValueChange={(v) => v && setStabilityOutputFormat(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{stabilityOutputFormat || t('selectOutputFormat')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                      <SelectItem value="webp">WebP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1323,7 +1651,7 @@ export function ModelDialog({
             />
           </div>
 
-          {(showReasoningEffort || showExtraBody) && (
+          {(showReasoningEffort || provider === 'qwen' || showExtraBody) && (
             <div className="grid grid-cols-2 gap-4">
               {showReasoningEffort && (
                 <div className="space-y-2">
@@ -1339,6 +1667,20 @@ export function ModelDialog({
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">{getReasoningEffortHint(provider)}</p>
+                </div>
+              )}
+
+              {provider === 'qwen' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="qwenEnableSearch">{t('qwenEnableSearch')}</Label>
+                    <Switch
+                      id="qwenEnableSearch"
+                      checked={qwenEnableSearch}
+                      onCheckedChange={setQwenEnableSearch}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('qwenEnableSearchHint')}</p>
                 </div>
               )}
 
@@ -1392,7 +1734,7 @@ export function ModelDialog({
   
   // ========== 高级内容 ==========
   // 支持 thinking 的供应商
-  const supportsThinking = ['anthropic', 'google', 'deepseek'].includes(provider)
+  const supportsThinking = ['anthropic', 'google', 'deepseek', 'zhipu', 'moonshot', 'ollama'].includes(provider)
 
   const advancedContent = (
     <>
@@ -1571,6 +1913,25 @@ export function ModelDialog({
           ) : (
             <div className="space-y-6">
               {basicInfoContent}
+              {category === 'image' && (
+                <div className="space-y-2">
+                  <Label htmlFor="defaultParamsExtensionImage">{t('defaultParamsExtension')}</Label>
+                  <Textarea
+                    id="defaultParamsExtensionImage"
+                    value={defaultParamsExtensionText}
+                    onChange={(e) => {
+                      setDefaultParamsExtensionText(e.target.value)
+                      setErrors((prev) => clearValidationError(prev, 'defaultParamsExtension'))
+                    }}
+                    placeholder="{}"
+                    className="font-mono text-sm"
+                    rows={6}
+                    aria-invalid={!!errors.defaultParamsExtension}
+                  />
+                  <FieldError>{errors.defaultParamsExtension}</FieldError>
+                  <p className="text-xs text-muted-foreground">{t('defaultParamsExtensionHint')}</p>
+                </div>
+              )}
             </div>
           )}
           

@@ -432,6 +432,8 @@ async def _test_chat_model(
     from app.llm.adapters.chat import (
         OpenAIAdapter,
         DeepSeekAdapter,
+        MoonshotAdapter,
+        OllamaAdapter,
         AnthropicAdapter,
         GeminiAdapter,
         XAIAdapter,
@@ -465,7 +467,7 @@ async def _test_chat_model(
     elif provider_value == ModelProvider.DEEPSEEK.value:
         adapter = DeepSeekAdapter(temp_model)
     elif provider_value == ModelProvider.MOONSHOT.value:
-        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="moonshot")
+        adapter = MoonshotAdapter(temp_model)
     elif provider_value == ModelProvider.ZHIPU.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="zhipu")
     elif provider_value == ModelProvider.QWEN.value:
@@ -475,7 +477,7 @@ async def _test_chat_model(
     elif provider_value == ModelProvider.MINIMAX.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="minimax")
     elif provider_value == ModelProvider.OLLAMA.value:
-        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="ollama")
+        adapter = OllamaAdapter(temp_model)
     elif provider_value == ModelProvider.CUSTOM.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="custom")
     else:

@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-25T17:26:26.896Z
+// GENERATED — 2026-04-28T13:20:22.604Z
 // Source: i18n/en/models.json
 export type ModelsMessages = {
   models: {
@@ -78,11 +78,15 @@ export type ModelsMessages = {
     anthropicThinkingConfig: string
     geminiThinkingConfig: string
     deepseekThinkingConfig: string
+    moonshotThinkingConfig: string
+    ollamaThinkingConfig: string
     thinkingEnabled: string
     thinkingEnabledHint: string
     anthropicThinkingEnabledHint: string
     geminiThinkingEnabledHint: string
     deepseekThinkingEnabledHint: string
+    moonshotThinkingEnabledHint: string
+    ollamaThinkingEnabledHint: string
     thinkingBudget: string
     thinkingBudgetPlaceholder: string
     thinkingBudgetHint: string
@@ -98,7 +102,10 @@ export type ModelsMessages = {
     reasoningEffortLow: string
     reasoningEffortMedium: string
     reasoningEffortHigh: string
+    reasoningEffortMax: string
     selectReasoningEffort: string
+    qwenEnableSearch: string
+    qwenEnableSearchHint: string
     extraBody: string
     extraBodyHint: string
     defaultParamsExtension: string
@@ -129,6 +136,39 @@ export type ModelsMessages = {
     selectQuality: string
     qualityStandard: string
     qualityHD: string
+    qualityLow: string
+    qualityMedium: string
+    qualityHigh: string
+    qualityAuto: string
+    openaiImageSettings: string
+    imageBackground: string
+    selectImageBackground: string
+    imageBackgroundTransparent: string
+    imageBackgroundOpaque: string
+    imageBackgroundAuto: string
+    imageOutputFormat: string
+    selectOutputFormat: string
+    imageOutputCompression: string
+    googleImageSettings: string
+    defaultGoogleAspectRatio: string
+    defaultGoogleImageSize: string
+    selectGoogleImageSize: string
+    googlePersonGeneration: string
+    selectGooglePersonGeneration: string
+    googlePersonGenerationAllowAll: string
+    googlePersonGenerationAllowAdult: string
+    googlePersonGenerationDontAllow: string
+    googleProminentPeople: string
+    selectGoogleProminentPeople: string
+    googleProminentPeopleAllowAll: string
+    googleProminentPeopleAllowAdult: string
+    googleProminentPeopleDontAllow: string
+    googleOutputMimeType: string
+    selectGoogleOutputMimeType: string
+    googleOutputCompressionQuality: string
+    stabilityImageSettings: string
+    stabilityStylePreset: string
+    selectStabilityStylePreset: string
     videoSettings: string
     defaultVideoDuration: string
     videoDurationUnit: string

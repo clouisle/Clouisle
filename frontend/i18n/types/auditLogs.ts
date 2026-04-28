@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-25T17:26:26.892Z
+// GENERATED — 2026-04-28T13:20:22.600Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {

@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-25T17:26:26.897Z
+// GENERATED — 2026-04-28T13:20:22.605Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {

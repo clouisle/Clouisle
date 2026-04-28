@@ -142,7 +142,8 @@ class OpenAIAdapter(BaseChatAdapter):
                 request_params["max_completion_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-            if self.reasoning_effort:
+            # OpenAI o1/o3 reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs
@@ -240,7 +241,8 @@ class OpenAIAdapter(BaseChatAdapter):
                 request_params["max_completion_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
-            if self.reasoning_effort:
+            # OpenAI o1/o3 reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs

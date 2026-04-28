@@ -40,6 +40,13 @@
   - [ ] 4. Admin model dialog known params + JSON extension
   - [ ] 5. Regression and verification
 
+- **text-to-image-defaults-first-batch** — Complete. Wired image-model `default_params` into runtime generation requests, added first-class OpenAI/Google/Stability text-to-image controls in admin model management, and covered the new payload/default precedence with focused tests. See `docs/plan/text-to-image-defaults-first-batch.md`
+  - [x] 1. Planning docs and runtime merge helper
+  - [x] 2. OpenAI-family payload modernization and quality handling
+  - [x] 3. Google and Stability default-param passthrough
+  - [x] 4. Frontend provider-specific image controls and i18n
+  - [x] 5. Targeted regression tests and validation
+
 - **agent-context-compression-ratio-thresholds** — In progress. Upgrade agent context compression from hard-budget-only behavior to staged context governance with ~80% proactive compaction, selective micro compaction, richer compression observability, and a Phase 2 Session Memory / SM Compact roadmap. See `docs/plan/agent-context-compression.md`
   - [x] 1. Ratio-based thresholds and pressure states
   - [x] 2. Selective micro compaction

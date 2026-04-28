@@ -33,6 +33,8 @@ from .adapters.chat import (
     BaseChatAdapter,
     OpenAIAdapter,
     DeepSeekAdapter,
+    MoonshotAdapter,
+    OllamaAdapter,
     AnthropicAdapter,
     GeminiAdapter,
     XAIAdapter,
@@ -211,6 +213,10 @@ class ModelManager:
             return GeminiAdapter(model_config)
         elif provider_value == ModelProvider.DEEPSEEK.value:
             return DeepSeekAdapter(model_config)
+        elif provider_value == ModelProvider.MOONSHOT.value:
+            return MoonshotAdapter(model_config)
+        elif provider_value == ModelProvider.OLLAMA.value:
+            return OllamaAdapter(model_config)
         elif provider_value == ModelProvider.XAI.value:
             return XAIAdapter(model_config)
 
@@ -218,8 +224,6 @@ class ModelManager:
         elif provider_value == ModelProvider.AZURE_OPENAI.value:
             # Azure OpenAI 使用 OpenAI 适配器，但需要特殊处理
             return OpenAICompatibleAdapter(model_config, provider_hint="azure")
-        elif provider_value == ModelProvider.MOONSHOT.value:
-            return OpenAICompatibleAdapter(model_config, provider_hint="moonshot")
         elif provider_value == ModelProvider.ZHIPU.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="zhipu")
         elif provider_value == ModelProvider.QWEN.value:
@@ -230,8 +234,8 @@ class ModelManager:
             return OpenAICompatibleAdapter(model_config, provider_hint="minimax")
         elif provider_value == ModelProvider.VOLCENGINE.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="volcengine")
-        elif provider_value == ModelProvider.OLLAMA.value:
-            return OpenAICompatibleAdapter(model_config, provider_hint="ollama")
+        elif provider_value == ModelProvider.SILICONFLOW.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="siliconflow")
         elif provider_value == ModelProvider.CUSTOM.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="custom")
 
