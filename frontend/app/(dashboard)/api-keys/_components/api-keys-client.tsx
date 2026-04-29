@@ -69,6 +69,7 @@ import { APIKeyDialog } from './api-key-dialog'
 import { DeleteAPIKeyDialog } from './delete-api-key-dialog'
 import { ShowKeyDialog } from './show-key-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function APIKeysClient() {
     const t = useTranslations('apiKeys')
@@ -83,7 +84,7 @@ export function APIKeysClient() {
     const [pageData, setPageData] = React.useState<PageData<APIKey> | null>(null)
 
     // 筛选状态
-    const [searchQuery, setSearchQuery] = React.useState('')
+    const [searchQuery, setSearchQuery] = useUrlSearchState()
     const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
     const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
     const [userFilter, setUserFilter] = React.useState<Set<string>>(new Set())

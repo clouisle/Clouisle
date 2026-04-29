@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { EntityDialog } from './entity-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function MemoriesClient() {
     const t = useTranslations('memories')
@@ -82,7 +83,7 @@ export function MemoriesClient() {
     const [pageData, setPageData] = React.useState<PageData<MemoryEntity> | null>(null)
 
     // Filter state
-    const [searchQuery, setSearchQuery] = React.useState('')
+    const [searchQuery, setSearchQuery] = useUrlSearchState()
     const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
 
     // Selection state

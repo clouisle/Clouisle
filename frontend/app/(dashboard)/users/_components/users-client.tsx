@@ -78,6 +78,7 @@ import { UserDialog } from './user-dialog'
 import { DeleteUserDialog } from './delete-user-dialog'
 import { SendNotificationDialog } from './send-notification-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 type Role = {
   id: string
@@ -104,7 +105,7 @@ export function UsersClient() {
   const [pageData, setPageData] = React.useState<PageData<User> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [roleFilter, setRoleFilter] = React.useState<Set<string>>(new Set())

@@ -67,6 +67,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { PermissionDialog } from './permission-dialog'
 import { DeletePermissionDialog } from './delete-permission-dialog'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function PermissionsClient() {
   const t = useTranslations('permissions')
@@ -82,7 +83,7 @@ export function PermissionsClient() {
   const [pageData, setPageData] = React.useState<PageData<Permission> | null>(null)
 
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const selectedScopes = React.useMemo(() => Array.from(scopeFilter), [scopeFilter])

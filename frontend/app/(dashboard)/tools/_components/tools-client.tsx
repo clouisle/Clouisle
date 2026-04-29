@@ -94,6 +94,7 @@ import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolConfigDialog } from '@/app/(platform)/app/tools/_components/tool-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 // 工具类型图标映射
 const toolTypeIcons: Record<ToolType, React.ReactNode> = {
@@ -134,7 +135,7 @@ export function ToolsClient() {
     const [pageData, setPageData] = React.useState<PageData<Tool> | null>(null)
 
     // 筛选状态
-    const [searchQuery, setSearchQuery] = React.useState('')
+    const [searchQuery, setSearchQuery] = useUrlSearchState()
     const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
     const [categoryFilter, setCategoryFilter] = React.useState<Set<string>>(new Set())
     const [enabledFilter, setEnabledFilter] = React.useState<Set<string>>(new Set())

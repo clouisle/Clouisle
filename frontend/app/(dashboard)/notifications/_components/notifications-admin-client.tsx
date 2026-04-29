@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { CreateNotificationDialog } from './create-notification-dialog'
 import { NotificationDetailDialog } from './notification-detail-dialog'
 import { formatDateTime } from '@/lib/utils'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
@@ -104,7 +105,7 @@ export function NotificationsAdminClient() {
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   // Filter states
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())

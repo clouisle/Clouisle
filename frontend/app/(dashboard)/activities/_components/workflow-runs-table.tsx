@@ -69,6 +69,7 @@ import {
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 import { WorkflowRunDrawer } from './workflow-run-drawer'
 import { useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 // Helper to format datetime
 function formatDateTime(dateString: string): string {
@@ -155,7 +156,7 @@ export function WorkflowRunsTable() {
   const [selectedRunId, setSelectedRunId] = React.useState<string | null>(null)
 
   // Filters
-  const [search, setSearch] = React.useState('')
+  const [search, setSearch] = useUrlSearchState()
   const [teamFilter, setTeamFilter] = React.useState<string[]>([])
   const [workflowFilter, setWorkflowFilter] = React.useState<string[]>([])
   const [statusFilter, setStatusFilter] = React.useState<string[]>([])

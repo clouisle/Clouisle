@@ -67,6 +67,7 @@ import {
 import { ModelDialog } from './model-dialog'
 import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function ModelsClient() {
   const t = useTranslations('models')
@@ -83,7 +84,7 @@ export function ModelsClient() {
   const [pageData, setPageData] = React.useState<PageData<Model> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [providerFilter, setProviderFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
