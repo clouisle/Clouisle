@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, Bot } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -42,16 +42,20 @@ import { McpToolDialog } from './_components/mcp-tool-dialog'
 import { ToolShareDialog } from './_components/tool-share-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
+type ToolsTab = 'tools' | 'skills'
+
 export default function ToolsPage() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { canPerform } = useCanPerform()
 
   // 没有团队时重定向到首页
   useRequireTeam()
 
+  const [activeTab, setActiveTab] = useState<ToolsTab>('tools')
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
@@ -78,6 +82,17 @@ export default function ToolsPage() {
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [sharingTool, setSharingTool] = useState<Tool | null>(null)
   const [availableTeams, setAvailableTeams] = useState<UserTeamInfo[]>([])
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    setActiveTab(tab === 'skills' ? 'skills' : 'tools')
+  }, [searchParams])
+
+  const handleTabChange = (value: string) => {
+    const nextTab: ToolsTab = value === 'skills' ? 'skills' : 'tools'
+    setActiveTab(nextTab)
+    router.replace(nextTab === 'tools' ? '/app/tools' : '/app/tools?tab=skills', { scroll: false })
+  }
 
   // 加载用户的团队列表
   useEffect(() => {
@@ -311,14 +326,14 @@ export default function ToolsPage() {
         <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
       </div>
 
-      <Tabs defaultValue="tools" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="tools">
             <Wrench className="mr-2 h-4 w-4" />
             {t('tools.tabs.tools')}
           </TabsTrigger>
           <TabsTrigger value="skills">
-            <Bot className="mr-2 h-4 w-4" />
+            <PackageOpen className="mr-2 h-4 w-4" />
             {t('tools.tabs.skills')}
           </TabsTrigger>
         </TabsList>

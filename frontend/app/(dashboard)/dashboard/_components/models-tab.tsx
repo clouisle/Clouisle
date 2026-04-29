@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { Coins, MessageSquare } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -32,6 +33,41 @@ function formatNumber(num: number): string {
   return num.toString()
 }
 
+function useCountUp(value: number, isLoading: boolean) {
+  const [displayValue, setDisplayValue] = React.useState(0)
+
+  React.useEffect(() => {
+    if (isLoading) {
+      setDisplayValue(0)
+      return
+    }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || value === 0) {
+      setDisplayValue(value)
+      return
+    }
+
+    const duration = 900
+    const startedAt = performance.now()
+    let frameId = 0
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - startedAt) / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 3)
+      setDisplayValue(Math.round(value * easedProgress))
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick)
+      }
+    }
+
+    frameId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frameId)
+  }, [isLoading, value])
+
+  return displayValue
+}
+
 function StatCard({
   title,
   value,
@@ -53,6 +89,8 @@ function StatCard({
     orange: 'bg-orange-500/10 text-orange-500',
     cyan: 'bg-cyan-500/10 text-cyan-500',
   }
+  const animatedValue = useCountUp(typeof value === 'number' ? value : 0, isLoading)
+  const displayValue = typeof value === 'number' ? formatNumber(animatedValue) : value
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -64,7 +102,7 @@ function StatCard({
               <div className="h-9 w-32 bg-muted animate-pulse rounded" />
             ) : (
               <p className="text-3xl font-bold tracking-tight">
-                {typeof value === 'number' ? formatNumber(value) : value}
+                {displayValue}
               </p>
             )}
           </div>

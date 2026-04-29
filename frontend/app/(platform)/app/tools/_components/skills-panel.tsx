@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, Bot, CheckCircle2, Download, FileArchive, GitBranch, Loader2, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Download, FileArchive, GitBranch, Loader2, MoreVertical, PackageOpen, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -18,6 +18,12 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -38,6 +44,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PermissionGuard } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
+import { cn } from '@/lib/utils'
 import {
   ApiError,
   skillsApi,
@@ -387,7 +394,7 @@ export function SkillsPanel() {
       ) : skills.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <Bot className="h-12 w-12 text-muted-foreground mb-4" />
+            <PackageOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <CardTitle>{t('noSkills')}</CardTitle>
             <CardDescription className="mt-2">{t('noSkillsHint')}</CardDescription>
             <PermissionGuard permission="tool:create">
@@ -399,62 +406,102 @@ export function SkillsPanel() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((skill) => {
             const isSystem = !skill.team_id
             const canModify = !isSystem
 
             return (
-              <Card key={skill.id}>
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {skill.icon ? (
-                          <span className="text-xl">{skill.icon}</span>
-                        ) : (
-                          <Bot className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        <CardTitle className="truncate text-base">{skill.display_name}</CardTitle>
+              <Card
+                key={skill.id}
+                size="sm"
+                className={cn(
+                  'group cursor-pointer transition-all hover:shadow-md hover:border-primary/50 py-0! h-36',
+                  !skill.is_enabled && 'opacity-60'
+                )}
+                onClick={() => openTestDialog(skill)}
+              >
+                <CardContent className="flex h-full flex-col justify-between px-2.5 py-3">
+                  <div className="flex items-start gap-2">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-base">
+                      {skill.icon ? skill.icon : <PackageOpen className="h-4 w-4" />}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <CardTitle className="truncate text-sm font-medium">{skill.display_name}</CardTitle>
+                        <Badge variant={skill.is_enabled ? 'default' : 'outline'} className="shrink-0 px-1.5 py-0 text-xs">
+                          {skill.is_enabled ? t('enabled') : t('disabled')}
+                        </Badge>
                       </div>
-                      <CardDescription className="mt-1 line-clamp-2">
+                      <CardDescription className="mt-0.5 line-clamp-2 text-xs">
                         {skill.description || t('noDescription')}
                       </CardDescription>
                     </div>
-                    <Badge variant={skill.is_enabled ? 'default' : 'outline'}>
-                      {skill.is_enabled ? t('enabled') : t('disabled')}
-                    </Badge>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline">{skill.category}</Badge>
-                    <Badge variant="outline">v{skill.version}</Badge>
-                    <Badge variant="outline">{isSystem ? t('system') : t('team')}</Badge>
-                  </div>
+                  <div className="mt-auto flex items-center justify-between border-t pt-2">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant="outline" className="bg-sky-100 px-1.5 py-0 text-xs text-sky-800 dark:bg-sky-900 dark:text-sky-300">
+                        {isSystem ? t('system') : t('team')}
+                      </Badge>
+                      <Badge variant="outline" className="px-1.5 py-0 text-xs">
+                        {skill.category}
+                      </Badge>
+                      <Badge variant="outline" className="px-1.5 py-0 text-xs">
+                        v{skill.version}
+                      </Badge>
+                    </div>
 
-                  <div className="mt-5 flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => openTestDialog(skill)}>
-                      <Play className="mr-2 h-4 w-4" />
-                      {t('test')}
-                    </Button>
-                    {canModify && (
-                      <PermissionGuard permission="tool:delete">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          disabled={deleteLoadingId === skill.id}
-                          onClick={() => handleDelete(skill)}
-                        >
-                          {deleteLoadingId === skill.id ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="mr-2 h-4 w-4" />
-                          )}
-                          {t('delete')}
-                        </Button>
-                      </PermissionGuard>
-                    )}
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openTestDialog(skill)
+                        }}
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+
+                      {canModify && (
+                        <PermissionGuard permission="tool:delete">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={(event) => event.stopPropagation()}
+                                  disabled={deleteLoadingId === skill.id}
+                                >
+                                  {deleteLoadingId === skill.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <MoreVertical className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleDelete(skill)
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                {t('delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </PermissionGuard>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
