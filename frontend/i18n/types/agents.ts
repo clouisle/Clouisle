@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-28T13:20:22.598Z
+// GENERATED — 2026-04-29T18:55:48.180Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -271,6 +271,7 @@ export type AgentsMessages = {
             builtin: string
             custom: string
             mcp: string
+            skill: string
           }
           categories: {
             time: string

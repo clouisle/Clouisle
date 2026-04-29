@@ -65,10 +65,11 @@ export interface KnowledgeBaseInfo {
 // ============ Tool & Variable Types ============
 
 export interface ToolConfig {
-  type: 'builtin' | 'custom' | 'mcp'
+  type: 'builtin' | 'custom' | 'mcp' | 'skill'
   name?: string | null
   tool_id?: string | null  // for custom tools
   server_id?: string | null  // for mcp tools
+  skill_id?: string | null  // for skills
   config?: Record<string, unknown> | null
 }
 

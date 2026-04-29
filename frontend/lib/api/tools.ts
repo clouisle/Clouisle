@@ -3,7 +3,7 @@ import type { PageData } from './users'
 
 // ============ Types ============
 
-export type ToolType = 'builtin' | 'custom' | 'mcp'
+export type ToolType = 'builtin' | 'custom' | 'mcp' | 'skill'
 
 export type CustomToolType = 'http' | 'code'
 

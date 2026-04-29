@@ -88,6 +88,7 @@ const typeColorConfig: Record<ToolType, string> = {
   builtin: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300',
   custom: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
   mcp: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300',
+  skill: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300',
 }
 
 export function ToolCard({
@@ -113,6 +114,7 @@ export function ToolCard({
     builtin: t('filters.builtin'),
     custom: t('filters.custom'),
     mcp: t('filters.mcp'),
+    skill: 'Skill',
   }
 
   // 分类标签映射（使用 i18n）

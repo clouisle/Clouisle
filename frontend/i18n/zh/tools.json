@@ -88,7 +88,8 @@
       "all": "全部",
       "builtin": "内置",
       "custom": "自定义",
-      "mcp": "MCP"
+      "mcp": "MCP",
+      "skill": "Skill"
     },
     "categories": {
       "time": "时间",

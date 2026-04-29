@@ -17,7 +17,7 @@ import {
   Link,
   ChartColumn,
 } from 'lucide-react'
-import { type Tool, type ToolConfig, type ToolCategory, type ToolType, toolsApi } from '@/lib/api'
+import { type Skill, type Tool, type ToolConfig, type ToolCategory, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -83,6 +83,9 @@ const typeConfig: Record<ToolType, { color: string }> = {
   mcp: {
     color: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300',
   },
+  skill: {
+    color: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300',
+  },
 }
 
 interface AddToolButtonProps {
@@ -90,16 +93,18 @@ interface AddToolButtonProps {
   selectedToolNames: string[]  // for builtin tools
   selectedToolIds: (string | undefined)[]  // for custom tools
   selectedMcpServerIds: (string | undefined)[]  // for mcp tools
+  selectedSkillIds: (string | undefined)[]  // for skills
   onAdd: (tool: Tool) => void
   onRemove: (tool: Tool) => void
 }
 
-export function AddToolButton({ availableTools, selectedToolNames, selectedToolIds, selectedMcpServerIds, onAdd, onRemove }: AddToolButtonProps) {
+export function AddToolButton({ availableTools, selectedToolNames, selectedToolIds, selectedMcpServerIds, selectedSkillIds, onAdd, onRemove }: AddToolButtonProps) {
   const t = useTranslations('agents.orchestration.tools')
   const typeLabels: Record<ToolType, string> = {
     builtin: t('dialog.filters.builtin'),
     custom: t('dialog.filters.custom'),
     mcp: t('dialog.filters.mcp'),
+    skill: t('dialog.filters.skill'),
   }
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
@@ -148,6 +153,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
       builtin: availableTools.filter((t) => t.type === 'builtin').length,
       custom: availableTools.filter((t) => t.type === 'custom').length,
       mcp: availableTools.filter((t) => t.type === 'mcp').length,
+      skill: availableTools.filter((t) => t.type === 'skill').length,
     }
   }, [availableTools])
 
@@ -160,8 +166,10 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
       isSelected = selectedToolIds.includes(tool.id)
     } else if (tool.type === 'mcp') {
       isSelected = selectedMcpServerIds.includes(tool.id)
+    } else if (tool.type === 'skill') {
+      isSelected = selectedSkillIds.includes(tool.id)
     }
-    
+
     if (isSelected) {
       // 取消选中
       onRemove(tool)
@@ -217,6 +225,9 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                 <TabsTrigger value="mcp" disabled={typeCounts.mcp === 0}>
                   {t('dialog.filters.mcp')} ({typeCounts.mcp})
                 </TabsTrigger>
+                <TabsTrigger value="skill" disabled={typeCounts.skill === 0}>
+                  {t('dialog.filters.skill')} ({typeCounts.skill})
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -245,6 +256,8 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                         isSelected = selectedToolIds.includes(tool.id)
                       } else if (tool.type === 'mcp') {
                         isSelected = selectedMcpServerIds.includes(tool.id)
+                      } else if (tool.type === 'skill') {
+                        isSelected = selectedSkillIds.includes(tool.id)
                       }
                       const category = categoryConfig[tool.category] || categoryConfig.other
                       const type = typeConfig[tool.type]
@@ -404,7 +417,8 @@ export function ToolSelector({
         (t) =>
           (config.type === 'builtin' && t.type === 'builtin' && t.name === config.name) ||
           (config.type === 'mcp' && t.type === 'mcp' && t.id === config.server_id) ||
-          (config.type === 'custom' && t.type === 'custom' && t.id === config.tool_id)
+          (config.type === 'custom' && t.type === 'custom' && t.id === config.tool_id) ||
+          (config.type === 'skill' && t.type === 'skill' && t.id === config.skill_id)
       )
       return { config, tool: tool || null }
     })
@@ -421,6 +435,9 @@ export function ToolSelector({
         }
         if (c.type === 'custom' && config.type === 'custom') {
           return c.tool_id !== config.tool_id
+        }
+        if (c.type === 'skill' && config.type === 'skill') {
+          return c.skill_id !== config.skill_id
         }
         return true
       })
@@ -440,6 +457,7 @@ export function ToolSelector({
     if (config.type === 'builtin') return `builtin-${config.name}`
     if (config.type === 'mcp') return `mcp-${config.server_id}`
     if (config.type === 'custom') return `custom-${config.tool_id}`
+    if (config.type === 'skill') return `skill-${config.skill_id}`
     return `unknown-${index}`
   }
 
@@ -458,6 +476,53 @@ export function ToolSelector({
 }
 
 // Hook 用于加载工具列表
+function parametersFromInputSchema(inputSchema: Record<string, unknown>): ToolParameter[] {
+  const properties = inputSchema.properties
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return []
+  }
+
+  const required = Array.isArray(inputSchema.required) ? inputSchema.required : []
+
+  return Object.entries(properties).map(([name, schema]) => {
+    const field = schema && typeof schema === 'object' && !Array.isArray(schema)
+      ? schema as Record<string, unknown>
+      : {}
+    const type = typeof field.type === 'string' ? field.type : 'string'
+    const description = typeof field.description === 'string' ? field.description : undefined
+    const enumValues = Array.isArray(field.enum)
+      ? field.enum.filter((value): value is string => typeof value === 'string')
+      : undefined
+
+    return {
+      name,
+      type,
+      description,
+      required: required.includes(name),
+      enum: enumValues,
+      default: field.default,
+    }
+  })
+}
+
+function skillToTool(skill: Skill): Tool {
+  return {
+    id: skill.id,
+    name: skill.name,
+    display_name: skill.display_name,
+    description: skill.description,
+    type: 'skill',
+    category: skill.category,
+    icon: skill.icon || undefined,
+    parameters: parametersFromInputSchema(skill.input_schema),
+    is_enabled: skill.is_enabled,
+    requires_config: false,
+    config_fields: [],
+    team_id: skill.team_id || undefined,
+    created_by_name: skill.created_by_name || undefined,
+  }
+}
+
 export function useTools() {
   const { currentTeam } = useTeam()
   const [tools, setTools] = React.useState<Tool[]>([])
@@ -473,9 +538,17 @@ export function useTools() {
 
       try {
         setLoading(true)
-        const response = await toolsApi.list(currentTeam.id)
-        // 合并所有类型的工具
-        const allTools = [...response.builtin, ...response.custom, ...response.mcp]
+        const [toolsResponse, skillsResponse] = await Promise.all([
+          toolsApi.list(currentTeam.id),
+          skillsApi.list({ team_id: currentTeam.id, enabled: true }),
+        ])
+        const skillTools = [...skillsResponse.system, ...skillsResponse.team].map(skillToTool)
+        const allTools = [
+          ...toolsResponse.builtin,
+          ...toolsResponse.custom,
+          ...toolsResponse.mcp,
+          ...skillTools,
+        ]
         setTools(allTools)
         setError(null)
       } catch (err) {

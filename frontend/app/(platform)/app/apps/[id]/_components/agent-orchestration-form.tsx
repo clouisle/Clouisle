@@ -365,7 +365,8 @@ export function AgentOrchestrationForm({
         (t) =>
           (tc.type === 'builtin' && t.name === tc.name) ||
           (tc.type === 'custom' && t.id === tc.tool_id) ||
-          (tc.type === 'mcp' && t.id === tc.server_id)
+          (tc.type === 'mcp' && t.id === tc.server_id) ||
+          (tc.type === 'skill' && t.id === tc.skill_id)
       )
       return {
         name: tc.name || tool?.name,
@@ -581,12 +582,18 @@ export function AgentOrchestrationForm({
               .filter(c => c.type === 'mcp')
               .map(c => c.server_id)
               .filter(Boolean) as string[]}
+            selectedSkillIds={toolsConfig
+              .filter(c => c.type === 'skill')
+              .map(c => c.skill_id)
+              .filter(Boolean) as string[]}
             onAdd={(tool) => {
               let newConfig: ToolConfig
               if (tool.type === 'builtin') {
                 newConfig = { type: 'builtin', name: tool.name }
               } else if (tool.type === 'mcp') {
                 newConfig = { type: 'mcp', server_id: tool.id }
+              } else if (tool.type === 'skill') {
+                newConfig = { type: 'skill', skill_id: tool.id, name: tool.name }
               } else {
                 newConfig = { type: 'custom', tool_id: tool.id, name: tool.name }
               }
@@ -604,6 +611,9 @@ export function AgentOrchestrationForm({
                   }
                   if (c.type === 'custom' && tool.type === 'custom') {
                     return c.tool_id !== tool.id
+                  }
+                  if (c.type === 'skill' && tool.type === 'skill') {
+                    return c.skill_id !== tool.id
                   }
                   return true
                 })

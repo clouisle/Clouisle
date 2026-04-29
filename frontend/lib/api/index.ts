@@ -145,6 +145,27 @@ export {
 } from './tools'
 
 export {
+  skillsApi,
+  type Skill,
+  type SkillConflict,
+  type SkillDetail,
+  type SkillExecutionMode,
+  type SkillImportInstallItem,
+  type SkillImportInstallRequest,
+  type SkillImportInstallResponse,
+  type SkillImportPreviewGitInput,
+  type SkillImportPreviewResponse,
+  type SkillInstallAction,
+  type SkillListParams,
+  type SkillListResponse,
+  type SkillPreviewItem,
+  type SkillSourceType,
+  type SkillTestRequest,
+  type SkillTestResponse,
+  type SkillUpdateInput,
+} from './skills'
+
+export {
   apiKeysApi,
   type APIKey,
   type APIKeyWithSecret,

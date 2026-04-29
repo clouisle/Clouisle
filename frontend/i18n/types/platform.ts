@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-28T13:20:22.605Z
+// GENERATED — 2026-04-29T18:55:48.188Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -164,6 +164,10 @@ export type PlatformMessages = {
       createFirstTool: string
       refresh: string
       searchPlaceholder: string
+      tabs: {
+        tools: string
+        skills: string
+      }
       noSearchResults: string
       requiresConfig: string
       parameters: string
@@ -448,6 +452,70 @@ export type PlatformMessages = {
         sharedBadge: string
         sharedFrom: string
         sharedWithCount: string
+      }
+    }
+    skills: {
+      title: string
+      description: string
+      noSkills: string
+      noSkillsHint: string
+      refresh: string
+      updated: string
+      deleted: string
+      enabled: string
+      disabled: string
+      system: string
+      team: string
+      test: string
+      delete: string
+      cancel: string
+      close: string
+      runTest: string
+      success: string
+      failed: string
+      arguments: string
+      artifacts: string
+      download: string
+      testTitle: string
+      testDescription: string
+      noDescription: string
+      import: {
+        open: string
+        title: string
+        description: string
+        zip: string
+        git: string
+        zipFile: string
+        repoUrl: string
+        ref: string
+        scan: string
+        previewTitle: string
+        previewSummary: string
+        packagePath: string
+        name: string
+        mode: string
+        status: string
+        action: string
+        valid: string
+        conflict: string
+        duplicateName: string
+        modeTips: {
+          instructions: string
+          script: string
+          legacy: string
+        }
+        install: string
+        update: string
+        skip: string
+        installSelected: string
+        installed: string
+        errors: {
+          duplicateNameInSource: string
+          invalidPackage: string
+          packageNotInSession: string
+          packagePathInvalid: string
+          nameExists: string
+        }
       }
     }
     models: {

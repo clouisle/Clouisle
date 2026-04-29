@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, Bot } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +35,7 @@ import {
 } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
-import { ToolList, ToolTestPanel } from './_components'
+import { SkillsPanel, ToolList, ToolTestPanel } from './_components'
 import { ToolConfigDialog } from './_components/tool-config-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
@@ -305,113 +306,137 @@ export default function ToolsPage() {
 
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
-          <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={loadTools} disabled={loading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            {t('tools.refresh')}
-          </Button>
-
-          <PermissionGuard permission="tool:create">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    {t('tools.createTool')}
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={handleCreateHttpTool}>
-                  <Globe className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>{t('tools.createMenu.http')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('tools.createMenu.httpDesc')}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleCreateCodeTool}>
-                  <Code className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>{t('tools.createMenu.code')}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('tools.createMenu.codeDesc')}
-                    </span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleCreateMcpTool}>
-                  <Plug className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span>{t('tools.createMenu.mcp')}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {t('tools.createMenu.mcpDesc')}
-                  </span>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          </PermissionGuard>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">{t('tools.title')}</h1>
+        <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : tools.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Wrench className="h-12 w-12 text-muted-foreground mb-4" />
-            <CardTitle className="mb-2">{t('tools.noTools')}</CardTitle>
-            <CardDescription className="mb-4">
-              {t('tools.createToolHint')}
-            </CardDescription>
-            <PermissionGuard permission="tool:create">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      {t('tools.createFirstTool')}
-                    </Button>
-                  }
-                />
-                <DropdownMenuContent align="center" className="w-56">
-                  <DropdownMenuItem onClick={handleCreateHttpTool}>
-                    <Globe className="mr-2 h-4 w-4" />
-                    {t('tools.createMenu.http')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleCreateCodeTool}>
-                    <Code className="mr-2 h-4 w-4" />
-                    {t('tools.createMenu.code')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleCreateMcpTool}>
-                    <Plug className="mr-2 h-4 w-4" />
-                    {t('tools.createMenu.mcp')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </PermissionGuard>
-          </CardContent>
-        </Card>
-      ) : (
-        <ToolList
-          tools={tools}
-          onSelect={handleSelectTool}
-          onTest={handleSelectTool}
-          onEdit={canPerform('tool:update') ? handleEditTool : undefined}
-          onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
-          onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
-          onShare={canPerform('tool:update') ? handleShareTool : undefined}
-        />
-      )}
+      <Tabs defaultValue="tools" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="tools">
+            <Wrench className="mr-2 h-4 w-4" />
+            {t('tools.tabs.tools')}
+          </TabsTrigger>
+          <TabsTrigger value="skills">
+            <Bot className="mr-2 h-4 w-4" />
+            {t('tools.tabs.skills')}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tools" className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight">{t('tools.tabs.tools')}</h2>
+              <p className="text-sm text-muted-foreground mt-1">{t('tools.description')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={loadTools} disabled={loading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {t('tools.refresh')}
+              </Button>
+
+              <PermissionGuard permission="tool:create">
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        {t('tools.createTool')}
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={handleCreateHttpTool}>
+                      <Globe className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>{t('tools.createMenu.http')}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('tools.createMenu.httpDesc')}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateCodeTool}>
+                      <Code className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>{t('tools.createMenu.code')}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('tools.createMenu.codeDesc')}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateMcpTool}>
+                      <Plug className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>{t('tools.createMenu.mcp')}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('tools.createMenu.mcpDesc')}
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </PermissionGuard>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : tools.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Wrench className="h-12 w-12 text-muted-foreground mb-4" />
+                <CardTitle className="mb-2">{t('tools.noTools')}</CardTitle>
+                <CardDescription className="mb-4">
+                  {t('tools.createToolHint')}
+                </CardDescription>
+                <PermissionGuard permission="tool:create">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button>
+                          <Plus className="mr-2 h-4 w-4" />
+                          {t('tools.createFirstTool')}
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="center" className="w-56">
+                      <DropdownMenuItem onClick={handleCreateHttpTool}>
+                        <Globe className="mr-2 h-4 w-4" />
+                        {t('tools.createMenu.http')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleCreateCodeTool}>
+                        <Code className="mr-2 h-4 w-4" />
+                        {t('tools.createMenu.code')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleCreateMcpTool}>
+                        <Plug className="mr-2 h-4 w-4" />
+                        {t('tools.createMenu.mcp')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </PermissionGuard>
+              </CardContent>
+            </Card>
+          ) : (
+            <ToolList
+              tools={tools}
+              onSelect={handleSelectTool}
+              onTest={handleSelectTool}
+              onEdit={canPerform('tool:update') ? handleEditTool : undefined}
+              onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
+              onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
+              onShare={canPerform('tool:update') ? handleShareTool : undefined}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="skills" className="space-y-4">
+          <SkillsPanel />
+        </TabsContent>
+      </Tabs>
 
       {/* 工具测试面板 */}
       <ToolTestPanel

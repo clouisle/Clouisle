@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-28T13:20:22.608Z
+// GENERATED — 2026-04-29T18:55:48.192Z
 // Source: i18n/en/tools.json
 export type ToolsMessages = {
   tools: {
@@ -91,6 +91,7 @@ export type ToolsMessages = {
       builtin: string
       custom: string
       mcp: string
+      skill: string
     }
     categories: {
       time: string

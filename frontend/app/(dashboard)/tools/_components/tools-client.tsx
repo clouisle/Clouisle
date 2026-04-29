@@ -25,6 +25,7 @@ import {
     Globe,
     Plug,
     Share2,
+    Zap,
     Clock3,
     Calculator,
     FolderOpen,
@@ -99,6 +100,7 @@ const toolTypeIcons: Record<ToolType, React.ReactNode> = {
     builtin: <Wrench className="h-4 w-4" />,
     custom: <Code className="h-4 w-4" />,
     mcp: <Server className="h-4 w-4" />,
+    skill: <Zap className="h-4 w-4" />,
 }
 
 // 工具分类图标映射
@@ -506,6 +508,7 @@ export function ToolsClient() {
             builtin: 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/20',
             custom: 'bg-purple-500/10 text-purple-500 hover:bg-purple-500/20',
             mcp: 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20',
+            skill: 'bg-sky-500/10 text-sky-500 hover:bg-sky-500/20',
         }
         return (
             <Badge variant="secondary" className={variants[type]}>

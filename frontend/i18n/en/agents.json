@@ -268,7 +268,8 @@
             "all": "All",
             "builtin": "Built-in",
             "custom": "Custom",
-            "mcp": "MCP"
+            "mcp": "MCP",
+            "skill": "Skill"
           },
           "categories": {
             "time": "Time",
