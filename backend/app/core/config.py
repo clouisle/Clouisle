@@ -71,7 +71,7 @@ class Settings(BaseSettings):
         return f"postgres://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_SERVER')}:{data.get('POSTGRES_PORT')}/{data.get('POSTGRES_DB')}"
 
     # Streaming timeouts (seconds)
-    STREAM_GLOBAL_TIMEOUT: int = 300  # 5 minutes
+    STREAM_GLOBAL_TIMEOUT: int = 1800  # 30 minutes
     STREAM_HEARTBEAT_INTERVAL: int = 15  # 15 seconds
 
     # Tool execution timeouts (seconds)

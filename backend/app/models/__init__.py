@@ -42,6 +42,14 @@ from .tool import (
     ToolSharePermission,
 )
 from .tool_config import ToolConfig
+from .skill import (
+    Skill,
+    SkillCategory,
+    SkillExecutionMode,
+    SkillImportSession,
+    SkillImportSessionStatus,
+    SkillSourceType,
+)
 from .api_key import APIKey
 from .audit_log import AuditLog
 from .notification import (
@@ -109,6 +117,12 @@ __all__ = [
     "ToolCategory",
     "ToolSharePermission",
     "ToolConfig",
+    "Skill",
+    "SkillCategory",
+    "SkillExecutionMode",
+    "SkillImportSession",
+    "SkillImportSessionStatus",
+    "SkillSourceType",
     "APIKey",
     "AuditLog",
     "Notification",

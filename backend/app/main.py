@@ -13,7 +13,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.init_data import init_db
-from app.core.i18n import set_language, t, get_code_message, has_translation, get_language
+from app.core.i18n import (
+    set_language,
+    t,
+    get_code_message,
+    has_translation,
+    get_language,
+)
 from app.core.redis import close_redis
 from app.schemas.response import success, error, ResponseCode, BusinessError
 
@@ -71,6 +77,7 @@ async def lifespan(app: FastAPI):
         init_embed_config,
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
+        init_skills_table,
     )
 
     try:
@@ -182,6 +189,11 @@ async def lifespan(app: FastAPI):
         await init_kb_rerank_fields()
     except Exception as e:
         logger.warning(f"Knowledge base rerank migration failed: {e}")
+
+    try:
+        await init_skills_table()
+    except Exception as e:
+        logger.warning(f"Skills table migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

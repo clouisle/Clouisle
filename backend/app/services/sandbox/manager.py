@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -64,6 +65,7 @@ class SandboxManager:
         )
 
         workspace = self.workspace_manager.prepare(job.job_id)
+        self._stage_input_files(job, workspace)
         self._enforce_disk_limit(job, workspace, stage="prepare")
         metadata.mark_prepare_completed(datetime.now(UTC))
 
@@ -125,9 +127,10 @@ class SandboxManager:
             return self._parse_snippet_result(process_result, script_path)
 
         if job.command:
+            cwd = self.workspace_manager.resolve_workspace_path(workspace, job.cwd)
             process_result = await self.process_launcher.launch(
                 self._resolve_command(job.command, env),
-                cwd=str(workspace.root),
+                cwd=str(cwd),
                 env=env,
                 timeout_seconds=job.limits.timeout_seconds,
                 max_stdout_kb=job.limits.max_stdout_kb,
@@ -157,6 +160,19 @@ class SandboxManager:
             success=False,
             error=t("sandbox_missing_executable_payload"),
         )
+
+    def _stage_input_files(self, job: SandboxJob, workspace: SandboxWorkspace) -> None:
+        for input_file in job.input_files:
+            target = self.workspace_manager.resolve_workspace_path(
+                workspace, input_file.target_path
+            )
+            if target.exists():
+                raise FileExistsError(f"Sandbox input target already exists: {input_file.target_path}")
+            content = base64.b64decode(input_file.content_base64, validate=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            if input_file.mode is not None:
+                target.chmod(input_file.mode)
 
     def _prepare_snippet_execution(
         self,

@@ -92,7 +92,11 @@ async def build_file_content_for_prompt(
     if not agent.enable_file_upload:
         return ""
 
-    from app.services.file_parser import file_parser_service, ParsedFile, FileParseConfig
+    from app.services.file_parser import (
+        file_parser_service,
+        ParsedFile,
+        FileParseConfig,
+    )
 
     parsed_files: list[ParsedFile] = []
     file_config = agent.file_upload_config or {}
@@ -116,7 +120,9 @@ async def build_file_content_for_prompt(
             ) as client:
                 for f in file_urls:
                     filename = get_item_value(f, "filename", "")
-                    mime_type = get_item_value(f, "mime_type", "application/octet-stream")
+                    mime_type = get_item_value(
+                        f, "mime_type", "application/octet-stream"
+                    )
                     size = get_item_value(f, "size", 0)
                     url = get_item_value(f, "url", "")
                     if not url:
@@ -151,9 +157,7 @@ async def build_file_content_for_prompt(
             custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
             if custom_tool:
                 try:
-                    urls = [
-                        get_item_value(f, "url", "") for f in file_urls
-                    ]
+                    urls = [get_item_value(f, "url", "") for f in file_urls]
                     result = await execute_tool_call(
                         f"custom_{custom_tool.name}",
                         {"files_url": [url for url in urls if url]},
@@ -204,9 +208,7 @@ async def build_file_content_for_prompt(
     if not parsed_files:
         return ""
 
-    return file_parser_service.format_files_for_prompt(
-        parsed_files, locale=user_locale
-    )
+    return file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale)
 
 
 # ============ Helper Functions ============
@@ -259,16 +261,19 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
 
 def should_retry_context_length(agent: Agent) -> bool:
     """Whether reactive context-length retry is enabled for the agent."""
-    return bool(get_context_compression_config(agent).get("reactive_retry_enabled", True))
-
+    return bool(
+        get_context_compression_config(agent).get("reactive_retry_enabled", True)
+    )
 
 
 def get_compression_trigger(compression: Any) -> str:
     pressure_level = getattr(compression, "pressure_level", None)
-    if pressure_level in {"blocking", "over_budget"} or getattr(compression, "stage", None) == "macro":
+    if (
+        pressure_level in {"blocking", "over_budget"}
+        or getattr(compression, "stage", None) == "macro"
+    ):
         return "blocking_threshold"
     return "proactive_threshold"
-
 
 
 def build_compression_events(
@@ -296,9 +301,13 @@ def build_compression_events(
     if trigger == "context_length_error" or stage == "reactive_retry":
         note_parts.append("Retried with more aggressive context compaction")
     elif trigger == "blocking_threshold":
-        note_parts.append("Applied blocking-level compaction before the next model call")
+        note_parts.append(
+            "Applied blocking-level compaction before the next model call"
+        )
     else:
-        note_parts.append("Applied proactive context compaction before the next model call")
+        note_parts.append(
+            "Applied proactive context compaction before the next model call"
+        )
     if compression.summary_turns:
         note_parts.append(f"summarized {compression.summary_turns} older turns")
     if compression.reasoning_trimmed:
@@ -351,7 +360,6 @@ def build_compression_events(
     )
 
     return start_event, end_event
-
 
 
 def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
@@ -679,7 +687,9 @@ async def update_message_stats(agent: Agent, token_usage: dict | None = None):
     )
 
 
-async def build_round_steps_map(messages: list[Message]) -> dict[UUID, list[dict[str, Any]]]:
+async def build_round_steps_map(
+    messages: list[Message],
+) -> dict[UUID, list[dict[str, Any]]]:
     """Group non-canonical round messages under their round_id for response payloads."""
     round_ids = {
         message.round_id
@@ -704,28 +714,30 @@ async def build_round_steps_map(messages: list[Message]) -> dict[UUID, list[dict
     for step in step_messages:
         if step.round_id:
             grouped.setdefault(step.round_id, []).append(
-            {
-                "id": step.id,
-                "role": step.role.value,
-                "content": step.content,
-                "tool_calls": step.tool_calls,
-                "tool_call_id": step.tool_call_id,
-                "tool_name": step.tool_name,
-                "reasoning_content": step.reasoning_content,
-                "model_used": step.model_used,
-                "token_usage": step.token_usage,
-                "duration_ms": step.duration_ms,
-                "is_manually_stopped": step.is_manually_stopped,
-                "rag_context": step.rag_context,
-                "created_at": step.created_at,
-                "round_id": step.round_id,
-                "round_index": step.round_index,
-                "round_role": step.round_role.value if step.round_role else None,
-                "is_round_canonical": step.is_round_canonical,
-                "iteration_index": step.iteration_index,
-                "round_status": step.round_status.value if step.round_status else None,
-            }
-        )
+                {
+                    "id": step.id,
+                    "role": step.role.value,
+                    "content": step.content,
+                    "tool_calls": step.tool_calls,
+                    "tool_call_id": step.tool_call_id,
+                    "tool_name": step.tool_name,
+                    "reasoning_content": step.reasoning_content,
+                    "model_used": step.model_used,
+                    "token_usage": step.token_usage,
+                    "duration_ms": step.duration_ms,
+                    "is_manually_stopped": step.is_manually_stopped,
+                    "rag_context": step.rag_context,
+                    "created_at": step.created_at,
+                    "round_id": step.round_id,
+                    "round_index": step.round_index,
+                    "round_role": step.round_role.value if step.round_role else None,
+                    "is_round_canonical": step.is_round_canonical,
+                    "iteration_index": step.iteration_index,
+                    "round_status": step.round_status.value
+                    if step.round_status
+                    else None,
+                }
+            )
     return grouped
 
 
@@ -737,10 +749,7 @@ async def build_message_round_payloads(messages: list[Message]) -> list[dict[str
         if message.round_id and not message.is_round_canonical:
             continue
         msg_data = MessageOut.model_validate(message).model_dump()
-        if (
-            message.round_id
-            and message.round_role == MessageRoundRole.ASSISTANT_FINAL
-        ):
+        if message.round_id and message.round_role == MessageRoundRole.ASSISTANT_FINAL:
             msg_data["steps"] = steps_by_round.get(message.round_id)
         payloads.append(msg_data)
     return payloads
@@ -1102,6 +1111,23 @@ Examples of when to search:
                         }
                     )
 
+        elif tool_type == "skill":
+            from app.services.skill import SkillService
+
+            skill_id = config.get("skill_id")
+            if skill_id:
+                try:
+                    skill = await SkillService.get_skill_for_team(
+                        skill_id,
+                        agent.team_id,
+                        enabled_only=True,
+                    )
+                    append_openai_tool(
+                        SkillService.to_tool_definition(skill).model_dump()
+                    )
+                except Exception as e:
+                    logger.warning("Failed to get skill tool %s: %s", skill_id, e)
+
         elif tool_type == "mcp":
             # MCP tool - get tools from MCP server
             # Frontend uses server_id for MCP tools
@@ -1230,6 +1256,23 @@ async def get_tool_display_names(
                     display_names[f"custom_{custom_tool.name}"] = (
                         custom_tool.display_name
                     )
+
+        elif tool_type == "skill":
+            from app.services.skill import SkillService
+
+            skill_id = config.get("skill_id")
+            if skill_id:
+                try:
+                    skill = await SkillService.get_skill_for_team(
+                        skill_id,
+                        agent.team_id,
+                        enabled_only=True,
+                    )
+                    display_names[SkillService.build_tool_name(skill)] = (
+                        skill.display_name
+                    )
+                except Exception:
+                    pass
 
         elif tool_type == "mcp":
             tool_id = config.get("server_id") or config.get("tool_id")
@@ -1369,11 +1412,7 @@ async def execute_tool_call(
                         or not isinstance(relation_type, str)
                     ):
                         return json.dumps(
-                            {
-                                "error": t(
-                                    "memory_tool_create_relation_requires_fields"
-                                )
-                            },
+                            {"error": t("memory_tool_create_relation_requires_fields")},
                             ensure_ascii=False,
                         )
                     result = await MemoryService.handle_create_relation(
@@ -1426,6 +1465,45 @@ async def execute_tool_call(
                     ensure_ascii=False,
                 )
 
+        # Check if it's a Skill tool (format: skill_<name>_<short_id>)
+        if tool_name.startswith("skill_"):
+            from app.services.skill import SkillService
+            from app.services.skill_executor import SkillExecutor
+
+            if not agent:
+                return json.dumps(
+                    {"error": t("agent_context_required_for_skill")}, ensure_ascii=False
+                )
+
+            try:
+                skill, skill_config = await SkillService.resolve_agent_skill_tool(
+                    agent,
+                    tool_name,
+                )
+                skill_result = await SkillExecutor.execute(
+                    skill=skill,
+                    arguments=arguments,
+                    config=skill_config,
+                    tenant_id=str(agent.team_id) if agent.team_id else None,
+                )
+                return skill_result.to_chat_payload()
+            except BusinessError as e:
+                return json.dumps(
+                    {"error": t(e.msg_key or "skill_execution_failed", **e.kwargs)},
+                    ensure_ascii=False,
+                )
+            except Exception as e:
+                logger.exception("Skill execution failed: %s", e)
+                return json.dumps(
+                    {
+                        "error": resolve_user_visible_error(
+                            str(e),
+                            fallback_key="skill_execution_failed",
+                        )
+                    },
+                    ensure_ascii=False,
+                )
+
         # Check if it's an MCP tool (format: mcp_<server_name>_<tool_name>)
         if tool_name.startswith("mcp_"):
             from app.llm.tools.mcp_client import execute_mcp_tool
@@ -1446,7 +1524,8 @@ async def execute_tool_call(
             # Get MCP tool from database by name (need agent's team_id)
             if not agent:
                 return json.dumps(
-                    {"error": t("agent_context_required_for_mcp_tool")}, ensure_ascii=False
+                    {"error": t("agent_context_required_for_mcp_tool")},
+                    ensure_ascii=False,
                 )
 
             mcp_tool = await Tool.filter(
@@ -1454,12 +1533,17 @@ async def execute_tool_call(
             ).first()
             if not mcp_tool:
                 return json.dumps(
-                    {"error": t("mcp_tool_not_found", server_name=server_name)}, ensure_ascii=False
+                    {"error": t("mcp_tool_not_found", server_name=server_name)},
+                    ensure_ascii=False,
                 )
 
             if not mcp_tool.mcp_config:
                 return json.dumps(
-                    {"error": t("mcp_tool_missing_configuration", tool_name=mcp_tool.name)},
+                    {
+                        "error": t(
+                            "mcp_tool_missing_configuration", tool_name=mcp_tool.name
+                        )
+                    },
                     ensure_ascii=False,
                 )
 
@@ -1521,6 +1605,12 @@ async def execute_tool_call(
                 )
         else:
             # Builtin tool
+            if not tool_registry.get_tool(tool_name):
+                return json.dumps(
+                    {"error": t("tool_not_found"), "tool_name": tool_name},
+                    ensure_ascii=False,
+                )
+
             # Get credentials from ToolConfig table
             credentials = {}
             if agent and agent.team_id:
@@ -1603,9 +1693,7 @@ async def execute_code_tool(
     code = code_config.get("code", "")
 
     if not code:
-        return json.dumps(
-            {"error": t("tool_code_not_defined")}, ensure_ascii=False
-        )
+        return json.dumps({"error": t("tool_code_not_defined")}, ensure_ascii=False)
 
     try:
         exec_result = await execute_code(
@@ -1898,7 +1986,9 @@ async def chat(
     # Get model identifier
     team_model = await get_agent_chat_model(agent)
     model_id = (
-        f"{team_model.model.provider}/{team_model.model.model_id}" if team_model else None
+        f"{team_model.model.provider}/{team_model.model.model_id}"
+        if team_model
+        else None
     )
 
     model_supports_vision = False
@@ -1970,8 +2060,12 @@ async def chat(
                     conversation=conversation,
                     user_message=final_message,
                     model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length if team_model else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    model_context_limit=team_model.model.context_length
+                    if team_model
+                    else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens
+                    if team_model
+                    else None,
                     provider=team_model.model.provider if team_model else None,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
@@ -1989,8 +2083,12 @@ async def chat(
                     conversation=conversation,
                     user_message=final_message,
                     model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length if team_model else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    model_context_limit=team_model.model.context_length
+                    if team_model
+                    else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens
+                    if team_model
+                    else None,
                     provider=team_model.model.provider if team_model else None,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
@@ -2016,8 +2114,12 @@ async def chat(
                     conversation=conversation,
                     user_message=final_message,
                     model_id=model_id or "gpt-4",
-                    model_context_limit=team_model.model.context_length if team_model else None,
-                    model_max_output_tokens=team_model.model.max_output_tokens if team_model else None,
+                    model_context_limit=team_model.model.context_length
+                    if team_model
+                    else None,
+                    model_max_output_tokens=team_model.model.max_output_tokens
+                    if team_model
+                    else None,
                     provider=team_model.model.provider if team_model else None,
                     file_content=file_content_str,
                     user_locale=current_user.locale,
@@ -2455,7 +2557,10 @@ async def chat_stream(
                         else None
                     )
                     working_history_override = (
-                        [message.model_dump(exclude_none=True) for message in chat_in.history_override]
+                        [
+                            message.model_dump(exclude_none=True)
+                            for message in chat_in.history_override
+                        ]
                         if chat_in.history_override
                         else None
                     )
@@ -2507,7 +2612,9 @@ async def chat_stream(
                                 (time.time() - start_time) * 1000
                             )
                             assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            assistant_msg.round_status = (
+                                MessageRoundStatus.MANUALLY_STOPPED
+                            )
                             assistant_msg.created_at = now_utc()
                             await assistant_msg.save()
                             return
@@ -2539,7 +2646,9 @@ async def chat_stream(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -2550,10 +2659,14 @@ async def chat_stream(
                                 exclude_message_ids=[assistant_msg.id],
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger=get_compression_trigger(prepared_context.compression),
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger=get_compression_trigger(
+                                        prepared_context.compression
+                                    ),
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -2575,7 +2688,9 @@ async def chat_stream(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -2586,12 +2701,14 @@ async def chat_stream(
                                 exclude_message_ids=[assistant_msg.id],
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger="context_length_error",
-                                retry_index=1,
-                                stage_override="reactive_retry",
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger="context_length_error",
+                                    retry_index=1,
+                                    stage_override="reactive_retry",
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -2670,7 +2787,9 @@ async def chat_stream(
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
                         except ContextLengthError:
-                            if context_retry_used or not should_retry_context_length(agent):
+                            if context_retry_used or not should_retry_context_length(
+                                agent
+                            ):
                                 raise
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
@@ -2683,7 +2802,9 @@ async def chat_stream(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 file_content=file_content_str,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
@@ -2694,12 +2815,14 @@ async def chat_stream(
                                 exclude_message_ids=[assistant_msg.id],
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger="context_length_error",
-                                retry_index=1,
-                                stage_override="reactive_retry",
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger="context_length_error",
+                                    retry_index=1,
+                                    stage_override="reactive_retry",
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -2816,7 +2939,9 @@ async def chat_stream(
                                 (time.time() - start_time) * 1000
                             )
                             assistant_msg.is_manually_stopped = True
-                            assistant_msg.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            assistant_msg.round_status = (
+                                MessageRoundStatus.MANUALLY_STOPPED
+                            )
                             assistant_msg.created_at = now_utc()
                             await assistant_msg.save()
                             return  # Exit generator - client is gone
@@ -3078,7 +3203,9 @@ async def chat_stream(
                     input_tokens = sum(
                         len(message_content or "") // 4
                         for message_content in (
-                            message.get("content") if isinstance(message, dict) else None
+                            message.get("content")
+                            if isinstance(message, dict)
+                            else None
                             for message in [
                                 item.model_dump(exclude_none=True)
                                 for item in final_prepared_context.messages
@@ -3092,7 +3219,9 @@ async def chat_stream(
                         "completion": output_tokens,
                     }
                     await assistant_msg.save()
-                    enqueue_session_memory_extraction(agent, conversation, assistant_msg)
+                    enqueue_session_memory_extraction(
+                        agent, conversation, assistant_msg
+                    )
 
                     # Update conversation stats atomically
                     title_update = {}
@@ -3210,7 +3339,7 @@ async def chat_stream(
                 reasoning=full_reasoning,
                 model_id=model_id,
                 start_time=start_time,
-                fallback_content=t('stream_timeout_exceeded'),
+                fallback_content=t("stream_timeout_exceeded"),
             )
             # Send timeout error event
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
@@ -3690,7 +3819,9 @@ async def regenerate_message(
                                 (time.time() - start_time) * 1000
                             )
                             new_message.is_manually_stopped = True
-                            new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            new_message.round_status = (
+                                MessageRoundStatus.MANUALLY_STOPPED
+                            )
                             new_message.created_at = now_utc()
                             await new_message.save()
                             return
@@ -3718,7 +3849,9 @@ async def regenerate_message(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -3726,10 +3859,14 @@ async def regenerate_message(
                                 history_before_message_created_at=message.created_at,
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger=get_compression_trigger(prepared_context.compression),
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger=get_compression_trigger(
+                                        prepared_context.compression
+                                    ),
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -3751,7 +3888,9 @@ async def regenerate_message(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -3759,12 +3898,14 @@ async def regenerate_message(
                                 history_before_message_created_at=message.created_at,
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger="context_length_error",
-                                retry_index=1,
-                                stage_override="reactive_retry",
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger="context_length_error",
+                                    retry_index=1,
+                                    stage_override="reactive_retry",
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -3824,7 +3965,9 @@ async def regenerate_message(
                                         yield f"event: {SSEEventType.OUTPUT_TRUNCATED}\ndata: {json.dumps({})}\n\n"
                                     break
                         except ContextLengthError:
-                            if context_retry_used or not should_retry_context_length(agent):
+                            if context_retry_used or not should_retry_context_length(
+                                agent
+                            ):
                                 raise
                             prepared_context = await retry_prepare_model_context(
                                 agent=agent,
@@ -3837,7 +3980,9 @@ async def regenerate_message(
                                 model_max_output_tokens=team_model.model.max_output_tokens
                                 if team_model
                                 else None,
-                                provider=team_model.model.provider if team_model else None,
+                                provider=team_model.model.provider
+                                if team_model
+                                else None,
                                 user_locale=current_user.locale,
                                 history_override=working_history_override,
                                 current_user_message_id=user_message.id,
@@ -3845,12 +3990,14 @@ async def regenerate_message(
                                 history_before_message_created_at=message.created_at,
                                 protected_round_id=round_id,
                             )
-                            compression_start, compression_end = build_compression_events(
-                                agent=agent,
-                                compression=prepared_context.compression,
-                                trigger="context_length_error",
-                                retry_index=1,
-                                stage_override="reactive_retry",
+                            compression_start, compression_end = (
+                                build_compression_events(
+                                    agent=agent,
+                                    compression=prepared_context.compression,
+                                    trigger="context_length_error",
+                                    retry_index=1,
+                                    stage_override="reactive_retry",
+                                )
                             )
                             if compression_start:
                                 yield compression_start
@@ -3917,7 +4064,9 @@ async def regenerate_message(
                                 (time.time() - start_time) * 1000
                             )
                             new_message.is_manually_stopped = True
-                            new_message.round_status = MessageRoundStatus.MANUALLY_STOPPED
+                            new_message.round_status = (
+                                MessageRoundStatus.MANUALLY_STOPPED
+                            )
                             new_message.created_at = now_utc()
                             await new_message.save()
                             return  # Exit generator - client is gone
@@ -4146,7 +4295,9 @@ async def regenerate_message(
                     input_tokens = sum(
                         len(message_content or "") // 4
                         for message_content in (
-                            message.get("content") if isinstance(message, dict) else None
+                            message.get("content")
+                            if isinstance(message, dict)
+                            else None
                             for message in [
                                 item.model_dump(exclude_none=True)
                                 for item in final_prepared_context.messages
@@ -4248,7 +4399,7 @@ async def regenerate_message(
                 reasoning=full_reasoning,
                 model_id=model_id,
                 start_time=start_time,
-                fallback_content=t('stream_timeout_exceeded'),
+                fallback_content=t("stream_timeout_exceeded"),
             )
             if preserved_partial:
                 await Message.filter(id=message.id).update(is_active=False)

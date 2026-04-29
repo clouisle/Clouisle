@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .cache import normalize_package_source_url
 
@@ -43,6 +43,12 @@ class SandboxArtifactSpec(BaseModel):
     path: str = Field(..., description="Artifact path inside workspace")
     optional: bool = Field(default=False, description="Whether missing artifact is allowed")
     description: str | None = Field(default=None, description="Artifact description")
+
+
+class SandboxInputFileSpec(BaseModel):
+    target_path: str = Field(..., description="Destination path inside workspace")
+    content_base64: str = Field(..., description="Base64-encoded file content")
+    mode: int | None = Field(default=None, ge=0, le=0o777, description="Optional file mode")
 
 
 class SandboxArtifact(BaseModel):
@@ -214,10 +220,27 @@ class SandboxJob(BaseModel):
     node_package_registry_url: str | None = Field(default=None)
     cwd: str = Field(default="/workspace")
     env: dict[str, str] = Field(default_factory=dict)
-    input_files: list[str] = Field(default_factory=list)
+    input_files: list[SandboxInputFileSpec] = Field(default_factory=list)
     artifacts: list[SandboxArtifactSpec] = Field(default_factory=list)
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input_files(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        input_files = data.get("input_files")
+        if input_files is None:
+            return data
+        normalized = []
+        for item in input_files:
+            if isinstance(item, dict) and "content" in item and "content_base64" not in item:
+                normalized.append({**item, "content_base64": item["content"]})
+            else:
+                normalized.append(item)
+        data["input_files"] = normalized
+        return data
 
     @field_validator("command")
     @classmethod

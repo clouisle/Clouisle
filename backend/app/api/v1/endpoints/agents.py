@@ -449,6 +449,14 @@ async def create_agent(
                 status_code=404,
             )
 
+    from app.services.skill import SkillService
+
+    await SkillService.validate_agent_skill_configs(
+        None,
+        [t.model_dump() for t in agent_in.tools_config],
+        agent_in.team_id,
+    )
+
     # Create agent
     agent = await Agent.create(
         name=agent_in.name,
@@ -613,7 +621,13 @@ async def update_agent(
 
     # Update tools config
     if agent_in.tools_config is not None:
-        agent.tools_config = [t.model_dump() for t in agent_in.tools_config]
+        from app.services.skill import SkillService
+
+        tools_config = [t.model_dump() for t in agent_in.tools_config]
+        await SkillService.validate_agent_skill_configs(
+            agent, tools_config, agent.team_id
+        )
+        agent.tools_config = tools_config
         updated_fields.append("tools_config")
 
     # Update enable_vision

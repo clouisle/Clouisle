@@ -51,6 +51,213 @@ msgstr "智能体已取消发布"
 msgid "agent_updated"
 msgstr "智能体更新成功"
 
+msgid "agent_context_required_for_skill"
+msgstr "执行技能需要智能体上下文"
+
+msgid "skill_access_denied"
+msgstr "您无权访问此技能"
+
+msgid "skill_argument_validation_failed"
+msgstr "技能参数校验失败"
+
+msgid "skill_command_template_invalid"
+msgstr "技能命令模板无效"
+
+msgid "skill_command_template_required"
+msgstr "技能命令模板不能为空"
+
+msgid "skill_command_template_variable_missing"
+msgstr "技能命令模板变量缺失：{variable}"
+
+msgid "skill_command_too_long"
+msgstr "技能命令过长"
+
+msgid "skill_created"
+msgstr "技能创建成功"
+
+msgid "skill_deleted"
+msgstr "技能删除成功"
+
+msgid "skill_disabled"
+msgstr "技能已禁用"
+
+msgid "skill_execution_failed"
+msgstr "技能执行失败"
+
+msgid "skill_id_required"
+msgstr "技能 ID 不能为空"
+
+msgid "skill_invalid_input_schema"
+msgstr "技能输入 Schema 无效"
+
+msgid "skill_invalid_name"
+msgstr "技能名称无效"
+
+msgid "skill_invalid_spec"
+msgstr "技能运行规格无效"
+
+msgid "skill_name_exists"
+msgstr "该技能名称已存在"
+
+msgid "skill_not_configured_for_agent"
+msgstr "该技能未配置到此智能体"
+
+msgid "skill_not_found"
+msgstr "技能未找到"
+
+msgid "skill_referenced_by_agent"
+msgstr "该技能仍被智能体使用"
+
+msgid "skill_shell_not_allowed"
+msgstr "技能不允许使用 Shell 执行"
+
+msgid "skill_spec_name_mismatch"
+msgstr "技能运行规格名称必须与技能名称一致"
+
+msgid "skill_system_admin_required"
+msgstr "只有系统管理员可以管理系统技能"
+
+msgid "skill_updated"
+msgstr "技能更新成功"
+
+msgid "skill_clouisle_extension_invalid"
+msgstr "Skill 的 Clouisle 扩展无效"
+
+msgid "skill_description_required"
+msgstr "Skill 描述不能为空"
+
+msgid "skill_duplicate_name_in_source"
+msgstr "同一来源中存在重复的 Skill 名称"
+
+msgid "skill_execution_invalid"
+msgstr "Skill 执行配置无效"
+
+msgid "skill_execution_mode_invalid"
+msgstr "Skill 执行模式无效"
+
+msgid "skill_execution_limits_invalid"
+msgstr "Skill 执行限制无效"
+
+msgid "skill_execution_artifacts_invalid"
+msgstr "Skill 执行产物配置无效"
+
+msgid "skill_execution_artifact_path_invalid"
+msgstr "Skill 执行产物路径无效"
+
+msgid "skill_frontmatter_invalid"
+msgstr "Skill frontmatter 无效"
+
+msgid "skill_frontmatter_required"
+msgstr "SKILL.md 必须包含 frontmatter"
+
+msgid "skill_frontmatter_unclosed"
+msgstr "SKILL.md frontmatter 未闭合"
+
+msgid "skill_git_clone_failed"
+msgstr "克隆 Git 仓库失败"
+
+msgid "skill_git_clone_timeout"
+msgstr "克隆 Git 仓库超时"
+
+msgid "skill_git_credentials_not_allowed"
+msgstr "Git 仓库地址不能包含凭据"
+
+msgid "skill_git_url_invalid"
+msgstr "Git 仓库地址无效"
+
+msgid "skill_import_installed"
+msgstr "Skills 导入成功"
+
+msgid "skill_import_session_expired"
+msgstr "Skill 导入会话已过期"
+
+msgid "skill_import_session_missing_source"
+msgstr "Skill 导入会话缺少来源文件"
+
+msgid "skill_import_session_not_found"
+msgstr "Skill 导入会话不存在"
+
+msgid "skill_md_must_be_utf8"
+msgstr "SKILL.md 必须使用 UTF-8 编码"
+
+msgid "skill_md_not_found"
+msgstr "未找到 SKILL.md"
+
+msgid "skill_name_conflict"
+msgstr "已存在同名 Skill"
+
+msgid "skill_name_required"
+msgstr "Skill 名称不能为空"
+
+msgid "skill_package_invalid"
+msgstr "Skill 包无效"
+
+msgid "skill_package_nested_archive_not_allowed"
+msgstr "Skill 包内不允许嵌套压缩包"
+
+msgid "skill_package_not_in_session"
+msgstr "Skill 包不属于当前导入会话"
+
+msgid "skill_package_path_invalid"
+msgstr "Skill 包路径无效"
+
+msgid "skill_package_symlink_not_allowed"
+msgstr "Skill 包内不允许符号链接"
+
+msgid "skill_execution_config_invalid"
+msgstr "Skill 执行配置无效"
+
+msgid "skill_package_payload_invalid"
+msgstr "Skill 包载荷无效"
+
+msgid "skill_package_payload_missing"
+msgstr "缺少 Skill 包载荷"
+
+msgid "skill_script_execution_not_ready"
+msgstr "脚本模式 Skill 执行尚不可用"
+
+msgid "skill_script_not_found"
+msgstr "未找到声明的 Skill 脚本"
+
+msgid "skill_script_runtime_invalid"
+msgstr "Skill 脚本运行时无效"
+
+msgid "skill_script_runtime_required"
+msgstr "脚本模式必须声明运行时"
+
+msgid "skill_script_path_invalid"
+msgstr "Skill 脚本路径无效"
+
+msgid "skill_script_required"
+msgstr "脚本模式必须声明脚本路径"
+
+msgid "skill_subdir_invalid"
+msgstr "Skill 来源子目录无效"
+
+msgid "skill_zip_file_too_large"
+msgstr "Zip 包内存在过大的文件"
+
+msgid "skill_zip_invalid"
+msgstr "Zip 包无效"
+
+msgid "skill_zip_nested_archive_not_allowed"
+msgstr "Skill Zip 包内不允许嵌套压缩包"
+
+msgid "skill_zip_path_invalid"
+msgstr "Zip 包包含不安全路径"
+
+msgid "skill_zip_required"
+msgstr "必须提供 .zip 文件"
+
+msgid "skill_zip_symlink_not_allowed"
+msgstr "Skill Zip 包内不允许符号链接"
+
+msgid "skill_zip_too_large"
+msgstr "Zip 包过大"
+
+msgid "skill_zip_too_many_files"
+msgstr "Zip 包文件数量过多"
+
 msgid "all_chunks_failed_to_embed"
 msgstr "所有分块嵌入失败：{error}"
 

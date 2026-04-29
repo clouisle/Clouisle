@@ -483,7 +483,9 @@ async def init_message_round_fields():
     """)
 
     if not tables:
-        logger.info("Messages table does not exist yet, skipping round metadata migration")
+        logger.info(
+            "Messages table does not exist yet, skipping round metadata migration"
+        )
         return
 
     await conn.execute_query("""
@@ -642,6 +644,100 @@ async def init_agent_user_input_request():
         logger.info("enable_user_input_request column already exists")
 
     logger.info("Agent enable_user_input_request migration complete")
+
+
+async def init_skills_table():
+    """Initialize package-backed Agent Skills tables."""
+    logger.info("Initializing skills table...")
+
+    conn = Tortoise.get_connection("default")
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS skills (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            display_name VARCHAR(100) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            icon VARCHAR(100),
+            category VARCHAR(20) NOT NULL DEFAULT 'other',
+            version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+            source_type VARCHAR(20) NOT NULL DEFAULT 'legacy',
+            source_uri TEXT,
+            source_ref VARCHAR(255),
+            source_subdir VARCHAR(500),
+            package_path VARCHAR(500),
+            package_storage_path VARCHAR(1000),
+            package_hash VARCHAR(128),
+            package_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+            skill_md TEXT NOT NULL DEFAULT '',
+            instructions TEXT NOT NULL DEFAULT '',
+            frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+            execution_mode VARCHAR(20) NOT NULL DEFAULT 'instructions',
+            execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+            input_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+            skill_spec JSONB NOT NULL DEFAULT '{}'::jsonb,
+            config_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+            default_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(team_id, name)
+        )
+    """)
+
+    await conn.execute_query("""
+        ALTER TABLE skills
+            ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) NOT NULL DEFAULT 'legacy',
+            ADD COLUMN IF NOT EXISTS source_uri TEXT,
+            ADD COLUMN IF NOT EXISTS source_ref VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS source_subdir VARCHAR(500),
+            ADD COLUMN IF NOT EXISTS package_path VARCHAR(500),
+            ADD COLUMN IF NOT EXISTS package_storage_path VARCHAR(1000),
+            ADD COLUMN IF NOT EXISTS package_hash VARCHAR(128),
+            ADD COLUMN IF NOT EXISTS package_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS skill_md TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS instructions TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20) NOT NULL DEFAULT 'instructions',
+            ADD COLUMN IF NOT EXISTS execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb
+    """)
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS skill_import_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            source_type VARCHAR(20) NOT NULL,
+            source_uri TEXT,
+            source_ref VARCHAR(255),
+            source_subdir VARCHAR(500),
+            status VARCHAR(20) NOT NULL DEFAULT 'previewed',
+            preview JSONB NOT NULL DEFAULT '{}'::jsonb,
+            temp_storage_path VARCHAR(1000),
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+
+    await conn.execute_query("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_system_name
+        ON skills(name)
+        WHERE team_id IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_skills_team_id ON skills(team_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_created_by ON skills(created_by_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(is_enabled);
+        CREATE INDEX IF NOT EXISTS idx_skills_source_type ON skills(source_type);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_team_id ON skill_import_sessions(team_id);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_status ON skill_import_sessions(status);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_expires_at ON skill_import_sessions(expires_at);
+    """)
+
+    logger.info("skills table initialization complete")
 
 
 async def init_tool_shares_table():
@@ -1995,6 +2091,9 @@ async def init_db():
 
     # 7. Initialize tool_shares table
     await init_tool_shares_table()
+
+    # 7.1. Initialize skills table
+    await init_skills_table()
 
     # 8. Fix CASCADE delete policies
     await fix_cascade_delete_policies()

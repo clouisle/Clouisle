@@ -51,6 +51,213 @@ msgstr "Agent unpublished successfully"
 msgid "agent_updated"
 msgstr "Agent updated successfully"
 
+msgid "agent_context_required_for_skill"
+msgstr "Agent context is required for skill execution"
+
+msgid "skill_access_denied"
+msgstr "You don't have access to this skill"
+
+msgid "skill_argument_validation_failed"
+msgstr "Skill arguments failed validation"
+
+msgid "skill_command_template_invalid"
+msgstr "Skill command template is invalid"
+
+msgid "skill_command_template_required"
+msgstr "Skill command template is required"
+
+msgid "skill_command_template_variable_missing"
+msgstr "Skill command template variable is missing: {variable}"
+
+msgid "skill_command_too_long"
+msgstr "Skill command is too long"
+
+msgid "skill_created"
+msgstr "Skill created successfully"
+
+msgid "skill_deleted"
+msgstr "Skill deleted successfully"
+
+msgid "skill_disabled"
+msgstr "Skill is disabled"
+
+msgid "skill_execution_failed"
+msgstr "Skill execution failed"
+
+msgid "skill_id_required"
+msgstr "Skill ID is required"
+
+msgid "skill_invalid_input_schema"
+msgstr "Skill input schema is invalid"
+
+msgid "skill_invalid_name"
+msgstr "Skill name is invalid"
+
+msgid "skill_invalid_spec"
+msgstr "Skill runtime spec is invalid"
+
+msgid "skill_name_exists"
+msgstr "Skill with this name already exists"
+
+msgid "skill_not_configured_for_agent"
+msgstr "Skill is not configured for this agent"
+
+msgid "skill_not_found"
+msgstr "Skill not found"
+
+msgid "skill_referenced_by_agent"
+msgstr "This skill is still used by an agent"
+
+msgid "skill_shell_not_allowed"
+msgstr "Shell execution is not allowed for skills"
+
+msgid "skill_spec_name_mismatch"
+msgstr "Skill runtime spec name must match the skill name"
+
+msgid "skill_system_admin_required"
+msgstr "Only system administrators can manage system skills"
+
+msgid "skill_updated"
+msgstr "Skill updated successfully"
+
+msgid "skill_clouisle_extension_invalid"
+msgstr "Skill Clouisle extension is invalid"
+
+msgid "skill_description_required"
+msgstr "Skill description is required"
+
+msgid "skill_duplicate_name_in_source"
+msgstr "Duplicate Skill name found in the same source"
+
+msgid "skill_execution_invalid"
+msgstr "Skill execution config is invalid"
+
+msgid "skill_execution_mode_invalid"
+msgstr "Skill execution mode is invalid"
+
+msgid "skill_execution_limits_invalid"
+msgstr "Skill execution limits are invalid"
+
+msgid "skill_execution_artifacts_invalid"
+msgstr "Skill execution artifacts are invalid"
+
+msgid "skill_execution_artifact_path_invalid"
+msgstr "Skill execution artifact path is invalid"
+
+msgid "skill_frontmatter_invalid"
+msgstr "Skill frontmatter is invalid"
+
+msgid "skill_frontmatter_required"
+msgstr "SKILL.md frontmatter is required"
+
+msgid "skill_frontmatter_unclosed"
+msgstr "SKILL.md frontmatter is not closed"
+
+msgid "skill_git_clone_failed"
+msgstr "Failed to clone Git repository"
+
+msgid "skill_git_clone_timeout"
+msgstr "Git repository clone timed out"
+
+msgid "skill_git_credentials_not_allowed"
+msgstr "Git repository URL must not include credentials"
+
+msgid "skill_git_url_invalid"
+msgstr "Git repository URL is invalid"
+
+msgid "skill_import_installed"
+msgstr "Skills imported successfully"
+
+msgid "skill_import_session_expired"
+msgstr "Skill import session has expired"
+
+msgid "skill_import_session_missing_source"
+msgstr "Skill import session source is missing"
+
+msgid "skill_import_session_not_found"
+msgstr "Skill import session not found"
+
+msgid "skill_md_must_be_utf8"
+msgstr "SKILL.md must be UTF-8 encoded"
+
+msgid "skill_md_not_found"
+msgstr "SKILL.md not found"
+
+msgid "skill_name_conflict"
+msgstr "A Skill with this name already exists"
+
+msgid "skill_name_required"
+msgstr "Skill name is required"
+
+msgid "skill_package_invalid"
+msgstr "Skill package is invalid"
+
+msgid "skill_package_nested_archive_not_allowed"
+msgstr "Nested archives are not allowed in Skill packages"
+
+msgid "skill_package_not_in_session"
+msgstr "Skill package is not part of this import session"
+
+msgid "skill_package_path_invalid"
+msgstr "Skill package path is invalid"
+
+msgid "skill_package_symlink_not_allowed"
+msgstr "Symlinks are not allowed in Skill packages"
+
+msgid "skill_execution_config_invalid"
+msgstr "Skill execution config is invalid"
+
+msgid "skill_package_payload_invalid"
+msgstr "Skill package payload is invalid"
+
+msgid "skill_package_payload_missing"
+msgstr "Skill package payload is missing"
+
+msgid "skill_script_execution_not_ready"
+msgstr "Script Skill execution is not available yet"
+
+msgid "skill_script_not_found"
+msgstr "Declared Skill script was not found"
+
+msgid "skill_script_runtime_invalid"
+msgstr "Skill script runtime is invalid"
+
+msgid "skill_script_runtime_required"
+msgstr "Script mode requires a runtime"
+
+msgid "skill_script_path_invalid"
+msgstr "Skill script path is invalid"
+
+msgid "skill_script_required"
+msgstr "Script mode requires a script path"
+
+msgid "skill_subdir_invalid"
+msgstr "Skill source subdirectory is invalid"
+
+msgid "skill_zip_file_too_large"
+msgstr "A file in the zip package is too large"
+
+msgid "skill_zip_invalid"
+msgstr "Zip package is invalid"
+
+msgid "skill_zip_nested_archive_not_allowed"
+msgstr "Nested archives are not allowed in Skill zip packages"
+
+msgid "skill_zip_path_invalid"
+msgstr "Zip package contains an unsafe path"
+
+msgid "skill_zip_required"
+msgstr "A .zip file is required"
+
+msgid "skill_zip_symlink_not_allowed"
+msgstr "Symlinks are not allowed in Skill zip packages"
+
+msgid "skill_zip_too_large"
+msgstr "Zip package is too large"
+
+msgid "skill_zip_too_many_files"
+msgstr "Zip package contains too many files"
+
 msgid "all_chunks_failed_to_embed"
 msgstr "All chunks failed to embed: {error}"
 

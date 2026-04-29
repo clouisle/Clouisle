@@ -4,6 +4,7 @@ Tool utilities for chat.
 
 from app.models.agent import Agent
 from app.models.tool import Tool
+from app.services.skill import SkillService
 
 
 async def get_agent_tools(agent: Agent) -> list[dict]:
@@ -12,13 +13,12 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
     tool_ids = [
         config.get("tool_id") for config in tools_config if config.get("tool_id")
     ]
-    if not tool_ids:
-        return []
-
-    all_tools = await Tool.filter(id__in=tool_ids, is_enabled=True).all()
-    tool_map = {str(t.id): t for t in all_tools}
-
     tools: list[dict] = []
+
+    all_tools = (
+        await Tool.filter(id__in=tool_ids, is_enabled=True).all() if tool_ids else []
+    )
+    tool_map = {str(t.id): t for t in all_tools}
     for tool_id in tool_ids:
         tool = tool_map.get(str(tool_id))
         if tool:
@@ -32,6 +32,17 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
                 }
             )
 
+    for skill, _config in await SkillService.get_agent_skills(agent, enabled_only=True):
+        tools.append(
+            {
+                "id": skill.id,
+                "name": SkillService.build_tool_name(skill),
+                "description": skill.description,
+                "parameters": skill.input_schema,
+                "type": "skill",
+            }
+        )
+
     return tools
 
 
@@ -44,10 +55,10 @@ async def get_tool_display_names(
     tool_ids = [
         config.get("tool_id") for config in tools_config if config.get("tool_id")
     ]
-    if not tool_ids:
-        return {}
 
-    all_tools = await Tool.filter(id__in=tool_ids, is_enabled=True).all()
+    all_tools = (
+        await Tool.filter(id__in=tool_ids, is_enabled=True).all() if tool_ids else []
+    )
     tool_map = {str(t.id): t for t in all_tools}
 
     display_names: dict[str, str] = {}
@@ -55,5 +66,8 @@ async def get_tool_display_names(
         tool = tool_map.get(str(tool_id))
         if tool:
             display_names[tool.name] = tool.display_name
+
+    for skill, _config in await SkillService.get_agent_skills(agent, enabled_only=True):
+        display_names[SkillService.build_tool_name(skill)] = skill.display_name
 
     return display_names

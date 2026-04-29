@@ -1,3 +1,4 @@
+import base64
 import json
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import pytest
 from app.services.sandbox.manager import SandboxManager
 from app.services.sandbox.models import (
     SandboxArtifactSpec,
+    SandboxInputFileSpec,
     SandboxJob,
     SandboxJobSource,
     SandboxLimits,
@@ -120,6 +122,31 @@ class TestSandboxManager:
         assert result.success is True
         assert result.stdout.strip() == "hello sandbox"
         assert result.result == "hello sandbox"
+
+    async def test_stages_inline_input_files_and_honors_command_cwd(self, tmp_path: Path):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        job = SandboxJob(
+            source=SandboxJobSource.SKILL,
+            command=["python3", "run.py"],
+            cwd="/workspace/skill",
+            input_files=[
+                SandboxInputFileSpec(
+                    target_path="/workspace/skill/run.py",
+                    content_base64=base64.b64encode(
+                        b"from pathlib import Path; print(Path.cwd().name)"
+                    ).decode("ascii"),
+                ),
+            ],
+        )
+
+        result = await manager.execute(job)
+
+        assert result.success is True
+        assert result.stdout.strip() == "skill"
 
     async def test_collects_required_artifact(self, tmp_path: Path):
         manager = SandboxManager(

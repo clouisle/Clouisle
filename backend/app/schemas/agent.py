@@ -383,10 +383,11 @@ class KnowledgeBaseInfo(BaseModel):
 class ToolConfig(BaseModel):
     """Tool configuration"""
 
-    type: str = Field(..., description="Tool type: builtin, custom, mcp")
+    type: str = Field(..., description="Tool type: builtin, custom, mcp, skill")
     name: str | None = Field(None, description="Tool name (for builtin/custom)")
     tool_id: str | None = Field(None, description="Tool ID (for custom tools)")
     server_id: str | None = Field(None, description="MCP server ID")
+    skill_id: str | None = Field(None, description="Skill ID")
     config: dict[str, Any] | None = Field(None, description="Tool-specific config")
 
 
