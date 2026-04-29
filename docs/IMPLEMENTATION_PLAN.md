@@ -2,6 +2,20 @@
 
 ## Active
 
+- **chat-code-preview** — Complete. Add previewable chat code blocks that open a resizable right-side canvas with sandboxed preview/source tabs while leaving unsupported languages source-only. See `docs/plan/chat-code-preview.md`
+  - [x] 1. Preview data flow and code fence detection
+  - [x] 2. Sandboxed preview canvas and chat page layout
+  - [x] 3. i18n and end-to-end validation
+
+- **agent-skills** — In progress. Redesign Agent Skills around zip/Git package import: scan multiple `SKILL.md` roots, preview/install selected Skills, keep Agent-scoped function calling, and run only declared script Skills in sandbox. See `docs/plan/agent-skills.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Backend package-driven Skill model and schemas
+  - [ ] 3. Zip/Git scanning, package parsing, and import sessions
+  - [ ] 4. Skills import API, permissions, audit, and i18n
+  - [x] 5. Skill tool definition and instructions/script execution
+  - [x] 6. Frontend import, preview, install, detail, and test UI
+  - [ ] 7. Agent selection and end-to-end security/regression tests
+
 - **workflow-typed-variables** — Complete. Replace JSON-stringified variable passing with native object/array passthrough across the workflow engine, introduce a TypeSpec system declared per node and auto-inferred from debug runs, swap Redis context serialization to msgpack, and remove `Any` / `unknown` from workflow IO front and back. Hard cutover, no backward compatibility for existing workflow definitions. See `docs/plan/workflow-typed-variables.md`
   - [x] 1. TypeSpec 与 msgpack 序列化层
   - [x] 2. 节点 IO 摆脱字符串化
