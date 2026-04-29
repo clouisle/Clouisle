@@ -10,8 +10,7 @@ import {
   LogIn,
   ArrowLeft,
   AlertCircle,
-  Plus,
-  RotateCcw,
+  SquarePen,
   PanelLeftClose,
   PanelLeft,
   MessageSquare,
@@ -54,10 +53,13 @@ import {
   VariableForm,
   useVariableForm,
   type ChatInputFile,
+  type CodePreviewPayload,
 } from '@/components/chat'
 import { useChat, type ChatImageContent } from '@/hooks/use-chat'
 import { convertBackendMessages, type BackendMessage } from '@/lib/utils/message-converter'
 import {Alert, AlertDescription, AlertTitle} from "@/components/ui/alert";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { CodePreviewCanvas } from '@/components/chat/code-preview-canvas'
 import {
   Collapsible,
   CollapsibleContent,
@@ -117,7 +119,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
   const [input, setInput] = React.useState('')
-  
+  const [activeCodePreview, setActiveCodePreview] = React.useState<CodePreviewPayload | null>(null)
+
   // File upload state with progress tracking
   const [files, setFiles] = React.useState<ChatInputFile[]>([])
   const [isUploading, setIsUploading] = React.useState(false)
@@ -570,7 +573,12 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
             {/* Sidebar Header */}
             <div className="flex items-center justify-between p-3 h-14 border-b">
               {/* Agent Info */}
-              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md text-left transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={handleNewChat}
+                title={t('newChat')}
+              >
                 {displayIcon ? (
                   isIconUrl ? (
                     <div className="relative h-6 w-6 overflow-hidden">
@@ -590,8 +598,8 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                     <Sparkles className="h-3.5 w-3.5" />
                   </div>
                 )}
-                <span className="font-medium text-foreground text-sm truncate max-w-[120px]">{agent.name}</span>
-              </div>
+                <span className="truncate text-sm font-medium text-foreground max-w-[120px]">{agent.name}</span>
+              </button>
               
               {/* New Chat Button */}
               <Button
@@ -601,7 +609,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 onClick={handleNewChat}
                 title={t('newChat')}
               >
-                <Plus className="h-5 w-5" />
+                <SquarePen className="h-5 w-5" />
               </Button>
             </div>
 
@@ -672,7 +680,10 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="flex-1 min-w-0 min-h-0">
+        <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <ResizablePanel defaultSize={activeCodePreview ? '62%' : '100%'} minSize="40%">
+            <div className="flex h-full min-w-0 flex-col">
         {/* Header */}
         <header className="flex items-center justify-between px-3 h-14 shrink-0 border-b">
           <div className="flex items-center gap-2">
@@ -688,7 +699,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           </div>
           
           <div className="flex items-center gap-2">
-            {hasMessages && (
+            {hasMessages && !sidebarOpen && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -696,7 +707,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
                 onClick={handleNewChat}
                 title={t('newChat')}
               >
-                <RotateCcw className="h-5 w-5" />
+                <SquarePen className="h-5 w-5" />
               </Button>
             )}
           </div>
@@ -764,6 +775,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
               onSelectOption={(option) => {
                 void handleSubmit(option, [])
               }}
+              onOpenCodePreview={setActiveCodePreview}
               emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Agent Icon */}
@@ -903,6 +915,20 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
             </p>
           </div>
         </div>
+            </div>
+          </ResizablePanel>
+          {activeCodePreview && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize="38%" minSize="25%" maxSize="60%">
+                <CodePreviewCanvas
+                  preview={activeCodePreview}
+                  onClose={() => setActiveCodePreview(null)}
+                />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
       </div>
 
       {/* Delete Dialog */}

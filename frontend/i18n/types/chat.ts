@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-28T13:20:22.601Z
+// GENERATED — 2026-04-29T18:55:48.183Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -127,6 +127,12 @@ export type ChatMessages = {
       mermaidExitFullscreenLabel: string
       mermaidRendering: string
       mermaidError: string
+      codePreview: string
+      codeSource: string
+      openCodePreview: string
+      closeCodePreview: string
+      codePreviewCanvasTitle: string
+      previewScriptsEnabled: string
     }
     userInputRequest: {
       pending: string

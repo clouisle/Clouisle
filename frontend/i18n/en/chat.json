@@ -124,7 +124,13 @@
       "mermaidEnterFullscreenLabel": "Fullscreen",
       "mermaidExitFullscreenLabel": "Exit fullscreen",
       "mermaidRendering": "Rendering diagram...",
-      "mermaidError": "Mermaid Error: {error}"
+      "mermaidError": "Mermaid Error: {error}",
+      "codePreview": "Preview",
+      "codeSource": "Source",
+      "openCodePreview": "Preview",
+      "closeCodePreview": "Close preview",
+      "codePreviewCanvasTitle": "Code preview",
+      "previewScriptsEnabled": "Scripts run in a sandboxed iframe"
     },
     "userInputRequest": {
       "pending": "Please select an option:",

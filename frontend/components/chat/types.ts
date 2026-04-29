@@ -237,6 +237,15 @@ export interface ChatError {
   quotaType?: string
 }
 
+export type CodePreviewKind = 'html' | 'svg' | 'css' | 'javascript' | 'markdown' | 'source'
+
+export interface CodePreviewPayload {
+  id: string
+  language: string
+  code: string
+  kind: CodePreviewKind
+}
+
 /**
  * Suggested question/action
  */

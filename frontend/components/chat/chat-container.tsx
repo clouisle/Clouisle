@@ -1,11 +1,11 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useLayoutEffect } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Message } from './message';
-import type { ChatMessage, MessagePart } from './types';
+import type { ChatMessage, CodePreviewPayload, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
@@ -22,6 +22,8 @@ interface ChatContainerProps {
   onSelectOption?: (option: string) => void;
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
+  /** Callback when a previewable code block is opened */
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
 }
 
 export function ChatContainer({
@@ -35,10 +37,18 @@ export function ChatContainer({
   onSwitchVersion,
   onSelectOption,
   showScrollToBottom = true,
+  onOpenCodePreview,
 }: ChatContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const followStreamingRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const isNearBottom = useCallback(() => {
+    if (!containerRef.current) return true;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    return scrollHeight - scrollTop - clientHeight < 100;
+  }, []);
 
   // Scroll to bottom within container only (not the page)
   const scrollToBottom = useCallback(() => {
@@ -50,22 +60,13 @@ export function ChatContainer({
     }
   }, []);
 
-  // Scroll to bottom instantly (for auto-scroll during streaming)
-  const scrollToBottomInstant = useCallback(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, []);
-
   // Track if user has manually scrolled up
   const handleScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    // Consider "at bottom" if within 100px of the bottom
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
-    userScrolledRef.current = !isAtBottom;
-    setShowScrollButton(!isAtBottom && messages.length > 0);
-  }, [messages.length]);
+    const atBottom = isNearBottom();
+    userScrolledRef.current = !atBottom;
+    followStreamingRef.current = atBottom;
+    setShowScrollButton(!atBottom && messages.length > 0);
+  }, [isNearBottom, messages.length]);
 
   // Get the last message's parts length for dependency tracking during streaming
   const lastMessagePartsLength = messages.length > 0
@@ -81,20 +82,25 @@ export function ChatContainer({
         .length
     : 0;
 
-  // Auto scroll to bottom when new messages arrive or streaming
-  useEffect(() => {
-    if (autoScroll && !userScrolledRef.current) {
-      scrollToBottomInstant();
+  // Auto scroll to bottom before paint so streaming height changes do not flash at the old position.
+  useLayoutEffect(() => {
+    if (!autoScroll || userScrolledRef.current || !followStreamingRef.current) {
+      return;
     }
-  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll, isStreaming, scrollToBottomInstant]);
+
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll]);
 
   // Reset user scroll tracking when streaming starts
   useEffect(() => {
-    if (isStreaming) {
+    if (isStreaming && isNearBottom()) {
       userScrolledRef.current = false;
+      followStreamingRef.current = true;
       setShowScrollButton(false);
     }
-  }, [isStreaming]);
+  }, [isStreaming, isNearBottom]);
 
   // Hide scroll button when no messages
   useEffect(() => {
@@ -121,7 +127,7 @@ export function ChatContainer({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none]"
       >
         <div className="flex flex-col min-w-0">
           {messages.map((message, index) => {
@@ -137,6 +143,7 @@ export function ChatContainer({
                 onRegenerate={message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined}
                 onSwitchVersion={message.role === 'assistant' && onSwitchVersion ? (versionIndex) => onSwitchVersion(message.id, versionIndex) : undefined}
                 onSelectOption={onSelectOption}
+                onOpenCodePreview={onOpenCodePreview}
               />
             );
           })}

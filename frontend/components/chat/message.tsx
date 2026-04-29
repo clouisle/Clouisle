@@ -5,12 +5,16 @@ import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
 import { useTheme } from 'next-themes'
 import type { MermaidConfig } from 'mermaid'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, ZoomIn, ZoomOut, Download, Maximize2, Minimize2 } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, ZoomIn, ZoomOut, Download, Maximize2, Minimize2, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
   Streamdown,
+  defaultRehypePlugins,
 } from 'streamdown'
+import type { CodeHighlighterPlugin, PluginConfig } from 'streamdown'
+import { bundledLanguages, codeToTokens } from 'shiki'
+import type { BundledLanguage, BundledTheme } from 'shiki'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Popover,
@@ -43,7 +47,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -76,9 +80,40 @@ import {
 const MERMAID_FENCE_REGEX = /^```mermaid\r?\n([\s\S]*?)\r?\n```$/
 const MERMAID_PARTIAL_FENCE_REGEX = /^```mermaid\r?\n([\s\S]*)$/
 const MERMAID_PARTIAL_OPENING_REGEX = /```mermaid\r?\n([\s\S]*)$/
+const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
 const MERMAID_MIN_ZOOM = 0.5
 const MERMAID_MAX_ZOOM = 2
 const MERMAID_ZOOM_STEP = 0.1
+const STREAMING_REHYPE_PLUGINS = [
+  defaultRehypePlugins.sanitize,
+  defaultRehypePlugins.harden,
+]
+const CHAT_CODE_THEMES: [BundledTheme, BundledTheme] = ['github-light', 'github-dark']
+const chatCodeHighlighter: CodeHighlighterPlugin = {
+  name: 'shiki',
+  type: 'code-highlighter',
+  highlight: (options, callback) => {
+    if (!(options.language in bundledLanguages)) {
+      return null
+    }
+
+    void codeToTokens(options.code, {
+      lang: options.language,
+      themes: {
+        light: options.themes[0] as BundledTheme,
+        dark: options.themes[1] as BundledTheme,
+      },
+    }).then((result) => callback?.(result)).catch(() => undefined)
+
+    return null
+  },
+  supportsLanguage: (language) => language in bundledLanguages,
+  getSupportedLanguages: () => Object.keys(bundledLanguages) as BundledLanguage[],
+  getThemes: () => CHAT_CODE_THEMES,
+}
+const chatStreamdownPlugins: PluginConfig = {
+  code: chatCodeHighlighter,
+}
 const mermaidSvgCache = new Map<string, string>()
 const mermaidStreamSessions = new Map<string, MermaidStreamSession>()
 let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
@@ -92,6 +127,11 @@ type MermaidStreamSession = {
   animatedSvg: string
   renderedTheme: MermaidTheme
   error: string | null
+}
+
+type ParsedCodeFence = {
+  language: string
+  code: string
 }
 
 function normalizeMermaidCode(content: string) {
@@ -121,6 +161,39 @@ function isPartialMermaidFence(content: string) {
 function extractMermaidCode(content: string) {
   const match = content.match(MERMAID_FENCE_REGEX) ?? content.match(MERMAID_PARTIAL_OPENING_REGEX)
   return normalizeMermaidCode(match?.[1] ?? content)
+}
+
+function parseCodeFence(content: string): ParsedCodeFence | null {
+  const match = content.match(CODE_FENCE_REGEX)
+  if (!match) {
+    return null
+  }
+
+  const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  return {
+    language,
+    code: match[2].replace(/\r\n?/g, '\n'),
+  }
+}
+
+function getPreviewKind(language: string, code: string): CodePreviewPayload['kind'] | null {
+  if (language === 'html' || language === 'htm' || language === 'xhtml') {
+    return 'html'
+  }
+  if (language === 'svg' || (language === 'xml' && code.trimStart().toLowerCase().startsWith('<svg'))) {
+    return 'svg'
+  }
+  if (language === 'css') {
+    return 'css'
+  }
+  if (language === 'js' || language === 'javascript' || language === 'mjs') {
+    return 'javascript'
+  }
+  if (language === 'md' || language === 'markdown') {
+    return 'markdown'
+  }
+
+  return null
 }
 
 function getMermaidCacheKey(code: string, theme: MermaidTheme) {
@@ -423,6 +496,70 @@ function MermaidSegmentButton({
     >
       {children}
     </button>
+  )
+}
+
+function PreviewableCodeBlock({
+  content,
+  index,
+  shouldParseIncompleteMarkdown,
+  parsedFence,
+  previewKind,
+  onOpenCodePreview,
+  ...props
+}: React.ComponentProps<typeof Block> & {
+  parsedFence: ParsedCodeFence
+  previewKind: CodePreviewPayload['kind'] | null
+  onOpenCodePreview: (payload: CodePreviewPayload) => void
+}) {
+  const t = useTranslations('chat.message')
+  const language = parsedFence.language || previewKind || 'text'
+  const blockRef = React.useRef<HTMLDivElement>(null)
+  const [toolbar, setToolbar] = React.useState<HTMLDivElement | null>(null)
+
+  React.useLayoutEffect(() => {
+    const block = blockRef.current
+    if (!block) {
+      setToolbar(null)
+      return
+    }
+
+    const syncToolbar = () => {
+      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"] > div'))
+    }
+
+    syncToolbar()
+    const observer = new MutationObserver(syncToolbar)
+    observer.observe(block, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [content])
+
+  const previewButton = (
+    <button
+      type="button"
+      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onOpenCodePreview({
+        id: `${language}:${parsedFence.code.length}:${parsedFence.code.slice(0, 32)}`,
+        language,
+        code: parsedFence.code,
+        kind: previewKind ?? 'source',
+      })}
+    >
+      <Eye className="h-3.5 w-3.5" />
+      <span>{t('openCodePreview')}</span>
+    </button>
+  )
+
+  return (
+    <div ref={blockRef}>
+      <Block
+        content={content}
+        index={index}
+        shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+        {...props}
+      />
+      {toolbar ? ReactDOM.createPortal(previewButton, toolbar) : null}
+    </div>
   )
 }
 
@@ -800,6 +937,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onSwitchVersion?: (versionIndex: number) => void
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
+  /** Callback when a previewable code block is opened */
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }
 
 export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
@@ -814,6 +953,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onFeedback,
       onSwitchVersion,
       onSelectOption,
+      onOpenCodePreview,
       className,
       ...props
     },
@@ -968,6 +1108,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             text={part.text}
             sources={documentSources}
             isStreaming={isStreaming && part.state !== 'done'}
+            onOpenCodePreview={onOpenCodePreview}
           />
         )
       }
@@ -1644,11 +1785,13 @@ function MermaidMarkdownBlock({
   mermaidTheme,
   isStreaming,
   streamKey,
+  onOpenCodePreview,
   ...props
 }: React.ComponentProps<typeof Block> & {
   mermaidTheme: MermaidTheme
   isStreaming: boolean
   streamKey: string
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }) {
   if (isMermaidFence(content) || (isStreaming && isPartialMermaidFence(content))) {
     return (
@@ -1657,6 +1800,23 @@ function MermaidMarkdownBlock({
         theme={mermaidTheme}
         isComplete={isMermaidFence(content)}
         streamKey={streamKey}
+      />
+    )
+  }
+
+  const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
+  const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
+
+  if (parsedFence && onOpenCodePreview) {
+    return (
+      <PreviewableCodeBlock
+        content={content}
+        index={index}
+        shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+        parsedFence={parsedFence}
+        previewKind={previewKind}
+        onOpenCodePreview={onOpenCodePreview}
+        {...props}
       />
     )
   }
@@ -1677,12 +1837,14 @@ function TextWithCitations({
   text,
   sources,
   isStreaming = false,
+  onOpenCodePreview,
 }: {
   messageId: string
   partIndex: number
   text: string
   sources: SourceDocumentPart[]
   isStreaming?: boolean
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }) {
   const { resolvedTheme } = useTheme()
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -1783,6 +1945,7 @@ function TextWithCitations({
   }, [hasSources])
 
   const mermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default'
+  const rehypePlugins = isStreaming ? STREAMING_REHYPE_PLUGINS : undefined
   const mermaidStreamKeyPrefix = React.useMemo(
     () => `${messageId}:${partIndex}`,
     [messageId, partIndex]
@@ -1839,20 +2002,46 @@ function TextWithCitations({
     }
   }, [processedText, hasSources, processCitations])
 
+  React.useEffect(() => {
+    if (!isStreaming || !containerRef.current) {
+      return
+    }
+
+    const scrollCodeBlocksToBottom = () => {
+      containerRef.current?.querySelectorAll<HTMLElement>('[data-streamdown="code-block-body"]').forEach((block) => {
+        block.scrollTop = block.scrollHeight
+      })
+    }
+
+    scrollCodeBlocksToBottom()
+    const observer = new MutationObserver(scrollCodeBlocksToBottom)
+    observer.observe(containerRef.current, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
+    return () => observer.disconnect()
+  }, [isStreaming, processedText])
+
   return (
     <div
       ref={containerRef}
+      data-chat-streaming={isStreaming ? 'true' : 'false'}
       className="w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
     >
       <Streamdown
         isAnimating={isStreaming}
         components={components}
+        rehypePlugins={rehypePlugins}
+        plugins={isStreaming ? undefined : chatStreamdownPlugins}
         BlockComponent={(props) => (
           <MermaidMarkdownBlock
             {...props}
             mermaidTheme={mermaidTheme}
             isStreaming={isStreaming}
             streamKey={`${mermaidStreamKeyPrefix}:${props.index}`}
+            onOpenCodePreview={onOpenCodePreview}
           />
         )}
       >

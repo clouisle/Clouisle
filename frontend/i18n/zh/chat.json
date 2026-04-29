@@ -124,7 +124,13 @@
       "mermaidEnterFullscreenLabel": "全屏",
       "mermaidExitFullscreenLabel": "退出全屏",
       "mermaidRendering": "正在渲染图表...",
-      "mermaidError": "Mermaid 错误：{error}"
+      "mermaidError": "Mermaid 错误：{error}",
+      "codePreview": "预览",
+      "codeSource": "源码",
+      "openCodePreview": "预览",
+      "closeCodePreview": "关闭预览",
+      "codePreviewCanvasTitle": "代码预览",
+      "previewScriptsEnabled": "脚本在沙箱 iframe 中运行"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",
