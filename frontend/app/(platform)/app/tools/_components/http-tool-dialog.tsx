@@ -226,7 +226,6 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
 // HTTP工具参数字段类型
 const HTTP_PARAM_TYPES = ['string', 'number', 'boolean', 'array', 'object', 'file', 'image'] as const
-type HttpParamType = typeof HTTP_PARAM_TYPES[number]
 
 function getHttpParamTypeLabel(t: (key: string) => string, type: string): string {
   const labels: Record<string, string> = {
