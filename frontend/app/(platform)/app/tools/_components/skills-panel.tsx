@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+
 import { PermissionGuard } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
@@ -107,26 +107,6 @@ function PreviewSkillSummary({ item }: { item: SkillPreviewItem }) {
   )
 }
 
-function PreviewModeBadge({ mode }: { mode: SkillPreviewItem['execution_mode'] }) {
-  const t = useTranslations('platform.skills.import')
-  const modeDescription = {
-    instructions: t('modeTips.instructions'),
-    script: t('modeTips.script'),
-    legacy: t('modeTips.legacy'),
-  }[mode]
-
-  return (
-    <Tooltip>
-      <TooltipTrigger>
-        <Badge variant="outline">{mode}</Badge>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-64 whitespace-normal leading-relaxed">
-        {modeDescription}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
 function PreviewRow({
   item,
   selection,
@@ -154,7 +134,6 @@ function PreviewRow({
       </TableCell>
       <TableCell className="max-w-52 truncate">{item.package_path}</TableCell>
       <TableCell><PreviewSkillSummary item={item} /></TableCell>
-      <TableCell><PreviewModeBadge mode={item.execution_mode} /></TableCell>
       <TableCell>
         {item.conflict ? (
           <Badge variant="secondary">{t('conflict')}</Badge>
@@ -572,7 +551,6 @@ export function SkillsPanel() {
                       <TableHead className="w-10" />
                       <TableHead>{t('import.packagePath')}</TableHead>
                       <TableHead>{t('import.name')}</TableHead>
-                      <TableHead>{t('import.mode')}</TableHead>
                       <TableHead>{t('import.status')}</TableHead>
                       <TableHead>{t('import.action')}</TableHead>
                     </TableRow>
@@ -591,7 +569,6 @@ export function SkillsPanel() {
                         <TableCell><AlertCircle className="h-4 w-4 text-destructive" /></TableCell>
                         <TableCell>{item.package_path}</TableCell>
                         <TableCell><PreviewSkillSummary item={item} /></TableCell>
-                        <TableCell><PreviewModeBadge mode={item.execution_mode} /></TableCell>
                         <TableCell className="text-destructive">{item.errors.map(formatImportIssue).join(', ')}</TableCell>
                         <TableCell>{t('import.skip')}</TableCell>
                       </TableRow>
