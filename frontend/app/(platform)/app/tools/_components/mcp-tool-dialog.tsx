@@ -47,6 +47,7 @@ import {
 } from '@/lib/api/tools'
 import type { UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
+import { ToolCategoryInput } from './tool-category-input'
 
 interface McpToolDialogProps {
   tool?: ToolDetail | null
@@ -97,6 +98,7 @@ export function McpToolDialog({
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
+  const [category, setCategory] = useState('api')
   const [isEnabled, setIsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -133,6 +135,7 @@ export function McpToolDialog({
         setName(tool.name)
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
+        setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
         setFieldErrors({})
         setFieldErrors({})
@@ -170,6 +173,7 @@ export function McpToolDialog({
         setName('')
         setDisplayName('')
         setIcon('')
+        setCategory('api')
         setIsEnabled(true)
         setFieldErrors({})
         setTransportType('stdio')
@@ -287,6 +291,7 @@ export function McpToolDialog({
         display_name: displayName,
         description: toolsDescription || `MCP Server: ${displayName || name}`,
         icon,
+        category,
         is_enabled: isEnabled,
         type: 'mcp',
         mcp_config: mcpConfig,
@@ -436,7 +441,7 @@ export function McpToolDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-start gap-4">
             <div className="space-y-2">
               <Label>{t('form.icon')}</Label>
               <ImageUpload
@@ -451,7 +456,15 @@ export function McpToolDialog({
                 }
               />
             </div>
-            <div className="flex-1 flex items-center justify-end gap-2">
+            <div className="space-y-2">
+              <Label htmlFor="category">{t('form.category')}</Label>
+              <ToolCategoryInput
+                value={category}
+                onChange={setCategory}
+                inputClassName="w-28"
+              />
+            </div>
+            <div className="flex-1 flex items-center justify-end gap-2 pt-8">
               <Label htmlFor="enabled">{t('form.enabled')}</Label>
               <Switch
                 id="enabled"

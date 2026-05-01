@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Tool, ToolCategory, ToolType } from '@/lib/api'
+import { Tool, ToolType, isPresetToolCategory } from '@/lib/api'
 import { ToolCard } from './tool-card'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -58,18 +58,7 @@ export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigur
     return groups
   }, [tools, search, filter])
 
-  // 分类显示名称
-  const categoryLabels: Record<ToolCategory, string> = {
-    time: t('categories.time'),
-    math: t('categories.math'),
-    search: t('categories.search'),
-    web: t('categories.web'),
-    file: t('categories.file'),
-    code: t('categories.code'),
-    api: t('categories.api'),
-    data: t('categories.data'),
-    other: t('categories.other'),
-  }
+  const categoryLabel = (category: string) => isPresetToolCategory(category) ? t(`categories.${category}`) : category
 
   // 统计各类型数量
   const typeCounts = useMemo(() => {
@@ -125,7 +114,7 @@ export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigur
           {Object.entries(groupedTools).map(([category, categoryTools]) => (
             <div key={category}>
               <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                {categoryLabels[category as ToolCategory] || category}
+                {categoryLabel(category)}
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {categoryTools.map((tool) => (

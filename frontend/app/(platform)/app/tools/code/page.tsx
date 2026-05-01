@@ -41,6 +41,7 @@ import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, 
 import { ApiError } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { ImageUpload } from '@/components/ui/image-upload'
+import { ToolCategoryInput } from '../_components/tool-category-input'
 import Editor from '@monaco-editor/react'
 
 const CODE_LANGUAGES = [
@@ -768,22 +769,11 @@ export default function CodeToolPage() {
                     <Label htmlFor="category" className="text-xs text-muted-foreground">
                       {t('form.category')}
                     </Label>
-                    <Select value={category} onValueChange={(v) => setCategory(v as ToolCategory)}>
-                      <SelectTrigger id="category" size="sm">
-                        <SelectValue>{t(`categories.${category}`)}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent side="bottom" alignItemWithTrigger={false}>
-                        <SelectItem value="time">{t('categories.time')}</SelectItem>
-                        <SelectItem value="math">{t('categories.math')}</SelectItem>
-                        <SelectItem value="search">{t('categories.search')}</SelectItem>
-                        <SelectItem value="web">{t('categories.web')}</SelectItem>
-                        <SelectItem value="file">{t('categories.file')}</SelectItem>
-                        <SelectItem value="code">{t('categories.code')}</SelectItem>
-                        <SelectItem value="api">{t('categories.api')}</SelectItem>
-                        <SelectItem value="data">{t('categories.data')}</SelectItem>
-                        <SelectItem value="other">{t('categories.other')}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <ToolCategoryInput
+                      value={category}
+                      onChange={setCategory}
+                      inputClassName="h-8 text-sm"
+                    />
                   </div>
                 </div>
                 <div className="space-y-1.5">

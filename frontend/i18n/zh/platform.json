@@ -201,6 +201,7 @@
         "web": "网页",
         "file": "文件",
         "code": "代码",
+        "sandbox": "沙盒",
         "api": "API",
         "data": "数据",
         "other": "其他"

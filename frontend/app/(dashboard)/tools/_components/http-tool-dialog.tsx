@@ -31,6 +31,7 @@ import {
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory } from '@/lib/api/tools'
 import { cn } from '@/lib/utils'
 import { FieldError } from '@/components/ui/field'
+import { ToolCategoryInput } from '@/app/(platform)/app/tools/_components/tool-category-input'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -303,23 +304,12 @@ export function HttpToolDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('category')}</Label>
-              <Select value={category} onValueChange={(v) => setCategory(v as ToolCategory)}>
-                <SelectTrigger className="w-28">
-                  <SelectValue>{t(`categories.${category}`)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent side="bottom" alignItemWithTrigger={false}>
-                  <SelectItem value="time">{t('categories.time')}</SelectItem>
-                  <SelectItem value="math">{t('categories.math')}</SelectItem>
-                  <SelectItem value="search">{t('categories.search')}</SelectItem>
-                  <SelectItem value="web">{t('categories.web')}</SelectItem>
-                  <SelectItem value="file">{t('categories.file')}</SelectItem>
-                  <SelectItem value="code">{t('categories.code')}</SelectItem>
-                  <SelectItem value="api">{t('categories.api')}</SelectItem>
-                  <SelectItem value="data">{t('categories.data')}</SelectItem>
-                  <SelectItem value="other">{t('categories.other')}</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="category">{t('category')}</Label>
+              <ToolCategoryInput
+                value={category}
+                onChange={setCategory}
+                inputClassName="w-28"
+              />
             </div>
           </div>
 

@@ -17,7 +17,7 @@ import {
   Link,
   ChartColumn,
 } from 'lucide-react'
-import { type Skill, type Tool, type ToolConfig, type ToolCategory, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
+import { isPresetToolCategory, type PresetToolCategory, type Skill, type Tool, type ToolConfig, type ToolParameter, type ToolType, toolsApi, skillsApi } from '@/lib/api'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -33,7 +33,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // 分类图标和颜色映射
-const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: string }> = {
+const categoryConfig: Record<PresetToolCategory, { icon: React.ReactNode; color: string }> = {
   time: {
     icon: <Clock3 className="h-4 w-4" />,
     color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
@@ -57,6 +57,10 @@ const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: strin
   code: {
     icon: <Code2 className="h-4 w-4" />,
     color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300',
+  },
+  sandbox: {
+    icon: <Code2 className="h-4 w-4" />,
+    color: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300',
   },
   api: {
     icon: <Link className="h-4 w-4" />,
@@ -106,6 +110,9 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
     mcp: t('dialog.filters.mcp'),
     skill: t('dialog.filters.skill'),
   }
+  const categoryLabel = (category: string) => isPresetToolCategory(category) ? t(`dialog.categories.${category}`) : category
+  const categoryDisplay = (category: string) => isPresetToolCategory(category) ? categoryConfig[category] : categoryConfig.other
+
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState('')
   const [filter, setFilter] = React.useState<'all' | ToolType>('all')
@@ -243,8 +250,8 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
               Object.entries(groupedTools).map(([category, tools]) => (
                 <div key={category}>
                   <h3 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-                    <span>{categoryConfig[category as ToolCategory]?.icon || '⚙️'}</span>
-                    {t(`dialog.categories.${category}`)}
+                    <span>{categoryDisplay(category).icon}</span>
+                    {categoryLabel(category)}
                   </h3>
                   <div className="grid grid-cols-1 gap-2">
                     {tools.map((tool) => {
@@ -259,9 +266,10 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                       } else if (tool.type === 'skill') {
                         isSelected = selectedSkillIds.includes(tool.id)
                       }
-                      const category = categoryConfig[tool.category] || categoryConfig.other
+                      const category = categoryDisplay(tool.category)
+                      const isSandboxTool = tool.category === 'sandbox'
                       const type = typeConfig[tool.type]
-                      const typeLabel = typeLabels[tool.type]
+                      const typeLabel = isSandboxTool ? t('dialog.categories.sandbox') : typeLabels[tool.type]
 
                       return (
                         <div
@@ -298,7 +306,7 @@ export function AddToolButton({ availableTools, selectedToolNames, selectedToolI
                             <div className="flex items-center gap-1.5 mt-1.5">
                               <Badge
                                 variant="outline"
-                                className={cn('text-[10px] px-1.5 py-0', type.color)}
+                                className={cn('text-[10px] px-1.5 py-0', isSandboxTool ? category.color : type.color)}
                               >
                                 {typeLabel}
                               </Badge>

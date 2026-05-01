@@ -5,34 +5,36 @@ import { Handle, Position } from '@xyflow/react'
 import { Wrench, AlertCircle, Clock3, Calculator, Search, Globe, FolderOpen, Code2, Link, ChartColumn } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { cn } from '@/lib/utils'
-import type { ToolCategory, ToolType } from '@/lib/api'
+import { isPresetToolCategory, type PresetToolCategory, type ToolCategory, type ToolType } from '@/lib/api'
+
+type WorkflowToolType = Exclude<ToolType, 'skill'>
 
 // 分类图标
-const categoryIcons: Record<ToolCategory, React.ReactNode> = {
+const categoryIcons: Record<PresetToolCategory, React.ReactNode> = {
   time: <Clock3 className="h-3.5 w-3.5" />,
   math: <Calculator className="h-3.5 w-3.5" />,
   search: <Search className="h-3.5 w-3.5" />,
   web: <Globe className="h-3.5 w-3.5" />,
   file: <FolderOpen className="h-3.5 w-3.5" />,
   code: <Code2 className="h-3.5 w-3.5" />,
+  sandbox: <Code2 className="h-3.5 w-3.5" />,
   api: <Link className="h-3.5 w-3.5" />,
   data: <ChartColumn className="h-3.5 w-3.5" />,
   other: <Wrench className="h-3.5 w-3.5" />,
 }
 
 // 类型标签配置
-const typeColors: Record<ToolType, string> = {
+const typeColors: Record<WorkflowToolType, string> = {
   builtin: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   custom: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   mcp: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-  skill: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
 }
 
 // 工具节点配置
 export interface ToolNodeConfig {
   toolId?: string
   toolName?: string
-  toolType: ToolType
+  toolType: WorkflowToolType
   toolDisplayName?: string
   toolDescription?: string
   toolIcon?: string
@@ -141,7 +143,7 @@ export function ToolNode({ selected, data }: ToolNodeProps) {
           )}>
             {hasTool && config.toolIcon ? (
               <span className="text-sm">{config.toolIcon}</span>
-            ) : hasTool && config.toolCategory ? (
+            ) : hasTool && config.toolCategory && isPresetToolCategory(config.toolCategory) ? (
               <span className="text-sm">{categoryIcons[config.toolCategory]}</span>
             ) : (
               <Wrench className="h-3.5 w-3.5" />

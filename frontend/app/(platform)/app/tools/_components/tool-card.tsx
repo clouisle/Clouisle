@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useTranslations } from 'next-intl'
-import { Tool, ToolCategory, ToolType } from '@/lib/api'
+import { Tool, ToolType, isPresetToolCategory, type PresetToolCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -44,7 +44,7 @@ interface ToolCardProps {
 }
 
 // 分类图标和颜色映射
-const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: string }> = {
+const categoryConfig: Record<PresetToolCategory, { icon: React.ReactNode; color: string }> = {
   time: {
     icon: <Clock3 className="h-4 w-4" />,
     color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
@@ -68,6 +68,10 @@ const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: strin
   code: {
     icon: <Code2 className="h-4 w-4" />,
     color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300',
+  },
+  sandbox: {
+    icon: <Code2 className="h-4 w-4" />,
+    color: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300',
   },
   api: {
     icon: <Link className="h-4 w-4" />,
@@ -102,7 +106,8 @@ export function ToolCard({
 }: ToolCardProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
-  const category = categoryConfig[tool.category] || categoryConfig.other
+  const category = isPresetToolCategory(tool.category) ? categoryConfig[tool.category] : categoryConfig.other
+  const categoryLabel = isPresetToolCategory(tool.category) ? t(`categories.${tool.category}`) : tool.category
   const typeColor = typeColorConfig[tool.type]
   const isEditable = tool.type === 'custom' || tool.type === 'mcp'
   const needsConfig = tool.type === 'builtin' && tool.requires_config
@@ -115,19 +120,6 @@ export function ToolCard({
     custom: t('filters.custom'),
     mcp: t('filters.mcp'),
     skill: 'Skill',
-  }
-
-  // 分类标签映射（使用 i18n）
-  const categoryLabels: Record<ToolCategory, string> = {
-    time: t('categories.time'),
-    math: t('categories.math'),
-    search: t('categories.search'),
-    web: t('categories.web'),
-    file: t('categories.file'),
-    code: t('categories.code'),
-    api: t('categories.api'),
-    data: t('categories.data'),
-    other: t('categories.other'),
   }
 
   // 判断图标是否为 URL
@@ -215,7 +207,7 @@ export function ToolCard({
               variant="outline"
               className={cn('text-xs px-1.5 py-0', category.color)}
             >
-              {categoryLabels[tool.category] || tool.category}
+              {categoryLabel}
             </Badge>
           </div>
 

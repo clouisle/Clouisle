@@ -13,16 +13,23 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useTeam } from '@/contexts/team-context'
-import { toolsApi, type Tool, type ToolType, type ToolCategory, type McpToolInfo } from '@/lib/api'
+import { toolsApi, isPresetToolCategory, type Tool, type ToolCategory, type PresetToolCategory, type McpToolInfo } from '@/lib/api'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
+
+type WorkflowToolType = Exclude<Tool['type'], 'skill'>
+type WorkflowTool = Tool & { type: WorkflowToolType }
+
+function isWorkflowTool(tool: Tool): tool is WorkflowTool {
+  return tool.type !== 'skill'
+}
 
 // 工具节点配置
 export interface ToolNodeConfig {
   toolId?: string              // 工具 ID（custom/mcp 服务器）
   toolName?: string            // 工具名称（builtin）
-  toolType: ToolType           // 工具类型
+  toolType: WorkflowToolType   // 工具类型
   toolDisplayName?: string     // 工具显示名称
   toolDescription?: string     // 工具描述
   toolIcon?: string            // 工具图标
@@ -57,33 +64,32 @@ export const defaultToolNodeConfig: ToolNodeConfig = {
 }
 
 // 分类图标和颜色
-const categoryConfig: Record<ToolCategory, { icon: React.ReactNode; color: string }> = {
+const categoryConfig: Record<PresetToolCategory, { icon: React.ReactNode; color: string }> = {
   time: { icon: <Clock3 className="h-4 w-4" />, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' },
   math: { icon: <Calculator className="h-4 w-4" />, color: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' },
   search: { icon: <Search className="h-4 w-4" />, color: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' },
   web: { icon: <Globe className="h-4 w-4" />, color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300' },
   file: { icon: <FolderOpen className="h-4 w-4" />, color: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' },
   code: { icon: <Code2 className="h-4 w-4" />, color: 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300' },
+  sandbox: { icon: <Code2 className="h-4 w-4" />, color: 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300' },
   api: { icon: <Link className="h-4 w-4" />, color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' },
   data: { icon: <ChartColumn className="h-4 w-4" />, color: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300' },
   other: { icon: <Wrench className="h-4 w-4" />, color: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300' },
 }
 
 // 类型标签配置 - 颜色部分
-const typeColorConfig: Record<ToolType, string> = {
+const typeColorConfig: Record<WorkflowToolType, string> = {
   builtin: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300',
   custom: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
   mcp: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-300',
-  skill: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300',
 }
 
 // 获取类型标签（需要 t 函数）
-function getTypeLabels(t: (key: string) => string): Record<ToolType, string> {
+function getTypeLabels(t: (key: string) => string): Record<WorkflowToolType, string> {
   return {
     builtin: t('configTool.typeBuiltin'),
     custom: t('configTool.typeCustom'),
     mcp: 'MCP',
-    skill: 'Skill',
   }
 }
 
@@ -113,15 +119,16 @@ export function ToolNodeConfig({
 
   // 获取类型标签
   const typeLabels = React.useMemo(() => getTypeLabels(t), [t])
+  const getCategoryConfig = (category: string) => isPresetToolCategory(category) ? categoryConfig[category] : categoryConfig.other
   
   // 工具数据
-  const [tools, setTools] = React.useState<Tool[]>([])
+  const [tools, setTools] = React.useState<WorkflowTool[]>([])
   const [isLoadingTools, setIsLoadingTools] = React.useState(false)
   
   // 工具选择弹窗
   const [toolSelectorOpen, setToolSelectorOpen] = React.useState(false)
   const [toolSearch, setToolSearch] = React.useState('')
-  const [toolFilter, setToolFilter] = React.useState<'all' | ToolType>('all')
+  const [toolFilter, setToolFilter] = React.useState<'all' | WorkflowToolType>('all')
   
   // MCP 工具选择
   const [mcpTools, setMcpTools] = React.useState<McpToolInfo[]>([])
@@ -145,7 +152,7 @@ export function ToolNodeConfig({
       try {
         const response = await toolsApi.list(currentTeam.id)
         const allTools = [...response.builtin, ...response.custom, ...response.mcp]
-        setTools(allTools.filter(t => t.is_enabled))
+        setTools(allTools.filter((tool): tool is WorkflowTool => isWorkflowTool(tool) && tool.is_enabled))
       } catch {
         // 忽略错误
       } finally {
@@ -156,7 +163,7 @@ export function ToolNodeConfig({
   }, [currentTeam])
 
   // 获取当前选中的工具信息
-  const selectedTool: Tool | undefined = React.useMemo(() => {
+  const selectedTool: WorkflowTool | undefined = React.useMemo(() => {
     if (!safeConfig.toolId && !safeConfig.toolName) return undefined
     
     return tools.find(t => {
@@ -189,7 +196,7 @@ export function ToolNodeConfig({
 
   // 按分类分组
   const groupedTools = React.useMemo(() => {
-    const groups: Record<string, Tool[]> = {}
+    const groups: Record<string, WorkflowTool[]> = {}
     filteredTools.forEach(tool => {
       const category = tool.category
       if (!groups[category]) groups[category] = []
@@ -239,7 +246,7 @@ export function ToolNodeConfig({
   }, [mcpTools, mcpToolSearch])
 
   // 选择工具（内置/自定义）
-  const handleSelectTool = (tool: Tool) => {
+  const handleSelectTool = (tool: WorkflowTool) => {
     if (tool.type === 'mcp') {
       // MCP 工具：先选择服务器，稍后选择具体工具
       onConfigChange({
@@ -471,7 +478,7 @@ export function ToolNodeConfig({
           // 已选择工具
           <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-muted/30">
             <div className="shrink-0 w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-lg">
-              {selectedTool.icon || categoryConfig[selectedTool.category]?.icon || '⚙️'}
+              {selectedTool.icon || getCategoryConfig(selectedTool.category).icon || '⚙️'}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
@@ -521,7 +528,7 @@ export function ToolNodeConfig({
                     className="h-8 pl-8 text-xs"
                   />
                 </div>
-                <Tabs value={toolFilter} onValueChange={(v) => setToolFilter(v as 'all' | ToolType)}>
+                <Tabs value={toolFilter} onValueChange={(v) => setToolFilter(v as 'all' | WorkflowToolType)}>
                   <TabsList className="h-7">
                     <TabsTrigger value="all" className="text-[10px] h-5 px-2">{t('configTool.filterAll')} ({typeCounts.all})</TabsTrigger>
                     <TabsTrigger value="builtin" className="text-[10px] h-5 px-2">{t('configTool.filterBuiltin')} ({typeCounts.builtin})</TabsTrigger>
@@ -540,17 +547,17 @@ export function ToolNodeConfig({
                       <p className="text-xs">{toolSearch ? t('configTool.noMatchingTools') : t('configTool.noAvailableTools')}</p>
                     </div>
                   ) : (
-                    Object.entries(groupedTools).map(([category, categoryTools]: [string, Tool[]]) => {
+                    Object.entries(groupedTools).map(([category, categoryTools]: [string, WorkflowTool[]]) => {
                       // 创建局部引用避免 TypeScript 闭包类型推断问题
-                      const currentSelectedTool = selectedTool as Tool | undefined
+                      const currentSelectedTool = selectedTool as WorkflowTool | undefined
                       return (
                       <div key={category}>
                         <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                          <span>{categoryConfig[category as ToolCategory]?.icon || '⚙️'}</span>
+                          <span>{getCategoryConfig(category).icon}</span>
                           {category}
                         </div>
                         <div className="space-y-1">
-                          {categoryTools.map((tool: Tool) => {
+                          {categoryTools.map((tool: WorkflowTool) => {
                             const isSelected = currentSelectedTool?.id === tool.id || 
                               (tool.type === 'builtin' && currentSelectedTool?.name === tool.name)
                             
@@ -564,7 +571,7 @@ export function ToolNodeConfig({
                                 onClick={() => handleSelectTool(tool)}
                               >
                                 <div className="shrink-0 w-7 h-7 rounded-md bg-muted flex items-center justify-center text-sm">
-                                  {tool.icon || categoryConfig[tool.category]?.icon || '⚙️'}
+                                  {tool.icon || getCategoryConfig(tool.category).icon}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1">

@@ -201,6 +201,7 @@
         "web": "Web",
         "file": "File",
         "code": "Code",
+        "sandbox": "Sandbox",
         "api": "API",
         "data": "Data",
         "other": "Other"
