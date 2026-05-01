@@ -130,7 +130,11 @@
       "openCodePreview": "预览",
       "closeCodePreview": "关闭预览",
       "codePreviewCanvasTitle": "代码预览",
-      "previewScriptsEnabled": "脚本在沙箱 iframe 中运行"
+      "previewScriptsEnabled": "脚本在沙箱 iframe 中运行",
+      "linkSafetyTitle": "要打开链接吗？",
+      "linkSafetyDescription": "该链接由聊天内容生成，打开前请先确认。",
+      "linkSafetyCancel": "取消",
+      "linkSafetyContinue": "继续"
     },
     "userInputRequest": {
       "pending": "请选择一个选项：",

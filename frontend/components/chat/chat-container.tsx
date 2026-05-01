@@ -26,6 +26,36 @@ interface ChatContainerProps {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void;
 }
 
+function hasOpenCodeFence(content: string) {
+  let openFence: '`' | '~' | null = null;
+  let openFenceLength = 0;
+
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!match) continue;
+
+    const fence = match[1][0] as '`' | '~';
+    if (!openFence) {
+      openFence = fence;
+      openFenceLength = match[1].length;
+      continue;
+    }
+
+    if (fence === openFence && match[1].length >= openFenceLength) {
+      openFence = null;
+      openFenceLength = 0;
+    }
+  }
+
+  return openFence !== null;
+}
+
+function hasScrollableStreamingCodeBlock(container: HTMLDivElement) {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>('[data-chat-streaming="true"] [data-streamdown="code-block-body"]')
+  ).some((block) => block.scrollHeight > block.clientHeight + 1);
+}
+
 export function ChatContainer({
   messages,
   className,
@@ -79,19 +109,21 @@ export function ChatContainer({
         .filter(p => p.type === 'text')
         .map(p => (p as { text: string }).text)
         .join('')
-        .length
-    : 0;
+    : '';
 
   // Auto scroll to bottom before paint so streaming height changes do not flash at the old position.
   useLayoutEffect(() => {
-    if (!autoScroll || userScrolledRef.current || !followStreamingRef.current) {
+    const container = containerRef.current;
+    if (!autoScroll || userScrolledRef.current || !followStreamingRef.current || !container) {
       return;
     }
 
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    if (isStreaming && hasOpenCodeFence(lastMessageText) && hasScrollableStreamingCodeBlock(container)) {
+      return;
     }
-  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll]);
+
+    container.scrollTop = container.scrollHeight;
+  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll, isStreaming]);
 
   // Reset user scroll tracking when streaming starts
   useEffect(() => {

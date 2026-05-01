@@ -130,7 +130,11 @@
       "openCodePreview": "Preview",
       "closeCodePreview": "Close preview",
       "codePreviewCanvasTitle": "Code preview",
-      "previewScriptsEnabled": "Scripts run in a sandboxed iframe"
+      "previewScriptsEnabled": "Scripts run in a sandboxed iframe",
+      "linkSafetyTitle": "Open link?",
+      "linkSafetyDescription": "This link was generated in the chat. Please confirm before opening it.",
+      "linkSafetyCancel": "Cancel",
+      "linkSafetyContinue": "Continue"
     },
     "userInputRequest": {
       "pending": "Please select an option:",

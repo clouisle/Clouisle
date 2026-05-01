@@ -12,7 +12,7 @@ import {
   Streamdown,
   defaultRehypePlugins,
 } from 'streamdown'
-import type { CodeHighlighterPlugin, PluginConfig } from 'streamdown'
+import type { CodeHighlighterPlugin, PluginConfig, LinkSafetyModalProps } from 'streamdown'
 import { bundledLanguages, codeToTokens } from 'shiki'
 import type { BundledLanguage, BundledTheme } from 'shiki'
 import { ImageLightbox, useLightbox } from './image-lightbox'
@@ -21,6 +21,12 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Tooltip,
   TooltipContent,
@@ -66,7 +72,7 @@ import {
   isStoppedPart,
   isIterationCapReachedPart,
 } from './types'
-import { SourceContent } from './message-parts'
+import { SourceContent, FileListContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
 import {
   getImageAssetUrl,
@@ -132,6 +138,43 @@ type MermaidStreamSession = {
 type ParsedCodeFence = {
   language: string
   code: string
+}
+
+type ToolArtifact = {
+  path?: string
+  url?: string
+  filename?: string
+  size?: number
+  content_type?: string
+  contentType?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getToolArtifacts(output: unknown): FilePart[] {
+  if (!isRecord(output) || !Array.isArray(output.artifacts)) {
+    return []
+  }
+
+  return output.artifacts
+    .filter(isRecord)
+    .map((artifact): FilePart | null => {
+      const item = artifact as ToolArtifact
+      const filename = item.filename || item.path?.split('/').pop() || item.path || 'artifact'
+      if (!item.url) {
+        return null
+      }
+      return {
+        type: 'file',
+        filename,
+        url: item.url,
+        size: typeof item.size === 'number' ? item.size : undefined,
+        mimeType: item.content_type || item.contentType,
+      }
+    })
+    .filter((file): file is FilePart => file !== null)
 }
 
 function normalizeMermaidCode(content: string) {
@@ -1086,6 +1129,19 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      const artifactFiles = getToolArtifacts(parsedOutput)
+      if (artifactFiles.length > 0) {
+        return (
+          <div className="space-y-3">
+            <FileListContent files={artifactFiles} />
+            <ToolOutput
+              output={parsedOutput}
+              errorText={isError ? String(parsedOutput) : undefined}
+            />
+          </div>
+        )
+      }
+
       return (
         <ToolOutput
           output={parsedOutput}
@@ -1831,6 +1887,75 @@ function MermaidMarkdownBlock({
   )
 }
 
+function isSameOriginChatLink(url: string) {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    const resolvedUrl = new URL(url, window.location.href)
+    return (
+      (resolvedUrl.protocol === 'http:' || resolvedUrl.protocol === 'https:')
+      && resolvedUrl.origin === window.location.origin
+    )
+  } catch {
+    return false
+  }
+}
+
+function LinkSafetyModal({
+  url,
+  isOpen,
+  onClose,
+  onConfirm,
+}: LinkSafetyModalProps) {
+  const t = useTranslations('chat.message')
+
+  if (!isOpen || typeof document === 'undefined') {
+    return null
+  }
+
+  return ReactDOM.createPortal(
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        onClose()
+      }
+    }}>
+      <DialogContent showCloseButton={false} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('linkSafetyTitle')}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>{t('linkSafetyDescription')}</p>
+          <div className="break-all rounded-md bg-muted/50 px-3 py-2 font-mono text-xs text-foreground">
+            {url}
+          </div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            onClick={onClose}
+          >
+            {t('linkSafetyCancel')}
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            onClick={() => {
+              onConfirm()
+              onClose()
+            }}
+          >
+            {t('linkSafetyContinue')}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>,
+    document.body
+  )
+}
+
 function TextWithCitations({
   messageId,
   partIndex,
@@ -2035,6 +2160,11 @@ function TextWithCitations({
         components={components}
         rehypePlugins={rehypePlugins}
         plugins={isStreaming ? undefined : chatStreamdownPlugins}
+        linkSafety={{
+          enabled: true,
+          onLinkCheck: (url) => isSameOriginChatLink(url),
+          renderModal: (props) => <LinkSafetyModal {...props} />,
+        }}
         BlockComponent={(props) => (
           <MermaidMarkdownBlock
             {...props}
