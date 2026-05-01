@@ -519,32 +519,176 @@ msgstr "Backup codes regenerated successfully"
 msgid "bad_request"
 msgstr "Bad request"
 
+msgid "builtin_tool_artifact"
+msgstr "Create Download Link"
+
+msgid "builtin_tool_artifact_description"
+msgstr "Collect existing files or directories from /workspace and return Markdown download links for the assistant's final answer. Use this after generating and verifying final user-facing files with bash commands such as `ls`, `find`, or `file`. This tool does not render download cards directly; after calling it, include the returned Markdown links in the final response body. Relative paths are interpreted from /workspace."
+
+msgid "builtin_tool_bash"
+msgstr "Run Command"
+
+msgid "builtin_tool_bash_description"
+msgstr "Execute a Bash command in the sandbox workspace. Use this for running scripts, installing packages, inspecting files, and invoking CLI tools. The sandbox workspace is exposed to you as /workspace; prefer paths under /workspace when calling this tool and set cwd to /workspace or a subdirectory. The cwd value is mapped to the current sandbox session directory on disk. When you write Python or Node scripts with the write tool, those scripts should use relative paths (e.g., 'output/report.docx') or derive paths from their working directory, not hardcode /workspace/... inside the script code. To install Python packages, run `python3 -m pip install <package>` or `pip install <package>`; pip commands are normalized to python3 -m pip. To run Python code, prefer writing a script with the write tool, then run `python3 /workspace/script.py`. Inline checks like `python3 -c \"print('ok')\"` are also allowed. For Node packages, use `npm install <package>` in the workspace, then run scripts with `node /workspace/script.js` or `npm run <script>`. If a module is missing, install it first instead of repeatedly retrying the same command."
+
 msgid "builtin_tool_calculate"
 msgstr "Calculate"
+
+msgid "builtin_tool_calculate_description"
+msgstr "Evaluate math expressions. Supports basic operators (+, -, *, /, //, %, **), math functions (sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil), and constants (pi, e)."
+
+msgid "builtin_tool_calculate_param_expression_description"
+msgstr "Math expression, e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'"
 
 msgid "builtin_tool_fetch_webpage"
 msgstr "Fetch Webpage"
 
+msgid "builtin_tool_fetch_webpage_description"
+msgstr "Fetch webpage content. Read the text content of a URL for deeper inspection of search results."
+
+msgid "builtin_tool_fetch_webpage_param_url_description"
+msgstr "Webpage URL to fetch"
+
+msgid "builtin_tool_fetch_webpage_param_max_length_description"
+msgstr "Max characters to return. Default 5000."
+
 msgid "builtin_tool_format_datetime"
 msgstr "Format DateTime"
+
+msgid "builtin_tool_format_datetime_description"
+msgstr "Format a datetime. Convert a timestamp to a formatted string."
+
+msgid "builtin_tool_format_datetime_param_timestamp_description"
+msgstr "Unix timestamp (seconds). If omitted, uses current time."
+
+msgid "builtin_tool_format_datetime_param_format_string_description"
+msgstr "Python strftime format string, e.g. '%Y-%m-%d %H:%M:%S'"
+
+msgid "builtin_tool_format_datetime_param_timezone_name_description"
+msgstr "Timezone name. Default is UTC."
 
 msgid "builtin_tool_generate_image"
 msgstr "Generate Image"
 
+msgid "builtin_tool_generate_image_description"
+msgstr "Generate images from a prompt. Supports optional size, count, and reference images."
+
+msgid "builtin_tool_generate_image_param_prompt_description"
+msgstr "Image generation prompt"
+
+msgid "builtin_tool_generate_image_param_width_description"
+msgstr "Output image width in pixels"
+
+msgid "builtin_tool_generate_image_param_height_description"
+msgstr "Output image height in pixels"
+
+msgid "builtin_tool_generate_image_param_num_images_description"
+msgstr "Number of images to generate"
+
+msgid "builtin_tool_generate_image_param_style_description"
+msgstr "Optional visual style hint"
+
+msgid "builtin_tool_generate_image_param_quality_description"
+msgstr "Optional quality tier"
+
+msgid "builtin_tool_generate_image_param_negative_prompt_description"
+msgstr "Optional negative prompt"
+
+msgid "builtin_tool_generate_image_param_seed_description"
+msgstr "Optional random seed"
+
+msgid "builtin_tool_generate_image_param_images_description"
+msgstr "Optional reference images for edit/reference generation"
+
+msgid "builtin_tool_generate_image_param_extra_params_description"
+msgstr "Optional provider-specific parameters"
+
 msgid "builtin_tool_generate_video"
 msgstr "Generate Video"
+
+msgid "builtin_tool_generate_video_description"
+msgstr "Generate a short video clip from a prompt. Use this when the user asks for cinematic motion, animated scenes, or motion-based concept clips."
+
+msgid "builtin_tool_generate_video_param_prompt_description"
+msgstr "Video generation prompt"
+
+msgid "builtin_tool_generate_video_param_duration_description"
+msgstr "Target video duration in seconds"
+
+msgid "builtin_tool_generate_video_param_aspect_ratio_description"
+msgstr "Output aspect ratio, e.g. 16:9 or 9:16"
+
+msgid "builtin_tool_generate_video_param_motion_intensity_description"
+msgstr "Motion intensity from 0 to 1 when supported"
+
+msgid "builtin_tool_generate_video_param_camera_motion_description"
+msgstr "Optional camera motion description"
+
+msgid "builtin_tool_generate_video_param_style_description"
+msgstr "Optional visual style hint"
+
+msgid "builtin_tool_generate_video_param_seed_description"
+msgstr "Optional random seed"
+
+msgid "builtin_tool_generate_video_param_extra_params_description"
+msgstr "Optional provider-specific parameters"
 
 msgid "builtin_tool_get_current_time"
 msgstr "Get Current Time"
 
+msgid "builtin_tool_get_current_time_description"
+msgstr "Get the current time. Returns the date, time, weekday, and timestamp for a specified timezone."
+
+msgid "builtin_tool_get_current_time_param_timezone_name_description"
+msgstr "Timezone name, e.g., 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'. Default is UTC."
+
 msgid "builtin_tool_markitdown"
 msgstr "MarkItDown File Parser"
+
+msgid "builtin_tool_markitdown_description"
+msgstr "Parse file content. Convert PDF, Word, Excel, and PowerPoint documents to text. Use this tool when a user uploads a file and wants you to analyze its content. Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html/.xml)."
+
+msgid "builtin_tool_markitdown_param_files_url_description"
+msgstr "List of file URLs. Each URL points to a file to parse."
+
+msgid "builtin_tool_read"
+msgstr "Read File"
+
+msgid "builtin_tool_read_description"
+msgstr "Read a UTF-8 text file from the sandbox workspace. Use this to inspect files created earlier with the write tool or generated by Bash commands. Paths must stay inside /workspace. For binary files such as .docx, .xlsx, images, or archives, use bash commands like `ls -l`, `file`, or a Python script to inspect metadata instead of reading raw binary content."
 
 msgid "builtin_tool_unit_convert"
 msgstr "Unit Convert"
 
+msgid "builtin_tool_unit_convert_description"
+msgstr "Convert units. Supports length (m, km, cm, mm, mi, yd, ft, in), weight (kg, g, mg, lb, oz, t), temperature (c, f, k), area (m2, km2, ha, acre), volume (l, ml, m3, gal), time (s, ms, min, h, d, wk), and data (b, kb, mb, gb, tb)."
+
+msgid "builtin_tool_unit_convert_param_value_description"
+msgstr "Value to convert"
+
+msgid "builtin_tool_unit_convert_param_from_unit_description"
+msgstr "Source unit"
+
+msgid "builtin_tool_unit_convert_param_to_unit_description"
+msgstr "Target unit"
+
 msgid "builtin_tool_web_search"
 msgstr "Web Search"
+
+msgid "builtin_tool_web_search_description"
+msgstr "Search the web. Use a search engine to find relevant information when you need up-to-date facts or research a topic."
+
+msgid "builtin_tool_web_search_param_query_description"
+msgstr "Search keywords or question"
+
+msgid "builtin_tool_web_search_param_num_results_description"
+msgstr "Number of results. Default 5, max 10."
+
+msgid "builtin_tool_write"
+msgstr "Write File"
+
+msgid "builtin_tool_write_description"
+msgstr "Write UTF-8 text content to a file inside the sandbox workspace. Use this before running non-trivial Python or Node code: write the script to /workspace/name.py or /workspace/name.js, then execute it with bash using `python3 /workspace/name.py` or `node /workspace/name.js`. Parent directories are created automatically. Use /workspace/... paths when calling this tool, but inside generated Python or Node scripts, prefer relative output paths such as `output/report.docx` or derive paths from the current working directory instead of hardcoding `/workspace/...`. For generated output files, keep them under /workspace, commonly /workspace/output/."
 
 msgid "can_only_regenerate_assistant"
 msgstr "Can only regenerate assistant messages"

@@ -38,6 +38,7 @@ class ToolCategory(str, Enum):
     WEB = "web"  # 网页操作
     FILE = "file"  # 文件操作
     CODE = "code"  # 代码执行
+    SANDBOX = "sandbox"  # 沙盒工具
     API = "api"  # API 调用
     DATA = "data"  # 数据处理
     OTHER = "other"  # 其他
@@ -182,7 +183,7 @@ class ToolOut(BaseModel):
     display_name: str = Field(..., description="显示名称")
     description: str = Field(..., description="工具描述")
     type: ToolType = Field(..., description="工具类型")
-    category: ToolCategory = Field(..., description="工具分类")
+    category: str = Field(..., description="工具分类")
     icon: str | None = Field(default=None, description="图标（emoji 或 URL）")
     parameters: list[ToolParameterSchema] = Field(
         default_factory=list, description="参数列表"
@@ -272,7 +273,7 @@ class ToolCreateInput(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100, description="显示名称")
     description: str = Field(default="", description="工具描述")
     icon: str | None = Field(default=None, max_length=100, description="图标")
-    category: ToolCategory = Field(default=ToolCategory.OTHER, description="分类")
+    category: str = Field(default=ToolCategory.OTHER.value, max_length=100, description="分类")
     type: ToolType = Field(default=ToolType.CUSTOM, description="工具类型")
     custom_type: CustomToolType | None = Field(
         default=None, description="自定义工具类型（仅 type=custom 时有效）"
@@ -306,7 +307,7 @@ class ToolUpdateInput(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, min_length=1)
     icon: str | None = None
-    category: ToolCategory | None = None
+    category: str | None = Field(default=None, max_length=100)
     custom_type: CustomToolType | None = None
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None
@@ -509,4 +510,38 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "icon": None,
         "requires_config": False,
     },
+    "artifact": {
+        "display_name_key": "builtin_tool_artifact",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "bash": {
+        "display_name_key": "builtin_tool_bash",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "read": {
+        "display_name_key": "builtin_tool_read",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "write": {
+        "display_name_key": "builtin_tool_write",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
 }
+
+
+def get_builtin_tool_description_key(tool_name: str) -> str:
+    return f"builtin_tool_{tool_name}_description"
+
+
+def get_builtin_tool_parameter_description_key(
+    tool_name: str, parameter_name: str
+) -> str:
+    return f"builtin_tool_{tool_name}_param_{parameter_name}_description"

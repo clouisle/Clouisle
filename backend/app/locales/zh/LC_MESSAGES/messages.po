@@ -519,32 +519,206 @@ msgstr "备份码已重新生成"
 msgid "bad_request"
 msgstr "错误请求"
 
+msgid "builtin_tool_artifact"
+msgstr "生成下载链接"
+
+msgid "builtin_tool_artifact_description"
+msgstr "将沙盒中生成的文件整理为可点击的下载链接，方便在回答中直接下载。"
+
+msgid "builtin_tool_bash"
+msgstr "执行命令"
+
+msgid "builtin_tool_bash_description"
+msgstr "让助手在隔离的沙盒环境中运行命令，用于处理文件、运行脚本或生成内容。"
+
 msgid "builtin_tool_calculate"
 msgstr "数学计算"
+
+msgid "builtin_tool_calculate_description"
+msgstr "计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。"
+
+msgid "builtin_tool_calculate_param_expression_description"
+msgstr "数学表达式，如 '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'"
 
 msgid "builtin_tool_fetch_webpage"
 msgstr "获取网页内容"
 
+msgid "builtin_tool_fetch_webpage_description"
+msgstr "获取网页内容。读取指定 URL 的网页文本内容。用于深入阅读搜索结果中感兴趣的页面。"
+
+msgid "builtin_tool_fetch_webpage_param_url_description"
+msgstr "要获取的网页 URL"
+
+msgid "builtin_tool_fetch_webpage_param_max_length_description"
+msgstr "返回内容的最大字符数，默认 5000"
+
 msgid "builtin_tool_format_datetime"
 msgstr "格式化日期时间"
+
+msgid "builtin_tool_format_datetime_description"
+msgstr "格式化日期时间。将时间戳转换为指定格式的字符串。"
+
+msgid "builtin_tool_format_datetime_param_timestamp_description"
+msgstr "Unix 时间戳（秒），不提供则使用当前时间"
+
+msgid "builtin_tool_format_datetime_param_format_string_description"
+msgstr "Python strftime 格式字符串，如 '%Y-%m-%d %H:%M:%S'"
+
+msgid "builtin_tool_format_datetime_param_timezone_name_description"
+msgstr "时区名称，默认为 UTC"
 
 msgid "builtin_tool_generate_image"
 msgstr "生成图片"
 
+msgid "builtin_tool_generate_image_description"
+msgstr "根据提示词生成图片，可选设置尺寸、数量和参考图。"
+
+msgid "builtin_tool_generate_image_param_prompt_description"
+msgstr "图片生成提示词"
+
+msgid "builtin_tool_generate_image_param_width_description"
+msgstr "输出图片宽度"
+
+msgid "builtin_tool_generate_image_param_height_description"
+msgstr "输出图片高度"
+
+msgid "builtin_tool_generate_image_param_num_images_description"
+msgstr "生成图片数量"
+
+msgid "builtin_tool_generate_image_param_style_description"
+msgstr "可选风格提示"
+
+msgid "builtin_tool_generate_image_param_quality_description"
+msgstr "可选质量档位"
+
+msgid "builtin_tool_generate_image_param_negative_prompt_description"
+msgstr "可选负面提示词"
+
+msgid "builtin_tool_generate_image_param_seed_description"
+msgstr "可选随机种子"
+
+msgid "builtin_tool_generate_image_param_images_description"
+msgstr "可选参考图数组"
+
+msgid "builtin_tool_generate_image_param_extra_params_description"
+msgstr "可选供应商特定参数"
+
 msgid "builtin_tool_generate_video"
 msgstr "生成视频"
+
+msgid "builtin_tool_generate_video_description"
+msgstr "根据提示词生成视频，可选设置时长、宽高比和风格。"
+
+msgid "builtin_tool_generate_video_param_prompt_description"
+msgstr "视频生成提示词"
+
+msgid "builtin_tool_generate_video_param_duration_description"
+msgstr "生成视频时长（秒）"
+
+msgid "builtin_tool_generate_video_param_aspect_ratio_description"
+msgstr "输出宽高比"
+
+msgid "builtin_tool_generate_video_param_motion_intensity_description"
+msgstr "运动强度（0-1）"
+
+msgid "builtin_tool_generate_video_param_camera_motion_description"
+msgstr "镜头运动描述"
+
+msgid "builtin_tool_generate_video_param_style_description"
+msgstr "可选风格提示"
+
+msgid "builtin_tool_generate_video_param_seed_description"
+msgstr "可选随机种子"
+
+msgid "builtin_tool_generate_video_param_extra_params_description"
+msgstr "可选供应商特定参数"
 
 msgid "builtin_tool_get_current_time"
 msgstr "获取当前时间"
 
+msgid "builtin_tool_get_current_time_description"
+msgstr "获取当前时间。返回指定时区的当前日期、时间、星期和时间戳。"
+
+msgid "builtin_tool_get_current_time_param_timezone_name_description"
+msgstr "时区名称，如 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'。默认为 UTC。"
+
 msgid "builtin_tool_markitdown"
 msgstr "MarkItDown 文件解析"
+
+msgid "builtin_tool_markitdown_description"
+msgstr "解析文件内容。将 PDF、Word、Excel、PPT 等文档转换为文本。当用户上传文件并希望你分析其内容时使用此工具。支持的格式：PDF、Word (.docx/.doc)、Excel (.xlsx/.xls)、PowerPoint (.pptx/.ppt)、文本文件 (.txt/.md/.csv/.json/.html/.xml)。"
+
+msgid "builtin_tool_markitdown_param_files_url_description"
+msgstr "文件 URL 列表。每个 URL 指向一个需要解析的文件。"
+
+msgid "builtin_tool_read"
+msgstr "读取文件"
+
+msgid "builtin_tool_read_description"
+msgstr "读取沙盒中的文本文件内容，让助手可以查看之前创建或生成的文件。"
 
 msgid "builtin_tool_unit_convert"
 msgstr "单位转换"
 
+msgid "builtin_tool_unit_convert_description"
+msgstr "单位转换。支持长度（m, km, cm, mm, mi, yd, ft, in）、重量（kg, g, mg, lb, oz, t）、温度（c, f, k）、面积（m2, km2, ha, acre）、体积（l, ml, m3, gal）、时间（s, ms, min, h, d, wk）、数据（b, kb, mb, gb, tb）。"
+
+msgid "builtin_tool_unit_convert_param_value_description"
+msgstr "要转换的数值"
+
+msgid "builtin_tool_unit_convert_param_from_unit_description"
+msgstr "源单位"
+
+msgid "builtin_tool_unit_convert_param_to_unit_description"
+msgstr "目标单位"
+
 msgid "builtin_tool_web_search"
 msgstr "网页搜索"
+
+msgid "builtin_tool_web_search_description"
+msgstr "搜索网页。使用搜索引擎查找相关信息。当需要获取最新信息、查找事实或研究某个话题时使用此工具。"
+
+msgid "builtin_tool_web_search_param_query_description"
+msgstr "搜索关键词或问题"
+
+msgid "builtin_tool_web_search_param_num_results_description"
+msgstr "返回结果数量，默认 5，最大 10"
+
+msgid "builtin_tool_write"
+msgstr "写入文件"
+
+msgid "builtin_tool_write_description"
+msgstr "在沙盒中创建或修改文本文件，常用于保存草稿、脚本或生成结果。"
+
+msgid "builtin_tool_bash_param_command_description"
+msgstr "要执行的 Shell 命令。示例：`ls -la /workspace`、`python3 -m pip install python-docx`、`python3 /workspace/create_docx.py`、`npm install mammoth`、`node /workspace/convert.js`。引用 read/write 工具创建的文件时使用 /workspace 路径。"
+
+msgid "builtin_tool_bash_param_timeout_description"
+msgstr "执行超时时间（秒）。对于包安装、构建或文档转换任务，请增加此值。"
+
+msgid "builtin_tool_bash_param_cwd_description"
+msgstr "命令的工作目录。默认为 /workspace；对于子目录中的文件使用 /workspace/subdir。"
+
+msgid "builtin_tool_read_param_path_description"
+msgstr "要读取的文件路径。使用 /workspace/file.txt 或相对路径如 file.txt；/workspace 外的路径会被拒绝。"
+
+msgid "builtin_tool_read_param_max_chars_description"
+msgstr "文本文件返回的最大字符数。仅在需要读取大文件的更多内容时增加此值。"
+
+msgid "builtin_tool_write_param_path_description"
+msgstr "要写入的文件路径。使用 /workspace/script.py、/workspace/output/result.txt 或相对路径；/workspace 外的路径会被拒绝。"
+
+msgid "builtin_tool_write_param_content_description"
+msgstr "要写入的完整 UTF-8 文本内容。对于脚本，包含完整的 Python 或 JavaScript 源代码。"
+
+msgid "builtin_tool_artifact_param_paths_description"
+msgstr "要收集用于下载的文件或目录。推荐使用对象格式如 [{\"path\":\"/workspace/output/report.docx\",\"description\":\"生成的报告\"}]。也接受字符串路径如 [\"output/report.docx\"]。"
+
+msgid "builtin_tool_artifact_param_max_size_mb_description"
+msgstr "每个收集的产物允许的最大大小（MB）。默认为 10。"
+
+msgid "builtin_tool_artifact_param_max_total_size_mb_description"
+msgstr "所有收集的产物允许的最大总上传大小（MB）。默认为 10。"
 
 msgid "can_only_regenerate_assistant"
 msgstr "只能重新生成助手消息"

@@ -15,14 +15,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.api import deps
-from app.core.i18n import t
+from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
     Tool,
     ToolShare,
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
-    ToolCategory as DBToolCategory,
 )
 from app.llm.tools import tool_registry
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
@@ -66,11 +65,14 @@ from app.schemas.tool import (
     ToolShareOut,
     ToolShareListOut,
     BUILTIN_TOOLS_METADATA,
+    get_builtin_tool_description_key,
+    get_builtin_tool_parameter_description_key,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
+SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "read", "write"}
 
 
 def _serialize_runtime_artifacts(artifacts: list[SandboxArtifact | Any]) -> list[SandboxArtifactSchema]:
@@ -123,6 +125,67 @@ async def check_team_access(
     return team
 
 
+def _get_builtin_tool_description(tool_info: Any, user_locale: str | None = None) -> str:
+    description_key = get_builtin_tool_description_key(tool_info.name)
+    if has_translation(description_key, user_locale):
+        return t(description_key, lang=user_locale)
+    return tool_info.description
+
+
+
+def _get_builtin_tool_parameters(
+    tool_info: Any, user_locale: str | None = None
+) -> list[ToolParameterSchema]:
+    return [
+        ToolParameterSchema(
+            name=p.name,
+            type=p.type,
+            description=(
+                t(
+                    get_builtin_tool_parameter_description_key(tool_info.name, p.name),
+                    lang=user_locale,
+                )
+                if has_translation(
+                    get_builtin_tool_parameter_description_key(tool_info.name, p.name),
+                    user_locale,
+                )
+                else p.description
+            ),
+            required=p.required,
+            enum=p.enum,
+            default=p.default,
+        )
+        for p in tool_info.parameters
+    ]
+
+
+
+def _tool_info_to_out(tool_info: Any, user_locale: str | None = None) -> ToolOut:
+    metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
+    parameters = _get_builtin_tool_parameters(tool_info, user_locale)
+
+    display_name_key = metadata.get("display_name_key")
+    display_name = (
+        t(display_name_key, lang=user_locale)
+        if display_name_key
+        else metadata.get("display_name", tool_info.name)
+    )
+    description = _get_builtin_tool_description(tool_info, user_locale)
+
+    return ToolOut(
+        name=tool_info.name,
+        display_name=display_name,
+        description=description,
+        type=ToolType.BUILTIN,
+        category=_category_value(metadata.get("category", ToolCategory.OTHER.value)),
+        icon=metadata.get("icon"),
+        parameters=parameters,
+        is_enabled=True,
+        requires_config=metadata.get("requires_config", False),
+        config_fields=metadata.get("config_fields", []),
+    )
+
+
 def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     """获取所有内置工具
 
@@ -133,43 +196,10 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     for tool_info in tool_registry.get_all_tools():
         if tool_info.name in AGENT_ONLY_BUILTIN_TOOLS:
             continue
+        tools.append(_tool_info_to_out(tool_info, user_locale))
 
-        metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
-
-        parameters = [
-            ToolParameterSchema(
-                name=p.name,
-                type=p.type,
-                description=p.description,
-                required=p.required,
-                enum=p.enum,
-                default=p.default,
-            )
-            for p in tool_info.parameters
-        ]
-
-        # Get display name from i18n using user's locale
-        display_name_key = metadata.get("display_name_key")
-        display_name = (
-            t(display_name_key, lang=user_locale)
-            if display_name_key
-            else tool_info.name
-        )
-
-        tools.append(
-            ToolOut(
-                name=tool_info.name,
-                display_name=display_name,
-                description=tool_info.description,
-                type=ToolType.BUILTIN,
-                category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
-                icon=metadata.get("icon"),
-                parameters=parameters,
-                is_enabled=True,
-                requires_config=metadata.get("requires_config", False),
-                config_fields=metadata.get("config_fields", []),
-            )
-        )
+    for tool_info in tool_registry.get_sandbox_tool_infos(list(SANDBOX_BUILTIN_TOOLS)):
+        tools.append(_tool_info_to_out(tool_info, user_locale))
 
     return tools
 
@@ -182,7 +212,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        category=ToolCategory(tool.category.value),
+        category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
@@ -207,7 +237,7 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        category=ToolCategory(tool.category.value),
+        category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
@@ -224,6 +254,10 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         updated_at=tool.updated_at.isoformat() if tool.updated_at else None,
         created_by_name=creator_name,
     )
+
+
+def _category_value(value: Any) -> str:
+    return value.value if isinstance(value, ToolCategory) else str(value)
 
 
 def _option(value: str, label: str | None = None) -> ToolFilterOption:
@@ -356,7 +390,7 @@ async def list_tools(
             continue
         if not _matches_filter(tool.type.value, type_filter):
             continue
-        if not _matches_filter(tool.category.value, category_filter):
+        if not _matches_filter(_category_value(tool.category), category_filter):
             continue
         if not _matches_filter(
             "enabled" if tool.is_enabled else "disabled", status_filter
@@ -411,7 +445,13 @@ async def get_tool_filter_options(
                 _option(ToolType.CUSTOM.value),
                 _option(ToolType.MCP.value),
             ],
-            categories=[_option(category.value) for category in ToolCategory],
+            categories=[
+                _option(category)
+                for category in sorted(
+                    {category.value for category in ToolCategory}
+                    | {tool.category for tool in tools if tool.category}
+                )
+            ],
             statuses=[_option("enabled"), _option("disabled")],
             teams=[_option(str(team.id), team.name) for team in accessible_teams],
             creators=[_option(value) for value in creator_values],
@@ -527,43 +567,13 @@ async def list_file_parsers(
     for tool_info in tool_registry.get_all_tools():
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
         if metadata.get("is_file_parser"):
-            parameters = [
-                ToolParameterSchema(
-                    name=p.name,
-                    type=p.type,
-                    description=p.description,
-                    required=p.required,
-                    enum=p.enum,
-                    default=p.default,
-                )
-                for p in tool_info.parameters
-            ]
-            # Get display name from i18n using user's locale
-            display_name_key = metadata.get("display_name_key")
-            display_name = (
-                t(display_name_key, lang=current_user.locale)
-                if display_name_key
-                else tool_info.name
-            )
-
-            parsers.append(
-                ToolOut(
-                    name=tool_info.name,
-                    display_name=display_name,
-                    description=tool_info.description,
-                    type=ToolType.BUILTIN,
-                    category=ToolCategory(metadata.get("category", ToolCategory.FILE)),
-                    icon=metadata.get("icon"),
-                    parameters=parameters,
-                    is_enabled=True,
-                )
-            )
+            parsers.append(_tool_info_to_out(tool_info, current_user.locale))
 
     # 2. 获取自定义的文件解析工具（category=file 的自定义工具）
     custom_tools = await Tool.filter(
         team_id=team_id,
         is_enabled=True,
-        category=ToolCategory.FILE,
+        category=ToolCategory.FILE.value,
     ).all()
 
     for tool in custom_tools:
@@ -583,7 +593,7 @@ async def list_file_parsers(
                 display_name=tool.display_name,
                 description=tool.description or "",
                 type=ToolType.CUSTOM,
-                category=ToolCategory(tool.category),
+                category=_category_value(tool.category),
                 icon=tool.icon,
                 parameters=parameters,
                 is_enabled=tool.is_enabled,
@@ -653,7 +663,7 @@ async def create_tool(
         display_name=tool_in.display_name,
         description=tool_in.description,
         icon=tool_in.icon,
-        category=DBToolCategory(tool_in.category.value),
+        category=tool_in.category,
         type=DBToolType(tool_in.type.value),
         custom_type=(
             DBCustomToolType(tool_in.custom_type.value) if tool_in.custom_type else None
@@ -705,41 +715,12 @@ async def get_tool_by_name(
     """根据名称获取工具（内置或自定义）"""
     # 先检查内置工具
     tool_info = tool_registry.get_tool(tool_name)
+    if tool_info is None and tool_name in SANDBOX_BUILTIN_TOOLS:
+        sandbox_tool_infos = tool_registry.get_sandbox_tool_infos([tool_name])
+        tool_info = sandbox_tool_infos[0] if sandbox_tool_infos else None
     if tool_info:
-        metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
-        parameters = [
-            ToolParameterSchema(
-                name=p.name,
-                type=p.type,
-                description=p.description,
-                required=p.required,
-                enum=p.enum,
-                default=p.default,
-            )
-            for p in tool_info.parameters
-        ]
-
-        # Get display name from i18n using user's locale
-        display_name_key = metadata.get("display_name_key")
-        display_name = (
-            t(display_name_key, lang=current_user.locale)
-            if display_name_key
-            else tool_info.name
-        )
-
         return success(
-            data=ToolOut(
-                name=tool_info.name,
-                display_name=display_name,
-                description=tool_info.description,
-                type=ToolType.BUILTIN,
-                category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
-                icon=metadata.get("icon"),
-                parameters=parameters,
-                is_enabled=True,
-                requires_config=metadata.get("requires_config", False),
-                config_fields=metadata.get("config_fields", []),
-            ),
+            data=_tool_info_to_out(tool_info, current_user.locale),
             msg_key="success",
         )
 
@@ -796,7 +777,7 @@ async def update_tool(
     if tool_in.icon is not None:
         tool.icon = tool_in.icon
     if tool_in.category is not None:
-        tool.category = DBToolCategory(tool_in.category.value)
+        tool.category = tool_in.category
     if tool_in.custom_type is not None:
         tool.custom_type = DBCustomToolType(tool_in.custom_type.value)
     if tool_in.parameters is not None:
@@ -1630,7 +1611,7 @@ async def list_shared_tools(
             display_name=tool.display_name,
             description=tool.description,
             type=ToolType.CUSTOM if tool.type == DBToolType.CUSTOM else ToolType.MCP,
-            category=ToolCategory(tool.category),
+            category=_category_value(tool.category),
             icon=tool.icon,
             parameters=[ToolParameterSchema(**param) for param in tool.parameters],
             is_enabled=tool.is_enabled,
