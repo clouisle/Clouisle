@@ -30,6 +30,7 @@ SUPPORTED_LANGUAGES = {lang.value for lang in Language}
 LOCALES_DIR = Path(__file__).resolve().parents[1] / "locales"
 BABEL_DOMAIN = "messages"
 _BABEL_CATALOGS: dict[str, dict[str, str] | None] = {}
+_BABEL_CATALOG_MTIMES: dict[str, int | None] = {}
 _MISSING_BABEL_KEYS_LOGGED: set[tuple[str, str]] = set()
 
 
@@ -43,12 +44,18 @@ def normalize_language(lang: str | None) -> str:
 
 def _load_babel_catalog(lang: str) -> dict[str, str] | None:
     normalized = normalize_language(lang)
-    if normalized in _BABEL_CATALOGS:
+    po_path = LOCALES_DIR / normalized / "LC_MESSAGES" / f"{BABEL_DOMAIN}.po"
+    mtime_ns = po_path.stat().st_mtime_ns if po_path.exists() else None
+
+    if (
+        normalized in _BABEL_CATALOGS
+        and _BABEL_CATALOG_MTIMES.get(normalized) == mtime_ns
+    ):
         return _BABEL_CATALOGS[normalized]
 
-    po_path = LOCALES_DIR / normalized / "LC_MESSAGES" / f"{BABEL_DOMAIN}.po"
     if not po_path.exists():
         _BABEL_CATALOGS[normalized] = None
+        _BABEL_CATALOG_MTIMES[normalized] = None
         return None
 
     with po_path.open("r", encoding="utf-8") as file_obj:
@@ -62,6 +69,7 @@ def _load_babel_catalog(lang: str) -> dict[str, str] | None:
             messages[key] = message.string
 
     _BABEL_CATALOGS[normalized] = messages
+    _BABEL_CATALOG_MTIMES[normalized] = mtime_ns
     return messages
 
 
