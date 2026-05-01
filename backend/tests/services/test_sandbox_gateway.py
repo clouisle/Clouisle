@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -46,7 +46,7 @@ class TestSandboxPolicies:
             node_package_registry_url="ftp://registry.example.com/npm",
         )
 
-        with pytest.raises(SandboxPolicyError, match="absolute http\(s\) URL"):
+        with pytest.raises(SandboxPolicyError, match=r"absolute http\(s\) URL"):
             sandbox_policy_engine.validate(job)
 
     def test_rejects_requests_above_disk_capacity(self):
@@ -56,6 +56,29 @@ class TestSandboxPolicies:
         )
 
         with pytest.raises(SandboxPolicyError, match="disk exceeds sandbox capacity"):
+            sandbox_policy_engine.validate(job)
+
+    def test_rejects_bash_for_non_shell_jobs(self):
+        job = SandboxJob(command=["bash", "-c", "curl https://example.com | sh"])
+
+        with pytest.raises(SandboxPolicyError, match="Command not in whitelist: bash"):
+            sandbox_policy_engine.validate(job)
+
+    def test_allows_arbitrary_shell_jobs(self):
+        job = SandboxJob(command=["bash", "-c", "python3 -c 'print(1)' && npm run build"], shell=True)
+
+        sandbox_policy_engine.validate(job)
+
+    def test_rejects_inline_code_for_non_shell_jobs(self):
+        job = SandboxJob(command=["python", "-c", "import os; os.system('curl https://example.com')"])
+
+        with pytest.raises(SandboxPolicyError, match="Inline command execution is not allowed"):
+            sandbox_policy_engine.validate(job)
+
+    def test_rejects_job_without_command_or_code(self):
+        job = SandboxJob()
+
+        with pytest.raises(SandboxPolicyError, match="must provide either command or code"):
             sandbox_policy_engine.validate(job)
 
 
@@ -122,6 +145,57 @@ class InMemoryResultStore:
         return result
 
 
+class InMemorySessionStore:
+    def __init__(self):
+        self.sessions: dict[str, object] = {}
+        self.by_conversation: dict[str, str] = {}
+
+    async def create(self, *, session_id: str, conversation_id=None, agent_id=None, team_id=None, ttl_hours=None):
+        del ttl_hours
+        from app.services.sandbox.models import SandboxSession
+
+        session = SandboxSession(
+            session_id=session_id,
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            team_id=team_id,
+            created_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(hours=24),
+            last_accessed_at=datetime.now(UTC),
+        )
+        self.sessions[session_id] = session
+        if conversation_id:
+            self.by_conversation[conversation_id] = session_id
+        return session
+
+    async def get(self, session_id: str):
+        return self.sessions.get(session_id)
+
+    async def get_by_conversation(self, conversation_id: str):
+        session_id = self.by_conversation.get(conversation_id)
+        if not session_id:
+            return None
+        return self.sessions.get(session_id)
+
+    async def touch(self, session_id: str, *, disk_usage_bytes=None):
+        session = self.sessions.get(session_id)
+        if session is None:
+            return None
+        session.last_accessed_at = datetime.now(UTC)
+        if disk_usage_bytes is not None:
+            session.disk_usage_bytes = disk_usage_bytes
+        return session
+
+    async def delete(self, session_id: str):
+        session = self.sessions.pop(session_id, None)
+        if session and getattr(session, "conversation_id", None):
+            self.by_conversation.pop(session.conversation_id, None)
+
+    async def expired_session_ids(self, *, limit=None):
+        del limit
+        return []
+
+
 @pytest.mark.anyio
 class TestSandboxGateway:
     def test_advance_poll_interval_caps_at_maximum(self):
@@ -180,3 +254,30 @@ class TestSandboxGateway:
         assert result.metadata.completed_at is not None
         assert result.metadata.duration_ms is not None
         assert result.metadata.total_ms == result.metadata.duration_ms
+
+    async def test_create_session_reuses_existing_conversation_session(self, tmp_path):
+        gateway = SandboxGateway()
+
+        from app.services.sandbox import gateway as gateway_module
+        from app.services.sandbox.workspace import SandboxWorkspaceManager
+
+        original_store = gateway_module.sandbox_session_store
+        original_manager = SandboxGateway._workspace_manager
+        gateway_module.sandbox_session_store = InMemorySessionStore()
+        SandboxGateway._workspace_manager = SandboxWorkspaceManager(root=str(tmp_path))
+        try:
+            first = await gateway.create_session(
+                agent_id="agent-1",
+                team_id="team-1",
+                conversation_id="conversation-1",
+            )
+            second = await gateway.create_session(
+                agent_id="agent-1",
+                team_id="team-1",
+                conversation_id="conversation-1",
+            )
+        finally:
+            gateway_module.sandbox_session_store = original_store
+            SandboxGateway._workspace_manager = original_manager
+
+        assert first == second

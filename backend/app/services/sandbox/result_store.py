@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.config import settings
 from app.core.redis import get_redis
 
 from .models import SandboxExecutionMetadata, SandboxResult, SandboxTaskStatus
@@ -19,12 +20,13 @@ class SandboxResultStore:
     def _status_key(self, job_id: str) -> str:
         return f"{self._key(job_id)}{self.STATUS_SUFFIX}"
 
-    async def save_result(self, result: SandboxResult, ttl_seconds: int = 86400) -> None:
+    async def save_result(self, result: SandboxResult, ttl_seconds: int | None = None) -> None:
         redis = await get_redis()
         if result.metadata is not None:
             result.metadata.status = result.status
-        await redis.setex(self._key(result.job_id), ttl_seconds, result.model_dump_json())
-        await redis.setex(self._status_key(result.job_id), ttl_seconds, result.status.value)
+        ttl = ttl_seconds or settings.SANDBOX_RESULT_TTL_SECONDS
+        await redis.setex(self._key(result.job_id), ttl, result.model_dump_json())
+        await redis.setex(self._status_key(result.job_id), ttl, result.status.value)
 
     async def get_result(self, job_id: str) -> SandboxResult | None:
         redis = await get_redis()

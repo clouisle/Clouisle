@@ -15,5 +15,6 @@ def compile_skill_to_job(skill: SandboxSkillSpec, command: list[str]) -> Sandbox
         env=skill.env,
         limits=skill.limits,
         artifacts=skill.artifacts,
+        artifact_limits=skill.artifact_limits,
         metadata={"skill_name": skill.name, "skill_version": skill.version, **skill.metadata},
     )

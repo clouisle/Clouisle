@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
+
+from app.core.config import settings
 
 from .cache import acquire_cache_lock, build_cache_key, normalize_package_source_url
 
@@ -15,6 +16,7 @@ class PythonEnvironmentManager:
     def __init__(self, cache_root: Path):
         self.cache_root = cache_root / "python-envs"
         self.cache_root.mkdir(parents=True, exist_ok=True)
+        self._python_version_cache: str | None = None
 
     def build_env_key(
         self,
@@ -44,7 +46,7 @@ class PythonEnvironmentManager:
 
         normalized_package_index_url = normalize_package_source_url(package_index_url)
         env_key = self.build_env_key(
-            sys.version.split()[0],
+            self.python_version(),
             packages,
             runtime_profile,
             normalized_package_index_url,
@@ -64,7 +66,7 @@ class PythonEnvironmentManager:
             env_root.mkdir(parents=True, exist_ok=True)
             try:
                 subprocess.run(
-                    [sys.executable, "-m", "venv", str(env_dir)],
+                    [self.python_binary(), "-m", "venv", str(env_dir)],
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -80,9 +82,65 @@ class PythonEnvironmentManager:
                 shutil.rmtree(env_root, ignore_errors=True)
                 raise
 
+    def ensure_workspace_environment(self, workspace_root: Path) -> Path:
+        env_dir = workspace_root / ".venv"
+        python_binary = env_dir / "bin" / "python"
+        pip_binary = env_dir / "bin" / "pip"
+        if python_binary.exists() and pip_binary.exists():
+            return env_dir
+
+        if env_dir.exists() and not python_binary.exists():
+            shutil.rmtree(env_dir, ignore_errors=True)
+
+        if not python_binary.exists():
+            subprocess.run(
+                [self.python_binary(), "-m", "venv", str(env_dir)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        if not pip_binary.exists():
+            subprocess.run(
+                [str(python_binary), "-m", "ensurepip", "--upgrade"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        return env_dir
+
     def build_env_vars(self, env_dir: Path) -> dict[str, str]:
         return {
             "VIRTUAL_ENV": str(env_dir),
             "PYTHONNOUSERSITE": "1",
-            "PATH": f"{env_dir / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
+            "PATH": f"{env_dir / 'bin'}{os.pathsep}{self.runtime_path()}",
         }
+
+    def build_workspace_env_vars(self, workspace_root: Path, tmp_dir: Path) -> dict[str, str]:
+        env_dir = self.ensure_workspace_environment(workspace_root)
+        pip_cache_dir = tmp_dir / "pip-cache"
+        pip_cache_dir.mkdir(parents=True, exist_ok=True)
+        env = self.build_env_vars(env_dir)
+        env["PIP_CACHE_DIR"] = str(pip_cache_dir)
+        return env
+
+    def python_binary(self) -> str:
+        for candidate in settings.SANDBOX_DEFAULT_PYTHON_BINARIES:
+            if Path(candidate).exists():
+                return candidate
+        return "python3"
+
+    def python_version(self) -> str:
+        if self._python_version_cache is None:
+            self._python_version_cache = subprocess.check_output(
+                [self.python_binary(), "--version"],
+                text=True,
+            ).strip().split()[-1]
+        return self._python_version_cache
+
+    def runtime_path(self) -> str:
+        python_dir = str(Path(self.python_binary()).parent)
+        current_path = os.environ.get("PATH", "")
+        parts = [part for part in current_path.split(os.pathsep) if part and "/backend/.venv/" not in part and not part.endswith("/backend/.venv/bin")]
+        filtered = os.pathsep.join(parts)
+        return f"{python_dir}{os.pathsep}{filtered}" if filtered else python_dir

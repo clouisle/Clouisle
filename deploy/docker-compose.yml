@@ -63,7 +63,7 @@ services:
   backend:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    env_file: .env
+    env_file: ../.env
     environment:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
@@ -84,7 +84,28 @@ services:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
-    env_file: .env
+    env_file: ../.env
+    environment:
+      POSTGRES_SERVER: db
+      REDIS_HOST: redis
+      QDRANT_URL: http://qdrant:6333
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  sandbox-worker:
+    image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
+    env_file: ../.env
     environment:
       POSTGRES_SERVER: db
       REDIS_HOST: redis
@@ -105,7 +126,7 @@ services:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "main.py", "beat"]
-    env_file: .env
+    env_file: ../.env
     environment:
       POSTGRES_SERVER: db
       REDIS_HOST: redis

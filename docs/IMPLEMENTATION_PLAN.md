@@ -2,6 +2,13 @@
 
 ## Active
 
+- **sandbox-worker-dev-container** — Complete. Add a no-bind-mount local dev container mode for the sandbox worker, preinstall Python/Node/common tools, and remove shell command allowlist restrictions while preserving sandbox resource/path isolation. See `docs/plan/sandbox-worker-dev-container.md`
+  - [x] 1. Planning docs
+  - [x] 2. Sandbox Worker Dockerfile
+  - [x] 3. Local Dev CLI Mode
+  - [x] 4. Shell Policy Relaxation
+  - [x] 5. Compose and Developer Docs
+
 - **chat-code-preview** — Complete. Add previewable chat code blocks that open a resizable right-side canvas with sandboxed preview/source tabs while leaving unsupported languages source-only. See `docs/plan/chat-code-preview.md`
   - [x] 1. Preview data flow and code fence detection
   - [x] 2. Sandboxed preview canvas and chat page layout

@@ -256,6 +256,15 @@ wheels = [
 ]
 
 [[package]]
+name = "bashlex"
+version = "0.18"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/76/60/aae0bb54f9af5e0128ba90eb83d8d0d506ee8f0475c4fdda3deeda20b1d2/bashlex-0.18.tar.gz", hash = "sha256:5bb03a01c6d5676338c36fd1028009c8ad07e7d61d8a1ce3f513b7fff52796ee", size = 68742, upload-time = "2023-01-18T15:21:26.402Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f4/be/6985abb1011fda8a523cfe21ed9629e397d6e06fb5bae99750402b25c95b/bashlex-0.18-py2.py3-none-any.whl", hash = "sha256:91d73a23a3e51711919c1c899083890cdecffc91d8c088942725ac13e9dcfffa", size = 69539, upload-time = "2023-01-18T15:21:24.167Z" },
+]
+
+[[package]]
 name = "bcrypt"
 version = "5.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }
@@ -535,6 +544,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "authlib" },
     { name = "babel" },
+    { name = "bashlex" },
     { name = "bcrypt" },
     { name = "celery" },
     { name = "cryptography" },
@@ -595,6 +605,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "authlib", specifier = ">=1.7.0" },
     { name = "babel", specifier = ">=2.17.0" },
+    { name = "bashlex", specifier = ">=0.18" },
     { name = "bcrypt", specifier = "==5.0.0" },
     { name = "celery", specifier = ">=5.3.6" },
     { name = "cryptography", specifier = ">=46.0.5" },

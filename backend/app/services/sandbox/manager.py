@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from app.core.i18n import t
 from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
@@ -22,7 +23,20 @@ from .policies import sandbox_policy_engine
 from .process_launcher import SandboxProcessLauncher
 from .python_env import PythonEnvironmentManager
 from .result_store import sandbox_result_store
+from .session_store import sandbox_session_store
 from .workspace import SandboxWorkspace, SandboxWorkspaceManager
+
+BLOCKED_ENV = frozenset({
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "BASH_ENV",
+    "ENV",
+    "RUBYOPT",
+    "PERL5LIB",
+    "PYTHONPATH",
+})
 
 
 class SandboxManager:
@@ -50,7 +64,14 @@ class SandboxManager:
             self.workspace_manager
         )
 
-    async def execute(self, job: SandboxJob):
+    async def execute(
+        self,
+        job: SandboxJob,
+        session_id: str | None = None,
+        *,
+        session_agent_id: str | None = None,
+        session_team_id: str | None = None,
+    ):
         sandbox_policy_engine.validate(job)
         metadata = await self._load_or_create_metadata(job.job_id)
         now = datetime.now(UTC)
@@ -64,7 +85,20 @@ class SandboxManager:
             )
         )
 
-        workspace = self.workspace_manager.prepare(job.job_id)
+        if session_id:
+            session = await sandbox_session_store.get(session_id)
+            if session is None:
+                raise ValueError("Sandbox session not found or expired")
+            if session_agent_id is not None and session.agent_id != session_agent_id:
+                raise ValueError("Sandbox session not found or expired")
+            if session_team_id is not None and session.team_id != session_team_id:
+                raise ValueError("Sandbox session not found or expired")
+            workspace = self.workspace_manager.prepare_session(session_id)
+            should_cleanup = False
+        else:
+            workspace = self.workspace_manager.prepare(job.job_id)
+            should_cleanup = self.cleanup_workspaces
+
         self._stage_input_files(job, workspace)
         self._enforce_disk_limit(job, workspace, stage="prepare")
         metadata.mark_prepare_completed(datetime.now(UTC))
@@ -74,7 +108,12 @@ class SandboxManager:
             self._enforce_disk_limit(job, workspace, stage="execution")
             artifacts = await self._collect_artifacts(job, workspace, metadata)
         finally:
-            if self.cleanup_workspaces:
+            if session_id:
+                await sandbox_session_store.touch(
+                    session_id,
+                    disk_usage_bytes=self.workspace_manager.workspace_size_bytes(workspace),
+                )
+            if should_cleanup:
                 self.workspace_manager.cleanup(job.job_id)
 
         metadata.mark_completed(datetime.now(UTC))
@@ -203,9 +242,7 @@ class SandboxManager:
         command = list(job.command or ["python"])
         executable = command[0]
         if executable in {"python", "python3"}:
-            executable = shutil.which("python3") or "python3"
-            if env.get("VIRTUAL_ENV"):
-                executable = str(Path(env["VIRTUAL_ENV"]) / "bin" / "python")
+            executable = self._python_executable(env)
         return self._resolve_command([executable, *command[1:], str(script_path)], env)
 
     def _build_javascript_snippet_command(
@@ -292,6 +329,19 @@ async function __execute__() {{
             return
         target.symlink_to(source, target_is_directory=True)
 
+    def _python_executable(self, env: dict[str, str]) -> str:
+        if env.get("VIRTUAL_ENV"):
+            return str(Path(env["VIRTUAL_ENV"]) / "bin" / "python")
+
+        for candidate in settings.SANDBOX_DEFAULT_PYTHON_BINARIES:
+            if Path(candidate).exists():
+                return candidate
+
+        resolved = shutil.which("python3", path=env.get("PATH"))
+        if resolved and "/.venv/" not in resolved and "/backend/.venv/" not in resolved:
+            return resolved
+        return "python3"
+
     def _resolve_command(
         self,
         command: list[str],
@@ -364,12 +414,21 @@ async function __execute__() {{
         metadata: SandboxExecutionMetadata,
     ) -> dict[str, str]:
         env = {
-            "PATH": os.environ.get("PATH", ""),
             "HOME": str(workspace.root),
             "TMPDIR": str(workspace.tmp_dir),
             "LANG": "en_US.UTF-8",
             "LC_ALL": "en_US.UTF-8",
         }
+        env.update(
+            self.python_env_manager.build_workspace_env_vars(
+                workspace.root,
+                workspace.tmp_dir,
+            )
+        )
+
+        for key in BLOCKED_ENV:
+            env.pop(key, None)
+
         needs_node_runtime = job.language == "javascript" or bool(job.command and job.command[0] in {"javascript", "node"})
         if job.python_packages or job.js_packages:
             install_started_monotonic = time.perf_counter()
@@ -406,7 +465,7 @@ async function __execute__() {{
             metadata.install_ms = 0
             metadata.install_duration_ms = 0
 
-        env.update(job.env)
+        env.update({key: value for key, value in job.env.items() if key not in BLOCKED_ENV})
         return env
 
     def _inject_default_node_runtime(self, env: dict[str, str]) -> None:
@@ -441,6 +500,7 @@ async function __execute__() {{
             job_id=job.job_id,
             artifacts=job.artifacts,
             workspace=workspace,
+            artifact_limits=job.artifact_limits,
         )
         metadata.mark_collect_completed(datetime.now(UTC))
         return artifacts

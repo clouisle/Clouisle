@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.config import settings
+
 from .cache import normalize_package_source_url
 
 
@@ -37,12 +39,28 @@ class SandboxJobSource(str, Enum):
     DEBUG = "debug"
     SKILL = "skill"
     LEGACY_SNIPPET = "legacy_snippet"
+    BASH = "bash"
 
 
 class SandboxArtifactSpec(BaseModel):
     path: str = Field(..., description="Artifact path inside workspace")
     optional: bool = Field(default=False, description="Whether missing artifact is allowed")
     description: str | None = Field(default=None, description="Artifact description")
+
+
+class SandboxArtifactLimits(BaseModel):
+    max_size_mb: float = Field(
+        default_factory=lambda: settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB,
+        gt=0,
+        le=1024,
+        description="Max size per artifact in MB",
+    )
+    max_total_size_mb: float = Field(
+        default_factory=lambda: settings.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB,
+        gt=0,
+        le=4096,
+        description="Max total artifact size in MB",
+    )
 
 
 class SandboxInputFileSpec(BaseModel):
@@ -222,6 +240,7 @@ class SandboxJob(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     input_files: list[SandboxInputFileSpec] = Field(default_factory=list)
     artifacts: list[SandboxArtifactSpec] = Field(default_factory=list)
+    artifact_limits: SandboxArtifactLimits = Field(default_factory=SandboxArtifactLimits)
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -284,4 +303,18 @@ class SandboxSkillSpec(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     artifacts: list[SandboxArtifactSpec] = Field(default_factory=list)
+    artifact_limits: SandboxArtifactLimits = Field(default_factory=SandboxArtifactLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SandboxSession(BaseModel):
+    """沙箱会话，用于对话级别的持久化工作空间"""
+
+    session_id: str
+    conversation_id: str | None = None
+    agent_id: str | None = None
+    team_id: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    expires_at: datetime
+    disk_usage_bytes: int = 0
+    last_accessed_at: datetime = Field(default_factory=datetime.now)

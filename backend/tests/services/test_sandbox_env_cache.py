@@ -35,6 +35,9 @@ class FakePythonEnvManager:
             "PATH": f"{env_dir / 'bin'}:/usr/bin",
         }
 
+    def runtime_path(self):
+        return "/usr/local/bin:/usr/bin:/bin"
+
 
 class FakeNodeEnvManager:
     def __init__(self, env_dir: Path, cache_hit: bool = False):
@@ -85,6 +88,7 @@ class TestSandboxEnvironmentCache:
 
         assert env["VIRTUAL_ENV"] == str(python_env)
         assert str(python_env / "bin") in env["PATH"]
+        assert "/backend/.venv/bin" not in env["PATH"]
         assert execution_metadata.cache_hit_python is True
         assert manager.python_env_manager.calls == [(["requests==2.32.3"], "standard", "https://mirror.example.com/simple")]
 
@@ -139,6 +143,7 @@ class TestSandboxEnvironmentCache:
         execution_metadata = SandboxExecutionMetadata()
         env = manager._build_command_env(job, workspace, execution_metadata)
 
+        assert "/backend/.venv/bin" not in env["PATH"]
         assert env["SANDBOX_NODE_BINARY"] == "/usr/bin/node"
         assert env["PATH"].split(":", 1)[0] == "/usr/bin"
         assert manager.node_env_manager.calls == []
@@ -174,6 +179,39 @@ class TestSandboxEnvironmentCache:
         assert first["SANDBOX_NODE_BINARY"] == "/usr/local/bin/node"
         assert second["SANDBOX_NODE_BINARY"] == "/usr/local/bin/node"
         assert mock_check_output.call_count == 1
+
+    def test_python_executable_prefers_virtualenv_when_python_packages_are_installed(self, tmp_path: Path):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+        env_dir = tmp_path / "cache" / "py-env"
+        env = {"VIRTUAL_ENV": str(env_dir), "PATH": f"{env_dir / 'bin'}:/usr/bin"}
+
+        assert manager._python_executable(env) == str(env_dir / "bin" / "python")
+
+    def test_python_runtime_path_excludes_backend_venv(self, tmp_path: Path):
+        manager = SandboxManager(
+            workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
+            cleanup_workspaces=False,
+            result_store=InMemoryResultStore(),
+        )
+
+        from unittest.mock import patch
+
+        with patch.dict(
+            "app.services.sandbox.python_env.os.environ",
+            {"PATH": "/app/backend/.venv/bin:/usr/local/bin:/usr/bin:/bin"},
+            clear=False,
+        ), patch(
+            "app.services.sandbox.python_env.Path.exists",
+            return_value=True,
+        ):
+            runtime_path = manager.python_env_manager.runtime_path()
+
+        assert runtime_path.startswith("/usr/local/bin")
+        assert "/backend/.venv/bin" not in runtime_path
 
     def test_python_env_key_includes_package_index_url(self, tmp_path: Path):
         manager = SandboxManager(

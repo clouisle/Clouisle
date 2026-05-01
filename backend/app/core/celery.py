@@ -63,6 +63,7 @@ celery_app.conf.task_routes = {
     "app.tasks.password_expiration.*": {"queue": "default"},
     "app.tasks.session_memory.*": {"queue": "default"},
     "app.tasks.sandbox.*": {"queue": "sandbox"},
+    "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
     "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
 }
@@ -88,6 +89,11 @@ celery_app.conf.beat_schedule = {
     "check-password-expiration": {
         "task": "tasks.check_password_expiration",
         "schedule": crontab(hour=8, minute=0),
+    },
+    "cleanup-expired-sandbox-sessions": {
+        "task": "tasks.cleanup_expired_sandbox_sessions",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "sandbox"},
     },
 }
 

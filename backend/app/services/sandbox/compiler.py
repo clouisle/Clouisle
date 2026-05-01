@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from .cache import normalize_package_source_url
-from .models import SandboxArtifactSpec, SandboxJob, SandboxJobSource, SandboxLimits
+from .models import (
+    SandboxArtifactLimits,
+    SandboxArtifactSpec,
+    SandboxJob,
+    SandboxJobSource,
+    SandboxLimits,
+)
 
 
 def normalize_code_config(code_config: dict[str, Any]) -> dict[str, Any]:
@@ -72,6 +78,9 @@ def compile_code_config_job(
         else SandboxArtifactSpec.model_validate(artifact)
         for artifact in (normalized_code_config.get("artifacts") or [])
     ]
+    artifact_limits = SandboxArtifactLimits.model_validate(
+        normalized_code_config.get("artifact_limits") or {}
+    )
 
     language = normalized_code_config.get("language", "python")
     code = normalized_code_config.get("code", "")
@@ -94,6 +103,7 @@ def compile_code_config_job(
         python_package_index_url=python_package_index_url,
         node_package_registry_url=node_package_registry_url,
         artifacts=artifacts,
+        artifact_limits=artifact_limits,
         limits=limits,
         metadata={"params": params or {}},
     )

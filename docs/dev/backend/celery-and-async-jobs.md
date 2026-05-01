@@ -95,6 +95,26 @@ self.update_state(
 
 The frontend should keep polling until a task reaches `completed` or `failed`, rather than treating task creation as completion.
 
+## Sandbox worker
+
+Sandbox jobs run on the dedicated `sandbox` Celery queue.
+
+Start the worker directly when running everything on the host:
+
+```bash
+python main.py sandbox-worker -c 1
+```
+
+For local development with container isolation, build current code into a temporary image and run the worker in a container:
+
+```bash
+python main.py sandbox-worker --local-dev -c 1
+```
+
+The local dev mode uses `deploy/dockerfiles/sandbox-worker.Dockerfile` with the repository root Docker context, so `.dockerignore` excludes local `.venv`, `node_modules`, caches, `.env` files, and other local artifacts. It does not bind mount the project directory; code changes require rebuilding by rerunning the command. The `-c/--concurrency` value is passed through to the Celery worker inside the container.
+
+Production compose includes a `sandbox-worker` service. Set `SANDBOX_WORKER_CONCURRENCY` to tune its Celery concurrency.
+
 ## Common issues
 
 ### Task is queued but worker does not execute it

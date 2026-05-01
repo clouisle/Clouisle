@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.services.sandbox.manager import SandboxManager
-from app.services.sandbox.models import SandboxExecutionMetadata, SandboxJob, SandboxJobSource
+from app.services.sandbox.models import SandboxJob, SandboxJobSource
 from app.services.sandbox.process_launcher import ProcessLaunchResult
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 
@@ -23,6 +23,9 @@ class FakePythonEnvManager:
             "VIRTUAL_ENV": str(env_dir),
             "PATH": f"{env_dir / 'bin'}:/usr/bin",
         }
+
+    def runtime_path(self):
+        return "/usr/local/bin:/usr/bin:/bin"
 
 
 class InMemoryResultStore:

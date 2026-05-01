@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     # Streaming timeouts (seconds)
     STREAM_GLOBAL_TIMEOUT: int = 1800  # 30 minutes
     STREAM_HEARTBEAT_INTERVAL: int = 15  # 15 seconds
+    STREAM_IDLE_TIMEOUT: int = 90  # max seconds between model stream chunks
 
     # Tool execution timeouts (seconds)
     STREAM_TOOL_TIMEOUT_HTTP: int = 30
@@ -85,6 +86,18 @@ class Settings(BaseSettings):
     SANDBOX_LEGACY_FALLBACK_ENABLED: bool = True
     SANDBOX_WORKSPACE_ROOT: str = "/tmp/clouisle-sandbox/jobs"
     SANDBOX_MAX_DISK_MB: int = 8192
+    SANDBOX_SESSION_TTL_HOURS: int = 24
+    SANDBOX_SESSION_CLEANUP_BATCH_SIZE: int = 100
+    SANDBOX_RESULT_TTL_SECONDS: int = 86400
+    SANDBOX_DEFAULT_PYTHON_BINARIES: list[str] = [
+        "/usr/local/bin/python3",
+        "/usr/bin/python3",
+        "/bin/python3",
+    ]
+    SANDBOX_ARTIFACT_UPLOAD_BASE_URL: str | None = None
+    SANDBOX_ARTIFACT_UPLOAD_API_KEY: str | None = None
+    SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB: float = 10.0
+    SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB: float = 10.0
 
     model_config = SettingsConfigDict(
         case_sensitive=True,

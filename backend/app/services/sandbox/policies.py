@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from urllib.parse import urlsplit
 
@@ -12,7 +13,13 @@ from .models import SandboxJob
 _PINNED_PYTHON_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+==[^=].+$")
 _PINNED_JS_PATTERN = re.compile(r"^[^\s@][^\s]*@[^\s].+$")
 
-
+ALLOWED_EXECUTABLES = frozenset({
+    "python",
+    "python3",
+    "javascript",
+    "node",
+    "nodejs",
+})
 def _validate_package_source_url(url: str | None, *, label: str) -> None:
     if not url:
         return
@@ -30,11 +37,14 @@ class SandboxPolicyError(ValueError):
 
 class SandboxPolicyEngine:
     def validate(self, job: SandboxJob) -> None:
-        if job.shell:
-            raise SandboxPolicyError("Shell execution is disabled for sandbox jobs")
+        if job.shell and not job.command:
+            raise SandboxPolicyError("Shell mode requires a command")
 
         if not job.command and not job.code:
             raise SandboxPolicyError("Sandbox jobs must provide either command or code")
+
+        if job.command and not job.shell:
+            self._validate_command(job.command)
 
         for package in job.python_packages:
             if not _PINNED_PYTHON_PATTERN.match(package):
@@ -64,6 +74,24 @@ class SandboxPolicyEngine:
 
         if any(not artifact.path.startswith("/workspace") for artifact in job.artifacts):
             raise SandboxPolicyError("Artifacts must stay inside /workspace")
+
+    def _validate_command(self, command: list[str]) -> None:
+        if not command:
+            return
+
+        executable = command[0]
+        if not executable:
+            return
+
+        basename = os.path.basename(executable) if os.path.isabs(executable) else executable
+        if basename not in ALLOWED_EXECUTABLES:
+            raise SandboxPolicyError(
+                f"Command not in whitelist: {basename}. "
+                f"Allowed: {', '.join(sorted(ALLOWED_EXECUTABLES))}"
+            )
+
+        if any(arg == "-c" for arg in command[1:]):
+            raise SandboxPolicyError("Inline command execution is not allowed")
 
 
 sandbox_policy_engine = SandboxPolicyEngine()
