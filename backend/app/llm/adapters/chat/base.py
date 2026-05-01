@@ -331,6 +331,7 @@ class BaseChatAdapter(ABC):
         finish_reason: FinishReason | None = None,
         usage: Usage | None = None,
         response_id: str | None = None,
+        stream_activity: bool = False,
     ) -> ChatStreamChunk:
         """
         创建流式响应块
@@ -353,6 +354,7 @@ class BaseChatAdapter(ABC):
                 content=content,
                 reasoning_content=reasoning_content,
                 tool_calls=tool_calls,
+                stream_activity=stream_activity,
             ),
             finish_reason=finish_reason,
             usage=usage,

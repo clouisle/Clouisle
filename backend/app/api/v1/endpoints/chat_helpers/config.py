@@ -46,6 +46,7 @@ def get_streaming_config(agent: Agent) -> dict:
         "heartbeat_interval": config.get(
             "heartbeat_interval", settings.STREAM_HEARTBEAT_INTERVAL
         ),
+        "idle_timeout": config.get("idle_timeout", settings.STREAM_IDLE_TIMEOUT),
         "tool_timeouts": {
             "http": config.get("tool_timeouts", {}).get(
                 "http", settings.STREAM_TOOL_TIMEOUT_HTTP

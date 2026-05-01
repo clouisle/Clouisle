@@ -271,6 +271,10 @@ class MoonshotAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
+                    )
                     continue
 
                 delta = chunk.choices[0].delta
@@ -284,6 +288,8 @@ class MoonshotAdapter(BaseChatAdapter):
                     delta,
                     getattr(delta, "model_extra", None),
                 )
+
+                raw_tool_calls = getattr(delta, "tool_calls", None)
 
                 # 累加工具调用
                 tool_accumulator.accumulate(delta)
@@ -314,6 +320,11 @@ class MoonshotAdapter(BaseChatAdapter):
                         tool_calls=tool_calls_delta,
                         finish_reason=finish_reason,
                         response_id=response_id,
+                    )
+                elif raw_tool_calls:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
                     )
         finally:
             await client.close()

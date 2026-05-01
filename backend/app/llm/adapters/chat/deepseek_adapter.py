@@ -20,7 +20,6 @@ from app.llm.types import (
 )
 
 from .base import BaseChatAdapter
-from .thinking import ThinkingExtractor
 from .tool_call_accumulator import ToolCallAccumulator
 
 logger = logging.getLogger(__name__)
@@ -304,6 +303,10 @@ class DeepSeekAdapter(BaseChatAdapter):
 
             async for chunk in stream:
                 if not chunk.choices:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
+                    )
                     continue
 
                 delta = chunk.choices[0].delta
@@ -315,6 +318,8 @@ class DeepSeekAdapter(BaseChatAdapter):
                 # 提取 reasoning_content (DeepSeek v4/R1)
                 # DeepSeek 在流式响应中通过 delta.reasoning_content 返回
                 reasoning_content = getattr(delta, "reasoning_content", None)
+
+                raw_tool_calls = getattr(delta, "tool_calls", None)
 
                 # 累加工具调用
                 tool_accumulator.accumulate(delta)
@@ -345,6 +350,11 @@ class DeepSeekAdapter(BaseChatAdapter):
                         tool_calls=tool_calls_delta,
                         finish_reason=finish_reason,
                         response_id=response_id,
+                    )
+                elif raw_tool_calls:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
                     )
         finally:
             await client.close()

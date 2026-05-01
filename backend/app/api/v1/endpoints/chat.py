@@ -7,22 +7,18 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     from app.models.api_key import APIKey
-    from app.models.tool import Tool
-from xml.etree import ElementTree as ET
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from tortoise.expressions import F
 
 from app.api import deps
-from app.core.config import settings
 from app.core.i18n import t
 from app.models.user import User, Team
 from app.models.model import TeamModel
@@ -57,10 +53,8 @@ from app.schemas.response import (
 )
 from app.llm.errors import ContextLengthError, InsufficientQuotaError
 from app.llm.tools import tool_registry
-from app.llm.tools.builtin.media import ToolExecutionResult
-from app.llm.types import Message as LLMChatMessage
+from app.llm.types import ChatStreamChunk, Message as LLMChatMessage
 from app.core.timezone import now_utc
-from app.services.error_messages import resolve_user_visible_error
 from app.services.chat_context import (
     build_model_messages,
     get_context_compression_config,
@@ -68,379 +62,47 @@ from app.services.chat_context import (
     retry_prepare_model_context,
 )
 
+# Import helper functions from modules
+from app.api.v1.endpoints.chat_helpers import (
+    get_streaming_config,
+    parse_user_input_request,
+    should_retry_context_length,
+    get_compression_trigger,
+    get_tool_execution_payloads,
+    StreamIdleTimeoutError,
+    iter_with_idle_timeout,
+    send_heartbeat_if_needed,
+)
+from app.api.v1.endpoints.chat_tools import (
+    build_file_content_for_prompt,
+    execute_tool_call,
+)
+from app.api.v1.endpoints.chat_rag import (
+    perform_rag_retrieval,
+    aggregate_rag_contexts,
+    build_rag_prompt,
+)
+from app.api.v1.endpoints.chat_sse import (
+    build_compression_events,
+    build_tool_result_sse_event,
+    build_media_result_sse_event,
+)
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 GENERIC_STREAM_ERROR_KEY = "unknown_error"
-MEDIA_TOOL_KINDS = {"media.image", "media.video"}
 
 
-def get_item_value(item: Any, key: str, default: Any = None) -> Any:
-    if isinstance(item, dict):
-        return item.get(key, default)
-    return getattr(item, key, default)
-
-
-async def build_file_content_for_prompt(
-    agent: Agent,
-    file_urls: list[Any] | None,
-    legacy_files: list[Any] | None,
-    user_locale: str | None,
-    tool_timeouts: dict[str, Any] | None,
-    user: User | None,
-) -> str:
-    if not agent.enable_file_upload:
-        return ""
-
-    from app.services.file_parser import (
-        file_parser_service,
-        ParsedFile,
-        FileParseConfig,
-    )
-
-    parsed_files: list[ParsedFile] = []
-    file_config = agent.file_upload_config or {}
-    parser_config = file_config.get("parser")
-    parse_config = FileParseConfig(
-        max_content_length=file_config.get("max_content_length", 100000),
-        truncate_strategy=file_config.get("truncate_strategy", "end"),
-    )
-
-    if file_urls and parser_config:
-        parser_type = parser_config.get("type", "builtin")
-        parser_name = parser_config.get("name", "markitdown")
-        parser_tool_id = parser_config.get("tool_id")
-
-        if parser_type == "builtin" and parser_name == "markitdown":
-            import httpx
-
-            download_timeout = (tool_timeouts or {}).get("download", 60)
-            async with httpx.AsyncClient(
-                timeout=download_timeout, follow_redirects=True
-            ) as client:
-                for f in file_urls:
-                    filename = get_item_value(f, "filename", "")
-                    mime_type = get_item_value(
-                        f, "mime_type", "application/octet-stream"
-                    )
-                    size = get_item_value(f, "size", 0)
-                    url = get_item_value(f, "url", "")
-                    if not url:
-                        continue
-                    try:
-                        if url.startswith("/"):
-                            base_url = settings.API_BASE_URL.rstrip("/")
-                            url = f"{base_url}{url}"
-
-                        response = await client.get(url)
-                        response.raise_for_status()
-                        parsed_files.append(
-                            await file_parser_service.parse_file(
-                                response.content,
-                                filename,
-                                parse_config,
-                            )
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to parse file %s: %s", filename, e)
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=filename,
-                                content=t("file_parse_failed_placeholder"),
-                                mime_type=mime_type,
-                                size=size,
-                            )
-                        )
-        elif parser_type == "custom" and parser_tool_id:
-            from app.models.tool import Tool
-
-            custom_tool = await Tool.filter(id=parser_tool_id, is_enabled=True).first()
-            if custom_tool:
-                try:
-                    urls = [get_item_value(f, "url", "") for f in file_urls]
-                    result = await execute_tool_call(
-                        f"custom_{custom_tool.name}",
-                        {"files_url": [url for url in urls if url]},
-                        agent=agent,
-                        tool_timeouts=tool_timeouts,
-                        user=user,
-                    )
-                    display_result, _ = get_tool_execution_payloads(result)
-                    if display_result:
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=t("custom_parser_filename"),
-                                content=display_result,
-                                mime_type="text/plain",
-                                size=len(display_result),
-                            )
-                        )
-                except Exception as e:
-                    logger.warning("Custom parser failed: %s", e)
-                    parsed_files.append(
-                        ParsedFile(
-                            filename=t("custom_parser_filename"),
-                            content=t("custom_parser_failed_placeholder"),
-                            mime_type="text/plain",
-                            size=0,
-                        )
-                    )
-
-    if not parsed_files and legacy_files:
-        for f in legacy_files:
-            filename = get_item_value(f, "filename", "")
-            content = get_item_value(f, "content", "")
-            mime_type = get_item_value(f, "mime_type", "text/plain")
-            size = get_item_value(f, "size", 0)
-            truncated = get_item_value(f, "truncated", False)
-            original_length = get_item_value(f, "original_length")
-            parsed_files.append(
-                ParsedFile(
-                    filename=filename,
-                    content=content,
-                    mime_type=mime_type,
-                    size=size,
-                    truncated=bool(truncated),
-                    original_length=original_length,
-                )
-            )
-
-    if not parsed_files:
-        return ""
-
-    return file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale)
-
-
-# ============ Helper Functions ============
-
-
-def get_streaming_config(agent: Agent) -> dict[str, Any]:
-    """
-    Get streaming configuration from agent or use defaults.
-
-    Returns:
-        dict with keys: global_timeout, heartbeat_interval, tool_timeouts
-    """
-    from app.core.config import settings
-
-    # Start with defaults from settings
-    tool_timeouts: dict[str, Any] = {
-        "http": settings.STREAM_TOOL_TIMEOUT_HTTP,
-        "code": settings.STREAM_TOOL_TIMEOUT_CODE,
-        "mcp": settings.STREAM_TOOL_TIMEOUT_MCP,
-        "download": settings.STREAM_TOOL_TIMEOUT_DOWNLOAD,
-    }
-    config: dict[str, Any] = {
-        "global_timeout": settings.STREAM_GLOBAL_TIMEOUT,
-        "heartbeat_interval": settings.STREAM_HEARTBEAT_INTERVAL,
-        "tool_timeouts": tool_timeouts,
-    }
-
-    # Override with agent-specific config if present
-    if agent.streaming_config:
-        if "global_timeout" in agent.streaming_config:
-            config["global_timeout"] = agent.streaming_config["global_timeout"]
-        if "heartbeat_interval" in agent.streaming_config:
-            config["heartbeat_interval"] = agent.streaming_config["heartbeat_interval"]
-        raw_tool_timeouts = agent.streaming_config.get("tool_timeouts")
-        if isinstance(raw_tool_timeouts, dict):
-            tool_timeouts.update(raw_tool_timeouts)
-
-    return config
-
-
-def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
-    if not value:
-        return None
-    try:
-        parsed = json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def should_retry_context_length(agent: Agent) -> bool:
-    """Whether reactive context-length retry is enabled for the agent."""
+def _is_model_stream_activity(chunk: ChatStreamChunk) -> bool:
+    delta = chunk.delta
     return bool(
-        get_context_compression_config(agent).get("reactive_retry_enabled", True)
+        delta.content
+        or delta.reasoning_content
+        or delta.tool_calls
+        or delta.stream_activity
+        or chunk.finish_reason
     )
-
-
-def get_compression_trigger(compression: Any) -> str:
-    pressure_level = getattr(compression, "pressure_level", None)
-    if (
-        pressure_level in {"blocking", "over_budget"}
-        or getattr(compression, "stage", None) == "macro"
-    ):
-        return "blocking_threshold"
-    return "proactive_threshold"
-
-
-def build_compression_events(
-    *,
-    agent: Agent,
-    compression: Any,
-    trigger: str,
-    retry_index: int = 0,
-    stage_override: str | None = None,
-) -> tuple[str | None, str | None]:
-    """Build SSE compression start and end event payloads when compression should be surfaced.
-
-    Returns:
-        Tuple of (start_event, end_event). Either or both may be None if events should not be emitted.
-    """
-    config = get_context_compression_config(agent)
-    if not config.get("emit_sse_events", True):
-        return None, None
-
-    stage = stage_override or compression.stage
-    if stage == "none":
-        return None, None
-
-    note_parts: list[str] = []
-    if trigger == "context_length_error" or stage == "reactive_retry":
-        note_parts.append("Retried with more aggressive context compaction")
-    elif trigger == "blocking_threshold":
-        note_parts.append(
-            "Applied blocking-level compaction before the next model call"
-        )
-    else:
-        note_parts.append(
-            "Applied proactive context compaction before the next model call"
-        )
-    if compression.summary_turns:
-        note_parts.append(f"summarized {compression.summary_turns} older turns")
-    if compression.reasoning_trimmed:
-        note_parts.append("trimmed historical reasoning")
-    if compression.tool_results_trimmed:
-        note_parts.append("compacted older tool results")
-    if compression.file_content_trimmed:
-        note_parts.append("trimmed file content")
-
-    # Start event - minimal info
-    start_payload = {
-        "stage": stage,
-        "trigger": trigger,
-    }
-    start_event = (
-        f"event: {SSEEventType.COMPRESSION_START}\n"
-        f"data: {json.dumps(start_payload, ensure_ascii=False)}\n\n"
-    )
-
-    # End event - full compression details
-    end_payload = {
-        "stage": stage,
-        "trigger": trigger,
-        "pressure_level": getattr(compression, "pressure_level", None),
-        "before_tokens": compression.before_tokens,
-        "after_tokens": compression.after_tokens,
-        "input_budget": compression.input_budget,
-        "trigger_ratio": getattr(compression, "trigger_ratio", None),
-        "warning_ratio": getattr(compression, "warning_ratio", None),
-        "blocking_ratio": getattr(compression, "blocking_ratio", None),
-        "trigger_budget": getattr(compression, "trigger_budget", None),
-        "hard_budget": getattr(compression, "hard_budget", compression.input_budget),
-        "utilization_before": getattr(compression, "utilization_before", None),
-        "utilization_after": getattr(compression, "utilization_after", None),
-        "policy_used": getattr(compression, "policy_used", None),
-        "actions": getattr(compression, "actions", None),
-        "retained_recent_turns": getattr(compression, "retained_recent_turns", None),
-        "retained_tool_turns": getattr(compression, "retained_tool_turns", None),
-        "compacted_blocks": getattr(compression, "compacted_blocks", None),
-        "summary_turns": compression.summary_turns,
-        "reasoning_dropped": compression.reasoning_trimmed,
-        "tool_results_trimmed": compression.tool_results_trimmed,
-        "file_content_trimmed": compression.file_content_trimmed,
-        "retry_index": retry_index,
-        "note": "; ".join(note_parts),
-    }
-    end_event = (
-        f"event: {SSEEventType.COMPRESSION_END}\n"
-        f"data: {json.dumps(end_payload, ensure_ascii=False)}\n\n"
-    )
-
-    return start_event, end_event
-
-
-def get_tool_execution_payloads(result: Any) -> tuple[str, str]:
-    if isinstance(result, ToolExecutionResult):
-        display_result = json.dumps(result.display_result, ensure_ascii=False)
-        return display_result, result.llm_result
-    if isinstance(result, dict):
-        payload = json.dumps(result, ensure_ascii=False)
-        return payload, payload
-    stringified = str(result) if result is not None else ""
-    return stringified, stringified
-
-
-def extract_media_display_payload(display_result: str) -> dict[str, Any] | None:
-    payload = _safe_json_loads(display_result)
-    if not payload:
-        return None
-    if payload.get("kind") not in MEDIA_TOOL_KINDS:
-        return None
-    return payload
-
-
-def infer_tool_result_is_error(display_result: str) -> bool:
-    payload = _safe_json_loads(display_result)
-    if not payload:
-        return False
-
-    if payload.get("success") is False:
-        return True
-
-    error = payload.get("error")
-    return isinstance(error, str) and bool(error.strip())
-
-
-def build_tool_result_sse_event(
-    *,
-    tool_call_id: str,
-    tool_name: str,
-    tool_display_name: str,
-    display_result: str,
-) -> str:
-    payload = {
-        "tool_call_id": tool_call_id,
-        "tool_name": tool_name,
-        "tool_display_name": tool_display_name,
-        "result": display_result,
-        "is_error": infer_tool_result_is_error(display_result),
-    }
-    return (
-        f"event: {SSEEventType.TOOL_RESULT}\n"
-        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-    )
-
-
-def build_media_result_sse_event(display_result: str) -> str | None:
-    media_payload = extract_media_display_payload(display_result)
-    if not media_payload:
-        return None
-    return (
-        f"event: {SSEEventType.MEDIA_RESULT}\n"
-        f"data: {json.dumps(media_payload, ensure_ascii=False)}\n\n"
-    )
-
-
-async def send_heartbeat_if_needed(
-    last_event_time: float, heartbeat_interval: float, request: Request
-) -> tuple[bool, float]:
-    """
-    Send heartbeat if needed and check client connection.
-
-    Returns:
-        (should_continue, new_last_event_time)
-    """
-    current_time = time.time()
-    if current_time - last_event_time >= heartbeat_interval:
-        # Check if client is still connected
-        if await request.is_disconnected():
-            logger.info("Client disconnected during heartbeat check")
-            return False, last_event_time
-        return True, current_time
-    return True, last_event_time
 
 
 async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
@@ -550,75 +212,6 @@ async def get_public_agent(agent_id: UUID, user: User | None = None) -> Agent:
             )
 
     return agent
-
-
-def parse_user_input_request(content: str) -> tuple[dict | None, str]:
-    """
-    Parse user_input_request XML from content.
-
-    Returns:
-        Tuple of (parsed_data, remaining_content)
-        - parsed_data is None if no valid user_input_request found
-        - remaining_content is content with user_input_request removed
-
-    Example parsed_data:
-    {
-        "question": "What would you like to do?",
-        "options": ["Option 1", "Option 2", "Option 3"]
-    }
-    """
-    pattern = r"<user_input_request>(.*?)</user_input_request>"
-    match = re.search(pattern, content, re.DOTALL)
-
-    if not match:
-        return None, content
-
-    xml_block = match.group(0)
-    xml_content = match.group(1)
-
-    try:
-        logger.info(f"Parsing user_input_request XML: {xml_content[:200]}")
-        root = ET.fromstring(f"<root>{xml_content}</root>")
-
-        # Extract question
-        question_elem = root.find("question")
-        if question_elem is None or not question_elem.text:
-            return None, content
-        question = question_elem.text.strip()
-
-        # Extract options
-        options_elem = root.find("options")
-        if options_elem is None:
-            return None, content
-
-        option_elems = options_elem.findall("option")
-        if len(option_elems) < 2:
-            return None, content
-
-        options = []
-        for opt in option_elems:
-            if opt.text:
-                option_text = opt.text.strip()
-                if option_text and len(option_text) <= 200:
-                    options.append(option_text)
-
-        if len(options) < 2:
-            return None, content
-
-        parsed_data = {
-            "question": question[:500],
-            "options": options,  # 不限制选项数量，全部渲染
-        }
-
-        remaining_content = content.replace(xml_block, "").strip()
-        logger.info(
-            f"Successfully parsed user_input_request: question={question[:50]}, options_count={len(options)}"
-        )
-        return parsed_data, remaining_content
-
-    except ET.ParseError as e:
-        logger.error(f"Failed to parse user_input_request XML: {e}")
-        return None, content
 
 
 async def get_or_create_conversation(
@@ -1073,9 +666,9 @@ Examples of when to search:
         if tool_type == "builtin":
             tool_name = config.get("name")
             if tool_name:
-                # Get builtin tool definition
                 builtin_tools = tool_registry.to_openai_tools([tool_name])
-                for builtin_tool in builtin_tools:
+                sandbox_tools = tool_registry.to_openai_sandbox_tools([tool_name])
+                for builtin_tool in [*builtin_tools, *sandbox_tools]:
                     append_openai_tool(builtin_tool)
 
         elif tool_type == "custom":
@@ -1122,9 +715,9 @@ Examples of when to search:
                         agent.team_id,
                         enabled_only=True,
                     )
-                    append_openai_tool(
-                        SkillService.to_tool_definition(skill).model_dump()
-                    )
+                    append_openai_tool(SkillService.to_tool_info(skill).to_openai_schema())
+                    for sandbox_tool in tool_registry.to_openai_sandbox_tools(["read", "write", "bash"]):
+                        append_openai_tool(sandbox_tool)
                 except Exception as e:
                     logger.warning("Failed to get skill tool %s: %s", skill_id, e)
 
@@ -1239,13 +832,12 @@ async def get_tool_display_names(
         if tool_type == "builtin":
             tool_name = config.get("name")
             if tool_name:
-                # Get display name from builtin metadata with i18n
                 metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
                 display_name_key = metadata.get("display_name_key")
                 if display_name_key:
                     display_names[tool_name] = t(display_name_key, lang=user_locale)
                 else:
-                    display_names[tool_name] = tool_name
+                    display_names[tool_name] = metadata.get("display_name", tool_name)
 
         elif tool_type == "custom":
             tool_id = config.get("tool_id")
@@ -1294,580 +886,6 @@ async def get_tool_display_names(
                         pass
 
     return display_names
-
-
-async def execute_tool_call(
-    tool_name: str,
-    arguments: dict,
-    agent: Agent | None = None,
-    tool_timeouts: dict | None = None,
-    user: User | None = None,
-) -> Any:
-    """
-    Execute a tool and return the result payload.
-
-    Args:
-        tool_name: Tool name (for builtin) or custom_<name> (for custom) or mcp_<tool_id>_<tool_name> (for MCP)
-        arguments: Tool arguments
-        agent: Agent instance (required for knowledge_search)
-        tool_timeouts: Tool timeout configuration dict
-        user: User instance (required for memory tools)
-    """
-    from app.models.tool import Tool, CustomToolType
-
-    # Initialize default timeouts if not provided
-    if tool_timeouts is None:
-        tool_timeouts = {
-            "http": 30,
-            "code": 60,
-            "mcp": 60,
-            "download": 60,
-        }
-
-    try:
-        if not tool_name:
-            return json.dumps({"error": t("tool_name_required")}, ensure_ascii=False)
-        # Handle knowledge_search - internal tool for RAG
-        if tool_name == "knowledge_search":
-            if not agent:
-                return json.dumps(
-                    {"error": t("agent_context_required_for_knowledge_search")},
-                    ensure_ascii=False,
-                )
-
-            query = arguments.get("query", "")
-            if not query:
-                return json.dumps(
-                    {"error": t("query_parameter_required")}, ensure_ascii=False
-                )
-
-            # Use existing RAG retrieval function
-            rag_contexts = await perform_rag_retrieval(agent, query)
-
-            if not rag_contexts:
-                return json.dumps(
-                    {"message": t("kb_no_results")},
-                    ensure_ascii=False,
-                )
-
-            # Format results for LLM
-            results = []
-            for ctx in rag_contexts:
-                results.append(
-                    {
-                        "source": f"{ctx['kb_name']} - {ctx['document_name']}",
-                        "content": ctx["content"],
-                        "relevance_score": ctx.get("score", 0),
-                    }
-                )
-
-            return json.dumps({"results": results}, ensure_ascii=False)
-
-        # Handle memory tools
-        if tool_name in [
-            "create_memory_entity",
-            "create_memory_relation",
-            "update_memory_entity",
-            "search_memory",
-        ]:
-            from app.services.memory import MemoryService
-
-            if not user:
-                return json.dumps(
-                    {"error": t("user_context_required_for_memory_tools")},
-                    ensure_ascii=False,
-                )
-
-            try:
-                if tool_name == "create_memory_entity":
-                    name = arguments.get("name")
-                    entity_type = arguments.get("entity_type")
-                    description = arguments.get("description")
-                    if not isinstance(name, str) or not isinstance(entity_type, str):
-                        return json.dumps(
-                            {
-                                "error": t(
-                                    "memory_tool_create_entity_requires_name_and_entity_type"
-                                )
-                            },
-                            ensure_ascii=False,
-                        )
-                    result = await MemoryService.handle_create_entity(
-                        user_id=user.id,
-                        name=name,
-                        entity_type=entity_type,
-                        description=description
-                        if isinstance(description, str)
-                        else None,
-                        properties=arguments.get("properties", {}),
-                    )
-                elif tool_name == "create_memory_relation":
-                    source_entity_name = arguments.get("source_entity_name")
-                    target_entity_name = arguments.get("target_entity_name")
-                    relation_type = arguments.get("relation_type")
-                    description = arguments.get("description")
-                    if (
-                        not isinstance(source_entity_name, str)
-                        or not isinstance(target_entity_name, str)
-                        or not isinstance(relation_type, str)
-                    ):
-                        return json.dumps(
-                            {"error": t("memory_tool_create_relation_requires_fields")},
-                            ensure_ascii=False,
-                        )
-                    result = await MemoryService.handle_create_relation(
-                        user_id=user.id,
-                        source_entity_name=source_entity_name,
-                        target_entity_name=target_entity_name,
-                        relation_type=relation_type,
-                        description=description
-                        if isinstance(description, str)
-                        else None,
-                    )
-                elif tool_name == "update_memory_entity":
-                    entity_name = arguments.get("entity_name")
-                    description = arguments.get("description")
-                    if not isinstance(entity_name, str):
-                        return json.dumps(
-                            {
-                                "error": t(
-                                    "memory_tool_update_entity_requires_entity_name"
-                                )
-                            },
-                            ensure_ascii=False,
-                        )
-                    result = await MemoryService.handle_update_entity(
-                        user_id=user.id,
-                        entity_name=entity_name,
-                        description=description
-                        if isinstance(description, str)
-                        else None,
-                        properties=arguments.get("properties"),
-                    )
-                elif tool_name == "search_memory":
-                    query = arguments.get("query")
-                    if not isinstance(query, str):
-                        return json.dumps(
-                            {"error": t("memory_tool_search_requires_query")},
-                            ensure_ascii=False,
-                        )
-                    result = await MemoryService.handle_search_memory(
-                        user_id=user.id,
-                        query=query,
-                        top_k=arguments.get("top_k", 5),
-                    )
-
-                return json.dumps(result, ensure_ascii=False)
-            except Exception as e:
-                logger.error("Memory tool execution failed: %s", e)
-                return json.dumps(
-                    {"success": False, "error": t("memory_tool_execution_failed")},
-                    ensure_ascii=False,
-                )
-
-        # Check if it's a Skill tool (format: skill_<name>_<short_id>)
-        if tool_name.startswith("skill_"):
-            from app.services.skill import SkillService
-            from app.services.skill_executor import SkillExecutor
-
-            if not agent:
-                return json.dumps(
-                    {"error": t("agent_context_required_for_skill")}, ensure_ascii=False
-                )
-
-            try:
-                skill, skill_config = await SkillService.resolve_agent_skill_tool(
-                    agent,
-                    tool_name,
-                )
-                skill_result = await SkillExecutor.execute(
-                    skill=skill,
-                    arguments=arguments,
-                    config=skill_config,
-                    tenant_id=str(agent.team_id) if agent.team_id else None,
-                )
-                return skill_result.to_chat_payload()
-            except BusinessError as e:
-                return json.dumps(
-                    {"error": t(e.msg_key or "skill_execution_failed", **e.kwargs)},
-                    ensure_ascii=False,
-                )
-            except Exception as e:
-                logger.exception("Skill execution failed: %s", e)
-                return json.dumps(
-                    {
-                        "error": resolve_user_visible_error(
-                            str(e),
-                            fallback_key="skill_execution_failed",
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-
-        # Check if it's an MCP tool (format: mcp_<server_name>_<tool_name>)
-        if tool_name.startswith("mcp_"):
-            from app.llm.tools.mcp_client import execute_mcp_tool
-
-            # Parse server_name and actual tool name
-            parts = tool_name.split(
-                "_", 2
-            )  # Split into ["mcp", "<server_name>", "<tool_name>"]
-            if len(parts) < 3:
-                return json.dumps(
-                    {"error": t("invalid_mcp_tool_name_format", tool_name=tool_name)},
-                    ensure_ascii=False,
-                )
-
-            server_name = parts[1]
-            actual_tool_name = parts[2]
-
-            # Get MCP tool from database by name (need agent's team_id)
-            if not agent:
-                return json.dumps(
-                    {"error": t("agent_context_required_for_mcp_tool")},
-                    ensure_ascii=False,
-                )
-
-            mcp_tool = await Tool.filter(
-                name=server_name, team_id=agent.team_id, is_enabled=True
-            ).first()
-            if not mcp_tool:
-                return json.dumps(
-                    {"error": t("mcp_tool_not_found", server_name=server_name)},
-                    ensure_ascii=False,
-                )
-
-            if not mcp_tool.mcp_config:
-                return json.dumps(
-                    {
-                        "error": t(
-                            "mcp_tool_missing_configuration", tool_name=mcp_tool.name
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-
-            # Execute MCP tool
-            mcp_result = await execute_mcp_tool(
-                mcp_tool.mcp_config,
-                actual_tool_name,
-                arguments,
-                timeout=tool_timeouts.get("mcp", 60),
-            )
-
-            if mcp_result.success:
-                if isinstance(mcp_result.result, (dict, list)):
-                    return json.dumps(mcp_result.result, ensure_ascii=False)
-                return str(mcp_result.result) if mcp_result.result is not None else ""
-            else:
-                return json.dumps(
-                    {
-                        "error": resolve_user_visible_error(
-                            mcp_result.error,
-                            fallback_key="mcp_tool_execution_failed",
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-
-        # Check if it's a custom tool
-        if tool_name.startswith("custom_"):
-            actual_name = tool_name[7:]  # Remove "custom_" prefix
-
-            # Get custom tool from database
-            custom_tool = await Tool.filter(name=actual_name, is_enabled=True).first()
-            if not custom_tool:
-                return json.dumps(
-                    {"error": t("custom_tool_not_found", tool_name=actual_name)},
-                    ensure_ascii=False,
-                )
-
-            # Execute based on custom_type
-            if custom_tool.custom_type == CustomToolType.HTTP:
-                http_result = await execute_http_tool(
-                    custom_tool, arguments, timeout=tool_timeouts.get("http", 30)
-                )
-                return http_result
-            elif custom_tool.custom_type == CustomToolType.CODE:
-                code_result = await execute_code_tool(
-                    custom_tool, arguments, timeout=tool_timeouts.get("code", 60)
-                )
-                return code_result
-            else:
-                return json.dumps(
-                    {
-                        "error": t(
-                            "unsupported_custom_tool_type",
-                            tool_type=custom_tool.custom_type,
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-        else:
-            # Builtin tool
-            if not tool_registry.get_tool(tool_name):
-                return json.dumps(
-                    {"error": t("tool_not_found"), "tool_name": tool_name},
-                    ensure_ascii=False,
-                )
-
-            # Get credentials from ToolConfig table
-            credentials = {}
-            if agent and agent.team_id:
-                from app.models.tool_config import ToolConfig
-
-                # Try team-specific config first
-                tool_config = await ToolConfig.filter(
-                    tool_name=tool_name, team_id=agent.team_id
-                ).first()
-                if tool_config:
-                    credentials = tool_config.credentials or {}
-
-                # If no team config, try global config
-                if not credentials:
-                    global_config = await ToolConfig.filter(
-                        tool_name=tool_name, team_id=None
-                    ).first()
-                    if global_config:
-                        credentials = global_config.credentials or {}
-
-            result = await tool_registry.execute(
-                tool_name,
-                arguments,
-                credentials=credentials,
-                agent=agent,
-                team_id=str(agent.team_id) if agent and agent.team_id else None,
-                user_id=str(user.id) if user else None,
-            )
-            if isinstance(result, ToolExecutionResult):
-                return result
-            if isinstance(result, dict):
-                return json.dumps(result, ensure_ascii=False)
-            return str(result)
-    except Exception as e:
-        logger.exception("Tool execution error: %s", e)
-        return json.dumps(
-            {"error": resolve_user_visible_error(str(e))},
-            ensure_ascii=False,
-        )
-
-
-async def execute_http_tool(
-    tool: "Tool", arguments: dict, timeout: float = 30.0
-) -> str:
-    """
-    Execute an HTTP-based custom tool.
-    """
-    from app.llm.tools.executors import (
-        execute_http_tool as shared_execute_http_tool,
-        format_http_result_for_llm,
-    )
-
-    result = await shared_execute_http_tool(
-        http_config=tool.http_config,
-        arguments=arguments,
-        credentials=tool.credentials,
-        timeout=timeout,
-    )
-    return format_http_result_for_llm(result)
-
-
-async def execute_code_tool(
-    tool: "Tool", arguments: dict, timeout: float = 60.0
-) -> str:
-    """
-    Execute a code-based custom tool.
-
-    Args:
-        tool: The Tool model instance
-        arguments: Tool arguments passed from LLM
-        timeout: Execution timeout in seconds
-
-    Returns:
-        JSON string with execution result
-    """
-    from app.llm.tools.sandbox import execute_code
-
-    code_config = tool.code_config or {}
-    language = code_config.get("language", "python")
-    code = code_config.get("code", "")
-
-    if not code:
-        return json.dumps({"error": t("tool_code_not_defined")}, ensure_ascii=False)
-
-    try:
-        exec_result = await execute_code(
-            language=language,
-            code=code,
-            params=arguments,
-            timeout=timeout,
-        )
-
-        if exec_result.success:
-            result = exec_result.result
-            # Include stdout logs if present
-            if exec_result.stdout:
-                if isinstance(result, dict):
-                    result["__logs__"] = exec_result.stdout
-                else:
-                    result = {"value": result, "__logs__": exec_result.stdout}
-            return (
-                json.dumps(result, ensure_ascii=False)
-                if isinstance(result, (dict, list))
-                else str(result)
-            )
-        else:
-            return json.dumps(
-                {
-                    "error": exec_result.error or t("code_execution_failed"),
-                    "logs": exec_result.stdout or "",
-                },
-                ensure_ascii=False,
-            )
-
-    except Exception as e:
-        logger.exception("Code tool execution error: %s", e)
-        return json.dumps(
-            {
-                "error": resolve_user_visible_error(
-                    str(e),
-                    fallback_key="code_tool_execution_failed",
-                )
-            },
-            ensure_ascii=False,
-        )
-
-
-async def perform_rag_retrieval(agent: Agent, query: str) -> list[dict]:
-    """Perform RAG retrieval from knowledge bases."""
-    from app.services.vector_store import VectorStore
-
-    rag_contexts: list[dict] = []
-
-    # Get knowledge base associations
-    kb_associations = await AgentKnowledgeBase.filter(
-        agent_id=agent.id
-    ).prefetch_related("knowledge_base")
-
-    for akb in kb_associations:
-        kb = akb.knowledge_base
-
-        # Skip if KB has no embedding model
-        if not kb.embedding_model_id:
-            continue
-
-        try:
-            vector_store = VectorStore(
-                embedding_model_id=str(kb.embedding_model_id),
-                rerank_model_id=str(kb.rerank_model_id) if kb.rerank_model_id else None,
-                team_id=str(kb.team_id),
-            )
-
-            results = await vector_store.search(
-                kb_id=kb.id,
-                query=query,
-                search_mode=akb.search_mode,
-                top_k=akb.retrieval_top_k,
-                score_threshold=akb.score_threshold,
-            )
-
-            for result in results:
-                rag_contexts.append(
-                    {
-                        "kb_id": str(kb.id),
-                        "kb_name": kb.name,
-                        "document_id": str(result.get("document_id")),
-                        "document_name": result.get("document_name"),
-                        "content": result.get("content"),
-                        "score": result.get("score"),
-                    }
-                )
-        except Exception as e:
-            logger.warning(f"RAG retrieval failed for KB {kb.id}: {e}")
-
-    return rag_contexts
-
-
-def aggregate_rag_contexts(rag_contexts: list[dict]) -> list[dict]:
-    """Aggregate RAG contexts by document to align citations with document-level sources."""
-    if not rag_contexts:
-        return []
-
-    aggregated: list[dict] = []
-    index_map: dict[tuple[str | None, str | None], int] = {}
-
-    for ctx in rag_contexts:
-        kb_id = ctx.get("kb_id")
-        doc_id = ctx.get("document_id") or ctx.get("document_name")
-        key = (kb_id, doc_id)
-
-        if key in index_map:
-            idx = index_map[key]
-            if ctx.get("content"):
-                aggregated[idx]["content_parts"].append(ctx.get("content"))
-            score = ctx.get("score")
-            if isinstance(score, (int, float)):
-                existing_score = aggregated[idx].get("score")
-                current_score = (
-                    float(existing_score)
-                    if isinstance(existing_score, (int, float))
-                    else 0.0
-                )
-                aggregated[idx]["score"] = max(current_score, float(score))
-            continue
-
-        index_map[key] = len(aggregated)
-        aggregated.append(
-            {
-                "kb_id": kb_id,
-                "kb_name": ctx.get("kb_name"),
-                "document_id": ctx.get("document_id"),
-                "document_name": ctx.get("document_name"),
-                "score": ctx.get("score"),
-                "content_parts": [ctx.get("content")] if ctx.get("content") else [],
-            }
-        )
-
-    for item in aggregated:
-        item["content"] = "\n\n".join([p for p in item.get("content_parts", []) if p])
-        item.pop("content_parts", None)
-
-    return aggregated
-
-
-def build_rag_prompt(rag_contexts: list[dict], user_message: str) -> str:
-    """Build user message with RAG context and citation instructions."""
-    if not rag_contexts:
-        return user_message
-
-    rag_contexts = aggregate_rag_contexts(rag_contexts)
-
-    # Build numbered references
-    references = []
-    for i, ctx in enumerate(rag_contexts, 1):
-        references.append(
-            f"[[ref:{i}]] {ctx['kb_name']} - {ctx['document_name']}:\n{ctx['content']}"
-        )
-
-    context_text = "\n\n---\n\n".join(references)
-
-    return f"""The following reference materials may help you answer the user's question.
-Use them ONLY if they are relevant to the question.
-
-Citation format requirement:
-- Use ONLY [[cite:N]] where N is the reference number.
-- Do NOT use (ref:N), [ref:N], "ref:N", or any other citation format.
-Only cite sources you actually use. Do not cite if the information comes from your general knowledge.
-
-Reference Materials:
-
-{context_text}
-
----
-
-User question: {user_message}
-
-Remember: Only use [[cite:N]] citations when you actually use information from the references above."""
 
 
 # ============ Public Endpoints (Optional Auth) ============
@@ -2004,6 +1022,12 @@ async def chat(
 
     streaming_config = get_streaming_config(agent)
     tool_timeouts = streaming_config["tool_timeouts"]
+    from app.services.sandbox.gateway import sandbox_gateway
+
+    sandbox_session_id = await sandbox_gateway.create_session(
+        agent_id=str(agent.id),
+        team_id=str(agent.team_id) if agent.team_id else None,
+    )
     file_content_str = await build_file_content_for_prompt(
         agent=agent,
         file_urls=chat_in.file_urls,
@@ -2211,6 +1235,7 @@ async def chat(
                         agent=agent,
                         tool_timeouts=tool_timeouts,
                         user=current_user,
+                        session_id=sandbox_session_id,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
 
@@ -2448,6 +1473,16 @@ async def chat_stream(
         global_timeout = streaming_config["global_timeout"]
         heartbeat_interval = streaming_config["heartbeat_interval"]
         tool_timeouts = streaming_config["tool_timeouts"]
+        idle_timeout = streaming_config["idle_timeout"]
+
+        # Create sandbox session for stateful execution
+        from app.services.sandbox.gateway import sandbox_gateway
+        sandbox_session_id = await sandbox_gateway.create_session(
+            agent_id=str(agent.id),
+            team_id=str(agent.team_id) if agent.team_id else None,
+            ttl_hours=24,
+            conversation_id=str(conversation.id),
+        )
 
         # Record start time and last event time
         start_time = time.time()
@@ -2734,11 +1769,16 @@ async def chat_stream(
                         emitted_any = False
                         client_disconnected = False
                         try:
-                            async for chunk in model_manager.team_chat_stream(
+                            stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
                                 model_id=model_id,
                                 tools=tools,
+                            )
+                            async for chunk in iter_with_idle_timeout(
+                                stream,
+                                timeout_seconds=idle_timeout,
+                                activity_predicate=_is_model_stream_activity,
                             ):
                                 # Check if client disconnected - stop LLM generation to save tokens
                                 if await request.is_disconnected():
@@ -2843,11 +1883,16 @@ async def chat_stream(
                             )
                             emitted_any = False
                             client_disconnected = False
-                            async for chunk in model_manager.team_chat_stream(
+                            stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
                                 model_id=model_id,
                                 tools=tools,
+                            )
+                            async for chunk in iter_with_idle_timeout(
+                                stream,
+                                timeout_seconds=idle_timeout,
+                                activity_predicate=_is_model_stream_activity,
                             ):
                                 if await request.is_disconnected():
                                     client_disconnected = True
@@ -3006,6 +2051,7 @@ async def chat_stream(
                                     agent=agent,
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
+                                    session_id=sandbox_session_id,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -3316,6 +2362,21 @@ async def chat_stream(
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                except StreamIdleTimeoutError:
+                    logger.warning(
+                        "Stream idle timeout (%ss) for conversation %s",
+                        idle_timeout,
+                        conversation.id,
+                    )
+                    await persist_partial_round_error(
+                        assistant_msg,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=t("stream_timeout_exceeded"),
+                    )
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
                 except Exception as e:
                     logger.exception(f"Unexpected error during stream: {e}")
                     await persist_partial_round_error(
@@ -3683,6 +2744,7 @@ async def regenerate_message(
         global_timeout = streaming_config["global_timeout"]
         heartbeat_interval = streaming_config["heartbeat_interval"]
         tool_timeouts = streaming_config["tool_timeouts"]
+        idle_timeout = streaming_config["idle_timeout"]
 
         # Record start time and last event time
         start_time = time.time()
@@ -3693,6 +2755,13 @@ async def regenerate_message(
         new_message_id = None
         new_message: Message | None = None
         model_id: str | None = None
+        from app.services.sandbox.gateway import sandbox_gateway
+
+        sandbox_session_id = await sandbox_gateway.create_session(
+            agent_id=str(agent.id),
+            team_id=str(agent.team_id) if agent.team_id else None,
+            conversation_id=str(conversation.id),
+        )
 
         logger.info(
             f"Starting regenerate stream for message {message_id}, "
@@ -3920,11 +2989,16 @@ async def regenerate_message(
                         ]
 
                         try:
-                            async for chunk in model_manager.team_chat_stream(
+                            stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
                                 model_id=model_id,
                                 tools=tools,
+                            )
+                            async for chunk in iter_with_idle_timeout(
+                                stream,
+                                timeout_seconds=idle_timeout,
+                                activity_predicate=_is_model_stream_activity,
                             ):
                                 # Check if client disconnected - stop LLM generation to save tokens
                                 if await request.is_disconnected():
@@ -4010,11 +3084,16 @@ async def regenerate_message(
                                 item.model_dump(exclude_none=True)
                                 for item in prepared_context.messages
                             ]
-                            async for chunk in model_manager.team_chat_stream(
+                            stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
                                 model_id=model_id,
                                 tools=tools,
+                            )
+                            async for chunk in iter_with_idle_timeout(
+                                stream,
+                                timeout_seconds=idle_timeout,
+                                activity_predicate=_is_model_stream_activity,
                             ):
                                 if await request.is_disconnected():
                                     client_disconnected = True
@@ -4113,6 +3192,7 @@ async def regenerate_message(
                                     agent=agent,
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
+                                    session_id=sandbox_session_id,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -4370,6 +3450,27 @@ async def regenerate_message(
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("LLM error during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                except StreamIdleTimeoutError:
+                    preserved_partial = await persist_partial_round_error(
+                        new_message,
+                        content=full_content,
+                        reasoning=full_reasoning,
+                        model_id=model_id,
+                        start_time=start_time,
+                        fallback_content=t("stream_timeout_exceeded"),
+                    )
+                    if preserved_partial:
+                        await Message.filter(id=message.id).update(is_active=False)
+                    else:
+                        if new_message_id:
+                            await Message.filter(id=new_message_id).delete()
+                        await Message.filter(id=message.id).update(is_active=True)
+                    logger.warning(
+                        "Regenerate stream idle timeout (%ss) for message %s",
+                        idle_timeout,
+                        message_id,
+                    )
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
                 except Exception as e:
                     preserved_partial = await persist_partial_round_error(
                         new_message,

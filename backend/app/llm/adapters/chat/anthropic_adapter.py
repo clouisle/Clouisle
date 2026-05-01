@@ -514,6 +514,10 @@ class AnthropicAdapter(BaseChatAdapter):
                                     "name": getattr(content_block, "name", ""),
                                     "input": "",
                                 }
+                                yield self.create_stream_chunk(
+                                    response_id=response_id,
+                                    stream_activity=True,
+                                )
                         continue
 
                     # 处理 content_block_delta
@@ -547,6 +551,10 @@ class AnthropicAdapter(BaseChatAdapter):
                             if current_tool_use is not None:
                                 partial_json = getattr(delta, "partial_json", "")
                                 current_tool_use["input"] += partial_json
+                                yield self.create_stream_chunk(
+                                    response_id=response_id,
+                                    stream_activity=True,
+                                )
 
                         continue
 

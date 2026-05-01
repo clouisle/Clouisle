@@ -111,6 +111,7 @@ class ChatStreamDelta(BaseModel):
     content: str | None = Field(default=None, description="增量内容")
     reasoning_content: str | None = Field(default=None, description="思维链内容增量")
     tool_calls: list[ToolCall] | None = Field(default=None, description="工具调用")
+    stream_activity: bool = Field(default=False, description="上游流式响应活动")
 
 
 class ChatStreamChunk(BaseModel):

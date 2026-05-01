@@ -496,6 +496,10 @@ class GeminiAdapter(BaseChatAdapter):
                             ),
                         )
                     )
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
+                    )
                 # 普通文本
                 elif hasattr(part, "text") and part.text:
                     yield self.create_stream_chunk(

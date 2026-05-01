@@ -1,4 +1,4 @@
-from app.api.v1.endpoints.chat import (
+from app.api.v1.endpoints.chat_sse import (
     build_media_result_sse_event,
     build_tool_result_sse_event,
     extract_media_display_payload,
@@ -32,6 +32,22 @@ def test_summarize_tool_result_for_llm_keeps_non_media_payload_unchanged():
     summary = summarize_tool_result_for_llm("search_memory", content)
 
     assert summary == content
+
+
+
+def test_summarize_tool_result_for_llm_compacts_skill_instruction_payload():
+    content = (
+        '{"success":true,"result":{"type":"skill_instructions",'
+        '"skill":{"name":"impeccable","display_name":"impeccable"},'
+        '"instructions":"very long internal instructions",'
+        '"arguments":{"prompt":"build UI"},"config":{},"status":"loaded"},'
+        '"error":null}'
+    )
+
+    summary = summarize_tool_result_for_llm("skill_impeccable_12345678", content)
+
+    assert summary == "Skill instructions for impeccable were loaded."
+    assert "very long internal instructions" not in summary
 
 
 def test_extract_media_display_payload_returns_media_payload_for_image():
