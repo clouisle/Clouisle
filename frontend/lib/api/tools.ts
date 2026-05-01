@@ -7,16 +7,25 @@ export type ToolType = 'builtin' | 'custom' | 'mcp' | 'skill'
 
 export type CustomToolType = 'http' | 'code'
 
-export type ToolCategory =
-  | 'time'
-  | 'math'
-  | 'search'
-  | 'web'
-  | 'file'
-  | 'code'
-  | 'api'
-  | 'data'
-  | 'other'
+export const PRESET_TOOL_CATEGORIES = [
+  'time',
+  'math',
+  'search',
+  'web',
+  'file',
+  'code',
+  'sandbox',
+  'api',
+  'data',
+  'other',
+] as const
+
+export type PresetToolCategory = (typeof PRESET_TOOL_CATEGORIES)[number]
+export type ToolCategory = string
+
+export function isPresetToolCategory(category: string): category is PresetToolCategory {
+  return (PRESET_TOOL_CATEGORIES as readonly string[]).includes(category)
+}
 
 export type ToolSharePermission = 'read_only' | 'read_execute'
 
@@ -276,260 +285,6 @@ export interface ToolShareListResponse {
   total: number
 }
 
-type BuiltinToolI18n = {
-  zh: {
-    display_name: string
-    description: string
-    parameters?: Record<string, string>
-  }
-  en: {
-    display_name: string
-    description: string
-    parameters?: Record<string, string>
-  }
-}
-
-const BUILTIN_TOOL_I18N: Record<string, BuiltinToolI18n> = {
-  get_current_time: {
-    zh: {
-      display_name: '获取当前时间',
-      description: '获取当前时间。返回指定时区的当前日期、时间、星期和时间戳。',
-      parameters: {
-        timezone_name: "时区名称，如 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'。默认为 UTC。",
-      },
-    },
-    en: {
-      display_name: 'Get Current Time',
-      description:
-        'Get the current time. Returns the date, time, weekday, and timestamp for a specified timezone.',
-      parameters: {
-        timezone_name:
-          "Timezone name, e.g., 'UTC', 'Asia/Shanghai', 'America/New_York', 'Europe/London'. Default is UTC.",
-      },
-    },
-  },
-  format_datetime: {
-    zh: {
-      display_name: '格式化日期时间',
-      description: '格式化日期时间。将时间戳转换为指定格式的字符串。',
-      parameters: {
-        timestamp: 'Unix 时间戳（秒），不提供则使用当前时间',
-        format_string: "Python strftime 格式字符串，如 '%Y-%m-%d %H:%M:%S'",
-        timezone_name: '时区名称，默认为 UTC',
-      },
-    },
-    en: {
-      display_name: 'Format DateTime',
-      description: 'Format a datetime. Convert a timestamp to a formatted string.',
-      parameters: {
-        timestamp: 'Unix timestamp (seconds). If omitted, uses current time.',
-        format_string: "Python strftime format string, e.g. '%Y-%m-%d %H:%M:%S'",
-        timezone_name: 'Timezone name. Default is UTC.',
-      },
-    },
-  },
-  calculate: {
-    zh: {
-      display_name: '计算器',
-      description:
-        '计算数学表达式。支持基本运算（+, -, *, /, //, %, **）和数学函数（sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil）以及常量（pi, e）。',
-      parameters: {
-        expression: "数学表达式，如 '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
-      },
-    },
-    en: {
-      display_name: 'Calculator',
-      description:
-        'Evaluate math expressions. Supports basic operators (+, -, *, /, //, %, **), math functions (sqrt, sin, cos, tan, log, exp, abs, round, min, max, floor, ceil), and constants (pi, e).',
-      parameters: {
-        expression: "Math expression, e.g. '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)'",
-      },
-    },
-  },
-  unit_convert: {
-    zh: {
-      display_name: '单位转换',
-      description:
-        '单位转换。支持长度（m, km, cm, mm, mi, yd, ft, in）、重量（kg, g, mg, lb, oz, t）、温度（c, f, k）、面积（m2, km2, ha, acre）、体积（l, ml, m3, gal）、时间（s, ms, min, h, d, wk）、数据（b, kb, mb, gb, tb）。',
-      parameters: {
-        value: '要转换的数值',
-        from_unit: '源单位',
-        to_unit: '目标单位',
-      },
-    },
-    en: {
-      display_name: 'Unit Converter',
-      description:
-        'Convert units. Supports length (m, km, cm, mm, mi, yd, ft, in), weight (kg, g, mg, lb, oz, t), temperature (c, f, k), area (m2, km2, ha, acre), volume (l, ml, m3, gal), time (s, ms, min, h, d, wk), and data (b, kb, mb, gb, tb).',
-      parameters: {
-        value: 'Value to convert',
-        from_unit: 'Source unit',
-        to_unit: 'Target unit',
-      },
-    },
-  },
-  web_search: {
-    zh: {
-      display_name: '网页搜索',
-      description: '搜索网页。使用搜索引擎查找相关信息。当需要获取最新信息、查找事实或研究某个话题时使用此工具。',
-      parameters: {
-        query: '搜索关键词或问题',
-        num_results: '返回结果数量，默认 5，最大 10',
-      },
-    },
-    en: {
-      display_name: 'Web Search',
-      description:
-        'Search the web. Use a search engine to find relevant information when you need up-to-date facts or research a topic.',
-      parameters: {
-        query: 'Search keywords or question',
-        num_results: 'Number of results. Default 5, max 10.',
-      },
-    },
-  },
-  fetch_webpage: {
-    zh: {
-      display_name: '获取网页内容',
-      description: '获取网页内容。读取指定 URL 的网页文本内容。用于深入阅读搜索结果中感兴趣的页面。',
-      parameters: {
-        url: '要获取的网页 URL',
-        max_length: '返回内容的最大字符数，默认 5000',
-      },
-    },
-    en: {
-      display_name: 'Fetch Webpage',
-      description:
-        'Fetch webpage content. Read the text content of a URL for deeper inspection of search results.',
-      parameters: {
-        url: 'Webpage URL to fetch',
-        max_length: 'Max characters to return. Default 5000.',
-      },
-    },
-  },
-  markitdown: {
-    zh: {
-      display_name: 'MarkItDown 文件解析',
-      description:
-        '解析文件内容。将 PDF、Word、Excel、PPT 等文档转换为文本。当用户上传文件并希望你分析其内容时使用此工具。支持的格式：PDF、Word (.docx/.doc)、Excel (.xlsx/.xls)、PowerPoint (.pptx/.ppt)、文本文件 (.txt/.md/.csv/.json/.html/.xml)。',
-      parameters: {
-        files_url: '文件 URL 列表。每个 URL 指向一个需要解析的文件。',
-      },
-    },
-    en: {
-      display_name: 'MarkItDown File Parser',
-      description:
-        'Parse file content. Convert PDF, Word, Excel, and PowerPoint documents to text. Use this tool when a user uploads a file and wants you to analyze its content. Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html/.xml).',
-      parameters: {
-        files_url: 'List of file URLs. Each URL points to a file to parse.',
-      },
-    },
-  },
-  generate_image: {
-    zh: {
-      display_name: '生成图片',
-      description:
-        '生成图片。根据提示词调用生图模型，可选设置尺寸、数量和参考图。',
-      parameters: {
-        prompt: '图片生成提示词',
-        width: '输出图片宽度',
-        height: '输出图片高度',
-        num_images: '生成图片数量',
-        style: '可选风格提示',
-        quality: '可选质量档位',
-        negative_prompt: '可选负面提示词',
-        seed: '可选随机种子',
-        images: '可选参考图数组',
-        extra_params: '可选供应商特定参数',
-      },
-    },
-    en: {
-      display_name: 'Generate Image',
-      description:
-        'Generate images from a prompt. Supports optional size, count, and reference images.',
-      parameters: {
-        prompt: 'Image generation prompt',
-        width: 'Output image width',
-        height: 'Output image height',
-        num_images: 'Number of images to generate',
-        style: 'Optional style hint',
-        quality: 'Optional quality tier',
-        negative_prompt: 'Optional negative prompt',
-        seed: 'Optional random seed',
-        images: 'Optional reference image array',
-        extra_params: 'Optional provider-specific parameters',
-      },
-    },
-  },
-  generate_video: {
-    zh: {
-      display_name: '生成视频',
-      description:
-        '生成视频。根据提示词调用文生视频模型，可选设置时长、宽高比和风格。',
-      parameters: {
-        prompt: '视频生成提示词',
-        duration: '生成视频时长（秒）',
-        aspect_ratio: '输出宽高比',
-        motion_intensity: '运动强度（0-1）',
-        camera_motion: '镜头运动描述',
-        style: '可选风格提示',
-        seed: '可选随机种子',
-        extra_params: '可选供应商特定参数',
-      },
-    },
-    en: {
-      display_name: 'Generate Video',
-      description:
-        'Generate a video clip from a prompt. Supports optional duration, aspect ratio, and style.',
-      parameters: {
-        prompt: 'Video generation prompt',
-        duration: 'Video duration in seconds',
-        aspect_ratio: 'Output aspect ratio',
-        motion_intensity: 'Motion intensity from 0 to 1',
-        camera_motion: 'Camera motion description',
-        style: 'Optional style hint',
-        seed: 'Optional random seed',
-        extra_params: 'Optional provider-specific parameters',
-      },
-    },
-  },
-}
-
-const getLocale = (): string => {
-  if (typeof document === 'undefined') return 'en'
-  const locale = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('locale='))
-    ?.split('=')[1]
-  return locale || 'en'
-}
-
-const applyToolDescriptionOverride = <T extends Tool>(tool: T): T => {
-  if (tool.type === 'builtin') {
-    const override = BUILTIN_TOOL_I18N[tool.name]
-    if (override) {
-      const locale = getLocale()
-      const localized = override[locale as keyof BuiltinToolI18n] || override.en
-      const parameters =
-        localized.parameters && tool.parameters?.length
-          ? tool.parameters.map((param) => ({
-              ...param,
-              description: localized.parameters?.[param.name] || param.description,
-            }))
-          : tool.parameters
-      return {
-        ...tool,
-        display_name: localized.display_name,
-        description: localized.description,
-        parameters,
-      }
-    }
-  }
-  return tool
-}
-
-const applyToolListOverrides = (tools: Tool[]): Tool[] =>
-  tools.map((tool) => applyToolDescriptionOverride(tool))
-
 // ============ API Functions ============
 
 export const toolsApi = {
@@ -537,13 +292,7 @@ export const toolsApi = {
    * 获取单个团队的工具列表（兼容现有平台页）
    */
   list: async (teamId: string): Promise<ToolListResponse> => {
-    const response = await api.get<ToolListResponse>('/tools/legacy', { params: { team_id: teamId } })
-    return {
-      ...response,
-      builtin: applyToolListOverrides(response.builtin),
-      custom: applyToolListOverrides(response.custom),
-      mcp: applyToolListOverrides(response.mcp),
-    }
+    return api.get<ToolListResponse>('/tools/legacy', { params: { team_id: teamId } })
   },
 
   /**
@@ -561,11 +310,7 @@ export const toolsApi = {
     team_id?.forEach((value) => queryParams.append('team_id', value))
     creator?.forEach((value) => queryParams.append('creator', value))
 
-    const response = await api.get<PageData<Tool>>(`/tools?${queryParams.toString()}`)
-    return {
-      ...response,
-      items: applyToolListOverrides(response.items),
-    }
+    return api.get<PageData<Tool>>(`/tools?${queryParams.toString()}`)
   },
 
   getFilterOptions: async (): Promise<ToolFilterOptions> =>
@@ -575,16 +320,14 @@ export const toolsApi = {
    * 获取所有内置工具
    */
   listBuiltin: async (): Promise<Tool[]> => {
-    const tools = await api.get<Tool[]>('/tools/builtin')
-    return applyToolListOverrides(tools)
+    return api.get<Tool[]>('/tools/builtin')
   },
 
   /**
    * 获取可用的文件解析器列表
    */
   listFileParsers: async (teamId: string): Promise<Tool[]> => {
-    const tools = await api.get<Tool[]>('/tools/file-parsers', { params: { team_id: teamId } })
-    return applyToolListOverrides(tools)
+    return api.get<Tool[]>('/tools/file-parsers', { params: { team_id: teamId } })
   },
 
   /**
@@ -592,8 +335,7 @@ export const toolsApi = {
    */
   getByName: async (name: string, teamId?: string): Promise<Tool> => {
     const params = teamId ? { team_id: teamId } : {}
-    const tool = await api.get<Tool>(`/tools/name/${name}`, { params })
-    return applyToolDescriptionOverride(tool)
+    return api.get<Tool>(`/tools/name/${name}`, { params })
   },
 
   /**

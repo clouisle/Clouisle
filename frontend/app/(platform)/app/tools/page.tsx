@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -47,6 +47,7 @@ type ToolsTab = 'tools' | 'skills'
 export default function ToolsPage() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
+  const locale = useLocale()
   const { currentTeam } = useTeam()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -122,7 +123,7 @@ export default function ToolsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentTeam?.id])
+  }, [currentTeam?.id, locale])
 
   useEffect(() => {
     loadTools()

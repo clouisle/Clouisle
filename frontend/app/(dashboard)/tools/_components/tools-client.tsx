@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
     Plus,
@@ -38,7 +38,8 @@ import {
     teamsApi,
     type Tool,
     type ToolType,
-    type ToolCategory,
+    isPresetToolCategory,
+    type PresetToolCategory,
     type ToolFilterOption,
     type UserTeamInfo,
     type ToolDetail,
@@ -105,13 +106,14 @@ const toolTypeIcons: Record<ToolType, React.ReactNode> = {
 }
 
 // 工具分类图标映射
-const categoryIcons: Record<ToolCategory, React.ReactNode> = {
+const categoryIcons: Record<PresetToolCategory, React.ReactNode> = {
     time: <Clock3 className="h-4 w-4" />,
     math: <Calculator className="h-4 w-4" />,
     search: <Search className="h-4 w-4" />,
     web: <Globe className="h-4 w-4" />,
     file: <FolderOpen className="h-4 w-4" />,
     code: <Code className="h-4 w-4" />,
+    sandbox: <Code className="h-4 w-4" />,
     api: <Link className="h-4 w-4" />,
     data: <ChartColumn className="h-4 w-4" />,
     other: <Wrench className="h-4 w-4" />,
@@ -120,6 +122,7 @@ const categoryIcons: Record<ToolCategory, React.ReactNode> = {
 export function ToolsClient() {
     const t = useTranslations('tools')
     const commonT = useTranslations('common')
+    const locale = useLocale()
     const router = useRouter()
     const { canPerform } = useCanPerform()
 
@@ -127,6 +130,7 @@ export function ToolsClient() {
     const [tools, setTools] = React.useState<Tool[]>([])
     const [teams, setTeams] = React.useState<UserTeamInfo[]>([])
     const [currentTeamId, setCurrentTeamId] = React.useState<string>('')  // 用于创建工具时的默认团队
+    const [categoryOptions, setCategoryOptions] = React.useState<ToolFilterOption[]>([])
     const [creatorOptions, setCreatorOptions] = React.useState<ToolFilterOption[]>([])
     const [teamOptions, setTeamOptions] = React.useState<ToolFilterOption[]>([])
     const [isLoading, setIsLoading] = React.useState(true)
@@ -198,6 +202,7 @@ export function ToolsClient() {
             ])
             setTools(toolsData.items)
             setPageData(toolsData)
+            setCategoryOptions(filterOptions.categories)
             setCreatorOptions(filterOptions.creators)
             setTeamOptions(filterOptions.teams)
         } catch {
@@ -205,7 +210,7 @@ export function ToolsClient() {
         } finally {
             setIsLoading(false)
         }
-    }, [page, pageSize, searchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators])
+    }, [page, pageSize, searchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators, locale])
 
     React.useEffect(() => {
         loadTools()
@@ -264,11 +269,14 @@ export function ToolsClient() {
         { value: 'mcp', label: t('filters.mcp'), icon: toolTypeIcons.mcp },
     ]
 
-    const categoryOptions = Object.entries(categoryIcons).map(([value, icon]) => ({
-        value,
-        label: t(`categories.${value}`),
-        icon: <span className="text-sm">{icon}</span>,
-    }))
+    const categoryFilterOptions = categoryOptions.map((option) => {
+        const icon = isPresetToolCategory(option.value) ? categoryIcons[option.value] : categoryIcons.other
+        return {
+            value: option.value,
+            label: isPresetToolCategory(option.value) ? t(`categories.${option.value}`) : option.label,
+            icon: <span className="text-sm">{icon}</span>,
+        }
+    })
 
     const enabledOptions = [
         { value: 'enabled', label: t('enabled') },
@@ -519,25 +527,6 @@ export function ToolsClient() {
         )
     }
 
-    // 获取内置工具的显示名称（支持多语言）
-    const getToolDisplayName = (tool: Tool) => {
-        if (tool.type === 'builtin') {
-            try {
-                // 尝试获取翻译，如果不存在则返回原始名称
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const translationKey = `builtinTools.${tool.name}` as any
-                const translated = t(translationKey)
-                // next-intl 在找不到翻译时会返回键本身
-                if (translated && !translated.startsWith('builtinTools.')) {
-                    return translated
-                }
-            } catch {
-                // 翻译不存在或出错，使用原始名称
-            }
-        }
-        return tool.display_name
-    }
-
     // 获取启用状态 Badge
     const getEnabledBadge = (enabled: boolean) => {
         if (enabled) {
@@ -632,7 +621,7 @@ export function ToolsClient() {
 
                 <DataTableFacetedFilter
                     title={t('category')}
-                    options={categoryOptions}
+                    options={categoryFilterOptions}
                     selectedValues={categoryFilter}
                     onSelectionChange={handleCategoryFilterChange}
                 />
@@ -741,14 +730,14 @@ export function ToolsClient() {
                                                         <span className="text-lg">{tool.icon}</span>
                                                     )
                                                 )}
-                                                <span className="font-medium">{getToolDisplayName(tool)}</span>
+                                                <span className="font-medium">{tool.display_name}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell>{getTypeBadge(tool.type)}</TableCell>
                                         <TableCell>
                                             <div className="flex items-center gap-1">
-                                                <span className="text-sm">{categoryIcons[tool.category]}</span>
-                                                <span>{t(`categories.${tool.category}`)}</span>
+                                                <span className="text-sm">{isPresetToolCategory(tool.category) ? categoryIcons[tool.category] : categoryIcons.other}</span>
+                                                <span>{isPresetToolCategory(tool.category) ? t(`categories.${tool.category}`) : tool.category}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell>
