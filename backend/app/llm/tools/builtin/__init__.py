@@ -8,6 +8,8 @@ from .time import register_time_tools
 from .calculator import register_calculator_tools
 from .web_search import register_web_search_tools
 from .file_parser import register_file_parser_tools
+from ..bash import register_bash_tool
+from ..sandbox_files import register_sandbox_file_tools
 from .media import register_media_tools
 
 
@@ -18,6 +20,8 @@ def register_all_builtin_tools() -> None:
     register_web_search_tools()
     register_file_parser_tools()
     register_media_tools()
+    register_bash_tool()
+    register_sandbox_file_tools()
 
 
 __all__ = [
@@ -27,4 +31,6 @@ __all__ = [
     "register_web_search_tools",
     "register_file_parser_tools",
     "register_media_tools",
+    "register_bash_tool",
+    "register_sandbox_file_tools",
 ]

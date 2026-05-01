@@ -312,6 +312,9 @@ async def execute_code(
     code: str,
     params: dict[str, Any] | None = None,
     timeout: float = 30.0,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+    team_id: str | None = None,
 ) -> ExecutionResult:
     """
     执行代码的便捷函数
@@ -337,6 +340,9 @@ async def execute_code(
             runtime_result = await sandbox_gateway.submit_and_wait(
                 job,
                 timeout_seconds=timeout + 5,
+                session_id=session_id,
+                agent_id=agent_id,
+                team_id=team_id,
             )
             if runtime_result.success:
                 return ExecutionResult(

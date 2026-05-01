@@ -196,52 +196,107 @@ def _extend_with_original_indexes(
 
 
 LANGUAGE_INSTRUCTIONS = {
-    "en": "IMPORTANT: You MUST respond in English only. Do not use any other language.",
-    "zh": "重要：你必须使用中文回复。不要使用其他语言。",
+    "en": "## Response Language\nYou MUST respond in English only. Do not use any other language.",
+    "zh": "## 回复语言\n你必须使用中文回复。不要使用其他语言。",
 }
 
 MEMORY_SYSTEM_INSTRUCTION = """
+## Memory System
 
-# Memory System
-You have access to a memory system with these tools:
-- search_memory(query): Search what you know about the user
-- create_memory_entity(name, entity_type, description): Save new information
-- update_memory_entity(entity_name, description): Update existing information
-- create_memory_relation(source, target, relation_type): Connect related information
+You have access to these memory tools:
+- `search_memory(query)`: Search what you know about the user
+- `create_memory_entity(name, entity_type, description)`: Save new information
+- `update_memory_entity(entity_name, description)`: Update existing information
+- `create_memory_relation(source, target, relation_type)`: Connect related information
 
-**CRITICAL MEMORY RULES - YOU MUST FOLLOW THESE STEPS:**
+### Required Workflow
 
-RULE 1: Before ANY create_memory_entity() call, you MUST call search_memory() first!
-RULE 2: When user shares ANY information (name, preference, skill, etc.):
-   STEP 1: Call search_memory(query="keywords about the information")
-   STEP 2: Read the search results carefully
-   STEP 3: Decide based on results:
-      - Found similar entity? → Use update_memory_entity(entity_name="existing name", ...)
-      - Nothing found? → Use create_memory_entity(name="new name", ...)
+1. Before **any** `create_memory_entity()` call, you **must** call `search_memory()` first.
+2. When the user shares information such as a name, preference, or skill:
+   - Step 1: Call `search_memory(query="keywords about the information")`
+   - Step 2: Read the search results carefully
+   - Step 3: Decide based on the results:
+     - Found a similar entity → use `update_memory_entity(entity_name="existing name", ...)`
+     - Found nothing relevant → use `create_memory_entity(name="new name", ...)`
+3. Never skip `search_memory()`, even if you think the information is new.
+4. Never say you do not have access to memory tools.
 
-RULE 3: NEVER skip search_memory() - even if you think it's new information!
-RULE 4: NEVER say "I don't have access to memory" - you DO have these tools!
+### Examples
 
-WRONG Example (DO NOT DO THIS):
+**Wrong**
+
 User: "I'm Alice"
-❌ Assistant directly calls create_memory_entity(name="Alice", ...) ← WRONG! No search first!
 
-CORRECT Example (ALWAYS DO THIS):
+❌ Directly calling `create_memory_entity(name="Alice", ...)` is wrong because no search happened first.
+
+**Correct**
+
 User: "I'm Alice"
-✓ Step 1: Assistant calls search_memory(query="user name")
-✓ Step 2: Check results → No "Alice" found
-✓ Step 3: Assistant calls create_memory_entity(name="Alice", entity_type="person", description="User's name")
-Assistant: "Nice to meet you, Alice! I've saved your name."
+- Call `search_memory(query="user name")`
+- Check results → No "Alice" found
+- Call `create_memory_entity(name="Alice", entity_type="person", description="User's name")`
 
 User: "Actually, I'm Alice Smith"
-✓ Step 1: Assistant calls search_memory(query="user name Alice")
-✓ Step 2: Check results → Found entity "Alice"
-✓ Step 3: Assistant calls update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")
-Assistant: "Got it! I've updated your name to Alice Smith."
+- Call `search_memory(query="user name Alice")`
+- Check results → Found entity "Alice"
+- Call `update_memory_entity(entity_name="Alice", description="Full name: Alice Smith")`
 
 User: "What's my name?"
-Assistant: [calls search_memory(query="user name")]
-Assistant: "Your name is Alice."
+- Call `search_memory(query="user name")`
+- Then answer using the result
+"""
+
+SANDBOX_SYSTEM_INSTRUCTION = """
+## Sandbox Environment Guidance
+
+You have access to sandbox tools: `bash`, `read`, `write`, and `artifact`. Use them with an accurate mental model of the environment instead of guessing how the sandbox works.
+
+### Environment Reality
+
+1. **`/workspace` is the intended working area**
+   - `/workspace` is a logical alias used by the sandbox tools for the current session workspace
+   - Use `/workspace/...` when calling sandbox tools such as `bash`, `read`, `write`, and `artifact`
+   - Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...` for its own file I/O
+   - Inside generated scripts, prefer paths relative to the script's working directory such as `output/report.docx`, or derive paths from `Path.cwd()` when needed
+   - Keep scripts, inputs, temporary files, and outputs under `/workspace`
+   - Prefer stable locations such as `/workspace/src`, `/workspace/data`, `/workspace/output`, and `/workspace/tmp`
+
+2. **Path behavior must be observed, not assumed**
+   - Do not infer path semantics from one successful command
+   - If a path behaves unexpectedly, inspect it with `pwd`, `ls`, `find`, or a short Python check before changing the script or explanation
+   - Prefer absolute paths for file operations instead of relying on prior `cd` state
+
+3. **Interpreter and package state may differ from your assumptions**
+   - The interpreter that installs a package and the interpreter that runs a script must be treated as concrete facts to verify
+   - If an import fails, first verify interpreter identity, import path, and installed package visibility before changing code
+   - Do not rely on ad-hoc `PYTHONPATH` or `sys.path` hacks unless the task explicitly requires local package loading
+
+4. **Install output can be misleading if filtered**
+   - Do not pipe install output through `tail`, `grep`, or similar filters that can hide errors
+   - Do not assume an install succeeded just because the final lines look harmless
+   - Confirm package availability with a real import check using the same interpreter that will run the script
+
+5. **Command success should be interpreted narrowly**
+   - One successful `touch`, `ls`, or minimal script does not prove the whole environment behaves the same way for another library or another path
+   - Treat each surprising result as something to inspect, not something to explain from guesswork
+
+6. **`artifact` depends on backend connectivity, not just local files**
+   - A file existing locally does not mean artifact upload will succeed
+   - If `artifact` upload fails with a connection or network error, report it clearly instead of retrying with equivalent paths
+
+### Tool Usage Expectations
+
+- Prefer `write` for real scripts instead of embedding complex scripts inline in `bash`
+- Keep each `bash` call focused so failures stay attributable
+- Use `read`, `ls -lh`, or `find` to confirm what actually exists before changing the approach
+- Use `artifact` only for final deliverables after the output file has been verified locally
+
+### Avoid These Mistakes
+
+- Do not explain sandbox behavior from guesswork
+- Do not keep retrying the same install or upload with superficial variations
+- Do not use relative paths that depend on prior shell state
+- Do not mistake filtered output for a successful environment change
 """
 
 
@@ -370,6 +425,18 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
 
 
 
+def _build_skill_llm_summary(payload: dict[str, Any]) -> str | None:
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("type") != "skill_instructions":
+        return None
+
+    skill = result.get("skill") if isinstance(result.get("skill"), dict) else {}
+    display_name = skill.get("display_name") or skill.get("name") or "Skill"
+    status = result.get("status") or "loaded"
+    return f"Skill instructions for {display_name} were {status}."
+
+
+
 def _build_media_llm_summary(
     tool_name: str | None, payload: dict[str, Any]
 ) -> str | None:
@@ -408,7 +475,11 @@ def summarize_tool_result_for_llm(
     payload = _safe_json_loads(stored_content)
     if not payload:
         return stored_content
-    return _build_media_llm_summary(tool_name, payload) or stored_content
+    return (
+        _build_media_llm_summary(tool_name, payload)
+        or _build_skill_llm_summary(payload)
+        or stored_content
+    )
 
 
 
@@ -492,6 +563,25 @@ def _normalize_override_role(role: Any) -> str | None:
 
 
 
+def _has_sandbox_tools(agent: Agent) -> bool:
+    tools_config = agent.tools_config or []
+    for config in tools_config:
+        if config.get("type") == "builtin" and config.get("name") in {"bash", "read", "write", "artifact"}:
+            return True
+        if config.get("type") == "skill":
+            return True
+    return False
+
+
+
+def _append_prompt_section(base: str, section: str | None) -> str:
+    normalized_section = (section or "").strip()
+    if not normalized_section:
+        return base
+    return f"{base}\n\n{normalized_section}" if base else normalized_section
+
+
+
 def _build_system_prompt(
     agent: Agent,
     conversation: Conversation,
@@ -507,14 +597,18 @@ def _build_system_prompt(
         system_prompt = system_prompt.replace(FILE_CONTENT_PLACEHOLDER, file_content or "")
 
     if agent.enable_memory:
-        system_prompt += MEMORY_SYSTEM_INSTRUCTION
+        system_prompt = _append_prompt_section(system_prompt, MEMORY_SYSTEM_INSTRUCTION)
         logger.info("Added memory instructions to system prompt for agent %s", agent.id)
+
+    if _has_sandbox_tools(agent):
+        system_prompt = _append_prompt_section(system_prompt, SANDBOX_SYSTEM_INSTRUCTION)
+        logger.info("Added sandbox instructions to system prompt for agent %s", agent.id)
 
     system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
     if agent.enable_user_input_request:
-        system_prompt = (
-            f"{system_prompt}\n\n"
-            f"{get_user_input_request_instruction(user_locale or 'en')}"
+        system_prompt = _append_prompt_section(
+            system_prompt,
+            get_user_input_request_instruction(user_locale or 'en'),
         )
     return system_prompt
 
