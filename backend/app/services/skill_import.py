@@ -326,7 +326,6 @@ class SkillImportService:
             errors=package.errors,
             warnings=package.warnings,
             conflict=conflict,
-            execution_mode=package.execution_mode,
             file_count=int(package.package_manifest.get("file_count", 0)),
             package_hash=package.package_hash,
         )
@@ -568,7 +567,6 @@ class SkillImportService:
             existing.frontmatter = parsed.frontmatter
             existing.input_schema = parsed.input_schema
             existing.skill_spec = skill_spec
-            existing.execution_mode = parsed.execution_mode
             existing.execution_config = parsed.execution_config
             existing.import_warnings = parsed.warnings
             existing.is_enabled = is_enabled
@@ -595,7 +593,6 @@ class SkillImportService:
             frontmatter=parsed.frontmatter,
             input_schema=parsed.input_schema,
             skill_spec=skill_spec,
-            execution_mode=parsed.execution_mode,
             execution_config=parsed.execution_config,
             import_warnings=parsed.warnings,
             is_enabled=is_enabled,

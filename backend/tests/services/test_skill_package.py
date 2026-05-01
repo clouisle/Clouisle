@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from app.models.skill import SkillExecutionMode
 from app.services.skill_package import SkillPackageService
 
 
@@ -39,7 +38,7 @@ Run the script.
     parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
 
     assert parsed.valid is True
-    assert parsed.execution_mode == SkillExecutionMode.SCRIPT
+    assert parsed.execution_config["mode"] == "script"
     assert parsed.execution_config["runtime"] == "python"
     assert parsed.execution_config["script"] == "scripts/run.py"
     assert parsed.execution_config["limits"]["timeout_seconds"] == 10
@@ -49,6 +48,43 @@ Run the script.
             "optional": True,
         }
     ]
+
+
+def test_parse_markdown_skill_has_no_runtime_or_script(tmp_path: Path):
+    skill_root = write_skill(
+        tmp_path / "markdown-skill",
+        """---
+name: markdown-skill
+description: Markdown only.
+---
+Read this file for instructions.
+""",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
+
+    assert parsed.valid is True
+    assert parsed.instructions == "Read this file for instructions.\n"
+    assert parsed.execution_config == {}
+
+
+def test_parse_skill_rejects_invalid_execution_mode(tmp_path: Path):
+    skill_root = write_skill(
+        tmp_path / "bad-mode",
+        """---
+name: bad-mode
+description: Bad mode.
+x-clouisle:
+  execution:
+    mode: docker
+---
+Run it.
+""",
+    )
+
+    parsed = SkillPackageService.parse_skill_root(tmp_path, skill_root)
+
+    assert "skill_execution_mode_invalid" in parsed.errors
 
 
 def test_parse_script_skill_rejects_invalid_runtime(tmp_path: Path):

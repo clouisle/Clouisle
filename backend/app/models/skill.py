@@ -32,14 +32,6 @@ class SkillSourceType(str, Enum):
     LEGACY = "legacy"
 
 
-class SkillExecutionMode(str, Enum):
-    """How an installed Skill is executed."""
-
-    INSTRUCTIONS = "instructions"
-    SCRIPT = "script"
-    LEGACY = "legacy"
-
-
 class SkillImportSessionStatus(str, Enum):
     """Short-lived Skill import session status."""
 
@@ -125,11 +117,6 @@ class Skill(models.Model):
         default=dict,
         description="Parsed SKILL.md frontmatter",
     )  # type: ignore[assignment]
-    execution_mode = fields.CharEnumField(
-        SkillExecutionMode,
-        default=SkillExecutionMode.INSTRUCTIONS,
-        description="Skill execution mode",
-    )
     execution_config: dict = fields.JSONField(
         default=dict,
         description="Validated Clouisle execution extension",

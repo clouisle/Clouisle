@@ -1,17 +1,12 @@
 import base64
 import json
-from types import SimpleNamespace
 from uuid import uuid4
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.skill import Skill, SkillCategory, SkillExecutionMode
-from pydantic import ValidationError
-
+from app.models.skill import Skill, SkillCategory
 from app.schemas.response import BusinessError
-from app.schemas.skill import SkillCreate
-from app.services.sandbox.models import SandboxJobSource, SandboxTaskStatus
 from app.services.skill import SkillService
 from app.services.skill_executor import SkillExecutor
 
@@ -34,25 +29,12 @@ def make_skill(**overrides) -> Skill:
             },
             "required": ["text"],
         },
-        "execution_mode": SkillExecutionMode.LEGACY,
+        "skill_md": "---\nname: echo_skill\ndescription: Echo a value\n---\nUse this Skill to echo text.",
+        "instructions": "Use this Skill to echo text.",
+        "frontmatter": {"name": "echo_skill", "description": "Echo a value"},
+        "package_manifest": {"file_count": 1},
         "skill_spec": {
-            "name": "echo_skill",
-            "version": "1.0.0",
-            "runtime_profile": "standard",
-            "python_packages": ["requests==2.32.3"],
-            "js_packages": [],
-            "command_template": [
-                "python",
-                "-m",
-                "echo",
-                "{{args.text}}",
-                "{{config.mode}}",
-            ],
-            "shell": False,
-            "env": {},
-            "limits": {},
-            "artifacts": [],
-            "metadata": {},
+            "package_files": [],
         },
         "config_schema": {},
         "default_config": {"mode": "safe"},
@@ -60,41 +42,6 @@ def make_skill(**overrides) -> Skill:
     }
     data.update(overrides)
     return Skill(**data)
-
-
-def test_skill_schema_rejects_shell_execution():
-    payload = make_skill().skill_spec
-    payload["shell"] = True
-
-    with pytest.raises(ValidationError):
-        SkillCreate(
-            name="echo_skill",
-            display_name="Echo Skill",
-            input_schema={"type": "object"},
-            skill_spec=payload,
-        )
-
-
-def test_instructions_mode_returns_skill_payload():
-    skill = make_skill(
-        execution_mode=SkillExecutionMode.INSTRUCTIONS,
-        instructions="Use this Skill to echo the provided text.",
-        package_path="echo-skill",
-        package_hash="abc123",
-        package_manifest={"file_count": 2},
-    )
-
-    result = SkillExecutor.execute_instructions_mode(
-        skill=skill,
-        arguments={"text": "hello"},
-        config={"mode": "safe"},
-    )
-
-    assert result.success is True
-    assert result.result["type"] == "skill_instructions"
-    assert result.result["instructions"] == "Use this Skill to echo the provided text."
-    assert result.result["arguments"] == {"text": "hello"}
-    assert result.result["manifest"] == {"file_count": 2, "package_hash": "abc123"}
 
 
 def test_build_tool_name_is_stable_and_prefixed():
@@ -107,25 +54,16 @@ def test_build_tool_name_is_stable_and_prefixed():
     )
 
 
-def test_render_command_template_replaces_args_and_config():
-    command = SkillExecutor.render_command_template(
-        ["python", "{{args.payload}}", "--mode={{config.mode}}"],
-        arguments={"payload": {"ok": True}},
-        config={"mode": "safe"},
-    )
+def test_skill_to_tool_info_uses_skill_json_schema():
+    skill = make_skill(name="Echo-Tool")
+    tool_info = SkillService.to_tool_info(skill)
 
-    assert command == ["python", '{"ok": true}', "--mode=safe"]
+    tool_schema = tool_info.to_openai_schema()
+    tool_definition = SkillService.to_tool_definition(skill)
 
-
-def test_render_command_template_rejects_missing_placeholder_value():
-    with pytest.raises(BusinessError) as exc:
-        SkillExecutor.render_command_template(
-            ["python", "{{args.missing}}"],
-            arguments={},
-            config={},
-        )
-
-    assert exc.value.msg_key == "skill_command_template_variable_missing"
+    assert tool_schema["function"]["name"] == tool_definition.function.name
+    assert tool_schema["function"]["parameters"] == skill.input_schema
+    assert tool_info.parameters_schema == skill.input_schema
 
 
 def test_validate_arguments_rejects_missing_required_argument():
@@ -143,17 +81,34 @@ def test_validate_arguments_rejects_wrong_type():
 
 
 @pytest.mark.anyio
-async def test_execute_script_skill_submits_inline_package_to_sandbox_gateway():
+async def test_execute_skill_returns_instructions_without_sandbox():
+    skill = make_skill(package_hash="abc123")
+
+    with patch(
+        "app.services.skill_executor.sandbox_gateway.submit_and_wait",
+        new=AsyncMock(),
+    ) as mock_submit:
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments={"text": "hello"},
+            config={"tone": "plain"},
+            tenant_id="team-1",
+        )
+
+    assert result.success is True
+    assert result.result["type"] == "skill_instructions"
+    assert result.result["instructions"] == "Use this Skill to echo text."
+    assert result.result["arguments"] == {"text": "hello"}
+    assert result.result["config"] == {"mode": "safe", "tone": "plain"}
+    assert result.result["manifest"] == {"file_count": 1, "package_hash": "abc123"}
+    assert result.result["workspace_root"] == "/workspace/skill/echo_skill"
+    mock_submit.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_execute_skill_stages_package_resources_when_session_exists():
     package_content = base64.b64encode(b"print('ok')\n").decode("ascii")
     skill = make_skill(
-        execution_mode=SkillExecutionMode.SCRIPT,
-        execution_config={
-            "mode": "script",
-            "runtime": "python",
-            "script": "scripts/run.py",
-            "limits": {"timeout_seconds": 10},
-            "artifacts": [{"path": "/workspace/output/result.json", "optional": True}],
-        },
         skill_spec={
             "package_files": [
                 {
@@ -164,84 +119,81 @@ async def test_execute_script_skill_submits_inline_package_to_sandbox_gateway():
             ]
         },
     )
-    runtime_result = SimpleNamespace(
-        success=True,
-        result={"echo": "hello"},
-        error=None,
-        stdout="out",
-        stderr="",
-        artifacts=[],
-        metadata=SimpleNamespace(duration_ms=12),
-        status=SandboxTaskStatus.COMPLETED,
-    )
+    workspace_root = uuid4().hex
+
+    class FakeWorkspace:
+        def __init__(self):
+            from pathlib import Path
+            import tempfile
+
+            self.root = Path(tempfile.mkdtemp(prefix="skill-workspace-"))
+
+    workspace = FakeWorkspace()
+
+    class FakeWorkspaceManager:
+        def resolve_workspace_path(self, workspace, path):
+            return workspace.root / path.removeprefix("/workspace/")
 
     with patch(
-        "app.services.skill_executor.sandbox_gateway.submit_and_wait",
-        new=AsyncMock(return_value=runtime_result),
-    ) as mock_submit:
+        "app.services.skill_executor.sandbox_gateway.get_session_workspace",
+        new=AsyncMock(return_value=workspace),
+    ), patch(
+        "app.services.skill_executor.sandbox_gateway._get_workspace_manager",
+        return_value=FakeWorkspaceManager(),
+    ):
         result = await SkillExecutor.execute(
             skill=skill,
             arguments={"text": "hello"},
-            config=None,
+            session_id=workspace_root,
             tenant_id="team-1",
         )
 
     assert result.success is True
-    mock_submit.assert_awaited_once()
-    job = mock_submit.await_args.args[0]
-    assert job.source == SandboxJobSource.SKILL
-    assert job.tenant_id == "team-1"
-    assert job.shell is False
-    assert job.cwd == "/workspace/skill"
-    assert job.command == ["python", "/workspace/skill/scripts/run.py"]
-    assert {input_file.target_path for input_file in job.input_files} == {
-        "/workspace/input/skill-input.json",
-        "/workspace/skill/scripts/run.py",
-    }
-    staged_payload = next(
-        input_file
-        for input_file in job.input_files
-        if input_file.target_path == "/workspace/input/skill-input.json"
-    )
-    staged_json = json.loads(base64.b64decode(staged_payload.content_base64).decode("utf-8"))
-    assert staged_json["arguments"] == {"text": "hello"}
-    assert staged_json["config"] == {"mode": "safe"}
-    assert staged_json["skill"]["id"] == str(skill.id)
-    assert job.artifacts[0].path == "/workspace/output/result.json"
-    assert job.artifacts[0].optional is True
+    staged = workspace.root / "skill" / "echo_skill" / "scripts" / "run.py"
+    assert staged.read_text() == "print('ok')\n"
 
 
 @pytest.mark.anyio
-async def test_execute_submits_skill_job_to_sandbox_gateway():
-    skill = make_skill()
-    runtime_result = SimpleNamespace(
-        success=True,
-        result={"echo": "hello"},
-        error=None,
-        stdout="out",
-        stderr="",
-        artifacts=[],
-        metadata=SimpleNamespace(duration_ms=12),
-        status=SandboxTaskStatus.COMPLETED,
+async def test_execute_skill_ignores_script_execution_config():
+    skill = make_skill(
+        execution_config={
+            "mode": "script",
+            "runtime": "python",
+            "script": "scripts/run.py",
+        },
     )
 
     with patch(
         "app.services.skill_executor.sandbox_gateway.submit_and_wait",
-        new=AsyncMock(return_value=runtime_result),
+        new=AsyncMock(),
     ) as mock_submit:
         result = await SkillExecutor.execute(
             skill=skill,
             arguments={"text": "hello"},
-            config=None,
             tenant_id="team-1",
         )
 
     assert result.success is True
-    assert result.result == {"echo": "hello"}
-    mock_submit.assert_awaited_once()
-    job = mock_submit.await_args.args[0]
-    assert job.source == SandboxJobSource.SKILL
-    assert job.tenant_id == "team-1"
-    assert job.command == ["python", "-m", "echo", "hello", "safe"]
-    assert job.python_packages == ["requests==2.32.3"]
-    assert job.metadata["skill_name"] == "echo_skill"
+    assert result.result["type"] == "skill_instructions"
+    mock_submit.assert_not_awaited()
+
+
+def test_instruction_display_result_hides_full_instructions():
+    skill = make_skill()
+    result = SkillExecutor.build_instruction_result(
+        skill=skill,
+        arguments={"text": "hello"},
+        config={},
+        workspace_root="/workspace/skill/echo_skill",
+    )
+
+    display = result.to_dict()
+    display_json = json.dumps(display, ensure_ascii=False)
+    assert display["result"]["type"] == "skill_instructions"
+    assert "Use this Skill to echo text." not in display_json
+
+    llm_payload = json.loads(result.to_llm_payload())
+    assert llm_payload["result"]["instructions"] == "Use this Skill to echo text."
+    assert "artifact_guidance" in llm_payload["result"]
+    assert "artifact" in llm_payload["result"]["artifact_guidance"]
+    assert "artifact_guidance" not in display_json

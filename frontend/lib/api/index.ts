@@ -152,7 +152,6 @@ export {
   type Skill,
   type SkillConflict,
   type SkillDetail,
-  type SkillExecutionMode,
   type SkillImportInstallItem,
   type SkillImportInstallRequest,
   type SkillImportInstallResponse,

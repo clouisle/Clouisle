@@ -45,7 +45,6 @@ from .tool_config import ToolConfig
 from .skill import (
     Skill,
     SkillCategory,
-    SkillExecutionMode,
     SkillImportSession,
     SkillImportSessionStatus,
     SkillSourceType,
@@ -119,7 +118,6 @@ __all__ = [
     "ToolConfig",
     "Skill",
     "SkillCategory",
-    "SkillExecutionMode",
     "SkillImportSession",
     "SkillImportSessionStatus",
     "SkillSourceType",

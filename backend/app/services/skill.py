@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from typing import Any
 from uuid import UUID
 
 from tortoise.expressions import Q
 
+from app.llm.tools.registry import ToolInfo
 from app.llm.types import FunctionDefinition, ToolDefinition
 from app.models.agent import Agent
 from app.models.skill import Skill
 from app.models.user import Team, TeamMember, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.skill import SkillCreate, SkillOut, SkillUpdate
-from app.services.sandbox.models import SandboxSkillSpec
 
 _SKILL_TOOL_PREFIX = "skill_"
 _SAFE_NAME_PATTERN = re.compile(r"[^A-Za-z0-9_]")
@@ -148,7 +149,7 @@ class SkillService:
             category=payload.category,
             version=payload.version,
             input_schema=payload.input_schema,
-            skill_spec=payload.skill_spec.model_dump(),
+            skill_spec=payload.skill_spec,
             config_schema=payload.config_schema,
             default_config=payload.default_config,
             is_enabled=payload.is_enabled,
@@ -184,17 +185,51 @@ class SkillService:
         return f"{_SKILL_TOOL_PREFIX}{safe_name}_{short_id}"
 
     @staticmethod
-    def to_tool_definition(skill: Skill) -> ToolDefinition:
+    def get_parameters_schema(skill: Skill) -> dict[str, Any]:
         parameters = skill.input_schema or {"type": "object", "properties": {}}
         if parameters.get("type") != "object":
-            parameters = {"type": "object", "properties": {}}
+            return {"type": "object", "properties": {}}
+        return parameters
 
+    @staticmethod
+    def to_tool_info(
+        skill: Skill,
+        *,
+        config: dict[str, Any] | None = None,
+    ) -> ToolInfo:
+        async def execute_skill(
+            agent: Agent | None = None,
+            session_id: str | None = None,
+            **arguments: Any,
+        ) -> Any:
+            from app.services.skill_executor import SkillExecutor
+
+            skill_result = await SkillExecutor.execute(
+                skill=skill,
+                arguments=arguments,
+                config=config,
+                tenant_id=str(agent.team_id) if agent is not None and agent.team_id else None,
+                session_id=session_id,
+            )
+            return skill_result.to_chat_payload()
+
+        return ToolInfo(
+            name=SkillService.build_tool_name(skill),
+            description=skill.description or skill.display_name,
+            parameters_schema=SkillService.get_parameters_schema(skill),
+            handler=execute_skill,
+        )
+
+    @staticmethod
+    def to_tool_definition(skill: Skill) -> ToolDefinition:
+        tool_info = SkillService.to_tool_info(skill)
+        schema = tool_info.to_openai_schema()["function"]
         return ToolDefinition(
             type="function",
             function=FunctionDefinition(
-                name=SkillService.build_tool_name(skill),
-                description=skill.description or skill.display_name,
-                parameters=parameters,
+                name=schema["name"],
+                description=schema["description"],
+                parameters=schema["parameters"],
             ),
         )
 
@@ -286,7 +321,6 @@ class SkillService:
             source_subdir=skill.source_subdir,
             package_path=skill.package_path,
             package_hash=skill.package_hash,
-            execution_mode=skill.execution_mode,
             input_schema=skill.input_schema,
             default_config=skill.default_config,
             is_enabled=skill.is_enabled,
@@ -299,8 +333,49 @@ class SkillService:
         )
 
     @staticmethod
-    def to_sandbox_spec(skill: Skill) -> SandboxSkillSpec:
-        spec_data = dict(skill.skill_spec or {})
-        spec_data.setdefault("name", skill.name)
-        spec_data.setdefault("version", skill.version)
-        return SandboxSkillSpec.model_validate(spec_data)
+    def parse_allowed_tools(skill: Skill) -> list[str] | None:
+        """从 skill.frontmatter 或 skill_md 解析 allowed-tools"""
+        # 优先从 frontmatter 获取
+        frontmatter = skill.frontmatter or {}
+        allowed = frontmatter.get("allowed-tools")
+        if allowed and isinstance(allowed, list):
+            return [str(a) for a in allowed]
+
+        # 尝试从 skill_md 解析 (Markdown 格式)
+        skill_md = skill.skill_md or ""
+        match = re.search(r"^allowed-tools:\s*$((?:\s*-\s*.+\n?)+)", skill_md, re.MULTILINE)
+        if match:
+            tools = []
+            for line in match.group(1).strip().split("\n"):
+                line = line.strip()
+                if line.startswith("-"):
+                    tools.append(line[1:].strip())
+            if tools:
+                return tools
+
+        return None
+
+    @staticmethod
+    def is_tool_allowed(tool_name: str, allowed_tools: list[str]) -> bool:
+        """检查工具是否在白名单内
+
+        支持格式:
+        - 精确匹配: "Bash", "Read"
+        - 带参数: "Bash(npx impeccable *)"
+        - 通配符: "Read*", "*"
+        """
+        if not allowed_tools:
+            return True
+
+        for pattern in allowed_tools:
+            # 提取工具名（去掉参数部分）
+            tool_pattern = pattern.split("(")[0].strip()
+
+            # 支持 * 通配符
+            if "*" in tool_pattern:
+                if fnmatch.fnmatch(tool_name, tool_pattern):
+                    return True
+            elif tool_pattern == tool_name:
+                return True
+
+        return False

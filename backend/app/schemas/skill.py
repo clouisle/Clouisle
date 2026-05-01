@@ -10,56 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.skill import SkillCategory, SkillExecutionMode, SkillSourceType
-from app.schemas.tool import SandboxArtifactSchema, SandboxLimitsSchema
-from app.services.sandbox.models import SandboxSkillSpec
-
-_SKILL_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,99}$")
-
-
-class SkillSpecSchema(BaseModel):
-    """Legacy sandbox skill spec kept for existing in-progress data."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    name: str = Field(..., min_length=1, max_length=100)
-    version: str = Field(default="1.0.0", max_length=50)
-    runtime_profile: str = Field(default="standard", max_length=100)
-    python_packages: list[str] = Field(default_factory=list)
-    js_packages: list[str] = Field(default_factory=list)
-    command_template: list[str] = Field(default_factory=list)
-    shell: bool = False
-    env: dict[str, str] = Field(default_factory=dict)
-    limits: SandboxLimitsSchema = Field(default_factory=SandboxLimitsSchema)
-    artifacts: list[SandboxArtifactSchema] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("command_template")
-    @classmethod
-    def validate_command_template(cls, value: list[str]) -> list[str]:
-        if not value:
-            raise ValueError("skill_command_template_required")
-        if any(not item for item in value):
-            raise ValueError("skill_command_template_invalid")
-        return value
-
-    @field_validator("shell")
-    @classmethod
-    def reject_shell(cls, value: bool) -> bool:
-        if value:
-            raise ValueError("skill_shell_not_allowed")
-        return value
-
-    def to_sandbox_spec(self) -> SandboxSkillSpec:
-        return SandboxSkillSpec.model_validate(self.model_dump())
-
-
-class SkillExecutionConfig(BaseModel):
-    mode: SkillExecutionMode = SkillExecutionMode.INSTRUCTIONS
-    runtime: str | None = Field(default=None, max_length=50)
-    script: str | None = Field(default=None, max_length=500)
-    limits: dict[str, Any] = Field(default_factory=dict)
-    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+from app.models.skill import SkillCategory, SkillSourceType
+from app.schemas.tool import SandboxArtifactSchema
 
 
 class SkillConflict(BaseModel):
@@ -80,7 +32,6 @@ class SkillPreviewItem(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     conflict: SkillConflict | None = None
-    execution_mode: SkillExecutionMode = SkillExecutionMode.INSTRUCTIONS
     file_count: int = 0
     package_hash: str | None = None
 
@@ -150,7 +101,6 @@ class SkillOut(BaseModel):
     source_subdir: str | None = None
     package_path: str | None = None
     package_hash: str | None = None
-    execution_mode: SkillExecutionMode
     input_schema: dict[str, Any]
     default_config: dict[str, Any]
     is_enabled: bool
@@ -193,6 +143,9 @@ class SkillTestResponse(BaseModel):
     duration_ms: int | None = None
 
 
+_SKILL_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,99}$")
+
+
 class SkillCreate(BaseModel):
     team_id: UUID | None = Field(default=None)
     name: str = Field(..., min_length=1, max_length=100)
@@ -202,7 +155,7 @@ class SkillCreate(BaseModel):
     category: SkillCategory = SkillCategory.OTHER
     version: str = Field(default="1.0.0", max_length=50)
     input_schema: dict[str, Any] = Field(default_factory=dict)
-    skill_spec: SkillSpecSchema
+    skill_spec: dict[str, Any] = Field(default_factory=dict)
     config_schema: dict[str, Any] = Field(default_factory=dict)
     default_config: dict[str, Any] = Field(default_factory=dict)
     is_enabled: bool = True

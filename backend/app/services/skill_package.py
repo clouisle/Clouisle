@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError
 
-from app.models.skill import SkillCategory, SkillExecutionMode
+from app.models.skill import SkillCategory
 from app.services.sandbox.models import SandboxArtifactSpec, SandboxLimits
 
 DEFAULT_INPUT_SCHEMA: dict[str, Any] = {
@@ -54,7 +54,6 @@ class ParsedSkillPackage(BaseModel):
     input_schema: dict[str, Any] = Field(
         default_factory=lambda: dict(DEFAULT_INPUT_SCHEMA)
     )
-    execution_mode: SkillExecutionMode = SkillExecutionMode.INSTRUCTIONS
     execution_config: dict[str, Any] = Field(default_factory=dict)
     package_manifest: dict[str, Any] = Field(default_factory=dict)
     package_hash: str | None = None
@@ -151,7 +150,6 @@ class SkillPackageService:
             execution, skill_root
         )
         parsed.execution_config = execution_config
-        parsed.execution_mode = SkillExecutionMode(execution_config["mode"])
         parsed.errors.extend(execution_errors)
 
         manifest, package_hash, manifest_errors = SkillPackageService.build_manifest(
@@ -167,16 +165,28 @@ class SkillPackageService:
         execution: dict[str, Any], skill_root: Path
     ) -> tuple[dict[str, Any], list[str]]:
         errors: list[str] = []
-        mode_value = execution.get("mode", SkillExecutionMode.INSTRUCTIONS.value)
-        config: dict[str, Any] = {"mode": SkillExecutionMode.INSTRUCTIONS.value}
+        if not execution:
+            return {}, errors
 
-        if mode_value == SkillExecutionMode.INSTRUCTIONS.value:
+        config: dict[str, Any] = dict(execution)
+        raw_mode = execution.get("mode", "instructions")
+        if not isinstance(raw_mode, str):
+            errors.append("skill_execution_mode_invalid")
             return config, errors
-        if mode_value != SkillExecutionMode.SCRIPT.value:
-            return config, ["skill_execution_mode_invalid"]
 
-        config["mode"] = SkillExecutionMode.SCRIPT.value
+        mode = raw_mode.strip().lower() or "instructions"
+        if mode not in {"instructions", "script"}:
+            errors.append("skill_execution_mode_invalid")
+            return config, errors
+        config["mode"] = mode
+
+        if mode == "instructions":
+            return {"mode": "instructions"}, errors
+
         runtime = str(execution.get("runtime") or "").strip().lower()
+        script = execution.get("script")
+        has_script = isinstance(script, str) and script.strip()
+
         if not runtime:
             errors.append("skill_script_runtime_required")
         elif runtime not in {"python", "node", "javascript"}:
@@ -184,8 +194,7 @@ class SkillPackageService:
         else:
             config["runtime"] = "node" if runtime == "javascript" else runtime
 
-        script = execution.get("script")
-        if not isinstance(script, str) or not script.strip():
+        if not has_script:
             errors.append("skill_script_required")
         else:
             script_path = PurePosixPath(script.strip())

@@ -320,12 +320,21 @@ async def test_skill(
             skill.team_id, current_user, require_admin=True
         )
 
-    result = await SkillExecutor.execute(
-        skill=skill,
-        arguments=test_in.arguments,
-        config=test_in.config,
-        tenant_id=str(skill.team_id) if skill.team_id else None,
+    from app.services.sandbox.gateway import sandbox_gateway
+
+    session_id = await sandbox_gateway.create_session(
+        team_id=str(skill.team_id) if skill.team_id else None,
     )
+    try:
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments=test_in.arguments,
+            config=test_in.config,
+            tenant_id=str(skill.team_id) if skill.team_id else None,
+            session_id=session_id,
+        )
+    finally:
+        await sandbox_gateway.cleanup_session(session_id)
     await AuditLogService.log(
         user=current_user,
         action="test_skill",

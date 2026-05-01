@@ -2,7 +2,6 @@ import { api } from './client'
 import type { SandboxArtifactConfig, ToolCategory } from './tools'
 
 export type SkillSourceType = 'zip' | 'git' | 'manual_text' | 'legacy'
-export type SkillExecutionMode = 'instructions' | 'script' | 'legacy'
 export type SkillInstallAction = 'install' | 'update' | 'skip'
 
 export interface Skill {
@@ -20,7 +19,6 @@ export interface Skill {
   source_subdir?: string | null
   package_path?: string | null
   package_hash?: string | null
-  execution_mode: SkillExecutionMode
   input_schema: Record<string, unknown>
   default_config: Record<string, unknown>
   is_enabled: boolean
@@ -64,7 +62,6 @@ export interface SkillPreviewItem {
   errors: string[]
   warnings: string[]
   conflict?: SkillConflict | null
-  execution_mode: SkillExecutionMode
   file_count: number
   package_hash?: string | null
 }

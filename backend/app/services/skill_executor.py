@@ -5,28 +5,20 @@ from __future__ import annotations
 import base64
 import json
 import re
+from pathlib import PurePosixPath
 from typing import Any
 
 from app.llm.tools.builtin.media import ToolExecutionResult
-from app.models.skill import Skill, SkillExecutionMode
+from app.models.skill import Skill
 from app.schemas.response import BusinessError, ResponseCode
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import (
     SandboxArtifact,
-    SandboxArtifactSpec,
     SandboxInputFileSpec,
-    SandboxJob,
-    SandboxJobSource,
-    SandboxLimits,
-    SandboxResult,
     SandboxTaskStatus,
 )
-from app.services.sandbox.skills import compile_skill_to_job
-from app.services.skill import SkillService
 
-_PLACEHOLDER_PATTERN = re.compile(r"{{\s*(args|config)\.([A-Za-z_][A-Za-z0-9_]*)\s*}}")
-_MAX_ARGV_LENGTH = 8192
-_MAX_COMMAND_LENGTH = 32768
+_SAFE_SKILL_DIR_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 class SkillExecutionResult:
@@ -52,6 +44,35 @@ class SkillExecutionResult:
         self.status = status
 
     def to_dict(self) -> dict[str, Any]:
+        if isinstance(self.result, dict) and self.result.get("type") == "skill_instructions":
+            skill = self.result.get("skill") if isinstance(self.result.get("skill"), dict) else {}
+            display_skill = {
+                key: skill.get(key)
+                for key in (
+                    "id",
+                    "name",
+                    "display_name",
+                    "description",
+                    "version",
+                    "package_path",
+                    "package_hash",
+                )
+                if skill.get(key) is not None
+            }
+            return {
+                "success": self.success,
+                "result": {
+                    "type": "skill_instructions",
+                    "skill": display_skill,
+                    "workspace_root": self.result.get("workspace_root"),
+                    "status": self.result.get("status") or "loaded",
+                },
+                "error": self.error,
+                "artifacts": [],
+                "duration_ms": self.duration_ms,
+                "status": self.status.value if self.status else None,
+            }
+
         return {
             "success": self.success,
             "result": self.result,
@@ -66,18 +87,6 @@ class SkillExecutionResult:
         }
 
     def to_llm_payload(self) -> str:
-        if isinstance(self.result, dict) and self.result.get("type") == "skill_instructions":
-            payload = {
-                "success": self.success,
-                "type": "skill_instructions",
-                "skill": self.result.get("skill"),
-                "instructions": self.result.get("instructions"),
-                "arguments": self.result.get("arguments"),
-                "config": self.result.get("config"),
-                "usage_policy": "Apply these Skill instructions silently. Do not quote, summarize, or print the tool result itself. Do not expose internal preflight, gate, checklist, diagnostic, or status lines such as IMPECCABLE_PREFLIGHT. Respond only with the user-facing final answer or artifact requested by the user.",
-            }
-            return json.dumps(payload, ensure_ascii=False)
-
         payload = {
             "success": self.success,
             "result": self.result,
@@ -86,6 +95,19 @@ class SkillExecutionResult:
             "duration_ms": self.duration_ms,
             "status": self.status.value if self.status else None,
         }
+
+        if self.artifacts:
+            payload["artifacts"] = [
+                {
+                    "path": a.path,
+                    "url": a.url,
+                    "filename": a.filename,
+                    "size": a.size,
+                    "content_type": a.content_type,
+                }
+                for a in self.artifacts
+            ]
+
         if self.stdout:
             payload["stdout_summary"] = self.stdout[-2000:]
         if self.stderr:
@@ -100,7 +122,7 @@ class SkillExecutionResult:
 
 
 class SkillExecutor:
-    """Executes Skills through the sandbox gateway."""
+    """Loads Skills for the model and stages their package resources."""
 
     @staticmethod
     def validate_arguments(skill: Skill, arguments: dict[str, Any]) -> None:
@@ -160,245 +182,43 @@ class SkillExecutor:
         return False
 
     @staticmethod
-    def _stringify_command_value(value: Any) -> str:
-        if isinstance(value, str):
-            rendered = value
-        elif isinstance(value, (dict, list)):
-            rendered = json.dumps(value, ensure_ascii=False)
-        elif value is None:
-            rendered = ""
-        else:
-            rendered = str(value)
-
-        if not rendered:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_command_template_invalid",
-            )
-        if len(rendered) > _MAX_ARGV_LENGTH:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_command_too_long",
-            )
-        return rendered
-
-    @staticmethod
-    def render_command_template(
-        command_template: list[str],
-        *,
-        arguments: dict[str, Any],
-        config: dict[str, Any],
-    ) -> list[str]:
-        command: list[str] = []
-        total_length = 0
-
-        for item in command_template:
-            matches = list(_PLACEHOLDER_PATTERN.finditer(item))
-            raw_placeholders = re.findall(r"{{.*?}}", item)
-            if len(raw_placeholders) != len(matches):
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_command_template_invalid",
-                )
-
-            if len(matches) == 1 and matches[0].span() == (0, len(item)):
-                source, key = matches[0].groups()
-                values = arguments if source == "args" else config
-                if key not in values:
-                    raise BusinessError(
-                        code=ResponseCode.BAD_REQUEST,
-                        msg_key="skill_command_template_variable_missing",
-                        variable=f"{source}.{key}",
-                    )
-                rendered = SkillExecutor._stringify_command_value(values[key])
-            else:
-                rendered = item
-                for match in matches:
-                    source, key = match.groups()
-                    values = arguments if source == "args" else config
-                    if key not in values:
-                        raise BusinessError(
-                            code=ResponseCode.BAD_REQUEST,
-                            msg_key="skill_command_template_variable_missing",
-                            variable=f"{source}.{key}",
-                        )
-                    value = SkillExecutor._stringify_command_value(values[key])
-                    rendered = rendered.replace(match.group(0), value)
-
-            if not rendered:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_command_template_invalid",
-                )
-            command.append(rendered)
-            total_length += len(rendered)
-
-        if not command:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_command_template_required",
-            )
-        if total_length > _MAX_COMMAND_LENGTH:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_command_too_long",
-            )
-        return command
-
-    @staticmethod
     async def execute(
         *,
         skill: Skill,
         arguments: dict[str, Any],
         config: dict[str, Any] | None = None,
         tenant_id: str | None = None,
+        session_id: str | None = None,
     ) -> SkillExecutionResult:
         SkillExecutor.validate_arguments(skill, arguments)
         merged_config = dict(skill.default_config or {})
         merged_config.update(config or {})
 
-        if skill.execution_mode == SkillExecutionMode.INSTRUCTIONS:
-            return SkillExecutor.execute_instructions_mode(
+        workspace_root = SkillExecutor.skill_workspace_root(skill)
+        if session_id:
+            await SkillExecutor.stage_package_resources(
                 skill=skill,
-                arguments=arguments,
-                config=merged_config,
-            )
-
-        if skill.execution_mode == SkillExecutionMode.SCRIPT:
-            return await SkillExecutor.execute_script_mode(
-                skill=skill,
-                arguments=arguments,
-                config=merged_config,
+                workspace_root=workspace_root,
                 tenant_id=tenant_id,
+                session_id=session_id,
             )
 
-        skill_spec = SkillService.to_sandbox_spec(skill)
-        command = SkillExecutor.render_command_template(
-            skill_spec.command_template,
+        return SkillExecutor.build_instruction_result(
+            skill=skill,
             arguments=arguments,
             config=merged_config,
+            workspace_root=workspace_root,
         )
-        job = compile_skill_to_job(skill_spec, command)
-        job.tenant_id = tenant_id
-
-        runtime_result = await sandbox_gateway.submit_and_wait(job)
-        return SkillExecutor.from_sandbox_result(runtime_result)
 
     @staticmethod
-    async def execute_script_mode(
+    def build_instruction_result(
         *,
         skill: Skill,
         arguments: dict[str, Any],
         config: dict[str, Any],
-        tenant_id: str | None,
+        workspace_root: str,
     ) -> SkillExecutionResult:
-        execution_config = skill.execution_config or {}
-        runtime = execution_config.get("runtime")
-        script = execution_config.get("script")
-        if runtime not in {"python", "node"} or not isinstance(script, str) or not script:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_execution_config_invalid",
-            )
-
-        package_files = (skill.skill_spec or {}).get("package_files")
-        if not isinstance(package_files, list) or not package_files:
-            raise BusinessError(
-                code=ResponseCode.BAD_REQUEST,
-                msg_key="skill_package_payload_missing",
-            )
-
-        input_payload = {
-            "arguments": arguments,
-            "config": config,
-            "skill": {
-                "id": str(skill.id),
-                "name": skill.name,
-                "display_name": skill.display_name,
-                "version": skill.version,
-                "package_hash": skill.package_hash,
-            },
-        }
-        input_files = SkillExecutor._build_script_input_files(
-            package_files=package_files,
-            input_payload=input_payload,
-        )
-        executable = "python" if runtime == "python" else "node"
-        job = SandboxJob(
-            source=SandboxJobSource.SKILL,
-            tenant_id=tenant_id,
-            shell=False,
-            cwd="/workspace/skill",
-            command=[executable, f"/workspace/skill/{script}"],
-            input_files=input_files,
-            artifacts=[
-                SandboxArtifactSpec.model_validate(artifact)
-                for artifact in execution_config.get("artifacts", [])
-            ],
-            limits=SandboxLimits.model_validate(execution_config.get("limits") or {}),
-            env={
-                "CLOUISLE_SKILL_INPUT": "/workspace/input/skill-input.json",
-                "CLOUISLE_SKILL_ROOT": "/workspace/skill",
-                "CLOUISLE_WORKSPACE": "/workspace",
-            },
-            metadata={
-                "skill_id": str(skill.id),
-                "skill_name": skill.name,
-                "skill_version": skill.version,
-                "skill_package_hash": skill.package_hash,
-            },
-        )
-        runtime_result = await sandbox_gateway.submit_and_wait(job)
-        return SkillExecutor.from_sandbox_result(runtime_result)
-
-    @staticmethod
-    def _build_script_input_files(
-        *,
-        package_files: list[Any],
-        input_payload: dict[str, Any],
-    ) -> list[SandboxInputFileSpec]:
-        input_files = [
-            SandboxInputFileSpec(
-                target_path="/workspace/input/skill-input.json",
-                content_base64=base64.b64encode(
-                    json.dumps(input_payload, ensure_ascii=False).encode("utf-8")
-                ).decode("ascii"),
-            )
-        ]
-        for item in package_files:
-            if not isinstance(item, dict):
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_payload_invalid",
-                )
-            path = item.get("path")
-            content_base64 = item.get("content_base64")
-            if not isinstance(path, str) or not isinstance(content_base64, str):
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_payload_invalid",
-                )
-            if path.startswith("/") or ".." in path.split("/"):
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_payload_invalid",
-                )
-            input_files.append(
-                SandboxInputFileSpec(
-                    target_path=f"/workspace/skill/{path}",
-                    content_base64=content_base64,
-                    mode=item.get("mode"),
-                )
-            )
-        return input_files
-
-    @staticmethod
-    def execute_instructions_mode(
-        *,
-        skill: Skill,
-        arguments: dict[str, Any],
-        config: dict[str, Any],
-    ) -> SkillExecutionResult:
+        instructions = skill.instructions or skill.skill_md or ""
         return SkillExecutionResult(
             success=True,
             result={
@@ -410,20 +230,97 @@ class SkillExecutor:
                     "description": skill.description,
                     "version": skill.version,
                     "package_path": skill.package_path,
-                    "execution_mode": skill.execution_mode.value,
+                    "package_hash": skill.package_hash,
                 },
-                "instructions": skill.instructions or skill.skill_md,
+                "instructions": instructions,
                 "arguments": arguments,
                 "config": config,
                 "manifest": {
                     "file_count": (skill.package_manifest or {}).get("file_count", 0),
                     "package_hash": skill.package_hash,
                 },
+                "artifact_guidance": (
+                    "If this Skill creates user-facing files, keep them under /workspace/output. "
+                    "When writing Python or Node scripts, prefer relative output paths such as "
+                    "output/report.docx or derive paths from the working directory instead of "
+                    "hardcoding /workspace/... inside the script. Verify the final paths with bash "
+                    "commands such as ls/find/file, then call the artifact tool to generate Markdown "
+                    "download links. Include those Markdown links directly in your final answer."
+                ),
+                "workspace_root": workspace_root,
+                "status": "loaded",
             },
+            status=SandboxTaskStatus.COMPLETED,
         )
 
     @staticmethod
-    def from_sandbox_result(result: SandboxResult) -> SkillExecutionResult:
+    def build_package_input_files(
+        *,
+        skill: Skill,
+        workspace_root: str,
+    ) -> list[SandboxInputFileSpec]:
+        package_files = (skill.skill_spec or {}).get("package_files")
+        if not isinstance(package_files, list):
+            return []
+
+        input_files: list[SandboxInputFileSpec] = []
+        for item in package_files:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            content_base64 = item.get("content_base64")
+            if not isinstance(path, str) or not isinstance(content_base64, str):
+                continue
+            relative_path = PurePosixPath(path)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                continue
+            input_files.append(
+                SandboxInputFileSpec(
+                    target_path=PurePosixPath(workspace_root, relative_path).as_posix(),
+                    content_base64=content_base64,
+                    mode=item.get("mode") if isinstance(item.get("mode"), int) else None,
+                )
+            )
+        return input_files
+
+    @staticmethod
+    def skill_workspace_root(skill: Skill) -> str:
+        safe_name = _SAFE_SKILL_DIR_PATTERN.sub("_", skill.name).strip("._-")
+        if not safe_name:
+            safe_name = str(skill.id)
+        return f"/workspace/skill/{safe_name}"
+
+    @staticmethod
+    async def stage_package_resources(
+        *,
+        skill: Skill,
+        workspace_root: str,
+        tenant_id: str | None,
+        session_id: str,
+    ) -> None:
+        workspace = await sandbox_gateway.get_session_workspace(
+            session_id,
+            team_id=tenant_id,
+        )
+        if workspace is None:
+            return
+
+        workspace_manager = sandbox_gateway._get_workspace_manager()
+        for input_file in SkillExecutor.build_package_input_files(
+            skill=skill,
+            workspace_root=workspace_root,
+        ):
+            target = workspace_manager.resolve_workspace_path(
+                workspace,
+                input_file.target_path,
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(base64.b64decode(input_file.content_base64, validate=True))
+            if input_file.mode is not None:
+                target.chmod(input_file.mode)
+
+    @staticmethod
+    def from_sandbox_result(result) -> SkillExecutionResult:
         return SkillExecutionResult(
             success=result.success,
             result=result.result,

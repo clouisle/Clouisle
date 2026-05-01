@@ -673,7 +673,6 @@ async def init_skills_table():
             skill_md TEXT NOT NULL DEFAULT '',
             instructions TEXT NOT NULL DEFAULT '',
             frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
-            execution_mode VARCHAR(20) NOT NULL DEFAULT 'instructions',
             execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
             import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
             input_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -701,7 +700,6 @@ async def init_skills_table():
             ADD COLUMN IF NOT EXISTS skill_md TEXT NOT NULL DEFAULT '',
             ADD COLUMN IF NOT EXISTS instructions TEXT NOT NULL DEFAULT '',
             ADD COLUMN IF NOT EXISTS frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
-            ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20) NOT NULL DEFAULT 'instructions',
             ADD COLUMN IF NOT EXISTS execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
             ADD COLUMN IF NOT EXISTS import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb
     """)
