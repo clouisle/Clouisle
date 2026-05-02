@@ -27,7 +27,7 @@ This ensures the backend receives real client IP addresses and other request met
 
 ### CI/CD (Recommended)
 
-Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`). The tag is the released-version marker; `main` may continue to receive newer commits after a release.
+Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`). The tag is the release marker, while `main` may continue to receive newer commits after a release:
 
 ```bash
 git tag v0.1.0
@@ -44,7 +44,9 @@ Images are pushed to:
 
 For example, `v0.1.0` publishes images with `IMAGE_TAG=0.1.0`.
 
-Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
+Required GitHub Secrets for image publishing: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
+
+Required GitHub Secrets for Agentic Workflows: `DEEPSEEK_API_KEY`.
 
 ### Local Build
 
