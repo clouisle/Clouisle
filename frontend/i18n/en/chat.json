@@ -117,6 +117,7 @@
       "mermaidCode": "Code",
       "mermaidZoomIn": "Zoom in",
       "mermaidZoomOut": "Zoom out",
+      "mermaidFitToView": "Fit to view",
       "mermaidEnterFullscreen": "Enter fullscreen",
       "mermaidExitFullscreen": "Exit fullscreen",
       "mermaidDownload": "Download SVG",

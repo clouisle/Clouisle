@@ -117,6 +117,7 @@
       "mermaidCode": "代码",
       "mermaidZoomIn": "放大",
       "mermaidZoomOut": "缩小",
+      "mermaidFitToView": "自适应",
       "mermaidEnterFullscreen": "进入全屏",
       "mermaidExitFullscreen": "退出全屏",
       "mermaidDownload": "下载 SVG",

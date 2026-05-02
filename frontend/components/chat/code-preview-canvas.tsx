@@ -1,15 +1,25 @@
 'use client'
 
 import * as React from 'react'
-import { Check, Copy, Download, X } from 'lucide-react'
+import { Check, Copy, Download, Expand, Loader2, ZoomIn, ZoomOut, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import { useTheme } from 'next-themes'
 import { Streamdown } from 'streamdown'
+import type { MermaidConfig } from 'mermaid'
 import { bundledLanguages } from 'shiki'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CodeBlock } from '@/components/ai-elements/code-block'
 import type { CodePreviewPayload } from './types'
 import type { BundledLanguage } from 'shiki'
+
+type MermaidTheme = NonNullable<MermaidConfig['theme']>
+
+let mermaidModulePromise: Promise<typeof import('mermaid')> | null = null
+
+const MERMAID_MIN_ZOOM = 0.5
+const MERMAID_MAX_ZOOM = 2
+const MERMAID_ZOOM_STEP = 0.1
 
 function escapeClosingScriptTag(code: string) {
   return code.replace(/<\/script/gi, '<\\/script')
@@ -31,6 +41,8 @@ function getSourceLanguage(preview: CodePreviewPayload): BundledLanguage | null 
       return 'javascript'
     case 'markdown':
       return 'markdown'
+    case 'mermaid':
+      return null
   }
 }
 
@@ -48,6 +60,8 @@ function getDownloadExtension(preview: CodePreviewPayload) {
     mjs: 'mjs',
     markdown: 'md',
     md: 'md',
+    mermaid: 'mmd',
+    mmd: 'mmd',
     ts: 'ts',
     typescript: 'ts',
     tsx: 'tsx',
@@ -165,6 +179,265 @@ function buildPreviewDocument(preview: CodePreviewPayload) {
   }
 }
 
+async function getMermaidRenderer(theme: MermaidTheme) {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid')
+  }
+
+  const { default: mermaid } = await mermaidModulePromise
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme,
+  })
+
+  return mermaid
+}
+
+function getMermaidRenderErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Failed to render Mermaid chart'
+}
+
+function clampMermaidZoom(zoom: number) {
+  return Math.min(MERMAID_MAX_ZOOM, Math.max(MERMAID_MIN_ZOOM, zoom))
+}
+
+function downloadMermaidSvg(svg: string) {
+  const blob = new Blob([svg], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'diagram.svg'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function MermaidPreview({ code }: { code: string }) {
+  const t = useTranslations('chat.message')
+  const { resolvedTheme } = useTheme()
+  const theme: MermaidTheme = resolvedTheme === 'dark' ? 'dark' : 'default'
+  const [svg, setSvg] = React.useState('')
+  const [error, setError] = React.useState<string | null>(null)
+  const [isRendering, setIsRendering] = React.useState(true)
+  const [zoom, setZoom] = React.useState(1)
+  const [pan, setPan] = React.useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = React.useState(false)
+  const dragStartRef = React.useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+  const diagramRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    setSvg('')
+    setError(null)
+    setIsRendering(true)
+
+    void (async () => {
+      try {
+        const mermaid = await getMermaidRenderer(theme)
+        const id = `mermaid-preview-${Math.random().toString(36).slice(2)}`
+        const { svg: renderedSvg } = await mermaid.render(id, code)
+        if (!cancelled) {
+          setSvg(renderedSvg)
+          setIsRendering(false)
+        }
+      } catch (renderError) {
+        if (!cancelled) {
+          setError(getMermaidRenderErrorMessage(renderError))
+          setIsRendering(false)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [code, theme])
+
+  React.useEffect(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+  }, [code])
+
+  React.useEffect(() => {
+    if (!diagramRef.current) {
+      return
+    }
+
+    diagramRef.current.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`
+  }, [pan, zoom])
+
+  const handleDownloadSvg = React.useCallback(() => {
+    if (!svg) {
+      return
+    }
+    downloadMermaidSvg(svg)
+  }, [svg])
+
+  const handleFitToView = React.useCallback(() => {
+    const viewport = viewportRef.current
+    const diagram = diagramRef.current
+    const svgElement = diagram?.querySelector('svg')
+    if (!viewport || !diagram || !svgElement) {
+      return
+    }
+
+    const viewportRect = viewport.getBoundingClientRect()
+    const svgRect = svgElement.getBoundingClientRect()
+    if (viewportRect.width <= 0 || viewportRect.height <= 0 || svgRect.width <= 0 || svgRect.height <= 0) {
+      return
+    }
+
+    const nextZoom = clampMermaidZoom(Math.min(
+      (viewportRect.width - 48) / svgRect.width * zoom,
+      (viewportRect.height - 48) / svgRect.height * zoom
+    ))
+
+    setZoom(nextZoom)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+  }, [zoom])
+
+  const handlePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!svg) {
+      return
+    }
+
+    dragStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    }
+    setIsDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    if (diagramRef.current) {
+      diagramRef.current.style.transition = 'none'
+    }
+  }, [pan.x, pan.y, svg])
+
+  const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || !diagramRef.current) {
+      return
+    }
+
+    const deltaX = event.clientX - dragStartRef.current.x
+    const deltaY = event.clientY - dragStartRef.current.y
+    const nextPan = {
+      x: dragStartRef.current.panX + deltaX,
+      y: dragStartRef.current.panY + deltaY,
+    }
+
+    diagramRef.current.style.transform = `translate(${nextPan.x}px, ${nextPan.y}px) scale(${zoom})`
+  }, [isDragging, zoom])
+
+  const handlePointerUp = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) {
+      return
+    }
+
+    const deltaX = event.clientX - dragStartRef.current.x
+    const deltaY = event.clientY - dragStartRef.current.y
+    const nextPan = {
+      x: dragStartRef.current.panX + deltaX,
+      y: dragStartRef.current.panY + deltaY,
+    }
+
+    setPan(nextPan)
+    setIsDragging(false)
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    if (diagramRef.current) {
+      diagramRef.current.style.transition = ''
+    }
+  }, [isDragging])
+
+  if (isRendering) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{t('mermaidRendering')}</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="h-full overflow-auto p-6">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/30">
+          <p className="font-mono text-red-700 text-sm dark:text-red-300">
+            {t('mermaidError', { error })}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center justify-end gap-1 border-b px-4 py-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleFitToView}
+          title={t('mermaidFitToView')}
+          disabled={!svg}
+        >
+          <Expand className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setZoom((current) => clampMermaidZoom(current - MERMAID_ZOOM_STEP))}
+          title={t('mermaidZoomOut')}
+          disabled={zoom <= MERMAID_MIN_ZOOM}
+        >
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setZoom((current) => clampMermaidZoom(current + MERMAID_ZOOM_STEP))}
+          title={t('mermaidZoomIn')}
+          disabled={zoom >= MERMAID_MAX_ZOOM}
+        >
+          <ZoomIn className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handleDownloadSvg}
+          title={t('mermaidDownload')}
+          disabled={!svg}
+        >
+          <Download className="h-4 w-4" />
+        </Button>
+      </div>
+      <div
+        ref={viewportRef}
+        className={`flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        <div
+          ref={diagramRef}
+          className="max-w-full origin-center transition-transform will-change-transform"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function CodePreviewCanvas({
   preview,
   onClose,
@@ -177,7 +450,7 @@ export function CodePreviewCanvas({
   const [copied, setCopied] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState(preview.kind === 'source' ? 'source' : 'preview')
   const srcDoc = React.useMemo(() => (
-    preview.kind === 'markdown' || preview.kind === 'source' ? '' : buildPreviewDocument(preview)
+    preview.kind === 'markdown' || preview.kind === 'source' || preview.kind === 'mermaid' ? '' : buildPreviewDocument(preview)
   ), [preview])
 
   React.useEffect(() => {
@@ -230,7 +503,7 @@ export function CodePreviewCanvas({
             )}
             <TabsTrigger value="source">{t('codeSource')}</TabsTrigger>
           </TabsList>
-          {preview.kind !== 'markdown' && preview.kind !== 'source' && (
+          {preview.kind !== 'markdown' && preview.kind !== 'source' && preview.kind !== 'mermaid' && (
             <span className="hidden text-xs text-muted-foreground lg:inline">
               {t('previewScriptsEnabled')}
             </span>
@@ -243,6 +516,8 @@ export function CodePreviewCanvas({
               <div className="h-full overflow-auto p-6">
                 <Streamdown>{preview.code}</Streamdown>
               </div>
+            ) : preview.kind === 'mermaid' ? (
+              <MermaidPreview code={preview.code} />
             ) : (
               <iframe
                 title={t('codePreview')}
