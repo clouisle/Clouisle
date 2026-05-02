@@ -27,18 +27,22 @@ This ensures the backend receives real client IP addresses and other request met
 
 ### CI/CD (Recommended)
 
-Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`), which builds and pushes both images to ACR automatically:
+Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`). The tag is the released-version marker; `main` may continue to receive newer commits after a release.
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
+The workflow builds and pushes both images to ACR, then creates a GitHub Release only after both image builds succeed. Image tags use the release tag without the leading `v`.
+
 Images are pushed to:
 ```
 <ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-backend:<version>
 <ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-frontend:<version>
 ```
+
+For example, `v0.1.0` publishes images with `IMAGE_TAG=0.1.0`.
 
 Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
 
