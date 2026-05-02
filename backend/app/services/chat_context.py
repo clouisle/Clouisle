@@ -120,7 +120,9 @@ class CompressionMeta:
     tool_results_trimmed: bool = False
     file_content_trimmed: bool = False
     summary_turns: int = 0
-    pressure_level: Literal["normal", "warning", "auto_compact", "blocking", "over_budget"] = "normal"
+    pressure_level: Literal[
+        "normal", "warning", "auto_compact", "blocking", "over_budget"
+    ] = "normal"
     trigger_ratio: float = 1.0
     warning_ratio: float = DEFAULT_WARNING_RATIO
     blocking_ratio: float = DEFAULT_BLOCKING_RATIO
@@ -149,9 +151,7 @@ def _clone_messages(
     protected_indexes: set[int] | None = None,
 ) -> tuple[list[Message], set[int]]:
     return [message.model_copy(deep=True) for message in messages], {
-        index
-        for index in (protected_indexes or set())
-        if 0 <= index < len(messages)
+        index for index in (protected_indexes or set()) if 0 <= index < len(messages)
     }
 
 
@@ -307,7 +307,6 @@ def get_language_instruction(user_locale: str | None = None) -> str:
     return LANGUAGE_INSTRUCTIONS.get(lang, LANGUAGE_INSTRUCTIONS["en"])
 
 
-
 def build_system_prompt_with_language(
     system_prompt: str | None, user_locale: str | None = None
 ) -> str:
@@ -318,7 +317,6 @@ def build_system_prompt_with_language(
     if instruction in system_prompt:
         return system_prompt
     return f"{system_prompt}\n\n{instruction}"
-
 
 
 def get_user_input_request_instruction(locale: str = "en") -> str:
@@ -376,7 +374,6 @@ When you need the user to choose from predefined options, use this XML format:
 - When guiding the conversation flow"""
 
 
-
 def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     """Build multimodal content for vision-capable models."""
     content_parts: list[ContentPart] = [ContentPart(type=ContentType.TEXT, text=text)]
@@ -413,7 +410,6 @@ def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     return content_parts
 
 
-
 def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     if not value:
         return None
@@ -424,17 +420,16 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-
 def _build_skill_llm_summary(payload: dict[str, Any]) -> str | None:
     result = payload.get("result")
     if not isinstance(result, dict) or result.get("type") != "skill_instructions":
         return None
 
-    skill = result.get("skill") if isinstance(result.get("skill"), dict) else {}
+    raw_skill = result.get("skill")
+    skill = raw_skill if isinstance(raw_skill, dict) else {}
     display_name = skill.get("display_name") or skill.get("name") or "Skill"
     status = result.get("status") or "loaded"
     return f"Skill instructions for {display_name} were {status}."
-
 
 
 def _build_media_llm_summary(
@@ -467,7 +462,6 @@ def _build_media_llm_summary(
     return None
 
 
-
 def summarize_tool_result_for_llm(
     tool_name: str | None,
     stored_content: str,
@@ -480,7 +474,6 @@ def summarize_tool_result_for_llm(
         or _build_skill_llm_summary(payload)
         or stored_content
     )
-
 
 
 def _trim_file_content(
@@ -502,18 +495,14 @@ def _trim_file_content(
 
     head = file_content[:head_chars].rstrip()
     tail = file_content[-tail_chars:].lstrip()
-    trimmed = (
-        f"{head}\n\n[... file content trimmed for context budget ...]\n\n{tail}"
-    )
+    trimmed = f"{head}\n\n[... file content trimmed for context budget ...]\n\n{tail}"
     return trimmed, True
-
 
 
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
     return " ".join(value.split())
-
 
 
 def _truncate_text(value: str | None, max_chars: int) -> str:
@@ -523,12 +512,10 @@ def _truncate_text(value: str | None, max_chars: int) -> str:
     return f"{normalized[: max_chars - 3].rstrip()}..."
 
 
-
 def _limit_summary_text(value: str, max_chars: int) -> str:
     if len(value) <= max_chars:
         return value
     return f"{value[: max_chars - 3].rstrip()}..."
-
 
 
 def _stringify_content(content: str | list[ContentPart] | None) -> str:
@@ -546,12 +533,10 @@ def _stringify_content(content: str | list[ContentPart] | None) -> str:
     return "\n".join(parts)
 
 
-
 def _get_override_value(item: Any, key: str, default: Any = None) -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
-
 
 
 def _normalize_override_role(role: Any) -> str | None:
@@ -562,16 +547,19 @@ def _normalize_override_role(role: Any) -> str | None:
     return str(role)
 
 
-
 def _has_sandbox_tools(agent: Agent) -> bool:
     tools_config = agent.tools_config or []
     for config in tools_config:
-        if config.get("type") == "builtin" and config.get("name") in {"bash", "read", "write", "artifact"}:
+        if config.get("type") == "builtin" and config.get("name") in {
+            "bash",
+            "read",
+            "write",
+            "artifact",
+        }:
             return True
         if config.get("type") == "skill":
             return True
     return False
-
 
 
 def _append_prompt_section(base: str, section: str | None) -> str:
@@ -579,7 +567,6 @@ def _append_prompt_section(base: str, section: str | None) -> str:
     if not normalized_section:
         return base
     return f"{base}\n\n{normalized_section}" if base else normalized_section
-
 
 
 def _build_system_prompt(
@@ -594,24 +581,29 @@ def _build_system_prompt(
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
         system_prompt = system_prompt.replace("{{query}}", user_message)
-        system_prompt = system_prompt.replace(FILE_CONTENT_PLACEHOLDER, file_content or "")
+        system_prompt = system_prompt.replace(
+            FILE_CONTENT_PLACEHOLDER, file_content or ""
+        )
 
     if agent.enable_memory:
         system_prompt = _append_prompt_section(system_prompt, MEMORY_SYSTEM_INSTRUCTION)
         logger.info("Added memory instructions to system prompt for agent %s", agent.id)
 
     if _has_sandbox_tools(agent):
-        system_prompt = _append_prompt_section(system_prompt, SANDBOX_SYSTEM_INSTRUCTION)
-        logger.info("Added sandbox instructions to system prompt for agent %s", agent.id)
+        system_prompt = _append_prompt_section(
+            system_prompt, SANDBOX_SYSTEM_INSTRUCTION
+        )
+        logger.info(
+            "Added sandbox instructions to system prompt for agent %s", agent.id
+        )
 
     system_prompt = build_system_prompt_with_language(system_prompt, user_locale)
     if agent.enable_user_input_request:
         system_prompt = _append_prompt_section(
             system_prompt,
-            get_user_input_request_instruction(user_locale or 'en'),
+            get_user_input_request_instruction(user_locale or "en"),
         )
     return system_prompt
-
 
 
 def _build_current_user_content(
@@ -622,7 +614,6 @@ def _build_current_user_content(
     if current_images and model_supports_vision:
         return build_vision_content(user_message, current_images)
     return user_message
-
 
 
 def _build_assistant_tool_calls(
@@ -652,10 +643,8 @@ def _build_assistant_tool_calls(
     return tool_calls, valid_tool_call_ids
 
 
-
 def _message_to_token_payload(message: Message) -> dict[str, Any]:
     return message.model_dump(exclude_none=True, mode="json")
-
 
 
 def _estimate_message_tokens(
@@ -665,7 +654,6 @@ def _estimate_message_tokens(
     return count_message_tokens(payload, model_id=model_id, provider=provider)
 
 
-
 def get_context_compression_config(agent: Agent) -> dict[str, Any]:
     """Get agent context compression config merged with defaults."""
     config = dict(DEFAULT_CONTEXT_COMPRESSION_CONFIG)
@@ -673,7 +661,6 @@ def get_context_compression_config(agent: Agent) -> dict[str, Any]:
     if isinstance(raw_config, dict):
         config.update(raw_config)
     return config
-
 
 
 def _build_token_budget(
@@ -701,7 +688,6 @@ def _build_token_budget(
     )
 
 
-
 def _build_compression_thresholds(
     *,
     token_budget: TokenBudget,
@@ -711,11 +697,16 @@ def _build_compression_thresholds(
 ) -> CompressionThresholds:
     input_budget = token_budget.input_budget
     return CompressionThresholds(
-        warning_input_budget=max(1, min(int(input_budget * warning_ratio), input_budget)),
-        trigger_input_budget=max(1, min(int(input_budget * trigger_ratio), input_budget)),
-        blocking_input_budget=max(1, min(int(input_budget * blocking_ratio), input_budget)),
+        warning_input_budget=max(
+            1, min(int(input_budget * warning_ratio), input_budget)
+        ),
+        trigger_input_budget=max(
+            1, min(int(input_budget * trigger_ratio), input_budget)
+        ),
+        blocking_input_budget=max(
+            1, min(int(input_budget * blocking_ratio), input_budget)
+        ),
     )
-
 
 
 def _assess_context_pressure(
@@ -735,7 +726,6 @@ def _assess_context_pressure(
     return "normal"
 
 
-
 def _compact_message_reasoning(
     messages: Sequence[Message],
     keep_recent_reasoning_messages: int = DEFAULT_RECENT_REASONING_MESSAGES,
@@ -750,7 +740,10 @@ def _compact_message_reasoning(
     for original_index in range(len(messages) - 1, -1, -1):
         message_copy = messages[original_index].model_copy(deep=True)
         is_protected = original_index in protected_indexes
-        if message_copy.role == MessageRole.ASSISTANT and message_copy.reasoning_content:
+        if (
+            message_copy.role == MessageRole.ASSISTANT
+            and message_copy.reasoning_content
+        ):
             if is_protected or kept_reasoning < keep_recent_reasoning_messages:
                 if not is_protected:
                     kept_reasoning += 1
@@ -769,13 +762,11 @@ def _compact_message_reasoning(
     return compacted, reasoning_trimmed, remapped_protected_indexes
 
 
-
 def _has_rich_media_context(message: Message) -> bool:
     if isinstance(message.content, list):
         return any(part.type == ContentType.IMAGE for part in message.content)
     text = _stringify_content(message.content)
     return FILE_CONTENT_PLACEHOLDER in text or "[image]" in text
-
 
 
 def _estimate_single_message_tokens(
@@ -785,7 +776,6 @@ def _estimate_single_message_tokens(
     provider: str | None,
 ) -> int:
     return _estimate_message_tokens([message], model_id=model_id, provider=provider)
-
 
 
 def _analyze_turn_block(
@@ -814,14 +804,12 @@ def _analyze_turn_block(
     }
 
 
-
 def _should_keep_tool_result_raw(
     *,
     tool_result_index_from_end: int,
     keep_recent_tool_results: int,
 ) -> bool:
     return tool_result_index_from_end < keep_recent_tool_results
-
 
 
 def _apply_selective_tool_result_compaction(
@@ -848,7 +836,9 @@ def _apply_selective_tool_result_compaction(
     for index, analysis in enumerate(analyses):
         if analysis["contains_media"]:
             keep_block_indexes.add(index)
-        if any(message_index in protected_indexes for message_index in block_indexes[index]):
+        if any(
+            message_index in protected_indexes for message_index in block_indexes[index]
+        ):
             keep_block_indexes.add(index)
 
     tool_turns_kept = 0
@@ -866,7 +856,9 @@ def _apply_selective_tool_result_compaction(
         for message_index in range(len(block) - 1, -1, -1):
             message = block[message_index]
             if message.role == MessageRole.TOOL and isinstance(message.content, str):
-                tool_positions_from_end[(block_index, message_index)] = tool_result_index_from_end
+                tool_positions_from_end[(block_index, message_index)] = (
+                    tool_result_index_from_end
+                )
                 tool_result_index_from_end += 1
 
     compacted: list[Message] = []
@@ -890,7 +882,9 @@ def _apply_selective_tool_result_compaction(
                 and message_copy.role == MessageRole.TOOL
                 and isinstance(message_copy.content, str)
             ):
-                tool_result_index = tool_positions_from_end.get((block_index, message_index), 999999)
+                tool_result_index = tool_positions_from_end.get(
+                    (block_index, message_index), 999999
+                )
                 should_keep_raw = _should_keep_tool_result_raw(
                     tool_result_index_from_end=tool_result_index,
                     keep_recent_tool_results=keep_recent_tool_results,
@@ -900,13 +894,20 @@ def _apply_selective_tool_result_compaction(
                     model_id=model_id,
                     provider=provider,
                 )
-                if not should_keep_raw and estimated_tokens >= tool_result_compact_min_tokens:
-                    summarized = summarize_tool_result_for_llm(None, message_copy.content)
+                if (
+                    not should_keep_raw
+                    and estimated_tokens >= tool_result_compact_min_tokens
+                ):
+                    summarized = summarize_tool_result_for_llm(
+                        None, message_copy.content
+                    )
                     if summarized != message_copy.content:
                         message_copy.content = summarized
                         tool_results_trimmed = True
                     elif len(message_copy.content) > 1200:
-                        message_copy.content = _truncate_text(message_copy.content, 1200)
+                        message_copy.content = _truncate_text(
+                            message_copy.content, 1200
+                        )
                         tool_results_trimmed = True
             _append_message(
                 compacted,
@@ -916,7 +917,6 @@ def _apply_selective_tool_result_compaction(
             )
 
     return compacted, tool_results_trimmed, compacted_protected_indexes
-
 
 
 async def _apply_session_memory_compaction(
@@ -980,7 +980,9 @@ async def _apply_session_memory_compaction(
     for index in range(len(blocks) - 1, -1, -1):
         if analyses[index]["contains_media"]:
             keep_indexes.add(index)
-        if any(message_index in protected_indexes for message_index in block_indexes[index]):
+        if any(
+            message_index in protected_indexes for message_index in block_indexes[index]
+        ):
             keep_indexes.add(index)
 
     tool_kept = 0
@@ -995,7 +997,9 @@ async def _apply_session_memory_compaction(
         blocks[index] for index in range(len(blocks)) if index not in keep_indexes
     ]
     if not summary_blocks:
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
         return cloned_messages, False, cloned_protected_indexes
 
     compacted: list[Message] = []
@@ -1024,7 +1028,6 @@ async def _apply_session_memory_compaction(
             )
 
     return compacted, True, compacted_protected_indexes
-
 
 
 async def _build_messages_with_file_content(
@@ -1224,14 +1227,12 @@ async def _build_messages_with_file_content(
     return messages, protected_indexes
 
 
-
 def _is_tool_turn(messages: Sequence[Message]) -> bool:
     return any(
         message.role in {MessageRole.ASSISTANT, MessageRole.TOOL}
         and (message.tool_calls or message.tool_call_id)
         for message in messages
     )
-
 
 
 def _split_turn_blocks(
@@ -1276,7 +1277,6 @@ def _split_turn_blocks(
     return prefix, prefix_indexes, blocks, block_indexes
 
 
-
 def _summarize_block(
     messages: Sequence[Message],
     *,
@@ -1319,14 +1319,11 @@ def _summarize_block(
             f"Tools involved: {_truncate_text(', '.join(deduped_tool_names), 300)}"
         )
     if tool_results:
-        items.append(
-            f"Tool outcomes: {_truncate_text(' | '.join(tool_results), 500)}"
-        )
+        items.append(f"Tool outcomes: {_truncate_text(' | '.join(tool_results), 500)}")
 
     if not items:
         return "Conversation turn preserved in compact summary."
     return " ; ".join(items)
-
 
 
 def _build_macro_summary_message(
@@ -1348,7 +1345,6 @@ def _build_macro_summary_message(
     return Message(role=MessageRole.ASSISTANT, content=summary)
 
 
-
 def _apply_macro_compaction(
     messages: Sequence[Message],
     *,
@@ -1363,7 +1359,9 @@ def _apply_macro_compaction(
     prefix, prefix_indexes, blocks, block_indexes = _split_turn_blocks(messages)
     protected_indexes = protected_indexes or set()
     if len(blocks) <= recent_raw_turns:
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
         return cloned_messages, 0, len(blocks), 0, 0, cloned_protected_indexes
 
     analyses = [
@@ -1371,12 +1369,16 @@ def _apply_macro_compaction(
         for block in blocks
     ]
 
-    keep_indexes: set[int] = set(range(max(len(blocks) - recent_raw_turns, 0), len(blocks)))
+    keep_indexes: set[int] = set(
+        range(max(len(blocks) - recent_raw_turns, 0), len(blocks))
+    )
 
     for index in range(len(blocks) - 1, -1, -1):
         if analyses[index]["contains_media"]:
             keep_indexes.add(index)
-        if any(message_index in protected_indexes for message_index in block_indexes[index]):
+        if any(
+            message_index in protected_indexes for message_index in block_indexes[index]
+        ):
             keep_indexes.add(index)
 
     tool_kept = 0
@@ -1387,11 +1389,24 @@ def _apply_macro_compaction(
             if tool_kept >= recent_tool_turns:
                 break
 
-    summary_blocks = [blocks[index] for index in range(len(blocks)) if index not in keep_indexes]
+    summary_blocks = [
+        blocks[index] for index in range(len(blocks)) if index not in keep_indexes
+    ]
     if not summary_blocks:
-        retained_tool_turns = sum(1 for index in keep_indexes if analyses[index]["contains_tool"])
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
-        return cloned_messages, 0, len(keep_indexes), retained_tool_turns, 0, cloned_protected_indexes
+        retained_tool_turns = sum(
+            1 for index in keep_indexes if analyses[index]["contains_tool"]
+        )
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
+        return (
+            cloned_messages,
+            0,
+            len(keep_indexes),
+            retained_tool_turns,
+            0,
+            cloned_protected_indexes,
+        )
 
     compacted: list[Message] = []
     compacted_protected_indexes: set[int] = set()
@@ -1421,11 +1436,21 @@ def _apply_macro_compaction(
             )
 
     summary_turns = len(summary_blocks)
-    retained_recent_turns = sum(1 for index in keep_indexes if index >= len(blocks) - recent_raw_turns)
-    retained_tool_turns = sum(1 for index in keep_indexes if analyses[index]["contains_tool"])
+    retained_recent_turns = sum(
+        1 for index in keep_indexes if index >= len(blocks) - recent_raw_turns
+    )
+    retained_tool_turns = sum(
+        1 for index in keep_indexes if analyses[index]["contains_tool"]
+    )
     compacted_blocks = len(summary_blocks)
-    return compacted, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks, compacted_protected_indexes
-
+    return (
+        compacted,
+        summary_turns,
+        retained_recent_turns,
+        retained_tool_turns,
+        compacted_blocks,
+        compacted_protected_indexes,
+    )
 
 
 async def _apply_micro_compaction(
@@ -1440,7 +1465,9 @@ async def _apply_micro_compaction(
     tool_result_compact_min_tokens: int = DEFAULT_TOOL_RESULT_COMPACT_MIN_TOKENS,
     recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
     recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
-    pressure_level: Literal["normal", "warning", "auto_compact", "blocking", "over_budget"] = "normal",
+    pressure_level: Literal[
+        "normal", "warning", "auto_compact", "blocking", "over_budget"
+    ] = "normal",
     trigger_ratio: float = DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
     warning_ratio: float = DEFAULT_WARNING_RATIO,
     blocking_ratio: float = DEFAULT_BLOCKING_RATIO,
@@ -1449,40 +1476,56 @@ async def _apply_micro_compaction(
     protected_indexes: set[int] | None = None,
 ) -> tuple[list[Message], CompressionMeta, set[int]]:
     protected_indexes = protected_indexes or set()
-    before_tokens = _estimate_message_tokens(messages, model_id=model_id, provider=provider)
-    if before_tokens < (trigger_budget or token_budget.input_budget):
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
-        return cloned_messages, CompressionMeta(
-            stage="none",
-            before_tokens=before_tokens,
-            after_tokens=before_tokens,
-            input_budget=token_budget.input_budget,
-            pressure_level=pressure_level,
-            trigger_ratio=trigger_ratio,
-            warning_ratio=warning_ratio,
-            blocking_ratio=blocking_ratio,
-            trigger_budget=trigger_budget or token_budget.input_budget,
-            hard_budget=token_budget.input_budget,
-            utilization_before=(before_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
-            utilization_after=(before_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
-            policy_used=policy_used,
-            actions=[],
-        ), cloned_protected_indexes
-
-    reasoning_compacted, reasoning_trimmed, reasoning_protected_indexes = _compact_message_reasoning(
-        messages,
-        keep_recent_reasoning_messages=keep_recent_reasoning_messages,
-        protected_indexes=protected_indexes,
+    before_tokens = _estimate_message_tokens(
+        messages, model_id=model_id, provider=provider
     )
-    tool_compacted, tool_results_trimmed, tool_protected_indexes = _apply_selective_tool_result_compaction(
-        reasoning_compacted,
-        model_id=model_id,
-        provider=provider,
-        keep_recent_tool_results=keep_recent_tool_results,
-        tool_result_compact_min_tokens=tool_result_compact_min_tokens,
-        recent_raw_turns=recent_raw_turns,
-        recent_tool_turns=recent_tool_turns,
-        protected_indexes=reasoning_protected_indexes,
+    if before_tokens < (trigger_budget or token_budget.input_budget):
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
+        return (
+            cloned_messages,
+            CompressionMeta(
+                stage="none",
+                before_tokens=before_tokens,
+                after_tokens=before_tokens,
+                input_budget=token_budget.input_budget,
+                pressure_level=pressure_level,
+                trigger_ratio=trigger_ratio,
+                warning_ratio=warning_ratio,
+                blocking_ratio=blocking_ratio,
+                trigger_budget=trigger_budget or token_budget.input_budget,
+                hard_budget=token_budget.input_budget,
+                utilization_before=(before_tokens / token_budget.input_budget)
+                if token_budget.input_budget
+                else 0.0,
+                utilization_after=(before_tokens / token_budget.input_budget)
+                if token_budget.input_budget
+                else 0.0,
+                policy_used=policy_used,
+                actions=[],
+            ),
+            cloned_protected_indexes,
+        )
+
+    reasoning_compacted, reasoning_trimmed, reasoning_protected_indexes = (
+        _compact_message_reasoning(
+            messages,
+            keep_recent_reasoning_messages=keep_recent_reasoning_messages,
+            protected_indexes=protected_indexes,
+        )
+    )
+    tool_compacted, tool_results_trimmed, tool_protected_indexes = (
+        _apply_selective_tool_result_compaction(
+            reasoning_compacted,
+            model_id=model_id,
+            provider=provider,
+            keep_recent_tool_results=keep_recent_tool_results,
+            tool_result_compact_min_tokens=tool_result_compact_min_tokens,
+            recent_raw_turns=recent_raw_turns,
+            recent_tool_turns=recent_tool_turns,
+            protected_indexes=reasoning_protected_indexes,
+        )
     )
     (
         session_memory_messages,
@@ -1512,28 +1555,37 @@ async def _apply_micro_compaction(
         actions.append("session_memory_compact")
 
     stage: Literal["none", "micro"] = "micro" if actions else "none"
-    utilization_before = (before_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0
-    utilization_after = (after_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0
-    return session_memory_messages, CompressionMeta(
-        stage=stage,
-        before_tokens=before_tokens,
-        after_tokens=after_tokens,
-        input_budget=token_budget.input_budget,
-        reasoning_trimmed=reasoning_trimmed,
-        tool_results_trimmed=tool_results_trimmed,
-        pressure_level=pressure_level,
-        trigger_ratio=trigger_ratio,
-        warning_ratio=warning_ratio,
-        blocking_ratio=blocking_ratio,
-        trigger_budget=trigger_budget or token_budget.input_budget,
-        hard_budget=token_budget.input_budget,
-        utilization_before=utilization_before,
-        utilization_after=utilization_after,
-        policy_used=policy_used,
-        actions=actions,
-        session_memory_compacted=session_memory_compacted,
-    ), session_memory_protected_indexes
-
+    utilization_before = (
+        (before_tokens / token_budget.input_budget)
+        if token_budget.input_budget
+        else 0.0
+    )
+    utilization_after = (
+        (after_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0
+    )
+    return (
+        session_memory_messages,
+        CompressionMeta(
+            stage=stage,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            input_budget=token_budget.input_budget,
+            reasoning_trimmed=reasoning_trimmed,
+            tool_results_trimmed=tool_results_trimmed,
+            pressure_level=pressure_level,
+            trigger_ratio=trigger_ratio,
+            warning_ratio=warning_ratio,
+            blocking_ratio=blocking_ratio,
+            trigger_budget=trigger_budget or token_budget.input_budget,
+            hard_budget=token_budget.input_budget,
+            utilization_before=utilization_before,
+            utilization_after=utilization_after,
+            policy_used=policy_used,
+            actions=actions,
+            session_memory_compacted=session_memory_compacted,
+        ),
+        session_memory_protected_indexes,
+    )
 
 
 def _apply_budget_compaction(
@@ -1545,7 +1597,9 @@ def _apply_budget_compaction(
     compression: CompressionMeta,
     file_content_trimmed: bool,
     aggressive: bool = False,
-    pressure_level: Literal["normal", "warning", "auto_compact", "blocking", "over_budget"] = "normal",
+    pressure_level: Literal[
+        "normal", "warning", "auto_compact", "blocking", "over_budget"
+    ] = "normal",
     trigger_ratio: float = DEFAULT_AUTO_COMPACT_TRIGGER_RATIO,
     warning_ratio: float = DEFAULT_WARNING_RATIO,
     blocking_ratio: float = DEFAULT_BLOCKING_RATIO,
@@ -1558,18 +1612,44 @@ def _apply_budget_compaction(
     protected_indexes: set[int] | None = None,
 ) -> tuple[list[Message], CompressionMeta, set[int]]:
     protected_indexes = protected_indexes or set()
-    if compression.after_tokens <= token_budget.input_budget and pressure_level != "blocking":
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+    if (
+        compression.after_tokens <= token_budget.input_budget
+        and pressure_level != "blocking"
+    ):
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
         return cloned_messages, compression, cloned_protected_indexes
 
-    macro_messages, summary_turns, retained_recent_turns, retained_tool_turns, compacted_blocks, macro_protected_indexes = _apply_macro_compaction(
+    (
+        macro_messages,
+        summary_turns,
+        retained_recent_turns,
+        retained_tool_turns,
+        compacted_blocks,
+        macro_protected_indexes,
+    ) = _apply_macro_compaction(
         messages,
         model_id=model_id,
         provider=provider,
-        recent_raw_turns=(recent_raw_turns if not aggressive else min(recent_raw_turns, AGGRESSIVE_RECENT_RAW_TURNS)),
-        recent_tool_turns=(recent_tool_turns if not aggressive else min(recent_tool_turns, AGGRESSIVE_RECENT_TOOL_TURNS)),
-        summary_max_chars=(summary_max_chars if not aggressive else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)),
-        block_summary_chars=(block_summary_chars if not aggressive else AGGRESSIVE_BLOCK_SUMMARY_CHARS),
+        recent_raw_turns=(
+            recent_raw_turns
+            if not aggressive
+            else min(recent_raw_turns, AGGRESSIVE_RECENT_RAW_TURNS)
+        ),
+        recent_tool_turns=(
+            recent_tool_turns
+            if not aggressive
+            else min(recent_tool_turns, AGGRESSIVE_RECENT_TOOL_TURNS)
+        ),
+        summary_max_chars=(
+            summary_max_chars
+            if not aggressive
+            else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)
+        ),
+        block_summary_chars=(
+            block_summary_chars if not aggressive else AGGRESSIVE_BLOCK_SUMMARY_CHARS
+        ),
         protected_indexes=protected_indexes,
     )
     macro_after_tokens = _estimate_message_tokens(
@@ -1578,37 +1658,47 @@ def _apply_budget_compaction(
         provider=provider,
     )
     if summary_turns <= 0:
-        cloned_messages, cloned_protected_indexes = _clone_messages(messages, protected_indexes)
+        cloned_messages, cloned_protected_indexes = _clone_messages(
+            messages, protected_indexes
+        )
         return cloned_messages, compression, cloned_protected_indexes
 
     actions = list(compression.actions or [])
     if "macro_summary" not in actions:
         actions.append("macro_summary")
-    utilization_after = (macro_after_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0
-    return macro_messages, CompressionMeta(
-        stage="macro",
-        before_tokens=compression.before_tokens,
-        after_tokens=macro_after_tokens,
-        input_budget=token_budget.input_budget,
-        reasoning_trimmed=compression.reasoning_trimmed,
-        tool_results_trimmed=compression.tool_results_trimmed,
-        file_content_trimmed=file_content_trimmed,
-        summary_turns=summary_turns,
-        pressure_level=pressure_level,
-        trigger_ratio=trigger_ratio,
-        warning_ratio=warning_ratio,
-        blocking_ratio=blocking_ratio,
-        trigger_budget=trigger_budget or token_budget.input_budget,
-        hard_budget=token_budget.input_budget,
-        utilization_before=compression.utilization_before,
-        utilization_after=utilization_after,
-        policy_used=policy_used,
-        actions=actions,
-        retained_recent_turns=retained_recent_turns,
-        retained_tool_turns=retained_tool_turns,
-        compacted_blocks=compacted_blocks,
-        session_memory_compacted=compression.session_memory_compacted,
-    ), macro_protected_indexes
+    utilization_after = (
+        (macro_after_tokens / token_budget.input_budget)
+        if token_budget.input_budget
+        else 0.0
+    )
+    return (
+        macro_messages,
+        CompressionMeta(
+            stage="macro",
+            before_tokens=compression.before_tokens,
+            after_tokens=macro_after_tokens,
+            input_budget=token_budget.input_budget,
+            reasoning_trimmed=compression.reasoning_trimmed,
+            tool_results_trimmed=compression.tool_results_trimmed,
+            file_content_trimmed=file_content_trimmed,
+            summary_turns=summary_turns,
+            pressure_level=pressure_level,
+            trigger_ratio=trigger_ratio,
+            warning_ratio=warning_ratio,
+            blocking_ratio=blocking_ratio,
+            trigger_budget=trigger_budget or token_budget.input_budget,
+            hard_budget=token_budget.input_budget,
+            utilization_before=compression.utilization_before,
+            utilization_after=utilization_after,
+            policy_used=policy_used,
+            actions=actions,
+            retained_recent_turns=retained_recent_turns,
+            retained_tool_turns=retained_tool_turns,
+            compacted_blocks=compacted_blocks,
+            session_memory_compacted=compression.session_memory_compacted,
+        ),
+        macro_protected_indexes,
+    )
 
 
 async def build_model_messages(
@@ -1672,14 +1762,10 @@ async def prepare_model_context(
         context_limit=model_context_limit,
         model_max_output_tokens=model_max_output_tokens,
         output_token_reserve=int(
-            compression_config.get(
-                "output_token_reserve", DEFAULT_OUTPUT_TOKEN_RESERVE
-            )
+            compression_config.get("output_token_reserve", DEFAULT_OUTPUT_TOKEN_RESERVE)
         ),
         safety_margin_tokens=int(
-            compression_config.get(
-                "safety_margin_tokens", DEFAULT_SAFETY_MARGIN_TOKENS
-            )
+            compression_config.get("safety_margin_tokens", DEFAULT_SAFETY_MARGIN_TOKENS)
         ),
     )
 
@@ -1712,7 +1798,9 @@ async def prepare_model_context(
     configured_recent_tool_turns = int(
         compression_config.get(
             "recent_tool_turns",
-            DEFAULT_RECENT_TOOL_TURNS if not aggressive else AGGRESSIVE_RECENT_TOOL_TURNS,
+            DEFAULT_RECENT_TOOL_TURNS
+            if not aggressive
+            else AGGRESSIVE_RECENT_TOOL_TURNS,
         )
     )
     tool_result_compact_min_tokens = int(
@@ -1728,7 +1816,10 @@ async def prepare_model_context(
         blocking_ratio=blocking_ratio,
     )
 
-    untrimmed_messages, untrimmed_protected_indexes = await _build_messages_with_file_content(
+    (
+        untrimmed_messages,
+        untrimmed_protected_indexes,
+    ) = await _build_messages_with_file_content(
         agent=agent,
         conversation=conversation,
         user_message=user_message,
@@ -1759,7 +1850,9 @@ async def prepare_model_context(
         thresholds=thresholds,
     )
     utilization_before = (
-        untrimmed_tokens / token_budget.input_budget if token_budget.input_budget else 0.0
+        untrimmed_tokens / token_budget.input_budget
+        if token_budget.input_budget
+        else 0.0
     )
     if not compression_enabled or not preflight_guard_enabled:
         return PreparedModelContext(
@@ -1784,7 +1877,9 @@ async def prepare_model_context(
             protected_indexes=untrimmed_protected_indexes,
         )
 
-    needs_file_trim = bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
+    needs_file_trim = (
+        bool(file_content) and untrimmed_tokens > thresholds.trigger_input_budget
+    )
     effective_file_content = file_content
     file_content_trimmed = False
     if needs_file_trim:
@@ -1839,7 +1934,9 @@ async def prepare_model_context(
         trigger_budget=thresholds.trigger_input_budget,
         hard_budget=token_budget.input_budget,
         utilization_before=utilization_before,
-        utilization_after=(base_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
+        utilization_after=(base_tokens / token_budget.input_budget)
+        if token_budget.input_budget
+        else 0.0,
         policy_used=policy_used,
         actions=["trim_file_content"] if file_content_trimmed else [],
     )
@@ -1853,7 +1950,11 @@ async def prepare_model_context(
         )
         if not compression_config.get("drop_historical_reasoning_first", True):
             keep_recent_reasoning_messages = max(keep_recent_reasoning_messages, 9999)
-        compacted_messages, compression, compacted_protected_indexes = await _apply_micro_compaction(
+        (
+            compacted_messages,
+            compression,
+            compacted_protected_indexes,
+        ) = await _apply_micro_compaction(
             messages=base_messages,
             conversation=conversation,
             model_id=model_id,
@@ -1873,52 +1974,63 @@ async def prepare_model_context(
             protected_indexes=base_protected_indexes,
         )
         compression.file_content_trimmed = file_content_trimmed
-        if file_content_trimmed and "trim_file_content" not in (compression.actions or []):
+        if file_content_trimmed and "trim_file_content" not in (
+            compression.actions or []
+        ):
             compression.actions = [*(compression.actions or []), "trim_file_content"]
 
     should_run_macro = False
     if compression_config.get("macro_compaction_enabled", True):
         should_run_macro = pressure_level in {"blocking", "over_budget"}
-        if not should_run_macro and pressure_level == "auto_compact" and macro_on_trigger:
+        if (
+            not should_run_macro
+            and pressure_level == "auto_compact"
+            and macro_on_trigger
+        ):
             should_run_macro = True
         if compression.after_tokens > token_budget.input_budget:
             should_run_macro = True
 
     if should_run_macro:
-        summary_max_chars = int(
-            compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
-        ) * 4
-        compacted_messages, compression, compacted_protected_indexes = _apply_budget_compaction(
-            messages=compacted_messages,
-            model_id=model_id,
-            provider=provider,
-            token_budget=token_budget,
-            compression=compression,
-            file_content_trimmed=file_content_trimmed,
-            aggressive=aggressive,
-            pressure_level=pressure_level,
-            trigger_ratio=trigger_ratio,
-            warning_ratio=warning_ratio,
-            blocking_ratio=blocking_ratio,
-            policy_used=policy_used,
-            trigger_budget=(
-                thresholds.blocking_input_budget
-                if pressure_level in {"blocking", "over_budget"}
-                else thresholds.trigger_input_budget
-            ),
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
-            summary_max_chars=(
-                summary_max_chars
-                if not aggressive
-                else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)
-            ),
-            block_summary_chars=(
-                DEFAULT_BLOCK_SUMMARY_CHARS
-                if not aggressive
-                else AGGRESSIVE_BLOCK_SUMMARY_CHARS
-            ),
-            protected_indexes=compacted_protected_indexes,
+        summary_max_chars = (
+            int(
+                compression_config.get("summary_max_tokens", DEFAULT_SUMMARY_MAX_TOKENS)
+            )
+            * 4
+        )
+        compacted_messages, compression, compacted_protected_indexes = (
+            _apply_budget_compaction(
+                messages=compacted_messages,
+                model_id=model_id,
+                provider=provider,
+                token_budget=token_budget,
+                compression=compression,
+                file_content_trimmed=file_content_trimmed,
+                aggressive=aggressive,
+                pressure_level=pressure_level,
+                trigger_ratio=trigger_ratio,
+                warning_ratio=warning_ratio,
+                blocking_ratio=blocking_ratio,
+                policy_used=policy_used,
+                trigger_budget=(
+                    thresholds.blocking_input_budget
+                    if pressure_level in {"blocking", "over_budget"}
+                    else thresholds.trigger_input_budget
+                ),
+                recent_raw_turns=configured_recent_raw_turns,
+                recent_tool_turns=configured_recent_tool_turns,
+                summary_max_chars=(
+                    summary_max_chars
+                    if not aggressive
+                    else min(summary_max_chars, AGGRESSIVE_SUMMARY_MAX_CHARS)
+                ),
+                block_summary_chars=(
+                    DEFAULT_BLOCK_SUMMARY_CHARS
+                    if not aggressive
+                    else AGGRESSIVE_BLOCK_SUMMARY_CHARS
+                ),
+                protected_indexes=compacted_protected_indexes,
+            )
         )
 
     if file_content_trimmed:
@@ -2007,7 +2119,9 @@ async def prepare_model_context(
                 trigger_budget=compression.trigger_budget,
                 hard_budget=token_budget.input_budget,
                 utilization_before=compression.utilization_before,
-                utilization_after=(emergency_tokens / token_budget.input_budget) if token_budget.input_budget else 0.0,
+                utilization_after=(emergency_tokens / token_budget.input_budget)
+                if token_budget.input_budget
+                else 0.0,
                 policy_used=compression.policy_used,
                 actions=emergency_actions,
                 retained_recent_turns=0,

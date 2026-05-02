@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
         init_message_round_fields,
         init_conversation_session_memory_table,
         init_agent_user_input_request,
+        init_agent_hide_tool_calls_field,
         init_agent_memory_fields,
         init_agent_media_generation_fields,
         init_permission_is_system_field,
@@ -134,6 +135,11 @@ async def lifespan(app: FastAPI):
         await init_agent_user_input_request()
     except Exception as e:
         logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+
+    try:
+        await init_agent_hide_tool_calls_field()
+    except Exception as e:
+        logger.warning(f"Agent hide_tool_calls migration failed: {e}")
 
     try:
         await init_agent_memory_fields()

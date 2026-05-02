@@ -41,7 +41,14 @@ OPENAI_DALLE_IMAGE_QUALITY_MAP = {
     "standard": "standard",
     "hd": "hd",
 }
-OPENAI_GPT_IMAGE_QUALITY_VALUES: Sequence[str] = ("low", "medium", "high", "auto", "standard", "hd")
+OPENAI_GPT_IMAGE_QUALITY_VALUES: Sequence[str] = (
+    "low",
+    "medium",
+    "high",
+    "auto",
+    "standard",
+    "hd",
+)
 OPENAI_GPT_IMAGE_QUALITY_MAP = {
     "low": "low",
     "medium": "medium",
@@ -88,9 +95,7 @@ def _validate_allowed_providers(
 
     provider = model_ref.split("/", 1)[0]
     if provider not in allowed_providers:
-        raise ValueError(
-            t("media_provider_not_allowed_for_agent", provider=provider)
-        )
+        raise ValueError(t("media_provider_not_allowed_for_agent", provider=provider))
 
 
 def _get_provider_from_model_ref(model_ref: str | None) -> str | None:
@@ -136,6 +141,9 @@ async def _normalize_image_quality(
 
 class ToolExecutionResult(dict):
     """Structured tool result for UI persistence and LLM replay."""
+
+    def __init__(self, *, display_result: dict[str, Any], llm_result: str) -> None:
+        super().__init__(display_result=display_result, llm_result=llm_result)
 
     @property
     def display_result(self) -> dict[str, Any]:
@@ -337,7 +345,9 @@ async def generate_image(
         default_width = config.get("default_width")
         default_height = config.get("default_height")
         legacy_size = config.get("size")
-        if (default_width is None or default_height is None) and isinstance(legacy_size, str):
+        if (default_width is None or default_height is None) and isinstance(
+            legacy_size, str
+        ):
             size_parts = legacy_size.split("x", 1)
             if len(size_parts) == 2:
                 parsed_width, parsed_height = size_parts

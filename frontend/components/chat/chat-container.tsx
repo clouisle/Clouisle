@@ -24,6 +24,8 @@ interface ChatContainerProps {
   showScrollToBottom?: boolean;
   /** Callback when a previewable code block is opened */
   onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  /** Hide tool call cards and tool execution details */
+  hideToolCalls?: boolean;
 }
 
 function hasOpenCodeFence(content: string) {
@@ -68,6 +70,7 @@ export function ChatContainer({
   onSelectOption,
   showScrollToBottom = true,
   onOpenCodePreview,
+  hideToolCalls = false,
 }: ChatContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
@@ -176,6 +179,7 @@ export function ChatContainer({
                 onSwitchVersion={message.role === 'assistant' && onSwitchVersion ? (versionIndex) => onSwitchVersion(message.id, versionIndex) : undefined}
                 onSelectOption={onSelectOption}
                 onOpenCodePreview={onOpenCodePreview}
+                hideToolCalls={hideToolCalls}
               />
             );
           })}

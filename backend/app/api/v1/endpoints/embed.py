@@ -188,6 +188,7 @@ async def get_embed_agent_info(
             enable_vision=agent.enable_vision,
             enable_file_upload=agent.enable_file_upload,
             file_upload_config=agent.file_upload_config or None,
+            hide_tool_calls=agent.hide_tool_calls,
             embed_config=agent.embed_config or {},
         ),
     )

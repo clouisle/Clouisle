@@ -32,6 +32,8 @@ export type AgentsMessages = {
       maxIterationsLabel: string
       maxIterationsTooltip: string
       maxIterationsHint: string
+      hideToolCalls: string
+      hideToolCallsDesc: string
       conversationConfig: string
       suggestedQuestionsPlaceholder: string
       promptDesc: string

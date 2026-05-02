@@ -213,6 +213,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
           <ChatContainer
             messages={messages}
             isStreaming={isStreaming}
+            hideToolCalls={type === 'agent' ? Boolean((metadata as PublicAgent).hide_tool_calls) : false}
             className="flex-1 min-h-0 overflow-y-auto"
             onSelectOption={(option) => {
               void handleSendMessage(option)

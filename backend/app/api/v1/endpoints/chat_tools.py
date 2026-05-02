@@ -152,17 +152,40 @@ async def execute_tool_call(
             server_name = parts[1]
             actual_tool_name = parts[2]
             try:
+                server_tool = await Tool.filter(
+                    name=server_name, type="mcp", is_enabled=True
+                ).first()
+                if not server_tool or not server_tool.mcp_config:
+                    return json.dumps(
+                        {
+                            "error": t(
+                                "mcp_tool_missing_configuration", tool_name=server_name
+                            )
+                        },
+                        ensure_ascii=False,
+                    )
                 result = await execute_mcp_tool(
-                    server_name=server_name,
+                    mcp_config=server_tool.mcp_config,
                     tool_name=actual_tool_name,
                     arguments=arguments,
                     timeout=tool_timeouts.get("mcp", 60),
                 )
-                return json.dumps(result, ensure_ascii=False)
+                return json.dumps(
+                    {
+                        "success": result.success,
+                        "result": result.result,
+                        "error": result.error,
+                    },
+                    ensure_ascii=False,
+                )
             except Exception as e:
                 logger.exception("MCP tool execution failed: %s", e)
                 return json.dumps(
-                    {"error": resolve_user_visible_error(str(e), fallback_key="mcp_tool_failed")},
+                    {
+                        "error": resolve_user_visible_error(
+                            str(e), fallback_key="mcp_tool_failed"
+                        )
+                    },
                     ensure_ascii=False,
                 )
         return json.dumps({"error": t("invalid_mcp_tool_name")}, ensure_ascii=False)
@@ -174,16 +197,18 @@ async def execute_tool_call(
         if not tool:
             return json.dumps({"error": t("custom_tool_not_found")}, ensure_ascii=False)
 
-        tool_type = tool.tool_type
-        tool_config = tool.config or {}
+        tool_type = tool.custom_type
 
         # HTTP tool
         if tool_type == CustomToolType.HTTP:
             try:
-                from app.llm.tools.executors import execute_http_tool as _execute_http_tool, format_http_result_for_llm
+                from app.llm.tools.executors import (
+                    execute_http_tool as _execute_http_tool,
+                    format_http_result_for_llm,
+                )
 
                 result = await _execute_http_tool(
-                    http_config=tool_config,
+                    http_config=tool.http_config,
                     arguments=arguments,
                     credentials=tool.credentials,
                     timeout=tool_timeouts.get("http", 30),
@@ -195,7 +220,11 @@ async def execute_tool_call(
             except Exception as e:
                 logger.exception("HTTP tool execution failed: %s", e)
                 return json.dumps(
-                    {"error": resolve_user_visible_error(str(e), fallback_key="http_tool_failed")},
+                    {
+                        "error": resolve_user_visible_error(
+                            str(e), fallback_key="http_tool_failed"
+                        )
+                    },
                     ensure_ascii=False,
                 )
 
@@ -213,7 +242,11 @@ async def execute_tool_call(
             except Exception as e:
                 logger.exception("Code tool execution failed: %s", e)
                 return json.dumps(
-                    {"error": resolve_user_visible_error(str(e), fallback_key="code_tool_failed")},
+                    {
+                        "error": resolve_user_visible_error(
+                            str(e), fallback_key="code_tool_failed"
+                        )
+                    },
                     ensure_ascii=False,
                 )
 
@@ -222,7 +255,10 @@ async def execute_tool_call(
     # File download tool
     if tool_name == "file_download":
         try:
-            from app.llm.tools.executors import execute_http_tool as _execute_http_tool, format_http_result_for_llm
+            from app.llm.tools.executors import (
+                execute_http_tool as _execute_http_tool,
+                format_http_result_for_llm,
+            )
 
             result = await _execute_http_tool(
                 http_config={"url": arguments.get("url", ""), "method": "GET"},
@@ -236,7 +272,11 @@ async def execute_tool_call(
         except Exception as e:
             logger.exception("File download failed: %s", e)
             return json.dumps(
-                {"error": resolve_user_visible_error(str(e), fallback_key="download_failed")},
+                {
+                    "error": resolve_user_visible_error(
+                        str(e), fallback_key="download_failed"
+                    )
+                },
                 ensure_ascii=False,
             )
 
@@ -255,12 +295,18 @@ async def execute_tool_call(
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)
             return json.dumps(
-                {"error": resolve_user_visible_error(str(e), fallback_key="tool_execution_failed")},
+                {
+                    "error": resolve_user_visible_error(
+                        str(e), fallback_key="tool_execution_failed"
+                    )
+                },
                 ensure_ascii=False,
             )
 
     # Tool not found
-    return json.dumps({"error": t("tool_not_found", tool_name=tool_name)}, ensure_ascii=False)
+    return json.dumps(
+        {"error": t("tool_not_found", tool_name=tool_name)}, ensure_ascii=False
+    )
 
 
 async def _execute_code_tool(
@@ -273,7 +319,7 @@ async def _execute_code_tool(
     """Execute a code tool."""
     from app.llm.tools.sandbox import execute_code
 
-    code_config = tool.config or {}
+    code_config = tool.code_config or {}
     language = code_config.get("language", "python")
     code = code_config.get("code", "")
     timeout = tool_timeouts.get("code", 60) if tool_timeouts else 60
@@ -286,7 +332,9 @@ async def _execute_code_tool(
             timeout=timeout,
             session_id=session_id,
             agent_id=str(agent.id) if agent and getattr(agent, "id", None) else None,
-            team_id=str(agent.team_id) if agent and getattr(agent, "team_id", None) else None,
+            team_id=str(agent.team_id)
+            if agent and getattr(agent, "team_id", None)
+            else None,
         )
         return {
             "success": result.success,

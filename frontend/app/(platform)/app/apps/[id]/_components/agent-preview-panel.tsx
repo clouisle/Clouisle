@@ -251,6 +251,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
         <ChatContainer
           messages={messages}
           isStreaming={isStreaming}
+          hideToolCalls={agent.hide_tool_calls}
           className="h-full"
           onRegenerate={regenerate}
           onSwitchVersion={switchVersion}

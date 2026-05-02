@@ -8,6 +8,7 @@ import { useTeam } from '@/contexts/team-context'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { ImageUpload } from '@/components/ui/image-upload'
 import {
@@ -64,6 +65,8 @@ interface AgentSettingsDrawerProps {
   onModelChange: (modelId: string | null) => void
   maxIterations: number
   onMaxIterationsChange: (value: number) => void
+  hideToolCalls: boolean
+  onHideToolCallsChange: (value: boolean) => void
   // Tool-related
   hasToolsEnabled: boolean
 }
@@ -115,6 +118,8 @@ export function AgentSettingsDrawer({
   onModelChange,
   maxIterations,
   onMaxIterationsChange,
+  hideToolCalls,
+  onHideToolCallsChange,
   hasToolsEnabled,
 }: AgentSettingsDrawerProps) {
   const t = useTranslations('agents')
@@ -307,6 +312,14 @@ export function AgentSettingsDrawer({
                 <p className="text-xs text-muted-foreground">
                   {ts('maxIterationsHint')}
                 </p>
+              </div>
+
+              <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">{ts('hideToolCalls')}</Label>
+                  <p className="text-xs text-muted-foreground">{ts('hideToolCallsDesc')}</p>
+                </div>
+                <Switch checked={hideToolCalls} onCheckedChange={onHideToolCallsChange} />
               </div>
             </SettingsSection>
 

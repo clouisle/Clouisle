@@ -30,6 +30,8 @@
       "maxIterationsLabel": "Max Iterations",
       "maxIterationsTooltip": "Maximum number of iterations the agent can perform when using tools. Each tool call counts as one iteration.",
       "maxIterationsHint": "Max tool call iterations (1-200)",
+      "hideToolCalls": "Hide Tool Calls",
+      "hideToolCallsDesc": "Hide tool call details in chat while keeping tools enabled.",
       "conversationConfig": "Conversation Settings",
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",

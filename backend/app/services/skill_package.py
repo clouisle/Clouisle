@@ -146,8 +146,8 @@ class SkillPackageService:
             parsed.errors.append("skill_execution_invalid")
             execution = {}
 
-        execution_config, execution_errors = SkillPackageService._normalize_execution_config(
-            execution, skill_root
+        execution_config, execution_errors = (
+            SkillPackageService._normalize_execution_config(execution, skill_root)
         )
         parsed.execution_config = execution_config
         parsed.errors.extend(execution_errors)
@@ -184,8 +184,9 @@ class SkillPackageService:
             return {"mode": "instructions"}, errors
 
         runtime = str(execution.get("runtime") or "").strip().lower()
-        script = execution.get("script")
-        has_script = isinstance(script, str) and script.strip()
+        script_value = execution.get("script")
+        script = script_value if isinstance(script_value, str) else None
+        has_script = bool(script and script.strip())
 
         if not runtime:
             errors.append("skill_script_runtime_required")
@@ -196,7 +197,7 @@ class SkillPackageService:
 
         if not has_script:
             errors.append("skill_script_required")
-        else:
+        elif script is not None:
             script_path = PurePosixPath(script.strip())
             normalized_script = script_path.as_posix()
             if not SkillPackageService._is_safe_relative_path(normalized_script):
@@ -214,8 +215,10 @@ class SkillPackageService:
         else:
             config["limits"] = limits
 
-        artifacts, artifacts_errors = SkillPackageService._normalize_execution_artifacts(
-            execution.get("artifacts", [])
+        artifacts, artifacts_errors = (
+            SkillPackageService._normalize_execution_artifacts(
+                execution.get("artifacts", [])
+            )
         )
         config["artifacts"] = artifacts
         errors.extend(artifacts_errors)
@@ -233,7 +236,9 @@ class SkillPackageService:
             return SandboxLimits().model_dump(), "skill_execution_limits_invalid"
 
     @staticmethod
-    def _normalize_execution_artifacts(value: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    def _normalize_execution_artifacts(
+        value: Any,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
         if value is None:
             return [], []
         if not isinstance(value, list):
@@ -273,7 +278,9 @@ class SkillPackageService:
         path = PurePosixPath(raw)
         if path.is_absolute() and not raw.startswith("/workspace"):
             return None
-        workspace_relative = raw.removeprefix("/workspace/") if raw != "/workspace" else ""
+        workspace_relative = (
+            raw.removeprefix("/workspace/") if raw != "/workspace" else ""
+        )
         relative_path = PurePosixPath(workspace_relative)
         if ".." in relative_path.parts:
             return None

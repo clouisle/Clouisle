@@ -44,8 +44,12 @@ class SkillExecutionResult:
         self.status = status
 
     def to_dict(self) -> dict[str, Any]:
-        if isinstance(self.result, dict) and self.result.get("type") == "skill_instructions":
-            skill = self.result.get("skill") if isinstance(self.result.get("skill"), dict) else {}
+        if (
+            isinstance(self.result, dict)
+            and self.result.get("type") == "skill_instructions"
+        ):
+            raw_skill = self.result.get("skill")
+            skill = raw_skill if isinstance(raw_skill, dict) else {}
             display_skill = {
                 key: skill.get(key)
                 for key in (
@@ -278,7 +282,9 @@ class SkillExecutor:
                 SandboxInputFileSpec(
                     target_path=PurePosixPath(workspace_root, relative_path).as_posix(),
                     content_base64=content_base64,
-                    mode=item.get("mode") if isinstance(item.get("mode"), int) else None,
+                    mode=item.get("mode")
+                    if isinstance(item.get("mode"), int)
+                    else None,
                 )
             )
         return input_files
@@ -315,7 +321,9 @@ class SkillExecutor:
                 input_file.target_path,
             )
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(base64.b64decode(input_file.content_base64, validate=True))
+            target.write_bytes(
+                base64.b64decode(input_file.content_base64, validate=True)
+            )
             if input_file.mode is not None:
                 target.chmod(input_file.mode)
 

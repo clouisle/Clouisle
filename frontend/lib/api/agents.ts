@@ -204,6 +204,7 @@ export interface Agent {
   model?: ModelInfo | null
   system_prompt?: string | null
   max_iterations: number
+  hide_tool_calls: boolean
   tools_config: ToolConfig[]
   variables: VariableDefinition[]
   opening_message?: string | null
@@ -257,6 +258,7 @@ export interface AgentCreateInput {
   model_id?: string | null
   system_prompt?: string | null
   max_iterations?: number
+  hide_tool_calls?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -285,6 +287,7 @@ export interface AgentUpdateInput {
   model_id?: string | null
   system_prompt?: string | null
   max_iterations?: number
+  hide_tool_calls?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -1188,6 +1191,7 @@ export interface PublicAgent {
   enable_vision: boolean
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
+  hide_tool_calls: boolean
   created_by?: CreatorInfo | null
 }
 

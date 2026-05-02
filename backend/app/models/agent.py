@@ -80,6 +80,9 @@ class Agent(models.Model):
     max_iterations = fields.IntField(
         default=5, description="Max tool call iterations (1-200)"
     )
+    hide_tool_calls = fields.BooleanField(
+        default=False, description="Hide tool call details in chat UI"
+    )
 
     # Tools configuration (JSON array)
     # [{"type": "builtin", "name": "web_search"}, {"type": "mcp", "server_id": "xxx"}]
@@ -407,7 +410,10 @@ class Message(models.Model):
     )
 
     # Round metadata
-    round_id = fields.UUIDField(null=True, description="Round ID shared by messages in the same agent execution round")
+    round_id = fields.UUIDField(
+        null=True,
+        description="Round ID shared by messages in the same agent execution round",
+    )
     round_index = fields.IntField(
         default=0,
         description="Stable order of this message within its round",

@@ -208,6 +208,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "model": model_info.model_dump() if model_info else None,
         "system_prompt": agent.system_prompt,
         "max_iterations": agent.max_iterations,
+        "hide_tool_calls": agent.hide_tool_calls,
         "tools_config": agent.tools_config or [],
         "enable_vision": agent.enable_vision,
         "enable_file_upload": agent.enable_file_upload,
@@ -467,6 +468,7 @@ async def create_agent(
         model_id=agent_in.model_id,
         system_prompt=agent_in.system_prompt,
         max_iterations=agent_in.max_iterations,
+        hide_tool_calls=agent_in.hide_tool_calls,
         tools_config=[t.model_dump() for t in agent_in.tools_config],
         enable_vision=agent_in.enable_vision,
         enable_file_upload=agent_in.enable_file_upload,
@@ -592,6 +594,9 @@ async def update_agent(
     if agent_in.max_iterations is not None:
         agent.max_iterations = agent_in.max_iterations
         updated_fields.append("max_iterations")
+    if agent_in.hide_tool_calls is not None:
+        agent.hide_tool_calls = agent_in.hide_tool_calls
+        updated_fields.append("hide_tool_calls")
     if agent_in.opening_message is not None:
         agent.opening_message = agent_in.opening_message
         updated_fields.append("opening_message")

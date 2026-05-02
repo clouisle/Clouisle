@@ -49,6 +49,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [modelId, setModelId] = React.useState<string | null>(null)
   const [systemPrompt, setSystemPrompt] = React.useState('')
   const [maxIterations, setMaxIterations] = React.useState(5)
+  const [hideToolCalls, setHideToolCalls] = React.useState(false)
   const [openingMessage, setOpeningMessage] = React.useState('')
   const [suggestedQuestions, setSuggestedQuestions] = React.useState<string[]>([])
   const [visibility, setVisibility] = React.useState<AgentVisibility>('private')
@@ -89,6 +90,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setModelId(data.model_id || null)
       setSystemPrompt(data.system_prompt || '')
       setMaxIterations(data.max_iterations || 5)
+      setHideToolCalls(data.hide_tool_calls || false)
       setOpeningMessage(data.opening_message || '')
       setSuggestedQuestions(data.suggested_questions || [])
       setVisibility(data.visibility)
@@ -135,6 +137,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         model_id: modelId,
         system_prompt: systemPrompt || null,
         max_iterations: maxIterations,
+        hide_tool_calls: hideToolCalls,
         opening_message: openingMessage || null,
         suggested_questions: suggestedQuestions.filter((q) => q.trim()),
         visibility,
@@ -175,6 +178,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     modelId,
     systemPrompt,
     maxIterations,
+    hideToolCalls,
     openingMessage,
     suggestedQuestions,
     visibility,
@@ -315,7 +319,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
 
           {/* Preview Panel */}
           <div className="w-95 min-w-95 shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
-            <AgentPreviewPanel agent={agent} />
+            <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls }} />
           </div>
         </div>
       </div>
@@ -341,6 +345,8 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         onModelChange={setModelId}
         maxIterations={maxIterations}
         onMaxIterationsChange={setMaxIterations}
+        hideToolCalls={hideToolCalls}
+        onHideToolCallsChange={setHideToolCalls}
         hasToolsEnabled={hasToolsEnabled}
       />
 

@@ -30,6 +30,8 @@
       "maxIterationsLabel": "最大迭代次数",
       "maxIterationsTooltip": "使用工具时，Agent 最多可以进行的迭代次数。每次工具调用计为一次迭代。",
       "maxIterationsHint": "工具调用的最大迭代次数 (1-200)",
+      "hideToolCalls": "隐藏工具调用",
+      "hideToolCallsDesc": "在对话中隐藏工具调用详情，但不禁用工具执行。",
       "conversationConfig": "对话配置",
       "suggestedQuestionsPlaceholder": "每行一个问题",
       "promptDesc": "定义 Agent 的角色和行为",

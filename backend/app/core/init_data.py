@@ -1361,6 +1361,31 @@ async def init_memory_tables():
     logger.info("Memory tables initialization complete")
 
 
+async def init_agent_hide_tool_calls_field():
+    """Add hide_tool_calls field to agents table."""
+    logger.info("Initializing agent hide_tool_calls field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping hide_tool_calls migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS hide_tool_calls BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+
+    logger.info("Agent hide_tool_calls field added successfully")
+
+
 async def init_agent_memory_fields():
     """
     Add enable_memory and memory_config fields to agents table.
@@ -2116,10 +2141,13 @@ async def init_db():
     # 10. Initialize memory tables
     await init_memory_tables()
 
-    # 11. Initialize agent memory fields
+    # 11. Initialize agent hide_tool_calls field
+    await init_agent_hide_tool_calls_field()
+
+    # 12. Initialize agent memory fields
     await init_agent_memory_fields()
 
-    # 12. Initialize agent media generation fields
+    # 13. Initialize agent media generation fields
     await init_agent_media_generation_fields()
 
     logger.info("Database initialization complete.")

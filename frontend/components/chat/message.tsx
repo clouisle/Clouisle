@@ -982,6 +982,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onSelectOption?: (option: string) => void
   /** Callback when a previewable code block is opened */
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  /** Hide tool call cards and tool execution details */
+  hideToolCalls?: boolean
 }
 
 export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
@@ -997,6 +999,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onSwitchVersion,
       onSelectOption,
       onOpenCodePreview,
+      hideToolCalls = false,
       className,
       ...props
     },
@@ -1136,7 +1139,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <FileListContent files={artifactFiles} />
             <ToolOutput
               output={parsedOutput}
-              errorText={isError ? String(parsedOutput) : undefined}
+              errorText={isError ? t('toolExecutionFailed') : undefined}
             />
           </div>
         )
@@ -1145,7 +1148,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       return (
         <ToolOutput
           output={parsedOutput}
-          errorText={isError ? String(parsedOutput) : undefined}
+          errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
     }
@@ -1172,6 +1175,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       // Tool calls: only skip if there's reasoning (they'll be in ChainOfThought)
       // If no reasoning, render them normally in message content
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+        if (hideToolCalls) {
+          return null
+        }
         if (hasReasoning) {
           return null // Skip, will be rendered in ChainOfThought
         }
@@ -1459,6 +1465,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       if (hasReasoning) {
         otherParts.forEach((part, index) => {
           if (isToolCallPart(part)) {
+            if (hideToolCalls) return
             const toolPart = part as ToolCallPart
             // Find matching result
             const result = message.parts.find(
@@ -1492,6 +1499,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </ChainOfThoughtStep>
             )
           } else if (isMcpToolCallPart(part)) {
+            if (hideToolCalls) return
             const mcpPart = part as McpToolCallPart
             // Find matching result
             const result = message.parts.find(
@@ -1518,10 +1526,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   <AIToolContent>
                     <ToolInput input={mcpPart.input} />
                     {result && isMcpToolResultPart(result) && (
-                      <ToolOutput
-                        output={result.output}
-                        errorText={result.isError ? String(result.output) : undefined}
-                      />
+                      renderToolResultContent(result.output, result.isError)
                     )}
                   </AIToolContent>
                 </Tool>
@@ -1567,7 +1572,14 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
     // Filter parts for file attachments
     const fileParts = otherParts.filter(isFilePart)
-    const contentParts = otherParts.filter((p) => !isFilePart(p) && !isToolResultPart(p) && !isMcpToolResultPart(p) && !isTaskPart(p) && !isReasoningPart(p))
+    const contentParts = otherParts.filter((p) => (
+      !isFilePart(p)
+      && !isToolResultPart(p)
+      && !isMcpToolResultPart(p)
+      && !isTaskPart(p)
+      && !isReasoningPart(p)
+      && !(hideToolCalls && (isToolCallPart(p) || isMcpToolCallPart(p)))
+    ))
     const visibleContentParts = (
       isErroredMessage
       && !showPreservedErrorNote

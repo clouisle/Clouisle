@@ -335,6 +335,7 @@ function EmbedAgentChatContent() {
         <ChatContainer
           messages={chat.messages}
           isStreaming={chat.isStreaming}
+          hideToolCalls={agent?.hide_tool_calls ?? false}
           onSelectOption={(option) => {
             void handleSend(option)
           }}

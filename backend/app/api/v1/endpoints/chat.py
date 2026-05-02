@@ -715,8 +715,12 @@ Examples of when to search:
                         agent.team_id,
                         enabled_only=True,
                     )
-                    append_openai_tool(SkillService.to_tool_info(skill).to_openai_schema())
-                    for sandbox_tool in tool_registry.to_openai_sandbox_tools(["read", "write", "bash"]):
+                    append_openai_tool(
+                        SkillService.to_tool_info(skill).to_openai_schema()
+                    )
+                    for sandbox_tool in tool_registry.to_openai_sandbox_tools(
+                        ["read", "write", "bash"]
+                    ):
                         append_openai_tool(sandbox_tool)
                 except Exception as e:
                     logger.warning("Failed to get skill tool %s: %s", skill_id, e)
@@ -925,6 +929,7 @@ async def get_public_agent_info(
             enable_vision=agent.enable_vision,
             enable_file_upload=agent.enable_file_upload,
             file_upload_config=agent.file_upload_config,
+            hide_tool_calls=agent.hide_tool_calls,
             created_by=creator_info,
         )
     )
@@ -1477,6 +1482,7 @@ async def chat_stream(
 
         # Create sandbox session for stateful execution
         from app.services.sandbox.gateway import sandbox_gateway
+
         sandbox_session_id = await sandbox_gateway.create_session(
             agent_id=str(agent.id),
             team_id=str(agent.team_id) if agent.team_id else None,

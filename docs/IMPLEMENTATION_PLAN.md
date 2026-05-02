@@ -2,6 +2,12 @@
 
 ## Active
 
+- **agent-hide-tool-calls** — Complete. Add an Agent setting that hides tool call UI without disabling tool execution. See `docs/plan/agent-hide-tool-calls.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend persistence and API
+  - [x] 3. Frontend setting and chat renderer suppression
+  - [x] 4. Validation and regression checks
+
 - **admin-capabilities** — In progress. Rename admin Tools to Capabilities, add Tools/Skills tabs, and back them with admin-prefixed APIs. See `docs/plan/admin-capabilities.md`
   - [x] 1. Design docs and implementation index
   - [ ] 2. Admin capability permissions and APIs

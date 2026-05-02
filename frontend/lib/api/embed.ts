@@ -32,6 +32,7 @@ export interface EmbedAgentInfo {
   enable_vision: boolean
   enable_file_upload: boolean
   file_upload_config: Record<string, unknown> | null
+  hide_tool_calls: boolean
   embed_config: Record<string, unknown>
 }
 

@@ -4,6 +4,8 @@ Tool execution utilities for chat.
 
 import json
 from app.core.i18n import t
+from typing import Any
+
 from app.models.agent import Agent
 from app.models.tool import Tool
 from app.llm.tools.executors import execute_http_tool as shared_execute_http_tool
@@ -18,7 +20,7 @@ async def execute_tool_call(
     arguments: dict,
     agent: Agent | None = None,
     tool_timeouts: dict | None = None,
-) -> str:
+) -> Any:
     """Execute a tool call and return the result."""
     tool_timeouts = tool_timeouts or {}
 

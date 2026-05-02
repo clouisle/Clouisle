@@ -60,7 +60,9 @@ class SandboxReadTool:
         self.agent_id = agent_id
         self.team_id = team_id
 
-    async def execute(self, path: str, max_chars: int = _MAX_READ_CHARS) -> dict[str, Any]:
+    async def execute(
+        self, path: str, max_chars: int = _MAX_READ_CHARS
+    ) -> dict[str, Any]:
         if not self.session_id:
             return {"success": False, "error": "Sandbox session is required"}
         try:
@@ -78,7 +80,12 @@ class SandboxReadTool:
                 ),
                 cwd="/workspace",
                 limits=SandboxLimits(timeout_seconds=10, disk_mb=1024),
-                metadata={"params": {"path": _runtime_workspace_path(safe_path), "max_chars": limit}},
+                metadata={
+                    "params": {
+                        "path": _runtime_workspace_path(safe_path),
+                        "max_chars": limit,
+                    }
+                },
             )
             result = await sandbox_gateway.submit_and_wait(
                 job,
@@ -121,7 +128,9 @@ class SandboxArtifactTool:
         try:
             artifact_specs = self._build_artifact_specs(paths)
             if not artifact_specs:
-                return self._result(success=False, error="At least one artifact path is required")
+                return self._result(
+                    success=False, error="At least one artifact path is required"
+                )
             artifact_limits = SandboxArtifactLimits(
                 max_size_mb=float(
                     max_size_mb
@@ -175,10 +184,13 @@ class SandboxArtifactTool:
             if isinstance(item, str):
                 raw_path = item
             elif isinstance(item, dict):
-                raw_path = item.get("path")
+                item_path = item.get("path")
+                raw_path = item_path if isinstance(item_path, str) else ""
                 optional = bool(item.get("optional", False))
                 item_description = item.get("description")
-                description = str(item_description) if item_description is not None else None
+                description = (
+                    str(item_description) if item_description is not None else None
+                )
             else:
                 raise ValueError("artifact path item must be a string or object")
             if not isinstance(raw_path, str) or not raw_path.strip():
@@ -209,7 +221,9 @@ class SandboxArtifactTool:
         }
         llm_result = {
             "success": success,
-            "result": "Use these Markdown links in your final answer." if success else None,
+            "result": "Use these Markdown links in your final answer."
+            if success
+            else None,
             "markdown_links": markdown_links,
             "files": files,
             "error": error,
@@ -254,7 +268,12 @@ class SandboxWriteTool:
                 ),
                 cwd="/workspace",
                 limits=SandboxLimits(timeout_seconds=10, disk_mb=1024),
-                metadata={"params": {"path": _runtime_workspace_path(safe_path), "content": text}},
+                metadata={
+                    "params": {
+                        "path": _runtime_workspace_path(safe_path),
+                        "content": text,
+                    }
+                },
             )
             result = await sandbox_gateway.submit_and_wait(
                 job,
@@ -263,7 +282,9 @@ class SandboxWriteTool:
                 team_id=self.team_id,
                 timeout_seconds=15,
             )
-            bytes_written = result.result.get("bytes", 0) if isinstance(result.result, dict) else 0
+            bytes_written = (
+                result.result.get("bytes", 0) if isinstance(result.result, dict) else 0
+            )
             return {
                 "success": result.success,
                 "path": safe_path,
@@ -342,8 +363,8 @@ def register_sandbox_file_tools() -> None:
                 type="array",
                 description=(
                     "Files or directories to collect for download. Prefer objects like "
-                    "[{\"path\":\"/workspace/output/report.docx\",\"description\":\"Generated report\"}]. "
-                    "String paths like [\"output/report.docx\"] are also accepted."
+                    '[{"path":"/workspace/output/report.docx","description":"Generated report"}]. '
+                    'String paths like ["output/report.docx"] are also accepted.'
                 ),
                 required=True,
                 items={
