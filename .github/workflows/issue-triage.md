@@ -7,16 +7,15 @@ permissions:
   issues: read
   pull-requests: read
 engine:
-  id: copilot
+  id: claude
   model: deepseek-v4-pro
   env:
-    COPILOT_PROVIDER_TYPE: anthropic
-    COPILOT_PROVIDER_BASE_URL: https://api.deepseek.com/anthropic
-    COPILOT_MODEL: deepseek-v4-pro
+    ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
+  api-target: api.deepseek.com
 secrets:
-  COPILOT_PROVIDER_API_KEY:
+  ANTHROPIC_API_KEY:
     value: ${{ secrets.DEEPSEEK_API_KEY }}
-    description: DeepSeek API key for the Copilot provider
+    description: DeepSeek API key for the Anthropic-compatible Claude engine endpoint
 network:
   allowed:
     - defaults
