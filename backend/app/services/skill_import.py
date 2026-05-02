@@ -20,7 +20,7 @@ from app.models.skill import (
     SkillImportSessionStatus,
     SkillSourceType,
 )
-from app.models.user import User
+from app.models.user import Team, User
 from app.schemas.response import BusinessError, ResponseCode
 from app.schemas.skill import (
     SkillConflict,
@@ -50,24 +50,43 @@ class SkillImportService:
     """Preview and install package-backed Skills from zip or Git."""
 
     @staticmethod
+    async def _resolve_import_team(
+        *, team_id: UUID | None, user: User, admin_mode: bool = False
+    ) -> Team | None:
+        if team_id is not None:
+            if admin_mode:
+                team = await Team.filter(id=team_id).first()
+                if not team:
+                    raise BusinessError(
+                        code=ResponseCode.TEAM_NOT_FOUND,
+                        msg_key="team_not_found",
+                        status_code=404,
+                    )
+                return team
+            return await SkillService.check_team_access(
+                team_id, user, require_admin=True
+            )
+
+        if not admin_mode and not user.is_superuser:
+            raise BusinessError(
+                code=ResponseCode.PERMISSION_DENIED,
+                msg_key="skill_system_admin_required",
+                status_code=403,
+            )
+        return None
+
+    @staticmethod
     async def preview_zip(
         *,
         team_id: UUID | None,
         user: User,
         filename: str,
         content: bytes,
+        admin_mode: bool = False,
     ) -> SkillImportPreviewOut:
-        team = None
-        if team_id is not None:
-            team = await SkillService.check_team_access(
-                team_id, user, require_admin=True
-            )
-        elif not user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="skill_system_admin_required",
-                status_code=403,
-            )
+        team = await SkillImportService._resolve_import_team(
+            team_id=team_id, user=user, admin_mode=admin_mode
+        )
 
         if not filename.lower().endswith(".zip"):
             raise BusinessError(
@@ -100,18 +119,11 @@ class SkillImportService:
         user: User,
         repo_url: str,
         ref: str | None = None,
+        admin_mode: bool = False,
     ) -> SkillImportPreviewOut:
-        team = None
-        if team_id is not None:
-            team = await SkillService.check_team_access(
-                team_id, user, require_admin=True
-            )
-        elif not user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="skill_system_admin_required",
-                status_code=403,
-            )
+        team = await SkillImportService._resolve_import_team(
+            team_id=team_id, user=user, admin_mode=admin_mode
+        )
 
         SkillImportService._validate_git_url(repo_url)
 
@@ -138,6 +150,7 @@ class SkillImportService:
         items: list[SkillImportInstallItem],
         is_enabled: bool,
         user: User,
+        admin_mode: bool = False,
     ) -> SkillImportInstallOut:
         session = await SkillImportSession.filter(id=session_id).first()
         if not session:
@@ -152,16 +165,9 @@ class SkillImportService:
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST, msg_key="skill_import_session_expired"
             )
-        if session.team_id is not None:
-            await SkillService.check_team_access(
-                session.team_id, user, require_admin=True
-            )
-        elif not user.is_superuser:
-            raise BusinessError(
-                code=ResponseCode.PERMISSION_DENIED,
-                msg_key="skill_system_admin_required",
-                status_code=403,
-            )
+        await SkillImportService._resolve_import_team(
+            team_id=session.team_id, user=user, admin_mode=admin_mode
+        )
 
         source_root = SkillImportService._source_root_for_session(session)
         selected = {item.package_path: item for item in items}

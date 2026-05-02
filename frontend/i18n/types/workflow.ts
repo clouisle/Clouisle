@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-30T21:21:23.500Z
+// GENERATED — 2026-05-02T07:54:58.820Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {

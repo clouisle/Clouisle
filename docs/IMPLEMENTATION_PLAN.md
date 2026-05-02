@@ -2,6 +2,14 @@
 
 ## Active
 
+- **admin-capabilities** — In progress. Rename admin Tools to Capabilities, add Tools/Skills tabs, and back them with admin-prefixed APIs. See `docs/plan/admin-capabilities.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Admin capability permissions and APIs
+  - [ ] 3. Admin route, navigation, search, and i18n
+  - [ ] 4. Admin Tools tab on `/admin/tools` APIs
+  - [ ] 5. Admin Skills tab on `/admin/skills` APIs
+  - [ ] 6. Validation and regression checks
+
 - **sandbox-worker-dev-container** — Complete. Add a no-bind-mount local dev container mode for the sandbox worker, preinstall Python/Node/common tools, and remove shell command allowlist restrictions while preserving sandbox resource/path isolation. See `docs/plan/sandbox-worker-dev-container.md`
   - [x] 1. Planning docs
   - [x] 2. Sandbox Worker Dockerfile

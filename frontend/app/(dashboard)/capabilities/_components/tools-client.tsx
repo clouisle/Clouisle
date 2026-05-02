@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Image from 'next/image'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
     Plus,
@@ -34,19 +34,17 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-    toolsApi,
-    teamsApi,
     type Tool,
     type ToolType,
     isPresetToolCategory,
     type PresetToolCategory,
     type ToolFilterOption,
-    type UserTeamInfo,
     type ToolDetail,
     type ToolCreateInput,
     type ToolUpdateInput,
     type PageData,
 } from '@/lib/api'
+import { adminToolsApi, teamsApi as adminTeamsApi, type Team } from '@/lib/api/admin'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -89,11 +87,11 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { HttpToolDialog } from '@/app/(platform)/app/tools/_components/http-tool-dialog'
-import { McpToolDialog } from '@/app/(platform)/app/tools/_components/mcp-tool-dialog'
+import { HttpToolDialog } from '@/app/(platform)/app/capabilities/_components/http-tool-dialog'
+import { McpToolDialog } from '@/app/(platform)/app/capabilities/_components/mcp-tool-dialog'
 import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
-import { ToolConfigDialog } from '@/app/(platform)/app/tools/_components/tool-config-dialog'
+import { ToolConfigDialog } from '@/app/(platform)/app/capabilities/_components/tool-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
@@ -122,13 +120,12 @@ const categoryIcons: Record<PresetToolCategory, React.ReactNode> = {
 export function ToolsClient() {
     const t = useTranslations('tools')
     const commonT = useTranslations('common')
-    const locale = useLocale()
     const router = useRouter()
     const { canPerform } = useCanPerform()
 
     // 数据状态
     const [tools, setTools] = React.useState<Tool[]>([])
-    const [teams, setTeams] = React.useState<UserTeamInfo[]>([])
+    const [teams, setTeams] = React.useState<Team[]>([])
     const [currentTeamId, setCurrentTeamId] = React.useState<string>('')  // 用于创建工具时的默认团队
     const [categoryOptions, setCategoryOptions] = React.useState<ToolFilterOption[]>([])
     const [creatorOptions, setCreatorOptions] = React.useState<ToolFilterOption[]>([])
@@ -166,10 +163,10 @@ export function ToolsClient() {
     React.useEffect(() => {
         const loadTeams = async () => {
             try {
-                const data = await teamsApi.getMyTeams()
-                setTeams(data)
-                if (data.length > 0 && !currentTeamId) {
-                    setCurrentTeamId(data[0].id)
+                const data = await adminTeamsApi.getTeams(1, 100)
+                setTeams(data.items)
+                if (data.items.length > 0 && !currentTeamId) {
+                    setCurrentTeamId(data.items[0].id)
                 }
             } catch {
                 // 忽略错误
@@ -188,7 +185,7 @@ export function ToolsClient() {
         setIsLoading(true)
         try {
             const [toolsData, filterOptions] = await Promise.all([
-                toolsApi.listPage({
+                adminToolsApi.listPage({
                     page,
                     pageSize,
                     search: searchQuery || undefined,
@@ -198,7 +195,7 @@ export function ToolsClient() {
                     team_id: selectedTeams.length > 0 ? selectedTeams : undefined,
                     creator: selectedCreators.length > 0 ? selectedCreators : undefined,
                 }),
-                toolsApi.getFilterOptions(),
+                adminToolsApi.getFilterOptions(),
             ])
             setTools(toolsData.items)
             setPageData(toolsData)
@@ -210,7 +207,7 @@ export function ToolsClient() {
         } finally {
             setIsLoading(false)
         }
-    }, [page, pageSize, searchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators, locale])
+    }, [page, pageSize, searchQuery, selectedTypes, selectedCategories, selectedStatuses, selectedTeams, selectedCreators])
 
     React.useEffect(() => {
         loadTools()
@@ -311,7 +308,7 @@ export function ToolsClient() {
 
     // 创建 Code 工具
     const handleCreateCodeTool = () => {
-        router.push(`/tools/code?teamId=${currentTeamId}`)
+        router.push(`/capabilities/code?teamId=${currentTeamId}`)
     }
 
     // 创建 MCP 工具
@@ -337,12 +334,12 @@ export function ToolsClient() {
 
         // 对于代码工具，直接跳转
         if (tool.type === 'custom' && tool.custom_type === 'code') {
-            router.push(`/tools/code?id=${tool.id}`)
+            router.push(`/capabilities/code?id=${tool.id}`)
             return
         }
 
         try {
-            const detail = await toolsApi.getById(tool.id)
+            const detail = await adminToolsApi.getById(tool.id)
 
             if (detail.type === 'mcp') {
                 setEditingMcpTool(detail)
@@ -352,14 +349,14 @@ export function ToolsClient() {
                     setEditingHttpTool(detail)
                     setHttpDialogOpen(true)
                 } else if (detail.custom_type === 'code') {
-                    router.push(`/tools/code?id=${tool.id}`)
+                    router.push(`/capabilities/code?id=${tool.id}`)
                 } else {
                     // 未知的自定义工具类型，尝试根据配置判断
                     if (detail.http_config && Object.keys(detail.http_config).length > 0) {
                         setEditingHttpTool(detail)
                         setHttpDialogOpen(true)
                     } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
-                        router.push(`/tools/code?id=${tool.id}`)
+                        router.push(`/capabilities/code?id=${tool.id}`)
                     } else {
                         toast.error(t('error.unknownToolType'))
                     }
@@ -376,10 +373,10 @@ export function ToolsClient() {
 
         try {
             if (editingHttpTool?.id) {
-                await toolsApi.update(editingHttpTool.id, data as ToolUpdateInput)
+                await adminToolsApi.update(editingHttpTool.id, data as ToolUpdateInput)
                 toast.success(t('toolUpdated'))
             } else {
-                await toolsApi.create(currentTeamId, data as ToolCreateInput)
+                await adminToolsApi.create(currentTeamId, data as ToolCreateInput)
                 toast.success(t('toolCreated'))
             }
             setHttpDialogOpen(false)
@@ -397,10 +394,10 @@ export function ToolsClient() {
 
         try {
             if (editingMcpTool?.id) {
-                await toolsApi.update(editingMcpTool.id, data as ToolUpdateInput)
+                await adminToolsApi.update(editingMcpTool.id, data as ToolUpdateInput)
                 toast.success(t('toolUpdated'))
             } else {
-                await toolsApi.create(currentTeamId, data as ToolCreateInput)
+                await adminToolsApi.create(currentTeamId, data as ToolCreateInput)
                 toast.success(t('toolCreated'))
             }
             setMcpDialogOpen(false)
@@ -419,7 +416,7 @@ export function ToolsClient() {
         try {
             let configExists = false
             try {
-                await toolsApi.getConfig(configuringTool.name, currentTeamId)
+                await adminToolsApi.getConfig(configuringTool.name, currentTeamId)
                 configExists = true
             } catch (error: unknown) {
                 const apiError = error as { response?: { status?: number } }
@@ -429,9 +426,9 @@ export function ToolsClient() {
             }
 
             if (configExists) {
-                await toolsApi.updateConfig(configuringTool.name, config, currentTeamId)
+                await adminToolsApi.updateConfig(configuringTool.name, config, currentTeamId)
             } else {
-                await toolsApi.createConfig(configuringTool.name, config, currentTeamId)
+                await adminToolsApi.createConfig(configuringTool.name, config, currentTeamId)
             }
 
             toast.success(t('configSaved'))
@@ -453,7 +450,7 @@ export function ToolsClient() {
     const handleToggleStatus = async (tool: Tool) => {
         if (!tool.id) return
         try {
-            await toolsApi.toggle(tool.id)
+            await adminToolsApi.toggle(tool.id)
             toast.success(tool.is_enabled ? t('toolDisabled') : t('toolEnabled'))
             loadTools()
         } catch {
@@ -465,7 +462,7 @@ export function ToolsClient() {
     const handleDuplicate = async (tool: Tool) => {
         if (!tool.id) return
         try {
-            await toolsApi.duplicate(tool.id)
+            await adminToolsApi.duplicate(tool.id)
             toast.success(t('toolDuplicated'))
             loadTools()
         } catch {
@@ -499,7 +496,7 @@ export function ToolsClient() {
     // 确认批量删除
     const confirmBulkDelete = async () => {
         try {
-            const promises = Array.from(selectedTools).map((id) => toolsApi.delete(id))
+            const promises = Array.from(selectedTools).map((id) => adminToolsApi.delete(id))
             await Promise.all(promises)
             toast.success(t('bulkDeleted', { count: selectedTools.size }))
             setSelectedTools(new Set())
@@ -555,7 +552,7 @@ export function ToolsClient() {
                     <p className="text-muted-foreground">{t('description')}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <PermissionGuard permission="tool:create">
+                    <PermissionGuard permission="admin:capability:create">
                         <DropdownMenu>
                             <DropdownMenuTrigger
                                 render={
@@ -750,15 +747,15 @@ export function ToolsClient() {
                                         </TableCell>
                                         <TableCell>{getEnabledBadge(tool.is_enabled)}</TableCell>
                                         <TableCell>
-                                            {((tool.type !== 'builtin' && tool.id && (canPerform('tool:update') || canPerform('tool:delete'))) ||
-                                                (tool.type === 'builtin' && tool.requires_config && canPerform('tool:update'))) && (
+                                            {((tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
+                                                (tool.type === 'builtin' && tool.requires_config && canPerform('admin:capability:update'))) && (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                                                             <MoreHorizontal className="h-4 w-4" />
                                                             <span className="sr-only">{t('common.openMenu')}</span>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
-                                                            {canPerform('tool:update') && (
+                                                            {canPerform('admin:capability:update') && (
                                                                 <>
                                                                     <DropdownMenuItem onClick={() => handleEdit(tool)}>
                                                                         <Pencil className="mr-2 h-4 w-4" />
@@ -795,7 +792,7 @@ export function ToolsClient() {
                                                                 </>
                                                             )}
 
-                                                            {tool.type !== 'builtin' && tool.id && canPerform('tool:delete') && (
+                                                            {tool.type !== 'builtin' && tool.id && canPerform('admin:capability:delete') && (
                                                                 <>
                                                                     <DropdownMenuSeparator />
                                                                     <DropdownMenuItem
@@ -937,7 +934,7 @@ export function ToolsClient() {
             />
 
             {/* 批量操作浮动工具栏 */}
-            {selectedTools.size > 0 && canPerform('tool:delete') && (
+            {selectedTools.size > 0 && canPerform('admin:capability:delete') && (
                 <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
                     <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
                         <Button

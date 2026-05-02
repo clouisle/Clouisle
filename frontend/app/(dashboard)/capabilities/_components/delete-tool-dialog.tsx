@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { toolsApi, type Tool } from '@/lib/api'
+import { type Tool } from '@/lib/api'
+import { adminToolsApi } from '@/lib/api/admin'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -32,7 +33,7 @@ export function DeleteToolDialog({ open, onOpenChange, tool, onSuccess }: Delete
 
     setIsDeleting(true)
     try {
-      await toolsApi.delete(tool.id)
+      await adminToolsApi.delete(tool.id)
       toast.success(t('toolDeleted'))
       onSuccess?.()
       onOpenChange(false)

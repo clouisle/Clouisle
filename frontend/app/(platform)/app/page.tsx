@@ -588,7 +588,7 @@ export default function PlatformHomePage() {
                   {t('actions.createKB.title')}
                 </Button>
               </Link>
-              <Link href="/app/tools" className="block">
+              <Link href="/app/capabilities" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Wrench className="mr-2 h-4 w-4" />
                   {t('actions.manageTools.title')}

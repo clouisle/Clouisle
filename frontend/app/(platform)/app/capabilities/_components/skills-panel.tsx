@@ -42,7 +42,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
-import { PermissionGuard } from '@/components/permission-guard'
+import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import {
@@ -165,6 +165,7 @@ function PreviewRow({
 export function SkillsPanel() {
   const t = useTranslations('platform.skills')
   const { currentTeam } = useTeam()
+  const { canPerform } = useCanPerform()
 
   const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
@@ -357,7 +358,7 @@ export function SkillsPanel() {
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             {t('refresh')}
           </Button>
-          <PermissionGuard permission="tool:create">
+          <PermissionGuard permission="skill:create">
             <Button onClick={openImportDialog}>
               <Plus className="mr-2 h-4 w-4" />
               {t('import.open')}
@@ -376,7 +377,7 @@ export function SkillsPanel() {
             <PackageOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <CardTitle>{t('noSkills')}</CardTitle>
             <CardDescription className="mt-2">{t('noSkillsHint')}</CardDescription>
-            <PermissionGuard permission="tool:create">
+            <PermissionGuard permission="skill:create">
               <Button className="mt-4" onClick={openImportDialog}>
                 <Plus className="mr-2 h-4 w-4" />
                 {t('import.open')}
@@ -398,7 +399,7 @@ export function SkillsPanel() {
                   'group cursor-pointer transition-all hover:shadow-md hover:border-primary/50 py-0! h-36',
                   !skill.is_enabled && 'opacity-60'
                 )}
-                onClick={() => openTestDialog(skill)}
+                onClick={() => canPerform('skill:execute') && openTestDialog(skill)}
               >
                 <CardContent className="flex h-full flex-col justify-between px-2.5 py-3">
                   <div className="flex items-start gap-2">
@@ -433,20 +434,22 @@ export function SkillsPanel() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          openTestDialog(skill)
-                        }}
-                      >
-                        <Play className="h-3.5 w-3.5" />
-                      </Button>
+                      {canPerform('skill:execute') && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openTestDialog(skill)
+                          }}
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
 
                       {canModify && (
-                        <PermissionGuard permission="tool:delete">
+                        <PermissionGuard permission="skill:delete">
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               render={
@@ -651,7 +654,7 @@ export function SkillsPanel() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestingSkill(null)}>{t('close')}</Button>
-            <Button onClick={handleRunTest} disabled={testLoading}>
+            <Button onClick={handleRunTest} disabled={testLoading || !canPerform('skill:execute')}>
               {testLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('runTest')}
             </Button>

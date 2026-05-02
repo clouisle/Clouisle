@@ -38,3 +38,6 @@ export type { SSOProviderAdmin, SSOProviderCreate, SSOProviderUpdate } from './s
 
 export { conversationsApi } from './conversations'
 export type { AdminConversationListItem, AdminConversationWithMessages, ConversationStats, ConversationTrends, AdminConversationQueryParams } from './conversations'
+
+export { adminToolsApi } from './tools'
+export { adminSkillsApi, type AdminSkill, type AdminSkillDetail, type AdminSkillListParams } from './skills'

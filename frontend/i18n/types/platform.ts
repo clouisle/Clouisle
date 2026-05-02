@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-30T21:21:23.494Z
+// GENERATED — 2026-05-02T07:54:58.814Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -6,7 +6,7 @@ export type PlatformMessages = {
       home: string
       apps: string
       kb: string
-      tools: string
+      capabilities: string
       models: string
       notifications: string
       memories: string
@@ -460,13 +460,23 @@ export type PlatformMessages = {
       description: string
       noSkills: string
       noSkillsHint: string
+      searchPlaceholder: string
       refresh: string
       updated: string
       deleted: string
       enabled: string
       disabled: string
+      enable: string
+      disable: string
       system: string
       team: string
+      scope: string
+      sources: {
+        zip: string
+        git: string
+        manual_text: string
+        legacy: string
+      }
       test: string
       delete: string
       cancel: string
@@ -480,6 +490,13 @@ export type PlatformMessages = {
       testTitle: string
       testDescription: string
       noDescription: string
+      rowsPerPage: string
+      pageInfo: string
+      category: string
+      version: string
+      source: string
+      updatedAt: string
+      actions: string
       import: {
         open: string
         title: string

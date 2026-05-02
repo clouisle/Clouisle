@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useLocale, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -42,21 +42,22 @@ import { McpToolDialog } from './_components/mcp-tool-dialog'
 import { ToolShareDialog } from './_components/tool-share-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
-type ToolsTab = 'tools' | 'skills'
+type CapabilityTab = 'tools' | 'skills'
 
-export default function ToolsPage() {
+export default function CapabilitiesPage() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
-  const locale = useLocale()
   const { currentTeam } = useTeam()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { canPerform } = useCanPerform()
+  const canReadTools = canPerform('tool:read')
+  const canReadSkills = canPerform('skill:read')
 
   // 没有团队时重定向到首页
   useRequireTeam()
 
-  const [activeTab, setActiveTab] = useState<ToolsTab>('tools')
+  const [activeTab, setActiveTab] = useState<CapabilityTab>('tools')
   const [tools, setTools] = useState<Tool[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
@@ -86,13 +87,16 @@ export default function ToolsPage() {
 
   useEffect(() => {
     const tab = searchParams.get('tab')
-    setActiveTab(tab === 'skills' ? 'skills' : 'tools')
-  }, [searchParams])
+    const requestedTab: CapabilityTab = tab === 'skills' ? 'skills' : 'tools'
+    const fallbackTab: CapabilityTab = canReadTools ? 'tools' : 'skills'
+    setActiveTab(requestedTab === 'skills' && canReadSkills ? 'skills' : fallbackTab)
+  }, [searchParams, canReadTools, canReadSkills])
 
   const handleTabChange = (value: string) => {
-    const nextTab: ToolsTab = value === 'skills' ? 'skills' : 'tools'
+    const fallbackTab: CapabilityTab = canReadTools ? 'tools' : 'skills'
+    const nextTab: CapabilityTab = value === 'skills' && canReadSkills ? 'skills' : fallbackTab
     setActiveTab(nextTab)
-    router.replace(nextTab === 'tools' ? '/app/tools' : '/app/tools?tab=skills', { scroll: false })
+    router.replace(nextTab === 'tools' ? '/app/capabilities' : '/app/capabilities?tab=skills', { scroll: false })
   }
 
   // 加载用户的团队列表
@@ -110,7 +114,10 @@ export default function ToolsPage() {
 
   // 加载工具列表
   const loadTools = useCallback(async () => {
-    if (!currentTeam?.id) return
+    if (!currentTeam?.id || !canReadTools) {
+      setLoading(false)
+      return
+    }
 
     setLoading(true)
     try {
@@ -123,7 +130,7 @@ export default function ToolsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentTeam?.id, locale])
+  }, [currentTeam?.id, canReadTools])
 
   useEffect(() => {
     loadTools()
@@ -153,7 +160,7 @@ export default function ToolsPage() {
 
     // 对于代码工具，可以直接跳转，不需要再获取详情
     if (tool.type === 'custom' && tool.custom_type === 'code') {
-      router.push(`/app/tools/code?id=${tool.id}`)
+      router.push(`/app/capabilities/code?id=${tool.id}`)
       return
     }
 
@@ -169,14 +176,14 @@ export default function ToolsPage() {
           setHttpDialogOpen(true)
         } else if (detail.custom_type === 'code') {
           // 代码工具跳转到独立页面
-          router.push(`/app/tools/code?id=${tool.id}`)
+          router.push(`/app/capabilities/code?id=${tool.id}`)
         } else {
           // 未知的自定义工具类型，尝试根据配置判断
           if (detail.http_config && Object.keys(detail.http_config).length > 0) {
             setEditingHttpTool(detail)
             setHttpDialogOpen(true)
           } else if (detail.code_config && Object.keys(detail.code_config).length > 0) {
-            router.push(`/app/tools/code?id=${tool.id}`)
+            router.push(`/app/capabilities/code?id=${tool.id}`)
           } else {
             toast.error(t('tools.error.unknownToolType'))
           }
@@ -195,7 +202,7 @@ export default function ToolsPage() {
 
   // 创建 Code 工具
   const handleCreateCodeTool = () => {
-    router.push('/app/tools/code')
+    router.push('/app/capabilities/code')
   }
 
   // 创建 MCP 工具
@@ -329,17 +336,22 @@ export default function ToolsPage() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="tools">
-            <Wrench className="mr-2 h-4 w-4" />
-            {t('tools.tabs.tools')}
-          </TabsTrigger>
-          <TabsTrigger value="skills">
-            <PackageOpen className="mr-2 h-4 w-4" />
-            {t('tools.tabs.skills')}
-          </TabsTrigger>
+          {canReadTools && (
+            <TabsTrigger value="tools">
+              <Wrench className="mr-2 h-4 w-4" />
+              {t('tools.tabs.tools')}
+            </TabsTrigger>
+          )}
+          {canReadSkills && (
+            <TabsTrigger value="skills">
+              <PackageOpen className="mr-2 h-4 w-4" />
+              {t('tools.tabs.skills')}
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="tools" className="space-y-4">
+        {canReadTools && (
+          <TabsContent value="tools" className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold tracking-tight">{t('tools.tabs.tools')}</h2>
@@ -439,8 +451,8 @@ export default function ToolsPage() {
           ) : (
             <ToolList
               tools={tools}
-              onSelect={handleSelectTool}
-              onTest={handleSelectTool}
+              onSelect={canPerform('tool:execute') ? handleSelectTool : undefined}
+              onTest={canPerform('tool:execute') ? handleSelectTool : undefined}
               onEdit={canPerform('tool:update') ? handleEditTool : undefined}
               onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
               onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
@@ -448,10 +460,13 @@ export default function ToolsPage() {
             />
           )}
         </TabsContent>
+        )}
 
-        <TabsContent value="skills" className="space-y-4">
-          <SkillsPanel />
-        </TabsContent>
+        {canReadSkills && (
+          <TabsContent value="skills" className="space-y-4">
+            <SkillsPanel />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* 工具测试面板 */}

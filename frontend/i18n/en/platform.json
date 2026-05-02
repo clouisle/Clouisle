@@ -4,7 +4,7 @@
       "home": "Home",
       "apps": "Apps",
       "kb": "Knowledge Bases",
-      "tools": "Tools",
+      "capabilities": "Capabilities",
       "models": "Models",
       "notifications": "Notifications",
       "memories": "My Memories"
@@ -54,7 +54,7 @@
       "title": "Dashboard",
       "welcome": "Welcome back, {name}",
       "welcomeDefault": "Welcome to Clouisle",
-      "description": "Manage your AI applications, knowledge bases, tools, and models",
+      "description": "Manage your AI applications, knowledge bases, capabilities, and models",
       "viewAll": "View All",
       "createNew": "Create New",
       "stats": {
@@ -94,8 +94,8 @@
           "description": "Configure AI models for your team"
         },
         "manageTools": {
-          "title": "Manage Tools",
-          "description": "Configure and manage available tools"
+          "title": "Manage Capabilities",
+          "description": "Manage available tools and skills"
         }
       },
       "recentItems": "Recent Items",
@@ -128,8 +128,8 @@
           "description": "Upload documents and create knowledge bases"
         },
         "tools": {
-          "title": "Tools",
-          "description": "Configure and manage available tools"
+          "title": "Capabilities",
+          "description": "Manage available tools and skills"
         },
         "models": {
           "title": "Models",
@@ -154,8 +154,8 @@
       "createFirstKb": "Create First Knowledge Base"
     },
     "tools": {
-      "title": "Tool Center",
-      "description": "Manage and configure available tools",
+      "title": "Capabilities",
+      "description": "Manage available tools and skills",
       "createTool": "Create Tool",
       "noTools": "No tools yet",
       "createToolHint": "Add tools to extend your AI application capabilities",
@@ -458,13 +458,23 @@
       "description": "Import Skills from zip bundles or Git repositories, then let Agents call the installed Skills.",
       "noSkills": "No skills yet",
       "noSkillsHint": "Import a zip bundle or Git repository that contains one or more SKILL.md packages.",
+      "searchPlaceholder": "Search Skills...",
       "refresh": "Refresh",
       "updated": "Skill updated successfully",
       "deleted": "Skill deleted successfully",
       "enabled": "Enabled",
       "disabled": "Disabled",
+      "enable": "Enable",
+      "disable": "Disable",
       "system": "System",
       "team": "Team",
+      "scope": "Scope",
+      "sources": {
+        "zip": "Zip",
+        "git": "Git",
+        "manual_text": "Manual",
+        "legacy": "Legacy"
+      },
       "test": "Test",
       "delete": "Delete",
       "cancel": "Cancel",
@@ -478,6 +488,13 @@
       "testTitle": "Test {name}",
       "testDescription": "Run this Skill with JSON arguments. Instructions-mode Skills return their SKILL.md instructions.",
       "noDescription": "No description",
+      "rowsPerPage": "Rows per page",
+      "pageInfo": "Page {page} of {total}",
+      "category": "Category",
+      "version": "Version",
+      "source": "Source",
+      "updatedAt": "Updated At",
+      "actions": "Actions",
       "import": {
         "open": "Import Skills",
         "title": "Import Skills",

@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
+import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,10 +38,12 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { formatValidationSummaryMessage } from '@/lib/validation'
 import { toast } from 'sonner'
-import { toolsApi, ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
-import { ApiError, teamsApi, UserTeamInfo } from '@/lib/api'
+import { ToolCreateInput, ToolUpdateInput, CodeConfig, ToolParameter, ToolCategory, SandboxArtifactConfig, SandboxLimitsConfig } from '@/lib/api/tools'
+import { ApiError } from '@/lib/api'
+import { adminToolsApi, teamsApi as adminTeamsApi, type Team } from '@/lib/api/admin'
 import { ImageUpload } from '@/components/ui/image-upload'
-import { ToolCategoryInput } from '@/app/(platform)/app/tools/_components/tool-category-input'
+import { ToolCategoryInput } from '@/app/(platform)/app/capabilities/_components/tool-category-input'
+import { useCanPerform } from '@/components/permission-guard'
 import Editor from '@monaco-editor/react'
 
 const CODE_LANGUAGES = [
@@ -212,9 +215,12 @@ function CodeToolPageContent() {
   const teamIdParam = searchParams.get('teamId')
   const t = useTranslations('tools')
   const tCommon = useTranslations('common')
+  const { canPerform } = useCanPerform()
+  const canSave = canPerform(toolId ? 'admin:capability:update' : 'admin:capability:create')
+  const canExecute = canPerform('admin:capability:execute')
 
   // 团队信息
-  const [teams, setTeams] = useState<UserTeamInfo[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [currentTeamId, setCurrentTeamId] = useState<string>(teamIdParam || '')
 
   // 工具信息
@@ -265,10 +271,10 @@ function CodeToolPageContent() {
   useEffect(() => {
     const loadTeams = async () => {
       try {
-        const data = await teamsApi.getMyTeams()
-        setTeams(data)
-        if (data.length > 0 && !currentTeamId) {
-          setCurrentTeamId(data[0].id)
+        const data = await adminTeamsApi.getTeams(1, 100)
+        setTeams(data.items)
+        if (data.items.length > 0 && !currentTeamId) {
+          setCurrentTeamId(data.items[0].id)
         }
       } catch {
         // 忽略错误
@@ -280,7 +286,7 @@ function CodeToolPageContent() {
   const loadTool = useCallback(async (id: string) => {
     setIsLoading(true)
     try {
-      const tool = await toolsApi.getById(id)
+      const tool = await adminToolsApi.getById(id)
       setName(tool.name)
       setDisplayName(tool.display_name)
       setDescription(tool.description)
@@ -313,7 +319,7 @@ function CodeToolPageContent() {
       }
     } catch {
       // toast handled by API interceptor
-      router.push('/tools')
+      router.push('/capabilities')
     } finally {
       setIsLoading(false)
     }
@@ -507,12 +513,12 @@ function CodeToolPageContent() {
       }
 
       if (isEditing && toolId) {
-        await toolsApi.update(toolId, data)
+        await adminToolsApi.update(toolId, data)
         toast.success(t('success.updated'))
       } else {
-        await toolsApi.create(currentTeamId, data as ToolCreateInput)
+        await adminToolsApi.create(currentTeamId, data as ToolCreateInput)
         toast.success(t('success.created'))
-        router.push('/tools')
+        router.push('/capabilities')
       }
     } catch (error) {
       if (error instanceof ApiError && error.isValidationError()) {
@@ -554,7 +560,7 @@ function CodeToolPageContent() {
       }
 
       const requestTimeoutSeconds = runtime.limits.timeout_seconds ?? 30
-      const result = await toolsApi.executeCode({
+      const result = await adminToolsApi.executeCode({
         language,
         code,
         params,
@@ -621,7 +627,7 @@ function CodeToolPageContent() {
   }
 
   const handleBack = () => {
-    router.push('/tools')
+    router.push('/capabilities')
   }
 
   if (isLoading) {
@@ -681,15 +687,19 @@ function CodeToolPageContent() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="sm" onClick={handleRun} disabled={isRunning || !code.trim()}>
-            {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            <span className="ml-1.5">{t('codeEditor.run')}</span>
-          </Button>
+          {canExecute && (
+            <Button variant="outline" size="sm" onClick={handleRun} disabled={isRunning || !code.trim()}>
+              {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              <span className="ml-1.5">{t('codeEditor.run')}</span>
+            </Button>
+          )}
 
-          <Button size="sm" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            <span className="ml-1.5">{tCommon('save')}</span>
-          </Button>
+          {canSave && (
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              <span className="ml-1.5">{tCommon('save')}</span>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -1187,12 +1197,14 @@ function CodeToolPageContent() {
 
 export default function CodeToolPage() {
   return (
-    <Suspense fallback={
+    <RoutePermissionGuard>
+      <Suspense fallback={
       <div className="flex items-center justify-center h-full">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     }>
       <CodeToolPageContent />
-    </Suspense>
+      </Suspense>
+    </RoutePermissionGuard>
   )
 }

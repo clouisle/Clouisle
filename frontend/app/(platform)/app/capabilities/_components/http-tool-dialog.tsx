@@ -29,7 +29,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory, ToolParameter, FormField } from '@/lib/api/tools'
-import type { UserTeamInfo } from '@/lib/api'
 import { ImageUpload } from '@/components/ui/image-upload'
 import { FieldError } from '@/components/ui/field'
 import {
@@ -213,12 +212,17 @@ function VariableInput({ value, onChange, variables, placeholder, className, mul
   )
 }
 
+interface TeamOption {
+  id: string
+  name: string
+}
+
 interface HttpToolDialogProps {
   tool?: ToolDetail | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
-  teams?: UserTeamInfo[]
+  teams?: TeamOption[]
   selectedTeamId?: string
   onSelectedTeamChange?: (teamId: string | null) => void
 }

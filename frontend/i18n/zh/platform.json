@@ -4,7 +4,7 @@
       "home": "首页",
       "apps": "应用",
       "kb": "知识库",
-      "tools": "工具",
+      "capabilities": "能力",
       "models": "模型",
       "notifications": "通知",
       "memories": "我的记忆"
@@ -54,7 +54,7 @@
       "title": "控制台",
       "welcome": "欢迎回来，{name}",
       "welcomeDefault": "欢迎使用 Clouisle",
-      "description": "您可以在这里管理 AI 应用、知识库、工具和模型",
+      "description": "您可以在这里管理 AI 应用、知识库、能力和模型",
       "viewAll": "查看全部",
       "createNew": "创建新应用",
       "stats": {
@@ -94,8 +94,8 @@
           "description": "为您的团队配置 AI 模型"
         },
         "manageTools": {
-          "title": "管理工具",
-          "description": "配置和管理可用的工具"
+          "title": "管理能力",
+          "description": "管理可用的工具和 Skills"
         }
       },
       "recentItems": "最近项目",
@@ -128,8 +128,8 @@
           "description": "上传文档并创建知识库"
         },
         "tools": {
-          "title": "工具",
-          "description": "配置和管理可用的工具"
+          "title": "能力",
+          "description": "管理可用的工具和 Skills"
         },
         "models": {
           "title": "模型",
@@ -154,8 +154,8 @@
       "createFirstKb": "创建第一个知识库"
     },
     "tools": {
-      "title": "工具中心",
-      "description": "管理和配置可用的工具",
+      "title": "能力",
+      "description": "管理可用的工具和 Skills",
       "createTool": "创建工具",
       "noTools": "暂无工具",
       "createToolHint": "添加工具以扩展 AI 应用的能力",
@@ -458,13 +458,23 @@
       "description": "从 zip 包或 Git 仓库导入 Skills，然后让 Agent 调用已安装的 Skills。",
       "noSkills": "暂无 Skills",
       "noSkillsHint": "导入包含一个或多个 SKILL.md 包的 zip 包或 Git 仓库。",
+      "searchPlaceholder": "搜索 Skills...",
       "refresh": "刷新",
       "updated": "Skill 更新成功",
       "deleted": "Skill 删除成功",
       "enabled": "已启用",
       "disabled": "已禁用",
+      "enable": "启用",
+      "disable": "禁用",
       "system": "系统",
       "team": "团队",
+      "scope": "范围",
+      "sources": {
+        "zip": "Zip",
+        "git": "Git",
+        "manual_text": "手动",
+        "legacy": "旧版"
+      },
       "test": "测试",
       "delete": "删除",
       "cancel": "取消",
@@ -478,6 +488,13 @@
       "testTitle": "测试 {name}",
       "testDescription": "使用 JSON 参数运行此 Skill。instructions 模式的 Skill 会返回 SKILL.md 指令。",
       "noDescription": "暂无描述",
+      "rowsPerPage": "每页行数",
+      "pageInfo": "第 {page} 页，共 {total} 页",
+      "category": "分类",
+      "version": "版本",
+      "source": "来源",
+      "updatedAt": "更新时间",
+      "actions": "操作",
       "import": {
         "open": "导入 Skills",
         "title": "导入 Skills",

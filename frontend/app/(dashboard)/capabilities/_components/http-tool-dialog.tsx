@@ -31,7 +31,7 @@ import {
 import { ToolCreateInput, ToolUpdateInput, ToolDetail, HttpConfig, ToolCategory } from '@/lib/api/tools'
 import { cn } from '@/lib/utils'
 import { FieldError } from '@/components/ui/field'
-import { ToolCategoryInput } from '@/app/(platform)/app/tools/_components/tool-category-input'
+import { ToolCategoryInput } from '@/app/(platform)/app/capabilities/_components/tool-category-input'
 import {
   clearValidationError,
   getValidationSummaryEntries,

@@ -34,7 +34,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { toolsApi, type Tool, type ToolShare, type ToolSharePermission, type UserTeamInfo } from '@/lib/api'
+import { type Tool, type ToolShare, type ToolSharePermission } from '@/lib/api'
+import { adminToolsApi } from '@/lib/api/admin'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -43,11 +44,16 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 
+interface TeamOption {
+  id: string
+  name: string
+}
+
 interface ToolShareDialogProps {
   tool: Tool | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  availableTeams: UserTeamInfo[]
+  availableTeams: TeamOption[]
   onSuccess?: () => void
 }
 
@@ -81,7 +87,7 @@ export function ToolShareDialog({
 
     setIsLoading(true)
     try {
-      const response = await toolsApi.listToolShares(tool.id)
+      const response = await adminToolsApi.listToolShares(tool.id)
       setShares(response.shares)
     } catch (error) {
       console.error('Failed to load shares:', error)
@@ -125,7 +131,7 @@ export function ToolShareDialog({
     setFieldErrors({})
     setIsSharing(true)
     try {
-      await toolsApi.shareTool(tool.id, {
+      await adminToolsApi.shareTool(tool.id, {
         team_id: selectedTeamId,
         permission: selectedPermission,
       })
@@ -159,7 +165,7 @@ export function ToolShareDialog({
     if (!tool?.id || !deletingShare) return
 
     try {
-      await toolsApi.unshareTool(tool.id, deletingShare.shared_with_team_id)
+      await adminToolsApi.unshareTool(tool.id, deletingShare.shared_with_team_id)
       toast.success(t('unshareSuccess'))
       await loadShares()
       onSuccess?.()

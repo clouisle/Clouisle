@@ -123,6 +123,26 @@ class SkillDetailOut(SkillOut):
     config_schema: dict[str, Any] = Field(default_factory=dict)
 
 
+class AdminSkillOut(SkillOut):
+    team_name: str | None = None
+
+
+class AdminSkillDetailOut(SkillDetailOut):
+    team_name: str | None = None
+
+
+class SkillFilterOption(BaseModel):
+    value: str
+    label: str
+
+
+class SkillFilterOptionsOut(BaseModel):
+    statuses: list[SkillFilterOption] = Field(default_factory=list)
+    sources: list[SkillFilterOption] = Field(default_factory=list)
+    teams: list[SkillFilterOption] = Field(default_factory=list)
+    creators: list[SkillFilterOption] = Field(default_factory=list)
+
+
 class SkillListOut(BaseModel):
     system: list[SkillOut] = Field(default_factory=list)
     team: list[SkillOut] = Field(default_factory=list)

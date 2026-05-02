@@ -5,6 +5,14 @@ import { useTranslations } from 'next-intl'
 import { Loader2, Plus, Trash2, Info, Terminal, Globe, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -16,34 +24,43 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { FieldError } from '@/components/ui/field'
 import {
-  clearValidationError,
-  clearValidationErrorsByPrefix,
-  getValidationSummaryEntries,
-  mapValidationErrors,
-  normalizeValidationErrors,
-  formatValidationSummaryMessage
-} from '@/lib/validation'
-import { 
-  ToolCreateInput, 
-  ToolUpdateInput, 
-  ToolDetail, 
-  McpConfig, 
+  ToolCreateInput,
+  ToolUpdateInput,
+  ToolDetail,
+  McpConfig,
   McpTransportType,
   McpToolInfo,
-  toolsApi 
+  toolsApi
 } from '@/lib/api/tools'
+import { ImageUpload } from '@/components/ui/image-upload'
+import { ToolCategoryInput } from './tool-category-input'
+
+interface TeamOption {
+  id: string
+  name: string
+}
 
 interface McpToolDialogProps {
   tool?: ToolDetail | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (data: ToolCreateInput | ToolUpdateInput) => Promise<void>
+  teams?: TeamOption[]
+  selectedTeamId?: string
+  onSelectedTeamChange?: (teamId: string | null) => void
 }
 
 interface EnvVar {
@@ -55,6 +72,8 @@ interface Header {
   key: string
   value: string
 }
+
+const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
 
 const MCP_TOOL_ERROR_PATH_MAP = {
   display_name: 'displayName',
@@ -70,8 +89,11 @@ export function McpToolDialog({
   open,
   onOpenChange,
   onSave,
+  teams = [],
+  selectedTeamId,
+  onSelectedTeamChange,
 }: McpToolDialogProps) {
-  const t = useTranslations('tools')
+  const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
 
   const isEditing = !!tool
@@ -80,6 +102,7 @@ export function McpToolDialog({
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [icon, setIcon] = useState('')
+  const [category, setCategory] = useState('api')
   const [isEnabled, setIsEnabled] = useState(true)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -116,7 +139,9 @@ export function McpToolDialog({
         setName(tool.name)
         setDisplayName(tool.display_name)
         setIcon(tool.icon || '')
+        setCategory(tool.category || 'api')
         setIsEnabled(tool.is_enabled)
+        setFieldErrors({})
         setFieldErrors({})
 
         if (tool.mcp_config) {
@@ -152,6 +177,7 @@ export function McpToolDialog({
         setName('')
         setDisplayName('')
         setIcon('')
+        setCategory('api')
         setIsEnabled(true)
         setFieldErrors({})
         setTransportType('stdio')
@@ -238,7 +264,11 @@ export function McpToolDialog({
 
   const handleSave = async () => {
     const nextErrors: Record<string, string> = {}
-    if (!name.trim()) nextErrors.name = t('error.nameRequired')
+    if (!name.trim()) {
+      nextErrors.name = t('error.nameRequired')
+    } else if (!TOOL_NAME_PATTERN.test(name.trim())) {
+      nextErrors.name = t('error.invalidName')
+    }
     if (!displayName.trim()) nextErrors.displayName = t('form.displayNameRequired')
     if (transportType === 'stdio' && !command.trim()) nextErrors.command = t('mcpDialog.commandRequired')
     if ((transportType === 'sse' || transportType === 'http') && !url.trim()) nextErrors.url = t('mcpDialog.urlRequired')
@@ -249,6 +279,7 @@ export function McpToolDialog({
     }
 
     setFieldErrors({})
+
     setIsLoading(true)
     try {
       const mcpConfig = buildMcpConfig()
@@ -264,13 +295,13 @@ export function McpToolDialog({
         display_name: displayName,
         description: toolsDescription || `MCP Server: ${displayName || name}`,
         icon,
+        category,
         is_enabled: isEnabled,
         type: 'mcp',
         mcp_config: mcpConfig,
       }
 
       await onSave(data)
-      onOpenChange(false)
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), MCP_TOOL_ERROR_PATH_MAP)
       if (Object.keys(errors).length > 0) {
@@ -364,8 +395,27 @@ export function McpToolDialog({
           )}
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
+            {!isEditing && onSelectedTeamChange && teams.length > 0 && (
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="team">{tCommon('team')}</Label>
+                <Select value={selectedTeamId} onValueChange={onSelectedTeamChange}>
+                  <SelectTrigger id="team">
+                    <SelectValue>
+                      {teams.find((team) => team.id === selectedTeamId)?.name || t('selectTeam')}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent side="bottom" alignItemWithTrigger={false}>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="name">{t('name')}</Label>
+              <Label htmlFor="name">{t('form.name')}</Label>
               <Input
                 id="name"
                 placeholder={t('mcpDialog.serverNamePlaceholder')}
@@ -380,10 +430,10 @@ export function McpToolDialog({
               <FieldError>{fieldErrors.name}</FieldError>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="displayName">{t('displayName')}</Label>
+              <Label htmlFor="displayName">{t('form.displayName')}</Label>
               <Input
                 id="displayName"
-                placeholder={t('displayNamePlaceholder')}
+                placeholder={t('form.displayNamePlaceholder')}
                 value={displayName}
                 onChange={(e) => {
                   setDisplayName(e.target.value)
@@ -395,19 +445,31 @@ export function McpToolDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-start gap-4">
             <div className="space-y-2">
-              <Label htmlFor="icon">{t('icon')}</Label>
-              <Input
-                id="icon"
-                className="w-16 text-center text-xl"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                maxLength={2}
+              <Label>{t('form.icon')}</Label>
+              <ImageUpload
+                value={icon.startsWith('http') ? icon : ''}
+                onChange={setIcon}
+                previewSize="sm"
+                category="icons"
+                placeholder={
+                  <span className="text-2xl">
+                    {icon.startsWith('http') ? '' : icon}
+                  </span>
+                }
               />
             </div>
-            <div className="flex-1 flex items-center justify-end gap-2">
-              <Label htmlFor="enabled">{t('enabled')}</Label>
+            <div className="space-y-2">
+              <Label htmlFor="category">{t('form.category')}</Label>
+              <ToolCategoryInput
+                value={category}
+                onChange={setCategory}
+                inputClassName="w-28"
+              />
+            </div>
+            <div className="flex-1 flex items-center justify-end gap-2 pt-8">
+              <Label htmlFor="enabled">{t('form.enabled')}</Label>
               <Switch
                 id="enabled"
                 checked={isEnabled}

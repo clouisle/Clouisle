@@ -3,8 +3,12 @@
     "common": {
       "openMenu": "打开菜单"
     },
-    "title": "工具管理",
-    "description": "管理团队的工具配置",
+    "title": "能力管理",
+    "description": "管理跨团队的工具和 Skills",
+    "tabs": {
+      "tools": "工具",
+      "skills": "Skills"
+    },
     "createTool": "创建工具",
     "editTool": "编辑工具",
     "deleteTool": "删除工具",

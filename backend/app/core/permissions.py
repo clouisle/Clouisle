@@ -57,6 +57,13 @@ class SystemPermissions:
     ADMIN_MODEL_UPDATE = "admin:model:update"
     ADMIN_MODEL_DELETE = "admin:model:delete"
 
+    # ============ Admin Capability Management ============
+    ADMIN_CAPABILITY_READ = "admin:capability:read"
+    ADMIN_CAPABILITY_CREATE = "admin:capability:create"
+    ADMIN_CAPABILITY_UPDATE = "admin:capability:update"
+    ADMIN_CAPABILITY_DELETE = "admin:capability:delete"
+    ADMIN_CAPABILITY_EXECUTE = "admin:capability:execute"
+
     # ============ Admin Settings Management ============
     ADMIN_SETTINGS_READ = "admin:settings:read"
     ADMIN_SETTINGS_UPDATE = "admin:settings:update"
@@ -118,6 +125,13 @@ class SystemPermissions:
     TOOL_UPDATE = "tool:update"
     TOOL_DELETE = "tool:delete"
     TOOL_EXECUTE = "tool:execute"
+
+    # ============ Platform Skill Management ============
+    SKILL_READ = "skill:read"
+    SKILL_CREATE = "skill:create"
+    SKILL_UPDATE = "skill:update"
+    SKILL_DELETE = "skill:delete"
+    SKILL_EXECUTE = "skill:execute"
 
     # ============ Platform API Key Management ============
     APIKEY_READ = "apikey:read"
@@ -254,6 +268,32 @@ class SystemPermissions:
                 "code": cls.ADMIN_MODEL_DELETE,
                 "scope": "admin",
                 "description": "Delete AI models from system",
+            },
+            # Admin Capability Management
+            {
+                "code": cls.ADMIN_CAPABILITY_READ,
+                "scope": "admin",
+                "description": "View all capabilities in system",
+            },
+            {
+                "code": cls.ADMIN_CAPABILITY_CREATE,
+                "scope": "admin",
+                "description": "Create tools and import skills for any scope",
+            },
+            {
+                "code": cls.ADMIN_CAPABILITY_UPDATE,
+                "scope": "admin",
+                "description": "Update tools and skills across the system",
+            },
+            {
+                "code": cls.ADMIN_CAPABILITY_DELETE,
+                "scope": "admin",
+                "description": "Delete tools and skills across the system",
+            },
+            {
+                "code": cls.ADMIN_CAPABILITY_EXECUTE,
+                "scope": "admin",
+                "description": "Test and execute tools and skills from admin",
             },
             # Admin Settings Management
             {
@@ -465,6 +505,32 @@ class SystemPermissions:
                 "code": cls.TOOL_EXECUTE,
                 "scope": "tool",
                 "description": "Execute tools",
+            },
+            # Platform Skill Management
+            {
+                "code": cls.SKILL_READ,
+                "scope": "skill",
+                "description": "View skills",
+            },
+            {
+                "code": cls.SKILL_CREATE,
+                "scope": "skill",
+                "description": "Import skills",
+            },
+            {
+                "code": cls.SKILL_UPDATE,
+                "scope": "skill",
+                "description": "Update skill configuration",
+            },
+            {
+                "code": cls.SKILL_DELETE,
+                "scope": "skill",
+                "description": "Delete skills",
+            },
+            {
+                "code": cls.SKILL_EXECUTE,
+                "scope": "skill",
+                "description": "Test and execute skills",
             },
             # Platform API Key Management
             {

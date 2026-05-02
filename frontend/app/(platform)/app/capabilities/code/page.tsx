@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useCanPerform } from '@/components/permission-guard'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -213,6 +214,9 @@ export default function CodeToolPage() {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
+  const { canPerform } = useCanPerform()
+  const canSave = canPerform(toolId ? 'tool:update' : 'tool:create')
+  const canExecute = canPerform('tool:execute')
 
   // 工具信息
   const [name, setName] = useState('')
@@ -294,7 +298,7 @@ export default function CodeToolPage() {
       }
     } catch {
       // toast handled by API interceptor
-      router.push('/app/tools')
+      router.push('/app/capabilities')
     } finally {
       setIsLoading(false)
     }
@@ -493,7 +497,7 @@ export default function CodeToolPage() {
       } else {
         await toolsApi.create(currentTeam.id, data as ToolCreateInput)
         toast.success(t('successMessages.created'))
-        router.push('/app/tools')
+        router.push('/app/capabilities')
       }
     } catch (error) {
       if (error instanceof ApiError && error.isValidationError()) {
@@ -602,7 +606,7 @@ export default function CodeToolPage() {
   }
 
   const handleBack = () => {
-    router.push('/app/tools')
+    router.push('/app/capabilities')
   }
 
   if (isLoading) {
@@ -644,15 +648,19 @@ export default function CodeToolPage() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="sm" onClick={handleRun} disabled={isRunning || !code.trim()}>
-            {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            <span className="ml-1.5">{t('codeEditor.run')}</span>
-          </Button>
+          {canExecute && (
+            <Button variant="outline" size="sm" onClick={handleRun} disabled={isRunning || !code.trim()}>
+              {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              <span className="ml-1.5">{t('codeEditor.run')}</span>
+            </Button>
+          )}
 
-          <Button size="sm" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            <span className="ml-1.5">{tCommon('save')}</span>
-          </Button>
+          {canSave && (
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              <span className="ml-1.5">{tCommon('save')}</span>
+            </Button>
+          )}
         </div>
       </header>
 

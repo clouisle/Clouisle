@@ -3,8 +3,12 @@
     "common": {
       "openMenu": "Open menu"
     },
-    "title": "Tool Management",
-    "description": "Manage team tool configurations",
+    "title": "Capability Management",
+    "description": "Manage tools and Skills across teams",
+    "tabs": {
+      "tools": "Tools",
+      "skills": "Skills"
+    },
     "createTool": "Create Tool",
     "editTool": "Edit Tool",
     "deleteTool": "Delete Tool",

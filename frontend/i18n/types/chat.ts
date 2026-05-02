@@ -1,4 +1,4 @@
-// GENERATED — 2026-04-30T21:21:23.487Z
+// GENERATED — 2026-05-02T07:54:58.810Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -133,6 +133,10 @@ export type ChatMessages = {
       closeCodePreview: string
       codePreviewCanvasTitle: string
       previewScriptsEnabled: string
+      linkSafetyTitle: string
+      linkSafetyDescription: string
+      linkSafetyCancel: string
+      linkSafetyContinue: string
     }
     userInputRequest: {
       pending: string
