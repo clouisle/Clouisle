@@ -6,11 +6,16 @@ permissions:
   issues: read
   pull-requests: read
 engine:
-  id: codex
+  id: copilot
   model: deepseek-v4-pro
   env:
-    OPENAI_BASE_URL: https://api.deepseek.com
-    OPENAI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    COPILOT_PROVIDER_TYPE: anthropic
+    COPILOT_PROVIDER_BASE_URL: https://api.deepseek.com/anthropic
+    COPILOT_MODEL: deepseek-v4-pro
+secrets:
+  COPILOT_PROVIDER_API_KEY:
+    value: ${{ secrets.DEEPSEEK_API_KEY }}
+    description: DeepSeek API key for the Copilot provider
 network:
   allowed:
     - defaults
