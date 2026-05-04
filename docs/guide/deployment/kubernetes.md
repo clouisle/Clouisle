@@ -212,7 +212,7 @@ data:
   FRONTEND_URL: "https://your-domain.com"
 
   # Database Configuration
-  POSTGRES_HOST: "postgres-service"
+  POSTGRES_SERVER: "postgres-service"
   POSTGRES_PORT: "5432"
 
   # Redis Configuration
