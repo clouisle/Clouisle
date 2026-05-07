@@ -1,9 +1,24 @@
-from app.models import SiteSetting
+from app.models import (
+    SiteSetting,
+    KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+)
 from app.schemas.site_setting import PublicSiteSettingsResponse
 from app.schemas.response import Response, success
 from fastapi import APIRouter
 
 router = APIRouter()
+
+
+def _normalize_kb_document_max_upload_size_mb(value: object) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+    if value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
+    if value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
+    return value
 
 
 @router.get("/public", response_model=Response[PublicSiteSettingsResponse])
@@ -23,5 +38,11 @@ async def get_public_settings():
             allow_account_deletion=settings.get("allow_account_deletion", True),
             sso_enabled=settings.get("sso_enabled", False),
             sso_allow_password_login=settings.get("sso_allow_password_login", True),
+            kb_document_max_upload_size_mb=_normalize_kb_document_max_upload_size_mb(
+                settings.get(
+                    "kb_document_max_upload_size_mb",
+                    KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+                )
+            ),
         )
     )

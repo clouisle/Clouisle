@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-02T07:54:58.814Z
+// GENERATED — 2026-05-07T12:48:18.608Z
 // Source: i18n/en/platform.json
 export type PlatformMessages = {
   platform: {
@@ -504,6 +504,8 @@ export type PlatformMessages = {
         zip: string
         git: string
         zipFile: string
+        zipRequired: string
+        zipTooLarge: string
         repoUrl: string
         ref: string
         scan: string

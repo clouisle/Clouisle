@@ -44,6 +44,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants'
 import { ApiError, type PageData, type SkillInstallAction, type SkillImportPreviewResponse, type SkillPreviewItem, type SkillSourceType, type SkillTestResponse, type ToolFilterOption } from '@/lib/api'
 import { adminSkillsApi, teamsApi as adminTeamsApi, type AdminSkill } from '@/lib/api/admin'
 import type { Team } from '@/lib/api/teams'
@@ -311,6 +312,24 @@ export function AdminSkillsPanel() {
     value: option.value,
     label: t(`sources.${option.value as SkillSourceType}`),
   }))
+
+  const handleZipFileChange = (file: File | null) => {
+    if (!file) {
+      setZipFile(null)
+      return
+    }
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.error(t('import.zipRequired'))
+      setZipFile(null)
+      return
+    }
+    if (file.size > SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES) {
+      toast.error(t('import.zipTooLarge'))
+      setZipFile(null)
+      return
+    }
+    setZipFile(file)
+  }
 
   const handlePreviewZip = async () => {
     if (!zipFile) return
@@ -749,7 +768,7 @@ export function AdminSkillsPanel() {
             </TabsList>
             <TabsContent value="zip" className="space-y-3">
               <Label>{t('import.zipFile')}</Label>
-              <Input className="max-w-md" type="file" accept=".zip" onChange={(event) => setZipFile(event.target.files?.[0] || null)} />
+              <Input className="max-w-md" type="file" accept=".zip" onChange={(event) => handleZipFileChange(event.target.files?.[0] || null)} />
               <Button onClick={handlePreviewZip} disabled={!zipFile || previewLoading}>
                 {previewLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('import.scan')}

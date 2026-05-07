@@ -43,6 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants'
 import { useTeam } from '@/contexts/team-context'
 import { cn } from '@/lib/utils'
 import {
@@ -224,6 +225,24 @@ export function SkillsPanel() {
     })
     setPreview(nextPreview)
     setPreviewSelections(selections)
+  }
+
+  const handleZipFileChange = (file: File | null) => {
+    if (!file) {
+      setZipFile(null)
+      return
+    }
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.error(t('import.zipRequired'))
+      setZipFile(null)
+      return
+    }
+    if (file.size > SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES) {
+      toast.error(t('import.zipTooLarge'))
+      setZipFile(null)
+      return
+    }
+    setZipFile(file)
   }
 
   const handlePreviewZip = async () => {
@@ -512,7 +531,7 @@ export function SkillsPanel() {
             </TabsList>
             <TabsContent value="zip" className="space-y-3">
               <Label>{t('import.zipFile')}</Label>
-              <Input className="max-w-md" type="file" accept=".zip" onChange={(event) => setZipFile(event.target.files?.[0] || null)} />
+              <Input className="max-w-md" type="file" accept=".zip" onChange={(event) => handleZipFileChange(event.target.files?.[0] || null)} />
               <Button onClick={handlePreviewZip} disabled={!zipFile || previewLoading}>
                 {previewLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('import.scan')}

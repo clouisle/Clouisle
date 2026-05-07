@@ -1,5 +1,12 @@
 from .user import Permission, Role, Team, TeamMember, User
-from .site_setting import SiteSetting, init_default_settings, DEFAULT_SETTINGS
+from .site_setting import (
+    SiteSetting,
+    init_default_settings,
+    DEFAULT_SETTINGS,
+    KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+)
 from .model import Model, ModelProvider, ModelType, PROVIDER_DEFAULTS, TeamModel
 from .knowledge_base import (
     KnowledgeBase,
@@ -78,6 +85,9 @@ __all__ = [
     "SiteSetting",
     "init_default_settings",
     "DEFAULT_SETTINGS",
+    "KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB",
+    "KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB",
+    "KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB",
     "Model",
     "ModelProvider",
     "ModelType",

@@ -502,6 +502,8 @@
         "zip": "Zip Upload",
         "git": "Git Repository",
         "zipFile": "Zip file",
+        "zipRequired": "Please select a .zip file",
+        "zipTooLarge": "Zip file is too large, maximum 50MB",
         "repoUrl": "Repository URL",
         "ref": "Branch, tag, or commit",
         "scan": "Scan Preview",

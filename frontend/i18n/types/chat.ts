@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-02T14:57:44.738Z
+// GENERATED — 2026-05-07T12:48:18.604Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -81,6 +81,7 @@ export type ChatMessages = {
       send: string
       stop: string
       attachFile: string
+      fileTooLarge: string
       maxFilesReached: string
       dropFiles: string
     }

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB } from '@/lib/constants'
 import { isValidVariableName } from '../utils'
 import type { Parameter, ParameterType } from '../types'
 
@@ -330,7 +331,7 @@ export function ParameterEditDialog({
                   <Label className="text-xs">{t('dialogs.parameterEdit.maxFileSizeLabel')}</Label>
                   <Input
                     type="number"
-                    value={paramForm.fileConfig?.maxSize || (paramForm.type === 'image' ? 10 : 50)}
+                    value={paramForm.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB}
                     onChange={(e) => setParamForm({
                       ...paramForm,
                       fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || 10 }
@@ -381,10 +382,10 @@ export function ParameterEditDialog({
                   <Label className="text-xs">{t('dialogs.parameterEdit.maxSizePerFileLabel')}</Label>
                   <Input
                     type="number"
-                    value={paramForm.fileConfig?.maxSize || 50}
+                    value={paramForm.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB}
                     onChange={(e) => setParamForm({
                       ...paramForm,
-                      fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || 50 }
+                      fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || GENERAL_UPLOAD_MAX_FILE_SIZE_MB }
                     })}
                     className="h-9"
                     min={1}

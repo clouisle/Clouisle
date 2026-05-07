@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-02T07:54:58.817Z
+// GENERATED — 2026-05-07T12:48:18.610Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -249,6 +249,11 @@ export type SiteSettingsMessages = {
     rangeError: string
     minValueError: string
     invalidRetentionDays: string
+    invalidKbDocumentMaxUploadSize: string
+    knowledgeBaseDocumentUpload: string
+    knowledgeBaseDocumentUploadDescription: string
+    kbDocumentMaxUploadSize: string
+    kbDocumentMaxUploadSizeHint: string
     loadError: string
     siteIconUrlPlaceholder: string
     testEmailRequired: string

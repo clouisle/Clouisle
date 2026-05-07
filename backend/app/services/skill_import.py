@@ -38,6 +38,7 @@ from app.services.skill_package import (
     SkillPackageService,
 )
 
+_MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024
 _MAX_ZIP_FILE_COUNT = 500
 _MAX_ZIP_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
 _MAX_ZIP_SINGLE_FILE_BYTES = 10 * 1024 * 1024
@@ -91,6 +92,11 @@ class SkillImportService:
         if not filename.lower().endswith(".zip"):
             raise BusinessError(
                 code=ResponseCode.BAD_REQUEST, msg_key="skill_zip_required"
+            )
+        if len(content) > _MAX_ZIP_UPLOAD_BYTES:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="skill_zip_too_large",
             )
 
         temp_root = Path(tempfile.mkdtemp(prefix="clouisle-skill-import-"))
@@ -521,7 +527,10 @@ class SkillImportService:
                 )
             if not path.is_file():
                 continue
-            if path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES and path.name != "SKILL.md":
+            if (
+                path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES
+                and path.name != "SKILL.md"
+            ):
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
                     msg_key="skill_package_nested_archive_not_allowed",

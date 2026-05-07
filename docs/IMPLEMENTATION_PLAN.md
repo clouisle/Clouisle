@@ -2,6 +2,13 @@
 
 ## Active
 
+- **kb-upload-file-limits** — Complete. Enforce knowledge base document upload restrictions and make the max upload size configurable in admin storage settings. See `docs/plan/kb-upload-file-limits.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Site setting and backend enforcement
+  - [x] 3. Admin storage UI
+  - [x] 4. Upload dialogs and validation
+  - [x] 5. Validation and regression checks
+
 - **agent-hide-tool-calls** — Complete. Add an Agent setting that hides tool call UI without disabling tool execution. See `docs/plan/agent-hide-tool-calls.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend persistence and API

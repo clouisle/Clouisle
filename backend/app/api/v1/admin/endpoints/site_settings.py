@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
 
 from app.api.deps import PermissionChecker
-from app.models import SiteSetting, DEFAULT_SETTINGS, User
+from app.models import (
+    SiteSetting,
+    DEFAULT_SETTINGS,
+    User,
+    KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+)
 from app.models.notification import AutoNotificationType
 from app.models.user_sso_connection import UserSSOConnection
 from app.schemas.site_setting import (
@@ -22,6 +28,24 @@ from app.services.audit_log import AuditLogService
 from app.tasks.audit_log import archive_old_audit_logs
 
 router = APIRouter()
+
+
+def _validate_setting_value(key: str, value: object) -> None:
+    if key != "kb_document_max_upload_size_mb":
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="validation_error",
+        )
+    if (
+        value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
+        or value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
+    ):
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="validation_error",
+        )
 
 
 async def _ensure_superadmin_sso_bound() -> None:
@@ -157,6 +181,7 @@ async def update_setting(
 
     if key == "sso_allow_password_login" and data.value is False:
         await _ensure_superadmin_sso_bound()
+    _validate_setting_value(key, data.value)
 
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
@@ -222,6 +247,8 @@ async def bulk_update_settings(
 ):
     if data.settings.get("sso_allow_password_login") is False:
         await _ensure_superadmin_sso_bound()
+    for key, value in data.settings.items():
+        _validate_setting_value(key, value)
 
     updated_keys = []
     for key, value in data.settings.items():

@@ -79,6 +79,7 @@
       "send": "Send",
       "stop": "Stop",
       "attachFile": "Attach file",
+      "fileTooLarge": "File size exceeds the limit of {maxSize}MB",
       "maxFilesReached": "Maximum {max} files allowed",
       "dropFiles": "Drop files here"
     },

@@ -120,6 +120,11 @@ class SettingConfig(TypedDict):
     desc: str
 
 
+KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB = 50
+KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB = 1
+KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB = 1024
+
+
 # Default settings definitions
 DEFAULT_SETTINGS: dict[str, SettingConfig] = {
     # General
@@ -429,6 +434,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "category": "storage",
         "public": False,
         "desc": "Archive file storage path",
+    },
+    "kb_document_max_upload_size_mb": {
+        "value": KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+        "type": "int",
+        "category": "storage",
+        "public": True,
+        "desc": "Knowledge base document max upload size in MB (1-1024)",
     },
     # Audit Alert
     "audit_alert_enabled": {

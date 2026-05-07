@@ -15,6 +15,12 @@ from app.api import deps
 from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.model import TeamModel, Model
+from app.models import (
+    SiteSetting,
+    KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+)
 from app.models.knowledge_base import (
     KnowledgeBase,
     Document,
@@ -59,6 +65,21 @@ from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+BYTES_PER_MB = 1024 * 1024
+
+
+async def get_kb_document_max_upload_size_mb() -> int:
+    value = await SiteSetting.get_value(
+        "kb_document_max_upload_size_mb", KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+    )
+    if not isinstance(value, int):
+        return KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+    if value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
+    if value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
+    return value
 
 
 def serialize_knowledge_base_error(error_message: str | None) -> str | None:
@@ -566,7 +587,7 @@ async def upload_document(
 ) -> Any:
     """
     Upload a document to the knowledge base.
-    Supported formats: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON.
+    Supported formats: PDF, DOC, DOCX, TXT, MD, Markdown, HTML, HTM, CSV, XLS, XLSX, JSON, PPTX.
 
     The document will be created with 'pending' status.
     Use the /process endpoint to start processing after configuring chunk settings.
@@ -591,6 +612,13 @@ async def upload_document(
     # Read file content
     content = await file.read()
     file_size = len(content)
+    max_upload_size_mb = await get_kb_document_max_upload_size_mb()
+    max_upload_size_bytes = max_upload_size_mb * BYTES_PER_MB
+    if file_size > max_upload_size_bytes:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_too_large",
+        )
 
     # Save file to storage
     file_path = document_processor.get_storage_path(kb_id, file.filename)
@@ -876,7 +904,9 @@ async def process_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-    return success(data=await serialize_document(doc), msg_key="document_processing_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_processing_started"
+    )
 
 
 @router.post(
@@ -1007,7 +1037,9 @@ async def process_document_with_chunks(
 
         # Reload with relations
         doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-        return success(data=await serialize_document(doc), msg_key="document_processing_started")
+        return success(
+            data=await serialize_document(doc), msg_key="document_processing_started"
+        )
 
     except Exception as e:
         # On error, reset document status
@@ -1167,7 +1199,9 @@ async def reprocess_document(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=await serialize_document(doc), msg_key="document_reprocess_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_reprocess_started"
+    )
 
 
 @router.post(
@@ -1231,7 +1265,9 @@ async def retry_failed_chunks(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=await serialize_document(doc), msg_key="retry_failed_chunks_started")
+    return success(
+        data=await serialize_document(doc), msg_key="retry_failed_chunks_started"
+    )
 
 
 # ============ Document Chunks ============
@@ -1568,7 +1604,9 @@ async def rechunk_document(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=await serialize_document(doc), msg_key="document_rechunk_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_rechunk_started"
+    )
 
 
 # ============ Search ============

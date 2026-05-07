@@ -22,6 +22,7 @@ import { clearValidationError, getValidationSummaryEntries,
 } from '@/lib/validation'
 import { Upload, X, FileIcon, ImageIcon } from 'lucide-react'
 import { uploadApi } from '@/lib/api/upload'
+import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB, BYTES_PER_MB } from '@/lib/constants'
 
 type VariableFieldErrors = Record<string, string>
 type VariableDefinition = Omit<AgentVariableDefinition, 'type'> & { type: AgentVariableDefinition['type'] | 'boolean' }
@@ -548,7 +549,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
   }, [variable.fileConfig, isImage])
 
   // Get max file size in bytes (fileConfig is in MB)
-  const maxSizeBytes = (variable.fileConfig?.maxSize || (isImage ? 10 : 50)) * 1024 * 1024
+  const maxSizeBytes = (variable.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB) * BYTES_PER_MB
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -556,7 +557,7 @@ function FileUploadInput({ variable, value, error, onChange, compact }: FileUplo
 
     // Validate file size
     if (file.size > maxSizeBytes) {
-      const maxSizeMB = maxSizeBytes / (1024 * 1024)
+      const maxSizeMB = maxSizeBytes / BYTES_PER_MB
       setUploadError(t('fileTooLarge', { maxSize: maxSizeMB }))
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -671,7 +672,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
   }, [variable.fileConfig, isImages])
 
   // Get max file size in bytes (fileConfig is in MB)
-  const maxSizeBytes = (variable.fileConfig?.maxSize || 50) * 1024 * 1024
+  const maxSizeBytes = (variable.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB) * BYTES_PER_MB
   const maxFiles = variable.fileConfig?.maxFiles || 5
 
   const fileUrls = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
@@ -692,7 +693,7 @@ function MultiFileUploadInput({ variable, value, error, onChange, compact }: Mul
     // Validate file sizes
     const oversizedFiles = files.filter(f => f.size > maxSizeBytes)
     if (oversizedFiles.length > 0) {
-      const maxSizeMB = maxSizeBytes / (1024 * 1024)
+      const maxSizeMB = maxSizeBytes / BYTES_PER_MB
       setUploadError(t('fileTooLarge', { maxSize: maxSizeMB }))
       if (fileInputRef.current) {
         fileInputRef.current.value = ''

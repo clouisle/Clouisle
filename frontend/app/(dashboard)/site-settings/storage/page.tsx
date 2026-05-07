@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, Archive, Database } from 'lucide-react'
+import { Loader2, Archive, Database, FileText } from 'lucide-react'
 import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi } from '@/lib/api/admin/site-settings'
 import {
@@ -19,6 +19,11 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { useCanPerform } from '@/components/permission-guard'
+import {
+  KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+  KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+  KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+} from '@/lib/constants'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +38,7 @@ import {
 interface StorageSettings {
   audit_log_retention_days: number
   audit_log_archive_path: string
+  kb_document_max_upload_size_mb: number
 }
 
 export default function SiteSettingsStoragePage() {
@@ -49,10 +55,15 @@ export default function SiteSettingsStoragePage() {
   const [settings, setSettings] = React.useState<StorageSettings>({
     audit_log_retention_days: 365,
     audit_log_archive_path: '/var/log/clouisle/audit_archives',
+    kb_document_max_upload_size_mb: KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
   })
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['audit_log_retention_days', 'audit_log_archive_path']),
+    () => getValidationSummaryEntries(fieldErrors, [
+      'audit_log_retention_days',
+      'audit_log_archive_path',
+      'kb_document_max_upload_size_mb',
+    ]),
     [fieldErrors]
   )
 
@@ -63,6 +74,8 @@ export default function SiteSettingsStoragePage() {
       setSettings({
         audit_log_retention_days: (data.audit_log_retention_days as number) ?? 365,
         audit_log_archive_path: (data.audit_log_archive_path as string) ?? '/var/log/clouisle/audit_archives',
+        kb_document_max_upload_size_mb: (data.kb_document_max_upload_size_mb as number)
+          ?? KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
       })
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -84,6 +97,12 @@ export default function SiteSettingsStoragePage() {
     if (settings.audit_log_retention_days < 30 || settings.audit_log_retention_days > 3650) {
       nextErrors.audit_log_retention_days = t('invalidRetentionDays')
     }
+    if (
+      settings.kb_document_max_upload_size_mb < KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
+      || settings.kb_document_max_upload_size_mb > KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
+    ) {
+      nextErrors.kb_document_max_upload_size_mb = t('invalidKbDocumentMaxUploadSize')
+    }
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors)
@@ -96,14 +115,17 @@ export default function SiteSettingsStoragePage() {
       await siteSettingsApi.bulkUpdate({
         audit_log_retention_days: settings.audit_log_retention_days,
         audit_log_archive_path: settings.audit_log_archive_path,
+        kb_document_max_upload_size_mb: settings.kb_document_max_upload_size_mb,
       })
       toast.success(t('saveSuccess'))
     } catch (error) {
       const errors = mapValidationErrors(normalizeValidationErrors(error), {
         audit_log_retention_days: 'audit_log_retention_days',
         audit_log_archive_path: 'audit_log_archive_path',
+        kb_document_max_upload_size_mb: 'kb_document_max_upload_size_mb',
         'settings.audit_log_retention_days': 'audit_log_retention_days',
         'settings.audit_log_archive_path': 'audit_log_archive_path',
+        'settings.kb_document_max_upload_size_mb': 'kb_document_max_upload_size_mb',
       })
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors)
@@ -158,6 +180,40 @@ export default function SiteSettingsStoragePage() {
           ))}
         </div>
       )}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            <CardTitle>{t('knowledgeBaseDocumentUpload')}</CardTitle>
+          </div>
+          <CardDescription>{t('knowledgeBaseDocumentUploadDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="kbDocumentMaxUploadSize">{t('kbDocumentMaxUploadSize')}</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="kbDocumentMaxUploadSize"
+                type="number"
+                value={settings.kb_document_max_upload_size_mb}
+                onChange={(e) => updateSetting(
+                  'kb_document_max_upload_size_mb',
+                  Number.isNaN(parseInt(e.target.value)) ? 0 : parseInt(e.target.value)
+                )}
+                min={KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB}
+                max={KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB}
+                className="w-32"
+                disabled={!canUpdateSettings}
+                aria-invalid={!!fieldErrors.kb_document_max_upload_size_mb}
+              />
+              <span className="text-sm text-muted-foreground">MB</span>
+            </div>
+            <FieldError>{fieldErrors.kb_document_max_upload_size_mb}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('kbDocumentMaxUploadSizeHint')}</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
