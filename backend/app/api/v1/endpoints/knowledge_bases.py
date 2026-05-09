@@ -566,7 +566,7 @@ async def list_documents(
 
     total = await query.count()
     skip = (page - 1) * page_size
-    docs = await query.offset(skip).limit(page_size)
+    docs = await query.prefetch_related("uploaded_by").offset(skip).limit(page_size)
     serialized_docs = [await serialize_document(doc) for doc in docs]
 
     return success(
