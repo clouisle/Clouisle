@@ -387,10 +387,10 @@ Check the backend logs for details:
 
 ```bash
 # Docker Compose
-docker compose logs backend | grep sso
+docker compose logs api | grep sso
 
 # Kubernetes
-kubectl -n clouisle logs deployment/backend | grep sso
+kubectl -n clouisle logs deployment/api | grep sso
 ```
 
 Common causes:

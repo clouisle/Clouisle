@@ -1,0 +1,43 @@
+{{- if .Values.sandboxWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-worker
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.sandboxWorker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "sandbox-worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "sandbox-worker") | nindent 8 }}
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: sandbox-worker
+          image: {{ include "clouisle.sandboxWorkerImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.sandboxWorker.pullPolicy }}
+          command:
+            {{- toYaml .Values.sandboxWorker.command | nindent 12 }}
+          {{- include "clouisle.envFrom" . | nindent 10 }}
+          {{- with .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: uploads
+              mountPath: {{ .Values.uploads.mountPath }}
+          resources:
+            {{- toYaml .Values.sandboxWorker.resources | nindent 12 }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ include "clouisle.uploadsClaimName" . }}
+{{- end }}

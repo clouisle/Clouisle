@@ -30,7 +30,9 @@ metadata:
 data:
   PROJECT_NAME: "Clouisle"
   TIMEZONE: "Asia/Shanghai"
-  API_BASE_URL: "http://backend:8000"
+  API_BASE_URL: "http://api:8000"
+  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: "http://api:8000"
+  SANDBOX_WORKER_CONCURRENCY: "1"
   FRONTEND_URL: "http://frontend:3000"
   POSTGRES_SERVER: "postgres"
   POSTGRES_PORT: "5432"
@@ -203,12 +205,12 @@ spec:
                   key: REDIS_PASSWORD
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
             initialDelaySeconds: 15
             periodSeconds: 20
           resources:
@@ -308,17 +310,34 @@ spec:
             claimName: qdrant-data
 
 # ===========================================================================
-# 7. Backend — Deployment + Service
+# 7. Uploads — Shared PVC
+#    Production multi-replica deployments require a ReadWriteMany-capable
+#    StorageClass. Use single replicas or object storage if RWX is unavailable.
+# ===========================================================================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+  namespace: clouisle
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 10Gi
+
+# ===========================================================================
+# 8. API — Deployment + Service
 # ===========================================================================
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: api
   namespace: clouisle
 spec:
   selector:
-    app: backend
+    app: api
   ports:
     - port: 8000
       targetPort: 8000
@@ -326,22 +345,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend
+  name: api
   namespace: clouisle
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: backend
+      app: api
   template:
     metadata:
       labels:
-        app: backend
+        app: api
     spec:
       containers:
-        - name: backend
+        - name: api
           image: clouisle-backend:latest
           imagePullPolicy: IfNotPresent
+          command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
           ports:
             - containerPort: 8000
           envFrom:
@@ -373,10 +393,11 @@ spec:
               memory: 2Gi
       volumes:
         - name: uploads
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: uploads-data
 
 # ===========================================================================
-# 8. Worker — Deployment (no Service)
+# 9. Worker — Deployment (no Service)
 # ===========================================================================
 ---
 apiVersion: apps/v1
@@ -416,10 +437,58 @@ spec:
               memory: 2Gi
       volumes:
         - name: uploads
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: uploads-data
 
 # ===========================================================================
-# 9. Beat — Deployment (single replica, Recreate)
+# 10. Sandbox Worker — Deployment (no Service)
+# ===========================================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-worker
+  namespace: clouisle
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sandbox-worker
+  template:
+    metadata:
+      labels:
+        app: sandbox-worker
+    spec:
+      containers:
+        - name: sandbox-worker
+          image: clouisle-sandbox-worker:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - python main.py sandbox-worker -c "${SANDBOX_WORKER_CONCURRENCY:-1}"
+          envFrom:
+            - configMapRef:
+                name: clouisle-config
+            - secretRef:
+                name: clouisle-secret
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-data
+
+# ===========================================================================
+# 11. Beat — Deployment (single replica, Recreate)
 # ===========================================================================
 ---
 apiVersion: apps/v1
@@ -458,7 +527,7 @@ spec:
               memory: 256Mi
 
 # ===========================================================================
-# 10. Frontend — Deployment + Service
+# 12. Frontend — Deployment + Service
 # ===========================================================================
 ---
 apiVersion: v1
@@ -515,7 +584,7 @@ spec:
               memory: 512Mi
 
 # ===========================================================================
-# 11. Ingress
+# 13. Ingress
 # ===========================================================================
 ---
 apiVersion: networking.k8s.io/v1
@@ -539,7 +608,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: backend
+                name: api
                 port:
                   number: 8000
           - path: /

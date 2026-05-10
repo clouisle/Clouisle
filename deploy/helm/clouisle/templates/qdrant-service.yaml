@@ -1,0 +1,16 @@
+{{- if .Values.qdrant.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "qdrant") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "clouisle.selectorLabels" (dict "root" . "component" "qdrant") | nindent 4 }}
+  ports:
+    - name: http
+      port: 6333
+      targetPort: http
+{{- end }}

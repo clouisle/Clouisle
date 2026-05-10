@@ -1,0 +1,43 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "worker") | nindent 8 }}
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "clouisle.backendImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command:
+            {{- toYaml .Values.worker.command | nindent 12 }}
+          {{- include "clouisle.envFrom" . | nindent 10 }}
+          {{- with .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: uploads
+              mountPath: {{ .Values.uploads.mountPath }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ include "clouisle.uploadsClaimName" . }}
+{{- end }}

@@ -1,0 +1,21 @@
+{{- if and .Values.uploads.enabled (not .Values.uploads.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "uploads") | nindent 4 }}
+  {{- with .Values.uploads.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.uploads.accessModes | nindent 4 }}
+  {{- if .Values.uploads.storageClassName }}
+  storageClassName: {{ .Values.uploads.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.uploads.size | quote }}
+{{- end }}

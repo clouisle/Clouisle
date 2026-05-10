@@ -1,0 +1,58 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "api") | nindent 8 }}
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: api
+          image: {{ include "clouisle.backendImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command:
+            {{- toYaml .Values.api.command | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8000
+          {{- include "clouisle.envFrom" . | nindent 10 }}
+          {{- with .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: uploads
+              mountPath: {{ .Values.uploads.mountPath }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.api.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.api.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.api.probes.readiness.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.api.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.api.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.api.probes.liveness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ include "clouisle.uploadsClaimName" . }}
+{{- end }}

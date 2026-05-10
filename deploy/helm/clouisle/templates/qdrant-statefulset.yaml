@@ -1,0 +1,74 @@
+{{- if .Values.qdrant.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qdrant
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "qdrant") | nindent 4 }}
+spec:
+  serviceName: qdrant
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "qdrant") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "qdrant") | nindent 8 }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: qdrant
+          image: {{ printf "%s:%s" .Values.qdrant.image.repository .Values.qdrant.image.tag | quote }}
+          imagePullPolicy: {{ .Values.qdrant.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 6333
+          env:
+            - name: QDRANT__SERVICE__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clouisle.secretName" . }}
+                  key: QDRANT_API_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /qdrant/storage
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.qdrant.resources | nindent 12 }}
+      {{- if .Values.qdrant.persistence.existingClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.qdrant.persistence.existingClaim }}
+      {{- else if not .Values.qdrant.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if and .Values.qdrant.persistence.enabled (not .Values.qdrant.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.qdrant.persistence.accessModes | nindent 10 }}
+        {{- if .Values.qdrant.persistence.storageClassName }}
+        storageClassName: {{ .Values.qdrant.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.qdrant.persistence.size | quote }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,39 @@
+{{- include "clouisle.beatReplicaGuard" . }}
+{{- if .Values.beat.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "beat") | nindent 4 }}
+spec:
+  replicas: {{ .Values.beat.replicas }}
+  strategy:
+    {{- toYaml .Values.beat.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "beat") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "beat") | nindent 8 }}
+      {{- with .Values.global.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: beat
+          image: {{ include "clouisle.backendImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command:
+            {{- toYaml .Values.beat.command | nindent 12 }}
+          {{- include "clouisle.envFrom" . | nindent 10 }}
+          {{- with .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}
+{{- end }}

@@ -2,6 +2,19 @@
 
 ## Active
 
+- **helm-chart-deployment** — In progress. Add a minimal production-ready Helm chart for the current API/worker/sandbox-worker/scheduler/frontend deployment model. See `docs/plan/helm-chart-deployment.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Helm chart scaffold and values schema
+  - [x] 3. Application service templates
+  - [x] 4. Built-in infrastructure templates
+  - [ ] 5. Helm deployment docs and validation
+
+- **deploy-config-refresh** — Complete. Refresh Docker Compose, K8s, image build, and deployment env documentation to match the current API/worker/sandbox-worker/scheduler runtime model. See `docs/plan/deploy-config-refresh.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Docker Compose services and env examples
+  - [x] 3. K8s manifest and CI image build
+  - [x] 4. Deployment README, legacy Nginx example, and validation
+
 - **kb-upload-file-limits** — Complete. Enforce knowledge base document upload restrictions and make the max upload size configurable in admin storage settings. See `docs/plan/kb-upload-file-limits.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Site setting and backend enforcement

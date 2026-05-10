@@ -1,0 +1,61 @@
+images:
+  backend:
+    repository: registry.example.com/clouisle/clouisle-backend
+    tag: 0.1.0
+  sandboxWorker:
+    repository: registry.example.com/clouisle/clouisle-sandbox-worker
+    tag: 0.1.0
+  frontend:
+    repository: registry.example.com/clouisle/clouisle-frontend
+    tag: 0.1.0
+
+config:
+  API_BASE_URL: http://api:8000
+  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
+  FRONTEND_URL: https://clouisle.example.com
+  BACKEND_CORS_ORIGINS: '["https://clouisle.example.com"]'
+
+secrets:
+  create: false
+  existingSecret: clouisle-secret
+
+uploads:
+  storageClassName: nfs-rwx
+  accessModes:
+    - ReadWriteMany
+  size: 50Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: clouisle.example.com
+      paths:
+        api:
+          path: /api
+          pathType: Prefix
+        frontend:
+          path: /
+          pathType: Prefix
+  tls:
+    - secretName: clouisle-tls
+      hosts:
+        - clouisle.example.com
+
+# For managed infrastructure, disable built-ins and set external addresses:
+# postgresql:
+#   enabled: false
+#   external:
+#     host: postgres.example.internal
+#     port: "5432"
+#     user: clouisle
+#     database: clouisle
+# redis:
+#   enabled: false
+#   external:
+#     host: redis.example.internal
+#     port: "6379"
+# qdrant:
+#   enabled: false
+#   external:
+#     url: https://qdrant.example.internal

@@ -60,7 +60,7 @@ clouisle-celery     Up
 docker compose logs --tail=100
 
 # Specific service
-docker compose logs -f backend
+docker compose logs -f api
 
 # Search for errors
 docker compose logs | grep ERROR
@@ -74,7 +74,7 @@ docker compose logs | grep ERROR
 
 **Symptoms**:
 ```
-Error: Cannot start service backend: port is already allocated
+Error: Cannot start service api: port is already allocated
 ```
 
 **Solutions**:
@@ -132,12 +132,12 @@ docker compose logs postgres
 sleep 10
 
 # Then run migrations
-docker compose exec backend alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
 3. **Check database credentials:**
 ```bash
-docker compose exec backend env | grep POSTGRES
+docker compose exec api env | grep POSTGRES
 ```
 
 4. **Reset database (development only):**
@@ -145,7 +145,7 @@ docker compose exec backend env | grep POSTGRES
 docker compose down -v
 docker compose up -d postgres
 sleep 10
-docker compose exec backend alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
 ### Frontend Build Fails
@@ -205,7 +205,7 @@ CORS_ORIGINS=http://localhost:3000,https://your-domain.com
 3. **Check network:**
 ```bash
 # From frontend container
-docker compose exec frontend curl http://backend:8000/health
+docker compose exec frontend curl http://api:8000/health
 ```
 
 4. **Check firewall:**
@@ -239,7 +239,7 @@ docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
 3. **Check credentials:**
 ```bash
 # Verify environment variables
-docker compose exec backend env | grep POSTGRES
+docker compose exec api env | grep POSTGRES
 
 # Test with psql
 docker compose exec postgres psql -U clouisle -d clouisle
@@ -278,7 +278,7 @@ docker compose exec redis redis-cli -a your-password ping
 
 3. **Check Redis password:**
 ```bash
-docker compose exec backend env | grep REDIS
+docker compose exec api env | grep REDIS
 ```
 
 ### Qdrant Connection Failed
@@ -305,7 +305,7 @@ curl http://localhost:6333/health
 
 3. **Check Qdrant URL:**
 ```bash
-docker compose exec backend env | grep QDRANT
+docker compose exec api env | grep QDRANT
 ```
 
 ## Authentication Issues
@@ -323,25 +323,25 @@ docker compose exec backend env | grep QDRANT
 
 1. **Check user exists:**
 ```bash
-docker compose exec backend python -m app.scripts.list_users
+docker compose exec api python -m app.scripts.list_users
 ```
 
 2. **Reset password:**
 ```bash
-docker compose exec backend python -m app.scripts.reset_password \
+docker compose exec api python -m app.scripts.reset_password \
   --email user@example.com \
   --password new-password
 ```
 
 3. **Check account status:**
 ```bash
-docker compose exec backend python -m app.scripts.user_info \
+docker compose exec api python -m app.scripts.user_info \
   --email user@example.com
 ```
 
 4. **Check backend logs:**
 ```bash
-docker compose logs backend | grep login
+docker compose logs api | grep login
 ```
 
 ### Token Expired
@@ -384,7 +384,7 @@ timedatectl
 
 1. **Check SSO configuration:**
 ```bash
-docker compose exec backend python -m app.scripts.check_sso
+docker compose exec api python -m app.scripts.check_sso
 ```
 
 2. **Verify callback URL:**
@@ -440,7 +440,7 @@ docker compose exec redis redis-cli info stats
 ```yaml
 # In docker-compose.yml
 services:
-  backend:
+  api:
     deploy:
       resources:
         limits:
@@ -521,7 +521,7 @@ docker system prune -a --volumes
 3. **Archive old data:**
 ```bash
 # Backup and delete old audit logs
-docker compose exec backend python -m app.scripts.archive_logs \
+docker compose exec api python -m app.scripts.archive_logs \
   --days 90
 ```
 
@@ -544,17 +544,17 @@ docker compose exec backend python -m app.scripts.archive_logs \
 
 1. **Check agent status:**
 ```bash
-docker compose logs backend | grep agent
+docker compose logs api | grep agent
 ```
 
 2. **Check LLM API key:**
 ```bash
-docker compose exec backend env | grep OPENAI_API_KEY
+docker compose exec api env | grep OPENAI_API_KEY
 ```
 
 3. **Test LLM connection:**
 ```bash
-docker compose exec backend python -m app.scripts.test_llm
+docker compose exec api python -m app.scripts.test_llm
 ```
 
 4. **Check rate limits:**
@@ -580,7 +580,7 @@ docker compose restart celery
 
 1. **Check workflow logs:**
 ```bash
-docker compose logs backend | grep workflow
+docker compose logs api | grep workflow
 ```
 
 2. **Check Celery:**
@@ -618,13 +618,13 @@ MAX_UPLOAD_SIZE=104857600  # 100 MB
 
 2. **Check upload directory:**
 ```bash
-docker compose exec backend ls -la /app/uploads
-docker compose exec backend df -h /app/uploads
+docker compose exec api ls -la /app/uploads
+docker compose exec api df -h /app/uploads
 ```
 
 3. **Check permissions:**
 ```bash
-docker compose exec backend chmod 755 /app/uploads
+docker compose exec api chmod 755 /app/uploads
 ```
 
 4. **Check Celery worker:**
@@ -634,7 +634,7 @@ docker compose logs celery | grep document
 
 5. **Retry processing:**
 ```bash
-docker compose exec backend python -m app.scripts.reprocess_document \
+docker compose exec api python -m app.scripts.reprocess_document \
   --document-id doc-123
 ```
 
@@ -657,19 +657,19 @@ curl http://localhost:6333/collections
 
 2. **Check embeddings:**
 ```bash
-docker compose exec backend python -m app.scripts.check_embeddings \
+docker compose exec api python -m app.scripts.check_embeddings \
   --kb-id kb-123
 ```
 
 3. **Reindex documents:**
 ```bash
-docker compose exec backend python -m app.scripts.reindex_kb \
+docker compose exec api python -m app.scripts.reindex_kb \
   --kb-id kb-123
 ```
 
 4. **Check search logs:**
 ```bash
-docker compose logs backend | grep search
+docker compose logs api | grep search
 ```
 
 ## Error Messages
@@ -682,17 +682,17 @@ docker compose logs backend | grep search
 
 1. **Check backend logs:**
 ```bash
-docker compose logs backend --tail=100
+docker compose logs api --tail=100
 ```
 
 2. **Check for exceptions:**
 ```bash
-docker compose logs backend | grep -A 10 "Traceback"
+docker compose logs api | grep -A 10 "Traceback"
 ```
 
-3. **Restart backend:**
+3. **Restart api:**
 ```bash
-docker compose restart backend
+docker compose restart api
 ```
 
 ### "Database Connection Error"
@@ -709,7 +709,7 @@ docker compose logs postgres
 
 2. **Verify credentials:**
 ```bash
-docker compose exec backend env | grep POSTGRES
+docker compose exec api env | grep POSTGRES
 ```
 
 3. **Test connection:**
@@ -745,7 +745,7 @@ RATE_LIMIT_PER_MINUTE=100
 
 1. **Check user permissions:**
 ```bash
-docker compose exec backend python -m app.scripts.user_info \
+docker compose exec api python -m app.scripts.user_info \
   --email user@example.com
 ```
 

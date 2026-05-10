@@ -45,7 +45,8 @@ RUN mkdir -p /app/uploads /tmp/clouisle-sandbox \
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=en_US.UTF-8 \
-    LC_ALL=en_US.UTF-8
+    LC_ALL=en_US.UTF-8 \
+    PATH="/app/backend/.venv/bin:$PATH"
 
 USER clouisle
 

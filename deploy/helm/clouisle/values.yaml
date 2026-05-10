@@ -1,0 +1,256 @@
+global:
+  imagePullSecrets: []
+  commonLabels: {}
+  podAnnotations: {}
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+images:
+  backend:
+    repository: clouisle-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  sandboxWorker:
+    repository: clouisle-sandbox-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: clouisle-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+config:
+  PROJECT_NAME: Clouisle
+  TIMEZONE: Asia/Shanghai
+  API_BASE_URL: http://api:8000
+  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
+  FRONTEND_URL: http://frontend:3000
+  BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
+  POSTGRES_USER: postgres
+  POSTGRES_DB: clouisle
+  POSTGRES_PORT: "5432"
+  REDIS_PORT: "6379"
+  VECTOR_BACKEND: qdrant
+  QDRANT_COLLECTION_PREFIX: kb_dim
+  QDRANT_DISTANCE: Cosine
+  SANDBOX_RUNTIME_ENABLED: "true"
+  SANDBOX_LEGACY_FALLBACK_ENABLED: "true"
+  SANDBOX_WORKER_CONCURRENCY: "1"
+  SANDBOX_WORKSPACE_ROOT: /tmp/clouisle-sandbox/jobs
+  SANDBOX_MAX_DISK_MB: "8192"
+  SANDBOX_SESSION_TTL_HOURS: "24"
+  SANDBOX_RESULT_TTL_SECONDS: "86400"
+  SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB: "10"
+  SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB: "10"
+
+extraEnv: {}
+extraSecretEnv: {}
+
+secrets:
+  create: true
+  existingSecret: ""
+  values:
+    SECRET_KEY: changethis-to-a-secure-random-secret-key
+    POSTGRES_PASSWORD: changeme
+    REDIS_PASSWORD: changeme
+    QDRANT_API_KEY: changeme
+    TAVILY_API_KEY: ""
+    SANDBOX_ARTIFACT_UPLOAD_API_KEY: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+uploads:
+  enabled: true
+  existingClaim: ""
+  mountPath: /app/uploads
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  size: 10Gi
+  annotations: {}
+
+api:
+  enabled: true
+  replicas: 2
+  command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
+  service:
+    type: ClusterIP
+    port: 8000
+  probes:
+    readiness:
+      path: /api/v1/health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    liveness:
+      path: /api/v1/health
+      initialDelaySeconds: 20
+      periodSeconds: 30
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+worker:
+  enabled: true
+  replicas: 2
+  command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+sandboxWorker:
+  enabled: true
+  replicas: 1
+  command: ["sh", "-c", "python main.py sandbox-worker -c \"${SANDBOX_WORKER_CONCURRENCY:-1}\""]
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+beat:
+  enabled: true
+  replicas: 1
+  strategy:
+    type: Recreate
+  command: ["python", "main.py", "beat"]
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+frontend:
+  enabled: true
+  replicas: 2
+  containerPort: 3000
+  service:
+    type: ClusterIP
+    port: 3000
+  env: {}
+  probes:
+    readiness:
+      path: /
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    liveness:
+      path: /
+      initialDelaySeconds: 10
+      periodSeconds: 30
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+  hosts:
+    - host: clouisle.example.com
+      paths:
+        api:
+          path: /api
+          pathType: Prefix
+        frontend:
+          path: /
+          pathType: Prefix
+  tls: []
+
+postgresql:
+  enabled: true
+  external:
+    host: ""
+    port: "5432"
+    user: ""
+    database: ""
+  image:
+    repository: postgres
+    tag: "16"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+redis:
+  enabled: true
+  external:
+    host: ""
+    port: "6379"
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+qdrant:
+  enabled: true
+  external:
+    url: ""
+  image:
+    repository: qdrant/qdrant
+    tag: latest
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
