@@ -181,20 +181,12 @@ async def _normalize_file_upload_value(
         content, detected_mime = _parse_data_url(raw_value)
         mime_type = mime_type or detected_mime
     elif raw_value.startswith("http://") or raw_value.startswith("https://"):
-        safe_url = _validate_external_http_url(raw_value)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(safe_url)
-            response.raise_for_status()
-            content = response.content
-            mime_type = (
-                mime_type
-                or response.headers.get("content-type", "").split(";", 1)[0].strip()
-                or None
-            )
-            source_url = raw_value
+        raise ValueError(
+            f"Unsupported file/image value for field '{field_name}'. Expected data URL."
+        )
     else:
         raise ValueError(
-            f"Unsupported file/image value for field '{field_name}'. Expected data URL or http(s) URL."
+            f"Unsupported file/image value for field '{field_name}'. Expected data URL."
         )
 
     resolved_filename = filename or _guess_filename(field_name, mime_type, source_url)
