@@ -3,6 +3,7 @@ Internationalization (i18n) module for multi-language support.
 Currently supports: English (en), Chinese (zh)
 """
 
+import hashlib
 import logging
 from contextvars import ContextVar
 from enum import Enum
@@ -87,8 +88,8 @@ def _log_missing_babel_key(lang: str, key: str) -> None:
         return
     _MISSING_BABEL_KEYS_LOGGED.add(marker)
     logger.warning(
-        "Missing Babel translation for key '%s' in locale '%s'; using legacy fallback",
-        key,
+        "Missing Babel translation for key hash '%s' in locale '%s'; using legacy fallback",
+        hashlib.sha256(key.encode("utf-8")).hexdigest()[:12],
         normalized,
     )
 

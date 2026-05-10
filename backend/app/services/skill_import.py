@@ -36,6 +36,8 @@ from app.services.skill_package import (
     NESTED_ARCHIVE_SUFFIXES,
     ParsedSkillPackage,
     SkillPackageService,
+    resolve_child_path,
+    safe_package_segment,
 )
 
 _MAX_ZIP_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -190,11 +192,8 @@ class SkillImportService:
                 result.errors.append(f"{package_path}: skill_package_not_in_session")
                 continue
 
-            skill_root = (source_root / package_path).resolve()
-            if (
-                source_root.resolve() not in skill_root.parents
-                and skill_root != source_root.resolve()
-            ):
+            skill_root = resolve_child_path(source_root, package_path)
+            if skill_root is None:
                 result.errors.append(f"{package_path}: skill_package_path_invalid")
                 continue
 
@@ -365,8 +364,8 @@ class SkillImportService:
 
             for info in infos:
                 SkillImportService._validate_zip_member(info)
-                target = (extract_root / info.filename).resolve()
-                if extract_root.resolve() not in target.parents:
+                target = resolve_child_path(extract_root, info.filename)
+                if target is None:
                     raise BusinessError(
                         code=ResponseCode.BAD_REQUEST, msg_key="skill_zip_path_invalid"
                     )
@@ -481,10 +480,15 @@ class SkillImportService:
                 code=ResponseCode.BAD_REQUEST,
                 msg_key="skill_import_session_missing_source",
             )
-        temp_root = Path(session.temp_storage_path)
-        if session.source_type == SkillSourceType.GIT:
-            return (temp_root / "repo").resolve()
-        return (temp_root / "source").resolve()
+        temp_root = Path(session.temp_storage_path).resolve()
+        child = "repo" if session.source_type == SkillSourceType.GIT else "source"
+        source_root = resolve_child_path(temp_root, child)
+        if source_root is None:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="skill_import_session_missing_source",
+            )
+        return source_root
 
     @staticmethod
     async def _resolve_update_target(
@@ -504,9 +508,19 @@ class SkillImportService:
     def _copy_to_private_storage(
         *, skill_root: Path, team_id: UUID | None, skill_name: str, package_hash: str
     ) -> str:
-        base_dir = Path(__file__).resolve().parents[3] / "uploads" / "skills"
+        base_dir = (Path(__file__).resolve().parents[3] / "uploads" / "skills").resolve()
         scope = str(team_id) if team_id else "system"
-        destination = (base_dir / scope / skill_name / package_hash[:16]).resolve()
+        relative_destination = PurePosixPath(
+            scope,
+            safe_package_segment(skill_name),
+            safe_package_segment(package_hash[:16]),
+        )
+        destination = resolve_child_path(base_dir, relative_destination)
+        if destination is None:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key="skill_package_path_invalid",
+            )
         if destination.exists():
             shutil.rmtree(destination)
         shutil.copytree(skill_root, destination, symlinks=False)
@@ -516,15 +530,23 @@ class SkillImportService:
     def _build_private_skill_spec(skill_root: Path) -> dict:
         files = []
         total_size = 0
-        for path in sorted(skill_root.rglob("*")):
-            relative_path = path.relative_to(skill_root)
-            if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
-                continue
-            if path.is_symlink():
+        skill_root = skill_root.resolve()
+        for raw_path in sorted(skill_root.rglob("*")):
+            if raw_path.is_symlink():
                 raise BusinessError(
                     code=ResponseCode.BAD_REQUEST,
                     msg_key="skill_package_symlink_not_allowed",
                 )
+            path = raw_path.resolve()
+            try:
+                relative_path = path.relative_to(skill_root)
+            except ValueError as exc:
+                raise BusinessError(
+                    code=ResponseCode.BAD_REQUEST,
+                    msg_key="skill_package_path_invalid",
+                ) from exc
+            if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
+                continue
             if not path.is_file():
                 continue
             if (

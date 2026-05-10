@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -38,6 +39,23 @@ IGNORED_DIR_NAMES = {
 }
 
 NESTED_ARCHIVE_SUFFIXES = {".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar"}
+_SAFE_PACKAGE_NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
+
+
+def resolve_child_path(root: Path, relative_path: str | PurePosixPath) -> Path | None:
+    root = root.resolve()
+    path = PurePosixPath(str(relative_path))
+    if path.is_absolute() or ".." in path.parts:
+        return None
+    candidate = (root / Path(*path.parts)).resolve()
+    if candidate == root or root in candidate.parents:
+        return candidate
+    return None
+
+
+def safe_package_segment(value: str) -> str:
+    segment = _SAFE_PACKAGE_NAME_RE.sub("-", value.strip())[:80].strip(".-_")
+    return segment or "skill"
 
 
 class ParsedSkillPackage(BaseModel):
@@ -87,9 +105,18 @@ class SkillPackageService:
     def parse_skill_root(source_root: Path, skill_root: Path) -> ParsedSkillPackage:
         source_root = source_root.resolve()
         skill_root = skill_root.resolve()
-        package_path = skill_root.relative_to(source_root).as_posix() or "."
-        skill_md_path = skill_root / "SKILL.md"
+        try:
+            relative_root = skill_root.relative_to(source_root)
+        except ValueError:
+            parsed = ParsedSkillPackage(package_path=".")
+            parsed.errors.append("skill_package_path_invalid")
+            return parsed
+        package_path = relative_root.as_posix() or "."
+        skill_md_path = resolve_child_path(skill_root, "SKILL.md")
         parsed = ParsedSkillPackage(package_path=package_path)
+        if skill_md_path is None:
+            parsed.errors.append("skill_md_not_found")
+            return parsed
 
         try:
             skill_md = skill_md_path.read_text(encoding="utf-8")
@@ -202,10 +229,12 @@ class SkillPackageService:
             normalized_script = script_path.as_posix()
             if not SkillPackageService._is_safe_relative_path(normalized_script):
                 errors.append("skill_script_path_invalid")
-            elif not (skill_root / normalized_script).resolve().is_file():
-                errors.append("skill_script_not_found")
             else:
-                config["script"] = normalized_script
+                script_file = resolve_child_path(skill_root, normalized_script)
+                if script_file is None or not script_file.is_file():
+                    errors.append("skill_script_not_found")
+                else:
+                    config["script"] = normalized_script
 
         limits, limits_error = SkillPackageService._normalize_execution_limits(
             execution.get("limits")
@@ -316,14 +345,19 @@ class SkillPackageService:
         digest = hashlib.sha256()
         errors: list[str] = []
 
-        for path in sorted(skill_root.rglob("*")):
-            relative = path.relative_to(skill_root).as_posix()
-            if any(
-                part in IGNORED_DIR_NAMES for part in path.relative_to(skill_root).parts
-            ):
-                continue
-            if path.is_symlink():
+        skill_root = skill_root.resolve()
+        for raw_path in sorted(skill_root.rglob("*")):
+            if raw_path.is_symlink():
                 errors.append("skill_package_symlink_not_allowed")
+                continue
+            path = raw_path.resolve()
+            try:
+                relative_path = path.relative_to(skill_root)
+            except ValueError:
+                errors.append("skill_package_path_invalid")
+                continue
+            relative = relative_path.as_posix()
+            if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
                 continue
             if not path.is_file():
                 continue

@@ -2,6 +2,13 @@
 
 ## Active
 
+- **pr-124-security-review** — Complete. Address PR #124 security review findings for path traversal, SSRF, ReDoS, XXE, sensitive logging, and duration timing. See `docs/plan/pr-124-security-review.md`
+  - [x] 1. Security review plan
+  - [x] 2. Path traversal hardening
+  - [x] 3. SSRF and ReDoS hardening
+  - [x] 4. XXE, sensitive logging, and timing fixes
+  - [x] 5. Validation and PR update
+
 - **helm-chart-deployment** — In progress. Add a minimal production-ready Helm chart for the current API/worker/sandbox-worker/scheduler/frontend deployment model. See `docs/plan/helm-chart-deployment.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Helm chart scaffold and values schema

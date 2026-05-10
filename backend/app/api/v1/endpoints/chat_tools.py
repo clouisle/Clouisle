@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 if TYPE_CHECKING:
     from app.models.agent import Agent
@@ -476,7 +477,6 @@ async def build_file_content_for_prompt(
         Formatted file content string for the prompt
     """
     from app.core.i18n import t
-    from app.core.config import settings
     from app.services.file_parser import (
         file_parser_service,
         ParsedFile,
@@ -500,45 +500,45 @@ async def build_file_content_for_prompt(
         parser_tool_id = parser_config.get("tool_id")
 
         if parser_type == "builtin" and parser_name == "markitdown":
-            import httpx
+            from app.api.v1.endpoints.upload import UPLOAD_ROOT, _resolve_upload_path
 
-            download_timeout = (tool_timeouts or {}).get("download", 60)
-            async with httpx.AsyncClient(
-                timeout=download_timeout, follow_redirects=True
-            ) as client:
-                for f in file_urls:
-                    filename = _get_item_value(f, "filename", "")
-                    mime_type = _get_item_value(
-                        f, "mime_type", "application/octet-stream"
+            for f in file_urls:
+                filename = _get_item_value(f, "filename", "")
+                mime_type = _get_item_value(f, "mime_type", "application/octet-stream")
+                size = _get_item_value(f, "size", 0)
+                url = _get_item_value(f, "url", "")
+                if not url:
+                    continue
+                try:
+                    prefix = "/api/v1/upload/files/"
+                    if not url.startswith(prefix):
+                        raise ValueError("only_upload_file_urls_are_allowed")
+                    relative_parts = [
+                        unquote(part) for part in url[len(prefix) :].split("/")
+                    ]
+                    if len(relative_parts) != 4:
+                        raise ValueError("invalid_upload_file_url")
+                    file_path = _resolve_upload_path(*relative_parts)
+                    if not file_path.is_file():
+                        raise ValueError("upload_file_not_found")
+                    file_path.relative_to(UPLOAD_ROOT)
+                    parsed_files.append(
+                        await file_parser_service.parse_file(
+                            file_path.read_bytes(),
+                            filename,
+                            parse_config,
+                        )
                     )
-                    size = _get_item_value(f, "size", 0)
-                    url = _get_item_value(f, "url", "")
-                    if not url:
-                        continue
-                    try:
-                        if url.startswith("/"):
-                            base_url = settings.API_BASE_URL.rstrip("/")
-                            url = f"{base_url}{url}"
-
-                        response = await client.get(url)
-                        response.raise_for_status()
-                        parsed_files.append(
-                            await file_parser_service.parse_file(
-                                response.content,
-                                filename,
-                                parse_config,
-                            )
+                except Exception as e:
+                    logger.warning("Failed to parse file %s: %s", filename, e)
+                    parsed_files.append(
+                        ParsedFile(
+                            filename=filename,
+                            content=t("file_parse_failed_placeholder"),
+                            mime_type=mime_type,
+                            size=size,
                         )
-                    except Exception as e:
-                        logger.warning("Failed to parse file %s: %s", filename, e)
-                        parsed_files.append(
-                            ParsedFile(
-                                filename=filename,
-                                content=t("file_parse_failed_placeholder"),
-                                mime_type=mime_type,
-                                size=size,
-                            )
-                        )
+                    )
         elif parser_type == "custom" and parser_tool_id:
             from app.models.tool import Tool
 

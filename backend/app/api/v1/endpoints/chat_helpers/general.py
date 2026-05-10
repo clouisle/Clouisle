@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -32,50 +33,42 @@ def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
 
 
 def parse_user_input_request(content: str) -> tuple[dict | None, str]:
-    """Parse user_input_request XML from content."""
-    from xml.etree import ElementTree as ET
-
-    pattern = r"<user_input_request>(.*?)</user_input_request>"
-    match = re.search(pattern, content, re.DOTALL)
+    """Parse user_input_request tags from content."""
+    match = re.search(
+        r"<user_input_request>(.*?)</user_input_request>", content, re.DOTALL
+    )
     if not match:
         return None, content
 
     xml_block = match.group(0)
     xml_content = match.group(1)
-
-    try:
-        logger.info("Parsing user_input_request XML: %s", xml_content[:200])
-        root = ET.fromstring(f"<root>{xml_content}</root>")
-        question_elem = root.find("question")
-        if question_elem is None or not question_elem.text:
-            return None, content
-        question = question_elem.text.strip()
-
-        options_elem = root.find("options")
-        if options_elem is None:
-            return None, content
-
-        options = []
-        for opt in options_elem.findall("option"):
-            if opt.text:
-                option_text = opt.text.strip()
-                if option_text and len(option_text) <= 200:
-                    options.append(option_text)
-
-        if len(options) < 2:
-            return None, content
-
-        remaining_content = content.replace(xml_block, "").strip()
-        logger.info(
-            "Successfully parsed user_input_request: question=%s, options_count=%s",
-            question[:50],
-            len(options),
-        )
-        return {"question": question[:500], "options": options}, remaining_content
-
-    except ET.ParseError as e:
-        logger.error("Failed to parse user_input_request XML: %s", e)
+    question_match = re.search(r"<question>(.*?)</question>", xml_content, re.DOTALL)
+    options_match = re.search(r"<options>(.*?)</options>", xml_content, re.DOTALL)
+    if not question_match or not options_match:
         return None, content
+
+    question = html.unescape(question_match.group(1)).strip()
+    if not question:
+        return None, content
+
+    options = []
+    for option_match in re.finditer(
+        r"<option>(.*?)</option>", options_match.group(1), re.DOTALL
+    ):
+        option_text = html.unescape(option_match.group(1)).strip()
+        if option_text and len(option_text) <= 200:
+            options.append(option_text)
+
+    if len(options) < 2:
+        return None, content
+
+    remaining_content = content.replace(xml_block, "").strip()
+    logger.info(
+        "Successfully parsed user_input_request: question_length=%s, options_count=%s",
+        len(question),
+        len(options),
+    )
+    return {"question": question[:500], "options": options}, remaining_content
 
 
 def get_tool_execution_payloads(result: Any) -> tuple[str, str]:

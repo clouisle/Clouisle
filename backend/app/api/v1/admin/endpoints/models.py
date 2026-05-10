@@ -192,7 +192,7 @@ async def test_model_connection(
             msg_key="model_api_key_required",
         )
 
-    start_time = time.time()
+    start_time = time.monotonic()
     try:
         model_type = ModelType(model.model_type)
     except ValueError as exc:
@@ -237,7 +237,7 @@ async def test_model_connection(
                 msg_key="model_type_not_supported",
             )
 
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         return success(
             data=ModelTestResponse(
                 success=True,
@@ -251,7 +251,7 @@ async def test_model_connection(
         raise
     except Exception as e:
         logger.exception(f"Model test failed: {e}")
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         raw_error_msg = str(e)
         error_msg = raw_error_msg
         if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
@@ -324,7 +324,7 @@ async def test_model_config(
     default_params = test_request.default_params or {}
     config = test_request.config or {}
 
-    start_time = time.time()
+    start_time = time.monotonic()
 
     try:
         if model_type == ModelType.CHAT:
@@ -352,7 +352,7 @@ async def test_model_config(
                 msg_key="model_type_not_supported",
             )
 
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         return success(
             data=ModelTestResponse(
                 success=True,
@@ -366,7 +366,7 @@ async def test_model_config(
         raise
     except Exception as e:
         logger.exception(f"Model test failed: {e}")
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         raw_error_msg = str(e)
         error_msg = raw_error_msg
         if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
