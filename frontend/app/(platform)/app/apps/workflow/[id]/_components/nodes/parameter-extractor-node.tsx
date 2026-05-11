@@ -139,6 +139,14 @@ export const extractionMethodConfigStatic: Record<ExtractionMethod, {
   },
 }
 
+const extractedParamTypeLabelKeys: Record<ExtractedParamType, string> = {
+  string: 'dialogs.parameterEdit.typeText',
+  number: 'dialogs.parameterEdit.typeNumber',
+  boolean: 'varTypes.boolean',
+  array: 'dialogs.parameterEdit.typeArray',
+  object: 'dialogs.parameterEdit.typeObject',
+}
+
 // 提取方式配置（带翻译）- 用于需要翻译的场景
 export function getExtractionMethodConfig(t: (key: string) => string): Record<ExtractionMethod, {
   label: string
@@ -169,8 +177,8 @@ export function getExtractionMethodConfig(t: (key: string) => string): Record<Ex
       sourceVariableTypes: ['String'],
     },
     json_path: {
-      label: 'JSON Path',
-      shortLabel: 'JSON',
+      label: t('nodesParameterExtractor.methodJsonPathLabel'),
+      shortLabel: t('nodesParameterExtractor.methodJsonPathShort'),
       description: t('nodesParameterExtractor.methodJsonPathDesc'),
       icon: FileJson,
       supportedTypes: ['string', 'number', 'boolean', 'array', 'object'],
@@ -193,14 +201,14 @@ export const extractionMethodConfig = extractionMethodConfigStatic as Record<Ext
 
 // 参数类型配置
 export const extractedParamTypeConfig: Record<ExtractedParamType, {
-  label: string
+  labelKey: string
   icon: React.ComponentType<{ className?: string }>
 }> = {
-  string: { label: 'String', icon: Type },
-  number: { label: 'Number', icon: Hash },
-  boolean: { label: 'Boolean', icon: ToggleLeft },
-  array: { label: 'Array', icon: List },
-  object: { label: 'Object', icon: Braces },
+  string: { labelKey: extractedParamTypeLabelKeys.string, icon: Type },
+  number: { labelKey: extractedParamTypeLabelKeys.number, icon: Hash },
+  boolean: { labelKey: extractedParamTypeLabelKeys.boolean, icon: ToggleLeft },
+  array: { labelKey: extractedParamTypeLabelKeys.array, icon: List },
+  object: { labelKey: extractedParamTypeLabelKeys.object, icon: Braces },
 }
 
 interface ParameterExtractorNodeData {
@@ -288,7 +296,7 @@ export function ParameterExtractorNode({ selected, data }: ParameterExtractorNod
 
                   {/* 类型 */}
                   <span className="text-[10px] text-muted-foreground">
-                    {typeConfig.label}
+                    {t(typeConfig.labelKey)}
                   </span>
 
                   {/* 必填标记 */}

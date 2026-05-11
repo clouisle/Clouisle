@@ -16,7 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type WeChatSettings } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface WeChatSettingsTabProps {
   settings: WeChatSettings
@@ -28,17 +36,65 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['wechat_webhook_url', 'wechat_corp_id', 'wechat_agent_id', 'wechat_secret']),
+    [fieldErrors]
+  )
 
   const updateSetting = <K extends keyof WeChatSettings>(key: K, value: WeChatSettings[K]) => {
     onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
+  }
+
+  const validateSettings = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.wechat_enabled) {
+      return nextErrors
+    }
+
+    if (settings.wechat_notification_type === 'webhook') {
+      if (!settings.wechat_webhook_url.trim()) {
+        nextErrors.wechat_webhook_url = t('required')
+      }
+    } else {
+      if (!settings.wechat_corp_id.trim()) nextErrors.wechat_corp_id = t('required')
+      if (!settings.wechat_agent_id.trim()) nextErrors.wechat_agent_id = t('required')
+      if (!settings.wechat_secret.trim()) nextErrors.wechat_secret = t('required')
+    }
+
+    return nextErrors
   }
 
   const handleSave = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateWeChat(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save wechat settings:', error)
     } finally {
       setSaving(false)
@@ -46,11 +102,22 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
   }
 
   const handleSendTest = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSendingTest(true)
       await siteSettingsApi.sendTestWeChat()
       toast.success(t('wechat.testSent'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
       console.error('Failed to send test wechat:', error)
     } finally {
       setSendingTest(false)
@@ -59,6 +126,13 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* 基础设置 */}
       <Card>
         <CardHeader>
@@ -129,7 +203,9 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
                 value={settings.wechat_webhook_url}
                 onChange={(e) => updateSetting('wechat_webhook_url', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.wechat_webhook_url}
               />
+              <FieldError>{fieldErrors.wechat_webhook_url}</FieldError>
               <p className="text-sm text-muted-foreground">{t('wechat.webhookUrlDesc')}</p>
             </div>
           </CardContent>
@@ -163,7 +239,9 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
                 value={settings.wechat_corp_id}
                 onChange={(e) => updateSetting('wechat_corp_id', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.wechat_corp_id}
               />
+              <FieldError>{fieldErrors.wechat_corp_id}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -174,7 +252,9 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
                 value={settings.wechat_agent_id}
                 onChange={(e) => updateSetting('wechat_agent_id', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.wechat_agent_id}
               />
+              <FieldError>{fieldErrors.wechat_agent_id}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -186,7 +266,9 @@ export function WeChatSettingsTab({ settings, onSettingsChange, canUpdate }: WeC
                 value={settings.wechat_secret}
                 onChange={(e) => updateSetting('wechat_secret', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.wechat_secret}
               />
+              <FieldError>{fieldErrors.wechat_secret}</FieldError>
             </div>
           </CardContent>
         </Card>

@@ -42,7 +42,7 @@ Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 
                          ┌─────────────────────────────────────────────┐
                          │              Frontend Container             │
   Browser ──────────────►│  Nginx (:3000)                              │
-                         │    ├── /api/*  ──► proxy to backend:8000    │
+                         │    ├── /api/*  ──► proxy to api:8000    │
                          │    ├── /_next/static/* ──► local files      │
                          │    └── /*  ──► Node.js SSR (:3001 internal) │
                          └──────────────────┬──────────────────────────┘
@@ -63,15 +63,17 @@ Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 
 
 | 镜像 | 服务 | 说明 |
 |------|------|------|
-| `clouisle-backend` | backend, worker, beat | Python 3.13：Gunicorn API 服务、Celery worker、Celery beat |
-| `clouisle-frontend` | frontend | Nginx + Next.js standalone（SSR） |
+| `clouisle-backend` | api, worker, beat | Python 3.13：API 服务、Celery worker、Celery beat |
+| `clouisle-sandbox-worker` | sandbox-worker | 沙箱任务执行和产物上传 |
+| `clouisle-frontend` | frontend | Next.js standalone（SSR） |
 
-后端镜像被 3 个服务复用，通过启动命令区分：
+后端镜像被 3 个服务复用，沙箱使用独立镜像，通过启动命令区分：
 
 | 服务 | 命令 | 副本数 |
 |------|------|--------|
-| backend | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
+| api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
 | worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **必须为 1** |
 
 > **重要**：beat 服务必须始终保持 1 个副本。运行多个 beat 会导致定时任务重复执行。
@@ -96,23 +98,50 @@ Clouisle 使用 **2 个 Docker 镜像**，运行为 **4 个应用服务** + **3 
 所有命令都在**项目根目录**执行：
 
 ```bash
-# Backend image (shared by backend, worker, beat services)
+# Backend image (shared by api, worker, beat services)
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend:latest .
 
-# Frontend image (Nginx + Next.js)
+# Sandbox worker image
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker:latest .
+
+# Frontend image (Next.js standalone)
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend:latest .
 ```
 
 私有镜像仓库示例：
 
 ```bash
-docker tag clouisle-backend:latest registry.example.com/clouisle/backend:latest
-docker tag clouisle-frontend:latest registry.example.com/clouisle/frontend:latest
-docker push registry.example.com/clouisle/backend:latest
-docker push registry.example.com/clouisle/frontend:latest
+docker tag clouisle-backend:latest registry.example.com/clouisle/clouisle-backend:latest
+docker tag clouisle-sandbox-worker:latest registry.example.com/clouisle/clouisle-sandbox-worker:latest
+docker tag clouisle-frontend:latest registry.example.com/clouisle/clouisle-frontend:latest
+docker push registry.example.com/clouisle/clouisle-backend:latest
+docker push registry.example.com/clouisle/clouisle-sandbox-worker:latest
+docker push registry.example.com/clouisle/clouisle-frontend:latest
 ```
 
 ---
+
+## Kubernetes Helm 部署
+
+Kubernetes 推荐使用 Helm 部署：
+
+```bash
+helm lint deploy/helm/clouisle
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace
+```
+
+生产环境建议先创建 `clouisle-secret`，再使用生产 values：
+
+```bash
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace \
+  -f deploy/helm/clouisle/values-production.yaml
+```
+
+单文件 manifest 仍保留在 `deploy/k8s/clouisle.yaml`，用于 fallback 或调试。
 
 ## Docker Compose 部署
 
@@ -221,7 +250,7 @@ volumes:
   qdrant:
     ports:
       - "6333:6333"    # Remove
-  backend:
+  api:
     ports:
       - "8000:8000"    # Remove — frontend Nginx proxies API requests
 ```
@@ -286,7 +315,7 @@ BACKEND_CORS_ORIGINS=https://example.com
 docker compose up -d --scale worker=4
 
 # Scale backend API (safe to run multiple behind Nginx)
-docker compose up -d --scale backend=2
+docker compose up -d --scale api=2
 
 # NEVER scale beat beyond 1
 # docker compose up -d --scale beat=2  ← DO NOT DO THIS
@@ -295,7 +324,7 @@ docker compose up -d --scale backend=2
 当 backend 扩容到多个副本时，移除主机端口映射避免冲突：
 
 ```yaml
-backend:
+api:
     # Remove: ports: ["8000:8000"]
     expose:
       - "8000"
@@ -305,15 +334,15 @@ backend:
 
 ```bash
 # View logs (follow mode)
-docker compose logs -f backend
+docker compose logs -f api
 docker compose logs -f worker
 docker compose logs -f frontend
 
 # View logs for a specific time range
-docker compose logs --since 1h backend
+docker compose logs --since 1h api
 
 # Restart a single service (zero-downtime for stateless services)
-docker compose restart backend
+docker compose restart api
 
 # Stop all services
 docker compose down
@@ -483,7 +512,7 @@ data:
 kubectl -n clouisle scale deployment worker --replicas=4
 
 # Scale backend
-kubectl -n clouisle scale deployment backend --replicas=3
+kubectl -n clouisle scale deployment api --replicas=3
 
 # Scale frontend
 kubectl -n clouisle scale deployment frontend --replicas=3
@@ -497,13 +526,13 @@ kubectl -n clouisle scale deployment frontend --replicas=3
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: backend-hpa
+  name: api-hpa
   namespace: clouisle
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: backend
+    name: api
   minReplicas: 2
   maxReplicas: 10
   metrics:
@@ -522,7 +551,7 @@ spec:
 kubectl -n clouisle get pods -o wide
 
 # View logs
-kubectl -n clouisle logs -f deployment/backend
+kubectl -n clouisle logs -f deployment/api
 kubectl -n clouisle logs -f deployment/worker
 kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
@@ -531,13 +560,13 @@ kubectl -n clouisle logs -f deployment/frontend
 kubectl -n clouisle logs -f <pod-name>
 
 # Restart a deployment (rolling restart)
-kubectl -n clouisle rollout restart deployment backend
+kubectl -n clouisle rollout restart deployment api
 
 # Check rollout status
-kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment api
 
 # Execute a command in a pod
-kubectl -n clouisle exec -it deployment/backend -- bash
+kubectl -n clouisle exec -it deployment/api -- bash
 
 # View resource usage
 kubectl -n clouisle top pods
@@ -670,7 +699,7 @@ docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
   alpine tar czf /backup/uploads_backup.tar.gz -C /data .
 
 # Kubernetes (if using PVC)
-kubectl -n clouisle exec deployment/backend -- tar czf - /app/uploads > uploads_backup.tar.gz
+kubectl -n clouisle exec deployment/api -- tar czf - /app/uploads > uploads_backup.tar.gz
 ```
 
 ### 自动备份计划
@@ -740,20 +769,20 @@ docker compose logs --tail=50 backend
 
 ```bash
 # 1. Build and push new images
-docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/backend:v2.0.0 .
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/api:v2.0.0 .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
-docker push registry.example.com/clouisle/backend:v2.0.0
+docker push registry.example.com/clouisle/api:v2.0.0
 docker push registry.example.com/clouisle/frontend:v2.0.0
 
 # 2. Update image tags in clouisle.yaml (the anchors at the top)
-#    - &backend-image registry.example.com/clouisle/backend:v2.0.0
+#    - &backend-image registry.example.com/clouisle/api:v2.0.0
 #    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
 
 # 3. Apply
 kubectl apply -f deploy/k8s/clouisle.yaml
 
 # 4. Monitor rollout
-kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment api
 kubectl -n clouisle rollout status deployment worker
 kubectl -n clouisle rollout status deployment frontend
 ```
@@ -797,16 +826,16 @@ kubectl -n clouisle exec statefulset/postgres -- pg_isready -U postgres
 
 ### Frontend 访问 API 返回 502
 
-frontend Nginx 将 `/api/*` 代理到 `http://backend:8000`。502 说明 backend 不可达。
+frontend Nginx 将 `/api/*` 代理到 `http://api:8000`。502 说明 backend 不可达。
 
 ```bash
 # Check if backend is running
-docker compose ps backend
+docker compose ps api
 # or
-kubectl -n clouisle get pods -l app=backend
+kubectl -n clouisle get pods -l app=api
 
 # Test connectivity from frontend container
-docker compose exec frontend wget -qO- http://backend:8000/api/v1/health
+docker compose exec frontend wget -qO- http://api:8000/api/v1/health
 ```
 
 ### Worker 不处理任务
@@ -846,7 +875,7 @@ K8s 中 beat Deployment 使用 `strategy: Recreate`，确保新 Pod 启动前旧
 
 ```bash
 # Docker Compose — verify both mount the same volume
-docker compose exec backend ls -la /app/uploads
+docker compose exec api ls -la /app/uploads
 docker compose exec worker ls -la /app/uploads
 ```
 

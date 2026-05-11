@@ -7,7 +7,7 @@ from pydantic import EmailStr
 from app.api import deps
 from app.core import security
 from app.core.i18n import t
-from app.core.password import validate_password
+from app.core.password import validate_password, translate_password_validation_errors
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.models.notification import AutoNotificationType, NotificationLevel
@@ -203,9 +203,11 @@ async def change_password(
     # Validate new password (including history check)
     is_valid, errors = await validate_password(data.new_password, current_user)
     if not is_valid:
+        translated_errors = translate_password_validation_errors(errors)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=", ".join([t(err) for err in errors]),
+            msg=", ".join(translated_errors),
+            data={"errors": {"new_password": translated_errors}},
         )
 
     # Update password with expiration logic

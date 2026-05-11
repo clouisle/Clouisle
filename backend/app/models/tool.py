@@ -37,6 +37,7 @@ class ToolCategory(str, Enum):
     WEB = "web"
     FILE = "file"
     CODE = "code"
+    SANDBOX = "sandbox"
     API = "api"
     DATA = "data"
     OTHER = "other"
@@ -74,8 +75,8 @@ class Tool(models.Model):
     display_name = fields.CharField(max_length=100, description="Display name")
     description = fields.TextField(description="Tool description")
     icon = fields.CharField(max_length=100, null=True, description="Icon emoji or URL")
-    category = fields.CharEnumField(
-        ToolCategory, default=ToolCategory.OTHER, description="Tool category"
+    category = fields.CharField(
+        max_length=100, default=ToolCategory.OTHER.value, description="Tool category"
     )
 
     # Tool type

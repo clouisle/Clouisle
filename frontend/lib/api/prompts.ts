@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, ApiError, type ApiResponse } from './client'
 
 // ============ Types ============
 
@@ -118,6 +118,10 @@ export const promptsApi = {
     })
 
     if (!response.ok) {
+      const responseData = await response.json() as ApiResponse
+      if (responseData && typeof responseData === 'object' && responseData.code !== undefined) {
+        throw new ApiError(responseData.code, responseData.msg, responseData.data)
+      }
       throw new Error(`Failed to generate prompt: ${response.status}`)
     }
 

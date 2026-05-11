@@ -80,6 +80,9 @@ class Agent(models.Model):
     max_iterations = fields.IntField(
         default=5, description="Max tool call iterations (1-200)"
     )
+    hide_tool_calls = fields.BooleanField(
+        default=False, description="Hide tool call details in chat UI"
+    )
 
     # Tools configuration (JSON array)
     # [{"type": "builtin", "name": "web_search"}, {"type": "mcp", "server_id": "xxx"}]
@@ -142,6 +145,12 @@ class Agent(models.Model):
     streaming_config: dict = fields.JSONField(
         default=dict,
         description="Streaming configuration (global_timeout, heartbeat_interval, tool_timeouts)",
+    )  # type: ignore[assignment]
+
+    # Context compression configuration
+    context_compression_config: dict = fields.JSONField(
+        default=dict,
+        description="Context compression configuration (budget guard, compaction, retry, SSE emission)",
     )  # type: ignore[assignment]
 
     # Embed configuration
@@ -266,6 +275,33 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
+class MessageRoundRole(str, Enum):
+    """Round-level semantic role for persisted chat messages."""
+
+    USER_INPUT = "user_input"
+    ASSISTANT_FINAL = "assistant_final"
+    ASSISTANT_STEP = "assistant_step"
+    TOOL_RESULT = "tool_result"
+
+
+class MessageRoundStatus(str, Enum):
+    """Terminal status for a completed assistant round."""
+
+    COMPLETED = "completed"
+    MAX_ITERATIONS_REACHED = "max_iterations_reached"
+    MANUALLY_STOPPED = "manually_stopped"
+    ERROR = "error"
+
+
+class ConversationSessionMemoryStatus(str, Enum):
+    """Conversation session-memory snapshot status."""
+
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    STALE = "stale"
+
+
 class Conversation(models.Model):
     """
     Conversation session.
@@ -310,6 +346,7 @@ class Conversation(models.Model):
 
     # Relations
     messages: fields.ReverseRelation["Message"]
+    session_memory_snapshots: fields.ReverseRelation["ConversationSessionMemory"]
 
     class Meta:
         table = "conversations"
@@ -372,6 +409,34 @@ class Message(models.Model):
         max_length=100, null=True, description="Tool name (for tool role messages)"
     )
 
+    # Round metadata
+    round_id = fields.UUIDField(
+        null=True,
+        description="Round ID shared by messages in the same agent execution round",
+    )
+    round_index = fields.IntField(
+        default=0,
+        description="Stable order of this message within its round",
+    )
+    round_role = fields.CharEnumField(
+        MessageRoundRole,
+        null=True,
+        description="Round semantic role for this message",
+    )
+    is_round_canonical = fields.BooleanField(
+        default=False,
+        description="Whether this message is the canonical visible message for its round",
+    )
+    iteration_index = fields.IntField(
+        null=True,
+        description="Tool-loop iteration index for step and tool result messages",
+    )
+    round_status = fields.CharEnumField(
+        MessageRoundStatus,
+        null=True,
+        description="Terminal round status recorded on canonical assistant messages",
+    )
+
     # Reasoning content (for assistant messages with chain-of-thought)
     reasoning_content = fields.TextField(
         null=True, description="Reasoning/thinking content from LLM"
@@ -383,6 +448,9 @@ class Message(models.Model):
         null=True, description='Token usage {"prompt": 100, "completion": 50}'
     )
     duration_ms = fields.IntField(null=True, description="Response duration in ms")
+    is_manually_stopped = fields.BooleanField(
+        default=False, description="Whether generation was manually stopped"
+    )
 
     # RAG context (for user messages that triggered retrieval)
     rag_context: list | None = fields.JSONField(
@@ -398,3 +466,65 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
+
+
+class ConversationSessionMemory(models.Model):
+    """Conversation-scoped session memory snapshot used for context compaction."""
+
+    id = fields.UUIDField(pk=True)
+
+    conversation: fields.ForeignKeyRelation[Conversation] = fields.ForeignKeyField(
+        "models.Conversation",
+        related_name="session_memory_snapshots",
+        on_delete=fields.CASCADE,
+        unique=True,
+    )
+    conversation_id: UUID  # type: ignore[assignment]
+
+    source_message_id = fields.UUIDField(
+        null=True,
+        description="Latest assistant message used to produce this snapshot",
+    )
+    status = fields.CharEnumField(
+        ConversationSessionMemoryStatus,
+        default=ConversationSessionMemoryStatus.PENDING,
+        description="Snapshot extraction status",
+    )
+    summary_text = fields.TextField(
+        default="",
+        description="Rendered session memory summary for prompt injection",
+    )
+    snapshot_payload: dict = fields.JSONField(
+        default=dict,
+        description="Structured conversation-scoped memory payload",
+    )  # type: ignore[assignment]
+    token_estimate = fields.IntField(
+        default=0,
+        description="Estimated token count of the rendered summary",
+    )
+    extractor_model = fields.CharField(
+        max_length=255,
+        null=True,
+        description="Model identifier used for the latest extraction",
+    )
+    failure_count = fields.IntField(
+        default=0,
+        description="Consecutive extraction failures recorded on the snapshot",
+    )
+    last_error = fields.TextField(
+        null=True,
+        description="Last extractor error message",
+    )
+    last_extracted_at = fields.DatetimeField(
+        null=True,
+        description="When the snapshot was last refreshed",
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "conversation_session_memories"
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"ConversationSessionMemory {self.conversation_id} ({self.status})"

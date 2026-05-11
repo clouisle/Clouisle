@@ -362,11 +362,14 @@ class AnthropicAdapter(BaseChatAdapter):
                         )
 
             # 启用 thinking (only if not using output_config)
-            if self.thinking_enabled and not has_output_config:
-                thinking_config: dict[str, Any] = {"type": "enabled"}
-                if self.thinking_budget:
-                    thinking_config["budget_tokens"] = self.thinking_budget
-                request_params["thinking"] = thinking_config
+            if not has_output_config:
+                if self.thinking_enabled:
+                    thinking_config: dict[str, Any] = {"type": "enabled"}
+                    if self.thinking_budget:
+                        thinking_config["budget_tokens"] = self.thinking_budget
+                    request_params["thinking"] = thinking_config
+                else:
+                    request_params["thinking"] = {"type": "disabled"}
                 logger.info("Anthropic adapter: Enabled thinking")
             elif self.thinking_enabled and has_output_config:
                 logger.warning(
@@ -374,7 +377,10 @@ class AnthropicAdapter(BaseChatAdapter):
                 )
 
             # Regular response
-            response = await client.messages.create(**request_params)
+            response = await client.messages.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             # 提取内容
             content, reasoning_content, tool_calls = self._extract_response(response)
@@ -478,14 +484,20 @@ class AnthropicAdapter(BaseChatAdapter):
                 if self.thinking_budget:
                     thinking_config["budget_tokens"] = self.thinking_budget
                 request_params["thinking"] = thinking_config
+            else:
+                request_params["thinking"] = {"type": "disabled"}
 
+            extra_body = self.get_passthrough_body() or None
             response_id = str(uuid.uuid4())
 
             # 用于累积工具调用
             current_tool_use: dict[str, Any] | None = None
             tool_calls: list[ToolCall] = []
 
-            async with client.messages.stream(**request_params) as stream:
+            async with client.messages.stream(
+                **request_params,
+                extra_body=extra_body,
+            ) as stream:
                 async for event in stream:
                     event_type = getattr(event, "type", None)
 
@@ -502,6 +514,10 @@ class AnthropicAdapter(BaseChatAdapter):
                                     "name": getattr(content_block, "name", ""),
                                     "input": "",
                                 }
+                                yield self.create_stream_chunk(
+                                    response_id=response_id,
+                                    stream_activity=True,
+                                )
                         continue
 
                     # 处理 content_block_delta
@@ -535,6 +551,10 @@ class AnthropicAdapter(BaseChatAdapter):
                             if current_tool_use is not None:
                                 partial_json = getattr(delta, "partial_json", "")
                                 current_tool_use["input"] += partial_json
+                                yield self.create_stream_chunk(
+                                    response_id=response_id,
+                                    stream_activity=True,
+                                )
 
                         continue
 

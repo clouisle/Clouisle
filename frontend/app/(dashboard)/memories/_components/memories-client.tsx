@@ -63,11 +63,17 @@ import {
 } from '@/components/ui/alert-dialog'
 import { EntityDialog } from './entity-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function MemoriesClient() {
     const t = useTranslations('memories')
     const commonT = useTranslations('common')
     const { canPerform } = useCanPerform()
+
+    const getEntityTypeLabel = (entityType: string) => {
+        const key = `types.${entityType}`
+        return t.has(key) ? t(key) : entityType
+    }
 
     // Data state
     const [entities, setEntities] = React.useState<MemoryEntity[]>([])
@@ -77,7 +83,7 @@ export function MemoriesClient() {
     const [pageData, setPageData] = React.useState<PageData<MemoryEntity> | null>(null)
 
     // Filter state
-    const [searchQuery, setSearchQuery] = React.useState('')
+    const [searchQuery, setSearchQuery] = useUrlSearchState()
     const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
 
     // Selection state
@@ -320,7 +326,7 @@ export function MemoriesClient() {
                                         <TableCell className="font-medium">{entity.name}</TableCell>
                                         <TableCell>
                                             <Badge className={getTypeBadgeColor(entity.entity_type)}>
-                                                {t(`types.${entity.entity_type}`)}
+                                                {getEntityTypeLabel(entity.entity_type)}
                                             </Badge>
                                         </TableCell>
                                         <TableCell>
@@ -413,7 +419,7 @@ export function MemoriesClient() {
                                     setPage(1)
                                 }}
                             >
-                                <SelectTrigger className="h-8 w-16">
+                                <SelectTrigger size="sm" className="w-16">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

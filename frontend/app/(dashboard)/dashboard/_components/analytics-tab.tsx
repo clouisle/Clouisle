@@ -36,18 +36,55 @@ function formatDuration(ms: number): string {
   return `${(ms / 60000).toFixed(1)}m`
 }
 
+function useCountUp(value: number, isLoading: boolean) {
+  const [displayValue, setDisplayValue] = React.useState(0)
+
+  React.useEffect(() => {
+    if (isLoading) {
+      setDisplayValue(0)
+      return
+    }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || value === 0) {
+      setDisplayValue(value)
+      return
+    }
+
+    const duration = 900
+    const startedAt = performance.now()
+    let frameId = 0
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - startedAt) / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 3)
+      setDisplayValue(Math.round(value * easedProgress))
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick)
+      }
+    }
+
+    frameId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frameId)
+  }, [isLoading, value])
+
+  return displayValue
+}
+
 function StatCard({
   title,
   value,
   icon: Icon,
   isLoading,
   color = 'primary',
+  formatter = formatNumber,
 }: {
   title: string
   value: number | string
   icon: React.ElementType
   isLoading: boolean
   color?: string
+  formatter?: (value: number) => string
 }) {
   const colorClasses = {
     primary: 'bg-primary/10 text-primary',
@@ -57,6 +94,8 @@ function StatCard({
     orange: 'bg-orange-500/10 text-orange-500',
     cyan: 'bg-cyan-500/10 text-cyan-500',
   }
+  const animatedValue = useCountUp(typeof value === 'number' ? value : 0, isLoading)
+  const displayValue = typeof value === 'number' ? formatter(animatedValue) : value
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -68,7 +107,7 @@ function StatCard({
               <div className="h-9 w-32 bg-muted animate-pulse rounded" />
             ) : (
               <p className="text-3xl font-bold tracking-tight">
-                {typeof value === 'number' ? formatNumber(value) : value}
+                {displayValue}
               </p>
             )}
           </div>
@@ -99,17 +138,19 @@ function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, 
         />
         <StatCard
           title={t('analytics.successRate')}
-          value={workflowData ? `${workflowData.success_rate.toFixed(1)}%` : '0%'}
+          value={workflowData?.success_rate || 0}
           icon={TrendingUp}
           isLoading={isLoading}
           color="green"
+          formatter={(value) => `${value.toFixed(1)}%`}
         />
         <StatCard
           title={t('analytics.avgDuration')}
-          value={workflowData ? formatDuration(workflowData.avg_duration_ms) : '0ms'}
+          value={workflowData?.avg_duration_ms || 0}
           icon={Clock}
           isLoading={isLoading}
           color="orange"
+          formatter={formatDuration}
         />
         <StatCard
           title={t('analytics.topAgent')}

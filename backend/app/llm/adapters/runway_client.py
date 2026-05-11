@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -66,7 +67,7 @@ class RunwayClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Runway request timeout",
+                message=t("runway_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -79,25 +80,25 @@ class RunwayClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid Runway API key",
+                message=t("invalid_runway_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="Runway task not found",
+                message=t("runway_task_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="Runway endpoint not found",
+                message=t("runway_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="Runway rate limit exceeded",
+                message=t("runway_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -110,7 +111,7 @@ class RunwayClient:
                 error_data.get("message")
                 or error_data.get("error")
                 or response.text
-                or "Runway API error"
+                or t("runway_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -139,7 +140,7 @@ class RunwayClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="Runway task polling timed out",
+            message=t("runway_task_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

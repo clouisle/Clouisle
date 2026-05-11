@@ -181,7 +181,7 @@ export function VariableAggregatorNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateVariable(varMapping.id, {
                             sourceVariable: `{{${variable.id}}}`,
-                            sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            sourceNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                             // 如果是 object 模式且没有设置 targetKey，自动从变量名推断
                             targetKey: safeConfig.mode === 'object' && !varMapping.targetKey 
                               ? variable.name.split('.').pop() || variable.name
@@ -233,7 +233,7 @@ export function VariableAggregatorNodeConfig({
               : safeConfig.variables,
           })}
         >
-          <SelectTrigger className="h-9 text-xs">
+          <SelectTrigger size="default" className="text-xs">
             <SelectValue>
               {modeConfig.label}
             </SelectValue>
@@ -349,8 +349,10 @@ export function VariableAggregatorNodeConfig({
             value={safeConfig.mergeStrategy || 'shallow'}
             onValueChange={(v) => onConfigChange({ ...safeConfig, mergeStrategy: v as 'shallow' | 'deep' })}
           >
-            <SelectTrigger className="h-9 text-xs">
-              <SelectValue />
+            <SelectTrigger size="default" className="text-xs">
+              <SelectValue>
+                {safeConfig.mergeStrategy === 'deep' ? t('configVariableAggregator.deepMerge') : t('configVariableAggregator.shallowMerge')}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="shallow" className="text-xs">{t('configVariableAggregator.shallowMerge')}</SelectItem>

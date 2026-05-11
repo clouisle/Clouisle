@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 import statistics
-from typing import Any, Callable, Awaitable
+from typing import Callable, Awaitable
 from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
@@ -130,8 +130,8 @@ class BenchmarkResult:
     # Raw results
     results: list[RequestResult] = field(default_factory=list)
 
-    def to_dict(self, include_raw: bool = False) -> dict:
-        data: dict[str, Any] = {
+    def to_dict(self, include_raw: bool = False) -> dict[str, object]:
+        data: dict[str, object] = {
             "benchmark_id": self.benchmark_id,
             "status": self.status.value,
             "config": self.config.to_dict(),
@@ -248,7 +248,7 @@ class WorkflowBenchmark:
     async def run(
         self,
         name: str,
-        executor: Callable[[dict], Awaitable[Any]],
+        executor: Callable[[dict], Awaitable[object]],
         inputs_generator: Callable[[], dict],
         config: BenchmarkConfig | None = None,
     ) -> BenchmarkResult:
@@ -330,7 +330,7 @@ class WorkflowBenchmark:
     async def _run_concurrent(
         self,
         benchmark_id: str,
-        executor: Callable[[dict], Awaitable[Any]],
+        executor: Callable[[dict], Awaitable[object]],
         inputs_generator: Callable[[], dict],
         config: BenchmarkConfig,
     ) -> list[RequestResult]:
@@ -434,7 +434,7 @@ class WorkflowBenchmark:
     async def _execute_request(
         self,
         request_id: str,
-        executor: Callable[[dict], Awaitable[Any]],
+        executor: Callable[[dict], Awaitable[object]],
         inputs: dict,
         timeout: float,
     ) -> RequestResult:
@@ -630,7 +630,7 @@ class LatencyHistogram:
 
 
 async def run_quick_benchmark(
-    executor: Callable[[dict], Awaitable[Any]],
+    executor: Callable[[dict], Awaitable[object]],
     inputs: dict,
     iterations: int = 100,
 ) -> dict:
@@ -664,7 +664,7 @@ async def run_quick_benchmark(
 
 
 async def compare_benchmarks(
-    executors: dict[str, Callable[[dict], Awaitable[Any]]],
+    executors: dict[str, Callable[[dict], Awaitable[object]]],
     inputs_generator: Callable[[], dict],
     config: BenchmarkConfig | None = None,
 ) -> dict[str, BenchmarkResult]:

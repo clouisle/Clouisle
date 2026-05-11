@@ -11,6 +11,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import {
+  ApiError,
   promptsApi,
   parsePromptSSEStream,
   type PromptGenerateContext,
@@ -26,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -35,6 +37,13 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { toast } from 'sonner'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 // ============ Types ============
 
@@ -70,14 +79,21 @@ export function PromptGenerateDialog({
   // Generation state
   const [isGenerating, setIsGenerating] = React.useState(false)
   const [generatedPrompt, setGeneratedPrompt] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [showAdvanced, setShowAdvanced] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['description']),
+    [fieldErrors]
+  )
 
   // Reset state when dialog opens
   React.useEffect(() => {
     if (open) {
       setDescription('')
       setGeneratedPrompt('')
+      setFieldErrors({})
       setIsGenerating(false)
       setCopied(false)
     }
@@ -86,10 +102,11 @@ export function PromptGenerateDialog({
   // Handle generate
   const handleGenerate = async () => {
     if (!description.trim()) {
-      toast.error(t('errors.descriptionRequired'))
+      setFieldErrors({ description: t('errors.descriptionRequired') })
       return
     }
 
+    setFieldErrors({})
     setIsGenerating(true)
     setGeneratedPrompt('')
 
@@ -118,8 +135,16 @@ export function PromptGenerateDialog({
         }
       }
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), {
+        description: 'description',
+      })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to generate prompt:', error)
-      toast.error(t('errors.generateFailed'))
+      if (!(error instanceof ApiError && error.isValidationError())) {
+        toast.error(t('errors.generateFailed'))
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -172,6 +197,14 @@ export function PromptGenerateDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 py-2 px-0.5">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+              ))}
+            </div>
+          )}
+
           {/* Description Input */}
           <div className="space-y-2">
             <Label htmlFor="description">{t('descriptionLabel')}</Label>
@@ -179,10 +212,15 @@ export function PromptGenerateDialog({
               id="description"
               placeholder={t('descriptionPlaceholder')}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'description'))
+              }}
               className="min-h-24 resize-none"
               disabled={isGenerating}
+              aria-invalid={!!fieldErrors.description}
             />
+            <FieldError>{fieldErrors.description}</FieldError>
           </div>
 
           {/* Context Preview */}

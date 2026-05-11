@@ -29,21 +29,21 @@ docker compose up -d
 
 # 5. Verify
 docker compose ps
-docker compose logs --tail=50 backend
+docker compose logs --tail=50 api
 ```
 
 ## Kubernetes Upgrade
 
 ```bash
 # 1. Build and push new images
-docker build -t registry.example.com/clouisle/backend:v2.0.0 .
-docker push registry.example.com/clouisle/backend:v2.0.0
+docker build -t registry.example.com/clouisle/api:v2.0.0 .
+docker push registry.example.com/clouisle/api:v2.0.0
 
 # 2. Update manifests
 kubectl apply -f deploy/k8s/clouisle.yaml
 
 # 3. Monitor rollout
-kubectl rollout status deployment/backend
+kubectl rollout status deployment/api
 ```
 
 ## Rollback Procedures
@@ -57,7 +57,7 @@ git checkout previous-version
 docker compose up -d
 
 # Kubernetes
-kubectl rollout undo deployment/backend
+kubectl rollout undo deployment/api
 ```
 
 ## Post-Upgrade Verification

@@ -13,6 +13,28 @@ Kubernetes deployment provides:
 - **Resource management**: CPU and memory limits
 - **Secrets management**: Secure credential storage
 
+## Recommended Helm Deployment
+
+Helm is the recommended Kubernetes deployment method for Clouisle. It keeps the large manifest behind templates and lets each environment maintain a small values file.
+
+```bash
+helm lint deploy/helm/clouisle
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace
+```
+
+For production, create `clouisle-secret` and use `deploy/helm/clouisle/values-production.yaml`:
+
+```bash
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace \
+  -f deploy/helm/clouisle/values-production.yaml
+```
+
+The single-file manifest `deploy/k8s/clouisle.yaml` is still available as a fallback for debugging or non-Helm environments.
+
 ## Prerequisites
 
 ### Requirements
@@ -20,7 +42,7 @@ Kubernetes deployment provides:
 **Kubernetes Cluster:**
 - Kubernetes 1.24+
 - kubectl configured
-- Helm 3.0+ (optional)
+- Helm 3.0+
 
 **Resources:**
 - Minimum: 4 CPU, 16GB RAM
@@ -586,11 +608,11 @@ kubectl apply -f qdrant.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend-service
+  name: api
   namespace: clouisle
 spec:
   selector:
-    app: backend
+    app: api
   ports:
     - port: 8000
       targetPort: 8000
@@ -599,17 +621,17 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend
+  name: api
   namespace: clouisle
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: backend
+      app: api
   template:
     metadata:
       labels:
-        app: backend
+        app: api
     spec:
       initContainers:
       - name: wait-for-postgres
@@ -638,7 +660,7 @@ spec:
               name: app-secret
               key: secret-key
       containers:
-      - name: backend
+      - name: api
         image: your-registry/clouisle-backend:latest
         ports:
         - containerPort: 8000
@@ -907,7 +929,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: backend-service
+            name: api
             port:
               number: 8000
       - path: /
@@ -932,13 +954,13 @@ kubectl apply -f ingress.yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: backend-hpa
+  name: api-hpa
   namespace: clouisle
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: backend
+    name: api
   minReplicas: 3
   maxReplicas: 10
   metrics:
@@ -994,7 +1016,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: backend
+      app: api
   endpoints:
   - port: http
     path: /metrics
@@ -1057,7 +1079,7 @@ kubectl get ingress -n clouisle
 kubectl get hpa -n clouisle
 
 # View logs
-kubectl logs -f deployment/backend -n clouisle
+kubectl logs -f deployment/api -n clouisle
 kubectl logs -f deployment/frontend -n clouisle
 ```
 
@@ -1067,13 +1089,13 @@ kubectl logs -f deployment/frontend -n clouisle
 
 ```bash
 # Update backend image
-kubectl set image deployment/backend backend=your-registry/clouisle-backend:v1.1.0 -n clouisle
+kubectl set image deployment/api api=your-registry/clouisle-backend:v1.1.0 -n clouisle
 
 # Update frontend image
 kubectl set image deployment/frontend frontend=your-registry/clouisle-frontend:v1.1.0 -n clouisle
 
 # Check rollout status
-kubectl rollout status deployment/backend -n clouisle
+kubectl rollout status deployment/api -n clouisle
 kubectl rollout status deployment/frontend -n clouisle
 ```
 
@@ -1081,13 +1103,13 @@ kubectl rollout status deployment/frontend -n clouisle
 
 ```bash
 # Rollback backend
-kubectl rollout undo deployment/backend -n clouisle
+kubectl rollout undo deployment/api -n clouisle
 
 # Rollback to specific revision
-kubectl rollout undo deployment/backend --to-revision=2 -n clouisle
+kubectl rollout undo deployment/api --to-revision=2 -n clouisle
 
 # View rollout history
-kubectl rollout history deployment/backend -n clouisle
+kubectl rollout history deployment/api -n clouisle
 ```
 
 ## Backup and Restore

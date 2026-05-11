@@ -3,7 +3,16 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { apiKeysApi, agentsApi, workflowsApi, ApiError, type APIKey, type APIKeyCreateInput, type APIKeyUpdateInput, type AgentListItem, type WorkflowListItem } from '@/lib/api'
+import {
+  apiKeysApi,
+  agentsApi,
+  workflowsApi,
+  type APIKey,
+  type APIKeyCreateInput,
+  type APIKeyUpdateInput,
+  type AgentListItem,
+  type WorkflowListItem,
+} from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,6 +28,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { FieldError } from '@/components/ui/field'
+import { clearValidationError, getValidationSummaryEntries, normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface APIKeyDialogProps {
   open: boolean
@@ -43,6 +56,11 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
   })
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['name', 'rate_limit', 'expires_at', 'agent_ids', 'workflow_ids']),
+    [fieldErrors]
+  )
   const [agents, setAgents] = React.useState<AgentListItem[]>([])
   const [isLoadingAgents, setIsLoadingAgents] = React.useState(false)
   const [workflows, setWorkflows] = React.useState<WorkflowListItem[]>([])
@@ -117,6 +135,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         ? [...prev.agent_ids, agentId]
         : prev.agent_ids.filter(id => id !== agentId)
     }))
+    setFieldErrors((prev) => clearValidationError(prev, 'agent_ids'))
   }
 
   const handleWorkflowToggle = (workflowId: string, checked: boolean) => {
@@ -126,6 +145,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         ? [...prev.workflow_ids, workflowId]
         : prev.workflow_ids.filter(id => id !== workflowId)
     }))
+    setFieldErrors((prev) => clearValidationError(prev, 'workflow_ids'))
   }
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,8 +190,9 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
       
       onOpenChange(false)
     } catch (error) {
-      if (error instanceof ApiError && error.isValidationError()) {
-        setFieldErrors(error.getFieldErrors())
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
       }
     } finally {
       setIsSubmitting(false)
@@ -189,19 +210,31 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="grid gap-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="grid gap-2">
             <Label htmlFor="name">{t('name')}</Label>
             <Input
               id="name"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, name: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'name'))
+              }}
               placeholder={t('namePlaceholder')}
               required
               autoFocus
+              aria-invalid={!!fieldErrors.name}
             />
-            {fieldErrors.name && (
-              <p className="text-sm text-destructive">{fieldErrors.name}</p>
-            )}
+            <FieldError>{fieldErrors.name}</FieldError>
           </div>
           
           <div className="grid gap-2">
@@ -211,20 +244,30 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
               type="number"
               min="0"
               value={formData.rate_limit}
-              onChange={(e) => setFormData({ ...formData, rate_limit: parseInt(e.target.value) || 0 })}
+              onChange={(e) => {
+                setFormData({ ...formData, rate_limit: parseInt(e.target.value) || 0 })
+                setFieldErrors((prev) => clearValidationError(prev, 'rate_limit'))
+              }}
+              aria-invalid={!!fieldErrors.rate_limit}
             />
             <p className="text-xs text-muted-foreground">{t('rateLimitHint')}</p>
+            <FieldError>{fieldErrors.rate_limit}</FieldError>
           </div>
-          
+
           <div className="grid gap-2">
             <Label htmlFor="expires_at">{t('expiresAt')}</Label>
             <Input
               id="expires_at"
               type="date"
               value={formData.expires_at}
-              onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, expires_at: e.target.value })
+                setFieldErrors((prev) => clearValidationError(prev, 'expires_at'))
+              }}
+              aria-invalid={!!fieldErrors.expires_at}
             />
             <p className="text-xs text-muted-foreground">{t('expiresAtHint')}</p>
+            <FieldError>{fieldErrors.expires_at}</FieldError>
           </div>
 
           {/* Agent 和 Workflow 选择 - 横向布局 */}
@@ -273,6 +316,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
                 </ScrollArea>
               )}
             </div>
+              <FieldError>{fieldErrors.agent_ids}</FieldError>
             </div>
 
             {/* Workflow 选择 */}
@@ -319,6 +363,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
                 </ScrollArea>
               )}
             </div>
+              <FieldError>{fieldErrors.workflow_ids}</FieldError>
             </div>
           </div>
 

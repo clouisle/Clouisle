@@ -387,10 +387,10 @@ Content-Type: application/json
 
 ```bash
 # Docker Compose
-docker compose logs backend | grep sso
+docker compose logs api | grep sso
 
 # Kubernetes
-kubectl -n clouisle logs deployment/backend | grep sso
+kubectl -n clouisle logs deployment/api | grep sso
 ```
 
 常见原因：

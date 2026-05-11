@@ -21,6 +21,26 @@ from app.services.vector_store import VectorStore, DimensionMismatchError
 logger = logging.getLogger(__name__)
 
 
+def _get_document_error_lang(document: Document, user_locale: str = "en") -> str:
+    if document.uploaded_by_id:
+        return user_locale
+    return "en"
+
+
+def _get_dimension_mismatch_error(document: Document, user_locale: str = "en") -> str:
+    return t(
+        "kb_embedding_dimension_mismatch",
+        lang=_get_document_error_lang(document, user_locale),
+    )
+
+
+def _get_generic_processing_error(document: Document, user_locale: str = "en") -> str:
+    return t(
+        "document_processing_failed_generic",
+        lang=_get_document_error_lang(document, user_locale),
+    )
+
+
 async def _send_doc_indexed_notification(
     document: Document,
     kb_name: str,
@@ -204,7 +224,7 @@ def process_document_task(self, document_id: str) -> dict:
                     clean_text=clean_text_setting,
                 )
             else:
-                raise ValueError("Document has no file_path or source_url")
+                raise ValueError(t("document_missing_source", lang=user_locale))
 
             # Update document metadata
             document.metadata = document.metadata or {}
@@ -232,7 +252,7 @@ def process_document_task(self, document_id: str) -> dict:
             )
 
             if not chunks:
-                raise ValueError("No chunks generated from document")
+                raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
             # Initialize vector store with KB's embedding model and team ID for usage tracking
             embedding_model_id = (
@@ -278,9 +298,11 @@ def process_document_task(self, document_id: str) -> dict:
             if failed_chunks and not embedded_chunks:
                 # All failed
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = (
-                    f"All {len(created_chunks)} chunks failed to embed"[:500]
-                )
+                document.error_message = t(
+                    "all_chunks_failed_to_embed",
+                    lang=user_locale,
+                    error=t("unknown_error_generic", lang=user_locale),
+                )[:500]
                 document.chunk_count = len(created_chunks)
                 document.token_count = total_tokens
                 await document.save()
@@ -302,9 +324,13 @@ def process_document_task(self, document_id: str) -> dict:
             if failed_chunks:
                 # Partial failure
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = f"{len(failed_chunks)}/{len(created_chunks)} chunks failed to embed"[
-                    :500
-                ]
+                document.error_message = t(
+                    "chunks_failed_to_embed",
+                    lang=user_locale,
+                    failed_count=len(failed_chunks),
+                    total_chunks=len(created_chunks),
+                    error=t("unknown_error_generic", lang=user_locale),
+                )[:500]
             else:
                 document.status = DocumentStatus.COMPLETED.value
                 document.error_message = None
@@ -352,7 +378,9 @@ def process_document_task(self, document_id: str) -> dict:
 
             # Update document status with specific error
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_dimension_mismatch_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             # Send failure notification
@@ -360,14 +388,14 @@ def process_document_task(self, document_id: str) -> dict:
                 document=document,
                 kb_name=kb.name,
                 team_id=kb.team_id,
-                error=str(e),
+                error=document.error_message,
                 user_locale=user_locale,
             )
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
                 "error_type": "dimension_mismatch",
             }
 
@@ -376,7 +404,9 @@ def process_document_task(self, document_id: str) -> dict:
 
             # Update document status
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_generic_processing_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             # Send failure notification
@@ -384,14 +414,14 @@ def process_document_task(self, document_id: str) -> dict:
                 document=document,
                 kb_name=kb.name,
                 team_id=kb.team_id,
-                error=str(e),
+                error=document.error_message,
                 user_locale=user_locale,
             )
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
             }
 
     # Run async function
@@ -574,7 +604,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
                     clean_text=clean_text_setting,
                 )
             else:
-                raise ValueError("Document has no file_path or source_url")
+                raise ValueError(t("document_missing_source", lang=user_locale))
 
             # Chunk text
             from app.services.document_processor import chunk_text
@@ -587,7 +617,7 @@ def rechunk_document_task(self, document_id: str) -> dict:
             )
 
             if not chunks:
-                raise ValueError("No chunks generated from document")
+                raise ValueError(t("document_no_chunks_generated", lang=user_locale))
 
             # Store chunks with embeddings and progress (pass kb_id for dimension management)
             async def _update_rechunk_progress(
@@ -618,14 +648,20 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
             if failed_chunks and len(failed_chunks) == len(created_chunks):
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = (
-                    f"All {len(created_chunks)} chunks failed to embed"[:500]
-                )
+                document.error_message = t(
+                    "all_chunks_failed_to_embed",
+                    lang=user_locale,
+                    error=t("unknown_error_generic", lang=user_locale),
+                )[:500]
             elif failed_chunks:
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = f"{len(failed_chunks)}/{len(created_chunks)} chunks failed to embed"[
-                    :500
-                ]
+                document.error_message = t(
+                    "chunks_failed_to_embed",
+                    lang=user_locale,
+                    failed_count=len(failed_chunks),
+                    total_chunks=len(created_chunks),
+                    error=t("unknown_error_generic", lang=user_locale),
+                )[:500]
             else:
                 document.status = DocumentStatus.COMPLETED.value
                 document.error_message = None
@@ -668,7 +704,9 @@ def rechunk_document_task(self, document_id: str) -> dict:
             logger.error(f"Dimension mismatch rechunking document {document_id}: {e}")
 
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_dimension_mismatch_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             # Send failure notification
@@ -676,14 +714,14 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 document=document,
                 kb_name=kb.name,
                 team_id=kb.team_id,
-                error=str(e),
+                error=document.error_message,
                 user_locale=user_locale,
             )
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
                 "error_type": "dimension_mismatch",
             }
 
@@ -692,7 +730,9 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
             # Update document status
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_generic_processing_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             # Send failure notification
@@ -700,14 +740,14 @@ def rechunk_document_task(self, document_id: str) -> dict:
                 document=document,
                 kb_name=kb.name,
                 team_id=kb.team_id,
-                error=str(e),
+                error=document.error_message,
                 user_locale=user_locale,
             )
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
             }
 
     # Run async function
@@ -784,10 +824,10 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
             if not chunks:
                 logger.warning(f"No chunks found for document {document_id}")
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = "No chunks to embed"
-                await document.save()
                 default_lang = await get_default_language()
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = t("no_chunks_to_embed", lang=default_lang)
+                await document.save()
                 return {
                     "status": "success",
                     "message": t("no_chunks_to_embed", lang=default_lang),
@@ -820,7 +860,9 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                     failed_count += 1
                     last_error = str(e)
                     chunk.status = "failed"
-                    chunk.error_message = str(e)[:500]
+                    chunk.error_message = _get_generic_processing_error(
+                        document, user_locale
+                    )[:500]
                     await chunk.save(update_fields=["status", "error_message"])
                     logger.error(f"Failed to embed chunk {chunk.id}: {e}")
 
@@ -841,9 +883,11 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             if embedded_count == 0 and len(chunks) > 0:
                 # All chunks failed - mark as error
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = (
-                    f"All {len(chunks)} chunks failed to embed: {last_error}"[:500]
-                )
+                document.error_message = t(
+                    "all_chunks_failed_to_embed",
+                    lang=user_locale,
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
+                )[:500]
                 await document.save()
 
                 logger.error(
@@ -852,18 +896,23 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 )
 
                 # Send failure notification
+                localized_error = t(
+                    "all_chunks_failed_to_embed",
+                    lang=user_locale,
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
+                )
                 await _send_doc_failed_notification(
                     document=document,
                     kb_name=kb.name,
                     team_id=kb.team_id,
-                    error=f"All {len(chunks)} chunks failed to embed: {last_error}",
+                    error=localized_error,
                     user_locale=user_locale,
                 )
 
                 return {
                     "status": "error",
                     "document_id": document_id,
-                    "message": f"All chunks failed to embed: {last_error}",
+                    "message": localized_error,
                     "embedded_count": 0,
                     "total_chunks": len(chunks),
                 }
@@ -872,9 +921,13 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
             if failed_count > 0:
                 # Partial failure - mark as error with details
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}"[
-                    :500
-                ]
+                document.error_message = t(
+                    "chunks_failed_to_embed",
+                    lang=user_locale,
+                    failed_count=failed_count,
+                    total_chunks=len(chunks),
+                    error=last_error,
+                )[:500]
                 await document.save()
 
                 await _refresh_kb_stats()
@@ -889,14 +942,14 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                     document=document,
                     kb_name=kb.name,
                     team_id=kb.team_id,
-                    error=f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}",
+                    error=document.error_message,
                     user_locale=user_locale,
                 )
 
                 return {
                     "status": "error",
                     "document_id": document_id,
-                    "message": f"{failed_count}/{len(chunks)} chunks failed to embed: {last_error}",
+                    "message": document.error_message,
                     "embedded_count": embedded_count,
                     "failed_count": failed_count,
                     "total_chunks": len(chunks),
@@ -941,7 +994,9 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
 
             # Update document status to ERROR
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_generic_processing_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             # Send failure notification
@@ -949,14 +1004,14 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 document=document,
                 kb_name=kb.name,
                 team_id=kb.team_id,
-                error=str(e),
+                error=document.error_message,
                 user_locale=user_locale,
             )
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
             }
 
     # Run async function
@@ -1019,13 +1074,14 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
             ).order_by("chunk_index")
 
             if not failed_chunks:
+                default_lang = await get_default_language()
                 document.status = DocumentStatus.COMPLETED.value
                 document.error_message = None
                 await document.save()
                 return {
                     "status": "success",
                     "document_id": document_id,
-                    "message": "No failed chunks to retry",
+                    "message": t("no_failed_chunks", lang=default_lang),
                     "retried_count": 0,
                 }
 
@@ -1061,7 +1117,9 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                 except Exception as e:
                     still_failed += 1
                     last_error = str(e)
-                    chunk.error_message = str(e)[:500]
+                    chunk.error_message = _get_generic_processing_error(
+                        document, user_locale
+                    )[:500]
                     await chunk.save(update_fields=["error_message"])
                     logger.error(f"Retry failed for chunk {chunk.id}: {e}")
 
@@ -1080,11 +1138,13 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
 
             if still_failed > 0:
                 document.status = DocumentStatus.ERROR.value
-                document.error_message = (
-                    f"{still_failed}/{total_chunks} chunks still failed: {last_error}"[
-                        :500
-                    ]
-                )
+                document.error_message = t(
+                    "chunks_still_failed_after_retry",
+                    lang=user_locale,
+                    failed_count=still_failed,
+                    total_chunks=total_chunks,
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
+                )[:500]
                 await document.save()
 
                 await _send_doc_failed_notification(
@@ -1139,13 +1199,15 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                 f"Error retrying failed chunks for document {document_id}: {e}"
             )
             document.status = DocumentStatus.ERROR.value
-            document.error_message = str(e)[:500]
+            document.error_message = _get_generic_processing_error(
+                document, user_locale
+            )[:500]
             await document.save()
 
             return {
                 "status": "error",
                 "document_id": document_id,
-                "message": str(e),
+                "message": document.error_message,
             }
 
     try:

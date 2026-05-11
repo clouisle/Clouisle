@@ -8,7 +8,9 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, TYPE_CHECKING, cast
 
+from app.core.i18n import t
 from app.llm import model_manager
+from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import Message, MessageRole, ToolDefinition, FunctionDefinition
 from app.models.agent import Agent, AgentKnowledgeBase, RAGMode
 
@@ -302,6 +304,20 @@ class AgentService:
                 tool_def = self._get_builtin_tool(tool_name)
                 if tool_def:
                     tools.append(tool_def)
+            elif tool_type == "skill":
+                from app.services.skill import SkillService
+
+                skill_id = tool_cfg.get("skill_id")
+                if skill_id:
+                    try:
+                        skill = await SkillService.get_skill_for_team(
+                            skill_id,
+                            agent.team_id,
+                            enabled_only=True,
+                        )
+                        tools.append(SkillService.to_tool_definition(skill))
+                    except Exception as e:
+                        logger.warning("Failed to get skill tool %s: %s", skill_id, e)
             elif tool_type == "mcp":
                 # MCP server tools - would need MCP integration
                 pass
@@ -371,9 +387,36 @@ class AgentService:
             logger.error(
                 f"Failed to parse tool arguments: {tool_call.function.arguments}"
             )
-            return {"error": "Invalid tool arguments"}
+            return {"error": t("invalid_tool_arguments")}
+
+        if tool_name.startswith("skill_"):
+            from app.services.skill import SkillService
+            from app.services.skill_executor import SkillExecutor
+
+            try:
+                skill, skill_config = await SkillService.resolve_agent_skill_tool(
+                    agent,
+                    tool_name,
+                )
+                result = await SkillExecutor.execute(
+                    skill=skill,
+                    arguments=arguments,
+                    config=skill_config,
+                    tenant_id=str(agent.team_id) if agent.team_id else None,
+                )
+                return result.to_dict()
+            except Exception as e:
+                logger.exception("Skill execution error: %s", e)
+                return {"error": resolve_user_visible_error(str(e))}
 
         # Get credentials for builtin tools
+        if not tool_registry.get_tool(tool_name):
+            return {
+                "error": t("tool_not_found"),
+                "tool_name": tool_name,
+                "success": False,
+            }
+
         credentials = {}
         team_id = agent.team_id
 
@@ -433,7 +476,10 @@ class AgentService:
             return result
         except Exception as e:
             logger.exception(f"Tool execution error: {e}")
-            return {"error": str(e), "success": False}
+            return {
+                "error": resolve_user_visible_error(str(e)),
+                "success": False,
+            }
 
     async def _retrieve_rag_context(
         self,

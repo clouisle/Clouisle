@@ -58,6 +58,7 @@ import {
 import { TeamDialog } from './team-dialog'
 import { TeamDetailDialog } from './team-detail-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function TeamsClient() {
   const t = useTranslations('teams')
@@ -72,7 +73,7 @@ export function TeamsClient() {
   const [pageData, setPageData] = React.useState<PageData<Team> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
 
   // 防抖搜索

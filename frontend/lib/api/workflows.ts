@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, getErrorMessage } from './client'
 import { PageData } from './agents'
 
 // ============ Workflow Types ============
@@ -186,6 +186,13 @@ export interface NodeData {
   type: string
   label: string
   config: Record<string, unknown>
+  /**
+   * Per-output structural TypeSpecs auto-inferred from the node's actual
+   * outputs during debug runs (see backend `schema_inference.py`). Optional —
+   * absent until the workflow has been debug-run at least once. Used by the
+   * variable picker for field-level autocomplete.
+   */
+  inferredSchema?: Record<string, import('@/lib/workflow/type-spec').TypeSpec>
 }
 
 export interface WorkflowEdge {
@@ -529,12 +536,12 @@ export const workflowsApi = {
         })
         
         if (!response.ok) {
-          throw new Error(`SSE connection failed: ${response.status}`)
+          throw new Error(`${getErrorMessage('requestFailed')}: ${response.status}`)
         }
-        
+
         const reader = response.body?.getReader()
         if (!reader) {
-          throw new Error('No response body')
+          throw new Error(getErrorMessage('requestFailed'))
         }
         
         const decoder = new TextDecoder()

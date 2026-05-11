@@ -13,6 +13,8 @@ from app.api.v1.admin.endpoints import (
     notifications,
     teams,
     memories,
+    skills,
+    tools,
     totp,
 )
 
@@ -44,4 +46,6 @@ admin_router.include_router(teams.router, prefix="/teams", tags=["admin-teams"])
 admin_router.include_router(
     memories.router, prefix="/memories", tags=["admin-memories"]
 )
+admin_router.include_router(tools.router, prefix="/tools", tags=["admin-tools"])
+admin_router.include_router(skills.router, prefix="/skills", tags=["admin-skills"])
 admin_router.include_router(totp.router, prefix="/totp", tags=["admin-totp"])

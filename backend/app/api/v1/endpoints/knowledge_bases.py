@@ -12,8 +12,15 @@ from fastapi.responses import FileResponse
 from tortoise.expressions import F
 
 from app.api import deps
+from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.model import TeamModel, Model
+from app.models import (
+    SiteSetting,
+    KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
+    KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
+)
 from app.models.knowledge_base import (
     KnowledgeBase,
     Document,
@@ -53,10 +60,60 @@ from app.schemas.response import (
     success,
 )
 from app.services.document_processor import document_processor
+from app.services.error_messages import is_safe_user_visible_error
 from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+BYTES_PER_MB = 1024 * 1024
+
+
+async def get_kb_document_max_upload_size_mb() -> int:
+    value = await SiteSetting.get_value(
+        "kb_document_max_upload_size_mb", KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+    )
+    if not isinstance(value, int):
+        return KB_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+    if value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
+    if value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB:
+        return KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
+    return value
+
+
+def serialize_knowledge_base_error(error_message: str | None) -> str | None:
+    if not error_message:
+        return None
+
+    normalized = error_message.strip()
+    if not normalized:
+        return None
+    if has_translation(normalized):
+        return t(normalized)
+    if is_safe_user_visible_error(normalized):
+        return normalized
+    return t("unknown_error")
+
+
+def serialize_document_error(error_message: str | None) -> str | None:
+    return serialize_knowledge_base_error(error_message)
+
+
+async def serialize_document(doc: Document) -> dict[str, Any]:
+    data = DocumentSchema.model_validate(doc).model_dump()
+    data["error_message"] = serialize_document_error(doc.error_message)
+    return data
+
+
+def serialize_chunk_error(error_message: str | None) -> str | None:
+    return serialize_knowledge_base_error(error_message)
+
+
+async def serialize_chunk(chunk: DocumentChunk) -> dict[str, Any]:
+    data = ChunkSchema.model_validate(chunk).model_dump()
+    data["error_message"] = serialize_chunk_error(chunk.error_message)
+    return data
 
 
 # ============ Helper Functions ============
@@ -168,7 +225,9 @@ async def ensure_team_authorized_model(
     if model.model_type != model_type:
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=f"Model {model.name} is not a {model_type} model",
+            msg_key="model_type_mismatch",
+            model_name=model.name,
+            model_type=model_type,
         )
 
     team_model = await TeamModel.filter(
@@ -382,7 +441,7 @@ async def update_knowledge_base(
     ):
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg="Embedding model cannot be changed after knowledge base creation",
+            msg_key="embedding_model_locked_after_kb_creation",
         )
     if "rerank_model_id" in fields_set:
         if kb_in.rerank_model_id is not None:
@@ -507,11 +566,12 @@ async def list_documents(
 
     total = await query.count()
     skip = (page - 1) * page_size
-    docs = await query.offset(skip).limit(page_size)
+    docs = await query.prefetch_related("uploaded_by").offset(skip).limit(page_size)
+    serialized_docs = [await serialize_document(doc) for doc in docs]
 
     return success(
         data={
-            "items": docs,
+            "items": serialized_docs,
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -527,7 +587,7 @@ async def upload_document(
 ) -> Any:
     """
     Upload a document to the knowledge base.
-    Supported formats: PDF, DOCX, TXT, MD, HTML, CSV, XLSX, JSON.
+    Supported formats: PDF, DOC, DOCX, TXT, MD, Markdown, HTML, HTM, CSV, XLS, XLSX, JSON, PPTX.
 
     The document will be created with 'pending' status.
     Use the /process endpoint to start processing after configuring chunk settings.
@@ -552,6 +612,13 @@ async def upload_document(
     # Read file content
     content = await file.read()
     file_size = len(content)
+    max_upload_size_mb = await get_kb_document_max_upload_size_mb()
+    max_upload_size_bytes = max_upload_size_mb * BYTES_PER_MB
+    if file_size > max_upload_size_bytes:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_too_large",
+        )
 
     # Save file to storage
     file_path = document_processor.get_storage_path(kb_id, file.filename)
@@ -574,7 +641,7 @@ async def upload_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_uploaded")
+    return success(data=await serialize_document(doc), msg_key="document_uploaded")
 
 
 @router.post("/{kb_id}/documents/url", response_model=Response[DocumentSchema])
@@ -615,7 +682,7 @@ async def add_url_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_created")
+    return success(data=await serialize_document(doc), msg_key="document_created")
 
 
 @router.get("/{kb_id}/documents/{doc_id}", response_model=Response[DocumentSchema])
@@ -641,7 +708,7 @@ async def get_document(
             status_code=404,
         )
 
-    return success(data=doc)
+    return success(data=await serialize_document(doc))
 
 
 @router.put("/{kb_id}/documents/{doc_id}", response_model=Response[DocumentSchema])
@@ -670,7 +737,7 @@ async def update_document(
         await doc.save()
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_updated")
+    return success(data=await serialize_document(doc), msg_key="document_updated")
 
 
 @router.delete("/{kb_id}/documents/{doc_id}", response_model=Response[dict])
@@ -837,7 +904,9 @@ async def process_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_processing_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_processing_started"
+    )
 
 
 @router.post(
@@ -959,7 +1028,7 @@ async def process_document_with_chunks(
             logger.error(f"Vector embedding task not dispatched: {e}", exc_info=True)
             # If task dispatch fails, mark as error and raise exception
             doc.status = DocumentStatus.ERROR.value
-            doc.error_message = f"Failed to start embedding task: {e}"
+            doc.error_message = "task_dispatch_failed"
             await doc.save()
             raise BusinessError(
                 code=ResponseCode.UNKNOWN_ERROR,
@@ -968,12 +1037,14 @@ async def process_document_with_chunks(
 
         # Reload with relations
         doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
-        return success(data=doc, msg_key="document_processing_started")
+        return success(
+            data=await serialize_document(doc), msg_key="document_processing_started"
+        )
 
     except Exception as e:
         # On error, reset document status
         doc.status = DocumentStatus.ERROR.value
-        doc.error_message = str(e)
+        doc.error_message = "document_process_failed"
         await doc.save()
         logger.exception(f"Error processing document with chunks: {e}")
         raise BusinessError(
@@ -1128,7 +1199,9 @@ async def reprocess_document(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_reprocess_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_reprocess_started"
+    )
 
 
 @router.post(
@@ -1192,7 +1265,9 @@ async def retry_failed_chunks(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="retry_failed_chunks_started")
+    return success(
+        data=await serialize_document(doc), msg_key="retry_failed_chunks_started"
+    )
 
 
 # ============ Document Chunks ============
@@ -1226,10 +1301,11 @@ async def list_document_chunks(
     total = await query.count()
     skip = (page - 1) * page_size
     chunks = await query.offset(skip).limit(page_size)
+    serialized_chunks = [await serialize_chunk(chunk) for chunk in chunks]
 
     return success(
         data={
-            "items": chunks,
+            "items": serialized_chunks,
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -1299,9 +1375,10 @@ async def update_document_chunk(
         )
         await vector_store.update_chunk_vector(chunk, kb_id=kb.id)
     except DimensionMismatchError as e:
+        logger.warning("Dimension mismatch for chunk %s: %s", chunk_id, e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=str(e),
+            msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
         logger.error(
@@ -1313,7 +1390,7 @@ async def update_document_chunk(
             msg_key="vector_update_failed",
         )
 
-    return success(data=chunk, msg_key="chunk_updated")
+    return success(data=await serialize_chunk(chunk), msg_key="chunk_updated")
 
 
 @router.delete(
@@ -1457,7 +1534,7 @@ async def create_document_chunk(
 
         logging.warning(f"Failed to create vector embedding: {e}")
 
-    return success(data=chunk, msg_key="chunk_created")
+    return success(data=await serialize_chunk(chunk), msg_key="chunk_created")
 
 
 @router.post(
@@ -1527,7 +1604,9 @@ async def rechunk_document(
         logging.warning("Celery task not dispatched - worker may not be running")
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
-    return success(data=doc, msg_key="document_rechunk_started")
+    return success(
+        data=await serialize_document(doc), msg_key="document_rechunk_started"
+    )
 
 
 # ============ Search ============
@@ -1584,15 +1663,16 @@ async def search_knowledge_base(
             rerank_overrides=rerank_overrides or None,
         )
     except DimensionMismatchError as e:
+        logger.warning("Dimension mismatch during KB search: %s", e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
-            msg=str(e),
+            msg_key="kb_embedding_dimension_mismatch",
         )
     except Exception as e:
+        logger.exception("Vector search failed: %s", e)
         raise BusinessError(
             code=ResponseCode.UNKNOWN_ERROR,
             msg_key="vector_search_failed",
-            error=str(e),
         )
 
     return success(

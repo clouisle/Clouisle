@@ -5,7 +5,13 @@ import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Link, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, ApiError } from '@/lib/api'
+import { knowledgeBasesApi } from '@/lib/api'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,6 +46,20 @@ export function ImportUrlDialog({
   const [name, setName] = React.useState('')
   const [isLoading, setIsLoading] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['url', 'name']),
+    [fieldErrors]
+  )
+
+  const updateUrl = React.useCallback((value: string) => {
+    setUrl(value)
+    setFieldErrors((prev) => clearValidationError(prev, 'url'))
+  }, [])
+
+  const updateName = React.useCallback((value: string) => {
+    setName(value)
+    setFieldErrors((prev) => clearValidationError(prev, 'name'))
+  }, [])
   
   // 重置状态
   React.useEffect(() => {
@@ -75,12 +95,13 @@ export function ImportUrlDialog({
       toast.success(t('urlImported'))
       onOpenChange(false)
       onSuccess()
-      
+
       // 跳转到预览页面配置分段（中台路径）
       router.push(`/app/kb/${knowledgeBaseId}/documents/preview?docs=${doc.id}`)
     } catch (error) {
-      if (error instanceof ApiError && error.isValidationError()) {
-        setFieldErrors(error.getFieldErrors())
+      const validationErrors = normalizeValidationErrors(error)
+      if (Object.keys(validationErrors).length > 0) {
+        setFieldErrors(validationErrors)
       }
       // 其他错误已由 API 客户端处理
     } finally {
@@ -98,6 +119,15 @@ export function ImportUrlDialog({
           </DialogHeader>
           
           <div className="grid gap-4 py-4">
+            {summaryEntries.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                {summaryEntries.map(([field, message]) => (
+                  <FieldError key={field}>
+                    {formatValidationSummaryMessage(field, message)}
+                  </FieldError>
+                ))}
+              </div>
+            )}
             {/* URL */}
             <Field>
               <Label htmlFor="url">{t('url')}</Label>
@@ -105,7 +135,7 @@ export function ImportUrlDialog({
                 id="url"
                 type="url"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => updateUrl(e.target.value)}
                 placeholder={t('urlPlaceholder')}
                 aria-invalid={!!fieldErrors.url}
               />
@@ -119,7 +149,7 @@ export function ImportUrlDialog({
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => updateName(e.target.value)}
                 placeholder={t('documentNamePlaceholder')}
                 aria-invalid={!!fieldErrors.name}
               />

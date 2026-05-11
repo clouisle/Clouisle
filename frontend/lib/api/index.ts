@@ -1,4 +1,16 @@
 export { api, ApiError, type ApiResponse, type ValidationErrorData } from './client'
+export {
+  clearValidationError,
+  clearValidationErrorsByPrefix,
+  getFieldErrorObjects,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  normalizeValidationErrorsRaw,
+  type FieldErrors,
+  type RawFieldErrors,
+  type ValidationPathMap,
+} from '../validation'
 export { authApi, type Token, type RegisterData, type User, type CaptchaResponse, type LoginData, type SSOConnection } from './auth'
 export { usersApi, totpApi, type PageData, type UserQueryParams, type PasswordStatus, type TOTPSetupResponse, type TOTPStatusResponse } from './users'
 export { teamsApi, type Team, type TeamWithMembers, type TeamMember, type UserTeamInfo, type TeamCreateInput, type TeamUpdateInput, type TeamMemberAddInput, type TeamMemberUpdateInput } from './teams'
@@ -62,6 +74,7 @@ export {
   type AgentKnowledgeBaseOut,
   type FileUploadConfig,
   type MemoryConfig,
+  type ContextCompressionConfig,
   type ImageGenerationConfig,
   type VideoGenerationConfig,
   type ToolConfig,
@@ -85,6 +98,8 @@ export {
   type SSEContentDelta,
   type SSERagContext,
   type SSEMessageEnd,
+  type SSEIterationCapReached,
+  type SSECompression,
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
@@ -109,10 +124,14 @@ export {
   type ToolDetail,
   type ToolType,
   type CustomToolType,
+  PRESET_TOOL_CATEGORIES,
+  isPresetToolCategory,
+  type PresetToolCategory,
   type ToolCategory,
   type HttpMethod,
   type ToolParameter,
   type HttpConfig,
+  type SandboxArtifactConfig,
   type ToolListResponse,
   type ToolFilterOption,
   type ToolFilterOptions,
@@ -127,6 +146,26 @@ export {
   type ToolSharePermission,
   type ToolShareListResponse,
 } from './tools'
+
+export {
+  skillsApi,
+  type Skill,
+  type SkillConflict,
+  type SkillDetail,
+  type SkillImportInstallItem,
+  type SkillImportInstallRequest,
+  type SkillImportInstallResponse,
+  type SkillImportPreviewGitInput,
+  type SkillImportPreviewResponse,
+  type SkillInstallAction,
+  type SkillListParams,
+  type SkillListResponse,
+  type SkillPreviewItem,
+  type SkillSourceType,
+  type SkillTestRequest,
+  type SkillTestResponse,
+  type SkillUpdateInput,
+} from './skills'
 
 export {
   apiKeysApi,

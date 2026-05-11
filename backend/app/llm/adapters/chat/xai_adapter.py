@@ -40,26 +40,13 @@ class XAIAdapter(BaseChatAdapter):
     def reasoning_effort(self) -> str | None:
         """
         推理强度: low, medium, high
-        从 config.thinking 或 config.reasoning_effort 获取
+        xAI 启用 thinking 但未指定时默认使用 medium
         """
-        # 从 thinking 配置获取
-        thinking = self.config.get("thinking") or self.default_params.get("thinking")
-        if isinstance(thinking, dict):
-            effort = thinking.get("effort") or thinking.get("reasoning_effort")
-            if effort:
-                return effort
-
-        # 直接从 config 获取
-        effort = self.config.get("reasoning_effort") or self.default_params.get(
-            "reasoning_effort"
-        )
+        effort = super().reasoning_effort
         if effort:
             return effort
-
-        # 如果启用了 thinking 但没有指定强度，默认使用 medium
         if self.thinking_enabled:
             return "medium"
-
         return None
 
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
@@ -167,6 +154,8 @@ class XAIAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
@@ -176,7 +165,10 @@ class XAIAdapter(BaseChatAdapter):
             if self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
-            response = await client.chat.completions.create(**request_params)
+            response = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             choice = response.choices[0]
             message = choice.message
@@ -258,6 +250,8 @@ class XAIAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_tokens"] = self.max_tokens
             if openai_tools:
@@ -267,13 +261,20 @@ class XAIAdapter(BaseChatAdapter):
             if self.reasoning_effort:
                 request_params["reasoning_effort"] = self.reasoning_effort
 
-            stream = await client.chat.completions.create(**request_params)
+            stream = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             response_id = str(uuid.uuid4())
             tool_accumulator = ToolCallAccumulator()
 
             async for chunk in stream:
                 if not chunk.choices:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
+                    )
                     continue
 
                 delta = chunk.choices[0].delta
@@ -287,6 +288,8 @@ class XAIAdapter(BaseChatAdapter):
                     delta,
                     getattr(delta, "model_extra", None),
                 )
+
+                raw_tool_calls = getattr(delta, "tool_calls", None)
 
                 # 累加工具调用
                 tool_accumulator.accumulate(delta)
@@ -317,6 +320,11 @@ class XAIAdapter(BaseChatAdapter):
                         tool_calls=tool_calls_delta,
                         finish_reason=finish_reason,
                         response_id=response_id,
+                    )
+                elif raw_tool_calls:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
                     )
         finally:
             await client.close()

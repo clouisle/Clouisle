@@ -13,7 +13,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.init_data import init_db
-from app.core.i18n import set_language, t, get_code_message
+from app.core.i18n import (
+    set_language,
+    t,
+    get_code_message,
+    has_translation,
+    get_language,
+)
 from app.core.redis import close_redis
 from app.schemas.response import success, error, ResponseCode, BusinessError
 
@@ -55,7 +61,12 @@ async def lifespan(app: FastAPI):
         init_workflow_visibility_field,
         init_agent_visibility_values,
         init_agent_streaming_config,
+        init_agent_context_compression_config,
+        init_message_manual_stop_field,
+        init_message_round_fields,
+        init_conversation_session_memory_table,
         init_agent_user_input_request,
+        init_agent_hide_tool_calls_field,
         init_agent_memory_fields,
         init_agent_media_generation_fields,
         init_permission_is_system_field,
@@ -67,6 +78,7 @@ async def lifespan(app: FastAPI):
         init_embed_config,
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
+        init_skills_table,
     )
 
     try:
@@ -100,9 +112,34 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Agent streaming_config migration failed: {e}")
 
     try:
+        await init_agent_context_compression_config()
+    except Exception as e:
+        logger.warning(f"Agent context_compression_config migration failed: {e}")
+
+    try:
+        await init_message_manual_stop_field()
+    except Exception as e:
+        logger.warning(f"Message manual stop migration failed: {e}")
+
+    try:
+        await init_message_round_fields()
+    except Exception as e:
+        logger.warning(f"Message round metadata migration failed: {e}")
+
+    try:
+        await init_conversation_session_memory_table()
+    except Exception as e:
+        logger.warning(f"Conversation session memory migration failed: {e}")
+
+    try:
         await init_agent_user_input_request()
     except Exception as e:
         logger.warning(f"Agent enable_user_input_request migration failed: {e}")
+
+    try:
+        await init_agent_hide_tool_calls_field()
+    except Exception as e:
+        logger.warning(f"Agent hide_tool_calls migration failed: {e}")
 
     try:
         await init_agent_memory_fields()
@@ -159,6 +196,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Knowledge base rerank migration failed: {e}")
 
+    try:
+        await init_skills_table()
+    except Exception as e:
+        logger.warning(f"Skills table migration failed: {e}")
+
     # Generate schemas
     await Tortoise.generate_schemas()
 
@@ -197,8 +239,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         field_parts = [str(part) for part in loc if part != "body"]
         field = ".".join(field_parts) if field_parts else "unknown"
 
-        # 获取错误消息
-        msg = err.get("msg", "Invalid value")
+        # 获取错误消息；只有在确认为翻译 key 时才翻译，否则回退到统一文案
+        raw_msg = err.get("msg", "validation_error")
+        if isinstance(raw_msg, str) and has_translation(raw_msg):
+            msg = t(raw_msg)
+        else:
+            msg = t("validation_error")
 
         # 如果同一字段有多个错误，用列表存储
         if field not in errors:
@@ -256,11 +302,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     }
     response_code = code_map.get(exc.status_code, ResponseCode.UNKNOWN_ERROR)
 
+    current_lang = get_language()
+    if isinstance(exc.detail, str) and has_translation(exc.detail, current_lang):
+        msg = t(exc.detail, lang=current_lang)
+    elif isinstance(response_code, ResponseCode):
+        msg = get_code_message(response_code, lang=current_lang)
+    else:
+        msg = t("unknown_error", lang=current_lang)
+
     return JSONResponse(
         status_code=exc.status_code,
         content=error(
             code=response_code,
-            msg=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+            msg=msg,
         ),
     )
 

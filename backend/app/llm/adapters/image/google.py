@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.adapters.media_utils import append_prompt_directives
 from app.llm.errors import ContentFilterError, InvalidRequestError, ProviderError
 from app.llm.types import (
@@ -103,11 +104,11 @@ class GoogleImageAdapter(BaseImageAdapter):
     def _split_extra_params(
         self, request: ImageGenerationRequest
     ) -> tuple[list[ImageContent], dict[str, Any]]:
-        extra_params = request.extra_params
-        if not extra_params:
+        merged_params = self._get_effective_extra_params(request)
+        if not merged_params:
             return list(request.images or []), {}
 
-        overrides = dict(extra_params)
+        overrides = dict(merged_params)
         reference_images: list[ImageContent] = []
 
         for key in _GOOGLE_REFERENCE_IMAGE_KEYS:
@@ -200,13 +201,27 @@ class GoogleImageAdapter(BaseImageAdapter):
     ) -> dict[str, Any]:
         image_config: dict[str, Any] = {}
 
-        if request.width > 0 and request.height > 0 and "aspect_ratio" not in overrides:
+        aspect_ratio = self._get_effective_param(
+            request,
+            param_key="aspect_ratio",
+        )
+        if aspect_ratio:
+            image_config["aspect_ratio"] = aspect_ratio
+        elif (
+            request.width > 0 and request.height > 0 and "aspect_ratio" not in overrides
+        ):
             image_config["aspect_ratio"] = self._closest_aspect_ratio(
                 request.width,
                 request.height,
             )
 
-        if self._supports_image_size() and "image_size" not in overrides:
+        image_size = self._get_effective_param(
+            request,
+            param_key="image_size",
+        )
+        if image_size:
+            image_config["image_size"] = image_size
+        elif self._supports_image_size() and "image_size" not in overrides:
             image_config["image_size"] = self._infer_image_size(
                 request.width,
                 request.height,
@@ -262,7 +277,7 @@ class GoogleImageAdapter(BaseImageAdapter):
             return types.Part.from_uri(file_uri=image.url, mime_type=mime_type)
 
         raise InvalidRequestError(
-            message="Google reference image must include url, base64, or file_path",
+            message=t("google_reference_image_missing_source"),
             field="images",
             provider=self.provider,
             model=self.model_id,
@@ -354,7 +369,7 @@ class GoogleImageAdapter(BaseImageAdapter):
             finish_reason = str(getattr(candidate, "finish_reason", "")).upper()
             if ("SAFETY" in finish_reason or "BLOCK" in finish_reason) and not images:
                 raise ContentFilterError(
-                    message="Google image generation was blocked by safety filters",
+                    message=t("google_image_generation_blocked_by_safety_filters"),
                     provider=self.provider,
                     model=self.model_id,
                 )
@@ -373,7 +388,7 @@ class GoogleImageAdapter(BaseImageAdapter):
                 )
 
         raise InvalidRequestError(
-            message="Google image model returned no image output",
+            message=t("google_image_model_returned_no_image_output"),
             provider=self.provider,
             model=self.model_id,
         )

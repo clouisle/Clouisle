@@ -20,6 +20,16 @@ interface NotificationDetailDialogProps {
 function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
   const t = useTranslations('notifications')
 
+  const getChannelLabel = (channel: string) => {
+    const key = `channel.${channel}`
+    return t.has(key) ? t(key) : channel
+  }
+
+  const getDeliveryStatusLabel = (status: string) => {
+    const key = `deliveryStatus.${status}`
+    return t.has(key) ? t(key) : status
+  }
+
   const channelIcon = delivery.channel === 'email' ? (
     <Mail className="h-3.5 w-3.5" />
   ) : delivery.channel === 'dingtalk' ? (
@@ -37,8 +47,8 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
   )
 
   const tooltipContent = delivery.error_message
-    ? `${t(`deliveryStatus.${delivery.status}`)}: ${delivery.error_message}`
-    : t(`deliveryStatus.${delivery.status}`)
+    ? `${getDeliveryStatusLabel(delivery.status)}: ${delivery.error_message}`
+    : getDeliveryStatusLabel(delivery.status)
 
   return (
     <Tooltip>
@@ -49,7 +59,7 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <p>{t(`channel.${delivery.channel}`)}: {tooltipContent}</p>
+        <p>{getChannelLabel(delivery.channel)}: {tooltipContent}</p>
         {delivery.retry_count > 0 && (
           <p className="text-xs text-muted-foreground">
             {t('retryCount', { count: delivery.retry_count })}
@@ -66,6 +76,26 @@ export function NotificationDetailDialog({
   onOpenChange,
 }: NotificationDetailDialogProps) {
   const t = useTranslations('notifications')
+
+  const getChannelLabel = (channel: string) => {
+    const key = `channel.${channel}`
+    return t.has(key) ? t(key) : channel
+  }
+
+  const getDeliveryStatusLabel = (status: string) => {
+    const key = `deliveryStatus.${status}`
+    return t.has(key) ? t(key) : status
+  }
+
+  const getScopeLabel = (scope: string) => {
+    const key = `scopeOptions.${scope}`
+    return t.has(key) ? t(key) : scope
+  }
+
+  const getLevelLabel = (level: string) => {
+    const key = `levelOptions.${level}`
+    return t.has(key) ? t(key) : level
+  }
 
   if (!notification) return null
 
@@ -108,14 +138,14 @@ export function NotificationDetailDialog({
               <div className="text-sm font-medium text-muted-foreground mb-1">
                 {t('scope')}
               </div>
-              <Badge variant="secondary">{t(`scopeOptions.${notification.scope}`)}</Badge>
+              <Badge variant="secondary">{getScopeLabel(notification.scope)}</Badge>
             </div>
 
             <div>
               <div className="text-sm font-medium text-muted-foreground mb-1">
                 {t('level')}
               </div>
-              <Badge variant="outline">{t(`levelOptions.${notification.level}`)}</Badge>
+              <Badge variant="outline">{getLevelLabel(notification.level)}</Badge>
             </div>
 
             <div>
@@ -176,10 +206,10 @@ export function NotificationDetailDialog({
                   >
                     <div className="flex items-center gap-2">
                       <DeliveryStatusIcon delivery={delivery} />
-                      <span className="text-sm">{t(`channel.${delivery.channel}`)}</span>
+                      <span className="text-sm">{getChannelLabel(delivery.channel)}</span>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {t(`deliveryStatus.${delivery.status}`)}
+                      {getDeliveryStatusLabel(delivery.status)}
                       {delivery.sent_at && ` • ${formatDateTime(delivery.sent_at)}`}
                     </div>
                   </div>

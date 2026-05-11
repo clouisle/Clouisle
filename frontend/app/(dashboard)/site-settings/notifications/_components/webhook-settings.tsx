@@ -17,7 +17,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type WebhookSettings } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface WebhookSettingsTabProps {
   settings: WebhookSettings
@@ -27,18 +35,45 @@ interface WebhookSettingsTabProps {
 
 export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: WebhookSettingsTabProps) {
   const t = useTranslations('siteSettings')
+  const tCommon = useTranslations('common')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
   const [headersText, setHeadersText] = React.useState(
     JSON.stringify(settings.webhook_headers || {}, null, 2)
   )
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => ({
+      webhook_enabled: 'webhook_enabled',
+      webhook_url: 'webhook_url',
+      webhook_method: 'webhook_method',
+      webhook_headers: 'webhook_headers',
+      webhook_body_template: 'webhook_body_template',
+      webhook_secret: 'webhook_secret',
+      'settings.webhook_enabled': 'webhook_enabled',
+      'settings.webhook_url': 'webhook_url',
+      'settings.webhook_method': 'webhook_method',
+      'settings.webhook_headers': 'webhook_headers',
+      'settings.webhook_body_template': 'webhook_body_template',
+      'settings.webhook_secret': 'webhook_secret',
+    }),
+    []
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['webhook_url', 'webhook_headers', 'webhook_body_template']),
+    [fieldErrors]
+  )
 
   const updateSetting = <K extends keyof WebhookSettings>(key: K, value: WebhookSettings[K]) => {
     onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
   }
 
   const handleHeadersChange = (text: string) => {
     setHeadersText(text)
+    setFieldErrors((prev) => clearValidationError(prev, 'webhook_headers'))
     try {
       const parsed = JSON.parse(text)
       updateSetting('webhook_headers', parsed)
@@ -47,12 +82,43 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
     }
   }
 
+  const validateSettings = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.webhook_enabled) {
+      return nextErrors
+    }
+
+    if (!settings.webhook_url.trim()) {
+      nextErrors.webhook_url = t('required')
+    }
+
+    try {
+      JSON.parse(headersText)
+    } catch {
+      nextErrors.webhook_headers = tCommon('invalidJSON')
+    }
+
+    return nextErrors
+  }
+
   const handleSave = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateWebhook(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save webhook settings:', error)
     } finally {
       setSaving(false)
@@ -60,11 +126,22 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
   }
 
   const handleSendTest = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSendingTest(true)
       await siteSettingsApi.sendTestWebhook()
       toast.success(t('webhook.testSent'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
       console.error('Failed to send test webhook:', error)
     } finally {
       setSendingTest(false)
@@ -73,6 +150,13 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* 基础设置 */}
       <Card>
         <CardHeader>
@@ -110,7 +194,9 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
               value={settings.webhook_url}
               onChange={(e) => updateSetting('webhook_url', e.target.value)}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.webhook_url}
             />
+            <FieldError>{fieldErrors.webhook_url}</FieldError>
             <p className="text-sm text-muted-foreground">{t('webhook.urlDesc')}</p>
           </div>
 
@@ -163,7 +249,9 @@ export function WebhookSettingsTab({ settings, onSettingsChange, canUpdate }: We
               className="font-mono text-sm"
               rows={4}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.webhook_headers}
             />
+            <FieldError>{fieldErrors.webhook_headers}</FieldError>
             <p className="text-sm text-muted-foreground">{t('webhook.headersDesc')}</p>
           </div>
 

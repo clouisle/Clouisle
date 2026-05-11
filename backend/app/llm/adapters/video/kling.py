@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -36,7 +37,7 @@ class KlingVideoAdapter(BaseVideoAdapter):
         task_id = task.get("task_id")
         if not task_id:
             raise ProviderError(
-                message="Kling task did not return a task_id",
+                message=t("kling_task_missing_id"),
                 provider="kling",
                 model=self.model_id,
             )

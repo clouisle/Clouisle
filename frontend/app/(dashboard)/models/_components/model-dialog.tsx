@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Tabs,
   TabsContent,
@@ -40,6 +41,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { FieldError } from '@/components/ui/field'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { cn } from '@/lib/utils'
 
 import { modelsApi, type Model, type ModelCreateInput } from '@/lib/api/admin/models'
@@ -51,6 +60,23 @@ const PROVIDER_GROUPS = {
   domestic: ['deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax'],
   other: ['ollama', 'custom'],
 }
+
+const DEFAULT_IMAGE_SIZE_OPTIONS = [
+  { value: '1024x1024', label: '1024×1024' },
+  { value: '1792x1024', label: '1792×1024' },
+  { value: '1024x1792', label: '1024×1792' },
+  { value: '512x512', label: '512×512' },
+  { value: '256x256', label: '256×256' },
+] as const
+
+const RUNWAY_LUMA_IMAGE_SIZE_OPTIONS = [
+  { value: '1080x1080', label: '1080×1080 (1:1)' },
+  { value: '1920x1080', label: '1920×1080 (16:9)' },
+  { value: '1080x1920', label: '1080×1920 (9:16)' },
+  { value: '1440x1080', label: '1440×1080 (4:3)' },
+  { value: '1080x1440', label: '1080×1440 (3:4)' },
+  { value: '2112x912', label: '2112×912 (21:9)' },
+] as const
 
 // 模型类型分类（仅包含已实现适配器的类型）
 const MODEL_CATEGORIES = {
@@ -76,6 +102,84 @@ function isChatOnly(modelType: string): boolean {
 
 function requiresApiKey(provider: string): boolean {
   return provider !== 'ollama'
+}
+
+const MANAGED_DEFAULT_PARAM_KEYS = new Set([
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'max_tokens',
+  'size',
+  'default_width',
+  'default_height',
+  'style',
+  'quality',
+  'background',
+  'output_format',
+  'output_compression',
+  'style_preset',
+  'image_size',
+  'aspect_ratio',
+  'person_generation',
+  'prominent_people',
+  'output_mime_type',
+  'output_compression_quality',
+  'duration',
+  'voice',
+  'speed',
+  'thinking',
+  'reasoning_effort',
+  'extra_body',
+])
+
+const MANAGED_CONFIG_KEYS = new Set([
+  'api_version',
+  'deployment_name',
+  'thinking',
+])
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function omitManagedKeys(
+  source: Record<string, unknown> | null | undefined,
+  managedKeys: Set<string>,
+): Record<string, unknown> {
+  if (!source) return {}
+  return Object.fromEntries(
+    Object.entries(source).filter(([key]) => !managedKeys.has(key))
+  )
+}
+
+function parseJsonObject(
+  value: string,
+  errorMessage: string,
+): { data: Record<string, unknown> | null; error?: string } {
+  if (!value.trim()) {
+    return { data: null }
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    if (!isPlainObject(parsed)) {
+      return { data: null, error: errorMessage }
+    }
+    return { data: parsed }
+  } catch {
+    return { data: null, error: errorMessage }
+  }
+}
+
+function parseImageSize(size: string | null | undefined): { width: number; height: number } | null {
+  if (!size) return null
+  const match = size.match(/^(\d+)x(\d+)$/)
+  if (!match) return null
+  return {
+    width: parseInt(match[1], 10),
+    height: parseInt(match[2], 10),
+  }
 }
 
 // 分隔线组件 - 移到组件外部避免重新创建
@@ -108,7 +212,43 @@ export function ModelDialog({
 }: ModelDialogProps) {
   const t = useTranslations('models')
   const commonT = useTranslations('common')
-  
+  const getProviderName = React.useCallback((code: string) => {
+    const key = `providers.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+  const getModelTypeName = React.useCallback((code: string) => {
+    const key = `modelTypes.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+  const getReasoningEffortLabel = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'openai') return t('openaiReasoningEffort')
+    if (currentProvider === 'deepseek') return t('deepseekReasoningEffort')
+    if (currentProvider === 'xai') return t('xaiReasoningEffort')
+    return t('reasoningEffort')
+  }, [t])
+  const getReasoningEffortHint = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'openai') return t('openaiReasoningEffortHint')
+    if (currentProvider === 'deepseek') return t('deepseekReasoningEffortHint')
+    if (currentProvider === 'xai') return t('xaiReasoningEffortHint')
+    return t('reasoningEffortHint')
+  }, [t])
+  const getThinkingTitle = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'anthropic') return t('anthropicThinkingConfig')
+    if (currentProvider === 'google') return t('geminiThinkingConfig')
+    if (currentProvider === 'deepseek') return t('deepseekThinkingConfig')
+    if (currentProvider === 'moonshot') return t('moonshotThinkingConfig')
+    if (currentProvider === 'ollama') return t('ollamaThinkingConfig')
+    return t('thinkingConfig')
+  }, [t])
+  const getThinkingHint = React.useCallback((currentProvider: string) => {
+    if (currentProvider === 'anthropic') return t('anthropicThinkingEnabledHint')
+    if (currentProvider === 'google') return t('geminiThinkingEnabledHint')
+    if (currentProvider === 'deepseek') return t('deepseekThinkingEnabledHint')
+    if (currentProvider === 'moonshot') return t('moonshotThinkingEnabledHint')
+    if (currentProvider === 'ollama') return t('ollamaThinkingEnabledHint')
+    return t('thinkingEnabledHint')
+  }, [t])
+
   const isEditing = !!model
   
   // 基本信息
@@ -119,7 +259,16 @@ export function ModelDialog({
   const [baseUrl, setBaseUrl] = React.useState('')
   const [apiKey, setApiKey] = React.useState('')
   const [showApiKey, setShowApiKey] = React.useState(false)
-  
+  const reasoningEffortOptions = React.useMemo(() => {
+    if (provider === 'openai') {
+      return ['minimal', 'low', 'medium', 'high'] as const
+    }
+    if (provider === 'deepseek') {
+      return ['high', 'max'] as const
+    }
+    return ['low', 'medium', 'high'] as const
+  }, [provider])
+
   // 参数
   const [contextLength, setContextLength] = React.useState('')
   const [maxOutputTokens, setMaxOutputTokens] = React.useState('')
@@ -147,6 +296,17 @@ export function ModelDialog({
   const [defaultImageSize, setDefaultImageSize] = React.useState('')
   const [defaultImageStyle, setDefaultImageStyle] = React.useState('')
   const [defaultImageQuality, setDefaultImageQuality] = React.useState('')
+  const [openaiImageBackground, setOpenaiImageBackground] = React.useState('')
+  const [openaiImageOutputFormat, setOpenaiImageOutputFormat] = React.useState('')
+  const [openaiImageOutputCompression, setOpenaiImageOutputCompression] = React.useState('')
+  const [googleImageAspectRatio, setGoogleImageAspectRatio] = React.useState('')
+  const [googleImageSize, setGoogleImageSize] = React.useState('')
+  const [googlePersonGeneration, setGooglePersonGeneration] = React.useState('')
+  const [googleProminentPeople, setGoogleProminentPeople] = React.useState('')
+  const [googleOutputMimeType, setGoogleOutputMimeType] = React.useState('')
+  const [googleOutputCompressionQuality, setGoogleOutputCompressionQuality] = React.useState('')
+  const [stabilityStylePreset, setStabilityStylePreset] = React.useState('')
+  const [stabilityOutputFormat, setStabilityOutputFormat] = React.useState('')
 
   // 视频生成参数
   const [defaultVideoDuration, setDefaultVideoDuration] = React.useState('')
@@ -164,10 +324,50 @@ export function ModelDialog({
   const [thinkingEnabled, setThinkingEnabled] = React.useState(false)
   const [thinkingBudget, setThinkingBudget] = React.useState('')
   const [reasoningEffort, setReasoningEffort] = React.useState('')
+  const [qwenEnableSearch, setQwenEnableSearch] = React.useState(false)
+  const [extraBodyText, setExtraBodyText] = React.useState('')
+  const [defaultParamsExtensionText, setDefaultParamsExtensionText] = React.useState('')
+  const [configExtensionText, setConfigExtensionText] = React.useState('')
 
   const [isLoading, setIsLoading] = React.useState(false)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
-  
+
+  const errorPathMap = React.useMemo(() => ({
+    model_id: 'modelId',
+    model_type: 'modelType',
+    api_key: 'apiKey',
+    base_url: 'baseUrl',
+    context_length: 'contextLength',
+    max_output_tokens: 'maxOutputTokens',
+    input_price: 'inputPrice',
+    output_price: 'outputPrice',
+    api_version: 'apiVersion',
+    deployment_name: 'deploymentName',
+    default_params: 'defaultParamsExtension',
+    config: 'configExtension',
+    'default_params.extra_body': 'extraBody',
+    'config.api_version': 'apiVersion',
+    'config.deployment_name': 'deploymentName',
+  }), [])
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(errors, [
+      'name',
+      'provider',
+      'modelId',
+      'modelType',
+      'baseUrl',
+      'apiKey',
+      'contextLength',
+      'maxOutputTokens',
+      'inputPrice',
+      'outputPrice',
+      'apiVersion',
+      'deploymentName',
+    ]),
+    [errors]
+  )
+
   // 测试状态
   const [isTesting, setIsTesting] = React.useState(false)
   const [testResult, setTestResult] = React.useState<{
@@ -193,19 +393,50 @@ export function ModelDialog({
       setIsDefault(model.is_default)
       
       const params = model.default_params || {}
+      const defaultImageDimensions = (
+        typeof params.default_width === 'number' && typeof params.default_height === 'number'
+      )
+        ? `${params.default_width}x${params.default_height}`
+        : ((params.size as string) || '')
       setTemperature((params.temperature as number)?.toString() || '')
       setTopP((params.top_p as number)?.toString() || '')
       setFrequencyPenalty((params.frequency_penalty as number)?.toString() || '')
       setPresencePenalty((params.presence_penalty as number)?.toString() || '')
       setMaxTokens((params.max_tokens as number)?.toString() || '')
-      setDefaultImageSize((params.size as string) || '')
+      setDefaultImageSize(defaultImageDimensions)
       setDefaultImageStyle((params.style as string) || '')
       setDefaultImageQuality((params.quality as string) || '')
+      setOpenaiImageBackground((params.background as string) || '')
+      setOpenaiImageOutputFormat((params.output_format as string) || '')
+      setOpenaiImageOutputCompression((params.output_compression as number)?.toString() || '')
+      setGoogleImageAspectRatio((params.aspect_ratio as string) || '')
+      setGoogleImageSize((params.image_size as string) || '')
+      setGooglePersonGeneration((params.person_generation as string) || '')
+      setGoogleProminentPeople((params.prominent_people as string) || '')
+      setGoogleOutputMimeType((params.output_mime_type as string) || '')
+      setGoogleOutputCompressionQuality((params.output_compression_quality as number)?.toString() || '')
+      setStabilityStylePreset((params.style_preset as string) || '')
+      setStabilityOutputFormat((params.output_format as string) || '')
       setDefaultVideoDuration((params.duration as number)?.toString() || '')
       setDefaultVideoAspectRatio((params.aspect_ratio as string) || '')
       setDefaultVoice((params.voice as string) || '')
       setDefaultSpeed((params.speed as number)?.toString() || '')
-      
+      setReasoningEffort(
+        (params.reasoning_effort as string)
+        || ((params.thinking as Record<string, unknown> | undefined)?.effort as string)
+        || ((params.thinking as Record<string, unknown> | undefined)?.reasoning_effort as string)
+        || ''
+      )
+      setQwenEnableSearch(!!params.enable_search)
+      setExtraBodyText(
+        params.extra_body && isPlainObject(params.extra_body)
+          ? JSON.stringify(params.extra_body, null, 2)
+          : ''
+      )
+      setDefaultParamsExtensionText(
+        JSON.stringify(omitManagedKeys(params, MANAGED_DEFAULT_PARAM_KEYS), null, 2)
+      )
+
       const caps = model.capabilities || {}
       setSupportsVision(!!caps.vision)
       setSupportsFunctionCall(!!caps.function_call)
@@ -215,21 +446,21 @@ export function ModelDialog({
       const config = model.config || {}
       setApiVersion((config.api_version as string) || '')
       setDeploymentName((config.deployment_name as string) || '')
+      setConfigExtensionText(
+        JSON.stringify(omitManagedKeys(config, MANAGED_CONFIG_KEYS), null, 2)
+      )
 
       // Thinking 配置
-      const thinking = config.thinking as Record<string, unknown> | boolean | undefined
+      const thinking = (params.thinking ?? config.thinking) as Record<string, unknown> | boolean | undefined
       if (typeof thinking === 'boolean') {
         setThinkingEnabled(thinking)
         setThinkingBudget('')
-        setReasoningEffort('')
       } else if (thinking && typeof thinking === 'object') {
         setThinkingEnabled(thinking.enabled !== false)
         setThinkingBudget((thinking.budget_tokens as number)?.toString() || (thinking.budget as number)?.toString() || '')
-        setReasoningEffort((thinking.effort as string) || (thinking.reasoning_effort as string) || '')
       } else {
         setThinkingEnabled(false)
         setThinkingBudget('')
-        setReasoningEffort('')
       }
     } else {
       setName('')
@@ -256,6 +487,17 @@ export function ModelDialog({
       setDefaultImageSize('')
       setDefaultImageStyle('')
       setDefaultImageQuality('')
+      setOpenaiImageBackground('')
+      setOpenaiImageOutputFormat('')
+      setOpenaiImageOutputCompression('')
+      setGoogleImageAspectRatio('')
+      setGoogleImageSize('')
+      setGooglePersonGeneration('')
+      setGoogleProminentPeople('')
+      setGoogleOutputMimeType('')
+      setGoogleOutputCompressionQuality('')
+      setStabilityStylePreset('')
+      setStabilityOutputFormat('')
       setDefaultVideoDuration('')
       setDefaultVideoAspectRatio('')
       setDefaultVoice('')
@@ -265,6 +507,10 @@ export function ModelDialog({
       setThinkingEnabled(false)
       setThinkingBudget('')
       setReasoningEffort('')
+      setQwenEnableSearch(false)
+      setExtraBodyText('')
+      setDefaultParamsExtensionText('')
+      setConfigExtensionText('')
     }
     setShowApiKey(false)
     setErrors({})
@@ -277,42 +523,114 @@ export function ModelDialog({
   
   // 测试模型配置
   const handleTestConnection = async () => {
-    // 验证必填字段
-    if (
-      !provider ||
-      !modelId.trim() ||
-      !modelType ||
-      (requiresApiKey(provider) && !apiKey.trim())
-    ) {
-      toast.error(t('fillRequiredFieldsFirst'))
+    const newErrors: Record<string, string> = {}
+    if (!provider) newErrors.provider = t('providerRequired')
+    if (!modelId.trim()) newErrors.modelId = t('modelIdRequired')
+    if (!modelType) newErrors.modelType = t('modelTypeRequired')
+    if (requiresApiKey(provider) && !apiKey.trim()) {
+      newErrors.apiKey = t('apiKeyRequired')
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...newErrors }))
+      setTestResult(null)
       return
     }
-    
+
+    const extraBodyResult = parseJsonObject(extraBodyText, commonT('invalidJSON'))
+    const defaultParamsExtensionResult = parseJsonObject(defaultParamsExtensionText, commonT('invalidJSON'))
+    const configExtensionResult = parseJsonObject(configExtensionText, commonT('invalidJSON'))
+
+    if (extraBodyResult.error || defaultParamsExtensionResult.error || configExtensionResult.error) {
+      setErrors((prev) => ({
+        ...prev,
+        ...(extraBodyResult.error ? { extraBody: extraBodyResult.error } : {}),
+        ...(defaultParamsExtensionResult.error ? { defaultParamsExtension: defaultParamsExtensionResult.error } : {}),
+        ...(configExtensionResult.error ? { configExtension: configExtensionResult.error } : {}),
+      }))
+      setTestResult(null)
+      return
+    }
+
     setIsTesting(true)
     setTestResult(null)
-    
+
     try {
-      const config: Record<string, unknown> = {}
+      const defaultParams: Record<string, unknown> = {
+        ...(defaultParamsExtensionResult.data || {}),
+      }
+      const category = getModelCategory(modelType)
+      const config: Record<string, unknown> = {
+        ...(configExtensionResult.data || {}),
+      }
+
+      if (temperature) defaultParams.temperature = parseFloat(temperature)
+      if (topP) defaultParams.top_p = parseFloat(topP)
+      if (frequencyPenalty) defaultParams.frequency_penalty = parseFloat(frequencyPenalty)
+      if (presencePenalty) defaultParams.presence_penalty = parseFloat(presencePenalty)
+      if (maxTokens) defaultParams.max_tokens = parseInt(maxTokens)
+      if (category === 'image') {
+        const parsedImageSize = parseImageSize(defaultImageSize)
+        if (parsedImageSize) {
+          defaultParams.default_width = parsedImageSize.width
+          defaultParams.default_height = parsedImageSize.height
+        }
+        if (defaultImageStyle) defaultParams.style = defaultImageStyle
+        if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+        if (isOpenAIImageProvider) {
+          if (openaiImageBackground) defaultParams.background = openaiImageBackground
+          if (openaiImageOutputFormat) defaultParams.output_format = openaiImageOutputFormat
+          if (openaiImageOutputCompression) defaultParams.output_compression = parseInt(openaiImageOutputCompression)
+        }
+        if (isGoogleImageProvider) {
+          if (googleImageAspectRatio) defaultParams.aspect_ratio = googleImageAspectRatio
+          if (googleImageSize) defaultParams.image_size = googleImageSize
+          if (googlePersonGeneration) defaultParams.person_generation = googlePersonGeneration
+          if (googleProminentPeople) defaultParams.prominent_people = googleProminentPeople
+          if (googleOutputMimeType) defaultParams.output_mime_type = googleOutputMimeType
+          if (googleOutputCompressionQuality) defaultParams.output_compression_quality = parseInt(googleOutputCompressionQuality)
+        }
+        if (isStabilityImageProvider) {
+          if (stabilityStylePreset) defaultParams.style_preset = stabilityStylePreset
+          if (stabilityOutputFormat) defaultParams.output_format = stabilityOutputFormat
+        }
+      }
+      if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
+      if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
-      
+      if (supportsThinking) {
+        const thinkingConfig: Record<string, unknown> = { enabled: thinkingEnabled }
+        if (thinkingEnabled && thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
+        config.thinking = thinkingConfig
+      }
+
       const result = await modelsApi.testModelConfig({
         provider,
         model_id: modelId.trim(),
         model_type: modelType,
         base_url: baseUrl.trim() || null,
         api_key: apiKey || null,
+        default_params: Object.keys(defaultParams).length > 0 ? defaultParams : null,
         config: Object.keys(config).length > 0 ? config : null,
       })
-      
-      setTestResult(result)
-      
+
+      setTestResult({
+        ...result,
+        message: result.message ? result.message.trim() : t('testFailed'),
+      })
+
       if (result.success) {
         toast.success(t('testSuccess'))
       } else {
-        toast.error(result.message)
+        toast.error(result.message ? result.message.trim() : t('testFailed'))
       }
-    } catch {
+    } catch (error) {
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors((prev) => ({ ...prev, ...validationErrors }))
+      }
       setTestResult({
         success: false,
         message: t('testFailed'),
@@ -324,7 +642,8 @@ export function ModelDialog({
   
   const handleProviderChange = (value: string) => {
     setProvider(value)
-    setTestResult(null) // 重置测试结果
+    setErrors((prev) => clearValidationError(prev, 'provider'))
+    setTestResult(null)
     if (!baseUrl) {
       const providerInfo = providers.find(p => p.code === value)
       if (providerInfo?.base_url) setBaseUrl(providerInfo.base_url)
@@ -334,6 +653,7 @@ export function ModelDialog({
   const handleModelTypeChange = (value: string | null) => {
     if (value) {
       setModelType(value)
+      setErrors((prev) => clearValidationError(prev, 'modelType'))
       const newCategory = getModelCategory(value)
       const currentCategory = getModelCategory(modelType)
       if (newCategory !== currentCategory) {
@@ -352,7 +672,7 @@ export function ModelDialog({
     const providersByCategory: Record<string, string[]> = {
       text: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
       rerank: ['openai', 'anthropic', 'google', 'xai', 'azure_openai', 'deepseek', 'moonshot', 'zhipu', 'qwen', 'baichuan', 'minimax', 'ollama', 'custom'],
-      image: ['openai', 'google', 'azure_openai', 'custom', 'runway', 'luma', 'stability'],
+      image: ['openai', 'google', 'azure_openai', 'custom', 'siliconflow', 'runway', 'luma', 'stability'],
       video: ['runway', 'luma'],
       audio: ['openai', 'azure_openai', 'custom'],
     }
@@ -388,17 +708,27 @@ export function ModelDialog({
       newErrors.apiKey = t('apiKeyRequired')
     }
     
+    const extraBodyResult = parseJsonObject(extraBodyText, commonT('invalidJSON'))
+    const defaultParamsExtensionResult = parseJsonObject(defaultParamsExtensionText, commonT('invalidJSON'))
+    const configExtensionResult = parseJsonObject(configExtensionText, commonT('invalidJSON'))
+
+    if (extraBodyResult.error) newErrors.extraBody = extraBodyResult.error
+    if (defaultParamsExtensionResult.error) newErrors.defaultParamsExtension = defaultParamsExtensionResult.error
+    if (configExtensionResult.error) newErrors.configExtension = configExtensionResult.error
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
-    
+
     setIsLoading(true)
-    
+
     try {
-      const defaultParams: Record<string, unknown> = {}
+      const defaultParams: Record<string, unknown> = {
+        ...(defaultParamsExtensionResult.data || {}),
+      }
       const category = getModelCategory(modelType)
-      
+
       if (category === 'text') {
         if (temperature) defaultParams.temperature = parseFloat(temperature)
         if (topP) defaultParams.top_p = parseFloat(topP)
@@ -406,9 +736,30 @@ export function ModelDialog({
         if (presencePenalty) defaultParams.presence_penalty = parseFloat(presencePenalty)
         if (maxTokens) defaultParams.max_tokens = parseInt(maxTokens)
       } else if (category === 'image') {
-        if (defaultImageSize) defaultParams.size = defaultImageSize
+        const parsedImageSize = parseImageSize(defaultImageSize)
+        if (parsedImageSize) {
+          defaultParams.default_width = parsedImageSize.width
+          defaultParams.default_height = parsedImageSize.height
+        }
         if (defaultImageStyle) defaultParams.style = defaultImageStyle
         if (defaultImageQuality) defaultParams.quality = defaultImageQuality
+        if (isOpenAIImageProvider) {
+          if (openaiImageBackground) defaultParams.background = openaiImageBackground
+          if (openaiImageOutputFormat) defaultParams.output_format = openaiImageOutputFormat
+          if (openaiImageOutputCompression) defaultParams.output_compression = parseInt(openaiImageOutputCompression)
+        }
+        if (isGoogleImageProvider) {
+          if (googleImageAspectRatio) defaultParams.aspect_ratio = googleImageAspectRatio
+          if (googleImageSize) defaultParams.image_size = googleImageSize
+          if (googlePersonGeneration) defaultParams.person_generation = googlePersonGeneration
+          if (googleProminentPeople) defaultParams.prominent_people = googleProminentPeople
+          if (googleOutputMimeType) defaultParams.output_mime_type = googleOutputMimeType
+          if (googleOutputCompressionQuality) defaultParams.output_compression_quality = parseInt(googleOutputCompressionQuality)
+        }
+        if (isStabilityImageProvider) {
+          if (stabilityStylePreset) defaultParams.style_preset = stabilityStylePreset
+          if (stabilityOutputFormat) defaultParams.output_format = stabilityOutputFormat
+        }
       } else if (category === 'video') {
         if (defaultVideoDuration) defaultParams.duration = parseFloat(defaultVideoDuration)
         if (defaultVideoAspectRatio) defaultParams.aspect_ratio = defaultVideoAspectRatio
@@ -416,7 +767,10 @@ export function ModelDialog({
         if (defaultVoice) defaultParams.voice = defaultVoice
         if (defaultSpeed) defaultParams.speed = parseFloat(defaultSpeed)
       }
-      
+      if (showReasoningEffort && reasoningEffort) defaultParams.reasoning_effort = reasoningEffort
+      if (provider === 'qwen' && qwenEnableSearch) defaultParams.enable_search = true
+      if (showExtraBody && extraBodyResult.data) defaultParams.extra_body = extraBodyResult.data
+
       let capabilities: Record<string, boolean> | null = null
       if (modelType === 'chat') {
         capabilities = {}
@@ -426,16 +780,17 @@ export function ModelDialog({
         if (supportsJsonMode) capabilities.json_mode = true
         if (Object.keys(capabilities).length === 0) capabilities = null
       }
-      
-      const config: Record<string, unknown> = {}
+
+      const config: Record<string, unknown> = {
+        ...(configExtensionResult.data || {}),
+      }
       if (apiVersion) config.api_version = apiVersion
       if (deploymentName) config.deployment_name = deploymentName
 
       // Thinking 配置
-      if (thinkingEnabled) {
-        const thinkingConfig: Record<string, unknown> = { enabled: true }
-        if (thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
-        if (reasoningEffort) thinkingConfig.effort = reasoningEffort
+      if (supportsThinking) {
+        const thinkingConfig: Record<string, unknown> = { enabled: thinkingEnabled }
+        if (thinkingEnabled && thinkingBudget) thinkingConfig.budget_tokens = parseInt(thinkingBudget)
         config.thinking = thinkingConfig
       }
 
@@ -479,8 +834,11 @@ export function ModelDialog({
       
       onOpenChange(false)
       onSuccess()
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const validationErrors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -491,6 +849,16 @@ export function ModelDialog({
   const showParamsTab = category === 'text'
   const tabCount = 1 + (showParamsTab ? 1 : 0) + (showAdvancedTab ? 1 : 0)
   const showTabs = tabCount > 1
+  const showReasoningEffort = ['openai', 'xai', 'deepseek', 'volcengine', 'siliconflow'].includes(provider)
+  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+  const showExtraBody = ['openai', 'anthropic', 'xai'].includes(provider)
+  const isOpenAIImageProvider = ['openai', 'azure_openai', 'custom', 'siliconflow'].includes(provider)
+  const isGoogleImageProvider = provider === 'google'
+  const isStabilityImageProvider = provider === 'stability'
+  const isRunwayOrLumaImageProvider = ['runway', 'luma'].includes(provider)
+  const imageSizeOptions = isRunwayOrLumaImageProvider
+    ? RUNWAY_LUMA_IMAGE_SIZE_OPTIONS
+    : DEFAULT_IMAGE_SIZE_OPTIONS
   
   // ========== 基本信息内容 ==========
   const basicInfoContent = (
@@ -504,28 +872,32 @@ export function ModelDialog({
           <Input
             id="name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value)
+              setErrors((prev) => clearValidationError(prev, 'name'))
+            }}
             placeholder={t('modelNamePlaceholder')}
+            aria-invalid={!!errors.name}
           />
-          {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
+          <FieldError>{errors.name}</FieldError>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>{t('modelType')} *</Label>
             <Select value={modelType} onValueChange={handleModelTypeChange} disabled={isEditing}>
-              <SelectTrigger>
-                <SelectValue>{modelType ? t(`modelTypes.${modelType}`) : t('selectModelType')}</SelectValue>
+              <SelectTrigger aria-invalid={!!errors.modelType}>
+                <SelectValue>{modelType ? getModelTypeName(modelType) : t('selectModelType')}</SelectValue>
               </SelectTrigger>
               <SelectContent side="bottom" alignItemWithTrigger={false}>
                 {modelTypes.map((mt) => (
                   <SelectItem key={mt.code} value={mt.code}>
-                    {t(`modelTypes.${mt.code}`)}
+                    {getModelTypeName(mt.code)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.modelType && <p className="text-sm text-destructive">{errors.modelType}</p>}
+            <FieldError>{errors.modelType}</FieldError>
           </div>
           
           <div className="space-y-2">
@@ -545,7 +917,7 @@ export function ModelDialog({
                     )}
                     disabled={isEditing || !modelType}
                   >
-                    {provider ? t(`providers.${provider}`) : t('selectProvider')}
+                    {provider ? getProviderName(provider) : t('selectProvider')}
                     <svg className="ml-2 h-4 w-4 shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
@@ -578,12 +950,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -615,12 +987,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -652,12 +1024,12 @@ export function ModelDialog({
                                   )}
                                 >
                                   {provider === code && <Check className="h-3 w-3 shrink-0" />}
-                                  <span className="truncate">{t(`providers.${code}`)}</span>
+                                  <span className="truncate">{getProviderName(code)}</span>
                                 </button>
                               )}
                             />
                             <TooltipContent side="bottom">
-                              {t(`providers.${code}`)}
+                              {getProviderName(code)}
                             </TooltipContent>
                           </Tooltip>
                         ))}
@@ -667,7 +1039,7 @@ export function ModelDialog({
                 </div>
               </PopoverContent>
             </Popover>
-            {errors.provider && <p className="text-sm text-destructive">{errors.provider}</p>}
+            <FieldError>{errors.provider}</FieldError>
             {!modelType && <p className="text-xs text-muted-foreground">{t('selectModelTypeFirst')}</p>}
           </div>
         </div>
@@ -677,11 +1049,15 @@ export function ModelDialog({
           <Input
             id="modelId"
             value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
+            onChange={(e) => {
+              setModelId(e.target.value)
+              setErrors((prev) => clearValidationError(prev, 'modelId'))
+            }}
             placeholder={t('modelIdPlaceholder')}
             disabled={isEditing}
+            aria-invalid={!!errors.modelId}
           />
-          {errors.modelId && <p className="text-sm text-destructive">{errors.modelId}</p>}
+          <FieldError>{errors.modelId}</FieldError>
         </div>
       </div>
       
@@ -695,9 +1071,14 @@ export function ModelDialog({
             <Input
               id="baseUrl"
               value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
+              onChange={(e) => {
+                setBaseUrl(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'baseUrl'))
+              }}
               placeholder={t('baseUrlPlaceholder')}
+              aria-invalid={!!errors.baseUrl}
             />
+            <FieldError>{errors.baseUrl}</FieldError>
             <p className="text-xs text-muted-foreground">{t('baseUrlHint')}</p>
           </div>
           
@@ -710,9 +1091,14 @@ export function ModelDialog({
                 id="apiKey"
                 type={showApiKey ? 'text' : 'password'}
                 value={apiKey}
-                onChange={(e) => { setApiKey(e.target.value); setTestResult(null) }}
+                onChange={(e) => {
+                  setApiKey(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'apiKey'))
+                  setTestResult(null)
+                }}
                 placeholder={isEditing ? t('apiKeyPlaceholderEdit') : t('apiKeyPlaceholder')}
                 className="pr-10"
+                aria-invalid={!!errors.apiKey}
               />
               <Button
                 type="button"
@@ -724,7 +1110,7 @@ export function ModelDialog({
                 {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            {errors.apiKey && <p className="text-sm text-destructive">{errors.apiKey}</p>}
+            <FieldError>{errors.apiKey}</FieldError>
             {isEditing && model?.has_api_key && !errors.apiKey && (
               <p className="text-xs text-muted-foreground">{t('apiKeyConfigured')}</p>
             )}
@@ -805,15 +1191,13 @@ export function ModelDialog({
                   <SelectValue>{defaultImageSize || t('selectSize')}</SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
-                  <SelectItem value="1024x1024">1024×1024</SelectItem>
-                  <SelectItem value="1792x1024">1792×1024</SelectItem>
-                  <SelectItem value="1024x1792">1024×1792</SelectItem>
-                  <SelectItem value="512x512">512×512</SelectItem>
-                  <SelectItem value="256x256">256×256</SelectItem>
+                  {imageSizeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>{t('defaultImageStyle')}</Label>
               <Select value={defaultImageStyle} onValueChange={(v) => v && setDefaultImageStyle(v)}>
@@ -826,7 +1210,7 @@ export function ModelDialog({
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label>{t('defaultImageQuality')}</Label>
               <Select value={defaultImageQuality} onValueChange={(v) => v && setDefaultImageQuality(v)}>
@@ -836,10 +1220,197 @@ export function ModelDialog({
                 <SelectContent side="bottom" alignItemWithTrigger={false}>
                   <SelectItem value="standard">{t('qualityStandard')}</SelectItem>
                   <SelectItem value="hd">{t('qualityHD')}</SelectItem>
+                  <SelectItem value="low">{t('qualityLow')}</SelectItem>
+                  <SelectItem value="medium">{t('qualityMedium')}</SelectItem>
+                  <SelectItem value="high">{t('qualityHigh')}</SelectItem>
+                  <SelectItem value="auto">{t('qualityAuto')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {isOpenAIImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('openaiImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('imageBackground')}</Label>
+                  <Select value={openaiImageBackground} onValueChange={(v) => v && setOpenaiImageBackground(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{openaiImageBackground || t('selectImageBackground')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="transparent">{t('imageBackgroundTransparent')}</SelectItem>
+                      <SelectItem value="opaque">{t('imageBackgroundOpaque')}</SelectItem>
+                      <SelectItem value="auto">{t('imageBackgroundAuto')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('imageOutputFormat')}</Label>
+                  <Select value={openaiImageOutputFormat} onValueChange={(v) => v && setOpenaiImageOutputFormat(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{openaiImageOutputFormat || t('selectOutputFormat')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                      <SelectItem value="webp">WebP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="openaiImageOutputCompression">{t('imageOutputCompression')}</Label>
+                  <Input
+                    id="openaiImageOutputCompression"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={openaiImageOutputCompression}
+                    onChange={(e) => setOpenaiImageOutputCompression(e.target.value)}
+                    placeholder="100"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isGoogleImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('googleImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('defaultGoogleAspectRatio')}</Label>
+                  <Select value={googleImageAspectRatio} onValueChange={(v) => v && setGoogleImageAspectRatio(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleImageAspectRatio || t('selectAspectRatio')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="21:9">21:9</SelectItem>
+                      <SelectItem value="16:9">16:9</SelectItem>
+                      <SelectItem value="4:3">4:3</SelectItem>
+                      <SelectItem value="3:2">3:2</SelectItem>
+                      <SelectItem value="1:1">1:1</SelectItem>
+                      <SelectItem value="2:3">2:3</SelectItem>
+                      <SelectItem value="3:4">3:4</SelectItem>
+                      <SelectItem value="9:16">9:16</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('defaultGoogleImageSize')}</Label>
+                  <Select value={googleImageSize} onValueChange={(v) => v && setGoogleImageSize(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleImageSize || t('selectGoogleImageSize')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="1K">1K</SelectItem>
+                      <SelectItem value="2K">2K</SelectItem>
+                      <SelectItem value="4K">4K</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googlePersonGeneration')}</Label>
+                  <Select value={googlePersonGeneration} onValueChange={(v) => v && setGooglePersonGeneration(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googlePersonGeneration || t('selectGooglePersonGeneration')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="ALLOW_ALL">{t('googlePersonGenerationAllowAll')}</SelectItem>
+                      <SelectItem value="ALLOW_ADULT">{t('googlePersonGenerationAllowAdult')}</SelectItem>
+                      <SelectItem value="DONT_ALLOW">{t('googlePersonGenerationDontAllow')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googleProminentPeople')}</Label>
+                  <Select value={googleProminentPeople} onValueChange={(v) => v && setGoogleProminentPeople(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleProminentPeople || t('selectGoogleProminentPeople')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="ALLOW_ALL">{t('googleProminentPeopleAllowAll')}</SelectItem>
+                      <SelectItem value="ALLOW_ADULT">{t('googleProminentPeopleAllowAdult')}</SelectItem>
+                      <SelectItem value="DONT_ALLOW">{t('googleProminentPeopleDontAllow')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('googleOutputMimeType')}</Label>
+                  <Select value={googleOutputMimeType} onValueChange={(v) => v && setGoogleOutputMimeType(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{googleOutputMimeType || t('selectGoogleOutputMimeType')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="image/png">PNG</SelectItem>
+                      <SelectItem value="image/jpeg">JPEG</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="googleOutputCompressionQuality">{t('googleOutputCompressionQuality')}</Label>
+                  <Input
+                    id="googleOutputCompressionQuality"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={googleOutputCompressionQuality}
+                    onChange={(e) => setGoogleOutputCompressionQuality(e.target.value)}
+                    placeholder="90"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isStabilityImageProvider && (
+            <div className="space-y-4">
+              <SectionTitle>{t('stabilityImageSettings')}</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('stabilityStylePreset')}</Label>
+                  <Select value={stabilityStylePreset} onValueChange={(v) => v && setStabilityStylePreset(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{stabilityStylePreset || t('selectStabilityStylePreset')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="3d-model">3D Model</SelectItem>
+                      <SelectItem value="analog-film">Analog Film</SelectItem>
+                      <SelectItem value="anime">Anime</SelectItem>
+                      <SelectItem value="cinematic">Cinematic</SelectItem>
+                      <SelectItem value="comic-book">Comic Book</SelectItem>
+                      <SelectItem value="digital-art">Digital Art</SelectItem>
+                      <SelectItem value="enhance">Enhance</SelectItem>
+                      <SelectItem value="fantasy-art">Fantasy Art</SelectItem>
+                      <SelectItem value="isometric">Isometric</SelectItem>
+                      <SelectItem value="line-art">Line Art</SelectItem>
+                      <SelectItem value="low-poly">Low Poly</SelectItem>
+                      <SelectItem value="modeling-compound">Modeling Compound</SelectItem>
+                      <SelectItem value="neon-punk">Neon Punk</SelectItem>
+                      <SelectItem value="origami">Origami</SelectItem>
+                      <SelectItem value="photographic">Photographic</SelectItem>
+                      <SelectItem value="pixel-art">Pixel Art</SelectItem>
+                      <SelectItem value="tile-texture">Tile Texture</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('imageOutputFormat')}</Label>
+                  <Select value={stabilityOutputFormat} onValueChange={(v) => v && setStabilityOutputFormat(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{stabilityOutputFormat || t('selectOutputFormat')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                      <SelectItem value="webp">WebP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -945,9 +1516,14 @@ export function ModelDialog({
               id="contextLength"
               type="number"
               value={contextLength}
-              onChange={(e) => setContextLength(e.target.value)}
+              onChange={(e) => {
+                setContextLength(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'contextLength'))
+              }}
               placeholder="128000"
+              aria-invalid={!!errors.contextLength}
             />
+            <FieldError>{errors.contextLength}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="maxOutputTokens">{t('maxOutputTokens')}</Label>
@@ -955,9 +1531,14 @@ export function ModelDialog({
               id="maxOutputTokens"
               type="number"
               value={maxOutputTokens}
-              onChange={(e) => setMaxOutputTokens(e.target.value)}
+              onChange={(e) => {
+                setMaxOutputTokens(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'maxOutputTokens'))
+              }}
               placeholder="4096"
+              aria-invalid={!!errors.maxOutputTokens}
             />
+            <FieldError>{errors.maxOutputTokens}</FieldError>
           </div>
         </div>
       </div>
@@ -972,9 +1553,14 @@ export function ModelDialog({
               type="number"
               step="0.000001"
               value={inputPrice}
-              onChange={(e) => setInputPrice(e.target.value)}
+              onChange={(e) => {
+                setInputPrice(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'inputPrice'))
+              }}
               placeholder="0.0"
+              aria-invalid={!!errors.inputPrice}
             />
+            <FieldError>{errors.inputPrice}</FieldError>
             <p className="text-xs text-muted-foreground">{t('priceUnit')}</p>
           </div>
           <div className="space-y-2">
@@ -984,9 +1570,14 @@ export function ModelDialog({
               type="number"
               step="0.000001"
               value={outputPrice}
-              onChange={(e) => setOutputPrice(e.target.value)}
+              onChange={(e) => {
+                setOutputPrice(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'outputPrice'))
+              }}
               placeholder="0.0"
+              aria-invalid={!!errors.outputPrice}
             />
+            <FieldError>{errors.outputPrice}</FieldError>
             <p className="text-xs text-muted-foreground">{t('priceUnit')}</p>
           </div>
         </div>
@@ -1059,6 +1650,83 @@ export function ModelDialog({
               placeholder={t('maxTokensPlaceholder')}
             />
           </div>
+
+          {(showReasoningEffort || provider === 'qwen' || showExtraBody) && (
+            <div className="grid grid-cols-2 gap-4">
+              {showReasoningEffort && (
+                <div className="space-y-2">
+                  <Label>{getReasoningEffortLabel(provider)}</Label>
+                  <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
+                    <SelectTrigger>
+                      <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent side="bottom" alignItemWithTrigger={false}>
+                      {reasoningEffortOptions.map((option) => (
+                        <SelectItem key={option} value={option}>{t(`reasoningEffort${option.charAt(0).toUpperCase()}${option.slice(1)}`)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{getReasoningEffortHint(provider)}</p>
+                </div>
+              )}
+
+              {provider === 'qwen' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="qwenEnableSearch">{t('qwenEnableSearch')}</Label>
+                    <Switch
+                      id="qwenEnableSearch"
+                      checked={qwenEnableSearch}
+                      onCheckedChange={setQwenEnableSearch}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{t('qwenEnableSearchHint')}</p>
+                </div>
+              )}
+
+              {showExtraBody && (
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="extraBody">{t('extraBody')}</Label>
+                  <Textarea
+                    id="extraBody"
+                    value={extraBodyText}
+                    onChange={(e) => {
+                      setExtraBodyText(e.target.value)
+                      setErrors((prev) => clearValidationError(prev, 'extraBody'))
+                    }}
+                    placeholder={`{
+  "thinking": {
+    "type": "enabled"
+  }
+}`}
+                    className="font-mono text-sm"
+                    rows={6}
+                    aria-invalid={!!errors.extraBody}
+                  />
+                  <FieldError>{errors.extraBody}</FieldError>
+                  <p className="text-xs text-muted-foreground">{t('extraBodyHint')}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="defaultParamsExtension">{t('defaultParamsExtension')}</Label>
+            <Textarea
+              id="defaultParamsExtension"
+              value={defaultParamsExtensionText}
+              onChange={(e) => {
+                setDefaultParamsExtensionText(e.target.value)
+                setErrors((prev) => clearValidationError(prev, 'defaultParamsExtension'))
+              }}
+              placeholder="{}"
+              className="font-mono text-sm"
+              rows={6}
+              aria-invalid={!!errors.defaultParamsExtension}
+            />
+            <FieldError>{errors.defaultParamsExtension}</FieldError>
+            <p className="text-xs text-muted-foreground">{t('defaultParamsExtensionHint')}</p>
+          </div>
         </div>
       )}
     </>
@@ -1066,9 +1734,7 @@ export function ModelDialog({
   
   // ========== 高级内容 ==========
   // 支持 thinking 的供应商
-  const supportsThinking = ['anthropic', 'google', 'xai', 'deepseek', 'openai'].includes(provider)
-  const showReasoningEffort = provider === 'xai'
-  const showThinkingBudget = ['anthropic', 'google'].includes(provider)
+  const supportsThinking = ['anthropic', 'google', 'deepseek', 'zhipu', 'moonshot', 'ollama'].includes(provider)
 
   const advancedContent = (
     <>
@@ -1111,12 +1777,12 @@ export function ModelDialog({
       {/* Thinking/Reasoning 配置 */}
       {isChatOnly(modelType) && supportsThinking && (
         <div className="space-y-4">
-          <SectionTitle>{t('thinkingConfig')}</SectionTitle>
+          <SectionTitle>{getThinkingTitle(provider)}</SectionTitle>
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
               <div className="space-y-0.5">
                 <Label className="text-sm font-medium">{t('thinkingEnabled')}</Label>
-                <p className="text-xs text-muted-foreground">{t('thinkingEnabledHint')}</p>
+                <p className="text-xs text-muted-foreground">{getThinkingHint(provider)}</p>
               </div>
               <Switch checked={thinkingEnabled} onCheckedChange={setThinkingEnabled} />
             </div>
@@ -1137,22 +1803,6 @@ export function ModelDialog({
                   </div>
                 )}
 
-                {showReasoningEffort && (
-                  <div className="space-y-2">
-                    <Label>{t('reasoningEffort')}</Label>
-                    <Select value={reasoningEffort} onValueChange={(v) => v && setReasoningEffort(v)}>
-                      <SelectTrigger>
-                        <SelectValue>{reasoningEffort ? t(`reasoningEffort${reasoningEffort.charAt(0).toUpperCase()}${reasoningEffort.slice(1)}`) : t('selectReasoningEffort')}</SelectValue>
-                      </SelectTrigger>
-                      <SelectContent side="bottom" alignItemWithTrigger={false}>
-                        <SelectItem value="low">{t('reasoningEffortLow')}</SelectItem>
-                        <SelectItem value="medium">{t('reasoningEffortMedium')}</SelectItem>
-                        <SelectItem value="high">{t('reasoningEffortHigh')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">{t('reasoningEffortHint')}</p>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1168,22 +1818,50 @@ export function ModelDialog({
               <Input
                 id="apiVersion"
                 value={apiVersion}
-                onChange={(e) => setApiVersion(e.target.value)}
+                onChange={(e) => {
+                  setApiVersion(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'apiVersion'))
+                }}
                 placeholder="2024-02-01"
+                aria-invalid={!!errors.apiVersion}
               />
+              <FieldError>{errors.apiVersion}</FieldError>
             </div>
             <div className="space-y-2">
               <Label htmlFor="deploymentName">{t('deploymentName')}</Label>
               <Input
                 id="deploymentName"
                 value={deploymentName}
-                onChange={(e) => setDeploymentName(e.target.value)}
+                onChange={(e) => {
+                  setDeploymentName(e.target.value)
+                  setErrors((prev) => clearValidationError(prev, 'deploymentName'))
+                }}
                 placeholder={t('deploymentNamePlaceholder')}
+                aria-invalid={!!errors.deploymentName}
               />
+              <FieldError>{errors.deploymentName}</FieldError>
             </div>
           </div>
         </div>
       )}
+
+      <div className="space-y-2">
+        <Label htmlFor="configExtension">{t('configExtension')}</Label>
+        <Textarea
+          id="configExtension"
+          value={configExtensionText}
+          onChange={(e) => {
+            setConfigExtensionText(e.target.value)
+            setErrors((prev) => clearValidationError(prev, 'configExtension'))
+          }}
+          placeholder="{}"
+          className="font-mono text-sm"
+          rows={6}
+          aria-invalid={!!errors.configExtension}
+        />
+        <FieldError>{errors.configExtension}</FieldError>
+        <p className="text-xs text-muted-foreground">{t('configExtensionHint')}</p>
+      </div>
     </>
   )
   
@@ -1198,6 +1876,16 @@ export function ModelDialog({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           {showTabs ? (
             <Tabs defaultValue="basic" className="w-full">
               <TabsList className={`grid w-full grid-cols-${tabCount}`}>
@@ -1225,6 +1913,25 @@ export function ModelDialog({
           ) : (
             <div className="space-y-6">
               {basicInfoContent}
+              {category === 'image' && (
+                <div className="space-y-2">
+                  <Label htmlFor="defaultParamsExtensionImage">{t('defaultParamsExtension')}</Label>
+                  <Textarea
+                    id="defaultParamsExtensionImage"
+                    value={defaultParamsExtensionText}
+                    onChange={(e) => {
+                      setDefaultParamsExtensionText(e.target.value)
+                      setErrors((prev) => clearValidationError(prev, 'defaultParamsExtension'))
+                    }}
+                    placeholder="{}"
+                    className="font-mono text-sm"
+                    rows={6}
+                    aria-invalid={!!errors.defaultParamsExtension}
+                  />
+                  <FieldError>{errors.defaultParamsExtension}</FieldError>
+                  <p className="text-xs text-muted-foreground">{t('defaultParamsExtensionHint')}</p>
+                </div>
+              )}
             </div>
           )}
           

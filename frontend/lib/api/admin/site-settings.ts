@@ -104,7 +104,7 @@ export const siteSettingsApi = {
   },
 
   async updateSecurity(data: Partial<SecuritySettings>): Promise<Record<string, unknown>> {
-    const res = await api.put<SiteSettings>('/admin/site-settings', { settings: data }, { silent: true })
+    const res = await api.put<SiteSettings>('/admin/site-settings', { settings: data })
     return res.settings
   },
 

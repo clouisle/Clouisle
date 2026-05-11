@@ -1,0 +1,76 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "postgres") | nindent 4 }}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "postgres") | nindent 8 }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: postgres
+          image: {{ printf "%s:%s" .Values.postgresql.image.repository .Values.postgresql.image.tag | quote }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.config.POSTGRES_USER | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.config.POSTGRES_DB | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clouisle.secretName" . }}
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.config.POSTGRES_USER | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.config.POSTGRES_USER | quote }}]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+      {{- if .Values.postgresql.persistence.existingClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.postgresql.persistence.existingClaim }}
+      {{- else if not .Values.postgresql.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if and .Values.postgresql.persistence.enabled (not .Values.postgresql.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.postgresql.persistence.accessModes | nindent 10 }}
+        {{- if .Values.postgresql.persistence.storageClassName }}
+        storageClassName: {{ .Values.postgresql.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size | quote }}
+  {{- end }}
+{{- end }}

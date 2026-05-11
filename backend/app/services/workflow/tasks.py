@@ -8,6 +8,9 @@ from celery import shared_task, group
 from uuid import UUID
 import logging
 
+from app.core.i18n import t
+from app.services.workflow.errors import translate_public_workflow_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +69,11 @@ def execute_workflow_task(
         return loop.run_until_complete(run())
     except Exception as e:
         logger.exception(f"Workflow execution failed: {e}")
-        return {"run_id": run_id, "status": "failed", "error": str(e)}
+        return {
+            "run_id": run_id,
+            "status": "failed",
+            "error": translate_public_workflow_error(e),
+        }
 
 
 @shared_task(
@@ -115,7 +122,11 @@ def execute_node_task(
         # Load run
         run = await WorkflowRun.filter(id=run_id).first()
         if not run:
-            return {"node_id": node_id, "status": "error", "error": "Run not found"}
+            return {
+                "node_id": node_id,
+                "status": "error",
+                "error": t("workflow_run_not_found"),
+            }
 
         # Execute
         result = await executor.execute(
@@ -263,7 +274,7 @@ def check_scheduled_workflows() -> dict:
     """
     import asyncio
     from datetime import datetime
-    from croniter import croniter
+    from croniter import croniter  # type: ignore[import-untyped]
     from app.models.workflow import Workflow, WorkflowStatus, TriggerType
 
     async def check():

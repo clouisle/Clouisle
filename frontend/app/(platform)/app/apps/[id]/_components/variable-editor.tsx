@@ -69,6 +69,21 @@ function getTypeLabelKey(type: VariableType) {
   return variableTypes.find((t) => t.value === type)?.labelKey || type
 }
 
+function getTranslatedTypeLabel(
+  t: ReturnType<typeof useTranslations>,
+  type: string
+) {
+  const key = `types.${type}`
+  return t.has(key) ? t(key) : type
+}
+
+function getVariableTypeLabel(
+  t: ReturnType<typeof useTranslations>,
+  type: VariableType
+) {
+  return getTranslatedTypeLabel(t, getTypeLabelKey(type))
+}
+
 interface AddVariableButtonProps {
   onAdd: (type: VariableType) => void
 }
@@ -146,16 +161,22 @@ function VariableEditDialog({ variable, open, onOpenChange, onSave, onCancel }: 
             <Label className="text-sm text-muted-foreground">{t('dialog.fieldType')}</Label>
             <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
               <TypeIcon className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">{t(`types.${getTypeLabelKey(draft.type)}`)}</span>
+              <span className="text-sm">{getVariableTypeLabel(t, draft.type)}</span>
               <div className="ml-auto">
                 <Select value={typeToDataType[draft.type]} disabled>
-                  <SelectTrigger className="h-7 w-20 text-xs">
-                    <SelectValue />
+                  <SelectTrigger size="xs" className="w-24 text-xs">
+                    <SelectValue>{getTranslatedTypeLabel(t, typeToDataType[draft.type])}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="string">string</SelectItem>
-                    <SelectItem value="number">number</SelectItem>
-                    <SelectItem value="boolean">boolean</SelectItem>
+                    <SelectItem value="string">{getTranslatedTypeLabel(t, 'string')}</SelectItem>
+                    <SelectItem value="number">{getTranslatedTypeLabel(t, 'number')}</SelectItem>
+                    <SelectItem value="boolean">{getTranslatedTypeLabel(t, 'boolean')}</SelectItem>
+                    <SelectItem value="array">{getTranslatedTypeLabel(t, 'array')}</SelectItem>
+                    <SelectItem value="object">{getTranslatedTypeLabel(t, 'object')}</SelectItem>
+                    <SelectItem value="file">{getTranslatedTypeLabel(t, 'file')}</SelectItem>
+                    <SelectItem value="image">{getTranslatedTypeLabel(t, 'image')}</SelectItem>
+                    <SelectItem value="files">{getTranslatedTypeLabel(t, 'files')}</SelectItem>
+                    <SelectItem value="images">{getTranslatedTypeLabel(t, 'images')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -167,7 +188,7 @@ function VariableEditDialog({ variable, open, onOpenChange, onSave, onCancel }: 
             <Input
               value={draft.name}
               onChange={(e) => updateField('name', e.target.value.replace(/\s/g, '_'))}
-              placeholder="name"
+              placeholder={t('dialog.variableNamePlaceholder')}
               className="font-mono"
             />
           </div>
@@ -326,6 +347,7 @@ interface VariableItemProps {
 }
 
 function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
+  const t = useTranslations('agents.orchestration.variables')
   const [isDeleteHover, setIsDeleteHover] = React.useState(false)
   const typeConfig = variableTypes.find((t) => t.value === variable.type)
   const TypeIcon = typeConfig?.icon || Type
@@ -377,10 +399,10 @@ function VariableItem({ variable, onEdit, onDelete }: VariableItemProps) {
         <div className="flex items-center gap-1.5 group-hover:hidden">
           {variable.required && (
             <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal">
-              REQUIRED
+              {t('dialog.required')}
             </Badge>
           )}
-          <span className="text-[10px] text-muted-foreground">{typeToDataType[variable.type]}</span>
+          <span className="text-[10px] text-muted-foreground">{getVariableTypeLabel(t, variable.type)}</span>
           {React.createElement(TypeIcon, { className: "h-3 w-3 text-muted-foreground" })}
         </div>
       </div>
@@ -476,7 +498,8 @@ export function VariableEditor({ variables, onChange, editingIndex: externalEdit
 
 export function createNewVariable(
   type: VariableType,
-  existingVariables: VariableDefinition[]
+  existingVariables: VariableDefinition[],
+  options?: string[]
 ): VariableDefinition {
   const baseName = 'var'
   let name = baseName
@@ -494,7 +517,7 @@ export function createNewVariable(
     hidden: false,
     default: type === 'checkbox' ? 'false' : null,
     description: null,
-    options: type === 'select' ? ['Option 1', 'Option 2'] : null,
+    options: type === 'select' ? (options ?? []) : null,
     maxLength: null,
   }
 }

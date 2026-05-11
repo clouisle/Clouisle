@@ -63,6 +63,7 @@ import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filte
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ConversationDrawer } from './conversation-drawer'
 import { useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 // Helper to format datetime
 function formatDateTime(dateString: string): string {
@@ -95,7 +96,7 @@ export function ConversationsTable() {
   const [isLoadingDetail, setIsLoadingDetail] = React.useState(false)
 
   // Filters
-  const [search, setSearch] = React.useState('')
+  const [search, setSearch] = useUrlSearchState()
   const [teamFilter, setTeamFilter] = React.useState<string[]>([])
   const [agentFilter, setAgentFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])

@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import get_current_user
+from app.core.i18n import t
 from app.models.user import User
 from app.models.memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from app.schemas.response import success, ResponseCode, BusinessError
@@ -179,7 +180,10 @@ async def delete_entity(
             entity_id=entity_id,
         )
 
-        return success({"message": "Entity deleted successfully"})
+        return success(
+            {"message": t("memory_entity_deleted")},
+            msg_key="memory_entity_deleted",
+        )
     except ValueError:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -252,7 +256,16 @@ async def create_relation(
         )
 
         return success(RelationResponse.model_validate(relation))
-    except ValueError:
+    except ValueError as e:
+        msg_key = str(e)
+        if msg_key in {
+            "memory_source_entity_not_found",
+            "memory_target_entity_not_found",
+        }:
+            raise BusinessError(
+                code=ResponseCode.BAD_REQUEST,
+                msg_key=msg_key,
+            )
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
             msg_key="memory_relation_create_failed",
@@ -277,7 +290,10 @@ async def delete_relation(
             relation_id=relation_id,
         )
 
-        return success({"message": "Relation deleted successfully"})
+        return success(
+            {"message": t("memory_relation_deleted")},
+            msg_key="memory_relation_deleted",
+        )
     except ValueError:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,

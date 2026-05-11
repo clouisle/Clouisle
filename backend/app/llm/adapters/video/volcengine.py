@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -36,7 +37,7 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
         task_id = result.get("id")
         if not task_id:
             raise ProviderError(
-                message="Volcengine task did not return an id",
+                message=t("volcengine_task_missing_id"),
                 provider="volcengine",
                 model=self.model_id,
             )

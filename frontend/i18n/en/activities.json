@@ -62,7 +62,8 @@
       "deleteSuccess": "Run deleted successfully",
       "deleteSelected": "Delete {count} run{count, plural, one {} other {s}}",
       "loadFailed": "Failed to load run details",
-      "deleteFailed": "Failed to delete run"
+      "deleteFailed": "Failed to delete run",
+      "noNodeExecutions": "No node executions yet"
     },
     "searchPlaceholder": "Search conversations...",
     "agent": "Agent",

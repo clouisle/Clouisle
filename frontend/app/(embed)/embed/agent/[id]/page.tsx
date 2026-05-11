@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ChatContainer, ChatInput, VariableForm, useVariableForm, type ChatInputFile, type FileUploadConfig } from '@/components/chat'
 import { useEmbedChat } from '@/hooks/use-embed-chat'
-import { embedApi, type EmbedAgentInfo } from '@/lib/api/embed'
+import { embedApi, resolveEmbedMessage, type EmbedAgentInfo } from '@/lib/api/embed'
 import type { VariableDefinition, VariableType } from '@/lib/api'
 import { Suspense } from 'react'
 
@@ -61,7 +61,8 @@ function EmbedAgentChatContent() {
         setError(null)
       })
       .catch(err => {
-        setError(err.message || t('errorLoading'))
+        const message = err instanceof Error ? resolveEmbedMessage(err.message, t('errorLoading')) : t('errorLoading')
+        setError(message)
       })
       .finally(() => setLoading(false))
   }, [agentId, apiKey, t])
@@ -134,7 +135,7 @@ function EmbedAgentChatContent() {
 
   const handleSend = React.useCallback(async (message: string, submittedFiles?: ChatInputFile[]) => {
     if (!message.trim()) return
-    if (variableForm.needsInput && !variableForm.isValid) {
+    if (variableForm.needsInput && !variableForm.validate()) {
       setVariablesOpen(true)
       return
     }
@@ -208,7 +209,7 @@ function EmbedAgentChatContent() {
     setInputValue('')
     setFiles([])
     await chat.sendMessage(message.trim(), images, fileUrls)
-  }, [files, agent, chat, agentId, apiKey, fileToDataUrl, variableForm.isValid, variableForm.needsInput])
+  }, [files, agent, chat, agentId, apiKey, fileToDataUrl, variableForm])
 
   const handleNewChat = React.useCallback(() => {
     chat.reset()
@@ -253,7 +254,7 @@ function EmbedAgentChatContent() {
             />
           </div>
         ) : (
-          <span className="text-4xl">{agent.icon}</span>
+          <span className="flex h-20 w-20 items-center justify-center leading-none text-4xl">{agent.icon}</span>
         )
       ) : (
         <Bot className="h-10 w-10 text-muted-foreground" />
@@ -298,7 +299,7 @@ function EmbedAgentChatContent() {
                 />
               </div>
             ) : (
-              <span className="text-lg">{agent.icon}</span>
+              <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{agent.icon}</span>
             )
           )}
           <span className="font-medium text-sm">{agent.name}</span>
@@ -334,6 +335,7 @@ function EmbedAgentChatContent() {
         <ChatContainer
           messages={chat.messages}
           isStreaming={chat.isStreaming}
+          hideToolCalls={agent?.hide_tool_calls ?? false}
           onSelectOption={(option) => {
             void handleSend(option)
           }}
@@ -387,6 +389,7 @@ function EmbedAgentChatContent() {
                       variables={formVariables}
                       values={variableForm.values}
                       onChange={variableForm.setValues}
+                      fieldErrors={variableForm.fieldErrors}
                       className="space-y-2"
                     />
                   </div>
@@ -403,7 +406,6 @@ function EmbedAgentChatContent() {
           isLoading={chat.isLoading}
           isStreaming={chat.isStreaming}
           placeholder={variableForm.needsInput && !variableForm.isValid ? t('fillRequired') : (agent.description || undefined)}
-          disabled={variableForm.needsInput && !variableForm.isValid}
           allowAttachments={agent.enable_vision}
           enableFileUpload={agent.enable_file_upload}
           fileUploadConfig={agent.file_upload_config as FileUploadConfig | null}

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..types import NodeOutputDecl, TypeSpec
+from ..errors import translate_public_workflow_error
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -70,10 +72,10 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
         search_mode = kr_config.get("searchMode", "hybrid")
         top_k = kr_config.get("topK", 5)
         threshold = kr_config.get("threshold", 0.0)
-        output_var = kr_config.get("outputVariable", "results")
+        output_var: str = kr_config.get("outputVariable", "results") or "results"
 
         if not kb_id:
-            return ExecutionResult(error="Knowledge base ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Resolve query based on source
         if query_source == "variable":
@@ -83,12 +85,12 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             query = kr_config.get("queryConstantValue", "")
 
         if not query:
-            return ExecutionResult(error="Query is empty")
+            return ExecutionResult(error="query_parameter_required")
 
         # Load knowledge base
         kb = await KnowledgeBase.filter(id=kb_id).first()
         if not kb:
-            return ExecutionResult(error=f"Knowledge base not found: {kb_id}")
+            return ExecutionResult(error="not_found")
 
         try:
             # Get embedding model and team ID from KB for usage tracking
@@ -142,8 +144,8 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
 
             # Use custom output variable name
             return ExecutionResult(
-                outputs={
-                    output_var: formatted_results,
+                outputs={  # type: ignore[dict-item]
+                    output_var: formatted_results,  # type: ignore[dict-item]
                     "context": combined_context,
                     "totalFound": len(formatted_results),
                 }
@@ -151,7 +153,7 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Knowledge retrieval error: {e}")
-            return ExecutionResult(error=f"Retrieval failed: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
@@ -159,6 +161,14 @@ class KnowledgeRetrievalNodeExecutor(NodeExecutor):
             {"name": "results", "type": "array"},
             {"name": "context", "type": "string"},
             {"name": "totalFound", "type": "number"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="results", type=TypeSpec(kind="array")),
+            NodeOutputDecl(name="context", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="totalFound", type=TypeSpec(kind="number")),
         ]
 
 
@@ -209,7 +219,7 @@ class DocumentExtractorNodeExecutor(NodeExecutor):
         # Get input file path
         file_path = await context.resolve_variable_ref(input_var)
         if not file_path:
-            return ExecutionResult(error="No file provided for extraction")
+            return ExecutionResult(error="validation_error")
 
         try:
             extractor = DocumentExtractor()
@@ -231,7 +241,7 @@ class DocumentExtractorNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Document extraction error: {e}")
-            return ExecutionResult(error=f"Extraction failed: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
@@ -239,4 +249,12 @@ class DocumentExtractorNodeExecutor(NodeExecutor):
             {"name": "content", "type": "string"},
             {"name": "metadata", "type": "object"},
             {"name": "structured", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="content", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="metadata", type=TypeSpec(kind="object")),
+            NodeOutputDecl(name="structured", type=TypeSpec(kind="object")),
         ]

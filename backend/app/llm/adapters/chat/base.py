@@ -72,42 +72,76 @@ class BaseChatAdapter(ABC):
         """额外配置"""
         return self.model_config.config or {}
 
+    RESERVED_PASSTHROUGH_KEYS = {
+        "model",
+        "messages",
+        "stream",
+        "tools",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "max_completion_tokens",
+        "response_format",
+    }
+
+    def get_effective_param(self, key: str, **kwargs: Any) -> Any:
+        """获取运行时生效参数，优先级：kwargs > default_params > config"""
+        value = kwargs.get(key)
+        if value is not None:
+            return value
+
+        value = self.default_params.get(key)
+        if value is not None:
+            return value
+
+        return self.config.get(key)
+
     @property
     def temperature(self) -> float | None:
         """温度参数"""
-        return self.default_params.get("temperature")
+        value = self.get_effective_param("temperature")
+        return float(value) if value is not None else None
 
     @property
     def top_p(self) -> float | None:
         """Top P 参数"""
-        return self.default_params.get("top_p")
+        value = self.get_effective_param("top_p")
+        return float(value) if value is not None else None
 
     @property
     def max_tokens(self) -> int | None:
         """最大输出 token"""
-        # 优先使用 ORM 独立字段 max_output_tokens
         max_output = getattr(self.model_config, "max_output_tokens", None)
         if max_output is not None:
-            return max_output
-        # 其次从 default_params 读取
-        max_from_params = self.default_params.get("max_tokens")
-        if max_from_params is not None:
-            return int(max_from_params)
-        # 最后从 config 读取
-        max_from_config = self.config.get("max_tokens")
-        if max_from_config is not None:
-            return int(max_from_config)
+            return int(max_output)
+
+        max_tokens = self.get_effective_param("max_tokens")
+        if max_tokens is not None:
+            return int(max_tokens)
         return None
 
     @property
     def timeout(self) -> int:
         """超时时间"""
-        return self.config.get("timeout", 60)
+        timeout = self.get_effective_param("timeout")
+        return int(timeout) if timeout is not None else 60
+
+    def get_effective_thinking(self, **kwargs: Any) -> bool | dict[str, Any] | None:
+        """获取 thinking 配置，优先 default_params，再回退 config"""
+        thinking = kwargs.get("thinking")
+        if thinking is not None:
+            return thinking
+
+        thinking = self.default_params.get("thinking")
+        if thinking is not None:
+            return thinking
+
+        return self.config.get("thinking")
 
     @property
     def thinking_enabled(self) -> bool:
         """是否启用 thinking/reasoning"""
-        thinking = self.config.get("thinking") or self.default_params.get("thinking")
+        thinking = self.get_effective_thinking()
         if thinking is None:
             return False
         if isinstance(thinking, bool):
@@ -119,10 +153,41 @@ class BaseChatAdapter(ABC):
     @property
     def thinking_budget(self) -> int | None:
         """thinking token 预算"""
-        thinking = self.config.get("thinking") or self.default_params.get("thinking")
+        thinking = self.get_effective_thinking()
         if isinstance(thinking, dict):
-            return thinking.get("budget_tokens") or thinking.get("budget")
+            budget = thinking.get("budget_tokens") or thinking.get("budget")
+            return int(budget) if budget is not None else None
         return None
+
+    @property
+    def reasoning_effort(self) -> str | None:
+        """推理强度参数"""
+        thinking = self.get_effective_thinking()
+        if isinstance(thinking, dict):
+            effort = thinking.get("effort") or thinking.get("reasoning_effort")
+            if effort:
+                return str(effort)
+
+        effort = self.get_effective_param("reasoning_effort")
+        if effort is not None:
+            return str(effort)
+        return None
+
+    @property
+    def extra_body(self) -> dict[str, Any]:
+        """额外请求体参数"""
+        extra_body = self.get_effective_param("extra_body")
+        if isinstance(extra_body, dict):
+            return extra_body
+        return {}
+
+    def get_passthrough_body(self) -> dict[str, Any]:
+        """获取过滤后的额外请求体参数"""
+        return {
+            key: value
+            for key, value in self.extra_body.items()
+            if key not in self.RESERVED_PASSTHROUGH_KEYS
+        }
 
     @abstractmethod
     async def chat(
@@ -266,6 +331,7 @@ class BaseChatAdapter(ABC):
         finish_reason: FinishReason | None = None,
         usage: Usage | None = None,
         response_id: str | None = None,
+        stream_activity: bool = False,
     ) -> ChatStreamChunk:
         """
         创建流式响应块
@@ -288,6 +354,7 @@ class BaseChatAdapter(ABC):
                 content=content,
                 reasoning_content=reasoning_content,
                 tool_calls=tool_calls,
+                stream_activity=stream_activity,
             ),
             finish_reason=finish_reason,
             usage=usage,

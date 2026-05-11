@@ -42,7 +42,7 @@ Clouisle uses **2 Docker images** running as **4 application services** + **3 in
                          ┌─────────────────────────────────────────────┐
                          │              Frontend Container             │
   Browser ──────────────►│  Nginx (:3000)                              │
-                         │    ├── /api/*  ──► proxy to backend:8000    │
+                         │    ├── /api/*  ──► proxy to api:8000    │
                          │    ├── /_next/static/* ──► local files      │
                          │    └── /*  ──► Node.js SSR (:3001 internal) │
                          └──────────────────┬──────────────────────────┘
@@ -63,15 +63,17 @@ Clouisle uses **2 Docker images** running as **4 application services** + **3 in
 
 | Image | Services | Description |
 |-------|----------|-------------|
-| `clouisle-backend` | backend, worker, beat | Python 3.13 — Gunicorn API server, Celery worker, Celery beat |
-| `clouisle-frontend` | frontend | Nginx + Next.js standalone (SSR) |
+| `clouisle-backend` | api, worker, beat | Python 3.13 — API server, Celery worker, Celery beat |
+| `clouisle-sandbox-worker` | sandbox-worker | Sandbox task execution and artifact upload |
+| `clouisle-frontend` | frontend | Next.js standalone (SSR) |
 
-The backend image is shared across three services, differentiated by the startup command:
+The backend image is shared across three services, and sandbox execution uses a separate image. Services are differentiated by startup command:
 
 | Service | Command | Replicas |
 |---------|---------|----------|
-| backend | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
+| api | `python main.py server -H 0.0.0.0 -w 4 --no-reload` | 1+ |
 | worker | `python main.py worker -c 4 -Q default,workflow` | 1+ |
+| sandbox-worker | `python main.py sandbox-worker -c ${SANDBOX_WORKER_CONCURRENCY:-1}` | 1+ |
 | beat | `python main.py beat` | **Exactly 1** |
 
 > **Important**: The beat service must always run exactly 1 replica. Running multiple beat instances will cause duplicate scheduled tasks.
@@ -96,23 +98,50 @@ The backend image is shared across three services, differentiated by the startup
 All commands run from the **project root** directory:
 
 ```bash
-# Backend image (shared by backend, worker, beat services)
+# Backend image (shared by api, worker, beat services)
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend:latest .
 
-# Frontend image (Nginx + Next.js)
+# Sandbox worker image
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker:latest .
+
+# Frontend image (Next.js standalone)
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend:latest .
 ```
 
 For a private registry:
 
 ```bash
-docker tag clouisle-backend:latest registry.example.com/clouisle/backend:latest
-docker tag clouisle-frontend:latest registry.example.com/clouisle/frontend:latest
-docker push registry.example.com/clouisle/backend:latest
-docker push registry.example.com/clouisle/frontend:latest
+docker tag clouisle-backend:latest registry.example.com/clouisle/clouisle-backend:latest
+docker tag clouisle-sandbox-worker:latest registry.example.com/clouisle/clouisle-sandbox-worker:latest
+docker tag clouisle-frontend:latest registry.example.com/clouisle/clouisle-frontend:latest
+docker push registry.example.com/clouisle/clouisle-backend:latest
+docker push registry.example.com/clouisle/clouisle-sandbox-worker:latest
+docker push registry.example.com/clouisle/clouisle-frontend:latest
 ```
 
 ---
+
+## Kubernetes Helm Deployment
+
+Helm is the recommended Kubernetes deployment method:
+
+```bash
+helm lint deploy/helm/clouisle
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace
+```
+
+For production, create `clouisle-secret` and use production values:
+
+```bash
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace \
+  -f deploy/helm/clouisle/values-production.yaml
+```
+
+The plain manifest remains available at `deploy/k8s/clouisle.yaml` for fallback or debugging.
 
 ## Docker Compose Deployment
 
@@ -221,7 +250,7 @@ Default exposed ports:
   qdrant:
     ports:
       - "6333:6333"    # Remove
-  backend:
+  api:
     ports:
       - "8000:8000"    # Remove — frontend Nginx proxies API requests
 ```
@@ -286,7 +315,7 @@ BACKEND_CORS_ORIGINS=https://example.com
 docker compose up -d --scale worker=4
 
 # Scale backend API (safe to run multiple behind Nginx)
-docker compose up -d --scale backend=2
+docker compose up -d --scale api=2
 
 # NEVER scale beat beyond 1
 # docker compose up -d --scale beat=2  ← DO NOT DO THIS
@@ -295,7 +324,7 @@ docker compose up -d --scale backend=2
 When scaling backend to multiple replicas, remove the host port mapping to avoid conflicts:
 
 ```yaml
-backend:
+api:
     # Remove: ports: ["8000:8000"]
     expose:
       - "8000"
@@ -305,15 +334,15 @@ backend:
 
 ```bash
 # View logs (follow mode)
-docker compose logs -f backend
+docker compose logs -f api
 docker compose logs -f worker
 docker compose logs -f frontend
 
 # View logs for a specific time range
-docker compose logs --since 1h backend
+docker compose logs --since 1h api
 
 # Restart a single service (zero-downtime for stateless services)
-docker compose restart backend
+docker compose restart api
 
 # Stop all services
 docker compose down
@@ -483,7 +512,7 @@ data:
 kubectl -n clouisle scale deployment worker --replicas=4
 
 # Scale backend
-kubectl -n clouisle scale deployment backend --replicas=3
+kubectl -n clouisle scale deployment api --replicas=3
 
 # Scale frontend
 kubectl -n clouisle scale deployment frontend --replicas=3
@@ -497,13 +526,13 @@ For auto-scaling:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: backend-hpa
+  name: api-hpa
   namespace: clouisle
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: backend
+    name: api
   minReplicas: 2
   maxReplicas: 10
   metrics:
@@ -522,7 +551,7 @@ spec:
 kubectl -n clouisle get pods -o wide
 
 # View logs
-kubectl -n clouisle logs -f deployment/backend
+kubectl -n clouisle logs -f deployment/api
 kubectl -n clouisle logs -f deployment/worker
 kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
@@ -531,13 +560,13 @@ kubectl -n clouisle logs -f deployment/frontend
 kubectl -n clouisle logs -f <pod-name>
 
 # Restart a deployment (rolling restart)
-kubectl -n clouisle rollout restart deployment backend
+kubectl -n clouisle rollout restart deployment api
 
 # Check rollout status
-kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment api
 
 # Execute a command in a pod
-kubectl -n clouisle exec -it deployment/backend -- bash
+kubectl -n clouisle exec -it deployment/api -- bash
 
 # View resource usage
 kubectl -n clouisle top pods
@@ -670,7 +699,7 @@ docker run --rm -v deploy_uploads_data:/data -v $(pwd):/backup \
   alpine tar czf /backup/uploads_backup.tar.gz -C /data .
 
 # Kubernetes (if using PVC)
-kubectl -n clouisle exec deployment/backend -- tar czf - /app/uploads > uploads_backup.tar.gz
+kubectl -n clouisle exec deployment/api -- tar czf - /app/uploads > uploads_backup.tar.gz
 ```
 
 ### Automated Backup Schedule
@@ -740,20 +769,20 @@ docker compose logs --tail=50 backend
 
 ```bash
 # 1. Build and push new images
-docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/backend:v2.0.0 .
+docker build -f deploy/dockerfiles/backend.Dockerfile -t registry.example.com/clouisle/api:v2.0.0 .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t registry.example.com/clouisle/frontend:v2.0.0 .
-docker push registry.example.com/clouisle/backend:v2.0.0
+docker push registry.example.com/clouisle/api:v2.0.0
 docker push registry.example.com/clouisle/frontend:v2.0.0
 
 # 2. Update image tags in clouisle.yaml (the anchors at the top)
-#    - &backend-image registry.example.com/clouisle/backend:v2.0.0
+#    - &backend-image registry.example.com/clouisle/api:v2.0.0
 #    - &frontend-image registry.example.com/clouisle/frontend:v2.0.0
 
 # 3. Apply
 kubectl apply -f deploy/k8s/clouisle.yaml
 
 # 4. Monitor rollout
-kubectl -n clouisle rollout status deployment backend
+kubectl -n clouisle rollout status deployment api
 kubectl -n clouisle rollout status deployment worker
 kubectl -n clouisle rollout status deployment frontend
 ```
@@ -797,16 +826,16 @@ Common causes:
 
 ### Frontend returns 502 for API requests
 
-The frontend Nginx proxies `/api/*` to `http://backend:8000`. A 502 means the backend is unreachable.
+The frontend Nginx proxies `/api/*` to `http://api:8000`. A 502 means the backend is unreachable.
 
 ```bash
 # Check if backend is running
-docker compose ps backend
+docker compose ps api
 # or
-kubectl -n clouisle get pods -l app=backend
+kubectl -n clouisle get pods -l app=api
 
 # Test connectivity from frontend container
-docker compose exec frontend wget -qO- http://backend:8000/api/v1/health
+docker compose exec frontend wget -qO- http://api:8000/api/v1/health
 ```
 
 ### Worker not processing tasks
@@ -846,7 +875,7 @@ The `uploads` volume must be shared between `backend` and `worker` services:
 
 ```bash
 # Docker Compose — verify both mount the same volume
-docker compose exec backend ls -la /app/uploads
+docker compose exec api ls -la /app/uploads
 docker compose exec worker ls -la /app/uploads
 ```
 

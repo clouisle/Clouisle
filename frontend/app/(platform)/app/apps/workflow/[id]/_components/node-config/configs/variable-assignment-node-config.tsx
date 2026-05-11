@@ -265,7 +265,7 @@ export function VariableAssignmentNodeConfig({
                           // 使用 variable.id（格式为 nodeId.paramName）而不是 variable.name
                           handleUpdateAssignment(assignment.id, {
                             variableRef: `{{${variable.id}}}`,
-                            variableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            variableRefNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')
@@ -366,7 +366,7 @@ export function VariableAssignmentNodeConfig({
                         handleUpdateAssignment(assignment.id, updates)
                       }}
                     >
-                      <SelectTrigger className="w-full h-9 text-xs">
+                      <SelectTrigger size="default" className="w-full text-xs">
                         <SelectValue>
                           <span className="flex items-center gap-2">
                             <OpIcon className="h-3.5 w-3.5" />

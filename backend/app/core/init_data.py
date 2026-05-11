@@ -381,6 +381,181 @@ async def init_agent_streaming_config():
     logger.info("Agent streaming_config migration complete")
 
 
+async def init_agent_context_compression_config():
+    """
+    Add context_compression_config field to agents table if it doesn't exist.
+    This handles the migration for the context compression configuration feature.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking agent context_compression_config field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping context_compression_config migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'agents' AND column_name = 'context_compression_config'
+    """)
+
+    if not rows:
+        logger.info("Adding context_compression_config column to agents table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE agents
+                ADD COLUMN context_compression_config JSONB NOT NULL DEFAULT '{}'::jsonb
+            """)
+            logger.info("Added context_compression_config column to agents table")
+        except Exception as e:
+            logger.error(f"Could not add context_compression_config column: {e}")
+            raise
+    else:
+        logger.info("context_compression_config column already exists")
+
+    logger.info("Agent context_compression_config migration complete")
+
+
+async def init_message_manual_stop_field():
+    """
+    Add is_manually_stopped field to messages table if it doesn't exist.
+    This handles the migration for persisted manual stop state on assistant messages.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Checking message is_manually_stopped field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping is_manually_stopped migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'messages' AND column_name = 'is_manually_stopped'
+    """)
+
+    if not rows:
+        logger.info("Adding is_manually_stopped column to messages table...")
+        try:
+            await conn.execute_query("""
+                ALTER TABLE messages
+                ADD COLUMN is_manually_stopped BOOLEAN NOT NULL DEFAULT FALSE
+            """)
+            logger.info("Added is_manually_stopped column to messages table")
+        except Exception as e:
+            logger.error(f"Could not add is_manually_stopped column: {e}")
+            raise
+    else:
+        logger.info("is_manually_stopped column already exists")
+
+    logger.info("Message manual stop migration complete")
+
+
+async def init_message_round_fields():
+    """
+    Add round-aware metadata fields to messages table.
+    This handles the migration for first-class round tracking.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Initializing message round metadata fields...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping round metadata migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_id UUID NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_index INT NOT NULL DEFAULT 0
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_role VARCHAR(32) NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS is_round_canonical BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS iteration_index INT NULL
+    """)
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS round_status VARCHAR(32) NULL
+    """)
+
+    logger.info("Message round metadata migration complete")
+
+
+async def init_conversation_session_memory_table():
+    """Create the conversation_session_memories table if it does not exist."""
+    logger.info("Initializing conversation session memory table...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'conversation_session_memories' AND table_schema = 'public'
+    """)
+
+    if tables:
+        logger.info("conversation_session_memories table already exists")
+        return
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS conversation_session_memories (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE UNIQUE,
+            source_message_id UUID,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            summary_text TEXT NOT NULL DEFAULT '',
+            snapshot_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            token_estimate INT NOT NULL DEFAULT 0,
+            extractor_model VARCHAR(255),
+            failure_count INT NOT NULL DEFAULT 0,
+            last_error TEXT,
+            last_extracted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_conversation_session_memories_status_updated
+        ON conversation_session_memories(status, updated_at DESC)
+    """)
+
+    logger.info("Conversation session memory table initialization complete")
+
+
 async def init_permission_is_system_field():
     """
     Add is_system field to permissions table if it doesn't exist.
@@ -469,6 +644,98 @@ async def init_agent_user_input_request():
         logger.info("enable_user_input_request column already exists")
 
     logger.info("Agent enable_user_input_request migration complete")
+
+
+async def init_skills_table():
+    """Initialize package-backed Agent Skills tables."""
+    logger.info("Initializing skills table...")
+
+    conn = Tortoise.get_connection("default")
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS skills (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            display_name VARCHAR(100) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            icon VARCHAR(100),
+            category VARCHAR(20) NOT NULL DEFAULT 'other',
+            version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+            source_type VARCHAR(20) NOT NULL DEFAULT 'legacy',
+            source_uri TEXT,
+            source_ref VARCHAR(255),
+            source_subdir VARCHAR(500),
+            package_path VARCHAR(500),
+            package_storage_path VARCHAR(1000),
+            package_hash VARCHAR(128),
+            package_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+            skill_md TEXT NOT NULL DEFAULT '',
+            instructions TEXT NOT NULL DEFAULT '',
+            frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+            execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb,
+            input_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+            skill_spec JSONB NOT NULL DEFAULT '{}'::jsonb,
+            config_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+            default_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(team_id, name)
+        )
+    """)
+
+    await conn.execute_query("""
+        ALTER TABLE skills
+            ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) NOT NULL DEFAULT 'legacy',
+            ADD COLUMN IF NOT EXISTS source_uri TEXT,
+            ADD COLUMN IF NOT EXISTS source_ref VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS source_subdir VARCHAR(500),
+            ADD COLUMN IF NOT EXISTS package_path VARCHAR(500),
+            ADD COLUMN IF NOT EXISTS package_storage_path VARCHAR(1000),
+            ADD COLUMN IF NOT EXISTS package_hash VARCHAR(128),
+            ADD COLUMN IF NOT EXISTS package_manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS skill_md TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS instructions TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS execution_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS import_warnings JSONB NOT NULL DEFAULT '[]'::jsonb
+    """)
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS skill_import_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID REFERENCES teams(id) ON DELETE CASCADE,
+            source_type VARCHAR(20) NOT NULL,
+            source_uri TEXT,
+            source_ref VARCHAR(255),
+            source_subdir VARCHAR(500),
+            status VARCHAR(20) NOT NULL DEFAULT 'previewed',
+            preview JSONB NOT NULL DEFAULT '{}'::jsonb,
+            temp_storage_path VARCHAR(1000),
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+
+    await conn.execute_query("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_skills_system_name
+        ON skills(name)
+        WHERE team_id IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_skills_team_id ON skills(team_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_created_by ON skills(created_by_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(is_enabled);
+        CREATE INDEX IF NOT EXISTS idx_skills_source_type ON skills(source_type);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_team_id ON skill_import_sessions(team_id);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_status ON skill_import_sessions(status);
+        CREATE INDEX IF NOT EXISTS idx_skill_import_sessions_expires_at ON skill_import_sessions(expires_at);
+    """)
+
+    logger.info("skills table initialization complete")
 
 
 async def init_tool_shares_table():
@@ -1094,6 +1361,31 @@ async def init_memory_tables():
     logger.info("Memory tables initialization complete")
 
 
+async def init_agent_hide_tool_calls_field():
+    """Add hide_tool_calls field to agents table."""
+    logger.info("Initializing agent hide_tool_calls field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'agents' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Agents table does not exist yet, skipping hide_tool_calls migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE agents
+        ADD COLUMN IF NOT EXISTS hide_tool_calls BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+
+    logger.info("Agent hide_tool_calls field added successfully")
+
+
 async def init_agent_memory_fields():
     """
     Add enable_memory and memory_config fields to agents table.
@@ -1668,6 +1960,11 @@ async def init_db():
         "admin:model:create",
         "admin:model:update",
         "admin:model:delete",
+        "admin:capability:read",
+        "admin:capability:create",
+        "admin:capability:update",
+        "admin:capability:delete",
+        "admin:capability:execute",
         "admin:settings:read",
         "admin:sso:read",
         "audit:read",
@@ -1704,6 +2001,11 @@ async def init_db():
         "tool:update",
         "tool:delete",
         "tool:execute",
+        "skill:read",
+        "skill:create",
+        "skill:update",
+        "skill:delete",
+        "skill:execute",
         "apikey:read",
         "apikey:create",
         "apikey:update",
@@ -1740,6 +2042,8 @@ async def init_db():
         "kb:update",
         "tool:read",
         "tool:execute",
+        "skill:read",
+        "skill:execute",
         "apikey:read",
         "apikey:create",
         "apikey:update",
@@ -1770,6 +2074,8 @@ async def init_db():
         "kb:read",
         "tool:read",
         "tool:execute",
+        "skill:read",
+        "skill:execute",
         "conversation:read",
     ]
 
@@ -1823,6 +2129,9 @@ async def init_db():
     # 7. Initialize tool_shares table
     await init_tool_shares_table()
 
+    # 7.1. Initialize skills table
+    await init_skills_table()
+
     # 8. Fix CASCADE delete policies
     await fix_cascade_delete_policies()
 
@@ -1832,10 +2141,13 @@ async def init_db():
     # 10. Initialize memory tables
     await init_memory_tables()
 
-    # 11. Initialize agent memory fields
+    # 11. Initialize agent hide_tool_calls field
+    await init_agent_hide_tool_calls_field()
+
+    # 12. Initialize agent memory fields
     await init_agent_memory_fields()
 
-    # 12. Initialize agent media generation fields
+    # 13. Initialize agent media generation fields
     await init_agent_media_generation_fields()
 
     logger.info("Database initialization complete.")

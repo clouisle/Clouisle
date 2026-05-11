@@ -4,6 +4,7 @@ Luma image-generation adapter.
 
 from __future__ import annotations
 
+from app.core.i18n import t
 from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import (
     GeneratedImage,
@@ -60,7 +61,7 @@ class LumaImageAdapter(BaseImageAdapter):
         generation_id = generation.get("id")
         if not generation_id:
             raise ProviderError(
-                message="Luma image generation did not return an id",
+                message=t("luma_image_generation_missing_id"),
                 provider="luma",
                 model=self.model_id,
             )
@@ -84,7 +85,7 @@ class LumaImageAdapter(BaseImageAdapter):
         image_url = assets.get("image")
         if not image_url:
             raise InvalidRequestError(
-                message="Luma image generation completed without an image asset",
+                message=t("luma_image_generation_missing_asset"),
                 provider="luma",
                 model=self.model_id,
             )

@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -61,7 +62,7 @@ class KlingClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Kling request timeout",
+                message=t("kling_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -74,25 +75,25 @@ class KlingClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid Kling API key",
+                message=t("invalid_kling_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="Kling task not found",
+                message=t("kling_task_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="Kling endpoint not found",
+                message=t("kling_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="Kling rate limit exceeded",
+                message=t("kling_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -105,7 +106,7 @@ class KlingClient:
                 error_data.get("message")
                 or error_data.get("error")
                 or response.text
-                or "Kling API error"
+                or t("kling_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -134,7 +135,7 @@ class KlingClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="Kling task polling timed out",
+            message=t("kling_task_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

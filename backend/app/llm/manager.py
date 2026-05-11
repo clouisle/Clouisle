@@ -16,6 +16,7 @@ from uuid import UUID
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from app.core.i18n import t
 from app.models.model import Model, ModelType, TeamModel, ModelProvider
 from app.services.usage_tracker import usage_tracker, QuotaExceededError
 
@@ -32,6 +33,8 @@ from .adapters.chat import (
     BaseChatAdapter,
     OpenAIAdapter,
     DeepSeekAdapter,
+    MoonshotAdapter,
+    OllamaAdapter,
     AnthropicAdapter,
     GeminiAdapter,
     XAIAdapter,
@@ -47,6 +50,7 @@ from .errors import (
     ContextLengthError,
     ContentFilterError,
     InvalidRequestError,
+    InsufficientQuotaError,
     QuotaExceededError as LLMQuotaExceededError,
     TaskNotFoundError,
 )
@@ -209,6 +213,10 @@ class ModelManager:
             return GeminiAdapter(model_config)
         elif provider_value == ModelProvider.DEEPSEEK.value:
             return DeepSeekAdapter(model_config)
+        elif provider_value == ModelProvider.MOONSHOT.value:
+            return MoonshotAdapter(model_config)
+        elif provider_value == ModelProvider.OLLAMA.value:
+            return OllamaAdapter(model_config)
         elif provider_value == ModelProvider.XAI.value:
             return XAIAdapter(model_config)
 
@@ -216,8 +224,6 @@ class ModelManager:
         elif provider_value == ModelProvider.AZURE_OPENAI.value:
             # Azure OpenAI 使用 OpenAI 适配器，但需要特殊处理
             return OpenAICompatibleAdapter(model_config, provider_hint="azure")
-        elif provider_value == ModelProvider.MOONSHOT.value:
-            return OpenAICompatibleAdapter(model_config, provider_hint="moonshot")
         elif provider_value == ModelProvider.ZHIPU.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="zhipu")
         elif provider_value == ModelProvider.QWEN.value:
@@ -228,8 +234,8 @@ class ModelManager:
             return OpenAICompatibleAdapter(model_config, provider_hint="minimax")
         elif provider_value == ModelProvider.VOLCENGINE.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="volcengine")
-        elif provider_value == ModelProvider.OLLAMA.value:
-            return OpenAICompatibleAdapter(model_config, provider_hint="ollama")
+        elif provider_value == ModelProvider.SILICONFLOW.value:
+            return OpenAICompatibleAdapter(model_config, provider_hint="siliconflow")
         elif provider_value == ModelProvider.CUSTOM.value:
             return OpenAICompatibleAdapter(model_config, provider_hint="custom")
 
@@ -257,6 +263,20 @@ class ModelManager:
             or "invalid_api_key" in error_msg
         ):
             return AuthenticationError(
+                message=str(e),
+                provider=provider,
+                model=model,
+            )
+        elif (
+            "insufficient balance" in error_msg
+            or "insufficient quota" in error_msg
+            or "quota exceeded" in error_msg
+            or "credit balance" in error_msg
+            or "payment required" in error_msg
+            or "402" in error_msg
+            and "balance" in error_msg
+        ):
+            return InsufficientQuotaError(
                 message=str(e),
                 provider=provider,
                 model=model,
@@ -620,7 +640,7 @@ class ModelManager:
             request.get("image") is not None or request.get("end_image") is not None
         ):
             raise InvalidRequestError(
-                message="Image-to-video has been removed from the project",
+                message=t("image_to_video_removed_from_project"),
                 field="image",
             )
 
@@ -691,7 +711,7 @@ class ModelManager:
                 raise last_error
             raise last_error
 
-        raise ModelNotFoundError(message="No enabled video model configured")
+        raise ModelNotFoundError(message=t("no_enabled_video_model_configured"))
 
     # ==================== Audio 方法 ====================
 

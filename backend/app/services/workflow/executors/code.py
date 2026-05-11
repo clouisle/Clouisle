@@ -9,11 +9,16 @@ from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
-from app.llm.tools.sandbox import CodeSandbox
+from ..errors import translate_public_workflow_error
+from app.core.i18n import t
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
     from ..context import ExecutionContext
+    from ..types import NodeOutputDecl
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +59,7 @@ class CodeNodeExecutor(NodeExecutor):
     """
 
     def __init__(self):
-        self.sandbox = CodeSandbox(timeout=CODE_TIMEOUT)
+        pass
 
     async def execute(
         self,
@@ -76,14 +81,14 @@ class CodeNodeExecutor(NodeExecutor):
         logger.debug(f"Code node inputs: {input_mappings}")
 
         if not code:
-            return ExecutionResult(error="No code provided")
-
-        # Resolve input variables
-        inputs = await self.resolve_inputs(context, input_mappings)
-
-        logger.info(f"Code node resolved inputs: {inputs}")
+            return ExecutionResult(error="tool_code_not_defined")
 
         try:
+            # Resolve input variables
+            inputs = await self.resolve_inputs(context, input_mappings)
+
+            logger.info(f"Code node resolved inputs: {inputs}")
+
             # Prepare code based on language
             if language == "python":
                 # Python code should define main(inputs) function
@@ -92,13 +97,22 @@ class CodeNodeExecutor(NodeExecutor):
                 # JavaScript code should define main(params) function
                 wrapped_code = self._wrap_javascript_code(code)
             else:
-                return ExecutionResult(error=f"Unsupported language: {language}")
+                return ExecutionResult(
+                    error=t("unsupported_code_execution_language", language=language)
+                )
 
-            # Execute in sandbox
-            sandbox_result = await self.sandbox.execute(
-                language=language,
-                code=wrapped_code,
+            job = compile_code_config_job(
+                code_config={
+                    "language": language,
+                    "code": wrapped_code,
+                },
                 params=inputs,
+                timeout=CODE_TIMEOUT,
+                source=SandboxJobSource.WORKFLOW,
+            )
+            sandbox_result = await sandbox_gateway.submit_and_wait(
+                job,
+                timeout_seconds=CODE_TIMEOUT + 5,
             )
 
             logger.info(
@@ -112,7 +126,9 @@ class CodeNodeExecutor(NodeExecutor):
 
             if not sandbox_result.success:
                 return ExecutionResult(
-                    error=f"Code execution error: {sandbox_result.error}"
+                    error=translate_public_workflow_error(
+                        sandbox_result.error or "code_execution_failed"
+                    )
                 )
 
             result = sandbox_result.result
@@ -129,7 +145,7 @@ class CodeNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Code execution error: {e}")
-            return ExecutionResult(error=f"Code execution error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     def _wrap_python_code(self, code: str) -> str:
         """
@@ -197,8 +213,54 @@ return main(params);
                 f"Unsupported language: {language}. Use 'python' or 'javascript'"
             )
 
+        # Check for duplicate input parameter names
+        input_mappings = config.get("inputs", [])
+        names = [m.get("name") for m in input_mappings if m.get("name")]
+        seen = set()
+        duplicates = set()
+        for name in names:
+            if name in seen:
+                duplicates.add(name)
+            seen.add(name)
+
+        if duplicates:
+            duplicate_list = ", ".join(sorted(duplicates))
+            errors.append(f"Duplicate input parameter names found: {duplicate_list}")
+
         return errors
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables from config."""
+        """Get output variables from config (legacy form)."""
         return config.get("outputs", [{"name": "result", "type": "any"}])
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Build TypeSpec output decls.
+
+        Honours a user-declared structural `typeSpec` on each output entry
+        when present (set by the frontend type-spec editor for object/array
+        outputs). Falls back to the legacy type-string conversion otherwise.
+        """
+        from ..types import NodeOutputDecl, TypeSpec, legacy_type_to_spec
+
+        outputs = config.get("outputs") or [{"name": "result", "type": "any"}]
+        decls: list[NodeOutputDecl] = []
+        for entry in outputs:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            type_spec_raw = entry.get("typeSpec")
+            if isinstance(type_spec_raw, dict):
+                spec = TypeSpec.model_validate(type_spec_raw)
+            else:
+                spec = legacy_type_to_spec(entry.get("type"))
+            description = entry.get("description")
+            decls.append(
+                NodeOutputDecl(
+                    name=name,
+                    type=spec,
+                    description=description if isinstance(description, str) else None,
+                )
+            )
+        return decls

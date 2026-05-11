@@ -9,11 +9,12 @@ from celery import shared_task
 
 from app.models.workflow import WorkflowRun, RunStatus
 from app.core.i18n import t, get_default_language
+from app.services.workflow.errors import translate_public_workflow_error
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@shared_task(bind=True, max_retries=0)
 def run_workflow_task(
     self,
     run_id: str,
@@ -78,19 +79,16 @@ def run_workflow_task(
 
         except Exception as e:
             logger.exception(f"Workflow execution error: {e}")
+            public_error = translate_public_workflow_error(e)
 
             # Update run status to failed
             run = await WorkflowRun.filter(id=run_uuid).first()
             if run:
                 run.status = RunStatus.FAILED
-                run.error_message = str(e)
+                run.error_message = public_error
                 await run.save()
 
-            # Re-raise for retry if applicable
-            if self.request.retries < self.max_retries:
-                raise self.retry(exc=e)
-
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": public_error}
 
     # Run the async function
     loop = asyncio.get_event_loop()
@@ -123,7 +121,7 @@ def cancel_workflow_task(self, run_id: str) -> dict:
 
         except Exception as e:
             logger.exception(f"Workflow cancellation error: {e}")
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "message": translate_public_workflow_error(e)}
 
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(_cancel())

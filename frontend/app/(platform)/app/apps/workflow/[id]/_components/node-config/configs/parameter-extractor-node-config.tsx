@@ -17,12 +17,12 @@ import { teamModelsApi, type TeamModel } from '@/lib/api'
 import { isValidVariableName } from '../utils'
 import { extractVariableDisplayName } from '../types'
 import type { AvailableVariable } from '../types'
-import { 
-  ParameterExtractorConfig, 
+import {
+  ParameterExtractorConfig,
   ExtractedParameter,
   ExtractionMethod,
   ExtractedParamType,
-  extractionMethodConfig,
+  getExtractionMethodConfig,
   extractedParamTypeConfig,
   defaultParameterExtractorConfig,
   generateJsonSchema,
@@ -61,6 +61,7 @@ export function ParameterExtractorNodeConfig({
     parameters: config.parameters || [],
   }
 
+  const extractionMethodConfig = React.useMemo(() => getExtractionMethodConfig(t), [t])
   const methodConfig = extractionMethodConfig[safeConfig.extractionMethod]
 
   // 加载模型列表
@@ -224,7 +225,7 @@ export function ParameterExtractorNodeConfig({
                           onConfigChange({
                             ...safeConfig,
                             sourceVariable: `{{${variable.id}}}`,
-                            sourceNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            sourceNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                           })
                           onOpenVariablePopoverChange(null)
                           onVariableSearchChange('')
@@ -277,7 +278,7 @@ export function ParameterExtractorNodeConfig({
             })
           }}
         >
-          <SelectTrigger className="w-full h-9 text-xs">
+          <SelectTrigger size="default" className="w-full text-xs">
             <SelectValue>
               <span className="flex items-center gap-2">
                 {React.createElement(methodConfig.icon, { className: "h-3.5 w-3.5" })}
@@ -326,7 +327,7 @@ export function ParameterExtractorNodeConfig({
               }}
               disabled={isLoadingModels}
             >
-              <SelectTrigger className="w-full h-9 text-xs">
+              <SelectTrigger size="default" className="w-full text-xs">
                 <SelectValue>
                   {isLoadingModels ? (
                     <span className="flex items-center gap-2 text-muted-foreground">
@@ -429,13 +430,13 @@ export function ParameterExtractorNodeConfig({
                       value={param.type}
                       onValueChange={(v) => handleUpdateParameter(param.id, { type: v as ExtractedParamType })}
                     >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
+                      <SelectTrigger size="sm" className="text-xs">
+                        <SelectValue>{t(extractedParamTypeConfig[param.type]?.labelKey || param.type)}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {methodConfig.supportedTypes.map((typeKey) => (
                           <SelectItem key={typeKey} value={typeKey} className="text-xs">
-                            {extractedParamTypeConfig[typeKey].label}
+                            {t(extractedParamTypeConfig[typeKey].labelKey)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -481,14 +482,14 @@ export function ParameterExtractorNodeConfig({
                           value={param.arrayItemType || 'string'}
                           onValueChange={(v) => handleUpdateParameter(param.id, { arrayItemType: v as ExtractedParamType })}
                         >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue />
+                          <SelectTrigger size="sm" className="text-xs">
+                            <SelectValue>{t(extractedParamTypeConfig[param.arrayItemType || 'string']?.labelKey || (param.arrayItemType || 'string'))}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="string" className="text-xs">String</SelectItem>
-                            <SelectItem value="number" className="text-xs">Number</SelectItem>
-                            <SelectItem value="boolean" className="text-xs">Boolean</SelectItem>
-                            <SelectItem value="object" className="text-xs">Object</SelectItem>
+                            <SelectItem value="string" className="text-xs">{t(extractedParamTypeConfig.string.labelKey)}</SelectItem>
+                            <SelectItem value="number" className="text-xs">{t(extractedParamTypeConfig.number.labelKey)}</SelectItem>
+                            <SelectItem value="boolean" className="text-xs">{t(extractedParamTypeConfig.boolean.labelKey)}</SelectItem>
+                            <SelectItem value="object" className="text-xs">{t(extractedParamTypeConfig.object.labelKey)}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -512,7 +513,7 @@ export function ParameterExtractorNodeConfig({
                 {/* JSON Path（json_path 模式） */}
                 {safeConfig.extractionMethod === 'json_path' && (
                   <div className="space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">JSON Path</Label>
+                    <Label className="text-[10px] text-muted-foreground">{t('configParameterExtractor.jsonPathLabel')}</Label>
                     <Input
                       value={param.jsonPath || ''}
                       onChange={(e) => handleUpdateParameter(param.id, { jsonPath: e.target.value })}

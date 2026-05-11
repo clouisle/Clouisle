@@ -41,6 +41,7 @@ class PublicSiteSettingsResponse(BaseModel):
     allow_account_deletion: bool = True
     sso_enabled: bool = False
     sso_allow_password_login: bool = True
+    kb_document_max_upload_size_mb: int = 50
 
 
 class AutoNotificationConfigResponse(BaseModel):

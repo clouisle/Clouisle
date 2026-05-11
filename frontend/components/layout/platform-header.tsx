@@ -54,7 +54,15 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { APP_VERSION, BUILD_DATE, APP_NAME, GITHUB_URL, DOCS_URL, CHANGELOG_URL } from '@/lib/constants'
 import { DefaultSiteIcon } from '@/components/default-site-icon'
 
-const navItems = [
+interface PlatformNavItem {
+  key: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  exact?: boolean
+  permissions?: string[]
+}
+
+const navItems: PlatformNavItem[] = [
   {
     key: 'home',
     href: '/app',
@@ -72,9 +80,10 @@ const navItems = [
     icon: Database,
   },
   {
-    key: 'tools',
-    href: '/app/tools',
+    key: 'capabilities',
+    href: '/app/capabilities',
     icon: Wrench,
+    permissions: ['tool:read', 'skill:read'],
   },
   {
     key: 'models',
@@ -96,11 +105,16 @@ export function PlatformHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
-  const { canAccessDashboard } = usePermissions()
+  const { canAccessDashboard, hasAnyPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
 
   // 没有团队时隐藏导航
   const hideNav = !isTeamLoading && !currentTeam
+
+  const visibleNavItems = React.useMemo(
+    () => navItems.filter((item) => !item.permissions || hasAnyPermission(item.permissions)),
+    [hasAnyPermission]
+  )
 
   // 使用默认值直到 mounted，避免水合不匹配
   const effectiveHeaderVariant = mounted ? platformHeaderVariant : 'centered'
@@ -239,7 +253,7 @@ export function PlatformHeader() {
             effectiveHeaderVariant === 'centered' && 'absolute left-1/2 -translate-x-1/2',
             effectiveHeaderVariant === 'default' && 'ml-6'
           )}>
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
                 <Link key={item.key} href={item.href}>
@@ -252,11 +266,6 @@ export function PlatformHeader() {
                     {/* 极简模式只显示图标 */}
                     {effectiveHeaderVariant !== 'minimal' && (
                       <span>{t(`nav.${item.key}`)}</span>
-                    )}
-                    {item.key === 'notifications' && unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
                     )}
                   </Button>
                 </Link>
@@ -392,7 +401,7 @@ export function PlatformHeader() {
       {!hideNav && mobileMenuOpen && (
         <div className="md:hidden border-t bg-background">
           <nav className="container max-w-screen-2xl px-4 py-2 space-y-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
                 <Link key={item.key} href={item.href} onClick={() => setMobileMenuOpen(false)}>
@@ -403,11 +412,6 @@ export function PlatformHeader() {
                   >
                     <Icon className="size-4" />
                     <span>{t(`nav.${item.key}`)}</span>
-                    {item.key === 'notifications' && unreadCount > 0 && (
-                      <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-destructive-foreground">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
                   </Button>
                 </Link>
               )

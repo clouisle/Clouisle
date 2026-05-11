@@ -40,6 +40,7 @@
     "deleteEntitySuccess": "实体已删除",
     "deleteRelationSuccess": "关系已删除",
     "deleteSelectedConfirm": "确定要删除 {count} 个选中的实体吗？此操作无法撤销。",
+    "unknown": "未知",
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "fitView": "适应视图",

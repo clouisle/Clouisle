@@ -113,6 +113,41 @@ function formatNumber(num: number): string {
   return num.toString()
 }
 
+function useCountUp(value: number, isLoading: boolean) {
+  const [displayValue, setDisplayValue] = React.useState(0)
+
+  React.useEffect(() => {
+    if (isLoading) {
+      setDisplayValue(0)
+      return
+    }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || value === 0) {
+      setDisplayValue(value)
+      return
+    }
+
+    const duration = 900
+    const startedAt = performance.now()
+    let frameId = 0
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - startedAt) / duration, 1)
+      const easedProgress = 1 - Math.pow(1 - progress, 3)
+      setDisplayValue(Math.round(value * easedProgress))
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick)
+      }
+    }
+
+    frameId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frameId)
+  }, [isLoading, value])
+
+  return displayValue
+}
+
 function StatCard({
   title,
   value,
@@ -130,6 +165,8 @@ function StatCard({
   suffix?: string
   href?: string
 }) {
+  const animatedValue = useCountUp(typeof value === 'number' ? value : 0, isLoading)
+  const displayValue = typeof value === 'number' ? formatNumber(animatedValue) : value
   const trendBadgeClassName = change === undefined
     ? ''
     : change >= 0
@@ -157,7 +194,7 @@ function StatCard({
               <Skeleton className="mt-1 ml-auto h-8 w-20" />
             ) : (
               <p className="mt-1 text-2xl font-bold">
-                {value}
+                {displayValue}
                 {suffix && <span className="ml-1 text-sm font-normal text-muted-foreground">{suffix}</span>}
               </p>
             )}
@@ -175,6 +212,7 @@ function StatCard({
 }
 
 function RecentItemCard({ item }: { item: RecentItem }) {
+  const t = useTranslations('platform.home')
   const href = item.type === 'agent' ? `/app/apps/${item.id}` : `/app/apps/workflow/${item.id}`
   const Icon = item.type === 'agent' ? Bot : Workflow
 
@@ -198,7 +236,7 @@ function RecentItemCard({ item }: { item: RecentItem }) {
           </p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <Badge variant="outline" className="text-xs px-1.5 py-0 h-4">
-              {item.type === 'agent' ? 'Agent' : 'Workflow'}
+              {t(`recentItemTypes.${item.type}`)}
             </Badge>
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
@@ -365,33 +403,27 @@ export default function PlatformHomePage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
-        <Link href="/app/apps">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createNew')}
-          </Button>
-        </Link>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title={t('stats.totalConversations')}
-          value={formatNumber(stats.totalConversations)}
+          value={stats.totalConversations}
           icon={MessageSquare}
           isLoading={isLoading}
           change={15}
         />
         <StatCard
           title={t('stats.totalMessages')}
-          value={formatNumber(stats.totalMessages)}
+          value={stats.totalMessages}
           icon={Activity}
           isLoading={isLoading}
           change={23}
         />
         <StatCard
           title={t('stats.totalTokens')}
-          value={formatNumber(stats.totalTokens)}
+          value={stats.totalTokens}
           icon={Coins}
           isLoading={isLoading}
           change={-5}
@@ -556,7 +588,7 @@ export default function PlatformHomePage() {
                   {t('actions.createKB.title')}
                 </Button>
               </Link>
-              <Link href="/app/tools" className="block">
+              <Link href="/app/capabilities" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Wrench className="mr-2 h-4 w-4" />
                   {t('actions.manageTools.title')}

@@ -8,24 +8,28 @@ import logging
 import time
 from collections.abc import Iterable
 from typing import Any
+
+from app.services.sandbox.models import SandboxArtifact
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
 from app.api import deps
-from app.core.i18n import t
+from app.core.i18n import has_translation, t
 from app.models.user import User, Team, TeamMember
 from app.models.tool import (
     Tool,
     ToolShare,
     ToolType as DBToolType,
     CustomToolType as DBCustomToolType,
-    ToolCategory as DBToolCategory,
 )
 from app.llm.tools import tool_registry
-from app.llm.tools.sandbox import execute_code
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.llm.tools.executors import execute_http_tool
+from app.services.error_messages import resolve_user_visible_error
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 from app.schemas.response import (
     Response,
     ResponseCode,
@@ -56,15 +60,37 @@ from app.schemas.tool import (
     McpToolInfoOut,
     McpToolsListRequest,
     McpToolsListResponse,
+    SandboxArtifactSchema,
     ToolShareInput,
     ToolShareOut,
     ToolShareListOut,
     BUILTIN_TOOLS_METADATA,
+    get_builtin_tool_description_key,
+    get_builtin_tool_parameter_description_key,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
+SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "read", "write"}
+
+
+def _serialize_runtime_artifacts(
+    artifacts: list[SandboxArtifact | Any],
+) -> list[SandboxArtifactSchema]:
+    return [
+        artifact
+        if isinstance(artifact, SandboxArtifactSchema)
+        else SandboxArtifactSchema.model_validate(artifact)
+        for artifact in artifacts
+    ]
+
+
+def _runtime_duration_ms(runtime_result: Any) -> int | None:
+    metadata = getattr(runtime_result, "metadata", None)
+    if metadata is None:
+        return None
+    return getattr(metadata, "duration_ms", None)
 
 
 # ============ Helper Functions ============
@@ -103,6 +129,67 @@ async def check_team_access(
     return team
 
 
+def _get_builtin_tool_description(
+    tool_info: Any, user_locale: str | None = None
+) -> str:
+    description_key = get_builtin_tool_description_key(tool_info.name)
+    if has_translation(description_key, user_locale):
+        return t(description_key, lang=user_locale)
+    return tool_info.description
+
+
+def _get_builtin_tool_parameters(
+    tool_info: Any, user_locale: str | None = None
+) -> list[ToolParameterSchema]:
+    return [
+        ToolParameterSchema(
+            name=p.name,
+            type=p.type,
+            description=(
+                t(
+                    get_builtin_tool_parameter_description_key(tool_info.name, p.name),
+                    lang=user_locale,
+                )
+                if has_translation(
+                    get_builtin_tool_parameter_description_key(tool_info.name, p.name),
+                    user_locale,
+                )
+                else p.description
+            ),
+            required=p.required,
+            enum=p.enum,
+            default=p.default,
+        )
+        for p in tool_info.parameters
+    ]
+
+
+def _tool_info_to_out(tool_info: Any, user_locale: str | None = None) -> ToolOut:
+    metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
+    parameters = _get_builtin_tool_parameters(tool_info, user_locale)
+
+    display_name_key = metadata.get("display_name_key")
+    display_name = (
+        t(display_name_key, lang=user_locale)
+        if display_name_key
+        else metadata.get("display_name", tool_info.name)
+    )
+    description = _get_builtin_tool_description(tool_info, user_locale)
+
+    return ToolOut(
+        name=tool_info.name,
+        display_name=display_name,
+        description=description,
+        type=ToolType.BUILTIN,
+        category=_category_value(metadata.get("category", ToolCategory.OTHER.value)),
+        icon=metadata.get("icon"),
+        parameters=parameters,
+        is_enabled=True,
+        requires_config=metadata.get("requires_config", False),
+        config_fields=metadata.get("config_fields", []),
+    )
+
+
 def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     """获取所有内置工具
 
@@ -113,43 +200,10 @@ def get_builtin_tools(user_locale: str | None = None) -> list[ToolOut]:
     for tool_info in tool_registry.get_all_tools():
         if tool_info.name in AGENT_ONLY_BUILTIN_TOOLS:
             continue
+        tools.append(_tool_info_to_out(tool_info, user_locale))
 
-        metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
-
-        parameters = [
-            ToolParameterSchema(
-                name=p.name,
-                type=p.type,
-                description=p.description,
-                required=p.required,
-                enum=p.enum,
-                default=p.default,
-            )
-            for p in tool_info.parameters
-        ]
-
-        # Get display name from i18n using user's locale
-        display_name_key = metadata.get("display_name_key")
-        display_name = (
-            t(display_name_key, lang=user_locale)
-            if display_name_key
-            else tool_info.name
-        )
-
-        tools.append(
-            ToolOut(
-                name=tool_info.name,
-                display_name=display_name,
-                description=tool_info.description,
-                type=ToolType.BUILTIN,
-                category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
-                icon=metadata.get("icon"),
-                parameters=parameters,
-                is_enabled=True,
-                requires_config=metadata.get("requires_config", False),
-                config_fields=metadata.get("config_fields", []),
-            )
-        )
+    for tool_info in tool_registry.get_sandbox_tool_infos(list(SANDBOX_BUILTIN_TOOLS)):
+        tools.append(_tool_info_to_out(tool_info, user_locale))
 
     return tools
 
@@ -162,7 +216,7 @@ def db_tool_to_out(tool: Tool, creator_name: str | None = None) -> ToolOut:
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        category=ToolCategory(tool.category.value),
+        category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
@@ -187,7 +241,7 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         display_name=tool.display_name,
         description=tool.description,
         type=ToolType(tool.type.value),
-        category=ToolCategory(tool.category.value),
+        category=_category_value(tool.category),
         icon=tool.icon,
         parameters=[ToolParameterSchema(**p) for p in tool.parameters],
         is_enabled=tool.is_enabled,
@@ -204,6 +258,10 @@ def db_tool_to_detail(tool: Tool, creator_name: str | None = None) -> ToolDetail
         updated_at=tool.updated_at.isoformat() if tool.updated_at else None,
         created_by_name=creator_name,
     )
+
+
+def _category_value(value: Any) -> str:
+    return value.value if isinstance(value, ToolCategory) else str(value)
 
 
 def _option(value: str, label: str | None = None) -> ToolFilterOption:
@@ -233,8 +291,8 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
     deduped_tools: dict[str, ToolOut] = {}
 
     builtin_tools = get_builtin_tools(user.locale)
-    for tool in builtin_tools:
-        deduped_tools[f"builtin:{tool.name}"] = tool
+    for builtin_tool in builtin_tools:
+        deduped_tools[f"builtin:{builtin_tool.name}"] = builtin_tool
 
     for team in accessible_teams:
         custom_db_tools = (
@@ -242,42 +300,48 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             .prefetch_related("created_by")
             .order_by("-updated_at")
         )
-        for tool in custom_db_tools:
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+        for db_tool in custom_db_tools:
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
-            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            deduped_tools[f"custom:{tool.id}"] = tool_out
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
+            deduped_tools[f"custom:{db_tool.id}"] = tool_out
 
         mcp_db_tools = (
             await Tool.filter(team_id=team.id, type=DBToolType.MCP)
             .prefetch_related("created_by")
             .order_by("-updated_at")
         )
-        for tool in mcp_db_tools:
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+        for db_tool in mcp_db_tools:
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = True
-            tool_out.owner_team_id = tool.team_id
+            tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            deduped_tools[f"mcp:{tool.id}"] = tool_out
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
+            deduped_tools[f"mcp:{db_tool.id}"] = tool_out
 
         shares = await ToolShare.filter(shared_with_team_id=team.id).prefetch_related(
             "tool", "tool__team", "tool__created_by"
         )
         for share in shares:
-            tool = share.tool
-            creator_name = tool.created_by.username if tool.created_by else None
-            tool_out = db_tool_to_out(tool, creator_name)
+            db_tool = share.tool
+            creator_name = db_tool.created_by.username if db_tool.created_by else None
+            tool_out = db_tool_to_out(db_tool, creator_name)
             tool_out.is_owned = False
-            tool_out.owner_team_id = tool.team_id
-            tool_out.owner_team_name = tool.team.name
+            tool_out.owner_team_id = db_tool.team_id
+            tool_out.owner_team_name = db_tool.team.name
             tool_out.share_permission = ToolSharePermission(share.permission)
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=tool.id).count()
-            unique_key = f"{tool.type.value}:{tool.id}"
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
+            unique_key = f"{db_tool.type.value}:{db_tool.id}"
             existing = deduped_tools.get(unique_key)
             if existing is None or (tool_out.is_owned and not existing.is_owned):
                 deduped_tools[unique_key] = tool_out
@@ -336,7 +400,7 @@ async def list_tools(
             continue
         if not _matches_filter(tool.type.value, type_filter):
             continue
-        if not _matches_filter(tool.category.value, category_filter):
+        if not _matches_filter(_category_value(tool.category), category_filter):
             continue
         if not _matches_filter(
             "enabled" if tool.is_enabled else "disabled", status_filter
@@ -391,7 +455,13 @@ async def get_tool_filter_options(
                 _option(ToolType.CUSTOM.value),
                 _option(ToolType.MCP.value),
             ],
-            categories=[_option(category.value) for category in ToolCategory],
+            categories=[
+                _option(category)
+                for category in sorted(
+                    {category.value for category in ToolCategory}
+                    | {tool.category for tool in tools if tool.category}
+                )
+            ],
             statuses=[_option("enabled"), _option("disabled")],
             teams=[_option(str(team.id), team.name) for team in accessible_teams],
             creators=[_option(value) for value in creator_values],
@@ -507,43 +577,13 @@ async def list_file_parsers(
     for tool_info in tool_registry.get_all_tools():
         metadata = BUILTIN_TOOLS_METADATA.get(tool_info.name, {})
         if metadata.get("is_file_parser"):
-            parameters = [
-                ToolParameterSchema(
-                    name=p.name,
-                    type=p.type,
-                    description=p.description,
-                    required=p.required,
-                    enum=p.enum,
-                    default=p.default,
-                )
-                for p in tool_info.parameters
-            ]
-            # Get display name from i18n using user's locale
-            display_name_key = metadata.get("display_name_key")
-            display_name = (
-                t(display_name_key, lang=current_user.locale)
-                if display_name_key
-                else tool_info.name
-            )
-
-            parsers.append(
-                ToolOut(
-                    name=tool_info.name,
-                    display_name=display_name,
-                    description=tool_info.description,
-                    type=ToolType.BUILTIN,
-                    category=ToolCategory(metadata.get("category", ToolCategory.FILE)),
-                    icon=metadata.get("icon"),
-                    parameters=parameters,
-                    is_enabled=True,
-                )
-            )
+            parsers.append(_tool_info_to_out(tool_info, current_user.locale))
 
     # 2. 获取自定义的文件解析工具（category=file 的自定义工具）
     custom_tools = await Tool.filter(
         team_id=team_id,
         is_enabled=True,
-        category=ToolCategory.FILE,
+        category=ToolCategory.FILE.value,
     ).all()
 
     for tool in custom_tools:
@@ -563,7 +603,7 @@ async def list_file_parsers(
                 display_name=tool.display_name,
                 description=tool.description or "",
                 type=ToolType.CUSTOM,
-                category=ToolCategory(tool.category),
+                category=_category_value(tool.category),
                 icon=tool.icon,
                 parameters=parameters,
                 is_enabled=tool.is_enabled,
@@ -600,12 +640,11 @@ async def get_mcp_tools(
             msg_key="success",
         )
     except Exception as e:
-        logger.exception(f"Failed to list MCP tools: {e}")
+        logger.exception("Failed to list MCP tools: %s", e)
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="mcp_connection_failed",
             status_code=500,
-            detail=str(e),
         )
 
 
@@ -634,7 +673,7 @@ async def create_tool(
         display_name=tool_in.display_name,
         description=tool_in.description,
         icon=tool_in.icon,
-        category=DBToolCategory(tool_in.category.value),
+        category=tool_in.category,
         type=DBToolType(tool_in.type.value),
         custom_type=(
             DBCustomToolType(tool_in.custom_type.value) if tool_in.custom_type else None
@@ -686,41 +725,12 @@ async def get_tool_by_name(
     """根据名称获取工具（内置或自定义）"""
     # 先检查内置工具
     tool_info = tool_registry.get_tool(tool_name)
+    if tool_info is None and tool_name in SANDBOX_BUILTIN_TOOLS:
+        sandbox_tool_infos = tool_registry.get_sandbox_tool_infos([tool_name])
+        tool_info = sandbox_tool_infos[0] if sandbox_tool_infos else None
     if tool_info:
-        metadata = BUILTIN_TOOLS_METADATA.get(tool_name, {})
-        parameters = [
-            ToolParameterSchema(
-                name=p.name,
-                type=p.type,
-                description=p.description,
-                required=p.required,
-                enum=p.enum,
-                default=p.default,
-            )
-            for p in tool_info.parameters
-        ]
-
-        # Get display name from i18n using user's locale
-        display_name_key = metadata.get("display_name_key")
-        display_name = (
-            t(display_name_key, lang=current_user.locale)
-            if display_name_key
-            else tool_info.name
-        )
-
         return success(
-            data=ToolOut(
-                name=tool_info.name,
-                display_name=display_name,
-                description=tool_info.description,
-                type=ToolType.BUILTIN,
-                category=ToolCategory(metadata.get("category", ToolCategory.OTHER)),
-                icon=metadata.get("icon"),
-                parameters=parameters,
-                is_enabled=True,
-                requires_config=metadata.get("requires_config", False),
-                config_fields=metadata.get("config_fields", []),
-            ),
+            data=_tool_info_to_out(tool_info, current_user.locale),
             msg_key="success",
         )
 
@@ -777,7 +787,7 @@ async def update_tool(
     if tool_in.icon is not None:
         tool.icon = tool_in.icon
     if tool_in.category is not None:
-        tool.category = DBToolCategory(tool_in.category.value)
+        tool.category = tool_in.category
     if tool_in.custom_type is not None:
         tool.custom_type = DBCustomToolType(tool_in.custom_type.value)
     if tool_in.parameters is not None:
@@ -887,13 +897,13 @@ async def test_tool(
             )
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            logger.error(f"Builtin tool execution error: {e}")
+            logger.error("Builtin tool execution error: %s", e)
 
             return success(
                 data=ToolExecuteResponse(
                     name=request.name,
                     success=False,
-                    error=str(e),
+                    error=resolve_user_visible_error(str(e)),
                     duration_ms=duration_ms,
                 ),
                 msg_key="success",
@@ -913,7 +923,10 @@ async def test_tool(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error="MCP configuration is missing",
+                            error=t(
+                                "mcp_tool_missing_configuration",
+                                tool_name=request.name,
+                            ),
                             duration_ms=int((time.time() - start_time) * 1000),
                         ),
                         msg_key="success",
@@ -945,13 +958,16 @@ async def test_tool(
                         msg_key="success",
                     )
                 except Exception as e:
-                    logger.exception(f"MCP tool execution error: {e}")
+                    logger.exception("MCP tool execution error: %s", e)
                     duration_ms = int((time.time() - start_time) * 1000)
                     return success(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error=str(e),
+                            error=resolve_user_visible_error(
+                                str(e),
+                                fallback_key="mcp_tool_execution_failed",
+                            ),
                             duration_ms=duration_ms,
                         ),
                         msg_key="success",
@@ -976,9 +992,7 @@ async def test_tool(
                     msg_key="success",
                 )
             elif custom_tool.custom_type == DBCustomToolType.CODE:
-                # 执行代码工具
                 code_config = custom_tool.code_config or {}
-                language = code_config.get("language", "javascript")
                 code = code_config.get("code", "")
 
                 if not code:
@@ -986,38 +1000,36 @@ async def test_tool(
                         data=ToolExecuteResponse(
                             name=request.name,
                             success=False,
-                            error="No code defined for this tool",
+                            error=t("tool_code_not_defined"),
                             duration_ms=int((time.time() - start_time) * 1000),
                         ),
                         msg_key="success",
                     )
 
-                exec_result = await execute_code(
-                    language=language,
-                    code=code,
+                job = compile_code_config_job(
+                    code_config=code_config,
                     params=request.arguments,
-                    timeout=30.0,
+                    timeout=float(
+                        code_config.get("limits", {}).get("timeout_seconds", 30.0)
+                    ),
+                    source=SandboxJobSource.TOOL,
                 )
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                # 构建结果，包含 stdout 日志
-                result_data = exec_result.result
-                if exec_result.stdout:
-                    if isinstance(result_data, dict):
-                        result_data["__logs__"] = exec_result.stdout
-                    else:
-                        result_data = {
-                            "value": result_data,
-                            "__logs__": exec_result.stdout,
-                        }
+                exec_result = await sandbox_gateway.submit_and_wait(
+                    job,
+                    timeout_seconds=job.limits.timeout_seconds + 5,
+                )
 
                 return success(
                     data=ToolExecuteResponse(
                         name=request.name,
                         success=exec_result.success,
-                        result=result_data,
+                        result=exec_result.result,
                         error=exec_result.error,
-                        duration_ms=duration_ms,
+                        logs=exec_result.stdout or None,
+                        artifacts=_serialize_runtime_artifacts(
+                            getattr(exec_result, "artifacts", [])
+                        ),
+                        duration_ms=_runtime_duration_ms(exec_result),
                     ),
                     msg_key="success",
                 )
@@ -1026,7 +1038,10 @@ async def test_tool(
                     data=ToolExecuteResponse(
                         name=request.name,
                         success=False,
-                        error=f"Unsupported tool type: {custom_tool.custom_type}",
+                        error=t(
+                            "unsupported_custom_tool_type",
+                            tool_type=custom_tool.custom_type,
+                        ),
                         duration_ms=int((time.time() - start_time) * 1000),
                     ),
                     msg_key="success",
@@ -1056,28 +1071,49 @@ async def execute_code_directly(
         return success(
             data=CodeExecuteResponse(
                 success=False,
-                error=f"Unsupported language: {request.language}. Only 'javascript' and 'python' are supported.",
+                error=t(
+                    "unsupported_code_execution_language",
+                    language=request.language,
+                ),
                 duration_ms=int((time.time() - start_time) * 1000),
             ),
             msg_key="success",
         )
 
-    # 执行代码
-    exec_result = await execute_code(
-        language=request.language,
-        code=request.code,
+    job = compile_code_config_job(
+        code_config={
+            "language": request.language,
+            "code": request.code,
+            "command": request.command,
+            "python_packages": request.python_packages,
+            "js_packages": request.js_packages,
+            "python_package_index_url": request.python_package_index_url,
+            "node_package_registry_url": request.node_package_registry_url,
+            "artifacts": [
+                artifact.model_dump(exclude_none=True) for artifact in request.artifacts
+            ],
+            "limits": request.limits.model_dump(),
+        },
         params=request.params,
         timeout=request.timeout,
+        source=SandboxJobSource.DEBUG,
     )
-    duration_ms = int((time.time() - start_time) * 1000)
+    exec_runtime_result = await sandbox_gateway.submit_and_wait(
+        job,
+        timeout_seconds=job.limits.timeout_seconds + 5,
+    )
+    artifacts = _serialize_runtime_artifacts(
+        getattr(exec_runtime_result, "artifacts", [])
+    )
 
     return success(
         data=CodeExecuteResponse(
-            success=exec_result.success,
-            result=exec_result.result,
-            error=exec_result.error,
-            logs=exec_result.stdout or None,
-            duration_ms=duration_ms,
+            success=exec_runtime_result.success,
+            result=exec_runtime_result.result,
+            error=exec_runtime_result.error,
+            logs=exec_runtime_result.stdout or None,
+            artifacts=artifacts,
+            duration_ms=_runtime_duration_ms(exec_runtime_result),
         ),
         msg_key="success",
     )
@@ -1587,7 +1623,7 @@ async def list_shared_tools(
             display_name=tool.display_name,
             description=tool.description,
             type=ToolType.CUSTOM if tool.type == DBToolType.CUSTOM else ToolType.MCP,
-            category=ToolCategory(tool.category),
+            category=_category_value(tool.category),
             icon=tool.icon,
             parameters=[ToolParameterSchema(**param) for param in tool.parameters],
             is_enabled=tool.is_enabled,

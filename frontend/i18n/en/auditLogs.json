@@ -33,6 +33,7 @@
     "operationUpdate": "Update",
     "operationDelete": "Delete",
     "operationExecute": "Execute",
+    "export": "Export",
     "exportCSV": "Export CSV",
     "exportJSON": "Export JSON",
     "showing": "Showing",

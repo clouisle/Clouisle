@@ -2,26 +2,33 @@
 通用文件上传接口
 """
 
+import logging
 import os
 import uuid
 import hashlib
+import hmac
 import mimetypes
 import aiofiles
 from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Query, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api import deps
+from app.core.config import settings
+from app.core.i18n import t
+from app.models.api_key import APIKey
 from app.models.user import User
 from app.schemas.response import Response, ResponseCode, BusinessError, success
 from app.services.file_parser import (
     file_parser_service,
     FileParseConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,6 +43,7 @@ UPLOAD_DIR = os.path.join(
     "uploads",
 )
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+SANDBOX_ARTIFACT_CATEGORY = "sandbox-artifacts"
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
@@ -81,15 +89,24 @@ MIME_TO_EXT = {
 
 UPLOAD_ROOT = Path(UPLOAD_DIR).resolve()
 DEFAULT_BINARY_EXT = ".bin"
+SANDBOX_ARTIFACT_SIGNATURE_TTL_SECONDS = 300
 
 
 def _validate_path_segment(value: str, field_name: str) -> str:
     """Allow only simple path segments to prevent traversal."""
     if not value or value in {".", ".."}:
-        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_upload_path_segment",
+            data={"field_name": field_name},
+        )
 
     if any(sep in value for sep in (os.sep, os.altsep) if sep):
-        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_upload_path_segment",
+            data={"field_name": field_name},
+        )
 
     return value
 
@@ -98,7 +115,11 @@ def _resolve_upload_path(*parts: str) -> Path:
     """Resolve a path under the upload root and reject traversal."""
     candidate = UPLOAD_ROOT.joinpath(*parts).resolve()
     if candidate != UPLOAD_ROOT and UPLOAD_ROOT not in candidate.parents:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="access_denied",
+            status_code=403,
+        )
     return candidate
 
 
@@ -196,6 +217,81 @@ async def save_generated_upload(
     }
 
 
+def _validate_upload_size(content: bytes, *, max_size: int = MAX_FILE_SIZE) -> None:
+    if len(content) > max_size:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_too_large",
+            data={"max_size": max_size, "actual_size": len(content)},
+        )
+
+
+def _validate_sandbox_artifact_signature(
+    *,
+    content: bytes,
+    filename: str,
+    timestamp: str | None,
+    signature: str | None,
+) -> None:
+    if not timestamp or not signature:
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="not_authenticated",
+            status_code=401,
+        )
+
+    try:
+        timestamp_value = int(timestamp)
+    except ValueError as exc:
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="not_authenticated",
+            status_code=401,
+        ) from exc
+
+    now_ts = int(datetime.now().timestamp())
+    if abs(now_ts - timestamp_value) > SANDBOX_ARTIFACT_SIGNATURE_TTL_SECONDS:
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="not_authenticated",
+            status_code=401,
+        )
+
+    digest = hashlib.sha256(content).hexdigest()
+    payload = f"{timestamp}:{filename}:{digest}".encode("utf-8")
+    expected = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise BusinessError(
+            code=ResponseCode.UNAUTHORIZED,
+            msg_key="not_authenticated",
+            status_code=401,
+        )
+
+
+def _validate_allowed_content_type(
+    *,
+    content_type: str | None,
+    filename: str | None,
+    allowed_types: set[str],
+) -> str:
+    resolved_content_type = content_type
+    if resolved_content_type not in allowed_types:
+        safe_filename = filename or ""
+        if safe_filename and file_parser_service.is_supported(safe_filename):
+            resolved_content_type = file_parser_service.get_mime_type(safe_filename)
+    if resolved_content_type not in allowed_types:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="invalid_file_type",
+            data={"allowed": list(allowed_types)},
+        )
+    return resolved_content_type
+
+
 @router.post("/image", response_model=Response[dict])
 async def upload_image(
     file: UploadFile = File(...),
@@ -224,12 +320,7 @@ async def upload_image(
     content = await file.read()
 
     # 验证文件大小
-    if len(content) > MAX_FILE_SIZE:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="file_too_large",
-            data={"max_size": MAX_FILE_SIZE},
-        )
+    _validate_upload_size(content)
 
     upload_info = await save_generated_upload(
         content=content,
@@ -264,29 +355,16 @@ async def upload_file(
     """
     category = _validate_path_segment(category, "category")
 
-    content_type = file.content_type
     allowed_types = ALLOWED_IMAGE_TYPES | ALLOWED_DOCUMENT_TYPES
-
-    if content_type not in allowed_types:
-        filename = file.filename or ""
-        if filename and file_parser_service.is_supported(filename):
-            content_type = file_parser_service.get_mime_type(filename)
-
-    if content_type not in allowed_types:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="invalid_file_type",
-            data={"allowed": list(allowed_types)},
-        )
+    content_type = _validate_allowed_content_type(
+        content_type=file.content_type,
+        filename=file.filename,
+        allowed_types=allowed_types,
+    )
 
     content = await file.read()
 
-    if len(content) > MAX_FILE_SIZE:
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="file_too_large",
-            data={"max_size": MAX_FILE_SIZE},
-        )
+    _validate_upload_size(content)
 
     upload_info = await save_generated_upload(
         content=content,
@@ -302,6 +380,63 @@ async def upload_file(
             "original_name": file.filename,
             "size": upload_info["size"],
             "content_type": content_type,
+        },
+        msg_key="file_uploaded",
+    )
+
+
+@router.post("/sandbox-artifact", response_model=Response[dict])
+async def upload_sandbox_artifact(
+    file: UploadFile = File(...),
+    authenticated: tuple[User, APIKey | None] | None = Depends(
+        deps.get_current_user_or_api_key_optional
+    ),
+    sandbox_artifact_timestamp: str | None = Header(
+        None, alias="X-Sandbox-Artifact-Timestamp"
+    ),
+    sandbox_artifact_signature: str | None = Header(
+        None, alias="X-Sandbox-Artifact-Signature"
+    ),
+) -> Any:
+    if not file.filename:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_required",
+        )
+
+    content_type = (
+        file.content_type
+        or mimetypes.guess_type(file.filename)[0]
+        or "application/octet-stream"
+    )
+    content = await file.read()
+    _validate_upload_size(
+        content,
+        max_size=int(settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB * 1024 * 1024),
+    )
+
+    if authenticated is None:
+        _validate_sandbox_artifact_signature(
+            content=content,
+            filename=file.filename,
+            timestamp=sandbox_artifact_timestamp,
+            signature=sandbox_artifact_signature,
+        )
+
+    upload_info = await save_generated_upload(
+        content=content,
+        category=SANDBOX_ARTIFACT_CATEGORY,
+        content_type=content_type,
+        filename=file.filename,
+    )
+
+    return success(
+        data={
+            "path": upload_info["path"],
+            "url": upload_info["url"],
+            "filename": upload_info["filename"],
+            "size": upload_info["size"],
+            "content_type": upload_info["content_type"],
         },
         msg_key="file_uploaded",
     )
@@ -325,7 +460,11 @@ async def get_file(
     )
 
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="file_not_found",
+            status_code=404,
+        )
 
     return FileResponse(file_path)
 
@@ -485,16 +624,16 @@ async def parse_file(
             config=config,
         )
     except ValueError as e:
+        logger.warning("Failed to parse file %s: %s", file.filename, e)
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="file_parse_error",
-            data={"error": str(e)},
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Unexpected file parse error for %s", file.filename)
         raise BusinessError(
             code=ResponseCode.INTERNAL_ERROR,
             msg_key="file_parse_error",
-            data={"error": str(e)},
         )
 
     return success(
@@ -551,13 +690,23 @@ async def parse_files_batch(
             continue
 
         if not file_parser_service.is_supported(file.filename):
-            errors.append({"filename": file.filename, "error": "Unsupported file type"})
+            errors.append(
+                {
+                    "filename": file.filename,
+                    "error": t("unsupported_file_type"),
+                }
+            )
             continue
 
         content = await file.read()
 
         if len(content) > MAX_PARSE_FILE_SIZE:
-            errors.append({"filename": file.filename, "error": "File too large"})
+            errors.append(
+                {
+                    "filename": file.filename,
+                    "error": t("file_too_large"),
+                }
+            )
             continue
 
         try:
@@ -578,7 +727,8 @@ async def parse_files_batch(
                 )
             )
         except Exception as e:
-            errors.append({"filename": file.filename, "error": str(e)})
+            logger.warning("Failed to parse file %s in batch: %s", file.filename, e)
+            errors.append({"filename": file.filename, "error": t("file_parse_error")})
 
     if errors and not results:
         raise BusinessError(

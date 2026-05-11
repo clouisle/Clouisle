@@ -6,6 +6,8 @@ from .factory import create_chat_model
 from .base import BaseChatAdapter
 from .openai_adapter import OpenAIAdapter
 from .deepseek_adapter import DeepSeekAdapter
+from .moonshot_adapter import MoonshotAdapter
+from .ollama_adapter import OllamaAdapter
 from .anthropic_adapter import AnthropicAdapter
 from .gemini_adapter import GeminiAdapter
 from .xai_adapter import XAIAdapter
@@ -18,6 +20,8 @@ __all__ = [
     "BaseChatAdapter",
     "OpenAIAdapter",
     "DeepSeekAdapter",
+    "MoonshotAdapter",
+    "OllamaAdapter",
     "AnthropicAdapter",
     "GeminiAdapter",
     "XAIAdapter",

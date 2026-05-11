@@ -1,11 +1,11 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useLayoutEffect } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Message } from './message';
-import type { ChatMessage, MessagePart } from './types';
+import type { ChatMessage, CodePreviewPayload, MessagePart } from './types';
 
 interface ChatContainerProps {
   messages: ChatMessage[];
@@ -22,6 +22,40 @@ interface ChatContainerProps {
   onSelectOption?: (option: string) => void;
   /** Show scroll to bottom button when not at bottom */
   showScrollToBottom?: boolean;
+  /** Callback when a previewable code block is opened */
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  /** Hide tool call cards and tool execution details */
+  hideToolCalls?: boolean;
+}
+
+function hasOpenCodeFence(content: string) {
+  let openFence: '`' | '~' | null = null;
+  let openFenceLength = 0;
+
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!match) continue;
+
+    const fence = match[1][0] as '`' | '~';
+    if (!openFence) {
+      openFence = fence;
+      openFenceLength = match[1].length;
+      continue;
+    }
+
+    if (fence === openFence && match[1].length >= openFenceLength) {
+      openFence = null;
+      openFenceLength = 0;
+    }
+  }
+
+  return openFence !== null;
+}
+
+function hasScrollableStreamingCodeBlock(container: HTMLDivElement) {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>('[data-chat-streaming="true"] [data-streamdown="code-block-body"]')
+  ).some((block) => block.scrollHeight > block.clientHeight + 1);
 }
 
 export function ChatContainer({
@@ -35,10 +69,19 @@ export function ChatContainer({
   onSwitchVersion,
   onSelectOption,
   showScrollToBottom = true,
+  onOpenCodePreview,
+  hideToolCalls = false,
 }: ChatContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const followStreamingRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const isNearBottom = useCallback(() => {
+    if (!containerRef.current) return true;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    return scrollHeight - scrollTop - clientHeight < 100;
+  }, []);
 
   // Scroll to bottom within container only (not the page)
   const scrollToBottom = useCallback(() => {
@@ -50,22 +93,13 @@ export function ChatContainer({
     }
   }, []);
 
-  // Scroll to bottom instantly (for auto-scroll during streaming)
-  const scrollToBottomInstant = useCallback(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, []);
-
   // Track if user has manually scrolled up
   const handleScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    // Consider "at bottom" if within 100px of the bottom
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
-    userScrolledRef.current = !isAtBottom;
-    setShowScrollButton(!isAtBottom && messages.length > 0);
-  }, [messages.length]);
+    const atBottom = isNearBottom();
+    userScrolledRef.current = !atBottom;
+    followStreamingRef.current = atBottom;
+    setShowScrollButton(!atBottom && messages.length > 0);
+  }, [isNearBottom, messages.length]);
 
   // Get the last message's parts length for dependency tracking during streaming
   const lastMessagePartsLength = messages.length > 0
@@ -78,23 +112,30 @@ export function ChatContainer({
         .filter(p => p.type === 'text')
         .map(p => (p as { text: string }).text)
         .join('')
-        .length
-    : 0;
+    : '';
 
-  // Auto scroll to bottom when new messages arrive or streaming
-  useEffect(() => {
-    if (autoScroll && !userScrolledRef.current) {
-      scrollToBottomInstant();
+  // Auto scroll to bottom before paint so streaming height changes do not flash at the old position.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!autoScroll || userScrolledRef.current || !followStreamingRef.current || !container) {
+      return;
     }
-  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll, isStreaming, scrollToBottomInstant]);
+
+    if (isStreaming && hasOpenCodeFence(lastMessageText) && hasScrollableStreamingCodeBlock(container)) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll, isStreaming]);
 
   // Reset user scroll tracking when streaming starts
   useEffect(() => {
-    if (isStreaming) {
+    if (isStreaming && isNearBottom()) {
       userScrolledRef.current = false;
+      followStreamingRef.current = true;
       setShowScrollButton(false);
     }
-  }, [isStreaming]);
+  }, [isStreaming, isNearBottom]);
 
   // Hide scroll button when no messages
   useEffect(() => {
@@ -121,7 +162,7 @@ export function ChatContainer({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none]"
       >
         <div className="flex flex-col min-w-0">
           {messages.map((message, index) => {
@@ -137,6 +178,8 @@ export function ChatContainer({
                 onRegenerate={message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined}
                 onSwitchVersion={message.role === 'assistant' && onSwitchVersion ? (versionIndex) => onSwitchVersion(message.id, versionIndex) : undefined}
                 onSelectOption={onSelectOption}
+                onOpenCodePreview={onOpenCodePreview}
+                hideToolCalls={hideToolCalls}
               />
             );
           })}

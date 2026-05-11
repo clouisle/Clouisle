@@ -136,16 +136,24 @@ class OpenAIAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_completion_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+            # OpenAI o1/o3 reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
+                request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs
             if "response_format" in kwargs and kwargs["response_format"] is not None:
                 request_params["response_format"] = kwargs["response_format"]
 
-            response = await client.chat.completions.create(**request_params)
+            response = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             choice = response.choices[0]
             message = choice.message
@@ -227,22 +235,34 @@ class OpenAIAdapter(BaseChatAdapter):
 
             if self.temperature is not None:
                 request_params["temperature"] = self.temperature
+            if self.top_p is not None:
+                request_params["top_p"] = self.top_p
             if self.max_tokens is not None:
                 request_params["max_completion_tokens"] = self.max_tokens
             if openai_tools:
                 request_params["tools"] = openai_tools
+            # OpenAI o1/o3 reasoning effort (only when thinking is enabled)
+            if self.thinking_enabled and self.reasoning_effort:
+                request_params["reasoning_effort"] = self.reasoning_effort
 
             # Add response_format if provided in kwargs
             if "response_format" in kwargs and kwargs["response_format"] is not None:
                 request_params["response_format"] = kwargs["response_format"]
 
-            stream = await client.chat.completions.create(**request_params)
+            stream = await client.chat.completions.create(
+                **request_params,
+                extra_body=self.get_passthrough_body() or None,
+            )
 
             response_id = str(uuid.uuid4())
             tool_accumulator = ToolCallAccumulator()
 
             async for chunk in stream:
                 if not chunk.choices:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
+                    )
                     continue
 
                 delta = chunk.choices[0].delta
@@ -256,6 +276,8 @@ class OpenAIAdapter(BaseChatAdapter):
                     delta,
                     getattr(delta, "model_extra", None),
                 )
+
+                raw_tool_calls = getattr(delta, "tool_calls", None)
 
                 # 累加工具调用
                 tool_accumulator.accumulate(delta)
@@ -286,6 +308,11 @@ class OpenAIAdapter(BaseChatAdapter):
                         tool_calls=tool_calls_delta,
                         finish_reason=finish_reason,
                         response_id=response_id,
+                    )
+                elif raw_tool_calls:
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
                     )
         finally:
             await client.close()

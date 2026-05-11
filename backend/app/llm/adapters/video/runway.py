@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.i18n import t
 from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import (
     TaskStatus,
@@ -41,7 +42,7 @@ class RunwayVideoAdapter(BaseVideoAdapter):
         task_id = task.get("id")
         if not task_id:
             raise ProviderError(
-                message="Runway video task did not return an id",
+                message=t("runway_video_task_missing_id"),
                 provider="runway",
                 model=self.model_id,
             )

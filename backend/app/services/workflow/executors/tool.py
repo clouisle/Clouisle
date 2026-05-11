@@ -8,8 +8,12 @@ from typing import TYPE_CHECKING, Any
 import logging
 import json
 
+from app.services.error_messages import resolve_user_visible_error
+
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..stream import StreamManager
+from ..errors import translate_public_workflow_error
+from ..types import NodeOutputDecl, TypeSpec, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -74,7 +78,7 @@ class ToolNodeExecutor(NodeExecutor):
         output_var = config.get("outputVariable", "result")
 
         if not tool_id and not (tool_type == "builtin" and tool_name):
-            return ExecutionResult(error="Tool ID not configured")
+            return ExecutionResult(error="tool_not_found")
 
         # Resolve inputs
         inputs = await self.resolve_inputs(context, input_mappings)
@@ -98,7 +102,7 @@ class ToolNodeExecutor(NodeExecutor):
                 # Load tool
                 tool = await Tool.filter(id=tool_id).first()
                 if not tool:
-                    return ExecutionResult(error=f"Tool not found: {tool_id}")
+                    return ExecutionResult(error="tool_not_found")
 
                 result = await tool_executor.execute(
                     tool=tool,
@@ -122,17 +126,18 @@ class ToolNodeExecutor(NodeExecutor):
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.exception(f"Tool execution error: {e}")
+            public_error = translate_public_workflow_error(e)
             outputs = {
                 "result": None,
                 "status": "error",
-                "error": str(e),
+                "error": public_error,
                 "executionTime": duration_ms,
             }
             if output_var and output_var != "result":
                 outputs[output_var] = None
             return ExecutionResult(
                 outputs=outputs,
-                error=f"Tool execution failed: {str(e)}",
+                error=public_error,
             )
 
     def get_output_variables(self, config: dict) -> list[dict]:
@@ -146,6 +151,18 @@ class ToolNodeExecutor(NodeExecutor):
         if output_var and output_var != "result":
             variables.insert(0, {"name": output_var, "type": "any"})
         return variables
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        output_var = config.get("outputVariable", "result")
+        specs = [
+            NodeOutputDecl(name="result", type=TypeSpec(kind="any")),
+            NodeOutputDecl(name="status", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="executionTime", type=TypeSpec(kind="number")),
+        ]
+        if output_var and output_var != "result":
+            specs.insert(0, NodeOutputDecl(name=output_var, type=TypeSpec(kind="any")))
+        return specs
 
 
 @NodeExecutorRegistry.register("agent")
@@ -196,12 +213,12 @@ class AgentNodeExecutor(NodeExecutor):
         max_turns = config.get("maxTurns", 10)
 
         if not agent_id:
-            return ExecutionResult(error="Agent ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Load agent
         agent = await Agent.filter(id=agent_id).first()
         if not agent:
-            return ExecutionResult(error=f"Agent not found: {agent_id}")
+            return ExecutionResult(error="agent_not_found")
 
         # Resolve message
         message = await self._resolve_template(message_template, context)
@@ -262,7 +279,7 @@ class AgentNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"Agent execution error: {e}")
-            return ExecutionResult(error=f"Agent error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     async def _resolve_template(
         self,
@@ -290,6 +307,14 @@ class AgentNodeExecutor(NodeExecutor):
             {"name": "response", "type": "string"},
             {"name": "toolCalls", "type": "array"},
             {"name": "usage", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="response", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="toolCalls", type=TypeSpec(kind="array")),
+            NodeOutputDecl(name="usage", type=TypeSpec(kind="object")),
         ]
 
 
@@ -338,7 +363,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
         timeout = config.get("timeout", 30)
 
         if not url_template:
-            return ExecutionResult(error="URL not configured")
+            return ExecutionResult(error="tool_execution_failed")
 
         # Resolve templates
         url = await self._resolve_template(url_template, context)
@@ -346,7 +371,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
         for key, value in headers_template.items():
             headers[key] = await self._resolve_template(str(value), context)
 
-        body: Any = None
+        body: WorkflowValue | None = None
         if body_template:
             if isinstance(body_template, str):
                 body = await self._resolve_template(body_template, context)
@@ -379,10 +404,15 @@ class HTTPRequestNodeExecutor(NodeExecutor):
                 )
 
         except httpx.TimeoutException:
-            return ExecutionResult(error=f"Request timed out after {timeout}s")
+            return ExecutionResult(
+                error=resolve_user_visible_error(
+                    f"Request timed out after {timeout}s",
+                    fallback_key="request_timeout",
+                )
+            )
         except Exception as e:
             logger.exception(f"HTTP request error: {e}")
-            return ExecutionResult(error=f"HTTP request failed: {str(e)}")
+            return ExecutionResult(error=resolve_user_visible_error(str(e)))
 
     async def _resolve_template(
         self,
@@ -435,4 +465,12 @@ class HTTPRequestNodeExecutor(NodeExecutor):
             {"name": "statusCode", "type": "number"},
             {"name": "body", "type": "any"},
             {"name": "headers", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(name="statusCode", type=TypeSpec(kind="number")),
+            NodeOutputDecl(name="body", type=TypeSpec(kind="any")),
+            NodeOutputDecl(name="headers", type=TypeSpec(kind="object")),
         ]

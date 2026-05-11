@@ -24,18 +24,18 @@ Monitoring setup for Clouisle.
 
 ```bash
 # Docker Compose
-docker compose logs -f backend
+docker compose logs -f api
 docker compose logs -f worker
 
 # Kubernetes
-kubectl logs -f deployment/backend
+kubectl logs -f deployment/api
 kubectl logs -f deployment/worker
 ```
 
 ### Access Logs
 
 - Nginx access logs (frontend)
-- Gunicorn access logs (backend)
+- Gunicorn access logs (api)
 
 ## Integration with Monitoring Tools
 

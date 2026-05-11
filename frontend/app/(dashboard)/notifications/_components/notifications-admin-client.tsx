@@ -19,12 +19,23 @@ import { toast } from 'sonner'
 import { CreateNotificationDialog } from './create-notification-dialog'
 import { NotificationDetailDialog } from './notification-detail-dialog'
 import { formatDateTime } from '@/lib/utils'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
 
 function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
   const t = useTranslations('notifications')
+
+  const getChannelLabel = (channel: string) => {
+    const key = `channel.${channel}`
+    return t.has(key) ? t(key) : channel
+  }
+
+  const getDeliveryStatusLabel = (status: string) => {
+    const key = `deliveryStatus.${status}`
+    return t.has(key) ? t(key) : status
+  }
 
   const channelIcon = delivery.channel === 'email' ? (
     <Mail className="h-3.5 w-3.5" />
@@ -43,8 +54,8 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
   )
 
   const tooltipContent = delivery.error_message
-    ? `${t(`deliveryStatus.${delivery.status}`)}: ${delivery.error_message}`
-    : t(`deliveryStatus.${delivery.status}`)
+    ? `${getDeliveryStatusLabel(delivery.status)}: ${delivery.error_message}`
+    : getDeliveryStatusLabel(delivery.status)
 
   return (
     <Tooltip>
@@ -55,7 +66,7 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <p>{t(`channel.${delivery.channel}`)}: {tooltipContent}</p>
+        <p>{getChannelLabel(delivery.channel)}: {tooltipContent}</p>
         {delivery.retry_count > 0 && (
           <p className="text-xs text-muted-foreground">
             {t('retryCount', { count: delivery.retry_count })}
@@ -69,6 +80,16 @@ function DeliveryStatusIcon({ delivery }: { delivery: NotificationDelivery }) {
 export function NotificationsAdminClient() {
   const t = useTranslations('notifications')
   const tCommon = useTranslations('common')
+
+  const getScopeLabel = (scope: string) => {
+    const key = `scopeOptions.${scope}`
+    return t.has(key) ? t(key) : scope
+  }
+
+  const getLevelLabel = (level: string) => {
+    const key = `levelOptions.${level}`
+    return t.has(key) ? t(key) : level
+  }
 
   const [items, setItems] = React.useState<NotificationItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -84,7 +105,7 @@ export function NotificationsAdminClient() {
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
 
   // Filter states
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
@@ -141,13 +162,13 @@ export function NotificationsAdminClient() {
   // Scope options
   const scopeOptions = SCOPES.map(scope => ({
     value: scope,
-    label: t(`scopeOptions.${scope}`),
+    label: getScopeLabel(scope),
   }))
 
   // Level options
   const levelOptions = LEVELS.map(level => ({
     value: level,
-    label: t(`levelOptions.${level}`),
+    label: getLevelLabel(level),
   }))
 
   // Calculate total pages based on server total
@@ -343,10 +364,10 @@ export function NotificationsAdminClient() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{t(`scopeOptions.${item.scope}`)}</Badge>
+                    <Badge variant="secondary">{getScopeLabel(item.scope)}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{t(`levelOptions.${item.level}`)}</Badge>
+                    <Badge variant="outline">{getLevelLabel(item.level)}</Badge>
                   </TableCell>
                   <TableCell>
                     {item.deliveries && item.deliveries.length > 0 ? (

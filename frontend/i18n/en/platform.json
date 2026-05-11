@@ -4,7 +4,7 @@
       "home": "Home",
       "apps": "Apps",
       "kb": "Knowledge Bases",
-      "tools": "Tools",
+      "capabilities": "Capabilities",
       "models": "Models",
       "notifications": "Notifications",
       "memories": "My Memories"
@@ -54,7 +54,7 @@
       "title": "Dashboard",
       "welcome": "Welcome back, {name}",
       "welcomeDefault": "Welcome to Clouisle",
-      "description": "Manage your AI applications, knowledge bases, tools, and models",
+      "description": "Manage your AI applications, knowledge bases, capabilities, and models",
       "viewAll": "View All",
       "createNew": "Create New",
       "stats": {
@@ -94,11 +94,15 @@
           "description": "Configure AI models for your team"
         },
         "manageTools": {
-          "title": "Manage Tools",
-          "description": "Configure and manage available tools"
+          "title": "Manage Capabilities",
+          "description": "Manage available tools and skills"
         }
       },
       "recentItems": "Recent Items",
+      "recentItemTypes": {
+        "agent": "Agent",
+        "workflow": "Workflow"
+      },
       "noRecentItems": "No recent items yet",
       "createFirst": "Create Your First App",
       "quickStart": "Quick Start",
@@ -124,8 +128,8 @@
           "description": "Upload documents and create knowledge bases"
         },
         "tools": {
-          "title": "Tools",
-          "description": "Configure and manage available tools"
+          "title": "Capabilities",
+          "description": "Manage available tools and skills"
         },
         "models": {
           "title": "Models",
@@ -150,14 +154,18 @@
       "createFirstKb": "Create First Knowledge Base"
     },
     "tools": {
-      "title": "Tool Center",
-      "description": "Manage and configure available tools",
+      "title": "Capabilities",
+      "description": "Manage available tools and skills",
       "createTool": "Create Tool",
       "noTools": "No tools yet",
       "createToolHint": "Add tools to extend your AI application capabilities",
       "createFirstTool": "Create First Tool",
       "refresh": "Refresh",
       "searchPlaceholder": "Search tools...",
+      "tabs": {
+        "tools": "Tools",
+        "skills": "Skills"
+      },
       "noSearchResults": "No tools found",
       "requiresConfig": "Requires configuration",
       "parameters": "Parameters",
@@ -177,6 +185,7 @@
       "toolDeleted": "Tool deleted successfully",
       "configSaved": "Configuration saved successfully",
       "configSaveFailed": "Failed to save configuration",
+      "selectTeam": "Select Team",
       "confirmDelete": "Delete Tool",
       "deleteToolConfirm": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
       "filters": {
@@ -192,6 +201,7 @@
         "web": "Web",
         "file": "File",
         "code": "Code",
+        "sandbox": "Sandbox",
         "api": "API",
         "data": "Data",
         "other": "Other"
@@ -205,6 +215,8 @@
         "name": "Name",
         "nameHint": "Unique identifier, cannot be changed after creation",
         "displayName": "Display Name",
+        "displayNamePlaceholder": "Enter display name",
+        "displayNameRequired": "Display name is required",
         "description": "Description",
         "descriptionPlaceholder": "Describe what this tool does",
         "icon": "Icon",
@@ -213,6 +225,7 @@
         "httpConfig": "HTTP Configuration",
         "httpMethod": "Method",
         "url": "URL",
+        "urlRequired": "URL is required",
         "urlHint": "Supports {{variable}} placeholders",
         "timeout": "Timeout (s)",
         "advancedSettings": "Advanced Settings",
@@ -232,7 +245,9 @@
       },
       "configDialog": {
         "title": "Configure {name}",
-        "description": "Set up API keys and credentials for this tool"
+        "description": "Set up API keys and credentials for this tool",
+        "tavilyApiKeyLabel": "Tavily API Key",
+        "tavilyApiKeyDescription": "Get your API key from Tavily"
       },
       "httpDialog": {
         "createTitle": "Create HTTP Tool",
@@ -246,11 +261,19 @@
         "contentType": "Content Type",
         "bodyTemplate": "Body Template",
         "bodyTemplateHint": "Use '{{variable}}' as placeholders",
+        "multipartFormData": "multipart/form-data (File Upload)",
         "formFields": "Form Fields",
         "formFieldsHint": "Configure multipart/form-data form fields. File fields reference file-type parameters",
         "fieldName": "Field Name",
         "fieldTypeText": "Text",
         "fieldTypeFile": "File",
+        "paramTypeString": "String",
+        "paramTypeNumber": "Number",
+        "paramTypeBoolean": "Boolean",
+        "paramTypeArray": "Array",
+        "paramTypeObject": "Object",
+        "paramTypeFile": "File",
+        "paramTypeImage": "Image",
         "addField": "Add Field",
         "timeout": "Timeout",
         "parameters": "Input Parameters",
@@ -260,7 +283,13 @@
         "paramName": "Parameter name",
         "paramDescription": "Description (optional)",
         "required": "Required",
-        "variableCompletion": "Parameter suggestions"
+        "variableCompletion": "Parameter suggestions",
+        "toolNamePlaceholder": "my_api_tool",
+        "urlPlaceholder": "https://api.example.com/｛｛id｝｝/data",
+        "keyPlaceholder": "Key",
+        "headerValuePlaceholder": "｛｛token｝｝",
+        "queryValuePlaceholder": "｛｛query｝｝",
+        "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
       },
       "mcpDialog": {
         "createTitle": "Add MCP Server",
@@ -290,7 +319,19 @@
         "toolsLoaded": "Loaded {count} tools",
         "fetchToolsFailed": "Failed to fetch tools, please check the configuration",
         "commandRequired": "Please enter a command",
-        "urlRequired": "Please enter server URL"
+        "urlRequired": "Please enter server URL",
+        "serverNamePlaceholder": "my_mcp_server",
+        "commandPlaceholder": "npx",
+        "argumentPlaceholder": "arg {index}",
+        "headerKeyPlaceholder": "KEY",
+        "headerValuePlaceholder": "value",
+        "sseUrlPlaceholder": "http://localhost:3000/sse",
+        "headerNamePlaceholder": "Header-Name",
+        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+      },
+      "testPanel": {
+        "arrayPlaceholder": "[\"item1\", \"item2\"]",
+        "objectPlaceholder": "{\"key\": \"value\"}"
       },
       "codeEditor": {
         "newTitle": "New Code Tool",
@@ -311,12 +352,62 @@
         "inputHint": "Test parameters in JSON format",
         "outputResult": "Output Result",
         "noOutput": "Run code to see output",
-        "defaultDescription": "Custom code tool"
+        "defaultDescription": "Custom code tool",
+        "runtime": "Runtime",
+        "pythonPackages": "Python Packages",
+        "pythonPackagesPlaceholder": "Pygments==2.18.0",
+        "pythonPackagesHint": "One pinned package per line. Use exact == versions.",
+        "jsPackages": "JavaScript Packages",
+        "jsPackagesPlaceholder": "semver@7.5.4",
+        "jsPackagesHint": "One pinned package per line. Use exact package@version entries.",
+        "pythonPackageIndexUrl": "Python Package Index URL",
+        "pythonPackageIndexUrlPlaceholder": "https://mirror.example.com/simple",
+        "nodePackageRegistryUrl": "Node Package Registry URL",
+        "nodePackageRegistryUrlPlaceholder": "https://registry.example.com/npm",
+        "packageSourceUrlHint": "Optional. Must be an absolute http(s) URL without embedded credentials. Only affects package installation.",
+        "command": "Command (argv)",
+        "commandPlaceholder": "python\n-X\nutf8",
+        "commandHint": "Optional. One argument per line. The generated script path is appended automatically.",
+        "invalidJsonInput": "Test input must be valid JSON",
+        "invalidPythonPackage": "Python package \"{value}\" must use an exact == version",
+        "invalidJsPackage": "JavaScript package \"{value}\" must use an exact package@version",
+        "invalidPackageSourceUrl": "Package source URL \"{value}\" must be an absolute http(s) URL without embedded credentials",
+        "logsLabel": "Logs",
+        "resultLabel": "Result",
+        "errorLabel": "Error",
+        "durationLabel": "Duration",
+        "limits": "Limits",
+        "timeoutSeconds": "Timeout (s)",
+        "diskMb": "Disk (MB)",
+        "maxStdoutKb": "Max stdout (KB)",
+        "maxStderrKb": "Max stderr (KB)",
+        "artifacts": "Artifacts",
+        "addArtifact": "Add Artifact",
+        "artifactPath": "Artifact Path",
+        "artifactPathPlaceholder": "/workspace/output/result.json",
+        "artifactDescription": "Description",
+        "artifactOptional": "Optional",
+        "invalidArtifactPath": "Artifact path \"{value}\" must stay under /workspace",
+        "artifactsLabel": "Artifacts",
+        "executionFailed": "Execution failed",
+        "languageJavaScript": "JavaScript",
+        "languagePython": "Python",
+        "paramTypeString": "String",
+        "paramTypeNumber": "Number",
+        "paramTypeInteger": "Integer",
+        "paramTypeBoolean": "Boolean",
+        "paramTypeArray": "Array",
+        "paramTypeObject": "Object",
+        "defaultInputDescription": "Input content"
       },
       "error": {
         "loadFailed": "Failed to load tool",
         "saveFailed": "Failed to save",
         "nameRequired": "Tool name is required",
+        "unknownToolType": "Unknown tool type",
+        "cannotDeleteBuiltin": "Cannot delete built-in tools",
+        "cannotShareBuiltin": "Cannot share built-in tools",
+        "noTeamSelected": "No team selected",
         "invalidName": "Tool name must start with a letter and contain only letters, numbers, and underscores",
         "duplicateParamName": "Parameter names must be unique"
       },
@@ -360,6 +451,89 @@
         "sharedBadge": "Shared",
         "sharedFrom": "From {teamName}",
         "sharedWithCount": "Shared with {count} teams"
+      }
+    },
+    "skills": {
+      "title": "Skill Center",
+      "description": "Import Skills from zip bundles or Git repositories, then let Agents call the installed Skills.",
+      "noSkills": "No skills yet",
+      "noSkillsHint": "Import a zip bundle or Git repository that contains one or more SKILL.md packages.",
+      "searchPlaceholder": "Search Skills...",
+      "refresh": "Refresh",
+      "updated": "Skill updated successfully",
+      "deleted": "Skill deleted successfully",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "enable": "Enable",
+      "disable": "Disable",
+      "system": "System",
+      "team": "Team",
+      "scope": "Scope",
+      "sources": {
+        "zip": "Zip",
+        "git": "Git",
+        "manual_text": "Manual",
+        "legacy": "Legacy"
+      },
+      "test": "Test",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "close": "Close",
+      "runTest": "Run Test",
+      "success": "Success",
+      "failed": "Failed",
+      "arguments": "Arguments",
+      "artifacts": "Artifacts",
+      "download": "Download",
+      "testTitle": "Test {name}",
+      "testDescription": "Run this Skill with JSON arguments. Instructions-mode Skills return their SKILL.md instructions.",
+      "noDescription": "No description",
+      "rowsPerPage": "Rows per page",
+      "pageInfo": "Page {page} of {total}",
+      "category": "Category",
+      "version": "Version",
+      "source": "Source",
+      "updatedAt": "Updated At",
+      "actions": "Actions",
+      "import": {
+        "open": "Import Skills",
+        "title": "Import Skills",
+        "description": "Scan a zip bundle or the full public HTTPS Git repository for Skill folders that contain SKILL.md.",
+        "zip": "Zip Upload",
+        "git": "Git Repository",
+        "zipFile": "Zip file",
+        "zipRequired": "Please select a .zip file",
+        "zipTooLarge": "Zip file is too large, maximum 50MB",
+        "repoUrl": "Repository URL",
+        "ref": "Branch, tag, or commit",
+        "scan": "Scan Preview",
+        "previewTitle": "Preview",
+        "previewSummary": "{valid} valid, {invalid} invalid",
+        "packagePath": "Package path",
+        "name": "Skill",
+        "mode": "Mode",
+        "status": "Status",
+        "action": "Action",
+        "valid": "Valid",
+        "conflict": "Conflict",
+        "duplicateName": "Duplicate name",
+        "modeTips": {
+          "instructions": "Returns the SKILL.md instructions to the Agent. No code is executed.",
+          "script": "Runs a declared script from the Skill package in the sandbox.",
+          "legacy": "Uses the old sandbox Skill configuration for compatibility."
+        },
+        "install": "Install",
+        "update": "Update",
+        "skip": "Skip",
+        "installSelected": "Install Selected",
+        "installed": "Skills installed successfully",
+        "errors": {
+          "duplicateNameInSource": "Duplicate Skill name in this source",
+          "invalidPackage": "Invalid Skill package",
+          "packageNotInSession": "Package is not in this import session",
+          "packagePathInvalid": "Invalid package path",
+          "nameExists": "A Skill with this name already exists"
+        }
       }
     },
     "models": {

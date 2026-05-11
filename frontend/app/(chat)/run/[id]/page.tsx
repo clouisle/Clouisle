@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Loader2, AlertCircle, Sparkles, GitBranch, ChevronDown, ChevronUp } from 'lucide-react'
 import Image from 'next/image'
-import { publicAgentsApi, workflowsApi, type Agent, type Workflow } from '@/lib/api'
+import { ApiError, publicAgentsApi, workflowsApi, type PublicAgent, type Workflow } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -25,7 +25,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   const tVars = useTranslations('chat.variables')
 
   const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
-  const [metadata, setMetadata] = React.useState<Agent | Workflow | null>(null)
+  const [metadata, setMetadata] = React.useState<PublicAgent | Workflow | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [error, setError] = React.useState<Error | null>(null)
   const [input, setInput] = React.useState('')
@@ -50,20 +50,21 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
 
         if (type === 'agent') {
           const data = await publicAgentsApi.getPublicAgent(resolvedParams.id)
-          setMetadata(data as Agent)
+          setMetadata(data as PublicAgent)
         } else {
           const data = await workflowsApi.getWorkflow(resolvedParams.id)
           setMetadata(data as Workflow)
         }
       } catch (err) {
-        setError(err as Error)
+        const isNotFound = err instanceof ApiError && (err.code === 404 || (err.code >= 4000 && err.code < 5000))
+        setError(new Error(isNotFound ? t('notFound') : t('loadError')))
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchMetadata()
-  }, [resolvedParams, type])
+  }, [resolvedParams, type, t])
 
   // Extract variables from metadata (for workflow, we'll handle query separately)
   const variables = React.useMemo(() => {
@@ -78,6 +79,8 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
     setValues: setVariableValues,
     needsInput: needsVariableInput,
     isValid: variablesValid,
+    fieldErrors: variableFieldErrors,
+    validate: validateVariables,
   } = useVariableForm(variables)
 
   // Check if there are any visible variables
@@ -125,9 +128,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return
 
-    // Check if required variables are filled
-    if (needsVariableInput && !variablesValid) {
-      // Open the variable panel if required fields are not filled
+    if (needsVariableInput && !validateVariables()) {
       setVariablesOpen(true)
       return
     }
@@ -165,7 +166,9 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
     )
   }
 
-  const isIconUrl = metadata.icon && (metadata.icon.startsWith('http') || metadata.icon.startsWith('/'))
+  const avatarUrl = 'avatar_url' in metadata ? metadata.avatar_url : null
+  const displayIcon = metadata.icon || avatarUrl
+  const isIconUrl = Boolean(displayIcon && (displayIcon.startsWith('http') || displayIcon.startsWith('/')))
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       {/* Main Content */}
@@ -175,11 +178,11 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
           <div className="flex items-center gap-3">
             {/* Icon */}
             <div className="flex items-center gap-2">
-              {metadata.icon ? (
+              {displayIcon ? (
                 isIconUrl ? (
                   <div className="relative h-6 w-6 rounded overflow-hidden">
                     <Image
-                      src={metadata.icon}
+                      src={displayIcon}
                       alt={metadata.name}
                       fill
                       unoptimized
@@ -187,7 +190,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                     />
                   </div>
                 ) : (
-                  <span className="text-lg">{metadata.icon}</span>
+                  <span className="flex h-6 w-6 items-center justify-center leading-none text-lg">{displayIcon}</span>
                 )
               ) : type === 'agent' ? (
                 <Sparkles className="h-5 w-5 text-primary" />
@@ -210,19 +213,20 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
           <ChatContainer
             messages={messages}
             isStreaming={isStreaming}
+            hideToolCalls={type === 'agent' ? Boolean((metadata as PublicAgent).hide_tool_calls) : false}
             className="flex-1 min-h-0 overflow-y-auto"
             onSelectOption={(option) => {
-              sendMessage(option)
+              void handleSendMessage(option)
             }}
             emptyState={
               <div className="flex-1 flex flex-col items-center justify-center px-4">
                 {/* Icon */}
                 <div className="mb-8">
-                  {metadata.icon ? (
+                  {displayIcon ? (
                     isIconUrl ? (
                       <div className="relative h-20 w-20 rounded-full overflow-hidden ring-2 ring-border">
                         <Image
-                          src={metadata.icon}
+                          src={displayIcon}
                           alt={metadata.name}
                           fill
                           unoptimized
@@ -231,7 +235,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                       </div>
                     ) : (
                       <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center ring-2 ring-border">
-                        <span className="text-4xl">{metadata.icon}</span>
+                        <span className="flex h-full w-full items-center justify-center leading-none text-4xl">{displayIcon}</span>
                       </div>
                     )
                   ) : (
@@ -301,6 +305,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
                           variables={variables}
                           values={variableValues}
                           onChange={setVariableValues}
+                          fieldErrors={variableFieldErrors}
                           className="space-y-2"
                         />
                       </div>
@@ -316,7 +321,7 @@ export default function UnifiedRunPage({ params }: UnifiedRunPageProps) {
               onSubmit={handleSendMessage}
               onStop={stop}
               placeholder={needsVariableInput && !variablesValid ? tVars('fillRequired') : (type === 'workflow' ? t('workflowInputPlaceholder') : t('typePlaceholder'))}
-              disabled={(runLoading && !isStreaming) || (needsVariableInput && !variablesValid)}
+              disabled={runLoading && !isStreaming}
               isLoading={runLoading}
               isStreaming={isStreaming}
             />

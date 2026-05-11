@@ -37,7 +37,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $${REDIS_PASSWORD}} ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,11 +60,17 @@ services:
   # ---------------------------------------------------------------------------
   # Application
   # ---------------------------------------------------------------------------
-  backend:
+  api:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
+    command: ["python", "main.py", "server", "-H", "0.0.0.0", "-w", "4", "--no-reload"]
     env_file: .env
     environment:
+      API_BASE_URL: http://api:8000
+      SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
@@ -82,10 +88,15 @@ services:
 
   worker:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "worker", "-c", "4", "-Q", "default,workflow"]
     env_file: .env
     environment:
+      API_BASE_URL: http://api:8000
+      SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
@@ -98,15 +109,46 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-      backend:
+      api:
+        condition: service_started
+
+  sandbox-worker:
+    image: ${IMAGE_REGISTRY:-clouisle}-sandbox-worker:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/sandbox-worker.Dockerfile
+    restart: unless-stopped
+    command: ["python", "main.py", "sandbox-worker", "-c", "${SANDBOX_WORKER_CONCURRENCY:-1}"]
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:8000
+      SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
+      POSTGRES_SERVER: db
+      REDIS_HOST: redis
+      QDRANT_URL: http://qdrant:6333
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      api:
         condition: service_started
 
   beat:
     image: ${IMAGE_REGISTRY:-clouisle}-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/backend.Dockerfile
     restart: unless-stopped
     command: ["python", "main.py", "beat"]
     env_file: .env
     environment:
+      API_BASE_URL: http://api:8000
+      SANDBOX_ARTIFACT_UPLOAD_BASE_URL: http://api:8000
       POSTGRES_SERVER: db
       REDIS_HOST: redis
       QDRANT_URL: http://qdrant:6333
@@ -115,16 +157,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend:
+      api:
         condition: service_started
 
   frontend:
     image: ${IMAGE_REGISTRY:-clouisle}-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/dockerfiles/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.0.0-dev}
+        NEXT_PUBLIC_BUILD_DATE: ${NEXT_PUBLIC_BUILD_DATE:-unknown}
     restart: unless-stopped
     ports:
       - "3000:3000"
     depends_on:
-      backend:
+      api:
         condition: service_started
 
 volumes:

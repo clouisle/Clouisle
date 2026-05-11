@@ -27,7 +27,7 @@ export function StartNodeConfig({
     <div className="space-y-4">
       {/* 系统参数（只读） */}
       <div className="space-y-2">
-        <Label className="text-xs font-medium text-muted-foreground">SYSTEM</Label>
+        <Label className="text-xs font-medium text-muted-foreground">{t('configStart.system')}</Label>
         <div className="space-y-1">
           {systemParameters.map((param) => (
             <div 

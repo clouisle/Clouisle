@@ -40,6 +40,7 @@
     "deleteEntitySuccess": "Entity deleted",
     "deleteRelationSuccess": "Relation deleted",
     "deleteSelectedConfirm": "Are you sure you want to delete {count} selected entities? This action cannot be undone.",
+    "unknown": "Unknown",
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
     "fitView": "Fit View",

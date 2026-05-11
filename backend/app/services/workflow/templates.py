@@ -9,11 +9,12 @@ Provides a template system for reusable workflow patterns:
 
 import json
 import logging
-from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime
-from uuid import uuid4
 from enum import Enum
+from uuid import uuid4
+
+from .types import WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,9 @@ class TemplateVariable:
     label: str
     description: str
     variable_type: str  # string, number, boolean, select, model, tool
-    default_value: Any = None
+    default_value: WorkflowValue | None = None
     required: bool = True
-    options: list[Any] = field(default_factory=list)  # For select type
+    options: list[WorkflowValue] = field(default_factory=list)  # For select type
     validation: dict = field(default_factory=dict)  # Validation rules
 
     def to_dict(self) -> dict:
@@ -749,7 +750,9 @@ class TemplateManager:
             "template_version": template.version,
         }
 
-    def _replace_variables(self, data: Any, variables: dict) -> Any:
+    def _replace_variables(
+        self, data: WorkflowValue, variables: dict[str, WorkflowValue]
+    ) -> WorkflowValue:
         """Recursively replace {{variable}} placeholders."""
         if isinstance(data, str):
             for name, value in variables.items():

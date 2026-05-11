@@ -14,6 +14,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from app.core.config import settings
+from app.core.i18n import t
+from app.services.error_messages import resolve_user_visible_error
+from app.services.sandbox.compiler import compile_legacy_code_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +48,8 @@ class CodeSandbox:
     def __init__(
         self,
         timeout: float = 30.0,
-        max_memory_mb: int = 128,
     ):
         self.timeout = timeout
-        self.max_memory_mb = max_memory_mb
 
     async def execute(
         self,
@@ -75,7 +80,7 @@ class CodeSandbox:
         else:
             return ExecutionResult(
                 success=False,
-                error=f"Unsupported language: {language}",
+                error=t("unsupported_code_execution_language", language=language),
             )
 
     async def _execute_javascript(
@@ -88,7 +93,7 @@ class CodeSandbox:
         if not shutil.which("node"):
             return ExecutionResult(
                 success=False,
-                error="Node.js is not installed on the server",
+                error=t("tool_execution_failed"),
             )
 
         # 创建包装代码
@@ -146,7 +151,7 @@ async function __execute__() {{
         if not python_cmd:
             return ExecutionResult(
                 success=False,
-                error="Python is not installed on the server",
+                error=t("tool_execution_failed"),
             )
 
         params_json = json.dumps(params)
@@ -233,7 +238,7 @@ except Exception as e:
                 await process.wait()
                 return ExecutionResult(
                     success=False,
-                    error=f"Execution timeout ({self.timeout}s)",
+                    error=t("request_timeout"),
                 )
 
             stdout_str = stdout.decode("utf-8", errors="replace")
@@ -253,7 +258,12 @@ except Exception as e:
                     return ExecutionResult(
                         success=result_data.get("success", False),
                         result=result_data.get("result"),
-                        error=result_data.get("error"),
+                        error=None
+                        if result_data.get("success", False)
+                        else resolve_user_visible_error(
+                            result_data.get("error"),
+                            fallback_key="code_tool_execution_failed",
+                        ),
                         stdout=logs_str,
                         stderr=stderr_str,
                     )
@@ -261,7 +271,7 @@ except Exception as e:
                     logger.error(f"Failed to parse execution result: {e}")
                     return ExecutionResult(
                         success=False,
-                        error=f"Failed to parse result: {e}",
+                        error=t("code_tool_execution_failed"),
                         stdout=stdout_str,
                         stderr=stderr_str,
                     )
@@ -270,14 +280,20 @@ except Exception as e:
                 if process.returncode != 0:
                     return ExecutionResult(
                         success=False,
-                        error=stderr_str
-                        or f"Process exited with code {process.returncode}",
+                        error=resolve_user_visible_error(
+                            stderr_str
+                            or t(
+                                "sandbox_process_exit_code",
+                                exit_code=process.returncode,
+                            ),
+                            fallback_key="code_tool_execution_failed",
+                        ),
                         stdout=stdout_str,
                         stderr=stderr_str,
                     )
                 return ExecutionResult(
                     success=False,
-                    error="No result returned from code execution",
+                    error=t("code_tool_execution_failed"),
                     stdout=stdout_str,
                     stderr=stderr_str,
                 )
@@ -286,7 +302,7 @@ except Exception as e:
             logger.exception(f"Subprocess execution error: {e}")
             return ExecutionResult(
                 success=False,
-                error=f"Execution error: {str(e)}",
+                error=t("tool_execution_failed"),
             )
 
 
@@ -299,6 +315,9 @@ async def execute_code(
     code: str,
     params: dict[str, Any] | None = None,
     timeout: float = 30.0,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+    team_id: str | None = None,
 ) -> ExecutionResult:
     """
     执行代码的便捷函数
@@ -312,5 +331,44 @@ async def execute_code(
     Returns:
         执行结果
     """
+    if settings.SANDBOX_RUNTIME_ENABLED:
+        job = compile_legacy_code_job(
+            language=language,
+            code=code,
+            params=params,
+            timeout=timeout,
+            source=SandboxJobSource.LEGACY_SNIPPET,
+        )
+        try:
+            runtime_result = await sandbox_gateway.submit_and_wait(
+                job,
+                timeout_seconds=timeout + 5,
+                session_id=session_id,
+                agent_id=agent_id,
+                team_id=team_id,
+            )
+            if runtime_result.success:
+                return ExecutionResult(
+                    success=True,
+                    result=runtime_result.result,
+                    error=runtime_result.error,
+                    stdout=runtime_result.stdout,
+                    stderr=runtime_result.stderr,
+                )
+            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+                return ExecutionResult(
+                    success=False,
+                    result=runtime_result.result,
+                    error=runtime_result.error,
+                    stdout=runtime_result.stdout,
+                    stderr=runtime_result.stderr,
+                )
+        except Exception as e:
+            logger.warning(
+                "Sandbox runtime gateway failed, falling back to legacy runner: %s", e
+            )
+            if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
+                return ExecutionResult(success=False, error=t("tool_execution_failed"))
+
     sandbox = CodeSandbox(timeout=timeout)
     return await sandbox.execute(language, code, params)

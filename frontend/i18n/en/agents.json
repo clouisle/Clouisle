@@ -30,6 +30,8 @@
       "maxIterationsLabel": "Max Iterations",
       "maxIterationsTooltip": "Maximum number of iterations the agent can perform when using tools. Each tool call counts as one iteration.",
       "maxIterationsHint": "Max tool call iterations (1-200)",
+      "hideToolCalls": "Hide Tool Calls",
+      "hideToolCallsDesc": "Hide tool call details in chat while keeping tools enabled.",
       "conversationConfig": "Conversation Settings",
       "suggestedQuestionsPlaceholder": "One question per line",
       "promptDesc": "Define the agent's role and behavior",
@@ -174,12 +176,21 @@
           "paragraph": "Paragraph",
           "select": "Dropdown",
           "number": "Number",
-          "checkbox": "Checkbox"
+          "checkbox": "Checkbox",
+          "string": "Text",
+          "boolean": "Boolean",
+          "array": "Array",
+          "object": "Object",
+          "file": "File",
+          "image": "Image",
+          "files": "Files",
+          "images": "Images"
         },
         "dialog": {
           "title": "Edit Variable",
           "fieldType": "Field Type",
           "variableName": "Variable Name",
+          "variableNamePlaceholder": "name",
           "displayName": "Display Name",
           "displayNamePlaceholder": "Display name",
           "options": "Options",
@@ -223,6 +234,7 @@
           "searchModeHybrid": "Hybrid Search",
           "searchModeHint": "Choose how to search the knowledge base",
           "topK": "Top K",
+          "topKCompact": "Top {count}",
           "topKHint": "Number of most relevant chunks to retrieve",
           "threshold": "Similarity Threshold",
           "thresholdHint": "Only return results above this similarity score",
@@ -253,11 +265,13 @@
           "noSearchResults": "No tools found",
           "noTools": "No tools available",
           "requiresConfig": "Requires configuration",
+          "paramsCount": "{count} params",
           "filters": {
             "all": "All",
             "builtin": "Built-in",
             "custom": "Custom",
-            "mcp": "MCP"
+            "mcp": "MCP",
+            "skill": "Skill"
           },
           "categories": {
             "time": "Time",
@@ -266,6 +280,7 @@
             "web": "Web",
             "file": "File",
             "code": "Code",
+            "sandbox": "Sandbox",
             "api": "API",
             "data": "Data",
             "other": "Other"
@@ -451,13 +466,21 @@
         "toolCall": "Tool call with tool name and arguments",
         "toolResult": "Tool execution result",
         "mediaResult": "Media display payload for generated images/videos, used by the client to render content directly in the assistant body",
-        "userInputRequest": "Agent requests user input with predefined options",
+        "userInputRequest": "Structured user-input request. Current clients primarily parse this from XML embedded in content_delta rather than handling a dedicated SSE event.",
+        "compressionStart": "Historical context compaction started before the next model call",
+        "compressionEnd": "Historical context compaction finished with summary and token budget details",
         "outputTruncated": "Output was truncated due to max output token limit",
+        "iterationCapReached": "The round hit the maximum tool-call iterations and ended with a terminal notice",
         "messageEnd": "Message ended with token usage and timing statistics",
         "error": "Error message"
       },
       "messageEndExample": "message_end event data example:",
       "codeExamples": "Code Examples",
+      "tabs": {
+        "curl": "cURL",
+        "python": "Python",
+        "javascript": "JavaScript"
+      },
       "multiTurn": {
         "title": "Multi-turn Conversation",
         "description": "To maintain conversation context across multiple requests, use the conversation_id returned in the first response.",

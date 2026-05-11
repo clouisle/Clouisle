@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
 import type { ExecutionState } from '@/components/chat/types'
+import { useTranslations } from 'next-intl'
 import { NodeCard } from './node-card'
 
 interface ExecutionTimelineProps {
@@ -13,6 +14,7 @@ export function ExecutionTimeline({
   layout = 'vertical',
   showDetails = true,
 }: ExecutionTimelineProps) {
+  const tCommon = useTranslations('common')
   const nodes = Array.from(executionState.nodes.values())
 
   if (nodes.length === 0) {
@@ -25,7 +27,7 @@ export function ExecutionTimeline({
       {executionState.progress.total > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Progress</span>
+            <span>{tCommon('progress')}</span>
             <span>
               {executionState.progress.current} / {executionState.progress.total}
             </span>

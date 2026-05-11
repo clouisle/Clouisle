@@ -67,6 +67,7 @@ import {
 import { KnowledgeBaseDialog } from './knowledge-base-dialog'
 import { DeleteKnowledgeBaseDialog } from './delete-knowledge-base-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function KnowledgeBasesClient() {
   const t = useTranslations('knowledgeBases')
@@ -82,7 +83,7 @@ export function KnowledgeBasesClient() {
   const [pageData, setPageData] = React.useState<PageData<KnowledgeBase> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   
   // 选择状态

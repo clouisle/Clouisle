@@ -33,7 +33,6 @@ class NodeProfile:
     error: str | None = None
 
     # Resource usage
-    memory_mb: float = 0
     tokens_used: int = 0  # For LLM nodes
     cache_hit: bool = False
 

@@ -22,7 +22,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationOut,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,
@@ -31,6 +30,7 @@ from app.schemas.response import (
     PageData,
     success,
 )
+from app.api.v1.endpoints.chat import build_message_round_payloads
 
 
 router = APIRouter()
@@ -485,7 +485,6 @@ async def get_conversation_detail(
                     status_code=404,
                 )
 
-    # Get only active messages
     messages = await Message.filter(
         conversation_id=conversation.id,
         is_active=True,
@@ -512,12 +511,11 @@ async def get_conversation_detail(
                 version_counts[str(root_id)] = 1
 
     # Build message outputs
-    messages_out = []
-    for m in messages:
-        msg_data = MessageOut.model_validate(m).model_dump()
+    messages_out = await build_message_round_payloads(messages)
+    canonical_messages = [m for m in messages if not m.round_id or m.is_round_canonical]
+    for msg_data, m in zip(messages_out, canonical_messages, strict=False):
         root_id = m.parent_id if m.parent_id else m.id
         msg_data["version_count"] = version_counts.get(str(root_id), 1)
-        messages_out.append(msg_data)
 
     # Build response
     conv_data = ConversationOut.model_validate(conversation).model_dump()

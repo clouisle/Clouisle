@@ -469,7 +469,7 @@ async def update_user(
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="password_validation_failed",
-                data={"errors": errors},
+                data={"errors": {"password": errors}},
             )
 
         user_data["hashed_password"] = security.get_password_hash(password)

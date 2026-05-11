@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query
 from tortoise.expressions import Q
 
 from app.api import deps
+from app.core.i18n import t
 from app.models.model import Model
 from app.models.user import User
 from app.schemas.model import (
@@ -191,7 +192,7 @@ async def test_model_connection(
             msg_key="model_api_key_required",
         )
 
-    start_time = time.time()
+    start_time = time.monotonic()
     try:
         model_type = ModelType(model.model_type)
     except ValueError as exc:
@@ -199,12 +200,18 @@ async def test_model_connection(
             code=ResponseCode.VALIDATION_ERROR,
             msg_key="model_type_not_supported",
         ) from exc
+    default_params = model.default_params or {}
     config = model.config or {}
 
     try:
         if model_type == ModelType.CHAT:
             await _test_chat_model(
-                provider, model.model_id, model.api_key, model.base_url, config
+                provider,
+                model.model_id,
+                model.api_key,
+                model.base_url,
+                default_params,
+                config,
             )
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(
@@ -230,11 +237,11 @@ async def test_model_connection(
                 msg_key="model_type_not_supported",
             )
 
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         return success(
             data=ModelTestResponse(
                 success=True,
-                message="Connection successful",
+                message=t("model_test_connection_successful"),
                 latency_ms=latency_ms,
             ),
             msg_key="model_test_success",
@@ -244,25 +251,28 @@ async def test_model_connection(
         raise
     except Exception as e:
         logger.exception(f"Model test failed: {e}")
-        latency_ms = int((time.time() - start_time) * 1000)
-        error_msg = str(e)
-        if "401" in error_msg or "Unauthorized" in error_msg.lower():
-            error_msg = "Invalid API key"
-        elif "404" in error_msg or "not found" in error_msg.lower():
-            error_msg = "Model not found or not accessible"
-        elif "429" in error_msg or "rate limit" in error_msg.lower():
+        latency_ms = int((time.monotonic() - start_time) * 1000)
+        raw_error_msg = str(e)
+        error_msg = raw_error_msg
+        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
+            error_msg = t("model_test_invalid_api_key")
+        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
+            error_msg = t("model_test_model_not_accessible")
+        elif "429" in raw_error_msg or "rate limit" in raw_error_msg.lower():
             return success(
                 data=ModelTestResponse(
                     success=True,
-                    message="Rate limit exceeded, but API key is valid",
+                    message=t("model_test_rate_limit_but_valid"),
                     latency_ms=latency_ms,
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in error_msg.lower():
-            error_msg = "Connection timeout"
-        elif "connection" in error_msg.lower():
-            error_msg = "Connection failed, check base URL"
+        elif "timeout" in raw_error_msg.lower():
+            error_msg = t("model_test_connection_timeout")
+        elif "connection" in raw_error_msg.lower():
+            error_msg = t("model_test_connection_failed_check_base_url")
+        else:
+            error_msg = t("model_test_unexpected_error")
 
         return success(
             data=ModelTestResponse(
@@ -311,13 +321,21 @@ async def test_model_config(
     model_type = test_request.model_type
     api_key = test_request.api_key
     base_url = test_request.base_url
+    default_params = test_request.default_params or {}
     config = test_request.config or {}
 
-    start_time = time.time()
+    start_time = time.monotonic()
 
     try:
         if model_type == ModelType.CHAT:
-            await _test_chat_model(provider, model_id, api_key, base_url, config)
+            await _test_chat_model(
+                provider,
+                model_id,
+                api_key,
+                base_url,
+                default_params,
+                config,
+            )
         elif model_type == ModelType.EMBEDDING:
             await _test_embedding_model(provider, model_id, api_key, base_url, config)
         elif model_type == ModelType.RERANK:
@@ -334,11 +352,11 @@ async def test_model_config(
                 msg_key="model_type_not_supported",
             )
 
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         return success(
             data=ModelTestResponse(
                 success=True,
-                message="Connection successful",
+                message=t("model_test_connection_successful"),
                 latency_ms=latency_ms,
             ),
             msg_key="model_test_success",
@@ -348,25 +366,28 @@ async def test_model_config(
         raise
     except Exception as e:
         logger.exception(f"Model test failed: {e}")
-        latency_ms = int((time.time() - start_time) * 1000)
-        error_msg = str(e)
-        if "401" in error_msg or "Unauthorized" in error_msg.lower():
-            error_msg = "Invalid API key"
-        elif "404" in error_msg or "not found" in error_msg.lower():
-            error_msg = "Model not found or not accessible"
-        elif "429" in error_msg or "rate limit" in error_msg.lower():
+        latency_ms = int((time.monotonic() - start_time) * 1000)
+        raw_error_msg = str(e)
+        error_msg = raw_error_msg
+        if "401" in raw_error_msg or "Unauthorized" in raw_error_msg.lower():
+            error_msg = t("model_test_invalid_api_key")
+        elif "404" in raw_error_msg or "not found" in raw_error_msg.lower():
+            error_msg = t("model_test_model_not_accessible")
+        elif "429" in raw_error_msg or "rate limit" in raw_error_msg.lower():
             return success(
                 data=ModelTestResponse(
                     success=True,
-                    message="Rate limit exceeded, but API key is valid",
+                    message=t("model_test_rate_limit_but_valid"),
                     latency_ms=latency_ms,
                 ),
                 msg_key="model_test_success",
             )
-        elif "timeout" in error_msg.lower():
-            error_msg = "Connection timeout"
-        elif "connection" in error_msg.lower():
-            error_msg = "Connection failed, check base URL"
+        elif "timeout" in raw_error_msg.lower():
+            error_msg = t("model_test_connection_timeout")
+        elif "connection" in raw_error_msg.lower():
+            error_msg = t("model_test_connection_failed_check_base_url")
+        else:
+            error_msg = t("model_test_unexpected_error")
 
         return success(
             data=ModelTestResponse(
@@ -404,12 +425,15 @@ async def _test_chat_model(
     model_id: str,
     api_key: str | None,
     base_url: Optional[str],
+    default_params: dict,
     config: dict,
 ) -> None:
     from app.llm.types import Message, MessageRole
     from app.llm.adapters.chat import (
         OpenAIAdapter,
         DeepSeekAdapter,
+        MoonshotAdapter,
+        OllamaAdapter,
         AnthropicAdapter,
         GeminiAdapter,
         XAIAdapter,
@@ -422,7 +446,8 @@ async def _test_chat_model(
             self.model_id = model_id
             self.api_key = api_key
             self.base_url = base_url
-            self.default_params = {}
+            self.default_params = default_params
+            self.max_output_tokens = default_params.get("max_tokens")
             self.config = config
 
     temp_model = TempModel()
@@ -442,7 +467,7 @@ async def _test_chat_model(
     elif provider_value == ModelProvider.DEEPSEEK.value:
         adapter = DeepSeekAdapter(temp_model)
     elif provider_value == ModelProvider.MOONSHOT.value:
-        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="moonshot")
+        adapter = MoonshotAdapter(temp_model)
     elif provider_value == ModelProvider.ZHIPU.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="zhipu")
     elif provider_value == ModelProvider.QWEN.value:
@@ -452,7 +477,7 @@ async def _test_chat_model(
     elif provider_value == ModelProvider.MINIMAX.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="minimax")
     elif provider_value == ModelProvider.OLLAMA.value:
-        adapter = OpenAICompatibleAdapter(temp_model, provider_hint="ollama")
+        adapter = OllamaAdapter(temp_model)
     elif provider_value == ModelProvider.CUSTOM.value:
         adapter = OpenAICompatibleAdapter(temp_model, provider_hint="custom")
     else:
@@ -462,7 +487,10 @@ async def _test_chat_model(
     response = await adapter.chat(messages)
 
     if not response.content:
-        raise ValueError("Empty response from model")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_response",
+        )
 
 
 async def _test_embedding_model(
@@ -488,14 +516,17 @@ async def _test_embedding_model(
         result = await embedding_model.aembed_query("test")
     except AttributeError as e:
         if "'str' object has no attribute 'data'" in str(e):
-            raise ValueError(
-                "API response format is not compatible with OpenAI. "
-                "The endpoint may not support the embeddings API or returns a non-standard format."
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="model_test_embedding_response_incompatible",
             )
         raise
 
     if not result or len(result) == 0:
-        raise ValueError("Empty embedding result")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_embedding_result",
+        )
 
 
 async def _test_rerank_model(
@@ -528,7 +559,10 @@ async def _test_rerank_model(
     )
 
     if not result.results:
-        raise ValueError("Empty rerank result")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="model_test_empty_rerank_result",
+        )
 
 
 def _test_image_model(

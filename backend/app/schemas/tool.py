@@ -8,9 +8,10 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.response import PageData
+from app.services.sandbox.cache import normalize_package_source_url
 
 
 class ToolType(str, Enum):
@@ -37,6 +38,7 @@ class ToolCategory(str, Enum):
     WEB = "web"  # 网页操作
     FILE = "file"  # 文件操作
     CODE = "code"  # 代码执行
+    SANDBOX = "sandbox"  # 沙盒工具
     API = "api"  # API 调用
     DATA = "data"  # 数据处理
     OTHER = "other"  # 其他
@@ -97,12 +99,80 @@ class HttpConfigSchema(BaseModel):
     )
 
 
+class SandboxArtifactSchema(BaseModel):
+    """Sandbox artifact configuration/result."""
+
+    path: str = Field(..., description="产物路径（必须位于 /workspace 下）")
+    optional: bool = Field(default=False, description="产物缺失是否允许")
+    description: str | None = Field(default=None, description="产物说明")
+    file_type: str | None = Field(
+        default=None, description="产物类型（file/directory）"
+    )
+    size: int | None = Field(default=None, ge=0, description="产物大小（字节）")
+    checksum: str | None = Field(default=None, description="文件校验和")
+    content_type: str | None = Field(default=None, description="内容类型")
+    storage_path: str | None = Field(default=None, description="持久化存储路径")
+    url: str | None = Field(default=None, description="下载地址")
+    filename: str | None = Field(default=None, description="持久化后的文件名")
+
+
+class SandboxLimitsSchema(BaseModel):
+    """Sandbox resource limits."""
+
+    timeout_seconds: float = Field(default=30.0, ge=1.0, le=600.0)
+    disk_mb: int = Field(default=1024, ge=0, le=102400)
+    max_stdout_kb: int = Field(default=256, ge=16, le=8192)
+    max_stderr_kb: int = Field(default=256, ge=16, le=8192)
+
+
 class CodeConfigSchema(BaseModel):
     """代码工具配置"""
 
+    model_config = ConfigDict(extra="ignore")
+
     language: str = Field(..., description="代码语言 (javascript/python)")
     code: str = Field(..., description="代码内容")
-    dependencies: list[str] = Field(default_factory=list, description="依赖包列表")
+    command: list[str] = Field(
+        default_factory=list, description="自定义命令（argv 数组）"
+    )
+    python_packages: list[str] = Field(
+        default_factory=list, description="Python 包列表"
+    )
+    js_packages: list[str] = Field(
+        default_factory=list, description="JavaScript 包列表"
+    )
+    python_package_index_url: str | None = Field(
+        default=None, description="Python 包镜像地址"
+    )
+    node_package_registry_url: str | None = Field(
+        default=None, description="JavaScript 包镜像地址"
+    )
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物配置"
+    )
+    limits: SandboxLimitsSchema = Field(
+        default_factory=SandboxLimitsSchema, description="资源限制"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_dependencies(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        legacy_packages = list(normalized.get("dependencies") or [])
+        language = normalized.get("language")
+
+        if language == "python" and not normalized.get("python_packages"):
+            normalized["python_packages"] = legacy_packages
+        elif language == "javascript" and not normalized.get("js_packages"):
+            normalized["js_packages"] = legacy_packages
+
+        for field in ("python_package_index_url", "node_package_registry_url"):
+            normalized[field] = normalize_package_source_url(normalized.get(field))
+
+        return normalized
 
 
 class McpConfigSchema(BaseModel):
@@ -129,7 +199,7 @@ class ToolOut(BaseModel):
     display_name: str = Field(..., description="显示名称")
     description: str = Field(..., description="工具描述")
     type: ToolType = Field(..., description="工具类型")
-    category: ToolCategory = Field(..., description="工具分类")
+    category: str = Field(..., description="工具分类")
     icon: str | None = Field(default=None, description="图标（emoji 或 URL）")
     parameters: list[ToolParameterSchema] = Field(
         default_factory=list, description="参数列表"
@@ -219,7 +289,9 @@ class ToolCreateInput(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100, description="显示名称")
     description: str = Field(default="", description="工具描述")
     icon: str | None = Field(default=None, max_length=100, description="图标")
-    category: ToolCategory = Field(default=ToolCategory.OTHER, description="分类")
+    category: str = Field(
+        default=ToolCategory.OTHER.value, max_length=100, description="分类"
+    )
     type: ToolType = Field(default=ToolType.CUSTOM, description="工具类型")
     custom_type: CustomToolType | None = Field(
         default=None, description="自定义工具类型（仅 type=custom 时有效）"
@@ -240,9 +312,7 @@ class ToolCreateInput(BaseModel):
     def validate_name(cls, v: str) -> str:
         """验证工具名称格式：只允许字母、数字、下划线，且必须以字母开头"""
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
-            raise ValueError(
-                "Tool name must start with a letter and contain only letters, numbers, and underscores"
-            )
+            raise ValueError("tool_name_invalid_format")
         return v
 
 
@@ -253,7 +323,7 @@ class ToolUpdateInput(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, min_length=1)
     icon: str | None = None
-    category: ToolCategory | None = None
+    category: str | None = Field(default=None, max_length=100)
     custom_type: CustomToolType | None = None
     parameters: list[ToolParameterSchema] | None = None
     http_config: HttpConfigSchema | None = None
@@ -267,9 +337,7 @@ class ToolUpdateInput(BaseModel):
     def validate_name(cls, v: str | None) -> str | None:
         """验证工具名称格式"""
         if v is not None and not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
-            raise ValueError(
-                "Tool name must start with a letter and contain only letters, numbers, and underscores"
-            )
+            raise ValueError("tool_name_invalid_format")
         return v
 
 
@@ -319,6 +387,10 @@ class ToolExecuteResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     result: Any = Field(default=None, description="执行结果")
     error: str | None = Field(default=None, description="错误信息")
+    logs: str | None = Field(default=None, description="日志输出")
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物列表"
+    )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
 
 
@@ -329,6 +401,38 @@ class CodeExecuteRequest(BaseModel):
     code: str = Field(..., description="代码内容")
     params: dict[str, Any] = Field(default_factory=dict, description="传入参数")
     timeout: float = Field(default=30.0, ge=1.0, le=60.0, description="超时时间（秒）")
+    command: list[str] = Field(
+        default_factory=list, description="自定义命令（argv 数组）"
+    )
+    python_packages: list[str] = Field(
+        default_factory=list, description="Python 包列表"
+    )
+    js_packages: list[str] = Field(
+        default_factory=list, description="JavaScript 包列表"
+    )
+    python_package_index_url: str | None = Field(
+        default=None, description="Python 包镜像地址"
+    )
+    node_package_registry_url: str | None = Field(
+        default=None, description="JavaScript 包镜像地址"
+    )
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物配置"
+    )
+    limits: SandboxLimitsSchema = Field(
+        default_factory=SandboxLimitsSchema, description="资源限制"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_package_source_urls(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        for field in ("python_package_index_url", "node_package_registry_url"):
+            normalized[field] = normalize_package_source_url(normalized.get(field))
+        return normalized
 
 
 class CodeExecuteResponse(BaseModel):
@@ -338,6 +442,9 @@ class CodeExecuteResponse(BaseModel):
     result: Any = Field(default=None, description="执行结果")
     error: str | None = Field(default=None, description="错误信息")
     logs: str | None = Field(default=None, description="日志输出")
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物列表"
+    )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
 
 
@@ -434,4 +541,38 @@ BUILTIN_TOOLS_METADATA: dict[str, dict[str, Any]] = {
         "icon": None,
         "requires_config": False,
     },
+    "artifact": {
+        "display_name_key": "builtin_tool_artifact",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "bash": {
+        "display_name_key": "builtin_tool_bash",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "read": {
+        "display_name_key": "builtin_tool_read",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
+    "write": {
+        "display_name_key": "builtin_tool_write",
+        "category": ToolCategory.SANDBOX,
+        "icon": None,
+        "requires_config": False,
+    },
 }
+
+
+def get_builtin_tool_description_key(tool_name: str) -> str:
+    return f"builtin_tool_{tool_name}_description"
+
+
+def get_builtin_tool_parameter_description_key(
+    tool_name: str, parameter_name: str
+) -> str:
+    return f"builtin_tool_{tool_name}_param_{parameter_name}_description"

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..types import NodeOutputDecl, TypeSpec
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -122,6 +123,17 @@ class UserInputNodeExecutor(NodeExecutor):
             if var.get("name")
         ]
 
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        variables = config.get("variables", [])
+        return [
+            NodeOutputDecl(
+                name=var.get("name"), type=TypeSpec(kind=var.get("type", "string"))
+            )
+            for var in variables
+            if var.get("name")
+        ]
+
 
 @NodeExecutorRegistry.register("trigger")
 class TriggerNodeExecutor(NodeExecutor):
@@ -186,3 +198,19 @@ class TriggerNodeExecutor(NodeExecutor):
             ]
         )
         return result
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        variables = config.get("variables", [])
+        specs = [
+            NodeOutputDecl(name="_trigger_type", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="_trigger_time", type=TypeSpec(kind="string")),
+        ]
+        specs.extend(
+            NodeOutputDecl(
+                name=var.get("name"), type=TypeSpec(kind=var.get("type", "string"))
+            )
+            for var in variables
+            if var.get("name")
+        )
+        return specs

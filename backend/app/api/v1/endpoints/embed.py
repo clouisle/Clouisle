@@ -27,6 +27,7 @@ from app.models.api_key import APIKey
 from app.models.user import User
 from app.models.workflow import Workflow, WorkflowStatus
 from app.schemas.agent import ChatRequest, EmbedAgentInfo
+from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.schemas.response import BusinessError, ResponseCode, success
 
 logger = logging.getLogger(__name__)
@@ -187,6 +188,7 @@ async def get_embed_agent_info(
             enable_vision=agent.enable_vision,
             enable_file_upload=agent.enable_file_upload,
             file_upload_config=agent.file_upload_config or None,
+            hide_tool_calls=agent.hide_tool_calls,
             embed_config=agent.embed_config or {},
         ),
     )
@@ -231,7 +233,6 @@ async def get_embed_conversation_messages(
     agent = await _get_embed_agent(agent_id, api_key, request)
 
     from app.models.agent import Message
-    from app.schemas.agent import MessageOut
 
     conversation = await Conversation.filter(
         id=conversation_id,
@@ -252,7 +253,7 @@ async def get_embed_conversation_messages(
     ).order_by("created_at")
 
     return success(
-        data=[MessageOut.model_validate(msg) for msg in messages],
+        data=await build_message_round_payloads(messages),
     )
 
 

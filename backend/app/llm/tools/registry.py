@@ -33,6 +33,9 @@ class ToolInfo(BaseModel):
     parameters: list[ToolParameter] = Field(
         default_factory=list, description="参数列表"
     )
+    parameters_schema: dict[str, Any] | None = Field(
+        default=None, description="原始 JSON Schema 参数定义"
+    )
     handler: Callable[..., Awaitable[Any]] | None = Field(default=None, exclude=True)
 
     class Config:
@@ -40,30 +43,40 @@ class ToolInfo(BaseModel):
 
     def to_openai_schema(self) -> dict:
         """转换为 OpenAI 工具格式"""
-        properties: dict[str, dict[str, str | list[str]]] = {}
-        required: list[str] = []
+        parameters_schema = self.parameters_schema
+        if parameters_schema is None:
+            properties: dict[str, dict[str, Any]] = {}
+            required: list[str] = []
 
-        for param in self.parameters:
-            prop: dict[str, str | list[str]] = {"type": param.type}
-            if param.description:
-                prop["description"] = param.description
-            if param.enum:
-                prop["enum"] = param.enum
-            properties[param.name] = prop
+            for param in self.parameters:
+                prop: dict[str, Any] = {"type": param.type}
+                if param.description:
+                    prop["description"] = param.description
+                if param.enum:
+                    prop["enum"] = param.enum
+                if param.items is not None:
+                    prop["items"] = param.items
+                elif param.type == "array":
+                    prop["items"] = {}
+                if param.default is not None:
+                    prop["default"] = param.default
+                properties[param.name] = prop
 
-            if param.required:
-                required.append(param.name)
+                if param.required:
+                    required.append(param.name)
+
+            parameters_schema = {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+            }
 
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required,
-                },
+                "parameters": parameters_schema,
             },
         }
 
@@ -98,10 +111,49 @@ class ToolRegistry:
 
         # 执行工具
         result = await tool_registry.execute("get_weather", {"city": "北京"})
+
+        # 注册沙箱工具（需要 session_id）
+        tool_registry.register_sandbox_tool("Bash", BashSandboxTool)
     """
 
     def __init__(self):
         self._tools: dict[str, ToolInfo] = {}
+        self._sandbox_tools: dict[str, type] = {}
+        self._sandbox_tool_infos: dict[str, ToolInfo] = {}
+
+    def register_sandbox_tool(
+        self,
+        name: str,
+        tool_class: type,
+        *,
+        tool_info: ToolInfo | None = None,
+        aliases: list[str] | None = None,
+    ) -> None:
+        """注册内部沙箱工具类。"""
+        self._sandbox_tools[name] = tool_class
+        for alias in aliases or []:
+            self._sandbox_tools[alias] = tool_class
+        if tool_info is not None:
+            self._sandbox_tool_infos[tool_info.name] = tool_info
+        logger.debug(f"Registered sandbox tool: {name}")
+
+    def get_sandbox_tool_class(self, name: str) -> type | None:
+        """获取沙箱工具类"""
+        return self._sandbox_tools.get(name)
+
+    def get_sandbox_tool_infos(self, names: list[str] | None = None) -> list[ToolInfo]:
+        """获取可暴露给模型的内部沙箱工具定义。"""
+        if names is None:
+            return list(self._sandbox_tool_infos.values())
+        return [
+            self._sandbox_tool_infos[name]
+            for name in names
+            if name in self._sandbox_tool_infos
+        ]
+
+    def to_openai_sandbox_tools(self, names: list[str] | None = None) -> list[dict]:
+        """转换内部沙箱工具为 OpenAI 工具格式。"""
+        return [tool.to_openai_schema() for tool in self.get_sandbox_tool_infos(names)]
 
     def register(
         self,
@@ -228,6 +280,8 @@ class ToolRegistry:
             name: 工具名称
             arguments: 参数字典
             credentials: 凭证信息（可选）
+            session_id: 会话 ID（用于沙箱工具）
+            allowed_commands: 允许的命令列表（用于 Bash 工具）
 
         Returns:
             工具执行结果
@@ -235,11 +289,42 @@ class ToolRegistry:
         Raises:
             ValueError: 工具不存在或没有处理函数
         """
+        # 1. 优先检查沙箱工具
+        sandbox_class = self.get_sandbox_tool_class(name)
+        if sandbox_class:
+            session_id = context.pop("session_id", None)
+            allowed_commands = context.pop("allowed_commands", None)
+            agent = context.get("agent")
+            tool_instance = sandbox_class(
+                session_id=session_id,
+                allowed_commands=allowed_commands,
+                agent_id=str(agent.id) if agent is not None else None,
+                team_id=str(agent.team_id)
+                if agent is not None and agent.team_id
+                else None,
+            )
+            return await tool_instance.execute(**arguments)
+
+        # 2. 回退到普通工具
         tool = self._tools.get(name)
         if not tool:
             raise ValueError(f"Tool not found: {name}")
+        return await self.execute_tool_info(
+            tool,
+            arguments,
+            credentials=credentials,
+            **context,
+        )
+
+    async def execute_tool_info(
+        self,
+        tool: ToolInfo,
+        arguments: dict[str, Any],
+        credentials: dict[str, str] | None = None,
+        **context: Any,
+    ) -> Any:
         if not tool.handler:
-            raise ValueError(f"Tool has no handler: {name}")
+            raise ValueError(f"Tool has no handler: {tool.name}")
 
         import inspect
 
@@ -258,6 +343,8 @@ class ToolRegistry:
     def clear(self) -> None:
         """清空所有注册的工具"""
         self._tools.clear()
+        self._sandbox_tools.clear()
+        self._sandbox_tool_infos.clear()
 
 
 # 全局工具注册表

@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { GENERAL_UPLOAD_MAX_FILE_SIZE_MB } from '@/lib/constants'
 import { isValidVariableName } from '../utils'
 import type { Parameter, ParameterType } from '../types'
 
@@ -122,7 +123,7 @@ export function ParameterEditDialog({
                 value={paramForm.type || 'text'}
                 onValueChange={(value) => setParamForm({ ...paramForm, type: value as ParameterType, fileConfig: undefined })}
               >
-                <SelectTrigger className="h-9 w-full">
+                <SelectTrigger size="default" className="w-full">
                   <SelectValue>
                     {paramForm.type && (
                       <span className="flex items-center gap-2">
@@ -255,7 +256,7 @@ export function ParameterEditDialog({
                     value={paramForm.defaultValue || ''}
                     onValueChange={(value) => setParamForm({ ...paramForm, defaultValue: value ?? undefined })}
                   >
-                    <SelectTrigger className="h-9 w-full">
+                    <SelectTrigger size="default" className="w-full">
                       <SelectValue>{paramForm.defaultValue || t('dialogs.parameterEdit.defaultSelectPlaceholder')}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -302,7 +303,7 @@ export function ParameterEditDialog({
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder='["item1", "item2", "item3"]'
+                  placeholder={t('dialogs.parameterEdit.arrayExample')}
                   className="min-h-24 resize-none font-mono text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonArrayHint')}</p>
@@ -316,7 +317,7 @@ export function ParameterEditDialog({
                   id="param-default"
                   value={paramForm.defaultValue || ''}
                   onChange={(e) => setParamForm({ ...paramForm, defaultValue: e.target.value })}
-                  placeholder='{"key": "value"}'
+                  placeholder={t('dialogs.parameterEdit.objectExample')}
                   className="min-h-24 resize-none font-mono text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground">{t('dialogs.parameterEdit.jsonObjectHint')}</p>
@@ -330,7 +331,7 @@ export function ParameterEditDialog({
                   <Label className="text-xs">{t('dialogs.parameterEdit.maxFileSizeLabel')}</Label>
                   <Input
                     type="number"
-                    value={paramForm.fileConfig?.maxSize || (paramForm.type === 'image' ? 10 : 50)}
+                    value={paramForm.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB}
                     onChange={(e) => setParamForm({
                       ...paramForm,
                       fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || 10 }
@@ -381,10 +382,10 @@ export function ParameterEditDialog({
                   <Label className="text-xs">{t('dialogs.parameterEdit.maxSizePerFileLabel')}</Label>
                   <Input
                     type="number"
-                    value={paramForm.fileConfig?.maxSize || 50}
+                    value={paramForm.fileConfig?.maxSize || GENERAL_UPLOAD_MAX_FILE_SIZE_MB}
                     onChange={(e) => setParamForm({
                       ...paramForm,
-                      fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || 50 }
+                      fileConfig: { ...paramForm.fileConfig, maxSize: parseInt(e.target.value) || GENERAL_UPLOAD_MAX_FILE_SIZE_MB }
                     })}
                     className="h-9"
                     min={1}

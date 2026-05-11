@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { NextIntlClientProvider } from 'next-intl';
-import { getLocale, getMessages } from 'next-intl/server';
+import { getLocale, getMessages, getTranslations } from 'next-intl/server';
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -18,16 +18,20 @@ const geistMono = localFont({
   weight: "100 900",
 });
 
-export const metadata: Metadata = {
-  title: "Clouisle - Admin Panel",
-  description: "Clouisle Admin Dashboard",
-  icons: {
-    icon: [
-      { url: '/clouisle-light.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
-      { url: '/clouisle-dark.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
-    ],
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations('platform')
+
+  return {
+    title: `Clouisle - ${t('admin')}`,
+    description: t('home.description'),
+    icons: {
+      icon: [
+        { url: '/clouisle-light.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
+        { url: '/clouisle-dark.svg', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
+      ],
+    },
+  }
+}
 
 export default async function RootLayout({
   children,

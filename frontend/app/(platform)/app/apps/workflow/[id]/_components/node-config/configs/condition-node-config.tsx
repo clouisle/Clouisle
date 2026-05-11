@@ -138,7 +138,7 @@ export function ConditionNodeConfig({
   const selectVariable = (branchId: string, ruleId: string, variableId: string, variableName: string, isSystem: boolean) => {
     updateConditionRule(branchId, ruleId, {
       variable: `{{${variableId}}}`,
-      variableSource: isSystem ? 'SYSTEM' : t('nodesCommon.start')
+      variableSource: isSystem ? t('nodesCommon.system') : t('nodesCommon.start')
     })
     onOpenVariablePopoverChange(null)
     onVariableSearchChange('')
@@ -249,8 +249,10 @@ export function ConditionNodeConfig({
                       value={branch.logicOperator}
                       onValueChange={(v) => updateBranchLogicOperator(branch.id, v as 'and' | 'or')}
                     >
-                      <SelectTrigger className="h-7 w-16">
-                        <SelectValue />
+                      <SelectTrigger size="xs" className="w-16">
+                        <SelectValue>
+                          {branch.logicOperator === 'or' ? t('configCondition.logicAny') : t('configCondition.logicAll')}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="and" className="text-xs">{t('configCondition.logicAll')}</SelectItem>
@@ -356,7 +358,7 @@ export function ConditionNodeConfig({
                           value={rule.operator}
                           onValueChange={(v) => updateConditionRule(branch.id, rule.id, { operator: v as ConditionOperator })}
                         >
-                          <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectTrigger size="xs" className="w-24 text-xs">
                             <SelectValue>{conditionOperatorShortLabels[rule.operator]}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>

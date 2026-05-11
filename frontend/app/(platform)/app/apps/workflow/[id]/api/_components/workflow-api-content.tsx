@@ -337,9 +337,9 @@ if (result.code === 0) {
             <Section title={t('codeExamples')}>
               <Tabs defaultValue="curl" className="w-full">
                 <TabsList>
-                  <TabsTrigger value="curl">cURL</TabsTrigger>
-                  <TabsTrigger value="python">Python</TabsTrigger>
-                  <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                  <TabsTrigger value="curl">{t('tabs.curl')}</TabsTrigger>
+                  <TabsTrigger value="python">{t('tabs.python')}</TabsTrigger>
+                  <TabsTrigger value="javascript">{t('tabs.javascript')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="curl" className="mt-4">
                   <CodeBlock code={curlCommand} language="bash" />
@@ -437,24 +437,8 @@ if (result.code === 0) {
                           <td className="px-4 py-2 text-muted-foreground">{t('eventToken')}</td>
                         </tr>
                         <tr className="border-t">
-                          <td className="px-4 py-2"><code>chunk</code></td>
-                          <td className="px-4 py-2 text-muted-foreground">{t('eventChunk')}</td>
-                        </tr>
-                        <tr className="border-t">
                           <td className="px-4 py-2"><code>output</code></td>
                           <td className="px-4 py-2 text-muted-foreground">{t('eventOutput')}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-4 py-2"><code>progress</code></td>
-                          <td className="px-4 py-2 text-muted-foreground">{t('eventProgress')}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-4 py-2"><code>iteration_start</code></td>
-                          <td className="px-4 py-2 text-muted-foreground">{t('eventIterationStart')}</td>
-                        </tr>
-                        <tr className="border-t">
-                          <td className="px-4 py-2"><code>iteration_complete</code></td>
-                          <td className="px-4 py-2 text-muted-foreground">{t('eventIterationComplete')}</td>
                         </tr>
                       </tbody>
                     </table>

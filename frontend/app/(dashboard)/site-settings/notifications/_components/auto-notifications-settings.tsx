@@ -9,7 +9,15 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type AutoNotificationConfig } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationErrorsByPrefix,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 // All notification types grouped by category
 const NOTIFICATION_CATEGORIES = {
@@ -41,12 +49,46 @@ interface AutoNotificationsSettingsTabProps {
 
 export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: AutoNotificationsSettingsTabProps) {
   const t = useTranslations('siteSettings')
+
+  const getNotificationChannelLabel = (channel: string) => {
+    const key = `notifications.${channel}`
+    return t.has(key) ? t(key) : channel
+  }
+
+  const getNotificationCategoryLabel = (categoryKey: string) => {
+    const key = `autoNotifications.categories.${categoryKey}`
+    return t.has(key) ? t(key) : categoryKey
+  }
+
+  const getNotificationCategoryDescription = (categoryKey: string) => {
+    const key = `autoNotifications.categories.${categoryKey}Desc`
+    return t.has(key) ? t(key) : categoryKey
+  }
+
+  const getNotificationTypeLabel = (type: string) => {
+    const normalizedType = type.replace('.', '_')
+    const key = `autoNotifications.types.${normalizedType}`
+    return t.has(key) ? t(key) : type
+  }
+
+  const getNotificationTypeDescription = (type: string) => {
+    const normalizedType = type.replace('.', '_')
+    const key = `autoNotifications.types.${normalizedType}Desc`
+    return t.has(key) ? t(key) : type
+  }
+
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [config, setConfig] = React.useState<AutoNotificationConfig>({
     channels: [],
     enabled_types: [],
   })
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['channels', 'enabled_types']),
+    [fieldErrors]
+  )
 
   const loadConfig = React.useCallback(async () => {
     try {
@@ -65,6 +107,7 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
   }, [loadConfig])
 
   const toggleType = (type: string) => {
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'enabled_types'))
     setConfig((prev) => ({
       ...prev,
       enabled_types: prev.enabled_types.includes(type)
@@ -74,6 +117,7 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
   }
 
   const toggleChannel = (channel: string) => {
+    setFieldErrors((prev) => clearValidationErrorsByPrefix(prev, 'channels'))
     setConfig((prev) => ({
       ...prev,
       channels: prev.channels.includes(channel)
@@ -88,6 +132,13 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
       await siteSettingsApi.updateAutoNotifications(config)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), {
+        channels: 'channels',
+        enabled_types: 'enabled_types',
+      })
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save auto notification config:', error)
     } finally {
       setSaving(false)
@@ -107,6 +158,13 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* Global Channels Configuration */}
       <Card>
         <CardHeader>
@@ -131,16 +189,18 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
                         disabled={!canUpdate}
                       />
                       <Label htmlFor={`global-${channel}`} className="text-sm cursor-pointer">
-                        {t(`notifications.${channel}`)}
+                        {getNotificationChannelLabel(channel)}
                       </Label>
                     </div>
                   ))}
                 </div>
               ) : (
+
                 <p className="text-sm text-muted-foreground">
                   {t('autoNotifications.noChannelsConfigured')}
                 </p>
               )}
+              <FieldError>{fieldErrors.channels}</FieldError>
             </div>
           </div>
         </CardContent>
@@ -150,19 +210,20 @@ export function AutoNotificationsSettingsTab({ enabledChannels, canUpdate }: Aut
       {Object.entries(NOTIFICATION_CATEGORIES).map(([categoryKey, types]) => (
         <Card key={categoryKey}>
           <CardHeader>
-            <CardTitle>{t(`autoNotifications.categories.${categoryKey}`)}</CardTitle>
-            <CardDescription>{t(`autoNotifications.categories.${categoryKey}Desc`)}</CardDescription>
+            <CardTitle>{getNotificationCategoryLabel(categoryKey)}</CardTitle>
+            <CardDescription>{getNotificationCategoryDescription(categoryKey)}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
+              <FieldError>{fieldErrors.enabled_types}</FieldError>
               {types.map((type) => (
                 <div key={type} className="flex items-center justify-between py-2">
                   <div className="space-y-0.5">
                     <Label className="text-sm font-medium">
-                      {t(`autoNotifications.types.${type.replace('.', '_')}`)}
+                      {getNotificationTypeLabel(type)}
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      {t(`autoNotifications.types.${type.replace('.', '_')}Desc`)}
+                      {getNotificationTypeDescription(type)}
                     </p>
                   </div>
                   <Switch

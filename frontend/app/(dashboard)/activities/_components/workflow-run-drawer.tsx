@@ -67,31 +67,37 @@ function formatDuration(ms: number | null | undefined): string {
 }
 
 // Status badge component
-function StatusBadge({ status }: { status: string }) {
-  const statusConfig: Record<string, { icon: React.ReactNode; className: string }> = {
+function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnType<typeof useTranslations> }) {
+  const statusConfig: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
     success: {
       icon: <CheckCircle className="h-3 w-3" />,
       className: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
+      label: tWorkflow('status.success'),
     },
     failed: {
       icon: <XCircle className="h-3 w-3" />,
       className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20',
+      label: tWorkflow('status.failed'),
     },
     running: {
       icon: <Loader className="h-3 w-3 animate-spin" />,
       className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+      label: tWorkflow('status.running'),
     },
     pending: {
       icon: <Clock className="h-3 w-3" />,
       className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
+      label: tWorkflow('status.pending'),
     },
     cancelled: {
       icon: <Ban className="h-3 w-3" />,
       className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
+      label: tWorkflow('status.cancelled'),
     },
     timeout: {
       icon: <AlertTriangle className="h-3 w-3" />,
       className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
+      label: tWorkflow('status.failed'),
     },
   }
 
@@ -101,7 +107,7 @@ function StatusBadge({ status }: { status: string }) {
     <Badge variant="outline" className={config.className}>
       <span className="flex items-center gap-1">
         {config.icon}
-        {status}
+        {config.label}
       </span>
     </Badge>
   )
@@ -109,6 +115,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: WorkflowRunDrawerProps) {
   const t = useTranslations('activities')
+  const tWorkflow = useTranslations('workflow')
   const commonT = useTranslations('common')
   const { canPerform } = useCanPerform()
   const canDeleteWorkflowRun = canPerform('workflow:delete')
@@ -194,7 +201,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('table.status')}</span>
-                  <StatusBadge status={run.status} />
+                  <StatusBadge status={run.status} tWorkflow={tWorkflow} />
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('table.triggerType')}</span>
@@ -263,7 +270,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                   <h3 className="text-sm font-semibold mb-3">{t('runDetail.errorInfo')}</h3>
                   <Alert variant="destructive">
                     <XCircle className="h-4 w-4" />
-                    <AlertTitle>Error</AlertTitle>
+                    <AlertTitle>{tWorkflow('status.failed')}</AlertTitle>
                     <AlertDescription className="mt-2 text-sm">
                       {run.error_message}
                     </AlertDescription>
@@ -311,7 +318,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
               <h3 className="text-sm font-semibold mb-3">{t('runDetail.nodeExecutions')}</h3>
               {nodeExecutions.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No node executions yet
+                  {t('runDetail.noNodeExecutions')}
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -327,7 +334,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                             {node.node_type}
                           </Badge>
                         </div>
-                        <StatusBadge status={node.status} />
+                        <StatusBadge status={node.status} tWorkflow={tWorkflow} />
                       </div>
                       <div className="text-xs text-muted-foreground space-y-1">
                         <div className="flex justify-between">
@@ -342,7 +349,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                         )}
                         {node.error_message && (
                           <div className="text-destructive mt-2">
-                            Error: {node.error_message}
+                            {t('runDetail.errorInfo')}: {node.error_message}
                           </div>
                         )}
                       </div>

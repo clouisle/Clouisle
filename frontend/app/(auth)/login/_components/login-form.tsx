@@ -7,9 +7,11 @@ import { useTranslations, useLocale } from 'next-intl'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { FieldError } from '@/components/ui/field'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { authApi, usersApi, siteSettingsApi, ssoApi, ApiError, type CaptchaResponse, type SSOProvider } from '@/lib/api'
+import { clearValidationError, formatValidationSummaryMessage, getValidationSummaryEntries } from '@/lib/validation'
 import { Loader2, RefreshCw, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 
@@ -93,14 +95,41 @@ export function LoginForm() {
   
   // 清除单个字段错误
   const clearFieldError = (field: string) => {
-    if (fieldErrors[field]) {
-      setFieldErrors(prev => {
-        const next = { ...prev }
-        delete next[field]
-        return next
-      })
-    }
+    setFieldErrors((prev) => clearValidationError(prev, field))
   }
+
+  const loginSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'password', 'captcha']),
+    [fieldErrors]
+  )
+  const verificationSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['code']),
+    [fieldErrors]
+  )
+  const totpSummaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['totp']),
+    [fieldErrors]
+  )
+  const loginSummaryFieldLabels = React.useMemo(
+    () => ({
+      username: t('username'),
+      password: t('password'),
+      captcha: t('captcha'),
+    }),
+    [t]
+  )
+  const verificationSummaryFieldLabels = React.useMemo(
+    () => ({
+      code: t('verificationCode'),
+    }),
+    [t]
+  )
+  const totpSummaryFieldLabels = React.useMemo(
+    () => ({
+      totp: t('verificationCode6Digit'),
+    }),
+    [t]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -218,7 +247,11 @@ export function LoginForm() {
       setShowCodeInput(false)
     } catch (err) {
       if (err instanceof ApiError) {
-        setFieldErrors({ code: t('verificationCodeInvalid') })
+        if (err.isValidationError()) {
+          setFieldErrors(err.getFieldErrors())
+        } else {
+          setFieldErrors({ code: t('verificationCodeInvalid') })
+        }
       }
     } finally {
       setLoading(false)
@@ -323,6 +356,14 @@ export function LoginForm() {
         </div>
 
         <div className="space-y-4">
+          {totpSummaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {totpSummaryEntries.map(([field, message]) => (
+                <FieldError key={field}>{formatValidationSummaryMessage(field, message, totpSummaryFieldLabels)}</FieldError>
+              ))}
+            </div>
+          )}
+
           {useBackupCode ? (
             <div className="space-y-2">
               <Label>{t('backupCodeLabel')}</Label>
@@ -337,9 +378,7 @@ export function LoginForm() {
                 maxLength={9}
                 disabled={loading}
               />
-              {fieldErrors.totp && (
-                <p className="text-sm text-destructive">{fieldErrors.totp}</p>
-              )}
+              <FieldError>{fieldErrors.totp}</FieldError>
             </div>
           ) : (
             <div className="space-y-2">
@@ -365,9 +404,7 @@ export function LoginForm() {
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              {fieldErrors.totp && (
-                <p className="text-sm text-destructive text-center">{fieldErrors.totp}</p>
-              )}
+              <FieldError className="text-center">{fieldErrors.totp}</FieldError>
             </div>
           )}
 
@@ -428,6 +465,14 @@ export function LoginForm() {
         </div>
 
         <div className="space-y-4">
+          {verificationSummaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {verificationSummaryEntries.map(([field, message]) => (
+                <FieldError key={field}>{formatValidationSummaryMessage(field, message, verificationSummaryFieldLabels)}</FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="text-center">
             <button
               type="button"
@@ -447,7 +492,10 @@ export function LoginForm() {
                   <InputOTP
                     maxLength={6}
                     value={verificationCode}
-                    onChange={setVerificationCode}
+                    onChange={(value) => {
+                      clearFieldError('code')
+                      setVerificationCode(value)
+                    }}
                     disabled={loading}
                   >
                     <InputOTPGroup>
@@ -460,9 +508,7 @@ export function LoginForm() {
                     </InputOTPGroup>
                   </InputOTP>
                 </div>
-                {fieldErrors.code && (
-                  <p className="text-sm text-destructive text-center">{fieldErrors.code}</p>
-                )}
+                <FieldError className="text-center">{fieldErrors.code}</FieldError>
               </div>
 
               <Button
@@ -504,6 +550,14 @@ export function LoginForm() {
       {/* 密码登录表单 */}
       {passwordLoginAllowed && (
         <form onSubmit={handleSubmit} className="space-y-4">
+          {loginSummaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {loginSummaryEntries.map(([field, message]) => (
+                <FieldError key={field}>{formatValidationSummaryMessage(field, message, loginSummaryFieldLabels)}</FieldError>
+              ))}
+            </div>
+          )}
+
       <div className="space-y-2">
         <Label htmlFor="username">{t('username')}</Label>
         <Input
@@ -519,9 +573,7 @@ export function LoginForm() {
           disabled={loading}
           aria-invalid={!!fieldErrors.username}
         />
-        {fieldErrors.username && (
-          <p className="text-sm text-destructive">{fieldErrors.username}</p>
-        )}
+        <FieldError>{fieldErrors.username}</FieldError>
       </div>
       
       <div className="space-y-2">
@@ -538,9 +590,7 @@ export function LoginForm() {
           disabled={loading}
           aria-invalid={!!fieldErrors.password}
         />
-        {fieldErrors.password && (
-          <p className="text-sm text-destructive">{fieldErrors.password}</p>
-        )}
+        <FieldError>{fieldErrors.password}</FieldError>
       </div>
       
       {/* 验证码输入 */}
@@ -581,9 +631,7 @@ export function LoginForm() {
               aria-invalid={!!fieldErrors.captcha}
             />
           </div>
-          {fieldErrors.captcha && (
-            <p className="text-sm text-destructive">{fieldErrors.captcha}</p>
-          )}
+          <FieldError>{fieldErrors.captcha}</FieldError>
         </div>
       )}
       

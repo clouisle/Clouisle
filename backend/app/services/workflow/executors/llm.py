@@ -4,11 +4,15 @@ LLM node executor.
 Handles AI model inference calls.
 """
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
 from ..lazy_stream import LazyStreamResult
+from ..errors import translate_public_workflow_error
+
+if TYPE_CHECKING:
+    from ..types import NodeOutputDecl, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -74,7 +78,7 @@ class LLMNodeExecutor(NodeExecutor):
             logger.error(
                 f"LLM node {node_id}: modelId not found in llmConfig. Available keys: {list(llm_config.keys())}"
             )
-            return ExecutionResult(error="Model ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # First try to find as TeamModel ID, then fallback to Model ID
         team_model = (
@@ -87,7 +91,7 @@ class LLMNodeExecutor(NodeExecutor):
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
             if model is None:
-                return ExecutionResult(error=f"Model not found: {team_model_id}")
+                return ExecutionResult(error="model_not_found")
             model_id = str(model.id)
 
         # Resolve prompts
@@ -104,13 +108,18 @@ class LLMNodeExecutor(NodeExecutor):
         resolved_inputs = await self.resolve_inputs(context, inputs)
 
         # Build messages
-        messages = []
+        messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
-        # Include resolved inputs in user prompt if any
+        # Include resolved inputs in user prompt if any. Use to_text so dict/list
+        # render as JSON instead of Python repr ("{'a': 1}").
         if resolved_inputs:
-            input_context = "\n".join([f"{k}: {v}" for k, v in resolved_inputs.items()])
+            from ..types import to_text
+
+            input_context = "\n".join(
+                f"{k}: {to_text(v)}" for k, v in resolved_inputs.items()
+            )
             user_prompt = (
                 f"{input_context}\n\n{user_prompt}" if user_prompt else input_context
             )
@@ -126,7 +135,7 @@ class LLMNodeExecutor(NodeExecutor):
         )  # Frontend uses "streaming", default to non-streaming
 
         # Response format configuration
-        response_format = None
+        response_format: dict[str, WorkflowValue] | None = None
         response_format_type = llm_config.get("responseFormat", "text")
         logger.info(f"LLM node {node_id}: responseFormat={response_format_type}")
         logger.info(f"LLM node {node_id}: Full llmConfig={llm_config}")
@@ -142,17 +151,14 @@ class LLMNodeExecutor(NodeExecutor):
                     import json
 
                     schema = json.loads(json_schema_str)
-                    response_format = cast(
-                        dict[str, Any],
-                        {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "response",
-                                "strict": True,
-                                "schema": schema,
-                            },
+                    response_format = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "response",
+                            "strict": True,
+                            "schema": schema,
                         },
-                    )
+                    }
                     logger.info(
                         f"LLM node {node_id}: Constructed response_format={json.dumps(response_format, ensure_ascii=False)}"
                     )
@@ -179,8 +185,8 @@ class LLMNodeExecutor(NodeExecutor):
                 logger.info(f"LLM node {node_id} returning lazy stream result")
 
                 return ExecutionResult(
-                    outputs={
-                        "response": lazy_result,  # Lazy result, will be executed when referenced
+                    outputs={  # type: ignore[dict-item]
+                        "response": lazy_result,  # type: ignore[dict-item]  # Lazy result, will be executed when referenced
                         "reasoning": "",  # Will be populated after lazy execution
                         "usage": {},  # Will be populated after lazy execution
                     }
@@ -188,7 +194,7 @@ class LLMNodeExecutor(NodeExecutor):
             else:
                 # Non-streaming mode
                 result = await model_manager.chat(
-                    messages=cast(list[Any], messages),
+                    messages=messages,  # type: ignore[arg-type]
                     model_id=str(model_id),
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -216,7 +222,7 @@ class LLMNodeExecutor(NodeExecutor):
 
         except Exception as e:
             logger.exception(f"LLM execution error: {e}")
-            return ExecutionResult(error=f"LLM error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
 
     async def _resolve_template(
         self,
@@ -251,9 +257,26 @@ class LLMNodeExecutor(NodeExecutor):
         return errors
 
     def get_output_variables(self, config: dict) -> list[dict]:
-        """Get output variables."""
+        """Get output variables (legacy form; see get_output_specs for structure)."""
         return [
             {"name": "response", "type": "string"},
             {"name": "reasoning", "type": "string"},
             {"name": "usage", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        from ..types import NodeOutputDecl, TypeSpec
+
+        usage_fields = {
+            "prompt_tokens": TypeSpec(kind="number"),
+            "completion_tokens": TypeSpec(kind="number"),
+            "total_tokens": TypeSpec(kind="number"),
+        }
+        return [
+            NodeOutputDecl(name="response", type=TypeSpec(kind="string")),
+            NodeOutputDecl(name="reasoning", type=TypeSpec(kind="string")),
+            NodeOutputDecl(
+                name="usage",
+                type=TypeSpec(kind="object", fields=usage_fields),
+            ),
         ]

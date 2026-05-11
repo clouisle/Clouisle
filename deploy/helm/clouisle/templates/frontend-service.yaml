@@ -1,0 +1,16 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "clouisle.selectorLabels" (dict "root" . "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+{{- end }}

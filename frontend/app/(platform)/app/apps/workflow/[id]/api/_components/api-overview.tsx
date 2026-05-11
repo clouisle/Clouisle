@@ -88,7 +88,7 @@ export function ApiOverview({ workflow, webhookUrl }: ApiOverviewProps) {
               {t('authenticationRequiredDescription')}
             </p>
             <div className="rounded-lg bg-muted p-4">
-              <p className="text-xs text-muted-foreground mb-2">Authorization Header:</p>
+              <p className="text-xs text-muted-foreground mb-2">{t('api.authorizationHeader')}</p>
               <code className="text-sm font-mono">
                 Authorization: Bearer clou_your_api_key_here
               </code>

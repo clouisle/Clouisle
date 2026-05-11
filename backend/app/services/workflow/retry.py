@@ -4,12 +4,21 @@ Retry mechanism for node execution.
 Provides configurable retry policies for failed node executions.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable, TypeVar
+from typing import TYPE_CHECKING, Callable, Awaitable, TypeVar
 from functools import wraps
 import asyncio
 import logging
 import random
+
+from .errors import translate_public_workflow_error
+
+if TYPE_CHECKING:
+    from .executor import ExecutionResult, NodeExecutor
+    from .context import ExecutionContext
+    from app.models.workflow import WorkflowRun
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +156,7 @@ class RetryableExecutor:
         result = await retryable.execute(node, context, run)
     """
 
-    def __init__(self, executor: Any, policy: RetryPolicy | None = None):
+    def __init__(self, executor: NodeExecutor, policy: RetryPolicy | None = None):
         """
         Initialize retryable executor.
 
@@ -160,10 +169,10 @@ class RetryableExecutor:
         self.attempts = 0
         self.last_error: str | None = None
 
-    async def execute(self, node: dict, context: Any, run: Any) -> Any:
+    async def execute(
+        self, node: dict, context: ExecutionContext, run: WorkflowRun
+    ) -> ExecutionResult:
         """Execute with retry logic."""
-        from .executor import ExecutionResult
-
         self.attempts = 0
         self.last_error = None
 
@@ -198,13 +207,9 @@ class RetryableExecutor:
                     await asyncio.sleep(delay)
                 else:
                     logger.error(f"All retries exhausted. Error: {e}")
-                    return ExecutionResult(
-                        error=f"Failed after {self.attempts} attempts: {str(e)}"
-                    )
+                    return ExecutionResult(error=translate_public_workflow_error(e))
 
-        return ExecutionResult(
-            error=f"Failed after {self.attempts} attempts: {self.last_error}"
-        )
+        return ExecutionResult(error=translate_public_workflow_error(self.last_error))
 
 
 class CircuitBreaker:

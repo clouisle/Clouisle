@@ -235,7 +235,7 @@ export function KnowledgeRetrievalNodeConfig({
                             ...safeConfig,
                             querySource: 'variable',
                             queryVariableRef: `{{${variable.id}}}`,
-                            queryVariableRefNodeLabel: variable.isSystem ? 'SYSTEM' : variable.groupLabel,
+                            queryVariableRefNodeLabel: variable.isSystem ? t('nodesCommon.system') : variable.groupLabel,
                             queryConstantValue: undefined,
                           })
                           onOpenVariablePopoverChange(null)
@@ -442,7 +442,7 @@ export function KnowledgeRetrievalNodeConfig({
                   }
                 }}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger size="sm" className="text-xs">
                   <SelectValue>
                     {safeConfig.searchMode === 'vector' && t('configKnowledgeRetrieval.searchModeVector')}
                     {safeConfig.searchMode === 'fulltext' && t('configKnowledgeRetrieval.searchModeFulltext')}

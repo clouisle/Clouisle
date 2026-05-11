@@ -64,6 +64,21 @@ class FileParserService:
         ".html": "text/html",
         ".htm": "text/html",
     }
+    SUPPORTED_TEMP_SUFFIXES = {
+        ".pdf": ".pdf",
+        ".docx": ".docx",
+        ".doc": ".doc",
+        ".pptx": ".pptx",
+        ".ppt": ".ppt",
+        ".xlsx": ".xlsx",
+        ".xls": ".xls",
+        ".txt": ".txt",
+        ".md": ".md",
+        ".csv": ".csv",
+        ".json": ".json",
+        ".html": ".html",
+        ".htm": ".htm",
+    }
 
     def __init__(self):
         self._md = None
@@ -76,9 +91,7 @@ class FileParserService:
 
                 self._md = MarkItDown()
             except ImportError:
-                raise ValueError(
-                    "MarkItDown not installed. Install with: pip install 'markitdown[pdf,xlsx,xls]'"
-                )
+                raise ValueError("document_processing_failed_generic")
         return self._md
 
     def is_supported(self, filename: str) -> bool:
@@ -165,10 +178,7 @@ class FileParserService:
         # Validate file type
         if not self.is_supported(filename):
             ext = Path(filename).suffix.lower()
-            raise ValueError(
-                f"Unsupported file type: {ext}. "
-                f"Supported: {', '.join(self.SUPPORTED_EXTENSIONS.keys())}"
-            )
+            raise ValueError("unsupported_file_type")
 
         mime_type = self.get_mime_type(filename)
         file_size = len(file_content)
@@ -187,8 +197,9 @@ class FileParserService:
             # Use MarkItDown for other formats
             md = self._get_markitdown()
 
-            # Write to temp file for MarkItDown
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                suffix=self.SUPPORTED_TEMP_SUFFIXES[ext], delete=False
+            ) as tmp:
                 tmp.write(file_content)
                 tmp_path = tmp.name
 

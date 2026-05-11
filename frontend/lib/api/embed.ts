@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '@/lib/constants'
+import { getErrorMessage } from './client'
 
 export interface EmbedWorkflowInfo {
   id: string
@@ -31,6 +32,7 @@ export interface EmbedAgentInfo {
   enable_vision: boolean
   enable_file_upload: boolean
   file_upload_config: Record<string, unknown> | null
+  hide_tool_calls: boolean
   embed_config: Record<string, unknown>
 }
 
@@ -71,6 +73,66 @@ function makeHeaders(apiKey: string): Record<string, string> {
   }
 }
 
+function getEmbedLocale(): string {
+  if (typeof document === 'undefined') return 'en'
+  const locale = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('locale='))
+    ?.split('=')[1]
+  return locale || 'en'
+}
+
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function isLikelyTechnicalMessage(message: string): boolean {
+  const lowered = message.toLowerCase()
+  return (
+    message.includes('\n')
+    || lowered.startsWith('http ')
+    || lowered.includes('traceback')
+    || lowered.includes('exception')
+    || lowered.includes('stack')
+    || lowered.includes('failed to fetch')
+  )
+}
+
+function getEmbedStatusErrorMessage(status: number): string {
+  if (status === 404) return getErrorMessage('resourceNotFound')
+  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  return getErrorMessage('requestFailed')
+}
+
+function shouldUseEmbedBackendMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return false
+  if (isLikelyMessageKey(trimmed) || isLikelyTechnicalMessage(trimmed)) return false
+
+  const locale = getEmbedLocale().toLowerCase()
+  if (locale.startsWith('zh')) {
+    return /[\u4e00-\u9fff]/.test(trimmed)
+  }
+
+  return true
+}
+
+function resolveEmbedApiErrorMessage(status: number, message: unknown): string {
+  if (typeof message === 'string' && shouldUseEmbedBackendMessage(message)) {
+    return message.trim()
+  }
+
+  return getEmbedStatusErrorMessage(status)
+}
+
+export function resolveEmbedMessage(message: unknown, fallback: string): string {
+  if (typeof message === 'string' && shouldUseEmbedBackendMessage(message)) {
+    return message.trim()
+  }
+
+  return fallback
+}
+
 export const embedApi = {
   getAgentInfo: async (agentId: string, apiKey: string): Promise<EmbedAgentInfo> => {
     const response = await fetch(`${API_BASE_URL}/embed/agents/${agentId}/info`, {
@@ -78,8 +140,8 @@ export const embedApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new Error(resolveEmbedApiErrorMessage(response.status, error.msg))
     }
 
     const data = await response.json()
@@ -117,8 +179,8 @@ export const embedApi = {
     )
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new Error(resolveEmbedApiErrorMessage(response.status, error.msg))
     }
 
     const data = await response.json()
@@ -149,11 +211,11 @@ export const embedApi = {
           const data = JSON.parse(xhr.responseText)
           resolve(data.data)
         } else {
-          const error = JSON.parse(xhr.responseText).msg || `HTTP ${xhr.status}`
-          reject(new Error(error))
+          const response = JSON.parse(xhr.responseText)
+          reject(new Error(resolveEmbedApiErrorMessage(xhr.status, response.msg)))
         }
       }
-      xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.onerror = () => reject(new Error(getErrorMessage('requestFailed')))
 
       const formData = new FormData()
       formData.append('file', file)
@@ -169,8 +231,8 @@ export const embedApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new Error(resolveEmbedApiErrorMessage(response.status, error.msg))
     }
 
     const data = await response.json()
@@ -189,8 +251,8 @@ export const embedApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new Error(resolveEmbedApiErrorMessage(response.status, error.msg))
     }
 
     const data = await response.json()
@@ -220,10 +282,10 @@ export const embedApi = {
           }
         )
 
-        if (!response.ok) throw new Error(`SSE connection failed: ${response.status}`)
+        if (!response.ok) throw new Error(getEmbedStatusErrorMessage(response.status))
 
         const reader = response.body?.getReader()
-        if (!reader) throw new Error('No response body')
+        if (!reader) throw new Error(getErrorMessage('requestFailed'))
 
         const decoder = new TextDecoder()
         let buffer = ''

@@ -45,9 +45,13 @@ All user-facing backend messages must be internationalized through `app/core/i18
 
 ### Translation rules
 
-- Add new keys to `TRANSLATIONS` in `app/core/i18n.py`.
-- Use `t()` or `msg_key`-based helpers for responses and errors.
+- Add new message keys to the backend Babel catalogs under `backend/app/locales/<lang>/LC_MESSAGES/messages.po`.
+- Keep using `t()` or `msg_key`-based helpers for responses and errors; do not bypass `app/core/i18n.py`.
+- Babel catalogs are the source of truth; `app/core/i18n_legacy.py` is only a generated compatibility snapshot for fallback and should not be edited by hand.
+- During migration, runtime may still fall back to the generated legacy snapshot, but new backend messages should be added to the Babel catalogs first.
 - Language is resolved from `X-Language` first, then `Accept-Language`.
+- Validate catalog parity and placeholders with `python scripts/check_i18n_catalogs.py` when editing translations.
+- If fallback compatibility files need refresh, run `python scripts/sync_i18n_legacy.py` and verify with `python scripts/check_i18n_legacy_sync.py`.
 
 ## Route isolation
 

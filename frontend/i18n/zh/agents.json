@@ -30,6 +30,8 @@
       "maxIterationsLabel": "最大迭代次数",
       "maxIterationsTooltip": "使用工具时，Agent 最多可以进行的迭代次数。每次工具调用计为一次迭代。",
       "maxIterationsHint": "工具调用的最大迭代次数 (1-200)",
+      "hideToolCalls": "隐藏工具调用",
+      "hideToolCallsDesc": "在对话中隐藏工具调用详情，但不禁用工具执行。",
       "conversationConfig": "对话配置",
       "suggestedQuestionsPlaceholder": "每行一个问题",
       "promptDesc": "定义 Agent 的角色和行为",
@@ -174,12 +176,21 @@
           "paragraph": "段落",
           "select": "下拉选项",
           "number": "数字",
-          "checkbox": "复选框"
+          "checkbox": "复选框",
+          "string": "文本",
+          "boolean": "布尔值",
+          "array": "数组",
+          "object": "对象",
+          "file": "文件",
+          "image": "图片",
+          "files": "多个文件",
+          "images": "多张图片"
         },
         "dialog": {
           "title": "编辑变量",
           "fieldType": "字段类型",
           "variableName": "变量名称",
+          "variableNamePlaceholder": "name",
           "displayName": "显示名称",
           "displayNamePlaceholder": "显示名称",
           "options": "选项列表",
@@ -223,6 +234,7 @@
           "searchModeHybrid": "混合检索",
           "searchModeHint": "选择知识库的检索方式",
           "topK": "召回数量 (Top K)",
+          "topKCompact": "Top {count}",
           "topKHint": "每次检索返回的最相关文档块数量",
           "threshold": "相似度阈值",
           "thresholdHint": "只返回相似度高于此阈值的结果",
@@ -253,11 +265,13 @@
           "noSearchResults": "未找到匹配的工具",
           "noTools": "暂无可用工具",
           "requiresConfig": "需要配置",
+          "paramsCount": "{count} 个参数",
           "filters": {
             "all": "全部",
             "builtin": "内置",
             "custom": "自定义",
-            "mcp": "MCP"
+            "mcp": "MCP",
+            "skill": "Skill"
           },
           "categories": {
             "time": "时间",
@@ -266,6 +280,7 @@
             "web": "网页",
             "file": "文件",
             "code": "代码",
+            "sandbox": "沙盒",
             "api": "API",
             "data": "数据",
             "other": "其他"
@@ -451,13 +466,21 @@
         "toolCall": "工具调用，包含工具名称和参数",
         "toolResult": "工具执行结果",
         "mediaResult": "生成图片/视频的媒体展示载荷，前端使用该事件将内容直接渲染到 assistant 正文区域",
-        "userInputRequest": "Agent 请求用户输入，包含预定义选项",
+        "userInputRequest": "结构化用户输入请求。当前客户端主要从 content_delta 中内嵌的 XML 解析该能力，而不是单独处理一个 SSE 事件。",
+        "compressionStart": "下一次模型调用前开始对历史上下文进行压缩整理",
+        "compressionEnd": "历史上下文压缩完成，并返回摘要与 token 预算细节",
         "outputTruncated": "输出已被截断，已达到最大输出 token 限制",
+        "iterationCapReached": "本轮已达到最大工具调用轮次，并以终止提示结束",
         "messageEnd": "消息结束，包含 token 用量和耗时统计",
         "error": "错误信息"
       },
       "messageEndExample": "message_end 事件数据示例：",
       "codeExamples": "代码示例",
+      "tabs": {
+        "curl": "cURL",
+        "python": "Python",
+        "javascript": "JavaScript"
+      },
       "multiTurn": {
         "title": "多轮对话",
         "description": "要在多次请求之间保持对话上下文，请使用第一次响应中返回的 conversation_id。",

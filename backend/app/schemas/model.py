@@ -183,6 +183,9 @@ class ModelTestRequest(BaseModel):
     api_key: Optional[str] = Field(
         None, max_length=1024, description="API key (optional for local providers)"
     )
+    default_params: Optional[dict[str, Any]] = Field(
+        None, description="Default inference parameters"
+    )
     config: Optional[dict[str, Any]] = Field(
         None, description="Additional configuration"
     )

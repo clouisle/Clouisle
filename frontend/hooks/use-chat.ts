@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import type { BackendMessage } from '@/lib/utils/message-converter'
 import {
   agentsApi,
@@ -14,10 +15,12 @@ import {
   type SSEContentDelta,
   type SSERagContext,
   type SSEMessageEnd,
+  type SSEIterationCapReached,
   type SSEError,
   type SSEToolCall,
   type SSEToolResult,
   type SSEMediaResult,
+  type SSECompression,
 } from '@/lib/api'
 import type {
   ChatMessage,
@@ -31,7 +34,8 @@ import type {
   UserInputRequestPart,
   MediaResultPart,
 } from '@/components/chat'
-import { parseToolResultOutput } from '@/lib/utils/tool-result'
+import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
+import { parseToolResultOutput, shouldDisplayMediaResultInBody } from '@/lib/utils/tool-result'
 
 export type ChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
 
@@ -105,6 +109,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     onStreamEnd,
   } = options
 
+  const tError = useTranslations('errors')
+  const tAuth = useTranslations('auth')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [error, setError] = useState<ChatError | null>(null)
@@ -118,6 +124,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   // Streaming state ref for stop function to access
   const streamingStateRef = useRef<{
     assistantMessageId: string | null
+    visibleMessageId: string | null
+    backendMessageId: string | null
     segments: ContentSegment[]
     reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
     currentReasoningIndex: number
@@ -125,11 +133,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     taskState: TaskState
   }>({
     assistantMessageId: null,
+    visibleMessageId: null,
+    backendMessageId: null,
     segments: [],
     reasoningBlocks: [],
     currentReasoningIndex: -1,
     ragSources: [],
-    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
 
   const isLoading = status === 'loading' || status === 'streaming'
@@ -181,11 +191,22 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         role: 'assistant',
         parts: [],
         createdAt: new Date(),
-        metadata: { isLoading: true }, // Mark as loading
+        metadata: { isLoading: true, isManuallyStopped: false },
       }
 
       // Add assistant message placeholder immediately (for loading state)
       setMessages((prev) => [...prev, assistantMessage])
+
+      streamingStateRef.current = {
+        assistantMessageId,
+        visibleMessageId: assistantMessageId,
+        backendMessageId: null,
+        segments: [],
+        reasoningBlocks: [],
+        currentReasoningIndex: -1,
+        ragSources: [],
+        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+      }
 
       try {
         // Prepare request
@@ -206,8 +227,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         if (!response.ok) {
           // Handle HTTP errors
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
         }
 
         // Update status to streaming
@@ -222,7 +243,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         // RAG sources
         let ragSources: SourceDocumentPart[] = []
         // Task state for showing progress
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
 
         // Helper to get or create current text segment
         const getCurrentTextSegment = (): ContentSegment => {
@@ -266,12 +287,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         // Store in ref for stop function to access
         streamingStateRef.current = {
           assistantMessageId,
+          visibleMessageId: assistantMessageId,
+          backendMessageId: null,
           segments,
           reasoningBlocks,
           currentReasoningIndex,
           ragSources,
           taskState,
         }
+
+        let receivedTerminalEvent = false
 
         // Parse SSE stream
         for await (const event of parseSSEStream(response)) {
@@ -287,6 +312,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 const oldId = assistantMessageId
                 assistantMessageId = data.message_id
                 streamingStateRef.current.assistantMessageId = data.message_id
+                streamingStateRef.current.visibleMessageId = data.message_id
+                streamingStateRef.current.backendMessageId = data.message_id
                 // Update the message in state with the real ID
                 setMessages((prev) =>
                   prev.map((msg) =>
@@ -547,6 +574,40 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'compression_start': {
+              taskState.compression = 'running'
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'compression_end': {
+              const data = event.data as SSECompression
+              taskState.compression = 'completed'
+              taskState.compressionInfo = data as unknown as Record<string, unknown>
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'tool_call': {
               const data = event.data as SSEToolCall
               const toolCallPart: ToolCallPart = {
@@ -639,6 +700,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'media_result': {
               const data = event.data as SSEMediaResult
+              if (!shouldDisplayMediaResultInBody(data)) {
+                break
+              }
               segments.push({
                 type: 'media-result',
                 mediaResult: {
@@ -678,7 +742,29 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'iteration_cap_reached': {
+              const data = event.data as SSEIterationCapReached
+              const iterationCapSegment: ContentSegment = { type: 'iteration-cap-reached' }
+              segments.push(iterationCapSegment)
+              if (data.content) {
+                segments.push({ type: 'text', text: data.content })
+              }
+              streamingStateRef.current.segments = segments
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantMessageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'message_end': {
+              receivedTerminalEvent = true
               // Get version info from event data
               const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
               // Finalize message - pass taskState to keep RAG steps visible
@@ -686,6 +772,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
+              // Note: compression state is now managed by compression_start/compression_end events
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {
@@ -709,7 +796,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                         parts: buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState),
                         versionNumber: endData.version_number ?? 1,
                         versionCount: endData.version_count ?? 1,
-                        metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
+                        metadata: {
+                          ...msg.metadata,
+                          isLoading: false,
+                          isManuallyStopped: false,
+                          isError: false,
+                          errorMessage: undefined,
+                          preservedPartialProgress: undefined,
+                          usage: endData.usage,
+                          timing: endData.timing,
+                        },
                       }
                     : msg
                 )
@@ -718,31 +814,41 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'error': {
+              receivedTerminalEvent = true
+              if (taskState.compression === 'running') {
+                taskState.compression = 'error'
+                streamingStateRef.current.taskState = taskState
+              }
               const data = event.data as SSEError
               const chatError: ChatError = {
                 code: data.code,
                 message: data.msg,
                 quotaType: data.quota_type,
               }
-              // Don't set error state, handle gracefully with error message
               onError?.(chatError)
 
-              // Generate friendly error message as AI response
-              const errorText = getErrorMessage(chatError)
-              
-              // Create a text segment with the error message
-              const errorSegment: ContentSegment = { type: 'text', text: errorText }
-              segments = [errorSegment]
-              streamingStateRef.current.segments = segments
+              const errorText = getErrorMessage(chatError, tError, tAuth)
+              const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
+                segments,
+                reasoningBlocks,
+                ragSources,
+                taskState,
+                errorText,
+              })
 
-              // Update message with error text as AI response
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === assistantMessageId
                     ? {
                         ...msg,
-                        parts: buildMessageParts(segments, [], [], false, undefined),
-                        metadata: { ...msg.metadata, isError: true },
+                        parts: errorParts,
+                        metadata: {
+                          ...msg.metadata,
+                          isLoading: false,
+                          isError: true,
+                          errorMessage: errorText,
+                          preservedPartialProgress: preservedProgress,
+                        },
                       }
                     : msg
                 )
@@ -750,6 +856,27 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
           }
+        }
+
+        if (!receivedTerminalEvent) {
+          finalizeStreamingState({
+            segments,
+            reasoningBlocks,
+            currentReasoningIndex,
+            taskState,
+          })
+          const fallbackParts = buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState)
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    parts: fallbackParts,
+                    metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: false },
+                  }
+                : msg
+            )
+          )
         }
 
         setStatus('idle')
@@ -762,38 +889,51 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const chatError: ChatError = {
-          message: err instanceof Error ? err.message : 'Unknown error',
+          message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
 
-        // Generate friendly error message as AI response
-        const errorText = getErrorMessage(chatError)
-        const errorSegment: ContentSegment = { type: 'text', text: errorText }
-        
-        // Update message with error text as AI response
+        const errorText = getErrorMessage(chatError, tError, tAuth)
+        const state = streamingStateRef.current
+        const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
+          segments: state.segments,
+          reasoningBlocks: state.reasoningBlocks,
+          ragSources: state.ragSources,
+          taskState: state.taskState,
+          errorText,
+        })
+
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
               ? {
                   ...msg,
-                  parts: buildMessageParts([errorSegment], [], [], false, undefined),
-                  metadata: { ...msg.metadata, isError: true },
+                  parts: errorParts,
+                  metadata: {
+                    ...msg.metadata,
+                    isLoading: false,
+                    isError: true,
+                    errorMessage: errorText,
+                    preservedPartialProgress: preservedProgress,
+                  },
                 }
               : msg
           )
         )
-        
+
         setStatus('idle')
       } finally {
         abortRef.current = null
         // Reset streaming state
         streamingStateRef.current = {
           assistantMessageId: null,
+          visibleMessageId: null,
+          backendMessageId: null,
           segments: [],
           reasoningBlocks: [],
           currentReasoningIndex: -1,
           ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
         }
       }
     },
@@ -806,6 +946,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       onError,
       onStreamStart,
       onStreamEnd,
+      tAuth,
+      tError,
     ]
   )
 
@@ -818,54 +960,46 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       abortRef.current = null
     }
 
-    // Finalize the current message state when stopped
     const state = streamingStateRef.current
-    if (state.assistantMessageId) {
-      // Mark all reasoning blocks as done
-      state.reasoningBlocks.forEach((block, index) => {
-        if (block.state === 'streaming') {
-          block.duration = Date.now() - block.startTime
-          block.state = 'done'
-
-          // Update corresponding reasoning segment
-          const reasoningSegments = state.segments.filter(s => s.type === 'reasoning')
-          if (reasoningSegments[index]) {
-            reasoningSegments[index].reasoningState = 'done'
-            reasoningSegments[index].reasoningDuration = block.duration
-          }
-        }
-      })
+    const targetMessageId = state.visibleMessageId || state.assistantMessageId || state.backendMessageId
+    if (targetMessageId) {
+      finalizeStreamingState(state)
+      const stoppedParts = appendStoppedPart(
+        buildMessageParts(
+          state.segments,
+          state.reasoningBlocks,
+          state.ragSources,
+          false,
+          state.taskState
+        )
+      )
 
       setMessages((prev) =>
         prev.map((msg) =>
-          msg.id === state.assistantMessageId
+          msg.id === targetMessageId
             ? {
                 ...msg,
-                metadata: { ...msg.metadata, isLoading: false },
-                parts: buildMessageParts(
-                  state.segments,
-                  state.reasoningBlocks,
-                  state.ragSources,
-                  false, // Not streaming anymore
-                  state.taskState
-                ),
+                metadata: { ...msg.metadata, isLoading: false, isManuallyStopped: true },
+                parts: stoppedParts,
               }
             : msg
         )
       )
-      // Reset streaming state
+      onStreamEnd?.()
       streamingStateRef.current = {
         assistantMessageId: null,
+        visibleMessageId: null,
+        backendMessageId: null,
         segments: [],
         reasoningBlocks: [],
         currentReasoningIndex: -1,
         ragSources: [],
-        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
       }
     }
 
     setStatus('idle')
-  }, [])
+  }, [onStreamEnd])
 
   /**
    * Reset chat state
@@ -994,16 +1128,32 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       // Update message to loading state
       setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                parts: [],
-                metadata: { ...msg.metadata, isLoading: true },
-              }
-            : msg
-        )
+        prev.map((msg) => {
+          if (msg.id !== messageId) return msg
+
+          const nextMetadata = { ...msg.metadata }
+          delete nextMetadata.isError
+          delete nextMetadata.errorMessage
+          delete nextMetadata.preservedPartialProgress
+
+          return {
+            ...msg,
+            parts: [],
+            metadata: { ...nextMetadata, isLoading: true, isManuallyStopped: false },
+          }
+        })
       )
+
+      streamingStateRef.current = {
+        assistantMessageId: messageId,
+        visibleMessageId: messageId,
+        backendMessageId: null,
+        segments: [],
+        reasoningBlocks: [],
+        currentReasoningIndex: -1,
+        ragSources: [],
+        taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
+      }
 
       try {
         // Use backend regenerate API which handles versioning
@@ -1013,8 +1163,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const response = await stream
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
         }
 
         setStatus('streaming')
@@ -1025,7 +1175,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }> = []
         let currentReasoningIndex = -1
         let ragSources: SourceDocumentPart[] = []
-        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+        const taskState: TaskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
         let newMessageId = messageId  // May be updated by message_start
 
         // Helper functions
@@ -1064,6 +1214,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         streamingStateRef.current = {
           assistantMessageId: messageId,
+          visibleMessageId: messageId,
+          backendMessageId: null,
           segments,
           reasoningBlocks,
           currentReasoningIndex,
@@ -1083,7 +1235,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               // Backend creates a new message version with a new ID
               if (data.message_id) {
                 newMessageId = data.message_id
-                streamingStateRef.current.assistantMessageId = newMessageId
+                streamingStateRef.current.assistantMessageId = messageId
+                streamingStateRef.current.visibleMessageId = messageId
+                streamingStateRef.current.backendMessageId = newMessageId
               }
               // Track version info for later use
               if (data.version_number) newVersionNumber = data.version_number
@@ -1320,6 +1474,40 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'compression_start': {
+              taskState.compression = 'running'
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'compression_end': {
+              const data = event.data as SSECompression
+              taskState.compression = 'completed'
+              taskState.compressionInfo = data as unknown as Record<string, unknown>
+              streamingStateRef.current.taskState = taskState
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'tool_call': {
               const data = event.data as SSEToolCall
               const toolCallPart: ToolCallPart = {
@@ -1397,9 +1585,57 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               break
             }
 
+            case 'media_result': {
+              const data = event.data as SSEMediaResult
+              if (!shouldDisplayMediaResultInBody(data)) {
+                break
+              }
+              segments.push({
+                type: 'media-result',
+                mediaResult: {
+                  type: 'media-result',
+                  output: data,
+                },
+              })
+              streamingStateRef.current.segments = segments
+
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
             case 'output_truncated': {
               const truncatedSegment: ContentSegment = { type: 'truncated' }
               segments.push(truncatedSegment)
+              streamingStateRef.current.segments = segments
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
+                      }
+                    : msg
+                )
+              )
+              break
+            }
+
+            case 'iteration_cap_reached': {
+              const data = event.data as SSEIterationCapReached
+              const iterationCapSegment: ContentSegment = { type: 'iteration-cap-reached' }
+              segments.push(iterationCapSegment)
+              if (data.content) {
+                segments.push({ type: 'text', text: data.content })
+              }
               streamingStateRef.current.segments = segments
               setMessages((prev) =>
                 prev.map((msg) =>
@@ -1418,6 +1654,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               if (taskState.toolCalling === 'running') {
                 taskState.toolCalling = 'completed'
               }
+              // Note: compression state is now managed by compression_start/compression_end events
               // Safety: ensure all tool calls are marked as done on message end
               for (const segment of segments) {
                 if (segment.type === 'tool-group' && segment.toolCalls) {
@@ -1432,6 +1669,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                   block.duration = Date.now() - block.startTime
                   block.state = 'done'
                 }
+              })
+              finalizeStreamingState({
+                segments,
+                reasoningBlocks,
+                taskState,
               })
               const newParts = buildMessageParts(segments, reasoningBlocks, ragSources, false, taskState)
 
@@ -1452,7 +1694,16 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                     parts: newParts,
                     versionNumber: finalVersionNumber,
                     versionCount: finalVersionCount,
-                    metadata: { ...msg.metadata, isLoading: false, usage: endData.usage, timing: endData.timing },
+                    metadata: {
+                      ...msg.metadata,
+                      isLoading: false,
+                      isManuallyStopped: false,
+                      isError: false,
+                      errorMessage: undefined,
+                      preservedPartialProgress: undefined,
+                      usage: endData.usage,
+                      timing: endData.timing,
+                    },
                   }
                 })
               )
@@ -1460,6 +1711,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             }
 
             case 'error': {
+              if (taskState.compression === 'running') {
+                taskState.compression = 'error'
+                streamingStateRef.current.taskState = taskState
+              }
               const data = event.data as SSEError
               const chatError: ChatError = {
                 code: data.code,
@@ -1468,18 +1723,28 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               }
               onError?.(chatError)
 
-              const errorText = getErrorMessage(chatError)
-              const errorSegment: ContentSegment = { type: 'text', text: errorText }
-              const errorParts = buildMessageParts([errorSegment], [], [], false, undefined)
+              const errorText = getErrorMessage(chatError, tError, tAuth)
+              const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
+                segments,
+                reasoningBlocks,
+                ragSources,
+                taskState,
+                errorText,
+              })
 
-              // Show error as message content
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== messageId) return msg
                   return {
                     ...msg,
                     parts: errorParts,
-                    metadata: { ...msg.metadata, isLoading: false, isError: true },
+                    metadata: {
+                      ...msg.metadata,
+                      isLoading: false,
+                      isError: true,
+                      errorMessage: errorText,
+                      preservedPartialProgress: preservedProgress,
+                    },
                   }
                 })
               )
@@ -1497,22 +1762,33 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const chatError: ChatError = {
-          message: err instanceof Error ? err.message : 'Unknown error',
+          message: err instanceof Error ? err.message : '',
         }
         onError?.(chatError)
 
-        const errorText = getErrorMessage(chatError)
-        const errorSegment: ContentSegment = { type: 'text', text: errorText }
-        const errorParts = buildMessageParts([errorSegment], [], [], false, undefined)
+        const errorText = getErrorMessage(chatError, tError, tAuth)
+        const state = streamingStateRef.current
+        const { parts: errorParts, preservedProgress } = buildErroredMessageParts({
+          segments: state.segments,
+          reasoningBlocks: state.reasoningBlocks,
+          ragSources: state.ragSources,
+          taskState: state.taskState,
+          errorText,
+        })
 
-        // Show error as message content
         setMessages((prev) =>
           prev.map((msg) => {
             if (msg.id !== messageId) return msg
             return {
               ...msg,
               parts: errorParts,
-              metadata: { ...msg.metadata, isLoading: false, isError: true },
+              metadata: {
+                ...msg.metadata,
+                isLoading: false,
+                isError: true,
+                errorMessage: errorText,
+                preservedPartialProgress: preservedProgress,
+              },
             }
           })
         )
@@ -1522,11 +1798,13 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         abortRef.current = null
         streamingStateRef.current = {
           assistantMessageId: null,
+          visibleMessageId: null,
+          backendMessageId: null,
           segments: [],
           reasoningBlocks: [],
           currentReasoningIndex: -1,
           ragSources: [],
-          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+          taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
         }
       }
     },
@@ -1539,6 +1817,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       onStreamStart,
       onStreamEnd,
       sendMessage,
+      tAuth,
+      tError,
     ]
   )
 
@@ -1566,8 +1846,10 @@ interface TaskState {
   rag: 'pending' | 'running' | 'completed' | 'error'
   generating: 'pending' | 'running' | 'completed' | 'error'
   toolCalling: 'pending' | 'running' | 'completed' | 'error'
+  compression: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
+  compressionInfo?: Record<string, unknown>
 }
 
 /**
@@ -1575,7 +1857,7 @@ interface TaskState {
  * This allows all content to appear in the order they were triggered
  */
 interface ContentSegment {
-  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'media-result' | 'truncated'
+  type: 'text' | 'tool-group' | 'reasoning' | 'user-input-request' | 'media-result' | 'truncated' | 'iteration-cap-reached'
   // For text type
   text?: string
   // For tool-group type
@@ -1622,6 +1904,17 @@ function buildMessageParts(
 
     // Note: We no longer add aggregated tool calling task here
     // Individual tool calls are shown in the segments below
+
+    // Compression task - show if it ran (not pending)
+    if (taskState.compression !== 'pending') {
+      const compressionTask: TaskPart = {
+        type: 'task',
+        taskType: 'compression',
+        state: isStreaming ? taskState.compression : 'completed',
+        info: taskState.compressionInfo,
+      }
+      parts.push(compressionTask)
+    }
 
     // Generating task - show if it ran (not pending)
     if (taskState.generating !== 'pending') {
@@ -1670,6 +1963,8 @@ function buildMessageParts(
     } else if (segment.type === 'truncated') {
       // Add truncated warning
       parts.push({ type: 'truncated' })
+    } else if (segment.type === 'iteration-cap-reached') {
+      parts.push({ type: 'iteration-cap-reached' })
     }
   }
 
@@ -1681,71 +1976,200 @@ function buildMessageParts(
   return parts
 }
 
+function hasRenderableStreamingProgress(
+  segments: ContentSegment[],
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>,
+  ragSources: SourceDocumentPart[],
+  taskState: TaskState
+): boolean {
+  return (
+    segments.some((segment) => {
+      if (segment.type === 'text') return Boolean(segment.text?.trim())
+      if (segment.type === 'reasoning') return Boolean(segment.reasoningText?.trim())
+      if (segment.type === 'tool-group') {
+        return Boolean((segment.toolCalls?.length || 0) > 0 || (segment.toolResults?.length || 0) > 0)
+      }
+      if (segment.type === 'user-input-request') return Boolean(segment.userInputRequest)
+      if (segment.type === 'media-result') return Boolean(segment.mediaResult)
+      return segment.type === 'truncated' || segment.type === 'iteration-cap-reached'
+    })
+    || reasoningBlocks.some((block) => block.text.trim().length > 0)
+    || ragSources.length > 0
+    || taskState.rag !== 'pending'
+    || taskState.generating !== 'pending'
+    || taskState.toolCalling !== 'pending'
+    || taskState.compression !== 'pending'
+  )
+}
+
+function buildErroredMessageParts(state: {
+  segments: ContentSegment[]
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+  ragSources: SourceDocumentPart[]
+  taskState: TaskState
+  errorText: string
+}): { parts: MessagePart[]; preservedProgress: boolean } {
+  if (!hasRenderableStreamingProgress(
+    state.segments,
+    state.reasoningBlocks,
+    state.ragSources,
+    state.taskState
+  )) {
+    const errorSegment: ContentSegment = { type: 'text', text: state.errorText }
+    return {
+      parts: buildMessageParts([errorSegment], [], [], false, undefined),
+      preservedProgress: false,
+    }
+  }
+
+  finalizeStreamingState(state)
+  return {
+    parts: buildMessageParts(
+      state.segments,
+      state.reasoningBlocks,
+      state.ragSources,
+      false,
+      state.taskState
+    ),
+    preservedProgress: true,
+  }
+}
+
+function finalizeStreamingState(state: {
+  segments: ContentSegment[]
+  reasoningBlocks: Array<{ text: string; startTime: number; duration?: number; state: 'streaming' | 'done' }>
+  currentReasoningIndex?: number
+  taskState: TaskState
+}) {
+  state.reasoningBlocks.forEach((block, index) => {
+    if (block.state === 'streaming') {
+      block.duration = Date.now() - block.startTime
+      block.state = 'done'
+    }
+
+    const reasoningSegments = state.segments.filter(s => s.type === 'reasoning')
+    if (reasoningSegments[index]) {
+      reasoningSegments[index].reasoningState = 'done'
+      reasoningSegments[index].reasoningDuration = block.duration
+      reasoningSegments[index].reasoningText = block.text
+    }
+  })
+
+  for (const segment of state.segments) {
+    if (segment.type === 'tool-group' && segment.toolCalls) {
+      segment.toolCalls = segment.toolCalls.map(tc =>
+        tc.state === 'running' ? { ...tc, state: 'done' as const } : tc
+      )
+    }
+  }
+
+  if (state.taskState.rag === 'running') state.taskState.rag = 'completed'
+  if (state.taskState.generating === 'running') state.taskState.generating = 'completed'
+  if (state.taskState.toolCalling === 'running') state.taskState.toolCalling = 'completed'
+  if (state.taskState.compression === 'running') state.taskState.compression = 'completed'
+  state.currentReasoningIndex = -1
+}
+
+function appendStoppedPart(parts: MessagePart[]): MessagePart[] {
+  return parts.some(part => part.type === 'stopped') ? parts : [...parts, { type: 'stopped' }]
+}
+
 /**
  * Get user-friendly error message based on error type
  * Returns an object with message and optional i18n key
  */
-function getErrorMessage(error: ChatError): string {
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function shouldUseChatBackendMessage(message: string): boolean {
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return false
+  if (isLikelyMessageKey(trimmed)) return false
+  if (trimmed.includes('\n')) return false
+
+  return !(
+    trimmed.includes('Traceback')
+    || trimmed.includes('Exception')
+    || trimmed.includes('HTTP ')
+    || trimmed.includes('Failed to fetch')
+  )
+}
+
+function getHttpErrorMessage(
+  status: number,
+  tError: ReturnType<typeof useTranslations>,
+  tAuth: ReturnType<typeof useTranslations>
+): string {
+  if (status === 401 || status === 403) {
+    return tAuth('sessionExpired')
+  }
+  if (status === 404) {
+    return tError('resourceNotFound')
+  }
+  if (status >= 500 && status < 600) {
+    return tError('serverErrorDescription')
+  }
+  return getApiErrorMessage('requestFailed')
+}
+
+function getErrorMessage(
+  error: ChatError,
+  tError: ReturnType<typeof useTranslations>,
+  tAuth: ReturnType<typeof useTranslations>
+): string {
   const { code, message, quotaType } = error
 
-  // Network errors
   if (message?.includes('fetch') || message?.includes('network') || message?.includes('Failed to fetch')) {
-    return '抱歉，网络连接出现问题，请检查您的网络后重试。'
+    return tError('networkError')
   }
 
-  // Timeout errors
   if (message?.includes('timeout') || message?.includes('Timeout')) {
-    return '抱歉，请求超时了，可能是网络较慢或服务器繁忙，请稍后重试。'
+    return tError('timeout')
   }
 
-  // Quota exceeded (business code 6103 or HTTP 429)
   if (code === 6103 || code === 429 || quotaType) {
-    const type = quotaType === 'input' ? '输入' : quotaType === 'output' ? '输出' : '使用'
-    return `抱歉，${type}配额已用尽，请联系管理员或稍后重试。`
+    const quotaTypeKey = quotaType === 'input'
+      ? 'quotaTypeInput'
+      : quotaType === 'output'
+        ? 'quotaTypeOutput'
+        : 'quotaTypeUsage'
+    return tError('quotaExceeded', { type: tError(quotaTypeKey) })
   }
 
-  // Model vision not supported (business code 6105)
   if (code === 6105) {
-    return '当前模型不支持视觉功能，请更换支持视觉的模型'
+    return tError('modelVisionNotSupported')
   }
 
-  // Model not found (business code 6100 or specific error messages)
   if (code === 6100 || message?.includes('No model found') || message?.includes('no_default_model') || message?.includes('no_chat_model')) {
-    return '抱歉，尚未配置默认模型，请联系管理员在后台设置默认的聊天模型。'
+    return tError('modelNotFound')
   }
 
-  // Model not authorized (business code 6104)
   if (code === 6104) {
-    return '抱歉，当前团队未授权使用该模型，请联系管理员。'
+    return tError('modelNotAuthorized')
   }
 
-  // Authentication errors (business code 2000-2999 or HTTP 401/403)
   if ((code && code >= 2000 && code < 3000) || code === 401 || code === 403) {
-    return '抱歉，您的登录已过期或没有访问权限，请重新登录。'
+    return tAuth('sessionExpired')
   }
 
-  // Not found (business code 4000-4999 or HTTP 404)
   if ((code && code >= 4000 && code < 5000) || code === 404) {
-    return '抱歉，找不到相关资源，可能已被删除或移动。'
+    return tError('resourceNotFound')
   }
 
-  // HTTP Server errors (500-599 range only)
   if (code && code >= 500 && code < 600) {
-    return '抱歉，服务器出现了一些问题，我们正在处理中，请稍后重试。'
+    return tError('serverErrorDescription')
   }
 
-  // Model not configured
   if (message?.includes('model') && message?.includes('configured')) {
-    return '抱歉，当前 Agent 尚未配置模型，请先在设置中配置一个可用的模型。'
+    return tError('modelNotConfigured')
   }
 
-  // If there's a specific message from the server, use it
-  if (message && message.length > 0 && message.length < 200) {
-    return message
+  if (message && shouldUseChatBackendMessage(message)) {
+    return message.trim()
   }
 
-  // Default error message
-  return '抱歉，出现了一些问题，请稍后重试。如果问题持续存在，请联系管理员。'
+  return tError('unknown')
 }
 
 /**

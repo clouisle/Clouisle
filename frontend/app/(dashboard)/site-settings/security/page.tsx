@@ -11,8 +11,16 @@ import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 export default function SiteSettingsSecurityPage() {
@@ -23,6 +31,7 @@ export default function SiteSettingsSecurityPage() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [roles, setRoles] = React.useState<Role[]>([])
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<SecuritySettings>({
     allow_registration: true,
     require_approval: false,
@@ -51,6 +60,31 @@ export default function SiteSettingsSecurityPage() {
     force_password_change_first_login: false,
     require_totp: false,
   })
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, [
+      'default_role_id',
+      'min_password_length',
+      'password_expiration_days',
+      'password_expiration_warning_days',
+      'password_history_count',
+      'password_min_age_days',
+      'session_timeout_days',
+      'max_login_attempts',
+      'lockout_duration_minutes',
+    ]),
+    [fieldErrors]
+  )
 
   const loadSettings = React.useCallback(async () => {
     try {
@@ -101,11 +135,50 @@ export default function SiteSettingsSecurityPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (settings.min_password_length < 6 || settings.min_password_length > 32) {
+      nextErrors.min_password_length = t('rangeError', { min: 6, max: 32 })
+    }
+    if (settings.password_expiration_enabled) {
+      if (settings.password_expiration_days < 1 || settings.password_expiration_days > 365) {
+        nextErrors.password_expiration_days = t('rangeError', { min: 1, max: 365 })
+      }
+      if (settings.password_expiration_warning_days < 1 || settings.password_expiration_warning_days > 30) {
+        nextErrors.password_expiration_warning_days = t('rangeError', { min: 1, max: 30 })
+      }
+      if (settings.password_history_count < 0 || settings.password_history_count > 24) {
+        nextErrors.password_history_count = t('rangeError', { min: 0, max: 24 })
+      }
+      if (settings.password_min_age_days < 0 || settings.password_min_age_days > 30) {
+        nextErrors.password_min_age_days = t('rangeError', { min: 0, max: 30 })
+      }
+    }
+    if (settings.session_timeout_days < 1) {
+      nextErrors.session_timeout_days = t('minValueError', { min: 1 })
+    }
+    if (settings.max_login_attempts < 3 || settings.max_login_attempts > 10) {
+      nextErrors.max_login_attempts = t('rangeError', { min: 3, max: 10 })
+    }
+    if (settings.lockout_duration_minutes < 1) {
+      nextErrors.lockout_duration_minutes = t('minValueError', { min: 1 })
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateSecurity(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save settings:', error)
     } finally {
       setSaving(false)
@@ -114,6 +187,7 @@ export default function SiteSettingsSecurityPage() {
 
   const updateSetting = <K extends keyof SecuritySettings>(key: K, value: SecuritySettings[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => clearValidationError(prev, key))
   }
 
   if (loading) {
@@ -137,6 +211,13 @@ export default function SiteSettingsSecurityPage() {
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t('registration')}</CardTitle>
@@ -187,29 +268,32 @@ export default function SiteSettingsSecurityPage() {
               disabled={!canUpdate}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label>{t('defaultRole')}</Label>
-              <p className="text-sm text-muted-foreground">{t('defaultRoleDescription')}</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label>{t('defaultRole')}</Label>
+                <p className="text-sm text-muted-foreground">{t('defaultRoleDescription')}</p>
+              </div>
+              <Select
+                value={settings.default_role_id}
+                onValueChange={(value) => updateSetting('default_role_id', value ?? '')}
+                disabled={!canUpdate}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue>
+                    {roles.find((r) => r.id === settings.default_role_id)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Select
-              value={settings.default_role_id}
-              onValueChange={(value) => updateSetting('default_role_id', value ?? '')}
-              disabled={!canUpdate}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue>
-                  {roles.find((r) => r.id === settings.default_role_id)?.name}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                {roles.map((role) => (
-                  <SelectItem key={role.id} value={role.id}>
-                    {role.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <FieldError>{fieldErrors.default_role_id}</FieldError>
           </div>
         </CardContent>
       </Card>
@@ -231,7 +315,9 @@ export default function SiteSettingsSecurityPage() {
               max={32}
               className="w-32"
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.min_password_length}
             />
+            <FieldError>{fieldErrors.min_password_length}</FieldError>
           </div>
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -312,9 +398,11 @@ export default function SiteSettingsSecurityPage() {
                     max={365}
                     className="w-32"
                     disabled={!canUpdate}
+                    aria-invalid={!!fieldErrors.password_expiration_days}
                   />
                   <span className="text-sm text-muted-foreground">{t('days')}</span>
                 </div>
+                <FieldError>{fieldErrors.password_expiration_days}</FieldError>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="warningDays">{t('passwordExpirationWarningDays')}</Label>
@@ -329,9 +417,11 @@ export default function SiteSettingsSecurityPage() {
                     max={30}
                     className="w-32"
                     disabled={!canUpdate}
+                    aria-invalid={!!fieldErrors.password_expiration_warning_days}
                   />
                   <span className="text-sm text-muted-foreground">{t('days')}</span>
                 </div>
+                <FieldError>{fieldErrors.password_expiration_warning_days}</FieldError>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="historyCount">{t('passwordHistoryCount')}</Label>
@@ -340,12 +430,14 @@ export default function SiteSettingsSecurityPage() {
                   id="historyCount"
                   type="number"
                   value={settings.password_history_count}
-                  onChange={(e) => updateSetting('password_history_count', parseInt(e.target.value) || 5)}
+                  onChange={(e) => updateSetting('password_history_count', Number.isNaN(parseInt(e.target.value)) ? 5 : parseInt(e.target.value))}
                   min={0}
                   max={24}
                   className="w-32"
                   disabled={!canUpdate}
+                  aria-invalid={!!fieldErrors.password_history_count}
                 />
+                <FieldError>{fieldErrors.password_history_count}</FieldError>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="minAgeDays">{t('passwordMinAgeDays')}</Label>
@@ -360,9 +452,11 @@ export default function SiteSettingsSecurityPage() {
                     max={30}
                     className="w-32"
                     disabled={!canUpdate}
+                    aria-invalid={!!fieldErrors.password_min_age_days}
                   />
                   <span className="text-sm text-muted-foreground">{t('days')}</span>
                 </div>
+                <FieldError>{fieldErrors.password_min_age_days}</FieldError>
               </div>
             </>
           )}
@@ -386,9 +480,11 @@ export default function SiteSettingsSecurityPage() {
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.session_timeout_days}
               />
               <span className="text-sm text-muted-foreground">{t('days')}</span>
             </div>
+            <FieldError>{fieldErrors.session_timeout_days}</FieldError>
           </div>
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
@@ -421,7 +517,9 @@ export default function SiteSettingsSecurityPage() {
               max={10}
               className="w-32"
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.max_login_attempts}
             />
+            <FieldError>{fieldErrors.max_login_attempts}</FieldError>
           </div>
           <div className="space-y-2">
             <Label htmlFor="lockoutDuration">{t('lockoutDuration')}</Label>
@@ -434,9 +532,11 @@ export default function SiteSettingsSecurityPage() {
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.lockout_duration_minutes}
               />
               <span className="text-sm text-muted-foreground">{t('minutes')}</span>
             </div>
+            <FieldError>{fieldErrors.lockout_duration_minutes}</FieldError>
           </div>
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">

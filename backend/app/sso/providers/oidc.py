@@ -6,6 +6,7 @@ from typing import Any, Dict, Tuple
 import httpx
 from authlib.jose import jwt
 
+from app.core.i18n import t
 from app.sso.providers.base import BaseSSOProvider
 
 
@@ -70,7 +71,7 @@ class OIDCProvider(BaseSSOProvider):
         code_verifier = kwargs.get("code_verifier")
 
         if not code:
-            raise ValueError("Missing authorization code")
+            raise ValueError(t("sso_missing_authorization_code"))
 
         # Exchange code for tokens
         token_data = await self._exchange_code(code, redirect_uri, code_verifier)

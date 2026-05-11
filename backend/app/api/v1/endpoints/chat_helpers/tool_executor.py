@@ -3,11 +3,16 @@ Tool execution utilities for chat.
 """
 
 import json
+from app.core.i18n import t
+from typing import Any
+
 from app.models.agent import Agent
 from app.models.tool import Tool
 from app.llm.tools.executors import execute_http_tool as shared_execute_http_tool
-from app.llm.tools.sandbox import execute_code
 from app.llm.tools.mcp_client import execute_mcp_tool
+from app.services.sandbox.compiler import compile_code_config_job
+from app.services.sandbox.gateway import sandbox_gateway
+from app.services.sandbox.models import SandboxJobSource
 
 
 async def execute_tool_call(
@@ -15,7 +20,7 @@ async def execute_tool_call(
     arguments: dict,
     agent: Agent | None = None,
     tool_timeouts: dict | None = None,
-) -> str:
+) -> Any:
     """Execute a tool call and return the result."""
     tool_timeouts = tool_timeouts or {}
 
@@ -28,10 +33,29 @@ async def execute_tool_call(
     if tool_name in builtin_tools:
         return await builtin_tools[tool_name](arguments)
 
+    if tool_name.startswith("skill_"):
+        from app.services.skill import SkillService
+        from app.services.skill_executor import SkillExecutor
+
+        if not agent:
+            return json.dumps(
+                {"error": t("agent_context_required_for_skill")}, ensure_ascii=False
+            )
+        skill, skill_config = await SkillService.resolve_agent_skill_tool(
+            agent, tool_name
+        )
+        result = await SkillExecutor.execute(
+            skill=skill,
+            arguments=arguments,
+            config=skill_config,
+            tenant_id=str(agent.team_id) if agent.team_id else None,
+        )
+        return result.to_chat_payload()
+
     # Get tool from database
     tool = await Tool.get_or_none(name=tool_name)
     if not tool:
-        return json.dumps({"error": f"Tool '{tool_name}' not found"})
+        return json.dumps({"error": t("tool_not_found")}, ensure_ascii=False)
 
     # Execute based on tool type
     if tool.type == "http":
@@ -44,7 +68,15 @@ async def execute_tool_call(
         timeout = tool_timeouts.get("mcp", 60.0)
         return await execute_mcp_tool_call(tool, arguments, timeout)
     else:
-        return json.dumps({"error": f"Unsupported tool type: {tool.type}"})
+        return json.dumps(
+            {
+                "error": t(
+                    "unsupported_custom_tool_type",
+                    tool_type=tool.type,
+                )
+            },
+            ensure_ascii=False,
+        )
 
 
 async def execute_http_tool(tool: Tool, arguments: dict, timeout: float = 30.0) -> str:
@@ -60,11 +92,15 @@ async def execute_http_tool(tool: Tool, arguments: dict, timeout: float = 30.0) 
 
 async def execute_code_tool(tool: Tool, arguments: dict, timeout: float = 60.0) -> str:
     """Execute a code tool in sandbox."""
-    result = await execute_code(
-        language=tool.code_config.get("language", "python"),
-        code=tool.code_config.get("code", ""),
+    job = compile_code_config_job(
+        code_config=tool.code_config or {},
         params=arguments,
         timeout=timeout,
+        source=SandboxJobSource.CHAT,
+    )
+    result = await sandbox_gateway.submit_and_wait(
+        job,
+        timeout_seconds=job.limits.timeout_seconds + 5,
     )
     return json.dumps(
         {

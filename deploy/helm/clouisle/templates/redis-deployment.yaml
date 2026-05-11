@@ -1,0 +1,67 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "redis") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "clouisle.selectorLabels" (dict "root" . "component" "redis") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clouisle.selectorLabels" (dict "root" . "component" "redis") | nindent 8 }}
+    spec:
+      {{- include "clouisle.podCommon" . | nindent 6 }}
+      containers:
+        - name: redis
+          image: {{ printf "%s:%s" .Values.redis.image.repository .Values.redis.image.tag | quote }}
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              if [ -n "$REDIS_PASSWORD" ]; then
+                redis-server --requirepass "$REDIS_PASSWORD"
+              else
+                redis-server
+              fi
+          ports:
+            - name: redis
+              containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clouisle.secretName" . }}
+                  key: REDIS_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli ${REDIS_PASSWORD:+-a \"$REDIS_PASSWORD\"} ping | grep -q PONG"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.redis.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.redis.persistence.existingClaim }}
+          {{- else if .Values.redis.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: redis-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

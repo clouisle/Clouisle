@@ -146,13 +146,13 @@ clouisle-celery     "celery -A app.core.…"   celery     Up
 **Run database migrations:**
 
 ```bash
-docker compose exec backend alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
 **Create initial admin user:**
 
 ```bash
-docker compose exec backend python -m app.scripts.create_admin \
+docker compose exec api python -m app.scripts.create_admin \
   --email admin@example.com \
   --password your-secure-password
 ```
@@ -230,7 +230,7 @@ services:
     restart: unless-stopped
 
   # Backend API
-  backend:
+  api:
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -243,7 +243,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./backend:/app
+      - ./api:/app
       - backend_uploads:/app/uploads
     ports:
       - "8000:8000"
@@ -275,7 +275,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./backend:/app
+      - ./api:/app
       - backend_uploads:/app/uploads
     depends_on:
       - postgres
@@ -294,7 +294,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
     volumes:
-      - ./backend:/app
+      - ./api:/app
     depends_on:
       - postgres
       - redis
@@ -396,7 +396,7 @@ docker compose up -d
 **Start specific service:**
 
 ```bash
-docker compose up -d backend
+docker compose up -d api
 ```
 
 **Start with logs:**
@@ -422,7 +422,7 @@ docker compose down -v
 **Stop specific service:**
 
 ```bash
-docker compose stop backend
+docker compose stop api
 ```
 
 ### Restarting Services
@@ -436,7 +436,7 @@ docker compose restart
 **Restart specific service:**
 
 ```bash
-docker compose restart backend
+docker compose restart api
 ```
 
 ### Viewing Logs
@@ -456,13 +456,13 @@ docker compose logs -f
 **View specific service logs:**
 
 ```bash
-docker compose logs -f backend
+docker compose logs -f api
 ```
 
 **View last 100 lines:**
 
 ```bash
-docker compose logs --tail=100 backend
+docker compose logs --tail=100 api
 ```
 
 ## Updating Deployment
@@ -485,7 +485,7 @@ docker compose up -d
 **Run migrations:**
 
 ```bash
-docker compose exec backend alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
 ### Update Docker Images
@@ -704,7 +704,7 @@ docker compose exec postgres psql -U clouisle -d clouisle -c "SELECT 1"
 
 4. **Verify credentials:**
 ```bash
-docker compose exec backend env | grep POSTGRES
+docker compose exec api env | grep POSTGRES
 ```
 
 ### Out of Memory

@@ -5,7 +5,7 @@ Provides administrative access to all conversations across the system.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -22,7 +22,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationOut,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,
@@ -31,6 +30,7 @@ from app.schemas.response import (
     PageData,
     success,
 )
+from app.api.v1.endpoints.chat import build_message_round_payloads
 
 
 router = APIRouter()
@@ -389,13 +389,13 @@ async def get_conversation_trends(
             created_at__gte=start_time_utc,
         ).values("created_at", "token_usage")
 
-    conv_counts_by_date: dict[datetime.date, int] = {}
+    conv_counts_by_date: dict[date, int] = {}
     for row in conversations:
         date_key = to_local(row["created_at"]).date()
         conv_counts_by_date[date_key] = conv_counts_by_date.get(date_key, 0) + 1
 
-    msg_counts_by_date: dict[datetime.date, int] = {}
-    token_counts_by_date: dict[datetime.date, int] = {}
+    msg_counts_by_date: dict[date, int] = {}
+    token_counts_by_date: dict[date, int] = {}
     for row in message_rows:
         date_key = to_local(row["created_at"]).date()
         msg_counts_by_date[date_key] = msg_counts_by_date.get(date_key, 0) + 1
@@ -510,12 +510,11 @@ async def get_conversation_detail(
                 version_counts[str(root_id)] = 1
 
     # Build message outputs
-    messages_out = []
-    for m in messages:
-        msg_data = MessageOut.model_validate(m).model_dump()
+    messages_out = await build_message_round_payloads(messages)
+    canonical_messages = [m for m in messages if not m.round_id or m.is_round_canonical]
+    for msg_data, m in zip(messages_out, canonical_messages, strict=False):
         root_id = m.parent_id if m.parent_id else m.id
         msg_data["version_count"] = version_counts.get(str(root_id), 1)
-        messages_out.append(msg_data)
 
     # Build response
     conv_data = ConversationOut.model_validate(conversation).model_dump()

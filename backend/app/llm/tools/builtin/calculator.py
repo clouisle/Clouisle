@@ -9,6 +9,7 @@ import math
 import operator
 from typing import Any, Callable
 
+from app.core.i18n import t
 from ..registry import tool_registry, ToolParameter
 
 
@@ -168,10 +169,10 @@ async def calculate(expression: str) -> dict:
             "result": result,
             "success": True,
         }
-    except Exception as e:
+    except Exception:
         return {
             "expression": expression,
-            "error": str(e),
+            "error": t("tool_execution_failed"),
             "success": False,
         }
 
@@ -299,7 +300,11 @@ async def unit_convert(
             "value": value,
             "from_unit": from_unit,
             "to_unit": to_unit,
-            "error": f"Cannot convert between {from_unit} and {to_unit}",
+            "error": t(
+                "unit_convert_unsupported_units",
+                from_unit=from_unit,
+                to_unit=to_unit,
+            ),
             "success": False,
         }
 

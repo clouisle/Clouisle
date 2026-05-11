@@ -70,6 +70,14 @@ export function ModelDetailDialog({
 }: ModelDetailDialogProps) {
   const t = useTranslations('models')
   const teamsT = useTranslations('teams')
+  const getProviderName = React.useCallback((code: string) => {
+    const key = `providers.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+  const getTypeName = React.useCallback((code: string) => {
+    const key = `modelTypes.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
 
   if (!teamModel) return null
 
@@ -131,10 +139,10 @@ export function ModelDetailDialog({
           {/* 基本信息 */}
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">
-              {t(`providers.${model.provider}`)}
+              {getProviderName(model.provider)}
             </Badge>
             <Badge variant="outline">
-              {t(`modelTypes.${model.model_type}`)}
+              {getTypeName(model.model_type)}
             </Badge>
             {teamModel.priority > 0 && (
               <Badge variant="secondary" className="gap-1">

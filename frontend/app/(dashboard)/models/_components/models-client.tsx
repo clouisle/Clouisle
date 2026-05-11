@@ -67,6 +67,7 @@ import {
 import { ModelDialog } from './model-dialog'
 import { DeleteModelDialog } from './delete-model-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function ModelsClient() {
   const t = useTranslations('models')
@@ -83,7 +84,7 @@ export function ModelsClient() {
   const [pageData, setPageData] = React.useState<PageData<Model> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [providerFilter, setProviderFilter] = React.useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = React.useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
@@ -193,19 +194,29 @@ export function ModelsClient() {
     setSelectedModels(new Set())
   }
 
+  const getProviderName = React.useCallback((code: string) => {
+    const key = `providers.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+
+  const getTypeName = React.useCallback((code: string) => {
+    const key = `modelTypes.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+
   const providerOptions = React.useMemo(() => {
     return providers.map(p => ({
       value: p.code,
-      label: t(`providers.${p.code}`),
+      label: getProviderName(p.code),
     }))
-  }, [providers, t])
+  }, [providers, getProviderName])
 
   const typeOptions = React.useMemo(() => {
     return modelTypes.map(mt => ({
       value: mt.code,
-      label: t(`modelTypes.${mt.code}`),
+      label: getTypeName(mt.code),
     }))
-  }, [modelTypes, t])
+  }, [modelTypes, getTypeName])
   
   // 状态选项
   const statusOptions = [
@@ -284,7 +295,7 @@ export function ModelsClient() {
         const latencyInfo = result.latency_ms ? ` (${result.latency_ms}ms)` : ''
         toast.success(`${t('testSuccess')}${latencyInfo}`, { id: toastId })
       } else {
-        toast.error(result.message || t('testFailed'), { id: toastId })
+        toast.error(result.message ? result.message.trim() : t('testFailed'), { id: toastId })
       }
     } catch {
       toast.dismiss(toastId)
@@ -316,16 +327,6 @@ export function ModelsClient() {
     } finally {
       setBulkDeleteDialogOpen(false)
     }
-  }
-  
-  // 获取供应商名称
-  const getProviderName = (code: string) => {
-    return t(`providers.${code}`)
-  }
-  
-  // 获取类型名称
-  const getTypeName = (code: string) => {
-    return t(`modelTypes.${code}`)
   }
   
   // 获取状态 Badge

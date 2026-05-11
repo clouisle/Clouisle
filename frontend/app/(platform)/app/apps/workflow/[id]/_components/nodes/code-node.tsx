@@ -19,7 +19,11 @@ export type ErrorHandlingType = 'none' | 'default_value' | 'error_branch'
 export interface CodeOutputVariable {
   id: string
   name: string                   // 变量名
-  type: OutputVariableType       // 变量类型
+  type: OutputVariableType       // 变量类型（保留作为快捷分类）
+  // Optional structural type (object fields / array item types). When `type`
+  // is 'object' or 'array' the schema editor lets the user fill this in so
+  // downstream nodes get autocomplete on nested fields.
+  typeSpec?: import('@/lib/workflow/type-spec').TypeSpec
 }
 
 // 重试配置

@@ -4,16 +4,65 @@
 提供 HTTP 工具和代码工具的执行功能，供 API 端点复用。
 """
 
+import ipaddress
 import json
 import logging
-import re
 import mimetypes
+import re
+import socket
 from base64 import b64decode
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
+from app.core.i18n import t
+
 logger = logging.getLogger(__name__)
+
+_BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
+
+
+class _ValidatedExternalUrl(str):
+    pass
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return any(
+        (
+            ip.is_private,
+            ip.is_loopback,
+            ip.is_link_local,
+            ip.is_reserved,
+            ip.is_multicast,
+            ip.is_unspecified,
+        )
+    )
+
+
+def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Invalid HTTP URL")
+    host = parsed.hostname.lower().rstrip(".")
+    if host in _BLOCKED_HOSTS:
+        raise ValueError("HTTP URL host is not allowed")
+    try:
+        if _is_blocked_ip(ipaddress.ip_address(host)):
+            raise ValueError("HTTP URL host is not allowed")
+    except ValueError as exc:
+        if "not allowed" in str(exc):
+            raise
+    try:
+        resolved = socket.getaddrinfo(
+            host, parsed.port or None, type=socket.SOCK_STREAM
+        )
+    except socket.gaierror as exc:
+        raise ValueError("HTTP URL host cannot be resolved") from exc
+    for *_, sockaddr in resolved:
+        if _is_blocked_ip(ipaddress.ip_address(sockaddr[0])):
+            raise ValueError("HTTP URL host is not allowed")
+    return _ValidatedExternalUrl(value)
 
 
 def _render_text_template(template: str, variables: dict[str, Any]) -> str:
@@ -91,12 +140,16 @@ def _guess_filename(
 
 
 def _parse_data_url(value: str) -> tuple[bytes, str | None]:
-    """Decode a data URL into bytes and content type."""
-    match = re.fullmatch(r"data:([^;,]+)?;base64,(.*)", value, re.DOTALL)
-    if not match:
+    if not value.startswith("data:"):
         raise ValueError("Invalid data URL")
-    mime_type = match.group(1) or "application/octet-stream"
-    return b64decode(match.group(2)), mime_type
+    metadata, separator, payload = value[5:].partition(",")
+    if not separator:
+        raise ValueError("Invalid data URL")
+    parts = metadata.split(";") if metadata else []
+    if "base64" not in parts:
+        raise ValueError("Invalid data URL")
+    mime_type = parts[0] if parts and "/" in parts[0] else "application/octet-stream"
+    return b64decode(payload, validate=True), mime_type
 
 
 async def _normalize_file_upload_value(
@@ -134,19 +187,12 @@ async def _normalize_file_upload_value(
         content, detected_mime = _parse_data_url(raw_value)
         mime_type = mime_type or detected_mime
     elif raw_value.startswith("http://") or raw_value.startswith("https://"):
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(raw_value)
-            response.raise_for_status()
-            content = response.content
-            mime_type = (
-                mime_type
-                or response.headers.get("content-type", "").split(";", 1)[0].strip()
-                or None
-            )
-            source_url = raw_value
+        raise ValueError(
+            f"Unsupported file/image value for field '{field_name}'. Expected data URL."
+        )
     else:
         raise ValueError(
-            f"Unsupported file/image value for field '{field_name}'. Expected data URL or http(s) URL."
+            f"Unsupported file/image value for field '{field_name}'. Expected data URL."
         )
 
     resolved_filename = filename or _guess_filename(field_name, mime_type, source_url)
@@ -267,7 +313,10 @@ async def execute_http_tool(
     if credentials:
         all_vars.update(credentials)
 
-    url = _render_text_template(http_config.get("url", ""), all_vars)
+    raw_url = str(http_config.get("url", ""))
+    if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
+        raise ValueError("HTTP tool URL templates are not supported")
+    url = _validate_external_http_url(raw_url)
     method = http_config.get("method", "GET").upper()
 
     headers = {
@@ -293,7 +342,7 @@ async def execute_http_tool(
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(
+            response = await client.request(  # lgtm[py/full-ssrf]
                 method=method,
                 url=url,
                 headers=headers,
@@ -324,10 +373,10 @@ async def execute_http_tool(
             }
 
     except httpx.TimeoutException:
-        return {"success": False, "error": "Request timeout"}
+        return {"success": False, "error": t("request_timeout")}
     except Exception as e:
         logger.exception(f"HTTP tool execution error: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": t("tool_execution_failed")}
 
 
 def format_http_result_for_llm(result: dict) -> str:
@@ -345,7 +394,7 @@ def format_http_result_for_llm(result: dict) -> str:
     else:
         return json.dumps(
             {
-                "error": result.get("error", "Unknown error"),
+                "error": result.get("error", t("unknown_error")),
                 "status_code": result.get("status_code"),
             },
             ensure_ascii=False,

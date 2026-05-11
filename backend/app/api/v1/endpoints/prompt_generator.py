@@ -7,6 +7,8 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends
+
+from app.core.i18n import t
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -19,7 +21,7 @@ from app.schemas.response import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-GENERIC_STREAM_ERROR_MSG = "An internal error occurred while processing the request"
+GENERIC_STREAM_ERROR_KEY = "unknown_error"
 
 
 # ============ Request/Response Models ============
@@ -262,7 +264,7 @@ async def generate_prompt(
             ).first()
 
             if not default_model:
-                yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': 'no_chat_model_available'})}\n\n"
+                yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('no_chat_model_available')})}\n\n"
                 return
 
             # Build meta-prompt
@@ -307,7 +309,7 @@ async def generate_prompt(
 
         except Exception as e:
             logger.exception(f"Error generating prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -342,7 +344,7 @@ async def optimize_prompt(
             ).first()
 
             if not default_model:
-                yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': 'no_chat_model_available'})}\n\n"
+                yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_NOT_FOUND, 'msg': t('no_chat_model_available')})}\n\n"
                 return
 
             # Build optimization prompt
@@ -382,7 +384,7 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Error optimizing prompt: {e}")
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': GENERIC_STREAM_ERROR_MSG})}\n\n"
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
     return StreamingResponse(
         event_generator(),

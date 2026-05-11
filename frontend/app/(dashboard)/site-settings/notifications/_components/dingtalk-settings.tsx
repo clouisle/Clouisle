@@ -16,7 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type DingTalkSettings } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface DingTalkSettingsTabProps {
   settings: DingTalkSettings
@@ -28,17 +36,65 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['dingtalk_webhook_url', 'dingtalk_app_key', 'dingtalk_app_secret', 'dingtalk_agent_id']),
+    [fieldErrors]
+  )
 
   const updateSetting = <K extends keyof DingTalkSettings>(key: K, value: DingTalkSettings[K]) => {
     onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
+  }
+
+  const validateSettings = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (!settings.dingtalk_enabled) {
+      return nextErrors
+    }
+
+    if (settings.dingtalk_notification_type === 'webhook') {
+      if (!settings.dingtalk_webhook_url.trim()) {
+        nextErrors.dingtalk_webhook_url = t('required')
+      }
+    } else {
+      if (!settings.dingtalk_app_key.trim()) nextErrors.dingtalk_app_key = t('required')
+      if (!settings.dingtalk_app_secret.trim()) nextErrors.dingtalk_app_secret = t('required')
+      if (!settings.dingtalk_agent_id.trim()) nextErrors.dingtalk_agent_id = t('required')
+    }
+
+    return nextErrors
   }
 
   const handleSave = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateDingTalk(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save dingtalk settings:', error)
     } finally {
       setSaving(false)
@@ -46,11 +102,22 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
   }
 
   const handleSendTest = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSendingTest(true)
       await siteSettingsApi.sendTestDingTalk()
       toast.success(t('dingtalk.testSent'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
       console.error('Failed to send test dingtalk:', error)
     } finally {
       setSendingTest(false)
@@ -59,6 +126,13 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* 基础设置 */}
       <Card>
         <CardHeader>
@@ -129,7 +203,9 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
                 value={settings.dingtalk_webhook_url}
                 onChange={(e) => updateSetting('dingtalk_webhook_url', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.dingtalk_webhook_url}
               />
+              <FieldError>{fieldErrors.dingtalk_webhook_url}</FieldError>
               <p className="text-sm text-muted-foreground">{t('dingtalk.webhookUrlDesc')}</p>
             </div>
 
@@ -176,7 +252,9 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
                 value={settings.dingtalk_app_key}
                 onChange={(e) => updateSetting('dingtalk_app_key', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.dingtalk_app_key}
               />
+              <FieldError>{fieldErrors.dingtalk_app_key}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -188,7 +266,9 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
                 value={settings.dingtalk_app_secret}
                 onChange={(e) => updateSetting('dingtalk_app_secret', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.dingtalk_app_secret}
               />
+              <FieldError>{fieldErrors.dingtalk_app_secret}</FieldError>
             </div>
 
             <div className="space-y-2">
@@ -199,7 +279,9 @@ export function DingTalkSettingsTab({ settings, onSettingsChange, canUpdate }: D
                 value={settings.dingtalk_agent_id}
                 onChange={(e) => updateSetting('dingtalk_agent_id', e.target.value)}
                 disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.dingtalk_agent_id}
               />
+              <FieldError>{fieldErrors.dingtalk_agent_id}</FieldError>
             </div>
           </CardContent>
         </Card>

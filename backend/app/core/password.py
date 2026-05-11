@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, List, Tuple, Optional
 
+from app.core.i18n import t
 from app.models.site_setting import SiteSetting
 
 if TYPE_CHECKING:
@@ -63,6 +64,17 @@ async def validate_password(
             errors.append("password_recently_used")
 
     return len(errors) == 0, errors
+
+
+def translate_password_validation_error(error: str) -> str:
+    key, _, param = error.partition(":")
+    if key == "password_min_length" and param:
+        return t(key, length=param)
+    return t(key)
+
+
+def translate_password_validation_errors(errors: List[str]) -> List[str]:
+    return [translate_password_validation_error(error) for error in errors]
 
 
 def get_password_requirements_sync(

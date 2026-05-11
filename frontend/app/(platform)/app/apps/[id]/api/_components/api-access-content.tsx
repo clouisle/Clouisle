@@ -190,8 +190,10 @@ while (true) {
     { event: 'tool_call', description: t('events.toolCall') },
     { event: 'tool_result', description: t('events.toolResult') },
     { event: 'media_result', description: t('events.mediaResult') },
-    { event: 'user_input_request', description: t('events.userInputRequest') },
+    { event: 'compression_start', description: t('events.compressionStart') },
+    { event: 'compression_end', description: t('events.compressionEnd') },
     { event: 'output_truncated', description: t('events.outputTruncated') },
+    { event: 'iteration_cap_reached', description: t('events.iterationCapReached') },
     { event: 'message_end', description: t('events.messageEnd') },
     { event: 'error', description: t('events.error') },
   ]
@@ -342,9 +344,9 @@ while (true) {
           <Section title={t('codeExamples')}>
             <Tabs defaultValue="curl" className="w-full">
               <TabsList>
-                <TabsTrigger value="curl">cURL</TabsTrigger>
-                <TabsTrigger value="python">Python</TabsTrigger>
-                <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                <TabsTrigger value="curl">{t('tabs.curl')}</TabsTrigger>
+                <TabsTrigger value="python">{t('tabs.python')}</TabsTrigger>
+                <TabsTrigger value="javascript">{t('tabs.javascript')}</TabsTrigger>
               </TabsList>
               <TabsContent value="curl" className="mt-4">
                 <CodeBlock code={curlCommand} language="bash" />

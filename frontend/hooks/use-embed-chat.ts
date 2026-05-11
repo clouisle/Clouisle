@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { embedApi, type EmbedChatRequest } from '@/lib/api/embed'
-import { parseSSEStream, type SSEMessageEnd } from '@/lib/api/agents'
+import { parseSSEStream, type SSECompression, type SSEMessageEnd } from '@/lib/api/agents'
 import type {
   ChatMessage,
   MessagePart,
@@ -14,6 +15,7 @@ import type {
   ToolResultPart,
   UserInputRequestPart,
 } from '@/components/chat'
+import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import { parseToolResultOutput } from '@/lib/utils/tool-result'
 
 export type EmbedChatStatus = 'idle' | 'loading' | 'streaming' | 'error'
@@ -45,13 +47,26 @@ type ContentSegment =
   | { type: 'reasoning'; index: number }
   | { type: 'user-input-request'; userInputRequest: UserInputRequestPart }
   | { type: 'truncated' }
+  | { type: 'iteration-cap-reached' }
 
 interface TaskState {
   rag: 'pending' | 'running' | 'completed' | 'error'
   generating: 'pending' | 'running' | 'completed' | 'error'
   toolCalling: 'pending' | 'running' | 'completed' | 'error'
+  compression: 'pending' | 'running' | 'completed' | 'error'
   ragSourceCount?: number
   toolCallCount?: number
+  compressionInfo?: Record<string, unknown>
+}
+
+function getEmbedHttpErrorMessage(status: number, tError: ReturnType<typeof useTranslations>): string {
+  if (status === 404) {
+    return tError('resourceNotFound')
+  }
+  if (status >= 500 && status < 600) {
+    return tError('serverErrorDescription')
+  }
+  return getApiErrorMessage('requestFailed')
 }
 
 function parseUserInputRequestSegments(segments: ContentSegment[]): ContentSegment[] {
@@ -136,6 +151,17 @@ function buildMessageParts(
     parts.push(ragTask)
   }
 
+  // Compression task - show if it ran (not pending)
+  if (taskState.compression !== 'pending') {
+    const compressionTask: TaskPart = {
+      type: 'task',
+      taskType: 'compression',
+      state: isStreaming ? taskState.compression : 'completed',
+      info: taskState.compressionInfo,
+    }
+    parts.push(compressionTask)
+  }
+
   // Generating task - show if it ran (not pending)
   if (taskState.generating !== 'pending') {
     const generatingTask: TaskPart = {
@@ -173,6 +199,8 @@ function buildMessageParts(
       parts.push(seg.userInputRequest)
     } else if (seg.type === 'truncated') {
       parts.push({ type: 'truncated' })
+    } else if (seg.type === 'iteration-cap-reached') {
+      parts.push({ type: 'iteration-cap-reached' })
     }
   }
 
@@ -182,6 +210,7 @@ function buildMessageParts(
 export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
   const { agentId, apiKey, variables = {}, initialMessages = [], onConversationChange, onError } = options
 
+  const tError = useTranslations('errors')
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [status, setStatus] = useState<EmbedChatStatus>('idle')
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -209,7 +238,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
     reasoningBlocks: [],
     currentReasoningIndex: -1,
     ragSources: [],
-    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending' },
+    taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
 
   const isLoading = status === 'loading' || status === 'streaming'
@@ -246,7 +275,7 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
       state.reasoningBlocks = []
       state.currentReasoningIndex = -1
       state.ragSources = []
-      state.taskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending' }
+      state.taskState = { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' }
 
       try {
         const chatRequest: EmbedChatRequest = {
@@ -262,11 +291,13 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
 
         const response = await stream
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ msg: 'Request failed' }))
-          throw new Error(errorData.msg || `HTTP ${response.status}`)
+          await response.json().catch(() => ({}))
+          throw new Error(getEmbedHttpErrorMessage(response.status, tError))
         }
 
         setStatus('streaming')
+
+        let receivedTerminalEvent = false
 
         for await (const event of parseSSEStream(response)) {
           const eventType = event.event as string
@@ -361,6 +392,18 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
 
+            case 'compression_start': {
+              state.taskState.compression = 'running'
+              break
+            }
+
+            case 'compression_end': {
+              const compressionData = data as unknown as SSECompression
+              state.taskState.compression = 'completed'
+              state.taskState.compressionInfo = compressionData as unknown as Record<string, unknown>
+              break
+            }
+
             case 'tool_call': {
               state.taskState.toolCalling = 'running'
               const toolData = data as { tool_name?: string; tool_call_id?: string; arguments?: Record<string, unknown> }
@@ -416,10 +459,27 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
               break
             }
 
+            case 'iteration_cap_reached': {
+              const iterationCapData = data as { content?: string }
+              state.segments.push({ type: 'iteration-cap-reached' })
+              if (iterationCapData.content) {
+                state.segments.push({ type: 'text', text: iterationCapData.content })
+              }
+              if (state.assistantMessageId) {
+                const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, true, state.taskState)
+                setMessages(prev =>
+                  prev.map(m => m.id === state.assistantMessageId ? { ...m, parts } : m)
+                )
+              }
+              break
+            }
+
             case 'message_end': {
+              receivedTerminalEvent = true
               const endData = data as unknown as SSEMessageEnd
               state.taskState.generating = 'completed'
               state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
+              // Note: compression state is now managed by compression_start/compression_end events
               if (state.assistantMessageId) {
                 const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
                 setMessages(prev =>
@@ -433,12 +493,30 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
             }
 
             case 'error': {
+              receivedTerminalEvent = true
+              state.taskState.compression = state.taskState.compression === 'running' ? 'error' : state.taskState.compression
               const errorData = data as { code?: number; msg?: string }
-              const errorObj = { code: errorData.code, message: errorData.msg || 'Unknown error' }
+              const errorObj = { code: errorData.code, message: errorData.msg || tError('unknown') }
               onError?.(errorObj)
               break
             }
           }
+        }
+
+        if (!receivedTerminalEvent && state.assistantMessageId) {
+          state.taskState.generating = state.taskState.generating === 'running' ? 'completed' : state.taskState.generating
+          state.taskState.toolCalling = state.taskState.toolCalling === 'running' ? 'completed' : state.taskState.toolCalling
+          state.taskState.compression = state.taskState.compression === 'running' ? 'completed' : state.taskState.compression
+          state.reasoningBlocks.forEach((block) => {
+            if (block.state === 'streaming') {
+              block.state = 'done'
+              block.duration = Date.now() - block.startTime
+            }
+          })
+          const parts = buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, false, state.taskState)
+          setMessages(prev =>
+            prev.map(m => m.id === state.assistantMessageId ? { ...m, parts, metadata: { ...m.metadata, isLoading: false } } : m)
+          )
         }
 
         setStatus('idle')
@@ -447,14 +525,14 @@ export function useEmbedChat(options: UseEmbedChatOptions): UseEmbedChatReturn {
           setStatus('idle')
           return
         }
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        const errorMessage = err instanceof Error ? err.message : tError('unknown')
         onError?.({ message: errorMessage })
         setStatus('error')
       } finally {
         abortRef.current = null
       }
     },
-    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError]
+    [agentId, apiKey, conversationId, variables, isLoading, onConversationChange, onError, tError]
   )
 
   const stop = useCallback(() => {

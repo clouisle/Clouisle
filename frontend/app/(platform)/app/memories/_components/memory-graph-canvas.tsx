@@ -33,9 +33,15 @@ interface Link extends d3.SimulationLinkDatum<Node> {
 
 export function MemoryGraphCanvas() {
   const t = useTranslations('memories')
+  const tCommon = useTranslations('common')
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const zoomBehaviorRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+
+  const getRelationTypeLabel = useCallback((relationType: string) => {
+    const key = `relationTypes.${relationType}`
+    return t.has(key) ? t(key) : relationType
+  }, [t])
 
   const [entities, setEntities] = useState<MemoryEntity[]>([])
   const [relations, setRelations] = useState<MemoryRelation[]>([])
@@ -240,7 +246,7 @@ export function MemoryGraphCanvas() {
       .attr('font-size', 10)
       .attr('fill', '#666')
       .attr('text-anchor', 'middle')
-      .text((d) => t(`relationTypes.${d.relation.relation_type}`))
+      .text((d) => getRelationTypeLabel(d.relation.relation_type))
 
     const node = g
       .append('g')
@@ -322,7 +328,172 @@ export function MemoryGraphCanvas() {
       simulation.stop()
       svgEl.removeEventListener('wheel', handleWheelPan)
     }
-  }, [nodes, links, t])
+  }, [nodes, links, t, getRelationTypeLabel])
+
+  // Highlight selected entity node (separate effect to avoid rebuilding simulation)
+  useEffect(() => {
+    if (!svgRef.current) return
+    const svg = select(svgRef.current)
+    const selectedId = selectedEntity?.id
+
+    svg.selectAll<SVGGElement, Node>('.nodes g').each(function (d) {
+      const circle = select(this).select('circle')
+      if (d.id === selectedId) {
+        circle
+          .attr('r', 40)
+          .attr('stroke', '#fbbf24')
+          .attr('stroke-width', 3)
+      } else {
+        circle
+          .attr('r', 30)
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 2)
+      }
+    })
+  }, [selectedEntity])
+
+  // Highlight multi-selected nodes
+  useEffect(() => {
+    if (!svgRef.current) return
+    const svg = select(svgRef.current)
+
+    svg.selectAll<SVGGElement, Node>('.nodes g').each(function (d) {
+      const circle = select(this).select('circle')
+      // Don't override the single-selected highlight
+      if (d.id === selectedEntity?.id) return
+
+      if (selectedEntityIds.has(d.id)) {
+        circle
+          .attr('stroke', '#fbbf24')
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', '4 2')
+      } else {
+        circle
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', null)
+      }
+    })
+  }, [selectedEntityIds, selectedEntity])
+
+  // Keyboard shortcuts: Escape to clear selection and exit select mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedEntityIds(new Set())
+        setSelectMode(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // Select mode: enable drag-to-select rectangle and click-to-toggle
+  useEffect(() => {
+    if (!svgRef.current) return
+    const svg = select(svgRef.current)
+
+    if (selectMode) {
+      svg.style('cursor', 'crosshair')
+
+      let startX = 0
+      let startY = 0
+      let dragging = false
+      let rectEl: SVGRectElement | null = null
+
+      const onMouseDown = (e: MouseEvent) => {
+        // Ctrl/Cmd + drag → pan (handled by zoom behavior)
+        if (e.ctrlKey || e.metaKey) return
+        // Only start rect from background, not from nodes
+        if ((e.target as Element).tagName !== 'svg') return
+        dragging = true
+        const rect = svgRef.current!.getBoundingClientRect()
+        startX = e.clientX - rect.left
+        startY = e.clientY - rect.top
+        rectEl = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+        rectEl.setAttribute('x', String(startX))
+        rectEl.setAttribute('y', String(startY))
+        rectEl.setAttribute('width', '0')
+        rectEl.setAttribute('height', '0')
+        rectEl.setAttribute('fill', 'rgba(59,130,246,0.1)')
+        rectEl.setAttribute('stroke', '#3b82f6')
+        rectEl.setAttribute('stroke-dasharray', '4 2')
+        rectEl.setAttribute('stroke-width', '1')
+        svgRef.current!.appendChild(rectEl)
+      }
+
+      const onMouseMove = (e: MouseEvent) => {
+        if (!dragging || !rectEl) return
+        const rect = svgRef.current!.getBoundingClientRect()
+        const curX = e.clientX - rect.left
+        const curY = e.clientY - rect.top
+        const x = Math.min(startX, curX)
+        const y = Math.min(startY, curY)
+        const w = Math.abs(curX - startX)
+        const h = Math.abs(curY - startY)
+        rectEl.setAttribute('x', String(x))
+        rectEl.setAttribute('y', String(y))
+        rectEl.setAttribute('width', String(w))
+        rectEl.setAttribute('height', String(h))
+      }
+
+      const onMouseUp = (e: MouseEvent) => {
+        if (!dragging || !rectEl) return
+        dragging = false
+        const svgRect = svgRef.current!.getBoundingClientRect()
+        const curX = e.clientX - svgRect.left
+        const curY = e.clientY - svgRect.top
+        const selX1 = Math.min(startX, curX)
+        const selY1 = Math.min(startY, curY)
+        const selX2 = Math.max(startX, curX)
+        const selY2 = Math.max(startY, curY)
+
+        // Only select if dragged a meaningful distance
+        if (selX2 - selX1 > 5 || selY2 - selY1 > 5) {
+          // Get current zoom transform
+          const g = svg.select('g')
+          const transformAttr = g.attr('transform')
+          let tx = 0, ty = 0, scale = 1
+          if (transformAttr) {
+            const match = transformAttr.match(/translate\(([-\d.]+),([-\d.]+)\)\s*scale\(([-\d.]+)\)/)
+            if (match) {
+              tx = parseFloat(match[1])
+              ty = parseFloat(match[2])
+              scale = parseFloat(match[3])
+            }
+          }
+
+          const newSelected = new Set(selectedEntityIds)
+          svg.selectAll<SVGGElement, Node>('.nodes g').each(function (d) {
+            // Convert node position to screen coordinates
+            const screenX = (d.x || 0) * scale + tx
+            const screenY = (d.y || 0) * scale + ty
+            if (screenX >= selX1 && screenX <= selX2 && screenY >= selY1 && screenY <= selY2) {
+              newSelected.add(d.id)
+            }
+          })
+          setSelectedEntityIds(newSelected)
+        }
+
+        rectEl.remove()
+        rectEl = null
+      }
+
+      const svgEl = svgRef.current
+      svgEl.addEventListener('mousedown', onMouseDown)
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+
+      return () => {
+        svgEl.removeEventListener('mousedown', onMouseDown)
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+        svg.style('cursor', null)
+      }
+    } else {
+      svg.style('cursor', null)
+    }
+  }, [selectMode, selectedEntityIds])
 
   // Highlight selected entity node (separate effect to avoid rebuilding simulation)
   useEffect(() => {
@@ -561,7 +732,7 @@ export function MemoryGraphCanvas() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+        <div className="text-muted-foreground">{tCommon('loading')}</div>
       </div>
     )
   }

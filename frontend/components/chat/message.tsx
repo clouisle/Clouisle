@@ -3,15 +3,28 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Streamdown } from 'streamdown'
+import {
+  Block,
+  Streamdown,
+  defaultRehypePlugins,
+} from 'streamdown'
+import type { CodeHighlighterPlugin, PluginConfig, LinkSafetyModalProps } from 'streamdown'
+import { bundledLanguages, codeToTokens } from 'shiki'
+import type { BundledLanguage, BundledTheme } from 'shiki'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Tooltip,
   TooltipContent,
@@ -38,7 +51,7 @@ import {
   ToolInput,
   ToolOutput,
 } from '@/components/ai-elements/tool'
-import type { ChatMessage, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
+import type { ChatMessage, CodePreviewPayload, MessagePart, TextPart, SourceDocumentPart, SourceUrlPart, ReasoningPart, ToolCallPart, McpToolCallPart, FilePart, ImagePart, TaskPart, UserInputRequestPart, MediaResultPart } from './types'
 import {
   isTextPart,
   isReasoningPart,
@@ -54,8 +67,10 @@ import {
   isTaskPart,
   isUserInputRequestPart,
   isTruncatedPart,
+  isStoppedPart,
+  isIterationCapReachedPart,
 } from './types'
-import { SourceContent } from './message-parts'
+import { SourceContent, FileListContent } from './message-parts'
 import { UserInputRequestCard } from './user-input-request-card'
 import {
   getImageAssetUrl,
@@ -63,7 +78,183 @@ import {
   isMediaImageToolResult,
   isMediaVideoToolResult,
   parseToolResultOutput,
+  shouldDisplayMediaResultInBody,
 } from '@/lib/utils/tool-result'
+
+const CODE_FENCE_REGEX = /^```([^\r\n`]*)\r?\n([\s\S]*?)\r?\n```$/
+const STREAMING_REHYPE_PLUGINS = [
+  defaultRehypePlugins.sanitize,
+  defaultRehypePlugins.harden,
+]
+const CHAT_CODE_THEMES: [BundledTheme, BundledTheme] = ['github-light', 'github-dark']
+const chatCodeHighlighter: CodeHighlighterPlugin = {
+  name: 'shiki',
+  type: 'code-highlighter',
+  highlight: (options, callback) => {
+    if (!(options.language in bundledLanguages)) {
+      return null
+    }
+
+    void codeToTokens(options.code, {
+      lang: options.language,
+      themes: {
+        light: options.themes[0] as BundledTheme,
+        dark: options.themes[1] as BundledTheme,
+      },
+    }).then((result) => callback?.(result)).catch(() => undefined)
+
+    return null
+  },
+  supportsLanguage: (language) => language in bundledLanguages,
+  getSupportedLanguages: () => Object.keys(bundledLanguages) as BundledLanguage[],
+  getThemes: () => CHAT_CODE_THEMES,
+}
+const chatStreamdownPlugins: PluginConfig = {
+  code: chatCodeHighlighter,
+}
+type ParsedCodeFence = {
+  language: string
+  code: string
+}
+
+type ToolArtifact = {
+  path?: string
+  url?: string
+  filename?: string
+  size?: number
+  content_type?: string
+  contentType?: string
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getToolArtifacts(output: unknown): FilePart[] {
+  if (!isRecord(output) || !Array.isArray(output.artifacts)) {
+    return []
+  }
+
+  return output.artifacts
+    .filter(isRecord)
+    .map((artifact): FilePart | null => {
+      const item = artifact as ToolArtifact
+      const filename = item.filename || item.path?.split('/').pop() || item.path || 'artifact'
+      if (!item.url) {
+        return null
+      }
+      return {
+        type: 'file',
+        filename,
+        url: item.url,
+        size: typeof item.size === 'number' ? item.size : undefined,
+        mimeType: item.content_type || item.contentType,
+      }
+    })
+    .filter((file): file is FilePart => file !== null)
+}
+
+
+function parseCodeFence(content: string): ParsedCodeFence | null {
+  const match = content.match(CODE_FENCE_REGEX)
+  if (!match) {
+    return null
+  }
+
+  const language = match[1].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  return {
+    language,
+    code: match[2].replace(/\r\n?/g, '\n'),
+  }
+}
+
+function getPreviewKind(language: string, code: string): CodePreviewPayload['kind'] | null {
+  if (language === 'mermaid') {
+    return 'mermaid'
+  }
+  if (language === 'html' || language === 'htm' || language === 'xhtml') {
+    return 'html'
+  }
+  if (language === 'svg' || (language === 'xml' && code.trimStart().toLowerCase().startsWith('<svg'))) {
+    return 'svg'
+  }
+  if (language === 'css') {
+    return 'css'
+  }
+  if (language === 'js' || language === 'javascript' || language === 'mjs') {
+    return 'javascript'
+  }
+  if (language === 'md' || language === 'markdown') {
+    return 'markdown'
+  }
+
+  return null
+}
+
+function PreviewableCodeBlock({
+  content,
+  index,
+  shouldParseIncompleteMarkdown,
+  parsedFence,
+  previewKind,
+  onOpenCodePreview,
+  ...props
+}: React.ComponentProps<typeof Block> & {
+  parsedFence: ParsedCodeFence
+  previewKind: CodePreviewPayload['kind'] | null
+  onOpenCodePreview: (payload: CodePreviewPayload) => void
+}) {
+  const t = useTranslations('chat.message')
+  const language = parsedFence.language || previewKind || 'text'
+  const blockRef = React.useRef<HTMLDivElement>(null)
+  const [toolbar, setToolbar] = React.useState<HTMLDivElement | null>(null)
+
+  React.useLayoutEffect(() => {
+    const block = blockRef.current
+    if (!block) {
+      setToolbar(null)
+      return
+    }
+
+    const syncToolbar = () => {
+      setToolbar(block.querySelector<HTMLDivElement>('[data-streamdown="code-block-header"] > div'))
+    }
+
+    syncToolbar()
+    const observer = new MutationObserver(syncToolbar)
+    observer.observe(block, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [content])
+
+  const previewButton = (
+    <button
+      type="button"
+      className="order-first inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onOpenCodePreview({
+        id: `${language}:${parsedFence.code.length}:${parsedFence.code.slice(0, 32)}`,
+        language,
+        code: parsedFence.code,
+        kind: previewKind ?? 'source',
+      })}
+    >
+      <Eye className="h-3.5 w-3.5" />
+      <span>{t('openCodePreview')}</span>
+    </button>
+  )
+
+  return (
+    <div ref={blockRef}>
+      <Block
+        content={content}
+        index={index}
+        shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+        {...props}
+      />
+      {toolbar ? ReactDOM.createPortal(previewButton, toolbar) : null}
+    </div>
+  )
+}
+
 
 export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   message: ChatMessage
@@ -83,6 +274,10 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onSwitchVersion?: (versionIndex: number) => void
   /** Callback when user selects an option from user input request */
   onSelectOption?: (option: string) => void
+  /** Callback when a previewable code block is opened */
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+  /** Hide tool call cards and tool execution details */
+  hideToolCalls?: boolean
 }
 
 export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
@@ -97,6 +292,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onFeedback,
       onSwitchVersion,
       onSelectOption,
+      onOpenCodePreview,
+      hideToolCalls = false,
       className,
       ...props
     },
@@ -120,34 +317,45 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
     const documentSources = message.parts.filter(isSourceDocumentPart) as SourceDocumentPart[]
     const otherParts = message.parts.filter((p) => !isSourcePart(p))
+    const hasIterationCapMarker = otherParts.some(isIterationCapReachedPart)
+    const iterationCapLabel = t('iterationCapReached').trim()
 
     // Get text content for copying (strip citation markers)
-    const getTextContent = React.useCallback(() => {
-      return message.parts
-        .filter(isTextPart)
-        .map((part) => (part as TextPart).text.replace(/\[\[cite:\d+\]\]/g, ''))
-        .join('\n')
-        .trim()
-    }, [message.parts])
+    const textContent = message.parts
+      .filter((part): part is TextPart => (
+        isTextPart(part)
+        && !(hasIterationCapMarker && part.text.trim() === iterationCapLabel)
+      ))
+      .map((part) => part.text.replace(/\[\[cite:\d+\]\]/g, ''))
+      .join('\n')
+      .trim()
 
     // Handle copy
-    const handleCopy = React.useCallback(async () => {
-      const text = getTextContent()
-      if (!text) return
+    const handleCopy = async () => {
+      if (!textContent) return
 
       try {
-        await navigator.clipboard.writeText(text)
+        await navigator.clipboard.writeText(textContent)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       } catch (err) {
         console.error('Failed to copy:', err)
       }
-    }, [getTextContent])
+    }
 
     const renderToolResultContent = (output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
 
       if (isMediaImageToolResult(parsedOutput)) {
+        if (parsedOutput.success === false) {
+          return (
+            <ToolOutput
+              output={undefined}
+              errorText={parsedOutput.error || (isError ? t('toolExecutionFailed') : undefined)}
+            />
+          )
+        }
+
         return (
           <div className="space-y-3">
             {parsedOutput.images.length > 0 && (
@@ -164,7 +372,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                     >
                       <img
                         src={imageUrl}
-                        alt={parsedOutput.prompt || 'Generated image'}
+                        alt={parsedOutput.prompt || t('generatedImageAlt')}
                         className="h-auto w-full object-cover"
                       />
                     </button>
@@ -173,13 +381,22 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </div>
             )}
             {parsedOutput.error && (
-              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+              <div className="text-sm text-red-500">{t('error')}: {parsedOutput.error}</div>
             )}
           </div>
         )
       }
 
       if (isMediaVideoToolResult(parsedOutput)) {
+        if (parsedOutput.success === false) {
+          return (
+            <ToolOutput
+              output={undefined}
+              errorText={parsedOutput.error || (isError ? t('toolExecutionFailed') : undefined)}
+            />
+          )
+        }
+
         const videoUrl = getVideoAssetUrl(parsedOutput.video)
         return (
           <div className="space-y-3">
@@ -193,18 +410,31 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/40 px-3 py-4 text-sm text-muted-foreground">
                 {parsedOutput.status === 'completed'
-                  ? 'Video generated but no preview URL is available.'
+                  ? t('videoPreviewUnavailable')
                   : parsedOutput.status === 'processing' || parsedOutput.status === 'pending'
-                    ? 'Video is still being generated.'
-                    : 'Video is unavailable.'}
+                    ? t('videoProcessing')
+                    : t('videoUnavailable')}
                 {typeof parsedOutput.progress === 'number' && (
-                  <div className="mt-1">Progress: {Math.round(parsedOutput.progress * 100)}%</div>
+                  <div className="mt-1">{t('progress', { value: Math.round(parsedOutput.progress * 100) })}</div>
                 )}
               </div>
             )}
             {parsedOutput.error && (
-              <div className="text-sm text-red-500">Error: {parsedOutput.error}</div>
+              <div className="text-sm text-red-500">{t('error')}: {parsedOutput.error}</div>
             )}
+          </div>
+        )
+      }
+
+      const artifactFiles = getToolArtifacts(parsedOutput)
+      if (artifactFiles.length > 0) {
+        return (
+          <div className="space-y-3">
+            <FileListContent files={artifactFiles} />
+            <ToolOutput
+              output={parsedOutput}
+              errorText={isError ? t('toolExecutionFailed') : undefined}
+            />
           </div>
         )
       }
@@ -212,7 +442,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       return (
         <ToolOutput
           output={parsedOutput}
-          errorText={isError ? String(parsedOutput) : undefined}
+          errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
     }
@@ -220,11 +450,16 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Render a single part
     const renderDefaultPart = (part: MessagePart, index: number) => {
       if (isTextPart(part)) {
+        if (hasIterationCapMarker && part.text.trim() === iterationCapLabel) {
+          return null
+        }
         return (
           <TextWithCitations
             key={index}
             text={part.text}
             sources={documentSources}
+            isStreaming={isStreaming && part.state !== 'done'}
+            onOpenCodePreview={onOpenCodePreview}
           />
         )
       }
@@ -232,6 +467,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       // Tool calls: only skip if there's reasoning (they'll be in ChainOfThought)
       // If no reasoning, render them normally in message content
       if (isToolCallPart(part) || isMcpToolCallPart(part)) {
+        if (hideToolCalls) {
+          return null
+        }
         if (hasReasoning) {
           return null // Skip, will be rendered in ChainOfThought
         }
@@ -261,7 +499,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <AIToolContent>
               <ToolInput input={toolPart.input} />
               {result && (isToolResultPart(result) || isMcpToolResultPart(result)) && (
-                (isToolResultPart(result) && (isMediaImageToolResult(parseToolResultOutput(result.output)) || isMediaVideoToolResult(parseToolResultOutput(result.output))))
+                (isToolResultPart(result) && shouldDisplayMediaResultInBody(result.output))
                   ? null
                   : renderToolResultContent(result.output, result.isError)
               )}
@@ -350,10 +588,36 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       }
 
+      if (isIterationCapReachedPart(part)) {
+        return (
+          <div
+            key={index}
+            className="flex items-start gap-2 mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-sm text-orange-800 dark:border-orange-800/50 dark:bg-orange-950/30 dark:text-orange-200"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{t('iterationCapReached')}</span>
+          </div>
+        )
+      }
+
+      // Manually stopped marker is rendered once at message level
+      if (isStoppedPart(part)) {
+        return null
+      }
+
       return null
     }
 
     // Get task parts and reasoning parts for ChainOfThought
+    const isManuallyStoppedMessage = Boolean(message.metadata?.isManuallyStopped) || otherParts.some(isStoppedPart)
+    const streamErrorMessage = typeof message.metadata?.errorMessage === 'string'
+      ? message.metadata.errorMessage
+      : null
+    const isErroredMessage = Boolean(isAssistant && message.metadata?.isError)
+    const preservedErrorNote = streamErrorMessage ?? t('partialResponseError')
+    const showPreservedErrorNote = Boolean(
+      isErroredMessage && message.metadata?.preservedPartialProgress
+    )
     const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
     const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
     const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
@@ -402,9 +666,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const getToolCallLabel = (toolPart: ToolCallPart) => {
       const name = toolPart.toolDisplayName || toolPart.toolName
       switch (toolPart.state) {
-        case 'running': return `${name} 执行中`
-        case 'done': return `${name} 已完成`
-        case 'error': return `${name} 执行失败`
+        case 'running': return t('toolRunning', { name })
+        case 'done': return t('toolCompleted', { name })
+        case 'error': return t('toolFailed', { name })
         default: return name
       }
     }
@@ -412,10 +676,46 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     // Render task title based on type and state
     const getTaskTitle = (taskPart: TaskPart) => {
       if (taskPart.taskType === 'rag') {
-        if (taskPart.state === 'completed' && taskPart.info) {
+        if (taskPart.state === 'completed' && typeof taskPart.info === 'number') {
           return tTask('foundSources', { count: taskPart.info })
         }
         return tTask('searchingKnowledge')
+      }
+      if (taskPart.taskType === 'compression') {
+        const info = (taskPart.info && typeof taskPart.info === 'object') ? taskPart.info as Record<string, unknown> : null
+        const beforeTokens = typeof info?.before_tokens === 'number' ? info.before_tokens : null
+        const afterTokens = typeof info?.after_tokens === 'number' ? info.after_tokens : null
+        const summaryTurns = typeof info?.summary_turns === 'number' ? info.summary_turns : null
+        const trigger = typeof info?.trigger === 'string' ? info.trigger : null
+        const pressureLevel = typeof info?.pressure_level === 'string' ? info.pressure_level : null
+        const compactedBlocks = typeof info?.compacted_blocks === 'number' ? info.compacted_blocks : null
+
+        if (taskPart.state === 'completed' && beforeTokens && afterTokens) {
+          if (trigger === 'context_length_error') {
+            return tTask('compressionCompletedReactive', { before: beforeTokens, after: afterTokens })
+          }
+          if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
+            if (summaryTurns && summaryTurns > 0) {
+              return tTask('compressionCompletedBlockingSummary', { before: beforeTokens, after: afterTokens, count: summaryTurns })
+            }
+            return tTask('compressionCompletedBlocking', { before: beforeTokens, after: afterTokens })
+          }
+          if (summaryTurns && summaryTurns > 0) {
+            return tTask('compressionCompletedProactiveSummary', {
+              before: beforeTokens,
+              after: afterTokens,
+              count: compactedBlocks ?? summaryTurns,
+            })
+          }
+          return tTask('compressionCompletedProactive', { before: beforeTokens, after: afterTokens })
+        }
+        if (trigger === 'context_length_error') {
+          return tTask('compressingContextReactive')
+        }
+        if (trigger === 'blocking_threshold' || pressureLevel === 'blocking' || pressureLevel === 'over_budget') {
+          return tTask('compressingContextBlocking')
+        }
+        return tTask('compressingContextProactive')
       }
       if (taskPart.taskType === 'generating') {
         return tTask('generating')
@@ -440,11 +740,24 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         )
       })
 
+      // 1.5 Compression steps after RAG and before reasoning/tool execution
+      taskParts.filter(t => t.taskType === 'compression').forEach((taskPart, index) => {
+        steps.push(
+          <ChainOfThoughtStep
+            key={`compression-${index}`}
+            icon={Timer}
+            label={getTaskTitle(taskPart)}
+            status={getStepStatus(taskPart.state)}
+          />
+        )
+      })
+
       // 2. Process other parts in their original order
       // Only include tool calls and reasoning if there's reasoning content
       if (hasReasoning) {
         otherParts.forEach((part, index) => {
           if (isToolCallPart(part)) {
+            if (hideToolCalls) return
             const toolPart = part as ToolCallPart
             // Find matching result
             const result = message.parts.find(
@@ -470,10 +783,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   />
                   <AIToolContent>
                     <ToolInput input={toolPart.input} />
-                    {result && isToolResultPart(result) && !(
-                      isMediaImageToolResult(parseToolResultOutput(result.output)) ||
-                      isMediaVideoToolResult(parseToolResultOutput(result.output))
-                    ) && (
+                    {result && isToolResultPart(result) && !shouldDisplayMediaResultInBody(result.output) && (
                       renderToolResultContent(result.output, result.isError)
                     )}
                   </AIToolContent>
@@ -481,6 +791,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </ChainOfThoughtStep>
             )
           } else if (isMcpToolCallPart(part)) {
+            if (hideToolCalls) return
             const mcpPart = part as McpToolCallPart
             // Find matching result
             const result = message.parts.find(
@@ -507,10 +818,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   <AIToolContent>
                     <ToolInput input={mcpPart.input} />
                     {result && isMcpToolResultPart(result) && (
-                      <ToolOutput
-                        output={result.output}
-                        errorText={result.isError ? String(result.output) : undefined}
-                      />
+                      renderToolResultContent(result.output, result.isError)
                     )}
                   </AIToolContent>
                 </Tool>
@@ -521,14 +829,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             steps.push(
               <ChainOfThoughtStep
                 key={`reasoning-${index}`}
+                icon={Brain}
                 label={reasoningPart.state === 'streaming'
-                  ? tReasoning('processing')
+                  ? tReasoning('thinking')
                   : tReasoning('thoughtFor', { seconds: reasoningPart.duration ? Math.ceil(reasoningPart.duration / 1000) : 0 })
                 }
                 status={reasoningPart.state === 'streaming' ? 'active' : 'complete'}
               >
                 {reasoningPart.text && (
-                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap font-sans">
+                  <pre className="text-xs text-muted-foreground/70 whitespace-pre-wrap break-words font-sans">
                     {reasoningPart.text}
                   </pre>
                 )}
@@ -555,10 +864,31 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
     // Filter parts for file attachments
     const fileParts = otherParts.filter(isFilePart)
-    const contentParts = otherParts.filter((p) => !isFilePart(p) && !isToolResultPart(p) && !isMcpToolResultPart(p) && !isTaskPart(p) && !isReasoningPart(p))
+    const contentParts = otherParts.filter((p) => (
+      !isFilePart(p)
+      && !isToolResultPart(p)
+      && !isMcpToolResultPart(p)
+      && !isTaskPart(p)
+      && !isReasoningPart(p)
+      && !(hideToolCalls && (isToolCallPart(p) || isMcpToolCallPart(p)))
+    ))
+    const visibleContentParts = (
+      isErroredMessage
+      && !showPreservedErrorNote
+      && streamErrorMessage
+    )
+      ? contentParts.filter((part) => !(isTextPart(part) && part.text.trim() === streamErrorMessage.trim()))
+      : contentParts
 
     // Check if this is a loading placeholder message (only show if no ChainOfThought)
-    const isLoadingMessage = message.metadata?.isLoading && contentParts.length === 0 && !hasChainOfThought
+    const isLoadingMessage = message.metadata?.isLoading && visibleContentParts.length === 0 && !hasChainOfThought
+    const isStandaloneErrorMessage = Boolean(
+      isErroredMessage
+      && !showPreservedErrorNote
+      && visibleContentParts.length === 0
+      && !hasChainOfThought
+      && !isLoadingMessage
+    )
 
     return (
       <div
@@ -578,7 +908,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </MessageAttachments>
             )}
 
-            <MessageContent>
+            <MessageContent className={cn(isErroredMessage && 'rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2')}>
               {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought isStreaming={isChainOfThoughtStreaming}>
@@ -595,9 +925,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   <span className="text-sm">{t('thinking')}</span>
                 </div>
               ) : (
-                contentParts.map((part, index) =>
+                visibleContentParts.map((part, index) =>
                   renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
                 )
+              )}
+              {isErroredMessage && (
+                <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
+                  <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
+                  <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+                </div>
+              )}
+              {isAssistant && isManuallyStoppedMessage && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Square className="h-3 w-3 shrink-0 fill-current" />
+                  <span>{t('manuallyStopped')}</span>
+                </div>
               )}
             </MessageContent>
 
@@ -607,7 +949,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             )}
 
             {/* Actions for assistant messages */}
-            {isAssistant && !isStreaming && getTextContent() && (
+            {isAssistant && !isStreaming && textContent && (
               <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
@@ -796,12 +1138,123 @@ function CitationBadge({
  * Uses MutationObserver to detect when Streamdown finishes rendering,
  * then replaces citation markers with portal targets
  */
+function PreviewableMarkdownBlock({
+  content,
+  index,
+  shouldParseIncompleteMarkdown,
+  isStreaming,
+  onOpenCodePreview,
+  ...props
+}: React.ComponentProps<typeof Block> & {
+  isStreaming: boolean
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
+}) {
+  const parsedFence = !isStreaming && onOpenCodePreview ? parseCodeFence(content) : null
+  const previewKind = parsedFence ? getPreviewKind(parsedFence.language, parsedFence.code) : null
+
+  if (parsedFence && onOpenCodePreview) {
+    return (
+      <PreviewableCodeBlock
+        content={content}
+        index={index}
+        shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+        parsedFence={parsedFence}
+        previewKind={previewKind}
+        onOpenCodePreview={onOpenCodePreview}
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <Block
+      content={content}
+      index={index}
+      shouldParseIncompleteMarkdown={shouldParseIncompleteMarkdown}
+      {...props}
+    />
+  )
+}
+
+function isSameOriginChatLink(url: string) {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  try {
+    const resolvedUrl = new URL(url, window.location.href)
+    return (
+      (resolvedUrl.protocol === 'http:' || resolvedUrl.protocol === 'https:')
+      && resolvedUrl.origin === window.location.origin
+    )
+  } catch {
+    return false
+  }
+}
+
+function LinkSafetyModal({
+  url,
+  isOpen,
+  onClose,
+  onConfirm,
+}: LinkSafetyModalProps) {
+  const t = useTranslations('chat.message')
+
+  if (!isOpen || typeof document === 'undefined') {
+    return null
+  }
+
+  return ReactDOM.createPortal(
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open) {
+        onClose()
+      }
+    }}>
+      <DialogContent showCloseButton={false} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('linkSafetyTitle')}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>{t('linkSafetyDescription')}</p>
+          <div className="break-all rounded-md bg-muted/50 px-3 py-2 font-mono text-xs text-foreground">
+            {url}
+          </div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            onClick={onClose}
+          >
+            {t('linkSafetyCancel')}
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            onClick={() => {
+              onConfirm()
+              onClose()
+            }}
+          >
+            {t('linkSafetyContinue')}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>,
+    document.body
+  )
+}
+
 function TextWithCitations({
   text,
   sources,
+  isStreaming = false,
+  onOpenCodePreview,
 }: {
   text: string
   sources: SourceDocumentPart[]
+  isStreaming?: boolean
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [portalTargets, setPortalTargets] = React.useState<Array<{
@@ -900,6 +1353,29 @@ function TextWithCitations({
     setPortalTargets((prev) => [...prev, ...newTargets])
   }, [hasSources])
 
+  const rehypePlugins = isStreaming ? STREAMING_REHYPE_PLUGINS : undefined
+
+  const components = React.useMemo(() => ({
+    p: ({ children, node, ...props }: React.ComponentProps<'p'> & {
+      node?: {
+        children?: Array<{ tagName?: string; type?: string }>
+      }
+    }) => {
+      const hasImgInNode = node?.children?.some(
+        (child) => child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
+      )
+      const hasBlockElements = React.Children.toArray(children).some(
+        (child) =>
+          React.isValidElement(child) &&
+          (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
+      )
+      if (hasImgInNode || hasBlockElements) {
+        return <div className="my-4" {...props}>{children}</div>
+      }
+      return <p {...props}>{children}</p>
+    },
+  }), [])
+
   // Use MutationObserver to detect when Streamdown renders content
   React.useEffect(() => {
     if (!containerRef.current || !hasSources) {
@@ -930,33 +1406,51 @@ function TextWithCitations({
     }
   }, [processedText, hasSources, processCitations])
 
+  React.useEffect(() => {
+    if (!isStreaming || !containerRef.current) {
+      return
+    }
+
+    const scrollCodeBlocksToBottom = () => {
+      containerRef.current?.querySelectorAll<HTMLElement>('[data-streamdown="code-block-body"]').forEach((block) => {
+        block.scrollTop = block.scrollHeight
+      })
+    }
+
+    scrollCodeBlocksToBottom()
+    const observer = new MutationObserver(scrollCodeBlocksToBottom)
+    observer.observe(containerRef.current, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
+    return () => observer.disconnect()
+  }, [isStreaming, processedText])
+
   return (
     <div
       ref={containerRef}
+      data-chat-streaming={isStreaming ? 'true' : 'false'}
       className="w-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
     >
       <Streamdown
-        components={{
-          // Use div instead of p when paragraph contains block elements (like images)
-          // This prevents React hydration error: <div> cannot be a descendant of <p>
-          p: ({ children, node, ...props }) => {
-            // Check AST node for img elements (more reliable than checking React children)
-            const hasImgInNode = node?.children?.some(
-              (child: { tagName?: string; type?: string }) => 
-                child.tagName === 'img' || child.type === 'element' && child.tagName === 'img'
-            )
-            // Also check React children for any wrapper components
-            const hasBlockElements = React.Children.toArray(children).some(
-              (child) => 
-                React.isValidElement(child) && 
-                (child.type === 'div' || child.type === 'img' || typeof child.type === 'function')
-            )
-            if (hasImgInNode || hasBlockElements) {
-              return <div className="my-4" {...props}>{children}</div>
-            }
-            return <p {...props}>{children}</p>
-          },
+        isAnimating={isStreaming}
+        components={components}
+        rehypePlugins={rehypePlugins}
+        plugins={isStreaming ? undefined : chatStreamdownPlugins}
+        linkSafety={{
+          enabled: true,
+          onLinkCheck: (url) => isSameOriginChatLink(url),
+          renderModal: (props) => <LinkSafetyModal {...props} />,
         }}
+        BlockComponent={(props) => (
+          <PreviewableMarkdownBlock
+            {...props}
+            isStreaming={isStreaming}
+            onOpenCodePreview={onOpenCodePreview}
+          />
+        )}
       >
         {processedText}
       </Streamdown>

@@ -8,12 +8,14 @@ to improve performance and reduce database/computation overhead.
 import json
 import hashlib
 import logging
-from typing import Any, TypeVar, Callable
+from typing import TypeVar, Callable, cast
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import wraps
 
 from app.core.redis import get_redis
+from .serialization import dumps_value, loads_value
+from .types import WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +88,7 @@ class CacheKey:
         return f"{CACHE_CONFIG.prefix}tool:{tool_id}:{inputs_hash}"
 
 
-def hash_content(content: Any) -> str:
+def hash_content(content: WorkflowValue) -> str:
     """Generate a hash for any content."""
     if isinstance(content, str):
         data = content.encode()
@@ -122,7 +124,7 @@ class WorkflowCache:
         """Initialize cache manager."""
         self.config = config or CACHE_CONFIG
         self._redis = None
-        self._local_cache: dict[str, tuple[Any, datetime]] = {}
+        self._local_cache: dict[str, tuple[WorkflowValue, datetime]] = {}
         self._local_cache_max = 100  # Local cache size limit
 
     async def _get_redis(self):
@@ -131,7 +133,7 @@ class WorkflowCache:
             self._redis = await get_redis()
         return self._redis
 
-    def _get_local(self, key: str) -> Any | None:
+    def _get_local(self, key: str) -> WorkflowValue | None:
         """Get value from local cache."""
         if key in self._local_cache:
             value, expires = self._local_cache[key]
@@ -141,7 +143,7 @@ class WorkflowCache:
                 del self._local_cache[key]
         return None
 
-    def _set_local(self, key: str, value: Any, ttl: int):
+    def _set_local(self, key: str, value: WorkflowValue, ttl: int):
         """Set value in local cache."""
         # Simple LRU: remove oldest if full
         if len(self._local_cache) >= self._local_cache_max:
@@ -177,17 +179,21 @@ class WorkflowCache:
         local = self._get_local(key)
         if local is not None:
             logger.debug(f"Workflow cache hit (local): {workflow_id}")
-            return local
+            return cast("dict | None", local) if isinstance(local, dict) else None
 
         # Check Redis
         try:
             redis = await self._get_redis()
             data = await redis.get(key)
             if data:
-                definition = json.loads(data)
+                definition = loads_value(data)
                 self._set_local(key, definition, self.config.workflow_definition_ttl)
                 logger.debug(f"Workflow cache hit (redis): {workflow_id}")
-                return definition
+                return (
+                    cast("dict | None", definition)
+                    if isinstance(definition, dict)
+                    else None
+                )
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -214,7 +220,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(definition))
+            await redis.setex(key, ttl, dumps_value(definition))
             self._set_local(key, definition, ttl)
             logger.debug(f"Workflow cached: {workflow_id}")
         except Exception as e:
@@ -261,17 +267,17 @@ class WorkflowCache:
         local = self._get_local(key)
         if local is not None:
             logger.debug(f"Plan cache hit (local): {workflow_id}")
-            return local
+            return cast("dict | None", local) if isinstance(local, dict) else None
 
         # Check Redis
         try:
             redis = await self._get_redis()
             data = await redis.get(key)
             if data:
-                plan = json.loads(data)
+                plan = loads_value(data)
                 self._set_local(key, plan, self.config.execution_plan_ttl)
                 logger.debug(f"Plan cache hit (redis): {workflow_id}")
-                return plan
+                return cast("dict | None", plan) if isinstance(plan, dict) else None
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -291,7 +297,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(plan))
+            await redis.setex(key, ttl, dumps_value(plan))
             self._set_local(key, plan, ttl)
             logger.debug(f"Plan cached: {workflow_id}")
         except Exception as e:
@@ -330,7 +336,9 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"Node cache hit: {node_id}")
-                return json.loads(data)
+                result = loads_value(data)
+                if isinstance(result, dict):
+                    return result
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -355,7 +363,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(outputs))
+            await redis.setex(key, ttl, dumps_value(outputs))
             logger.debug(f"Node result cached: {node_id}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -379,8 +387,8 @@ class WorkflowCache:
         Returns:
             LLM response dict or None if not cached
         """
-        prompt_hash = hash_content(messages)
-        params_hash = hash_content(params or {})
+        prompt_hash = hash_content(cast("WorkflowValue", messages))
+        params_hash = hash_content(cast("WorkflowValue", params or {}))
         key = CacheKey.llm_response(model, prompt_hash, params_hash)
 
         try:
@@ -388,7 +396,9 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"LLM cache hit: {model}")
-                return json.loads(data)
+                result = loads_value(data)
+                if isinstance(result, dict):
+                    return result
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -403,14 +413,14 @@ class WorkflowCache:
         ttl: int | None = None,
     ) -> None:
         """Cache LLM response."""
-        prompt_hash = hash_content(messages)
-        params_hash = hash_content(params or {})
+        prompt_hash = hash_content(cast("WorkflowValue", messages))
+        params_hash = hash_content(cast("WorkflowValue", params or {}))
         key = CacheKey.llm_response(model, prompt_hash, params_hash)
         ttl = ttl or self.config.llm_response_ttl
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(response))
+            await redis.setex(key, ttl, dumps_value(response))
             logger.debug(f"LLM response cached: {model}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -431,7 +441,9 @@ class WorkflowCache:
             data = await redis.get(key)
             if data:
                 logger.debug(f"Tool cache hit: {tool_id}")
-                return json.loads(data)
+                result = loads_value(data)
+                if isinstance(result, dict):
+                    return result
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 
@@ -451,7 +463,7 @@ class WorkflowCache:
 
         try:
             redis = await self._get_redis()
-            await redis.setex(key, ttl, json.dumps(outputs))
+            await redis.setex(key, ttl, dumps_value(outputs))
             logger.debug(f"Tool result cached: {tool_id}")
         except Exception as e:
             logger.warning(f"Cache set error: {e}")
@@ -531,7 +543,7 @@ def cached(
                 redis = await get_redis()
                 data = await redis.get(full_key)
                 if data is not None:
-                    return json.loads(data)
+                    return loads_value(data)
             except Exception:
                 pass
 
@@ -542,7 +554,7 @@ def cached(
             if result is not None or cache_none:
                 try:
                     redis = await get_redis()
-                    await redis.setex(full_key, ttl, json.dumps(result, default=str))
+                    await redis.setex(full_key, ttl, dumps_value(result))
                 except Exception:
                     pass
 

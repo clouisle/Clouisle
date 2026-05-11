@@ -1,0 +1,19 @@
+Clouisle has been rendered for namespace {{ .Release.Namespace }}.
+
+Application services:
+  API:      http://api:{{ .Values.api.service.port }}
+  Frontend: http://frontend:{{ .Values.frontend.service.port }}
+
+Useful commands:
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} get svc
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/api
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/worker
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/sandbox-worker
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/frontend
+
+Port-forward API:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/api 8000:{{ .Values.api.service.port }}
+
+Port-forward frontend:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/frontend 3000:{{ .Values.frontend.service.port }}

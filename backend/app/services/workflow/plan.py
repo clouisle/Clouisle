@@ -6,10 +6,13 @@ and determining execution order.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import cast
 import logging
 
+from app.core.i18n import t
+
 from .errors import CyclicDependencyError, WorkflowValidationError
+from .types import WorkflowValue
 
 logger = logging.getLogger(__name__)
 
@@ -167,11 +170,11 @@ class ExecutionPlan:
         for node_id, node in self.nodes.items():
             if node.node_type in start_types:
                 if self.start_node_id:
-                    raise WorkflowValidationError("Workflow has multiple start nodes")
+                    raise WorkflowValidationError()
                 self.start_node_id = node_id
 
         if not self.start_node_id:
-            raise WorkflowValidationError("Workflow has no start node")
+            raise WorkflowValidationError()
 
         logger.debug(f"Start node: {self.start_node_id}")
 
@@ -213,9 +216,9 @@ class ExecutionPlan:
 
         # Check for cycles
         if len(processed) != len(self.nodes):
-            unprocessed = set(self.nodes.keys()) - processed
             raise CyclicDependencyError(
-                f"Cyclic dependency detected involving nodes: {unprocessed}"
+                WorkflowValidationError().message,
+                msg_key="validation_error",
             )
 
         logger.debug(f"Built {len(self.stages)} execution stages")
@@ -331,42 +334,27 @@ class ExecutionPlan:
 
         # Check start node exists
         if not self.start_node_id:
-            errors.append("No start node found")
+            errors.append(t("workflow_validation_no_start_node"))
 
-        # Check for isolated nodes (no connections)
+        # Check for isolated nodes (no upstream connections)
         for node_id, node in self.nodes.items():
             # Skip start nodes and internal subgraph nodes
-            if node.node_type not in {
+            if node.node_type in {
                 "user_input",
                 "trigger",
                 "iteration_start",
                 "loop_start",
                 *NON_EXECUTABLE_NODE_TYPES,
             }:
-                if not node.upstream:
-                    errors.append(f"Node {node_id} has no upstream connections")
-
-            if node.node_type != "answer":
-                if not node.downstream and node.node_type not in {
-                    "user_input",
-                    "trigger",
-                    *NON_EXECUTABLE_NODE_TYPES,
-                }:
-                    # Allow answer nodes and start nodes to have no downstream
-                    pass  # OK for now, could be a dead branch
-
-        # Check answer nodes exist
-        answer_nodes = [
-            node_id
-            for node_id, node in self.nodes.items()
-            if node.node_type == "answer"
-        ]
-        if not answer_nodes:
-            errors.append("No answer (output) node found")
+                continue
+            if not node.upstream:
+                errors.append(
+                    t("workflow_validation_node_no_upstream", node_id=node_id)
+                )
 
         return errors
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, WorkflowValue]:
         """
         Serialize execution plan to dictionary.
 
@@ -377,12 +365,15 @@ class ExecutionPlan:
             "start_node_id": self.start_node_id,
             "node_count": len(self.nodes),
             "stage_count": len(self.stages),
-            "stages": [
-                {
-                    "index": stage.stage_index,
-                    "nodes": stage.node_ids,
-                }
-                for stage in self.stages
-            ],
-            "execution_order": self.get_execution_order(),
+            "stages": cast(
+                list[WorkflowValue],
+                [
+                    {
+                        "index": stage.stage_index,
+                        "nodes": stage.node_ids,
+                    }
+                    for stage in self.stages
+                ],
+            ),
+            "execution_order": cast(list[WorkflowValue], self.get_execution_order()),
         }

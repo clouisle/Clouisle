@@ -16,6 +16,7 @@ import {
   FileIcon,
   ArrowUp,
 } from 'lucide-react';
+import { GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 export interface ChatInputFile {
@@ -121,6 +122,7 @@ export function ChatInput({
   const [internalFiles, setInternalFiles] = useState<ChatInputFile[]>([]);
   const [isComposing, setIsComposing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -133,6 +135,15 @@ export function ChatInput({
   const files = controlledFiles ?? internalFiles;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const setFiles = onFilesChange ?? setInternalFiles;
+
+  const documentMaxFileSize = fileUploadConfig?.max_file_size || GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES;
+  const validateFileSize = useCallback((file: File) => {
+    const maxFileSize = isDocumentFile(file) ? documentMaxFileSize : GENERAL_UPLOAD_MAX_FILE_SIZE_BYTES;
+    if (file.size <= maxFileSize) return true;
+    const maxFileSizeMb = Math.round(maxFileSize / 1024 / 1024);
+    setFileError(t('fileTooLarge', { maxSize: maxFileSizeMb }));
+    return false;
+  }, [documentMaxFileSize, t]);
 
   // Check if input is multiline (has newlines or is long enough to wrap)
   const isMultiline = value.includes('\n') || value.length > 60;
@@ -178,7 +189,9 @@ export function ChatInput({
       if (selectedFiles.length === 0) return;
 
       const remainingSlots = maxFiles - files.length;
-      const filesToAdd = selectedFiles.slice(0, remainingSlots);
+      const filesToAdd = selectedFiles.slice(0, remainingSlots).filter(validateFileSize);
+      if (filesToAdd.length === 0) return;
+      setFileError(null);
 
       const newFiles: ChatInputFile[] = filesToAdd.map((file) => ({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -203,7 +216,7 @@ export function ChatInput({
         fileInputRef.current.value = '';
       }
     },
-    [files, maxFiles, onFilesChange]
+    [files, maxFiles, onFilesChange, validateFileSize]
   );
 
   const removeFile = useCallback((fileId: string) => {
@@ -255,7 +268,9 @@ export function ChatInput({
       e.preventDefault();
 
       const remainingSlots = maxFiles - files.length;
-      const filesToAdd = pastedFiles.slice(0, remainingSlots);
+      const filesToAdd = pastedFiles.slice(0, remainingSlots).filter(validateFileSize);
+      if (filesToAdd.length === 0) return;
+      setFileError(null);
 
       const newFiles: ChatInputFile[] = filesToAdd.map((file, index) => ({
         id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
@@ -273,7 +288,7 @@ export function ChatInput({
         setInternalFiles((prev) => [...prev, ...newFiles]);
       }
     },
-    [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange]
+    [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, validateFileSize]
   );
 
   // Handle drag and drop
@@ -326,7 +341,9 @@ export function ChatInput({
     if (validFiles.length === 0) return;
 
     const remainingSlots = maxFiles - files.length;
-    const filesToAdd = validFiles.slice(0, remainingSlots);
+    const filesToAdd = validFiles.slice(0, remainingSlots).filter(validateFileSize);
+    if (filesToAdd.length === 0) return;
+    setFileError(null);
 
     const newFiles: ChatInputFile[] = filesToAdd.map((file, index) => ({
       id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
@@ -343,7 +360,7 @@ export function ChatInput({
     } else {
       setInternalFiles((prev) => [...prev, ...newFiles]);
     }
-  }, [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange]);
+  }, [allowAttachments, enableFileUpload, files, maxFiles, onFilesChange, validateFileSize]);
 
   const canSubmit = (value.trim().length > 0 || files.length > 0) && !disabled && !isLoading && !isUploading;
   const showStop = isStreaming && onStop;
@@ -409,6 +426,9 @@ export function ChatInput({
             </div>
           )}
         </div>
+      )}
+      {fileError && (
+        <p className="mb-2 text-xs text-destructive">{fileError}</p>
       )}
 
       {/* Input Area - OpenAI Style */}

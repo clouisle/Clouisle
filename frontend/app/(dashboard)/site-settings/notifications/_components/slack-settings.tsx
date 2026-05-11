@@ -9,7 +9,15 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Loader2, ExternalLink } from 'lucide-react'
+import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type SlackSettings } from '@/lib/api/admin/site-settings'
+import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  mapValidationErrors,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
 
 interface SlackSettingsTabProps {
   settings: SlackSettings
@@ -21,17 +29,55 @@ export function SlackSettingsTab({ settings, onSettingsChange, canUpdate }: Slac
   const t = useTranslations('siteSettings')
   const [saving, setSaving] = React.useState(false)
   const [sendingTest, setSendingTest] = React.useState(false)
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
+
+  const errorPathMap = React.useMemo(
+    () => Object.fromEntries(
+      Object.keys(settings).flatMap((key) => [
+        [key, key],
+        [`settings.${key}`, key],
+      ])
+    ),
+    [settings]
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['slack_webhook_url']),
+    [fieldErrors]
+  )
 
   const updateSetting = <K extends keyof SlackSettings>(key: K, value: SlackSettings[K]) => {
     onSettingsChange({ ...settings, [key]: value })
+    setFieldErrors((prev) => clearValidationError(prev, key))
+  }
+
+  const validateSettings = () => {
+    const nextErrors: Record<string, string> = {}
+
+    if (settings.slack_enabled && !settings.slack_webhook_url.trim()) {
+      nextErrors.slack_webhook_url = t('required')
+    }
+
+    return nextErrors
   }
 
   const handleSave = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors({})
     try {
       setSaving(true)
       await siteSettingsApi.updateSlack(settings)
       toast.success(t('saveSuccess'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
       console.error('Failed to save slack settings:', error)
     } finally {
       setSaving(false)
@@ -39,11 +85,22 @@ export function SlackSettingsTab({ settings, onSettingsChange, canUpdate }: Slac
   }
 
   const handleSendTest = async () => {
+    const nextErrors = validateSettings()
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors)
+      return
+    }
+
+    setFieldErrors((prev) => clearValidationError(prev, 'slack_webhook_url'))
     try {
       setSendingTest(true)
       await siteSettingsApi.sendTestSlack()
       toast.success(t('slack.testSent'))
     } catch (error) {
+      const errors = mapValidationErrors(normalizeValidationErrors(error), errorPathMap)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors((prev) => ({ ...prev, ...errors }))
+      }
       console.error('Failed to send test slack:', error)
     } finally {
       setSendingTest(false)
@@ -52,6 +109,13 @@ export function SlackSettingsTab({ settings, onSettingsChange, canUpdate }: Slac
 
   return (
     <div className="space-y-6">
+      {summaryEntries.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+          {summaryEntries.map(([field, message]) => (
+            <FieldError key={field}>{formatValidationSummaryMessage(field, message)}</FieldError>
+          ))}
+        </div>
+      )}
       {/* 基础设置 */}
       <Card>
         <CardHeader>
@@ -100,7 +164,9 @@ export function SlackSettingsTab({ settings, onSettingsChange, canUpdate }: Slac
               value={settings.slack_webhook_url}
               onChange={(e) => updateSetting('slack_webhook_url', e.target.value)}
               disabled={!canUpdate}
+              aria-invalid={!!fieldErrors.slack_webhook_url}
             />
+            <FieldError>{fieldErrors.slack_webhook_url}</FieldError>
             <p className="text-sm text-muted-foreground">{t('slack.webhookUrlDesc')}</p>
           </div>
         </CardContent>

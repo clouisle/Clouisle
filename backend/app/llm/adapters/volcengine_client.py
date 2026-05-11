@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from app.core.i18n import t
 from app.llm.errors import (
     AuthenticationError,
     InvalidRequestError,
@@ -63,7 +64,7 @@ class VolcengineClient:
                 )
         except httpx.TimeoutException as exc:
             raise ProviderError(
-                message="Volcengine request timeout",
+                message=t("volcengine_request_timeout"),
                 provider=self.provider,
                 model=self.model_id,
             ) from exc
@@ -76,25 +77,25 @@ class VolcengineClient:
 
         if response.status_code == 401:
             raise AuthenticationError(
-                message="Invalid Volcengine API key",
+                message=t("invalid_volcengine_api_key"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 404 and method.upper() == "GET":
             raise TaskNotFoundError(
-                message="Volcengine task not found",
+                message=t("volcengine_task_not_found"),
                 task_id=path.rsplit("/", 1)[-1],
                 provider=self.provider,
             )
         if response.status_code == 404:
             raise InvalidRequestError(
-                message="Volcengine endpoint not found",
+                message=t("volcengine_endpoint_not_found"),
                 provider=self.provider,
                 model=self.model_id,
             )
         if response.status_code == 429:
             raise RateLimitError(
-                message="Volcengine rate limit exceeded",
+                message=t("volcengine_rate_limit_exceeded"),
                 provider=self.provider,
                 model=self.model_id,
             )
@@ -107,7 +108,7 @@ class VolcengineClient:
                 error_data.get("message")
                 or error_data.get("error")
                 or response.text
-                or "Volcengine API error"
+                or t("volcengine_api_error")
             )
             raise ProviderError(
                 message=message,
@@ -136,7 +137,7 @@ class VolcengineClient:
             elapsed += self.poll_interval
 
         raise ProviderError(
-            message="Volcengine task polling timed out",
+            message=t("volcengine_task_polling_timed_out"),
             provider=self.provider,
             model=self.model_id,
         )

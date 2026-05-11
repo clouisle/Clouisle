@@ -5,7 +5,12 @@ import { useTranslations } from 'next-intl'
 import { Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Agent } from '@/lib/api'
-import { agentsApi } from '@/lib/api'
+import {
+  agentsApi,
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+} from '@/lib/api'
 import { workflowsApi, type Workflow } from '@/lib/api/workflows'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { FieldError } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
@@ -27,6 +33,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { formatValidationSummaryMessage } from '@/lib/validation'
+
 
 interface EmbedConfigDialogProps {
   open: boolean
@@ -81,10 +89,16 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
   )
   const [apiKeyInput, setApiKeyInput] = React.useState<string>('')
   const [selectedMode, setSelectedMode] = React.useState<string>('bubble')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [saving, setSaving] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
   const [domainsText, setDomainsText] = React.useState(
     config.allowed_domains.join(', ')
+  )
+
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['allowed_domains', 'theme.primary_color', 'bubble.greeting', 'apiKey']),
+    [fieldErrors]
   )
 
   // Reset config when target changes
@@ -92,17 +106,30 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
     const parsed = parseEmbedConfig(targetEmbedConfig)
     setConfig(parsed)
     setDomainsText(parsed.allowed_domains.join(', '))
+    setFieldErrors({})
   }, [targetEmbedConfig])
 
   const handleSave = async () => {
+    setFieldErrors({})
+
+    const domains = domainsText
+      .split(/[,\n]/)
+      .map(d => d.trim())
+      .filter(Boolean)
+
+    const invalidDomain = domains.find((domain) => !/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?$/.test(domain))
+    if (invalidDomain) {
+      setFieldErrors({ allowed_domains: t('invalidDomain', { value: invalidDomain }) })
+      return
+    }
+
+    if (config.theme.primary_color && !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(config.theme.primary_color)) {
+      setFieldErrors({ 'theme.primary_color': t('invalidPrimaryColor') })
+      return
+    }
+
     setSaving(true)
     try {
-      // Parse domains from text
-      const domains = domainsText
-        .split(/[,\n]/)
-        .map(d => d.trim())
-        .filter(Boolean)
-
       const embedConfig = {
         ...config,
         allowed_domains: domains,
@@ -114,8 +141,11 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
       onUpdate(updated)
       toast.success(t('save'))
       onOpenChange(false)
-    } catch {
-      // Error handled by API client
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setSaving(false)
     }
@@ -192,6 +222,16 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
         )}
 
         <div className="space-y-6">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           {/* Enable toggle */}
           <div className="flex items-center justify-between">
             <div>
@@ -212,11 +252,16 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                 <Label>{t('allowedDomains')}</Label>
                 <Textarea
                   value={domainsText}
-                  onChange={e => setDomainsText(e.target.value)}
+                  onChange={e => {
+                    setDomainsText(e.target.value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'allowed_domains'))
+                  }}
                   placeholder={t('allowedDomainsPlaceholder')}
                   rows={2}
                   className="text-sm"
+                  aria-invalid={!!fieldErrors.allowed_domains}
                 />
+                <FieldError>{fieldErrors.allowed_domains}</FieldError>
                 <p className="text-xs text-muted-foreground">{t('allowedDomainsDescription')}</p>
               </div>
 
@@ -251,22 +296,30 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                     <Input
                       type="color"
                       value={config.theme.primary_color || '#6366f1'}
-                      onChange={e => setConfig(prev => ({
-                        ...prev,
-                        theme: { ...prev.theme, primary_color: e.target.value },
-                      }))}
+                      onChange={e => {
+                        setConfig(prev => ({
+                          ...prev,
+                          theme: { ...prev.theme, primary_color: e.target.value },
+                        }))
+                        setFieldErrors((prev) => clearValidationError(prev, 'theme.primary_color'))
+                      }}
                       className="w-12 h-9 p-1 cursor-pointer"
                     />
                     <Input
                       value={config.theme.primary_color || ''}
-                      onChange={e => setConfig(prev => ({
-                        ...prev,
-                        theme: { ...prev.theme, primary_color: e.target.value || null },
-                      }))}
+                      onChange={e => {
+                        setConfig(prev => ({
+                          ...prev,
+                          theme: { ...prev.theme, primary_color: e.target.value || null },
+                        }))
+                        setFieldErrors((prev) => clearValidationError(prev, 'theme.primary_color'))
+                      }}
                       placeholder="#6366f1"
                       className="flex-1"
+                      aria-invalid={!!fieldErrors['theme.primary_color']}
                     />
                   </div>
+                  <FieldError>{fieldErrors['theme.primary_color']}</FieldError>
                 </div>
               </div>
 
@@ -316,10 +369,15 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                   <Input
                     type="password"
                     value={apiKeyInput}
-                    onChange={e => setApiKeyInput(e.target.value)}
+                    onChange={e => {
+                      setApiKeyInput(e.target.value)
+                      setFieldErrors((prev) => clearValidationError(prev, 'apiKey'))
+                    }}
                     placeholder="clou_xxxxxxxxxxxx"
                     className="font-mono text-sm"
+                    aria-invalid={!!fieldErrors.apiKey}
                   />
+                  <FieldError>{fieldErrors.apiKey}</FieldError>
                   <p className="text-xs text-muted-foreground">{t('apiKeyDescription')}</p>
                 </div>
 

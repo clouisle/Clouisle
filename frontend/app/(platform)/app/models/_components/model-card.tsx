@@ -61,7 +61,15 @@ interface ModelCardProps {
 export function ModelCard({ teamModel, onClick }: ModelCardProps) {
   const t = useTranslations('models')
   const teamsT = useTranslations('teams')
-  
+  const getProviderName = React.useCallback((code: string) => {
+    const key = `providers.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+  const getTypeName = React.useCallback((code: string) => {
+    const key = `types.${code}`
+    return t.has(key) ? t(key) : code
+  }, [t])
+
   const { model } = teamModel
   const TypeIcon = modelTypeIcons[model.model_type] || MessageSquare
   const providerColor = providerColors[model.provider] || providerColors.custom
@@ -114,10 +122,10 @@ export function ModelCard({ teamModel, onClick }: ModelCardProps) {
         {/* 中部：供应商和类型标签 */}
         <div className="flex items-center gap-1.5 mt-2">
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {t(`providers.${model.provider}`)}
+            {getProviderName(model.provider)}
           </Badge>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {t(`types.${model.model_type}`)}
+            {getTypeName(model.model_type)}
           </Badge>
           {teamModel.priority > 0 && (
             <Tooltip>

@@ -11,11 +11,13 @@ Provides REST API for:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.schemas.response import BusinessError, ResponseCode
+from app.services.workflow.errors import translate_public_workflow_error
 from app.services.workflow.versioning import (
     get_version_manager,
     VersionStatus,
@@ -164,7 +166,11 @@ async def get_version(
     _ = workflow_id
     version = await manager.get_version(version_id)
     if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_version_not_found",
+            status_code=404,
+        )
 
     return version.to_dict()
 
@@ -179,11 +185,23 @@ async def publish_version(
     manager = get_version_manager()
 
     _ = workflow_id
-    version = await manager.publish_version(version_id, current_user.id)
-    if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+    try:
+        version = await manager.publish_version(version_id, current_user.id)
+        if not version:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="workflow_version_not_found",
+                status_code=404,
+            )
 
-    return {"success": True, "status": version.status.value}
+        return {"success": True, "status": version.status.value}
+    except BusinessError:
+        raise
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=translate_public_workflow_error(e),
+        )
 
 
 @router.post("/{workflow_id}/version/{version_id}/archive")
@@ -196,11 +214,23 @@ async def archive_version(
     manager = get_version_manager()
 
     _ = workflow_id
-    version = await manager.archive_version(version_id)
-    if not version:
-        raise HTTPException(status_code=404, detail="Version not found")
+    try:
+        version = await manager.archive_version(version_id)
+        if not version:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="workflow_version_not_found",
+                status_code=404,
+            )
 
-    return {"success": True, "status": version.status.value}
+        return {"success": True, "status": version.status.value}
+    except BusinessError:
+        raise
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=translate_public_workflow_error(e),
+        )
 
 
 @router.get("/{workflow_id}/diff", response_model=VersionDiffResponse)
@@ -214,15 +244,27 @@ async def get_version_diff(
     manager = get_version_manager()
 
     _ = workflow_id
-    diff = await manager.diff(from_version, to_version)
-    if not diff:
-        raise HTTPException(status_code=404, detail="Could not generate diff")
+    try:
+        diff = await manager.diff(from_version, to_version)
+        if not diff:
+            raise BusinessError(
+                code=ResponseCode.NOT_FOUND,
+                msg_key="workflow_version_diff_not_found",
+                status_code=404,
+            )
 
-    return VersionDiffResponse(
-        from_version=from_version,
-        to_version=to_version,
-        diff=diff.to_dict(),
-    )
+        return VersionDiffResponse(
+            from_version=from_version,
+            to_version=to_version,
+            diff=diff.to_dict(),
+        )
+    except BusinessError:
+        raise
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=translate_public_workflow_error(e),
+        )
 
 
 @router.post("/{workflow_id}/rollback", response_model=RollbackResponse)
@@ -234,18 +276,24 @@ async def rollback_version(
     """Rollback to a previous version."""
     manager = get_version_manager()
 
-    result = await manager.rollback(
-        workflow_id=UUID(workflow_id),
-        version_id=request.version_id,
-        user_id=current_user.id,
-        create_backup=request.create_backup,
-    )
+    try:
+        result = await manager.rollback(
+            workflow_id=UUID(workflow_id),
+            version_id=request.version_id,
+            user_id=current_user.id,
+            create_backup=request.create_backup,
+        )
 
-    return RollbackResponse(
-        success=True,
-        new_version_id=result.version_id,
-        backup_version_id=None,
-    )
+        return RollbackResponse(
+            success=True,
+            new_version_id=result.version_id,
+            backup_version_id=None,
+        )
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=translate_public_workflow_error(e),
+        )
 
 
 @router.post("/{workflow_id}/fork", response_model=ForkResponse)
@@ -257,17 +305,23 @@ async def fork_workflow(
     """Fork a workflow to create a new one."""
     manager = get_version_manager()
 
-    new_version = await manager.fork(
-        workflow_id=UUID(workflow_id),
-        version_id=request.version_id,
-        new_workflow_id=UUID(request.new_workflow_id),
-        user_id=current_user.id,
-    )
+    try:
+        new_version = await manager.fork(
+            workflow_id=UUID(workflow_id),
+            version_id=request.version_id,
+            new_workflow_id=UUID(request.new_workflow_id),
+            user_id=current_user.id,
+        )
 
-    return ForkResponse(
-        success=True,
-        new_version_id=new_version.version_id,
-    )
+        return ForkResponse(
+            success=True,
+            new_version_id=new_version.version_id,
+        )
+    except ValueError as e:
+        raise BusinessError(
+            code=ResponseCode.BAD_REQUEST,
+            msg=translate_public_workflow_error(e),
+        )
 
 
 @router.get("/{workflow_id}/stats")
@@ -393,7 +447,11 @@ async def get_template(
 
     template = await manager.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_template_not_found",
+            status_code=404,
+        )
 
     return template.to_dict()
 
@@ -455,8 +513,11 @@ async def instantiate_template(
             workflow_name=request.workflow_name,
         )
         return workflow_def
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_instantiate_failed",
+        )
 
 
 @template_router.post("/{template_id}/rate")
@@ -475,7 +536,10 @@ async def rate_template(
     )
 
     if not success:
-        raise HTTPException(status_code=400, detail="Rating failed")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_rating_failed",
+        )
 
     return {"success": True}
 
@@ -491,14 +555,25 @@ async def delete_template(
     # Check ownership (in production)
     template = await manager.get_template(template_id)
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="workflow_template_not_found",
+            status_code=404,
+        )
 
     if template.author_id != str(current_user.id):
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise BusinessError(
+            code=ResponseCode.FORBIDDEN,
+            msg_key="workflow_template_access_denied",
+            status_code=403,
+        )
 
     success = await manager.delete_template(template_id)
     if not success:
-        raise HTTPException(status_code=400, detail="Cannot delete template")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="workflow_template_delete_failed",
+        )
 
     return {"success": True}
 

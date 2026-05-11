@@ -16,6 +16,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
+import { siteSettingsApi } from '@/lib/api/site-settings'
+import {
+  BYTES_PER_MB,
+  KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES,
+  KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+} from '@/lib/constants'
 
 interface UploadDocumentDialogProps {
   open: boolean
@@ -23,25 +29,6 @@ interface UploadDocumentDialogProps {
   knowledgeBaseId: string
   onSuccess: () => void
 }
-
-// 支持的文件类型
-const ACCEPTED_TYPES = [
-  '.pdf',
-  '.docx',
-  '.doc',
-  '.txt',
-  '.md',
-  '.markdown',
-  '.html',
-  '.htm',
-  '.csv',
-  '.xlsx',
-  '.xls',
-  '.json',
-  '.pptx',
-]
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
 export function UploadDocumentDialog({
   open,
@@ -54,11 +41,24 @@ export function UploadDocumentDialog({
   const router = useRouter()
   
   const [files, setFiles] = React.useState<File[]>([])
+  const [maxUploadSizeMb, setMaxUploadSizeMb] = React.useState(
+    KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB
+  )
   const [isUploading, setIsUploading] = React.useState(false)
   const [uploadProgress, setUploadProgress] = React.useState(0)
   const [isDragOver, setIsDragOver] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-  
+  const maxUploadSizeBytes = maxUploadSizeMb * BYTES_PER_MB
+  const maxUploadSizeLabel = `${maxUploadSizeMb}MB`
+
+  React.useEffect(() => {
+    if (!open) return
+
+    siteSettingsApi.getPublic()
+      .then(settings => setMaxUploadSizeMb(settings.kb_document_max_upload_size_mb))
+      .catch(() => setMaxUploadSizeMb(KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB))
+  }, [open])
+
   // 重置状态
   React.useEffect(() => {
     if (!open) {
@@ -70,11 +70,11 @@ export function UploadDocumentDialog({
   // 验证文件
   const validateFile = (file: File): string | null => {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase()
-    if (!ACCEPTED_TYPES.includes(ext)) {
+    if (!KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES.includes(ext)) {
       return t('unsupportedFileType', { type: ext })
     }
-    if (file.size > MAX_FILE_SIZE) {
-      return t('fileTooLarge', { size: '50MB' })
+    if (file.size > maxUploadSizeBytes) {
+      return t('fileTooLarge', { size: maxUploadSizeLabel })
     }
     return null
   }
@@ -127,7 +127,18 @@ export function UploadDocumentDialog({
   // 上传文件
   const handleUpload = async () => {
     if (files.length === 0) return
-    
+
+    const errors = files
+      .map(file => {
+        const error = validateFile(file)
+        return error ? `${file.name}: ${error}` : null
+      })
+      .filter((error): error is string => error !== null)
+    if (errors.length > 0) {
+      toast.error(errors.join('\n'))
+      return
+    }
+
     setIsUploading(true)
     setUploadProgress(0)
     
@@ -205,7 +216,7 @@ export function UploadDocumentDialog({
             ref={fileInputRef}
             type="file"
             multiple
-            accept={ACCEPTED_TYPES.join(',')}
+            accept={KNOWLEDGE_BASE_DOCUMENT_ACCEPTED_TYPES.join(',')}
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}
           />

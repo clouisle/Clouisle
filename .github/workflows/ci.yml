@@ -6,6 +6,9 @@ on:
   push:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   backend-check:
     runs-on: ubuntu-latest
@@ -27,6 +30,12 @@ jobs:
 
     - name: Check dependency licenses
       run: uv run python scripts/check_licenses.py
+
+    - name: Check i18n catalogs
+      run: uv run python scripts/check_i18n_catalogs.py
+
+    - name: Check i18n legacy sync
+      run: uv run python scripts/check_i18n_legacy_sync.py
 
     - name: Lint with Ruff
       run: uv run ruff check .

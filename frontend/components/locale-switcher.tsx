@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Globe } from 'lucide-react'
 import {
   DropdownMenu,
@@ -18,6 +18,7 @@ interface LocaleSwitcherProps {
 
 export function LocaleSwitcher({ showLabel = false }: LocaleSwitcherProps) {
   const locale = useLocale()
+  const t = useTranslations('common')
   const { changeLocale } = useLocaleChange()
 
   return (
@@ -30,7 +31,7 @@ export function LocaleSwitcher({ showLabel = false }: LocaleSwitcherProps) {
           >
             <Globe className="h-4 w-4" />
             {showLabel && <span>{localeNames[locale as Locale]}</span>}
-            <span className="sr-only">Switch language</span>
+            <span className="sr-only">{t('changeLanguage')}</span>
           </button>
         )}
       />

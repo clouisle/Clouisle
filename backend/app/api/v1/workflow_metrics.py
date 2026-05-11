@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user
+from app.core.i18n import t
 from app.models.user import User
 from app.services.workflow import (
     get_metrics_collector,
@@ -296,4 +297,7 @@ async def clear_cache(
     cache = get_workflow_cache()
     count = await cache.clear_all()
 
-    return {"cleared": count, "message": f"Cleared {count} cache entries"}
+    return {
+        "cleared": count,
+        "message": t("workflow_cache_cleared_entries", count=count),
+    }

@@ -321,7 +321,7 @@ class WorkflowVersionManager:
         """
         version = await self.get_version(version_id)
         if not version:
-            raise ValueError(f"Version not found: {version_id}")
+            raise ValueError("version_not_found")
 
         if version.status == VersionStatus.PUBLISHED:
             return version
@@ -347,7 +347,7 @@ class WorkflowVersionManager:
         """Archive a version."""
         version = await self.get_version(version_id)
         if not version:
-            raise ValueError(f"Version not found: {version_id}")
+            raise ValueError("version_not_found")
 
         version.status = VersionStatus.ARCHIVED
         logger.info(f"Archived version {version_id}")
@@ -375,10 +375,10 @@ class WorkflowVersionManager:
         # Get target version
         target_version = await self.get_version(version_id)
         if not target_version:
-            raise ValueError(f"Version not found: {version_id}")
+            raise ValueError("version_not_found")
 
         if target_version.workflow_id != str(workflow_id):
-            raise ValueError("Version does not belong to this workflow")
+            raise ValueError("workflow_not_found")
 
         # Create backup of current state if requested
         if create_backup:
@@ -421,7 +421,7 @@ class WorkflowVersionManager:
         to_version = await self.get_version(to_version_id)
 
         if not from_version or not to_version:
-            raise ValueError("Version not found")
+            raise ValueError("version_not_found")
 
         return self._compute_diff(
             from_version.definition,
@@ -438,11 +438,11 @@ class WorkflowVersionManager:
         """Generate diff between a version and current draft."""
         workflow = await Workflow.filter(id=workflow_id).first()
         if not workflow or not workflow.definition:
-            raise ValueError("Workflow not found")
+            raise ValueError("workflow_not_found")
 
         version = await self.get_version(version_id)
         if not version:
-            raise ValueError("Version not found")
+            raise ValueError("version_not_found")
 
         return self._compute_diff(
             version.definition,
@@ -616,7 +616,7 @@ class WorkflowVersionManager:
             )
 
         if not source_version:
-            raise ValueError("Source version not found")
+            raise ValueError("version_not_found")
 
         # Create version in new workflow
         new_version = await self.create_version(

@@ -4,7 +4,7 @@
       "home": "首页",
       "apps": "应用",
       "kb": "知识库",
-      "tools": "工具",
+      "capabilities": "能力",
       "models": "模型",
       "notifications": "通知",
       "memories": "我的记忆"
@@ -54,7 +54,7 @@
       "title": "控制台",
       "welcome": "欢迎回来，{name}",
       "welcomeDefault": "欢迎使用 Clouisle",
-      "description": "您可以在这里管理 AI 应用、知识库、工具和模型",
+      "description": "您可以在这里管理 AI 应用、知识库、能力和模型",
       "viewAll": "查看全部",
       "createNew": "创建新应用",
       "stats": {
@@ -94,11 +94,15 @@
           "description": "为您的团队配置 AI 模型"
         },
         "manageTools": {
-          "title": "管理工具",
-          "description": "配置和管理可用的工具"
+          "title": "管理能力",
+          "description": "管理可用的工具和 Skills"
         }
       },
       "recentItems": "最近项目",
+      "recentItemTypes": {
+        "agent": "智能体",
+        "workflow": "工作流"
+      },
       "noRecentItems": "暂无最近项目",
       "createFirst": "创建您的第一个应用",
       "quickStart": "快速开始",
@@ -124,8 +128,8 @@
           "description": "上传文档并创建知识库"
         },
         "tools": {
-          "title": "工具",
-          "description": "配置和管理可用的工具"
+          "title": "能力",
+          "description": "管理可用的工具和 Skills"
         },
         "models": {
           "title": "模型",
@@ -150,14 +154,18 @@
       "createFirstKb": "创建第一个知识库"
     },
     "tools": {
-      "title": "工具中心",
-      "description": "管理和配置可用的工具",
+      "title": "能力",
+      "description": "管理可用的工具和 Skills",
       "createTool": "创建工具",
       "noTools": "暂无工具",
       "createToolHint": "添加工具以扩展 AI 应用的能力",
       "createFirstTool": "创建第一个工具",
       "refresh": "刷新",
       "searchPlaceholder": "搜索工具...",
+      "tabs": {
+        "tools": "工具",
+        "skills": "Skills"
+      },
       "noSearchResults": "未找到工具",
       "requiresConfig": "需要配置",
       "parameters": "参数",
@@ -177,6 +185,7 @@
       "toolDeleted": "工具删除成功",
       "configSaved": "配置保存成功",
       "configSaveFailed": "配置保存失败",
+      "selectTeam": "选择团队",
       "confirmDelete": "删除工具",
       "deleteToolConfirm": "确定要删除 \"{name}\" 吗？此操作无法撤销。",
       "filters": {
@@ -192,6 +201,7 @@
         "web": "网页",
         "file": "文件",
         "code": "代码",
+        "sandbox": "沙盒",
         "api": "API",
         "data": "数据",
         "other": "其他"
@@ -205,6 +215,8 @@
         "name": "名称",
         "nameHint": "唯一标识符，创建后不可修改",
         "displayName": "显示名称",
+        "displayNamePlaceholder": "请输入显示名称",
+        "displayNameRequired": "请输入显示名称",
         "description": "描述",
         "descriptionPlaceholder": "描述这个工具的功能",
         "icon": "图标",
@@ -213,6 +225,7 @@
         "httpConfig": "HTTP 配置",
         "httpMethod": "方法",
         "url": "URL",
+        "urlRequired": "请输入 URL",
         "urlHint": "支持 {{variable}} 占位符",
         "timeout": "超时 (秒)",
         "advancedSettings": "高级设置",
@@ -232,7 +245,9 @@
       },
       "configDialog": {
         "title": "配置 {name}",
-        "description": "配置工具所需的 API 密钥和凭证"
+        "description": "配置工具所需的 API 密钥和凭证",
+        "tavilyApiKeyLabel": "Tavily API Key",
+        "tavilyApiKeyDescription": "前往 Tavily 获取 API Key"
       },
       "httpDialog": {
         "createTitle": "创建 HTTP 工具",
@@ -246,11 +261,19 @@
         "contentType": "内容类型",
         "bodyTemplate": "请求体模板",
         "bodyTemplateHint": "使用 '{{变量名}}' 作为占位符",
+        "multipartFormData": "multipart/form-data（文件上传）",
         "formFields": "表单字段",
         "formFieldsHint": "配置 multipart/form-data 的表单字段，文件字段引用文件类型的参数",
         "fieldName": "字段名",
         "fieldTypeText": "文本",
         "fieldTypeFile": "文件",
+        "paramTypeString": "文本",
+        "paramTypeNumber": "数字",
+        "paramTypeBoolean": "布尔值",
+        "paramTypeArray": "数组",
+        "paramTypeObject": "对象",
+        "paramTypeFile": "文件",
+        "paramTypeImage": "图片",
         "addField": "添加字段",
         "timeout": "超时时间",
         "parameters": "入参定义",
@@ -260,7 +283,13 @@
         "paramName": "参数名",
         "paramDescription": "参数描述（可选）",
         "required": "必填",
-        "variableCompletion": "参数补全"
+        "variableCompletion": "参数补全",
+        "toolNamePlaceholder": "my_api_tool",
+        "urlPlaceholder": "https://api.example.com/｛｛id｝｝/data",
+        "keyPlaceholder": "键名",
+        "headerValuePlaceholder": "｛｛token｝｝",
+        "queryValuePlaceholder": "｛｛query｝｝",
+        "bodyTemplatePlaceholder": "｛\"key\": \"｛｛value｝｝\"｝"
       },
       "mcpDialog": {
         "createTitle": "添加 MCP 服务",
@@ -290,7 +319,19 @@
         "toolsLoaded": "已加载 {count} 个工具",
         "fetchToolsFailed": "获取工具列表失败，请检查配置",
         "commandRequired": "请输入命令",
-        "urlRequired": "请输入服务地址"
+        "urlRequired": "请输入服务地址",
+        "serverNamePlaceholder": "my_mcp_server",
+        "commandPlaceholder": "npx",
+        "argumentPlaceholder": "参数 {index}",
+        "headerKeyPlaceholder": "KEY",
+        "headerValuePlaceholder": "值",
+        "sseUrlPlaceholder": "http://localhost:3000/sse",
+        "headerNamePlaceholder": "请求头名称",
+        "httpUrlPlaceholder": "http://localhost:3000/mcp"
+      },
+      "testPanel": {
+        "arrayPlaceholder": "[\"item1\", \"item2\"]",
+        "objectPlaceholder": "{\"key\": \"value\"}"
       },
       "codeEditor": {
         "newTitle": "新建代码工具",
@@ -311,12 +352,62 @@
         "inputHint": "JSON 格式的测试参数",
         "outputResult": "输出结果",
         "noOutput": "运行代码查看输出",
-        "defaultDescription": "自定义代码工具"
+        "defaultDescription": "自定义代码工具",
+        "runtime": "运行时",
+        "pythonPackages": "Python 包",
+        "pythonPackagesPlaceholder": "Pygments==2.18.0",
+        "pythonPackagesHint": "每行一个包，必须使用精确的 == 版本。",
+        "jsPackages": "JavaScript 包",
+        "jsPackagesPlaceholder": "semver@7.5.4",
+        "jsPackagesHint": "每行一个包，必须使用精确的 package@version。",
+        "pythonPackageIndexUrl": "Python 包镜像地址",
+        "pythonPackageIndexUrlPlaceholder": "https://mirror.example.com/simple",
+        "nodePackageRegistryUrl": "Node 包仓库地址",
+        "nodePackageRegistryUrlPlaceholder": "https://registry.example.com/npm",
+        "packageSourceUrlHint": "可选。必须是绝对 http(s) URL，且不能内嵌凭证。仅影响安装阶段。",
+        "command": "命令（argv）",
+        "commandPlaceholder": "python\n-X\nutf8",
+        "commandHint": "可选。每行一个参数，系统会自动在末尾追加生成的脚本路径。",
+        "invalidJsonInput": "测试输入必须是合法 JSON",
+        "invalidPythonPackage": "Python 包 \"{value}\" 必须使用精确的 == 版本",
+        "invalidJsPackage": "JavaScript 包 \"{value}\" 必须使用精确的 package@version 格式",
+        "invalidPackageSourceUrl": "包源地址 \"{value}\" 必须是绝对 http(s) URL，且不能内嵌凭证",
+        "logsLabel": "日志",
+        "resultLabel": "结果",
+        "errorLabel": "错误",
+        "durationLabel": "耗时",
+        "limits": "限制",
+        "timeoutSeconds": "超时（秒）",
+        "diskMb": "磁盘（MB）",
+        "maxStdoutKb": "标准输出上限（KB）",
+        "maxStderrKb": "标准错误上限（KB）",
+        "artifacts": "产物",
+        "addArtifact": "添加产物",
+        "artifactPath": "产物路径",
+        "artifactPathPlaceholder": "/workspace/output/result.json",
+        "artifactDescription": "描述",
+        "artifactOptional": "可选",
+        "invalidArtifactPath": "产物路径 \"{value}\" 必须位于 /workspace 下",
+        "artifactsLabel": "产物",
+        "executionFailed": "执行失败",
+        "languageJavaScript": "JavaScript",
+        "languagePython": "Python",
+        "paramTypeString": "字符串",
+        "paramTypeNumber": "数字",
+        "paramTypeInteger": "整数",
+        "paramTypeBoolean": "布尔值",
+        "paramTypeArray": "数组",
+        "paramTypeObject": "对象",
+        "defaultInputDescription": "输入内容"
       },
       "error": {
         "loadFailed": "加载工具失败",
         "saveFailed": "保存失败",
         "nameRequired": "请输入工具名称",
+        "unknownToolType": "未知工具类型",
+        "cannotDeleteBuiltin": "无法删除内置工具",
+        "cannotShareBuiltin": "无法分享内置工具",
+        "noTeamSelected": "未选择团队",
         "invalidName": "工具名称必须以字母开头，且只能包含字母、数字和下划线",
         "duplicateParamName": "参数名称不能重复"
       },
@@ -360,6 +451,89 @@
         "sharedBadge": "已共享",
         "sharedFrom": "来自 {teamName}",
         "sharedWithCount": "已共享给 {count} 个团队"
+      }
+    },
+    "skills": {
+      "title": "Skill 中心",
+      "description": "从 zip 包或 Git 仓库导入 Skills，然后让 Agent 调用已安装的 Skills。",
+      "noSkills": "暂无 Skills",
+      "noSkillsHint": "导入包含一个或多个 SKILL.md 包的 zip 包或 Git 仓库。",
+      "searchPlaceholder": "搜索 Skills...",
+      "refresh": "刷新",
+      "updated": "Skill 更新成功",
+      "deleted": "Skill 删除成功",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "enable": "启用",
+      "disable": "禁用",
+      "system": "系统",
+      "team": "团队",
+      "scope": "范围",
+      "sources": {
+        "zip": "Zip",
+        "git": "Git",
+        "manual_text": "手动",
+        "legacy": "旧版"
+      },
+      "test": "测试",
+      "delete": "删除",
+      "cancel": "取消",
+      "close": "关闭",
+      "runTest": "运行测试",
+      "success": "成功",
+      "failed": "失败",
+      "arguments": "参数",
+      "artifacts": "产物",
+      "download": "下载",
+      "testTitle": "测试 {name}",
+      "testDescription": "使用 JSON 参数运行此 Skill。instructions 模式的 Skill 会返回 SKILL.md 指令。",
+      "noDescription": "暂无描述",
+      "rowsPerPage": "每页行数",
+      "pageInfo": "第 {page} 页，共 {total} 页",
+      "category": "分类",
+      "version": "版本",
+      "source": "来源",
+      "updatedAt": "更新时间",
+      "actions": "操作",
+      "import": {
+        "open": "导入 Skills",
+        "title": "导入 Skills",
+        "description": "扫描 zip 包或完整公开 HTTPS Git 仓库中包含 SKILL.md 的 Skill 目录。",
+        "zip": "上传 Zip",
+        "git": "Git 仓库",
+        "zipFile": "Zip 文件",
+        "zipRequired": "请选择 .zip 文件",
+        "zipTooLarge": "Zip 文件过大，最大 50MB",
+        "repoUrl": "仓库地址",
+        "ref": "分支、标签或提交",
+        "scan": "扫描预览",
+        "previewTitle": "预览",
+        "previewSummary": "{valid} 个有效，{invalid} 个无效",
+        "packagePath": "包路径",
+        "name": "Skill",
+        "mode": "模式",
+        "status": "状态",
+        "action": "操作",
+        "valid": "有效",
+        "conflict": "冲突",
+        "duplicateName": "名称重复",
+        "modeTips": {
+          "instructions": "将 SKILL.md 中的指令返回给 Agent，不执行代码。",
+          "script": "在沙箱中运行 Skill 包声明的脚本。",
+          "legacy": "兼容旧版 sandbox Skill 配置。"
+        },
+        "install": "安装",
+        "update": "更新",
+        "skip": "跳过",
+        "installSelected": "安装选中项",
+        "installed": "Skills 安装成功",
+        "errors": {
+          "duplicateNameInSource": "当前来源中存在重复的 Skill 名称",
+          "invalidPackage": "无效的 Skill 包",
+          "packageNotInSession": "该包不属于当前导入会话",
+          "packagePathInvalid": "包路径无效",
+          "nameExists": "已存在同名 Skill"
+        }
       }
     },
     "models": {

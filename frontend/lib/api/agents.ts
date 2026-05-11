@@ -1,4 +1,30 @@
-import { api } from './client'
+import { api, ApiError, getErrorMessage } from './client'
+
+function getPublicStatusErrorMessage(status: number): string {
+  if (status === 404) return getErrorMessage('resourceNotFound')
+  if (status >= 500 && status < 600) return getErrorMessage('serverError')
+  return getErrorMessage('requestFailed')
+}
+
+function resolvePublicApiErrorMessage(status: number, message: unknown): string {
+  if (typeof message === 'string') {
+    const trimmed = message.trim()
+    if (
+      trimmed
+      && trimmed.length <= 200
+      && !/^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(trimmed)
+      && !trimmed.includes('\n')
+      && !trimmed.includes('Traceback')
+      && !trimmed.includes('Exception')
+      && !trimmed.includes('HTTP ')
+      && !trimmed.includes('Failed to fetch')
+    ) {
+      return trimmed
+    }
+  }
+
+  return getPublicStatusErrorMessage(status)
+}
 
 // ============ Types ============
 
@@ -39,10 +65,11 @@ export interface KnowledgeBaseInfo {
 // ============ Tool & Variable Types ============
 
 export interface ToolConfig {
-  type: 'builtin' | 'custom' | 'mcp'
+  type: 'builtin' | 'custom' | 'mcp' | 'skill'
   name?: string | null
   tool_id?: string | null  // for custom tools
   server_id?: string | null  // for mcp tools
+  skill_id?: string | null  // for skills
   config?: Record<string, unknown> | null
 }
 
@@ -112,6 +139,39 @@ export interface MemoryConfig {
   importance_threshold: 'low' | 'medium' | 'high'
 }
 
+export interface ContextCompressionConfig {
+  enabled: boolean
+  micro_compaction_enabled: boolean
+  macro_compaction_enabled: boolean
+  preflight_guard_enabled: boolean
+  reactive_retry_enabled: boolean
+  recent_raw_turns: number
+  recent_tool_turns: number
+  warning_ratio: number
+  auto_compact_trigger_ratio: number
+  blocking_ratio: number
+  compaction_policy: 'staged' | 'hard_budget_only'
+  macro_on_trigger: boolean
+  retention_strategy: 'recent_raw_and_tool_first'
+  keep_recent_tool_results: number
+  keep_recent_tool_result_minutes: number
+  tool_result_compact_min_tokens: number
+  session_memory_enabled: boolean
+  session_memory_async_extract: boolean
+  session_memory_max_tokens: number
+  session_memory_min_turns: number
+  session_memory_failure_threshold: number
+  session_memory_cooldown_seconds: number
+  legacy_compact_enabled: boolean
+  legacy_compact_failure_threshold: number
+  legacy_compact_cooldown_seconds: number
+  output_token_reserve: number
+  safety_margin_tokens: number
+  summary_max_tokens: number
+  drop_historical_reasoning_first: boolean
+  emit_sse_events: boolean
+}
+
 export interface ImageGenerationConfig {
   default_model_ref?: string | null
   default_width: number
@@ -144,6 +204,7 @@ export interface Agent {
   model?: ModelInfo | null
   system_prompt?: string | null
   max_iterations: number
+  hide_tool_calls: boolean
   tools_config: ToolConfig[]
   variables: VariableDefinition[]
   opening_message?: string | null
@@ -155,6 +216,7 @@ export interface Agent {
   enable_user_input_request: boolean
   enable_memory: boolean
   memory_config?: MemoryConfig | null
+  context_compression_config?: ContextCompressionConfig | null
   enable_image_generation: boolean
   image_generation_config?: ImageGenerationConfig | null
   enable_video_generation: boolean
@@ -196,6 +258,7 @@ export interface AgentCreateInput {
   model_id?: string | null
   system_prompt?: string | null
   max_iterations?: number
+  hide_tool_calls?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -207,6 +270,7 @@ export interface AgentCreateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  context_compression_config?: ContextCompressionConfig | null
   enable_image_generation?: boolean
   image_generation_config?: ImageGenerationConfig | null
   enable_video_generation?: boolean
@@ -223,6 +287,7 @@ export interface AgentUpdateInput {
   model_id?: string | null
   system_prompt?: string | null
   max_iterations?: number
+  hide_tool_calls?: boolean
   tools_config?: ToolConfig[]
   knowledge_base_configs?: AgentKnowledgeBaseConfig[]
   variables?: VariableDefinition[]
@@ -234,6 +299,7 @@ export interface AgentUpdateInput {
   enable_user_input_request?: boolean
   enable_memory?: boolean
   memory_config?: MemoryConfig | null
+  context_compression_config?: ContextCompressionConfig | null
   enable_image_generation?: boolean
   image_generation_config?: ImageGenerationConfig | null
   enable_video_generation?: boolean
@@ -285,6 +351,30 @@ export interface ConversationUpdateInput {
 // ============ Message Types ============
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool'
+export type MessageRoundRole = 'user_input' | 'assistant_final' | 'assistant_step' | 'tool_result'
+export type MessageRoundStatus = 'completed' | 'max_iterations_reached' | 'manually_stopped' | 'error'
+
+export interface MessageRoundStep {
+  id: string
+  role: MessageRole
+  content: string
+  tool_calls?: Record<string, unknown>[] | null
+  tool_call_id?: string | null
+  tool_name?: string | null
+  reasoning_content?: string | null
+  model_used?: string | null
+  token_usage?: { prompt: number; completion: number } | null
+  duration_ms?: number | null
+  is_manually_stopped?: boolean
+  rag_context?: Record<string, unknown>[] | null
+  created_at: string
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
+}
 
 export interface Message {
   id: string
@@ -304,8 +394,16 @@ export interface Message {
   model_used?: string | null
   token_usage?: { prompt: number; completion: number } | null
   duration_ms?: number | null
+  is_manually_stopped?: boolean
   rag_context?: Record<string, unknown>[] | null
   created_at: string
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
+  steps?: MessageRoundStep[] | null
   // Version fields
   parent_id?: string | null
   is_active?: boolean
@@ -350,9 +448,25 @@ export interface ChatFileUrl {
   mime_type: string
 }
 
+export interface HistoryToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown> | string
+}
+
 export interface HistoryMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
+  reasoning_content?: string | null
+  tool_calls?: HistoryToolCall[] | null
+  tool_call_id?: string | null
+  tool_name?: string | null
+  round_id?: string | null
+  round_index?: number
+  round_role?: MessageRoundRole | null
+  is_round_canonical?: boolean
+  iteration_index?: number | null
+  round_status?: MessageRoundStatus | null
 }
 
 export interface ChatRequest {
@@ -387,7 +501,10 @@ export type SSEEventType =
   | 'rag_start'
   | 'rag_context'
   | 'user_input_request'
+  | 'compression_start'
+  | 'compression_end'
   | 'output_truncated'
+  | 'iteration_cap_reached'
   | 'message_end'
   | 'error'
 
@@ -403,6 +520,33 @@ export interface SSEContentDelta {
 export interface SSEUserInputRequest {
   question: string
   options: string[]
+}
+
+export interface SSECompression {
+  stage: 'micro' | 'macro' | 'reactive_retry'
+  trigger: 'proactive_threshold' | 'blocking_threshold' | 'context_length_error' | string
+  pressure_level?: 'normal' | 'warning' | 'auto_compact' | 'blocking' | 'over_budget'
+  before_tokens: number
+  after_tokens: number
+  input_budget: number
+  trigger_ratio?: number
+  warning_ratio?: number
+  blocking_ratio?: number
+  trigger_budget?: number
+  hard_budget?: number
+  utilization_before?: number
+  utilization_after?: number
+  policy_used?: string
+  actions?: string[]
+  retained_recent_turns?: number
+  retained_tool_turns?: number
+  compacted_blocks?: number
+  summary_turns?: number
+  reasoning_dropped?: boolean
+  tool_results_trimmed?: boolean
+  file_content_trimmed?: boolean
+  retry_index?: number
+  note?: string
 }
 
 export interface SSERagContext {
@@ -427,6 +571,10 @@ export interface SSEMessageEnd {
     duration_ms: number
     tokens_per_second: number | null
   }
+}
+
+export interface SSEIterationCapReached {
+  content?: string
 }
 
 export interface SSEError {
@@ -738,34 +886,80 @@ export async function* parseSSEStream(response: Response): AsyncGenerator<SSEEve
   let buffer = ''
   // Track event/data across chunks to handle TCP splitting
   let currentEvent: SSEEventType | null = null
-  let currentData = ''
+  let currentDataLines: string[] = []
+
+  const flushEvent = (): SSEEvent | null => {
+    if (!currentEvent || currentDataLines.length === 0) {
+      currentEvent = null
+      currentDataLines = []
+      return null
+    }
+
+    try {
+      return {
+        event: currentEvent,
+        data: JSON.parse(currentDataLines.join('\n')),
+      }
+    } catch {
+      return null
+    } finally {
+      currentEvent = null
+      currentDataLines = []
+    }
+  }
+
+  const processLine = (rawLine: string): SSEEvent | null => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+    if (line.startsWith('event:')) {
+      currentEvent = line.slice(6).trim() as SSEEventType
+      return null
+    }
+
+    if (line.startsWith('data:')) {
+      currentDataLines.push(line.slice(5).trimStart())
+      return null
+    }
+
+    if (line === '') {
+      return flushEvent()
+    }
+
+    return null
+  }
 
   while (true) {
     const { done, value } = await reader.read()
-    if (done) break
+
+    if (done) {
+      buffer += decoder.decode()
+      break
+    }
 
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = lines.pop() || ''
 
     for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7).trim() as SSEEventType
-      } else if (line.startsWith('data: ')) {
-        currentData = line.slice(6)
-      } else if (line === '' && currentEvent && currentData) {
-        try {
-          yield {
-            event: currentEvent,
-            data: JSON.parse(currentData),
-          }
-        } catch {
-          // Ignore parse errors
-        }
-        currentEvent = null
-        currentData = ''
+      const event = processLine(line)
+      if (event) {
+        yield event
       }
     }
+  }
+
+  if (buffer) {
+    for (const line of buffer.split('\n')) {
+      const event = processLine(line)
+      if (event) {
+        yield event
+      }
+    }
+  }
+
+  const finalEvent = flushEvent()
+  if (finalEvent) {
+    yield finalEvent
   }
 }
 
@@ -997,6 +1191,7 @@ export interface PublicAgent {
   enable_vision: boolean
   enable_file_upload: boolean
   file_upload_config?: FileUploadConfig | null
+  hide_tool_calls: boolean
   created_by?: CreatorInfo | null
 }
 
@@ -1021,8 +1216,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1044,8 +1239,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1066,8 +1261,8 @@ export const publicAgentsApi = {
     })
     
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
     
     const data = await response.json()
@@ -1089,8 +1284,8 @@ export const publicAgentsApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
   },
 
@@ -1113,8 +1308,8 @@ export const publicAgentsApi = {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ msg: 'Unknown error' }))
-      throw new Error(error.msg || `HTTP ${response.status}`)
+      const error = await response.json().catch(() => ({}))
+      throw new ApiError(response.status, resolvePublicApiErrorMessage(response.status, error.msg), error.data)
     }
 
     const result = await response.json()

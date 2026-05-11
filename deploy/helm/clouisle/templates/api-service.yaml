@@ -1,0 +1,16 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    {{- include "clouisle.selectorLabels" (dict "root" . "component" "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+{{- end }}

@@ -5,6 +5,8 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr, model_validator
 
+from app.core.i18n import t
+
 
 class SendVerificationRequest(BaseModel):
     """发送验证邮件请求"""
@@ -52,7 +54,7 @@ class ResetPasswordConfirmRequest(BaseModel):
         has_code = self.email is not None and self.code is not None
         has_token = self.token is not None
         if not has_code and not has_token:
-            raise ValueError("Either (email + code) or token must be provided")
+            raise ValueError(t("verification_email_code_or_token_required"))
         return self
 
 

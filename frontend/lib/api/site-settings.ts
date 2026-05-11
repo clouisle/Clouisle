@@ -27,6 +27,7 @@ export interface PublicSiteSettings {
   allow_account_deletion: boolean
   sso_enabled: boolean
   sso_allow_password_login: boolean
+  kb_document_max_upload_size_mb: number
 }
 
 export interface GeneralSettings {

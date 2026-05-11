@@ -231,6 +231,12 @@ function WorkflowEditorContent() {
 
   const workflowId = params.id as string
 
+  // Workflow definitions earlier than schema_version 2 predate the typed-
+  // variable refactor (see docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md).
+  // Loading them is fine — we still render the canvas — but running them is
+  // disabled until the user re-saves so the new definition stamps the
+  // version. This is a hard cutover; no in-place migration.
+
   // State
   const [workflow, setWorkflow] = React.useState<Workflow | null>(null)
   const [currentUser, setCurrentUser] = React.useState<User | null>(null)
@@ -1391,7 +1397,7 @@ function WorkflowEditorContent() {
                         unoptimized
                       />
                     ) : (
-                      <span className="text-base">{workflow.icon}</span>
+                      <span className="flex h-5 w-5 items-center justify-center leading-none text-base">{workflow.icon}</span>
                     )
                   ) : (
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10">
@@ -1702,6 +1708,20 @@ function WorkflowEditorContent() {
             open={testRunDrawerOpen}
             onClose={() => setTestRunDrawerOpen(false)}
             onNodeTracesChange={handleNodeTracesChange}
+            onDebugRunComplete={async () => {
+              // Backend writes inferredSchema during debug runs (see
+              // backend `schema_inference.merge_run_into_workflow`).
+              // Refetch so the editor shows the freshly inferred fields.
+              try {
+                const fresh = await workflowsApi.getWorkflow(workflowId)
+                setWorkflow(fresh)
+                if (fresh.definition?.nodes) {
+                  setNodes(fresh.definition.nodes as unknown as WorkflowNode[])
+                }
+              } catch {
+                /* refetch is best-effort; failures don't break the run */
+              }
+            }}
           />
         </div>
       </div>

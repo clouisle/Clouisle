@@ -767,7 +767,7 @@ class VectorStore:
                     f"Failed to embed chunk {chunk_obj.id} (index {chunk_data['chunk_index']}): {e}"
                 )
                 chunk_obj.status = "failed"
-                chunk_obj.error_message = str(e)[:500]
+                chunk_obj.error_message = "document_process_failed"
                 await chunk_obj.save(update_fields=["status", "error_message"])
                 failed_count += 1
 

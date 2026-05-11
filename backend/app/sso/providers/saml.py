@@ -1,8 +1,12 @@
+import logging
 from typing import Any, Dict
 
 from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
+from app.core.i18n import t
 from app.sso.providers.base import BaseSSOProvider
+
+logger = logging.getLogger(__name__)
 
 
 class SAMLProvider(BaseSSOProvider):
@@ -80,7 +84,7 @@ class SAMLProvider(BaseSSOProvider):
         """
         saml_response = callback_data.get("SAMLResponse")
         if not saml_response:
-            raise ValueError("Missing SAMLResponse")
+            raise ValueError(t("sso_missing_saml_response"))
 
         settings = self._get_saml_settings(acs_url=redirect_uri)
 
@@ -98,9 +102,12 @@ class SAMLProvider(BaseSSOProvider):
         if not auth.is_authenticated():
             errors = auth.get_errors()
             error_reason = auth.get_last_error_reason()
-            raise ValueError(
-                f"SAML authentication failed: {error_reason}, errors: {errors}"
+            logger.warning(
+                "SAML authentication failed: reason=%s errors=%s",
+                error_reason,
+                errors,
             )
+            raise ValueError(t("sso_saml_authentication_failed"))
 
         # Extract user attributes
         attributes = auth.get_attributes()

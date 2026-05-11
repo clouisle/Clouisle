@@ -45,6 +45,7 @@ import { toast } from "sonner";
 import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter";
 import { AuditLogDrawer } from "./audit-log-drawer";
 import { PermissionGuard } from "@/components/permission-guard";
+import { useUrlSearchState } from "@/hooks/use-url-search-state";
 
 export function AuditLogsTable() {
     const t = useTranslations("auditLogs");
@@ -59,7 +60,7 @@ export function AuditLogsTable() {
     const [actionOptionsMeta, setActionOptionsMeta] = useState<AuditLogActionOption[]>([]);
 
     // Filters
-    const [search, setSearch] = useState("");
+    const [search, setSearch] = useUrlSearchState();
     const [statusFilter, setStatusFilter] = useState<string[]>([]);
     const [actionFilter, setActionFilter] = useState<string[]>([]);
 
@@ -160,9 +161,10 @@ export function AuditLogsTable() {
             update: "bg-yellow-500",
             delete: "bg-red-500",
         };
+        const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
         return (
             <Badge className={colors[operation] || "bg-gray-500"}>
-                {t(`operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`)}
+                {t.has(key) ? t(key) : operation}
             </Badge>
         );
     };

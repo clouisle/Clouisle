@@ -10,8 +10,10 @@ from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
 from app.api.deps import PermissionChecker
+from app.core.i18n import has_translation, t
 from app.core.timezone import now_utc
 from app.models.audit_log import AuditLog
+from app.services.error_messages import is_safe_user_visible_error
 from app.models.user import User
 from app.models.site_setting import SiteSetting
 from app.schemas.audit_log import (
@@ -23,6 +25,22 @@ from app.schemas.audit_log import (
 from app.schemas.response import Response, success, ResponseCode, BusinessError
 
 router = APIRouter()
+
+
+def serialize_audit_error(error_message: str | None) -> str | None:
+    if not error_message:
+        return None
+    if has_translation(error_message):
+        return t(error_message)
+    if is_safe_user_visible_error(error_message):
+        return error_message
+    return t("unknown_error")
+
+
+def serialize_audit_log(log: AuditLog) -> AuditLogSchema:
+    data = AuditLogSchema.model_validate(log).model_dump()
+    data["error_message"] = serialize_audit_error(log.error_message)
+    return AuditLogSchema.model_validate(data)
 
 
 AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
@@ -454,7 +472,7 @@ async def list_audit_logs(
     logs = await query.order_by("-created_at").offset(offset).limit(page_size)
 
     # 转换为schema
-    logs_data = [AuditLogSchema.model_validate(log) for log in logs]
+    logs_data = [serialize_audit_log(log) for log in logs]
 
     return success(
         data={
@@ -643,7 +661,7 @@ async def export_audit_logs(
                     log.operation,
                     log.status,
                     log.ip_address or "",
-                    log.error_message or "",
+                    serialize_audit_error(log.error_message) or "",
                 ]
             )
 
@@ -659,7 +677,7 @@ async def export_audit_logs(
 
     else:  # JSON
         # 生成JSON
-        logs_data = [log.to_dict() for log in logs]
+        logs_data = [serialize_audit_log(log).model_dump(mode="json") for log in logs]
         json_str = json.dumps(logs_data, indent=2, ensure_ascii=False)
 
         return StreamingResponse(
@@ -684,4 +702,4 @@ async def get_audit_log(
             msg_key="audit_log_not_found",
         )
 
-    return success(data=AuditLogSchema.model_validate(log))
+    return success(data=serialize_audit_log(log))

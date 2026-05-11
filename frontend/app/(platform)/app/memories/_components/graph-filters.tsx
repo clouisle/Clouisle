@@ -24,6 +24,16 @@ export function GraphFilters({
 }: GraphFiltersProps) {
   const t = useTranslations('memories')
 
+  const getEntityTypeLabel = (entityType: string) => {
+    const key = `entityTypes.${entityType}`
+    return t.has(key) ? t(key) : entityType
+  }
+
+  const getRelationTypeLabel = (relationType: string) => {
+    const key = `relationTypes.${relationType}`
+    return t.has(key) ? t(key) : relationType
+  }
+
   return (
     <div className="bg-background border rounded-lg shadow-lg p-3 space-y-3 max-w-[250px]">
       <div>
@@ -46,7 +56,7 @@ export function GraphFilters({
                   }
                 }}
               />
-              <span>{t(`entityTypes.${type}`)}</span>
+              <span>{getEntityTypeLabel(type)}</span>
             </label>
           ))}
         </div>
@@ -74,7 +84,7 @@ export function GraphFilters({
                   }
                 }}
               />
-              <span>{t(`relationTypes.${type}`)}</span>
+              <span>{getRelationTypeLabel(type)}</span>
             </label>
           ))}
         </div>

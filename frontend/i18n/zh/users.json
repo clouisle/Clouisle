@@ -42,6 +42,7 @@
     "allRoles": "所有角色",
     "role": "角色",
     "username": "用户名",
+    "email": "邮箱",
     "rowsPerPage": "每页行数",
     "pageInfo": "第 {page} 页，共 {total} 页",
     "pendingApprovalNotice": "有 {count} 个用户等待审核",

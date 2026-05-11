@@ -301,10 +301,31 @@ class GeminiAdapter(BaseChatAdapter):
         if self.max_tokens is not None:
             generation_config["max_output_tokens"] = self.max_tokens
         # Gemini 2.0 Flash Thinking 需要设置 thinking_config
-        if self.thinking_enabled:
-            generation_config["thinking_config"] = {
-                "thinking_budget": self.thinking_budget or 8192
-            }
+        thinking = self.get_effective_thinking()
+        if thinking is not None:
+            if self.thinking_enabled:
+                generation_config["thinking_config"] = {
+                    "thinking_budget": self.thinking_budget or 8192
+                }
+            else:
+                generation_config["thinking_config"] = {"thinking_budget": 0}
+
+        # Response format/schema support
+        # Gemini uses response_schema (not response_format like OpenAI)
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            response_format = kwargs["response_format"]
+            # Convert OpenAI format to Gemini format
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_object":
+                    # For simple JSON mode, we can set response_mime_type
+                    generation_config["response_mime_type"] = "application/json"
+                elif response_format.get("type") == "json_schema":
+                    # For JSON schema, extract the schema
+                    json_schema_config = response_format.get("json_schema", {})
+                    schema = json_schema_config.get("schema")
+                    if schema:
+                        generation_config["response_schema"] = schema
+                        generation_config["response_mime_type"] = "application/json"
 
         # Response format/schema support
         # Gemini uses response_schema (not response_format like OpenAI)
@@ -403,10 +424,31 @@ class GeminiAdapter(BaseChatAdapter):
         if self.max_tokens is not None:
             generation_config["max_output_tokens"] = self.max_tokens
         # Gemini 2.0 Flash Thinking 需要设置 thinking_config
-        if self.thinking_enabled:
-            generation_config["thinking_config"] = {
-                "thinking_budget": self.thinking_budget or 8192
-            }
+        thinking = self.get_effective_thinking()
+        if thinking is not None:
+            if self.thinking_enabled:
+                generation_config["thinking_config"] = {
+                    "thinking_budget": self.thinking_budget or 8192
+                }
+            else:
+                generation_config["thinking_config"] = {"thinking_budget": 0}
+
+        # Response format/schema support
+        # Gemini uses response_schema (not response_format like OpenAI)
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            response_format = kwargs["response_format"]
+            # Convert OpenAI format to Gemini format
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_object":
+                    # For simple JSON mode, we can set response_mime_type
+                    generation_config["response_mime_type"] = "application/json"
+                elif response_format.get("type") == "json_schema":
+                    # For JSON schema, extract the schema
+                    json_schema_config = response_format.get("json_schema", {})
+                    schema = json_schema_config.get("schema")
+                    if schema:
+                        generation_config["response_schema"] = schema
+                        generation_config["response_mime_type"] = "application/json"
 
         # Response format/schema support
         # Gemini uses response_schema (not response_format like OpenAI)
@@ -483,6 +525,10 @@ class GeminiAdapter(BaseChatAdapter):
                                 arguments=json.dumps(args),
                             ),
                         )
+                    )
+                    yield self.create_stream_chunk(
+                        response_id=response_id,
+                        stream_activity=True,
                     )
                 # 普通文本
                 elif hasattr(part, "text") and part.text:

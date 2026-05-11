@@ -279,7 +279,7 @@ export default function WorkflowLogsPage() {
           <div className="flex items-center gap-3 flex-wrap">
             {/* Status Filter */}
             <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
-              <SelectTrigger className="w-40 h-9">
+              <SelectTrigger className="w-40" size="default">
                 <Activity className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue>
                   {statusFilter === 'all' && t('allStatus')}
@@ -300,7 +300,7 @@ export default function WorkflowLogsPage() {
 
             {/* Date Filter */}
             <Select value={dateFilter} onValueChange={(v) => v && setDateFilter(v)}>
-              <SelectTrigger className="w-40 h-9">
+              <SelectTrigger className="w-40" size="default">
                 <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue>
                   {dateFilter === 'all' && t('allTime')}

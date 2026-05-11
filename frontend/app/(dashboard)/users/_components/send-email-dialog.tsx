@@ -5,6 +5,12 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
 import {
+  clearValidationError,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+  formatValidationSummaryMessage
+} from '@/lib/validation'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -16,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { FieldError } from '@/components/ui/field'
 import { usersApi, type User } from '@/lib/api/admin/users'
 
 interface SendEmailDialogProps {
@@ -36,48 +43,60 @@ export function SendEmailDialog({
   
   const [subject, setSubject] = React.useState('')
   const [content, setContent] = React.useState('')
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [sending, setSending] = React.useState(false)
-  
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['subject', 'content']),
+    [fieldErrors]
+  )
+
   // 重置表单
   React.useEffect(() => {
     if (open) {
       setSubject('')
       setContent('')
+      setFieldErrors({})
     }
   }, [open])
   
   const handleSend = async () => {
+    setFieldErrors({})
+
     if (!subject.trim()) {
-      toast.error(t('emailSubjectRequired'))
+      setFieldErrors({ subject: t('emailSubjectRequired') })
       return
     }
     if (!content.trim()) {
-      toast.error(t('emailContentRequired'))
+      setFieldErrors({ content: t('emailContentRequired') })
       return
     }
-    
+
     setSending(true)
     try {
       const result = await usersApi.sendEmail(
         users.map(u => u.id),
         subject,
-        content
+        content,
+        { silent: true }
       )
-      
+
       if (result.skipped_count > 0) {
-        // 部分发送成功，部分被限制
-        toast.warning(t('emailSentPartial', { 
+        toast.warning(t('emailSentPartial', {
           sent: result.sent_count,
           skipped: result.skipped_count,
         }))
       } else {
         toast.success(t('emailSent', { count: result.sent_count }))
       }
-      
+
+      setFieldErrors({})
       onOpenChange(false)
       onSuccess?.()
-    } catch {
-      // 错误已由 API 客户端处理
+    } catch (error) {
+      const errors = normalizeValidationErrors(error)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
+      }
     } finally {
       setSending(false)
     }
@@ -94,27 +113,47 @@ export function SendEmailDialog({
         </DialogHeader>
         
         <div className="space-y-4 py-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="subject">{t('emailSubject')}</Label>
             <Input
               id="subject"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                setSubject(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'subject'))
+              }}
               placeholder={t('emailSubjectPlaceholder')}
               disabled={sending}
+              aria-invalid={!!fieldErrors.subject}
             />
+            <FieldError>{fieldErrors.subject}</FieldError>
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="content">{t('emailContent')}</Label>
             <Textarea
               id="content"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                setContent(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'content'))
+              }}
               placeholder={t('emailContentPlaceholder')}
               rows={6}
               disabled={sending}
+              aria-invalid={!!fieldErrors.content}
             />
+            <FieldError>{fieldErrors.content}</FieldError>
           </div>
           
           {users.length > 0 && (

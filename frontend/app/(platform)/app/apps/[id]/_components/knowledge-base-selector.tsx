@@ -132,7 +132,7 @@ function KnowledgeBaseConfigDialog({ item, open, onOpenChange, onSave }: Knowled
               value={searchMode}
               onValueChange={(value) => setSearchMode(value || 'hybrid')}
             >
-              <SelectTrigger className="h-9 text-sm">
+              <SelectTrigger size="default" className="text-sm">
                 <SelectValue>
                   {searchMode === 'vector' && t('dialog.searchModeVector')}
                   {searchMode === 'fulltext' && t('dialog.searchModeFulltext')}
@@ -239,7 +239,7 @@ function KnowledgeBaseDisplayItem({ item, onConfigure, onDelete }: KnowledgeBase
           </Button>
         </div>
         <div className="flex items-center gap-1.5 group-hover:hidden">
-          <span className="text-[10px] text-muted-foreground">Top {item.config.retrieval_top_k}</span>
+          <span className="text-[10px] text-muted-foreground">{t('dialog.topKCompact', { count: item.config.retrieval_top_k })}</span>
           <Badge variant="outline" className="text-[10px] h-4 px-1.5 font-normal">
             {t('documents', { count: item.knowledgeBase.document_count })}
           </Badge>

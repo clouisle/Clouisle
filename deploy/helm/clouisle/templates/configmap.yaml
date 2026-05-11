@@ -1,0 +1,63 @@
+{{- if and (not .Values.secrets.create) (not .Values.secrets.existingSecret) }}
+{{- fail "secrets.existingSecret is required when secrets.create=false" }}
+{{- end }}
+{{- if and (not .Values.uploads.enabled) (not .Values.uploads.existingClaim) }}
+{{- fail "uploads.existingClaim is required when uploads.enabled=false" }}
+{{- end }}
+{{- if and .Values.ingress.enabled (not .Values.api.enabled) }}
+{{- fail "api.enabled must be true when ingress.enabled=true" }}
+{{- end }}
+{{- if and .Values.ingress.enabled (not .Values.frontend.enabled) }}
+{{- fail "frontend.enabled must be true when ingress.enabled=true" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clouisle.configName" . }}
+  labels:
+    {{- include "clouisle.componentLabels" (dict "root" . "component" "config") | nindent 4 }}
+data:
+  PROJECT_NAME: {{ .Values.config.PROJECT_NAME | quote }}
+  TIMEZONE: {{ .Values.config.TIMEZONE | quote }}
+  API_BASE_URL: {{ .Values.config.API_BASE_URL | quote }}
+  SANDBOX_ARTIFACT_UPLOAD_BASE_URL: {{ .Values.config.SANDBOX_ARTIFACT_UPLOAD_BASE_URL | quote }}
+  FRONTEND_URL: {{ .Values.config.FRONTEND_URL | quote }}
+  BACKEND_CORS_ORIGINS: {{ .Values.config.BACKEND_CORS_ORIGINS | quote }}
+  {{ if .Values.postgresql.enabled }}
+  POSTGRES_SERVER: "postgres"
+  POSTGRES_PORT: {{ .Values.config.POSTGRES_PORT | quote }}
+  POSTGRES_USER: {{ .Values.config.POSTGRES_USER | quote }}
+  POSTGRES_DB: {{ .Values.config.POSTGRES_DB | quote }}
+  {{ else }}
+  POSTGRES_SERVER: {{ required "postgresql.external.host is required when postgresql.enabled=false" .Values.postgresql.external.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgresql.external.port | quote }}
+  POSTGRES_USER: {{ default .Values.config.POSTGRES_USER .Values.postgresql.external.user | quote }}
+  POSTGRES_DB: {{ default .Values.config.POSTGRES_DB .Values.postgresql.external.database | quote }}
+  {{ end }}
+  {{ if .Values.redis.enabled }}
+  REDIS_HOST: "redis"
+  REDIS_PORT: {{ .Values.config.REDIS_PORT | quote }}
+  {{ else }}
+  REDIS_HOST: {{ required "redis.external.host is required when redis.enabled=false" .Values.redis.external.host | quote }}
+  REDIS_PORT: {{ .Values.redis.external.port | quote }}
+  {{ end }}
+  VECTOR_BACKEND: {{ .Values.config.VECTOR_BACKEND | quote }}
+  {{ if .Values.qdrant.enabled }}
+  QDRANT_URL: "http://qdrant:6333"
+  {{ else }}
+  QDRANT_URL: {{ required "qdrant.external.url is required when qdrant.enabled=false" .Values.qdrant.external.url | quote }}
+  {{ end }}
+  QDRANT_COLLECTION_PREFIX: {{ .Values.config.QDRANT_COLLECTION_PREFIX | quote }}
+  QDRANT_DISTANCE: {{ .Values.config.QDRANT_DISTANCE | quote }}
+  SANDBOX_RUNTIME_ENABLED: {{ .Values.config.SANDBOX_RUNTIME_ENABLED | quote }}
+  SANDBOX_LEGACY_FALLBACK_ENABLED: {{ .Values.config.SANDBOX_LEGACY_FALLBACK_ENABLED | quote }}
+  SANDBOX_WORKER_CONCURRENCY: {{ .Values.config.SANDBOX_WORKER_CONCURRENCY | quote }}
+  SANDBOX_WORKSPACE_ROOT: {{ .Values.config.SANDBOX_WORKSPACE_ROOT | quote }}
+  SANDBOX_MAX_DISK_MB: {{ .Values.config.SANDBOX_MAX_DISK_MB | quote }}
+  SANDBOX_SESSION_TTL_HOURS: {{ .Values.config.SANDBOX_SESSION_TTL_HOURS | quote }}
+  SANDBOX_RESULT_TTL_SECONDS: {{ .Values.config.SANDBOX_RESULT_TTL_SECONDS | quote }}
+  SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB: {{ .Values.config.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB | quote }}
+  SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB: {{ .Values.config.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB | quote }}
+  {{ range $key, $value := .Values.extraEnv }}
+  {{ $key }}: {{ $value | quote }}
+  {{ end }}

@@ -63,6 +63,7 @@ import {
 import { RoleDialog } from './role-dialog'
 import { DeleteRoleDialog } from './delete-role-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function RolesClient() {
   const t = useTranslations('roles')
@@ -77,7 +78,7 @@ export function RolesClient() {
   const [pageData, setPageData] = React.useState<PageData<Role> | null>(null)
   
   // 筛选状态
-  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchQuery, setSearchQuery] = useUrlSearchState()
   const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
 
   // 防抖搜索

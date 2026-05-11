@@ -246,7 +246,7 @@ export default function LogsPage({ params }: LogsPageProps) {
           <div className="flex items-center gap-3 flex-wrap">
             {/* Date Filter */}
             <Select value={dateFilter} onValueChange={(v) => v && setDateFilter(v)}>
-              <SelectTrigger className="w-40 h-9">
+              <SelectTrigger size="default" className="w-40">
                 <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue>
                   {dateFilter === 'all' && t('filters.allTime')}
@@ -284,7 +284,7 @@ export default function LogsPage({ params }: LogsPageProps) {
 
             {/* Sort */}
             <Select value={sortBy} onValueChange={(v) => v && setSortBy(v)}>
-              <SelectTrigger className="w-36 h-9">
+              <SelectTrigger size="default" className="w-36">
                 <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue>
                   {sortBy === 'created_at' && t('sort.createdAt')}

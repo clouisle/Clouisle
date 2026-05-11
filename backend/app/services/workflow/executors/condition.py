@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any, cast
 import logging
 
 from ..executor import NodeExecutor, NodeExecutorRegistry, ExecutionResult
+from ..errors import translate_public_workflow_error
+from ..types import NodeOutputDecl, TypeSpec, to_text, WorkflowValue
 
 if TYPE_CHECKING:
     from app.models.workflow import WorkflowRun
@@ -189,9 +191,9 @@ class ConditionNodeExecutor(NodeExecutor):
         await context.set_branch(node_id, matched_handle)
 
         return ExecutionResult(
-            outputs={
+            outputs={  # type: ignore[dict-item]
                 "matched_branch": matched_handle,
-                "condition_results": condition_results,
+                "condition_results": cast(dict[str, WorkflowValue], condition_results),
             },
             next_handles=[matched_handle],
         )
@@ -230,6 +232,19 @@ class ConditionNodeExecutor(NodeExecutor):
         return [
             {"name": "matched_branch", "type": "string"},
             {"name": "condition_results", "type": "object"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(
+                name="matched_branch",
+                type=TypeSpec(kind="string"),
+            ),
+            NodeOutputDecl(
+                name="condition_results",
+                type=TypeSpec(kind="object"),
+            ),
         ]
 
 
@@ -307,12 +322,12 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             logger.error(
                 f"Question classifier node {node_id}: modelId not found. Config: {config}"
             )
-            return ExecutionResult(error="Model ID not configured")
+            return ExecutionResult(error="validation_error")
 
         # Get input value
         input_value = await context.resolve_variable_ref(input_var)
         if not input_value:
-            return ExecutionResult(error="No input provided for classification")
+            return ExecutionResult(error="validation_error")
 
         # First try to find as TeamModel ID, then fallback to Model ID
         team_model = (
@@ -325,7 +340,7 @@ class QuestionClassifierNodeExecutor(NodeExecutor):
             # Fallback: try as direct Model ID for backward compatibility
             model = await Model.filter(id=team_model_id).first()
             if model is None:
-                return ExecutionResult(error=f"Model not found: {team_model_id}")
+                return ExecutionResult(error="model_not_found")
             model_id = str(model.id)
 
         # Build classification prompt
@@ -351,7 +366,7 @@ Respond in JSON format:
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(input_value)},
+            {"role": "user", "content": to_text(input_value)},
         ]
 
         try:
@@ -432,4 +447,29 @@ Respond in JSON format:
 
         except Exception as e:
             logger.exception(f"Question classifier error: {e}")
-            return ExecutionResult(error=f"Classification error: {str(e)}")
+            return ExecutionResult(error=translate_public_workflow_error(e))
+
+    def get_output_variables(self, config: dict) -> list[dict]:
+        """Get output variables."""
+        return [
+            {"name": "category", "type": "string"},
+            {"name": "confidence", "type": "number"},
+            {"name": "reasoning", "type": "string"},
+        ]
+
+    def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
+        """Get output specs with TypeSpec for type inference."""
+        return [
+            NodeOutputDecl(
+                name="category",
+                type=TypeSpec(kind="string"),
+            ),
+            NodeOutputDecl(
+                name="confidence",
+                type=TypeSpec(kind="number"),
+            ),
+            NodeOutputDecl(
+                name="reasoning",
+                type=TypeSpec(kind="string"),
+            ),
+        ]

@@ -12,6 +12,7 @@ from uuid import UUID
 from app.models.memory import MemoryEntity, MemoryRelation, EntityType, RelationType
 from app.models.user import User
 from app.core.config import settings
+from app.core.i18n import t
 from app.services.audit_log import AuditLogService
 
 AsyncQdrantClient: Any = None
@@ -24,6 +25,11 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def _memory_tool_error() -> str:
+    return t("memory_tool_execution_failed")
+
 
 _qdrant_client: Any = None
 _memory_collections: set[str] = set()
@@ -172,7 +178,7 @@ class MemoryService:
         """
         entity = await MemoryEntity.filter(id=entity_id, user_id=user_id).first()
         if not entity:
-            raise ValueError("Entity not found")
+            raise ValueError("memory_entity_not_found")
 
         # Merge description
         if description:
@@ -205,7 +211,7 @@ class MemoryService:
         """
         entity = await MemoryEntity.filter(id=entity_id, user_id=user_id).first()
         if not entity:
-            raise ValueError("Entity not found")
+            raise ValueError("memory_entity_not_found")
 
         # Delete embedding from Qdrant
         if entity.embedding_id:
@@ -253,8 +259,10 @@ class MemoryService:
         source = await MemoryEntity.filter(id=source_entity_id, user_id=user_id).first()
         target = await MemoryEntity.filter(id=target_entity_id, user_id=user_id).first()
 
-        if not source or not target:
-            raise ValueError("Source or target entity not found")
+        if not source:
+            raise ValueError("memory_source_entity_not_found")
+        if not target:
+            raise ValueError("memory_target_entity_not_found")
 
         # Check if relation already exists
         existing = await MemoryRelation.filter(
@@ -295,7 +303,7 @@ class MemoryService:
         """
         relation = await MemoryRelation.filter(id=relation_id, user_id=user_id).first()
         if not relation:
-            raise ValueError("Relation not found")
+            raise ValueError("memory_relation_not_found")
 
         await relation.delete()
         logger.info(f"Deleted memory relation for user {user_id}")
@@ -612,9 +620,12 @@ class MemoryService:
             )
 
             # Add warning if similar entities found
-            message = f"Created memory entity: {entity.name}"
+            message = t("memory_entity_created_tool", entity_name=entity.name)
             if similar_names:
-                message += f" (Note: Similar entities exist: {', '.join(similar_names)}. Consider if you meant to update one of them instead.)"
+                message += t(
+                    "memory_similar_entities_notice",
+                    similar_entities=", ".join(similar_names),
+                )
 
             return {
                 "success": True,
@@ -644,7 +655,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -693,7 +704,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Source entity '{source_entity_name}' not found",
+                    "error": t(
+                        "memory_source_entity_not_found",
+                        entity_name=source_entity_name,
+                    ),
                 }
 
             if not target:
@@ -714,7 +728,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Target entity '{target_entity_name}' not found",
+                    "error": t(
+                        "memory_target_entity_not_found",
+                        entity_name=target_entity_name,
+                    ),
                 }
 
             relation = await MemoryService.create_relation(
@@ -746,7 +763,12 @@ class MemoryService:
             return {
                 "success": True,
                 "relation_id": str(relation.id),
-                "message": f"Created relation: {source.name} --[{relation_type}]--> {target.name}",
+                "message": t(
+                    "memory_relation_created_tool",
+                    source_name=source.name,
+                    relation_type=relation_type,
+                    target_name=target.name,
+                ),
             }
         except Exception as e:
             logger.error(f"Failed to create relation: {e}")
@@ -770,7 +792,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -814,7 +836,10 @@ class MemoryService:
                 )
                 return {
                     "success": False,
-                    "error": f"Entity '{entity_name}' not found",
+                    "error": t(
+                        "memory_entity_named_not_found",
+                        entity_name=entity_name,
+                    ),
                 }
 
             # Store old values for audit
@@ -859,7 +884,7 @@ class MemoryService:
             return {
                 "success": True,
                 "entity_id": str(entity.id),
-                "message": f"Updated memory entity: {entity.name}",
+                "message": t("memory_entity_updated_tool", entity_name=entity.name),
             }
         except Exception as e:
             logger.error(f"Failed to update entity: {e}")
@@ -882,7 +907,7 @@ class MemoryService:
 
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }
 
     @staticmethod
@@ -918,18 +943,18 @@ class MemoryService:
                     "success": True,
                     "results": [],
                     "count": 0,
-                    "message": "No memories found. This might be the first conversation or the information hasn't been saved yet.",
+                    "message": t("memory_search_empty"),
                 }
 
             return {
                 "success": True,
                 "results": results,
                 "count": len(results),
-                "message": f"Found {len(results)} relevant memories.",
+                "message": t("memory_search_results_found", count=len(results)),
             }
         except Exception as e:
             logger.error(f"Failed to search memory: {e}")
             return {
                 "success": False,
-                "error": str(e),
+                "error": _memory_tool_error(),
             }

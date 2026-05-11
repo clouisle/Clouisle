@@ -146,10 +146,10 @@ export interface StepStartPart {
  */
 export interface TaskPart {
   type: 'task'
-  taskType: 'rag' | 'thinking' | 'generating'
+  taskType: 'rag' | 'thinking' | 'generating' | 'compression'
   state: 'pending' | 'running' | 'completed' | 'error'
   /** Additional info, e.g., number of sources found */
-  info?: string | number
+  info?: string | number | Record<string, unknown>
 }
 
 /**
@@ -171,6 +171,20 @@ export interface TruncatedPart {
 }
 
 /**
+ * Manually stopped marker part
+ */
+export interface StoppedPart {
+  type: 'stopped'
+}
+
+/**
+ * Maximum tool iteration cap reached marker part
+ */
+export interface IterationCapReachedPart {
+  type: 'iteration-cap-reached'
+}
+
+/**
  * All possible message parts
  */
 export type MessagePart =
@@ -189,6 +203,8 @@ export type MessagePart =
   | TaskPart
   | UserInputRequestPart
   | TruncatedPart
+  | StoppedPart
+  | IterationCapReachedPart
 
 /**
  * Chat message
@@ -219,6 +235,15 @@ export interface ChatError {
   message: string
   msgKey?: string  // i18n key for the error message
   quotaType?: string
+}
+
+export type CodePreviewKind = 'html' | 'svg' | 'css' | 'javascript' | 'markdown' | 'mermaid' | 'source'
+
+export interface CodePreviewPayload {
+  id: string
+  language: string
+  code: string
+  kind: CodePreviewKind
 }
 
 /**
@@ -291,6 +316,14 @@ export function isUserInputRequestPart(part: MessagePart): part is UserInputRequ
 
 export function isTruncatedPart(part: MessagePart): part is TruncatedPart {
   return part.type === 'truncated'
+}
+
+export function isStoppedPart(part: MessagePart): part is StoppedPart {
+  return part.type === 'stopped'
+}
+
+export function isIterationCapReachedPart(part: MessagePart): part is IterationCapReachedPart {
+  return part.type === 'iteration-cap-reached'
 }
 
 export function isSourcePart(part: MessagePart): part is SourceUrlPart | SourceDocumentPart {

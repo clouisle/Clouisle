@@ -94,10 +94,10 @@ services:
 **Kubernetes:**
 
 ```yaml
-# backend-deployment.yaml
+# api-deployment.yaml
 spec:
   containers:
-  - name: backend
+  - name: api
     resources:
       requests:
         memory: "4Gi"
@@ -151,7 +151,7 @@ services:
 **Kubernetes:**
 
 ```yaml
-# backend-deployment.yaml
+# api-deployment.yaml
 spec:
   replicas: 5
   strategy:
@@ -170,12 +170,12 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: backend-hpa
+  name: api-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: backend
+    name: api
   minReplicas: 3
   maxReplicas: 20
   metrics:
@@ -231,11 +231,11 @@ services:
 
 ```nginx
 # nginx.conf
-upstream backend {
+upstream api {
     least_conn;
-    server backend-1:8000 weight=1 max_fails=3 fail_timeout=30s;
-    server backend-2:8000 weight=1 max_fails=3 fail_timeout=30s;
-    server backend-3:8000 weight=1 max_fails=3 fail_timeout=30s;
+    server api-1:8000 weight=1 max_fails=3 fail_timeout=30s;
+    server api-2:8000 weight=1 max_fails=3 fail_timeout=30s;
+    server api-3:8000 weight=1 max_fails=3 fail_timeout=30s;
     keepalive 32;
 }
 
@@ -252,7 +252,7 @@ server {
     server_name your-domain.com;
 
     location /api {
-        proxy_pass http://backend;
+        proxy_pass http://api;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host $host;

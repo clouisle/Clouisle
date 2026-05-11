@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-import markdown
+import markdown  # type: ignore[import-untyped]
 
 from app.core.celery import celery_app
 from app.core.email import send_email
@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 # Markdown 转换器
 md = markdown.Markdown(extensions=["extra", "nl2br", "sane_lists"])
+
+
+def _delivery_error_message() -> str:
+    return "notification_delivery_failed"
 
 
 @dataclass
@@ -292,7 +296,7 @@ def send_notification_email_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.EMAIL,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -312,7 +316,7 @@ async def _send_notification_email(notification_id: UUID):
     # 一次性加载所有上下文
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # 获取收件人（包含语言偏好）
     recipients = await _get_notification_recipients(ctx.notification)
@@ -386,10 +390,14 @@ async def _send_notification_email(notification_id: UUID):
             notification_id,
             NotificationChannel.EMAIL,
             NotificationDeliveryStatus.SUCCESS,
-            f"Partial success: {success_count}/{len(recipients)} sent, failed: {', '.join(failed_emails[:5])}",
+            t(
+                "notification_delivery_partial_success",
+                success_count=success_count,
+                total_count=len(recipients),
+            ),
         )
     else:
-        raise RuntimeError(f"Failed to send email to all {len(recipients)} recipients")
+        raise RuntimeError("email_send_failed")
 
 
 @celery_app.task(name="send_notification_dingtalk", bind=True, max_retries=3)
@@ -410,7 +418,7 @@ def send_notification_dingtalk_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.DINGTALK,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -433,7 +441,7 @@ async def _send_notification_dingtalk(notification_id: UUID) -> bool:
     # 一次性加载所有上下文
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # 钉钉通知使用中文（主要面向中国用户）
     title, content = _build_notification_message(ctx, "zh")
@@ -454,9 +462,7 @@ async def _send_notification_dingtalk(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(
-            f"Failed to send DingTalk notification for {notification_id}"
-        )
+        raise RuntimeError("dingtalk_send_failed")
 
 
 @celery_app.task(name="send_notification_wechat", bind=True, max_retries=3)
@@ -476,7 +482,7 @@ def send_notification_wechat_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.WECHAT,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -494,7 +500,7 @@ async def _send_notification_wechat(notification_id: UUID) -> bool:
 
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # 企业微信使用中文
     title, content = _build_notification_message(ctx, "zh")
@@ -514,9 +520,7 @@ async def _send_notification_wechat(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(
-            f"Failed to send WeChat Work notification for {notification_id}"
-        )
+        raise RuntimeError("wechat_send_failed")
 
 
 @celery_app.task(name="send_notification_feishu", bind=True, max_retries=3)
@@ -536,7 +540,7 @@ def send_notification_feishu_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.FEISHU,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -554,7 +558,7 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
 
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # 飞书使用中文
     title, content = _build_notification_message(ctx, "zh")
@@ -574,7 +578,7 @@ async def _send_notification_feishu(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(f"Failed to send Feishu notification for {notification_id}")
+        raise RuntimeError("feishu_send_failed")
 
 
 @celery_app.task(name="send_notification_webhook", bind=True, max_retries=3)
@@ -594,7 +598,7 @@ def send_notification_webhook_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.WEBHOOK,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -612,7 +616,7 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
 
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # Webhook 使用英文（通用）
     title, content = _build_notification_message(ctx, "en")
@@ -632,7 +636,7 @@ async def _send_notification_webhook(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(f"Failed to send Webhook notification for {notification_id}")
+        raise RuntimeError("webhook_send_failed")
 
 
 @celery_app.task(name="send_notification_slack", bind=True, max_retries=3)
@@ -652,7 +656,7 @@ def send_notification_slack_task(self, notification_id: str):
                 UUID(notification_id),
                 NotificationChannel.SLACK,
                 NotificationDeliveryStatus.FAILED,
-                str(exc),
+                _delivery_error_message(),
             )
         )
         raise self.retry(exc=exc, countdown=60 * (self.request.retries + 1))
@@ -670,7 +674,7 @@ async def _send_notification_slack(notification_id: UUID) -> bool:
 
     ctx = await _load_notification_context(notification_id)
     if not ctx:
-        raise ValueError(f"Notification {notification_id} not found")
+        raise ValueError("notification_not_found")
 
     # Slack 使用英文
     title, content = _build_notification_message(ctx, "en")
@@ -690,4 +694,4 @@ async def _send_notification_slack(notification_id: UUID) -> bool:
         )
         return True
     else:
-        raise RuntimeError(f"Failed to send Slack notification for {notification_id}")
+        raise RuntimeError("slack_send_failed")

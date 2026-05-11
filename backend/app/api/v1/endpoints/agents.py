@@ -38,7 +38,6 @@ from app.schemas.agent import (
     ConversationListOut,
     ConversationUpdate,
     ConversationWithMessages,
-    MessageOut,
 )
 from app.schemas.response import (
     Response,
@@ -51,6 +50,7 @@ from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.models.notification import AutoNotificationType
 from app.core.i18n import t
+from app.api.v1.endpoints.chat import build_message_round_payloads
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -208,6 +208,7 @@ async def build_agent_out(agent: Agent) -> dict:
         "model": model_info.model_dump() if model_info else None,
         "system_prompt": agent.system_prompt,
         "max_iterations": agent.max_iterations,
+        "hide_tool_calls": agent.hide_tool_calls,
         "tools_config": agent.tools_config or [],
         "enable_vision": agent.enable_vision,
         "enable_file_upload": agent.enable_file_upload,
@@ -217,6 +218,9 @@ async def build_agent_out(agent: Agent) -> dict:
         "enable_user_input_request": agent.enable_user_input_request,
         "enable_memory": agent.enable_memory,
         "memory_config": agent.memory_config if agent.memory_config else None,
+        "context_compression_config": agent.context_compression_config
+        if agent.context_compression_config
+        else None,
         "enable_image_generation": agent.enable_image_generation,
         "image_generation_config": _sanitize_media_config(
             agent.image_generation_config
@@ -446,6 +450,14 @@ async def create_agent(
                 status_code=404,
             )
 
+    from app.services.skill import SkillService
+
+    await SkillService.validate_agent_skill_configs(
+        None,
+        [t.model_dump() for t in agent_in.tools_config],
+        agent_in.team_id,
+    )
+
     # Create agent
     agent = await Agent.create(
         name=agent_in.name,
@@ -456,6 +468,7 @@ async def create_agent(
         model_id=agent_in.model_id,
         system_prompt=agent_in.system_prompt,
         max_iterations=agent_in.max_iterations,
+        hide_tool_calls=agent_in.hide_tool_calls,
         tools_config=[t.model_dump() for t in agent_in.tools_config],
         enable_vision=agent_in.enable_vision,
         enable_file_upload=agent_in.enable_file_upload,
@@ -466,6 +479,9 @@ async def create_agent(
         enable_memory=agent_in.enable_memory,
         memory_config=agent_in.memory_config.model_dump()
         if agent_in.memory_config
+        else {},
+        context_compression_config=agent_in.context_compression_config.model_dump()
+        if agent_in.context_compression_config
         else {},
         enable_image_generation=agent_in.enable_image_generation,
         image_generation_config=agent_in.image_generation_config.model_dump()
@@ -578,6 +594,9 @@ async def update_agent(
     if agent_in.max_iterations is not None:
         agent.max_iterations = agent_in.max_iterations
         updated_fields.append("max_iterations")
+    if agent_in.hide_tool_calls is not None:
+        agent.hide_tool_calls = agent_in.hide_tool_calls
+        updated_fields.append("hide_tool_calls")
     if agent_in.opening_message is not None:
         agent.opening_message = agent_in.opening_message
         updated_fields.append("opening_message")
@@ -607,7 +626,13 @@ async def update_agent(
 
     # Update tools config
     if agent_in.tools_config is not None:
-        agent.tools_config = [t.model_dump() for t in agent_in.tools_config]
+        from app.services.skill import SkillService
+
+        tools_config = [t.model_dump() for t in agent_in.tools_config]
+        await SkillService.validate_agent_skill_configs(
+            agent, tools_config, agent.team_id
+        )
+        agent.tools_config = tools_config
         updated_fields.append("tools_config")
 
     # Update enable_vision
@@ -640,6 +665,11 @@ async def update_agent(
     if agent_in.memory_config is not None:
         agent.memory_config = agent_in.memory_config.model_dump()
         updated_fields.append("memory_config")
+    if agent_in.context_compression_config is not None:
+        agent.context_compression_config = (
+            agent_in.context_compression_config.model_dump()
+        )
+        updated_fields.append("context_compression_config")
 
     if agent_in.enable_image_generation is not None:
         agent.enable_image_generation = agent_in.enable_image_generation
@@ -777,7 +807,7 @@ async def publish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_PUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_published_title"),
             content=t("notify_agent_published_content", agent_name=agent.name),
         )
@@ -814,7 +844,7 @@ async def unpublish_agent(
     if agent.team_id:
         await AutoNotificationService.send_to_team(
             notification_type=AutoNotificationType.AGENT_UNPUBLISHED,
-            team_id=agent.team_id,
+            team_id=UUID(str(agent.team_id)),
             title=t("notify_agent_unpublished_title"),
             content=t("notify_agent_unpublished_content", agent_name=agent.name),
         )
@@ -848,6 +878,7 @@ async def duplicate_agent(
         enable_user_input_request=agent.enable_user_input_request,
         enable_memory=agent.enable_memory,
         memory_config=agent.memory_config,
+        context_compression_config=agent.context_compression_config,
         enable_image_generation=agent.enable_image_generation,
         image_generation_config=(
             {
@@ -907,7 +938,7 @@ async def get_agent_video_generation_status(
     if not agent.enable_video_generation:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
-            msg="Video generation is not enabled for this agent",
+            msg_key="video_generation_not_enabled_for_agent",
             status_code=400,
         )
 
@@ -1026,7 +1057,6 @@ async def get_conversation(
             status_code=404,
         )
 
-    # Get only active messages
     messages = await Message.filter(
         conversation_id=conversation.id,
         is_active=True,
@@ -1059,12 +1089,11 @@ async def get_conversation(
                 version_counts[str(root_id)] = 1
 
     # Build message outputs with pre-fetched version counts
-    messages_out = []
-    for m in messages:
-        msg_data = MessageOut.model_validate(m).model_dump()
+    messages_out = await build_message_round_payloads(messages)
+    canonical_messages = [m for m in messages if not m.round_id or m.is_round_canonical]
+    for msg_data, m in zip(messages_out, canonical_messages, strict=False):
         root_id = m.parent_id if m.parent_id else m.id
         msg_data["version_count"] = version_counts.get(str(root_id), 1)
-        messages_out.append(msg_data)
 
     # First convert to ConversationOut, then build ConversationWithMessages
     conv_out = ConversationOut.model_validate(conversation)

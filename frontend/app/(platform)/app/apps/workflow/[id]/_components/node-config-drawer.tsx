@@ -912,7 +912,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
           name: p.name,
           type: p.valueType,
           group: 'system',
-          groupLabel: 'SYSTEM',
+          groupLabel: t('nodesCommon.system'),
           isSystem: true,
           isArray: false,
           isIterable: false,
@@ -1085,6 +1085,9 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
               setEditingCodeInput(null)
               setIsCodeInputDialogOpen(true)
             }}
+            inferredSchema={
+              (node?.data as { inferredSchema?: Record<string, import('@/lib/workflow/type-spec').TypeSpec> } | undefined)?.inferredSchema
+            }
           />
         )
       
@@ -1390,6 +1393,7 @@ export function NodeConfigDrawer({ node, allNodes, allEdges, open, onClose, onUp
         open={isCodeInputDialogOpen}
         onOpenChange={setIsCodeInputDialogOpen}
         editingInput={editingCodeInput}
+        existingInputs={codeConfig.inputs}
         variables={getAvailableVariables()}
         variableSearch={variableSearch}
         openVariablePopover={openVariablePopover}
@@ -1447,15 +1451,15 @@ function LastRunContent({ trace, t }: { trace: NodeTrace; t: (key: string) => st
       {trace.tokens && (trace.tokens.total ?? 0) > 0 && (
         <div className="flex items-center gap-4 text-xs p-2.5 bg-muted/30 rounded-lg">
           <div>
-            <span className="text-muted-foreground">Prompt: </span>
+            <span className="text-muted-foreground">{t('runDrawer.tokenPrompt')}</span>
             <span>{trace.tokens.prompt || 0}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Completion: </span>
+            <span className="text-muted-foreground">{t('runDrawer.tokenCompletion')}</span>
             <span>{trace.tokens.completion || 0}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Total: </span>
+            <span className="text-muted-foreground">{t('runDrawer.tokenTotal')}</span>
             <span className="font-medium">{trace.tokens.total || 0}</span>
           </div>
         </div>
@@ -1498,7 +1502,22 @@ function LastRunContent({ trace, t }: { trace: NodeTrace; t: (key: string) => st
         <div className="space-y-1">
           <span className="text-xs text-red-500 font-medium">{t('runDrawer.errorLabel')}</span>
           <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded text-xs text-red-600 dark:text-red-400">
-            {trace.error}
+            {(() => {
+              const message = typeof trace.error === 'string' ? trace.error.trim() : ''
+              if (
+                !message
+                || message.length > 200
+                || /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message)
+                || message.includes('\n')
+                || message.includes('Traceback')
+                || message.includes('Exception')
+                || message.includes('HTTP ')
+                || message.includes('Failed to fetch')
+              ) {
+                return t('runDrawer.unknownError')
+              }
+              return message
+            })()}
           </div>
         </div>
       )}

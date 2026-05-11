@@ -213,12 +213,12 @@ async def get_current_active_superuser(
     return current_user
 
 
-async def get_current_user_optional(
+async def get_current_user_or_api_key_optional(
     token: Optional[str] = Depends(reusable_oauth2),
     authorization: Optional[str] = Header(None),
-) -> Optional[User]:
+) -> Optional[tuple[User, Optional[APIKey]]]:
     """
-    可选的用户认证。如果提供了有效的 token，返回用户；否则返回 None。
+    可选的用户或 API Key 认证。如果提供了有效的 token，返回 (user, api_key)；否则返回 None。
     不会抛出认证错误。
     """
     # 尝试从 Authorization header 获取 token
@@ -230,19 +230,31 @@ async def get_current_user_optional(
     if not auth_token:
         return None
 
-    # 检查是否是 API Key
     if auth_token.startswith("clou_"):
         try:
-            user, _ = await _authenticate_api_key(auth_token)
-            return user
+            return await _authenticate_api_key(auth_token)
         except BusinessError:
             return None
 
-    # 尝试 JWT 认证
     try:
-        return await _authenticate_jwt(auth_token)
+        return await _authenticate_jwt(auth_token), None
     except BusinessError:
         return None
+
+
+async def get_current_user_optional(
+    token: Optional[str] = Depends(reusable_oauth2),
+    authorization: Optional[str] = Header(None),
+) -> Optional[User]:
+    """
+    可选的用户认证。如果提供了有效的 token，返回用户；否则返回 None。
+    不会抛出认证错误。
+    """
+    authenticated = await get_current_user_or_api_key_optional(token, authorization)
+    if authenticated is None:
+        return None
+    user, _ = authenticated
+    return user
 
 
 class PermissionChecker:

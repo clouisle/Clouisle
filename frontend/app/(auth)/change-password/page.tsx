@@ -8,9 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { usersApi, ApiError } from '@/lib/api'
+import { usersApi } from '@/lib/api'
+import {
+  clearValidationError,
+  formatValidationSummaryMessage,
+  getValidationSummaryEntries,
+  normalizeValidationErrors,
+} from '@/lib/validation'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { FieldError } from '@/components/ui/field'
 
 export default function ChangePasswordPage() {
   const t = useTranslations('auth')
@@ -24,6 +31,18 @@ export default function ChangePasswordPage() {
   const [loading, setLoading] = React.useState(false)
 
   const reason = searchParams.get('reason') // 'expired' or 'force'
+  const summaryEntries = React.useMemo(
+    () => getValidationSummaryEntries(fieldErrors, ['current_password', 'new_password', 'confirmPassword']),
+    [fieldErrors]
+  )
+  const summaryFieldLabels = React.useMemo(
+    () => ({
+      current_password: t('currentPassword'),
+      new_password: t('newPassword'),
+      confirmPassword: t('confirmNewPassword'),
+    }),
+    [t]
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,10 +68,9 @@ export default function ChangePasswordPage() {
       const redirect = searchParams.get('redirect')
       router.push(redirect || '/app')
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.isValidationError()) {
-          setFieldErrors(err.getFieldErrors())
-        }
+      const errors = normalizeValidationErrors(err)
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors)
       }
     } finally {
       setLoading(false)
@@ -80,19 +98,31 @@ export default function ChangePasswordPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {summaryEntries.length > 0 && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+              {summaryEntries.map(([field, message]) => (
+                <FieldError key={field}>
+                  {formatValidationSummaryMessage(field, message, summaryFieldLabels)}
+                </FieldError>
+              ))}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="currentPassword">{t('currentPassword')}</Label>
             <Input
               id="currentPassword"
               type="password"
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'current_password'))
+              }}
               required
               autoComplete="current-password"
+              aria-invalid={!!fieldErrors.current_password}
             />
-            {fieldErrors.current_password && (
-              <p className="text-sm text-destructive">{fieldErrors.current_password}</p>
-            )}
+            <FieldError>{fieldErrors.current_password}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -101,13 +131,15 @@ export default function ChangePasswordPage() {
               id="newPassword"
               type="password"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e) => {
+                setNewPassword(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'new_password'))
+              }}
               required
               autoComplete="new-password"
+              aria-invalid={!!fieldErrors.new_password}
             />
-            {fieldErrors.new_password && (
-              <p className="text-sm text-destructive">{fieldErrors.new_password}</p>
-            )}
+            <FieldError>{fieldErrors.new_password}</FieldError>
           </div>
 
           <div className="space-y-2">
@@ -116,13 +148,15 @@ export default function ChangePasswordPage() {
               id="confirmPassword"
               type="password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value)
+                setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
+              }}
               required
               autoComplete="new-password"
+              aria-invalid={!!fieldErrors.confirmPassword}
             />
-            {fieldErrors.confirmPassword && (
-              <p className="text-sm text-destructive">{fieldErrors.confirmPassword}</p>
-            )}
+            <FieldError>{fieldErrors.confirmPassword}</FieldError>
           </div>
 
           <Button type="submit" className="w-full" disabled={loading}>

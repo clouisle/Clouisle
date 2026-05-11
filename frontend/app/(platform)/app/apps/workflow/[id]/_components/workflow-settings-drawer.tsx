@@ -416,7 +416,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.visibility')}</Label>
                 <Select value={visibility} onValueChange={(v) => v && setVisibility(v as WorkflowVisibility)} disabled={readOnly}>
-                  <SelectTrigger className="h-9 text-sm">
+                  <SelectTrigger size="default">
                     <span>{visibility === 'private' ? t('settings.visibilityPrivate') : t('settings.visibilityTeam')}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -477,7 +477,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.triggerMethod')}</Label>
                 <Select value={triggerType} onValueChange={(v) => v && setTriggerType(v as TriggerType)} disabled={readOnly}>
-                  <SelectTrigger className="h-9 text-sm">
+                  <SelectTrigger size="default">
                     <span>{triggerTypeOptions.find(o => o.value === triggerType) ? t(triggerTypeOptions.find(o => o.value === triggerType)!.labelKey) : t('settings.selectTriggerMethod')}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -497,7 +497,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
               {triggerType === 'webhook' && (
                 <div className="space-y-2 bg-muted/30 rounded-lg p-2.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs">Webhook URL</Label>
+                    <Label className="text-xs">{t('settings.webhookUrl')}</Label>
                     {!readOnly && (
                       <Button
                         variant="ghost"
@@ -553,7 +553,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t('settings.scheduleFrequency')}</Label>
                     <Select value={scheduleType} onValueChange={(v) => v && setScheduleType(v as typeof scheduleType)} disabled={readOnly}>
-                      <SelectTrigger className="h-9 text-sm">
+                      <SelectTrigger size="default">
                         <span>
                           {scheduleType === 'interval' && t('settings.scheduleInterval')}
                           {scheduleType === 'daily' && t('settings.scheduleDaily')}
@@ -577,7 +577,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                     <div className="space-y-1.5">
                       <Label className="text-xs">{t('settings.executionInterval')}</Label>
                       <Select value={String(intervalMinutes)} onValueChange={(v) => v && setIntervalMinutes(parseInt(v))} disabled={readOnly}>
-                        <SelectTrigger className="h-9 text-sm">
+                        <SelectTrigger size="default">
                           <span>{intervalMinutes < 60 ? t('settings.everyNMinutes', { n: intervalMinutes }) : t('settings.everyNHours', { n: intervalMinutes / 60 })}</span>
                         </SelectTrigger>
                         <SelectContent>
@@ -615,7 +615,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                       <div className="space-y-1.5">
                         <Label className="text-xs">{t('settings.weekday')}</Label>
                         <Select value={String(weeklyDay)} onValueChange={(v) => v && setWeeklyDay(parseInt(v))} disabled={readOnly}>
-                          <SelectTrigger className="h-9 text-sm">
+                          <SelectTrigger size="default">
                             <span>{[t('settings.sunday'), t('settings.monday'), t('settings.tuesday'), t('settings.wednesday'), t('settings.thursday'), t('settings.friday'), t('settings.saturday')][weeklyDay]}</span>
                           </SelectTrigger>
                           <SelectContent>
@@ -648,7 +648,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
                       <div className="space-y-1.5">
                         <Label className="text-xs">{t('settings.date')}</Label>
                         <Select value={String(monthlyDay)} onValueChange={(v) => v && setMonthlyDay(parseInt(v))} disabled={readOnly}>
-                          <SelectTrigger className="h-9 text-sm">
+                          <SelectTrigger size="default">
                             <span>{t('settings.monthlyDay', { day: monthlyDay })}</span>
                           </SelectTrigger>
                           <SelectContent>

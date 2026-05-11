@@ -48,6 +48,10 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.workflow.errors import (
+    get_public_workflow_error_key,
+    translate_public_workflow_error,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -140,6 +144,32 @@ async def check_workflow_access(
 # ============ Global Workflow Runs (must be before /{workflow_id} routes) ============
 
 
+def sanitize_public_workflow_error(error_message: str | None) -> str | None:
+    if not error_message:
+        return None
+
+    if get_public_workflow_error_key(error_message):
+        return translate_public_workflow_error(error_message)
+
+    return t("workflow_execution_error")
+
+
+def sanitize_workflow_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(payload)
+    sanitized["error_message"] = sanitize_public_workflow_error(
+        sanitized.get("error_message")
+    )
+    return sanitized
+
+
+def sanitize_node_execution_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(payload)
+    sanitized["error_message"] = sanitize_public_workflow_error(
+        sanitized.get("error_message")
+    )
+    return sanitized
+
+
 @router.get("/runs", response_model=Response[PageData[dict]])
 async def list_all_workflow_runs(
     team_id: list[UUID] | None = Query(None),
@@ -219,7 +249,9 @@ async def list_all_workflow_runs(
     # Build response with workflow info
     items = []
     for run in runs:
-        item = WorkflowRunListItem.model_validate(run).model_dump()
+        item = sanitize_workflow_run_payload(
+            WorkflowRunListItem.model_validate(run).model_dump()
+        )
         related_workflow = run.workflow
         item["workflow_name"] = related_workflow.name if related_workflow else None
         item["workflow_icon"] = related_workflow.icon if related_workflow else None
@@ -1243,7 +1275,7 @@ async def list_workflow_runs(
 
     return success(
         data={
-            "items": [r.model_dump() for r in run_list],
+            "items": [sanitize_workflow_run_payload(r.model_dump()) for r in run_list],
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -1275,7 +1307,11 @@ async def get_workflow_run(
     # Check access through workflow
     await check_workflow_access(run.workflow_id, current_user)
 
-    return success(data=WorkflowRunOut.model_validate(run).model_dump())
+    return success(
+        data=sanitize_workflow_run_payload(
+            WorkflowRunOut.model_validate(run).model_dump()
+        )
+    )
 
 
 @router.get("/runs/{run_id}/nodes", response_model=Response[list[NodeExecutionOut]])
@@ -1305,7 +1341,12 @@ async def list_run_node_executions(
     executions = await NodeExecution.filter(run_id=run_id).order_by("execution_order")
 
     return success(
-        data=[NodeExecutionOut.model_validate(e).model_dump() for e in executions]
+        data=[
+            sanitize_node_execution_payload(
+                NodeExecutionOut.model_validate(e).model_dump()
+            )
+            for e in executions
+        ]
     )
 
 

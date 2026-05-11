@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
+import { getErrorMessage as getApiErrorMessage } from '@/lib/api/client'
 import { workflowsApi, type WorkflowEvent } from '@/lib/api/workflows'
 import type { ChatMessage, ExecutionNode, ExecutionState } from '@/components/chat/types'
 
@@ -25,6 +26,29 @@ export interface UseWorkflowRunReturn {
  * Hook for running workflows with SSE streaming
  * Converts workflow events to ChatMessage and ExecutionNode formats
  */
+function isLikelyMessageKey(message: string): boolean {
+  return /^[a-z0-9]+(?:[._-][a-z0-9]+)+$/i.test(message.trim())
+}
+
+function resolveWorkflowErrorMessage(message: unknown, fallback: string): string {
+  if (typeof message !== 'string') return fallback
+
+  const trimmed = message.trim()
+  if (!trimmed || trimmed.length > 200) return fallback
+  if (isLikelyMessageKey(trimmed)) return fallback
+  if (trimmed.includes('\n')) return fallback
+  if (
+    trimmed.includes('Traceback')
+    || trimmed.includes('Exception')
+    || trimmed.includes('HTTP ')
+    || trimmed.includes('Failed to fetch')
+  ) {
+    return fallback
+  }
+
+  return trimmed
+}
+
 export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunReturn {
   const { workflowId, isDebug = false, onError, onComplete } = options
 
@@ -354,7 +378,7 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
 
       case 'node_error': {
         const nodeId = data.node_id as string
-        const errorMessage = data.error as string
+        const errorMessage = resolveWorkflowErrorMessage(data.error, getApiErrorMessage('requestFailed'))
 
         setExecutionState((prev) => {
           const newNodes = new Map(prev.nodes)
@@ -436,11 +460,11 @@ export function useWorkflowRun(options: UseWorkflowRunOptions): UseWorkflowRunRe
       }
 
       case 'workflow_error': {
-        const errorMessage = data.error as string
+        const errorMessage = resolveWorkflowErrorMessage(data.error, getApiErrorMessage('requestFailed'))
         const errorMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          parts: [{ type: 'text', text: `Workflow Error: ${errorMessage}` }],
+          parts: [{ type: 'text', text: `${errorMessage}` }],
         }
         setMessages((prev) => [...prev, errorMsg])
         setIsStreaming(false)

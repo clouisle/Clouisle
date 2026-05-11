@@ -2,61 +2,57 @@
 
 ## Architecture
 
-Clouisle uses **2 Docker images** that run as **4 application services**:
+Clouisle uses **3 Docker images** that run as **5 application services**:
 
 | Image | Service(s) | Description |
-|-------|-----------|-------------|
-| `clouisle-backend` | backend, worker, beat | Python 3.13 — FastAPI API server, Celery worker, Celery beat scheduler |
-| `clouisle-frontend` | frontend | Next.js app served via Nginx (static assets + API reverse proxy) |
+|-------|------------|-------------|
+| `clouisle-backend` | `api`, `worker`, `beat` | FastAPI API server, Celery worker, Celery beat scheduler |
+| `clouisle-sandbox-worker` | `sandbox-worker` | Sandbox task execution and artifact collection |
+| `clouisle-frontend` | `frontend` | Next.js standalone server running with `node server.js` |
 
 Infrastructure dependencies: **PostgreSQL 16**, **Redis 7**, **Qdrant**.
 
-### Frontend Nginx Architecture
+The API service is named `api` in deployment files. Older docs and scripts may refer to it as `backend`; update those commands to use `api`.
 
-The frontend container runs Nginx on port 3000 with the Next.js standalone server on an internal port (3001). Nginx handles:
+### Request Routing
 
-- **Static assets** (`/_next/static/`, `/public/`) — served directly with long cache headers
-- **API requests** (`/api/*`) — proxied to the backend with full client IP forwarding (`X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`, etc.)
-- **All other requests** — proxied to the internal Next.js server for SSR
+The frontend container serves the Next.js standalone app on port 3000. It does not include Nginx. In production, route traffic with an external reverse proxy or Ingress:
 
-This ensures the backend receives real client IP addresses and other request metadata.
+- `/api/*` → `api:8000`
+- `/` → `frontend:3000`
+
+`deploy/nginx/default.conf` is an optional external Nginx example, not part of the current frontend image.
 
 ---
 
 ## Building Images
 
-### CI/CD (Recommended)
+### CI/CD
 
-Push a `v*` tag to trigger the GitHub Actions workflow (`.github/workflows/build-images.yml`). The tag is the release marker, while `main` may continue to receive newer commits after a release:
+Push a `v*` tag to trigger `.github/workflows/build-images.yml`:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow builds and pushes both images to ACR, then creates a GitHub Release only after both image builds succeed. Image tags use the release tag without the leading `v`.
-
 Images are pushed to:
-```
+
+```text
 <ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-backend:<version>
+<ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-sandbox-worker:<version>
 <ACR_REGISTRY>/<ACR_NAMESPACE>/clouisle-frontend:<version>
 ```
 
-For example, `v0.1.0` publishes images with `IMAGE_TAG=0.1.0`.
-
-Required GitHub Secrets for image publishing: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
-
-Required GitHub Secrets for Agentic Workflows: `DEEPSEEK_API_KEY`.
+Required GitHub Secrets: `ACR_REGISTRY`, `ACR_NAMESPACE`, `ACR_USERNAME`, `ACR_PASSWORD`.
 
 ### Local Build
 
-From the **project root**:
+From the project root:
 
 ```bash
-# Backend image (used for backend, worker, and beat)
 docker build -f deploy/dockerfiles/backend.Dockerfile -t clouisle-backend .
-
-# Frontend image
+docker build -f deploy/dockerfiles/sandbox-worker.Dockerfile -t clouisle-sandbox-worker .
 docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 ```
 
@@ -68,32 +64,45 @@ docker build -f deploy/dockerfiles/frontend.Dockerfile -t clouisle-frontend .
 
 ```bash
 cd deploy
-
-# 1. Create environment file
 cp .env.example .env
-# Edit .env — set strong passwords for POSTGRES_PASSWORD, REDIS_PASSWORD, QDRANT_API_KEY, SECRET_KEY
+# Edit .env and set strong values for SECRET_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD, and QDRANT_API_KEY.
 
-# 2a. Using ACR images (set IMAGE_REGISTRY in .env)
-#     IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-namespace/clouisle
-#     IMAGE_TAG=0.1.0
-docker compose up -d
-
-# 2b. Using local build
-#     IMAGE_REGISTRY=clouisle  (default)
 docker compose up -d --build
+```
+
+Compose reads `deploy/.env`. The default image prefix is `clouisle`; set these when using registry images:
+
+```env
+IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/your-namespace/clouisle
+IMAGE_TAG=0.1.0
 ```
 
 ### Services
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `frontend` | 3000 | Next.js + Nginx |
-| `backend` | 8000 | FastAPI API server |
-| `worker` | — | Celery worker (no exposed port) |
-| `beat` | — | Celery beat scheduler (no exposed port) |
+| `frontend` | 3000 | Next.js standalone server |
+| `api` | 8000 | FastAPI API server |
+| `worker` | — | Celery worker for `default,workflow` queues |
+| `sandbox-worker` | — | Celery worker for sandbox queue and artifact upload |
+| `beat` | — | Celery beat scheduler; keep exactly one replica |
 | `db` | 5432 | PostgreSQL 16 |
 | `redis` | 6379 | Redis 7 |
 | `qdrant` | 6333 | Qdrant vector database |
+
+### Important Internal URLs
+
+Containerized services should use internal service names:
+
+```env
+POSTGRES_SERVER=db
+REDIS_HOST=redis
+QDRANT_URL=http://qdrant:6333
+API_BASE_URL=http://api:8000
+SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000
+```
+
+`sandbox-worker` uploads artifacts to `/api/v1/upload/sandbox-artifact`. Keep `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` on an internal API address; do not point it at `localhost` inside containers.
 
 ### Volumes
 
@@ -102,20 +111,24 @@ docker compose up -d --build
 | `postgres_data` | PostgreSQL data |
 | `redis_data` | Redis persistence |
 | `qdrant_data` | Qdrant vector storage |
-| `uploads_data` | User-uploaded files |
+| `uploads_data` | User uploads and sandbox artifacts |
 
 ### Common Operations
 
 ```bash
 # View logs
-docker compose logs -f backend
+docker compose logs -f api
 docker compose logs -f worker
+docker compose logs -f sandbox-worker
+docker compose logs -f beat
+docker compose logs -f frontend
 
 # Restart a single service
-docker compose restart backend
+docker compose restart api
 
 # Scale workers
 docker compose up -d --scale worker=4
+docker compose up -d --scale sandbox-worker=2
 
 # Stop everything
 docker compose down
@@ -130,79 +143,93 @@ docker compose down -v
 
 ### Prerequisites
 
-- Kubernetes cluster (1.25+)
+- Kubernetes cluster 1.25+
 - `kubectl` configured
-- Ingress controller (e.g., ingress-nginx) installed
+- Helm 3.x installed
+- Ingress controller, such as ingress-nginx
 - Container images pushed to a registry accessible by the cluster
+- A `ReadWriteMany` capable StorageClass for multi-replica uploads, or single-replica application deployments
 
-### Deploy
-
-All K8s resources are in a single file `deploy/k8s/clouisle.yaml`, using YAML anchors to deduplicate repeated values (image names, envFrom, resource limits, probe timings, etc.).
+### Option A: Helm Chart (recommended)
 
 ```bash
-# 1. Edit the manifest — replace base64 secret placeholders and set your domain
-#    Generate base64: echo -n 'your-value' | base64
+helm lint deploy/helm/clouisle
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace
+```
+
+For production, create a Secret and use `values-production.yaml`:
+
+```bash
+kubectl create namespace clouisle
+kubectl -n clouisle create secret generic clouisle-secret \
+  --from-literal=SECRET_KEY='replace-with-strong-random-key' \
+  --from-literal=POSTGRES_PASSWORD='replace-with-postgres-password' \
+  --from-literal=REDIS_PASSWORD='replace-with-redis-password' \
+  --from-literal=QDRANT_API_KEY='replace-with-qdrant-api-key'
+
+helm upgrade --install clouisle deploy/helm/clouisle \
+  --namespace clouisle \
+  --create-namespace \
+  -f deploy/helm/clouisle/values-production.yaml
+```
+
+See `deploy/helm/clouisle/README.md` for external PostgreSQL/Redis/Qdrant examples.
+
+### Option B: Single-file manifest
+
+The plain manifest is still available at `deploy/k8s/clouisle.yaml` for debugging or environments that do not use Helm.
+
+```bash
+# 1. Edit the manifest: replace base64 secret placeholders and set image/domain/storage values.
 vi deploy/k8s/clouisle.yaml
 
-# 2. Apply everything at once
+# 2. Apply everything
 kubectl apply -f deploy/k8s/clouisle.yaml
 
-# 3. Wait for infrastructure to be ready
+# 3. Wait for infrastructure
 kubectl -n clouisle wait --for=condition=ready pod -l app=postgres --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=redis --timeout=120s
 kubectl -n clouisle wait --for=condition=ready pod -l app=qdrant --timeout=120s
-
-# Application pods will start automatically once infrastructure is healthy
 ```
 
-### Manifest Sections (clouisle.yaml)
+### Manifest Sections
 
 | # | Resource | Notes |
 |---|----------|-------|
 | 1 | Namespace | `clouisle` |
 | 2 | ConfigMap | Non-sensitive configuration |
-| 3 | Secret | Passwords and keys (replace base64 placeholders) |
-| 4 | PostgreSQL | StatefulSet + Headless Service + PVC (10Gi) |
+| 3 | Secret | Passwords and keys |
+| 4 | PostgreSQL | StatefulSet + headless Service + PVC |
 | 5 | Redis | Deployment + Service |
-| 6 | Qdrant | StatefulSet + Headless Service + PVC (10Gi) |
-| 7 | Backend | Deployment (2 replicas) + Service :8000 |
-| 8 | Worker | Deployment (2 replicas), no Service |
-| 9 | Beat | Deployment (1 replica, Recreate), no Service |
-| 10 | Frontend | Deployment (2 replicas) + Service :3000 |
-| 11 | Ingress | `/api` → backend, `/` → frontend |
-
-### YAML Anchors
-
-Repeated values are extracted as anchors at the top of the file under `x-definitions`:
-
-| Anchor | Usage |
-|--------|-------|
-| `*ns` | Namespace `clouisle` — used in every `metadata.namespace` |
-| `*backend-image` | `clouisle-backend:latest` — shared by backend, worker, beat |
-| `*frontend-image` | `clouisle-frontend:latest` |
-| `*pull-policy` | `IfNotPresent` |
-| `*env-from` | ConfigMap + Secret envFrom — shared by backend, worker, beat |
-| `*uploads-volume` / `*uploads-mount` | Shared uploads emptyDir volume |
-| `*backend-resources` | CPU/memory limits for backend, worker |
-| `*probe-readiness-fast` / `*probe-liveness-slow` | Probe timing presets |
+| 6 | Qdrant | StatefulSet + headless Service + PVC |
+| 7 | Uploads | Shared `uploads-data` PVC |
+| 8 | API | Deployment + Service :8000 |
+| 9 | Worker | Deployment, no Service |
+| 10 | Sandbox Worker | Deployment, no Service |
+| 11 | Beat | Deployment, 1 replica, Recreate |
+| 12 | Frontend | Deployment + Service :3000 |
+| 13 | Ingress | `/api` → `api`, `/` → `frontend` |
 
 ### Scaling
 
 ```bash
-# Scale workers
 kubectl -n clouisle scale deployment worker --replicas=4
-
-# Scale backend
-kubectl -n clouisle scale deployment backend --replicas=3
-
-# IMPORTANT: beat must always be exactly 1 replica
+kubectl -n clouisle scale deployment sandbox-worker --replicas=2
+kubectl -n clouisle scale deployment api --replicas=3
 ```
+
+Keep `beat` at exactly one replica.
+
+If `uploads-data` uses `ReadWriteMany`, API/worker/sandbox-worker replicas can share uploaded files and sandbox artifacts. If your cluster does not support RWX storage, keep those deployments single-replica or move uploads/artifacts to object storage before scaling.
 
 ### Logs
 
 ```bash
-kubectl -n clouisle logs -f deployment/backend
+kubectl -n clouisle logs -f deployment/api
 kubectl -n clouisle logs -f deployment/worker
+kubectl -n clouisle logs -f deployment/sandbox-worker
 kubectl -n clouisle logs -f deployment/beat
 kubectl -n clouisle logs -f deployment/frontend
 ```
@@ -211,41 +238,47 @@ kubectl -n clouisle logs -f deployment/frontend
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `PROJECT_NAME` | No | `Clouisle` | Project display name |
-| `SECRET_KEY` | **Yes** | — | JWT signing key |
-| `TIMEZONE` | No | `Asia/Shanghai` | Server timezone |
-| `API_BASE_URL` | No | `http://localhost:8000` | Backend URL (for internal file access) |
-| `FRONTEND_URL` | No | `http://localhost:3000` | Frontend URL (for SSO redirects) |
-| `POSTGRES_SERVER` | No | `localhost` | PostgreSQL host |
-| `POSTGRES_PORT` | No | `5432` | PostgreSQL port |
-| `POSTGRES_USER` | No | `postgres` | PostgreSQL user |
-| `POSTGRES_PASSWORD` | **Yes** | — | PostgreSQL password |
-| `POSTGRES_DB` | No | `clouisle` | PostgreSQL database |
-| `REDIS_HOST` | No | `localhost` | Redis host |
-| `REDIS_PORT` | No | `6379` | Redis port |
-| `REDIS_PASSWORD` | No | — | Redis password |
-| `QDRANT_URL` | No | `http://localhost:6333` | Qdrant URL |
-| `QDRANT_API_KEY` | No | — | Qdrant API key |
-| `BACKEND_CORS_ORIGINS` | No | `http://localhost:3000` | Allowed CORS origins |
-| `TAVILY_API_KEY` | No | — | Tavily search API key |
+| Variable | Required | Compose default | Description |
+|----------|----------|-----------------|-------------|
+| `SECRET_KEY` | Yes | placeholder | JWT signing key and default sandbox upload signing basis |
+| `API_BASE_URL` | Yes | `http://api:8000` | Internal API URL for containers |
+| `SANDBOX_ARTIFACT_UPLOAD_BASE_URL` | Yes for sandbox | `http://api:8000` | Internal API URL used by sandbox artifact upload |
+| `FRONTEND_URL` | Yes | `http://localhost:3000` | Public frontend URL |
+| `BACKEND_CORS_ORIGINS` | Yes | `["http://localhost:3000"]` | JSON array of allowed frontend origins |
+| `POSTGRES_SERVER` | Yes | `db` | PostgreSQL host |
+| `POSTGRES_PASSWORD` | Yes | empty | PostgreSQL password |
+| `REDIS_HOST` | Yes | `redis` | Redis host |
+| `REDIS_PASSWORD` | Recommended | empty | Redis password |
+| `QDRANT_URL` | Yes | `http://qdrant:6333` | Qdrant URL |
+| `QDRANT_API_KEY` | Recommended | empty | Qdrant API key |
+| `SANDBOX_WORKER_CONCURRENCY` | No | `1` | Sandbox worker concurrency |
+| `SANDBOX_WORKSPACE_ROOT` | No | `/tmp/clouisle-sandbox/jobs` | Sandbox workspace root |
+| `NEXT_PUBLIC_API_URL` | Yes for frontend build | `/api/v1` | Browser-visible API base path |
+| `TAVILY_API_KEY` | No | empty | Tavily search API key |
 
 ---
 
 ## Troubleshooting
 
-**Backend can't connect to database**
-- Ensure PostgreSQL is healthy: `docker compose ps db` or `kubectl -n clouisle get pods -l app=postgres`
-- Check that `POSTGRES_SERVER`, `POSTGRES_PASSWORD` are correct in the environment
+**API can't connect to database**
+- Check `docker compose ps db` or `kubectl -n clouisle get pods -l app=postgres`.
+- Verify `POSTGRES_SERVER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
 
-**Frontend returns 502 for API requests**
-- Ensure the backend is running and healthy
-- In Docker Compose, the Nginx config proxies `/api/*` to `http://backend:8000` — verify the backend service name matches
+**Frontend cannot reach API**
+- Confirm your external proxy or Ingress sends `/api/*` to `api:8000`.
+- In Compose, verify `docker compose logs -f api` and `curl http://localhost:8000/api/v1/health`.
+
+**Sandbox artifacts are not uploaded**
+- Verify `SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://api:8000` in containerized deployment.
+- Check `docker compose logs -f sandbox-worker` or `kubectl -n clouisle logs -f deployment/sandbox-worker`.
+- Ensure `SECRET_KEY` is the same for `api` and `sandbox-worker`, unless `SANDBOX_ARTIFACT_UPLOAD_API_KEY` is configured.
 
 **Worker not processing tasks**
-- Check worker logs for connection errors to Redis
-- Verify `REDIS_HOST` and `REDIS_PASSWORD` are correct
+- Check worker logs for Redis connection or auth errors.
+- Verify `REDIS_HOST` and `REDIS_PASSWORD`.
 
 **Beat running duplicate schedules**
-- Ensure only 1 beat replica is running (K8s: `replicas: 1` with `Recreate` strategy)
+- Ensure only one `beat` replica is running.
+
+**Old backend commands no longer work**
+- Replace `backend` service references with `api`, for example `docker compose logs -f api`.
