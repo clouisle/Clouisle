@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
+import { KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB } from '@/lib/constants'
 
 interface SiteSettingsContextType {
   settings: PublicSiteSettings
@@ -22,6 +23,7 @@ const defaultSettings: PublicSiteSettings = {
   allow_account_deletion: true,
   sso_enabled: false,
   sso_allow_password_login: true,
+  kb_document_max_upload_size_mb: KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
 }
 
 const SiteSettingsContext = React.createContext<SiteSettingsContextType>({

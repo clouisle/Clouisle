@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import shlex
 from collections.abc import Collection
-from typing import Any
-
-import bashlex
 
 PROTECTED_PATHS = frozenset({
     "/",
@@ -40,61 +38,37 @@ class ShellCommandSafetyError(ValueError):
 
 
 class ShellCommandSafetyAnalyzer:
-    """Analyze shell command AST for unsafe semantics."""
+    """Analyze shell commands for unsafe semantics."""
 
     def __init__(self, workspace_root: str = "/workspace") -> None:
         self.workspace_root = workspace_root
 
     def validate(self, command: str, *, allowed_commands: Collection[str] | None = None) -> None:
+        words = self._split_command(command)
+        if not words:
+            return
+
+        command_name = os.path.basename(words[0])
+        if self._is_dangerous_command(command_name, words):
+            raise ShellCommandSafetyError(f"Dangerous command blocked: {command_name}")
+        pip_words = self._pip_invocation_words(command_name, words)
+        if pip_words is not None:
+            self._validate_pip_install(command_name, pip_words)
+        elif command_name == "npm":
+            self._validate_npm_install(words)
+        elif self._is_disallowed_invocation(command_name, words):
+            raise ShellCommandSafetyError(f"Unsafe command invocation blocked: {command_name}")
+        if allowed_commands is not None and not self._is_allowed_command(command_name, allowed_commands):
+            raise ShellCommandSafetyError(f"Command not in whitelist: {command_name}")
+        self._validate_path_arguments(command_name, words)
+
+    def _split_command(self, command: str) -> list[str]:
+        if any(token in command for token in ("&&", "||", ";", "|", "<", ">", "`", "$")):
+            raise ShellCommandSafetyError("Unsupported shell syntax")
         try:
-            ast = bashlex.parse(command)
-        except (bashlex.errors.ParsingError, NotImplementedError) as e:
+            return shlex.split(command, posix=True)
+        except ValueError as e:
             raise ShellCommandSafetyError("Unsupported shell syntax") from e
-
-        for node in self._walk_ast(ast):
-            if getattr(node, "kind", None) != "command":
-                continue
-            words = self._command_words(node)
-            if not words:
-                continue
-            command_name = os.path.basename(words[0])
-            if self._is_dangerous_command(command_name, words):
-                raise ShellCommandSafetyError(f"Dangerous command blocked: {command_name}")
-            pip_words = self._pip_invocation_words(command_name, words)
-            if pip_words is not None:
-                self._validate_pip_install(command_name, pip_words)
-            elif command_name == "npm":
-                self._validate_npm_install(words)
-            elif self._is_disallowed_invocation(command_name, words):
-                raise ShellCommandSafetyError(f"Unsafe command invocation blocked: {command_name}")
-            if allowed_commands is not None and not self._is_allowed_command(command_name, allowed_commands):
-                raise ShellCommandSafetyError(f"Command not in whitelist: {command_name}")
-            self._validate_path_arguments(command_name, words)
-
-    def _walk_ast(self, ast: Any) -> list[Any]:
-        nodes: list[Any] = []
-        if isinstance(ast, list):
-            for item in ast:
-                nodes.extend(self._walk_ast(item))
-            return nodes
-
-        if getattr(ast, "kind", None) is not None:
-            nodes.append(ast)
-
-        for attr in ("parts", "list", "command", "commands"):
-            value = getattr(ast, attr, None)
-            if value is not None:
-                nodes.extend(self._walk_ast(value))
-        return nodes
-
-    def _command_words(self, node: Any) -> list[str]:
-        words: list[str] = []
-        for part in getattr(node, "parts", []) or []:
-            if getattr(part, "kind", None) == "word":
-                word = getattr(part, "word", "")
-                if word:
-                    words.append(word)
-        return words
 
     def _is_dangerous_command(self, command_name: str, words: list[str]) -> bool:
         if command_name in {"rm", "del", "rd", "rmdir", "unlink"}:

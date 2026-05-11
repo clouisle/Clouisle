@@ -58,7 +58,6 @@ dependencies = [
     "urllib3>=2.6.3",
     "Babel>=2.17.0",
     "msgpack>=1.1.0",
-    "bashlex>=0.18",
 ]
 
 [tool.uv]
