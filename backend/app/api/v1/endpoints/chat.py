@@ -2431,7 +2431,19 @@ async def chat_stream(
                     await assistant_msg.save()
                 else:
                     await assistant_msg.delete()
-            raise
+            return
+        except Exception:
+            logger.exception("Unhandled stream error")
+            if assistant_msg:
+                await persist_partial_round_error(
+                    assistant_msg,
+                    content=full_content,
+                    reasoning=full_reasoning,
+                    model_id=model_id,
+                    start_time=start_time,
+                    fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+                )
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         finally:
             # Resource cleanup and logging
@@ -3537,7 +3549,24 @@ async def regenerate_message(
                 else:
                     await Message.filter(id=new_message.id).delete()
                     await Message.filter(id=message.id).update(is_active=True)
-            raise
+            return
+
+        except Exception:
+            logger.exception("Unhandled regenerate stream error")
+            preserved_partial = await persist_partial_round_error(
+                new_message,
+                content=full_content,
+                reasoning=full_reasoning,
+                model_id=model_id,
+                start_time=start_time,
+                fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+            )
+            if preserved_partial:
+                await Message.filter(id=message.id).update(is_active=False)
+            elif new_message_id:
+                await Message.filter(id=new_message_id).delete()
+                await Message.filter(id=message.id).update(is_active=True)
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         finally:
             # Resource cleanup and logging

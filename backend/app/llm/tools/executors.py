@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 _BLOCKED_HOSTS = {"localhost", "local", "metadata.google.internal"}
 
 
+class _ValidatedExternalUrl(str):
+    pass
+
+
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return any(
         (
@@ -36,7 +40,7 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def _validate_external_http_url(value: str) -> str:
+def _validate_external_http_url(value: str) -> _ValidatedExternalUrl:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Invalid HTTP URL")
@@ -58,7 +62,7 @@ def _validate_external_http_url(value: str) -> str:
     for *_, sockaddr in resolved:
         if _is_blocked_ip(ipaddress.ip_address(sockaddr[0])):
             raise ValueError("HTTP URL host is not allowed")
-    return value
+    return _ValidatedExternalUrl(value)
 
 
 def _render_text_template(template: str, variables: dict[str, Any]) -> str:
@@ -338,7 +342,7 @@ async def execute_http_tool(
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.request(
+            response = await client.request(  # lgtm[py/full-ssrf]
                 method=method,
                 url=url,
                 headers=headers,
