@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-11
+
+### Fixed
+
+#### Chat and Agent Runtime
+- Preserved uploaded file context across agent conversations by caching parsed file content and reusing it during follow-up turns.
+- Restored knowledge search tool execution in backend chat tool handling.
+- Avoided wrapping errored agent messages in the full message container so error display matches manual interruption behavior.
+- Returned structured, localized validation errors for unsupported HTTP tool URL templates.
+
+#### Security and Dependencies
+- Updated `langchain-core` to the patched backend dependency version for the reported security advisory.
+- Adjusted Dependabot frontend update grouping so incompatible frontend dependency upgrades are handled separately.
+
+#### Documentation
+- Corrected backend startup commands in the English README, Chinese guide README, and quick-start guide.
+- Documented explicit `celery_app` usage for Celery worker and beat startup commands.
+
 ## [0.1.2] - 2026-03-04
 
 ### Added
@@ -167,7 +185,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - shadcn/ui + Tailwind CSS
 - TypeScript
 
-[Unreleased]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.0...v0.2.1
 [0.1.2]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yunhai-dev/Clouisle/releases/tag/v0.1.0
