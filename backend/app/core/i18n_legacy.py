@@ -1071,6 +1071,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "MCP tool has no configuration: {tool_name}",
         "zh": "MCP 工具缺少配置：{tool_name}",
     },
+    "http_tool_url_templates_not_supported": {
+        "en": "HTTP tool URL templates are not supported",
+        "zh": "HTTP 工具不支持 URL 模板",
+    },
     "mcp_tool_not_found": {
         "en": "MCP tool not found: {server_name}",
         "zh": "未找到 MCP 工具：{server_name}",

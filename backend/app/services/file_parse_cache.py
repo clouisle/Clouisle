@@ -73,7 +73,10 @@ def read_cached_file(
         parser_hash=parser_hash,
         source_signature=source_signature,
     )
-    if metadata.get("key") != expected_key or metadata.get("parser_hash") != parser_hash:
+    if (
+        metadata.get("key") != expected_key
+        or metadata.get("parser_hash") != parser_hash
+    ):
         return None
     if metadata.get("source") != source_signature:
         return None

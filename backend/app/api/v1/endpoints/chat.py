@@ -1591,7 +1591,10 @@ async def chat_stream(
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
                     last_event_time = time.time()
 
-                    file_content_str, updated_file_urls = await build_file_content_for_context(
+                    (
+                        file_content_str,
+                        updated_file_urls,
+                    ) = await build_file_content_for_context(
                         agent=agent,
                         file_urls=chat_in.file_urls,
                         legacy_files=chat_in.files,
@@ -1599,7 +1602,10 @@ async def chat_stream(
                         tool_timeouts=tool_timeouts,
                         user=current_user,
                     )
-                    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
+                    if (
+                        updated_file_urls is not None
+                        and user_msg.file_urls != updated_file_urls
+                    ):
                         user_msg.file_urls = updated_file_urls
                         await user_msg.save(update_fields=["file_urls"])
 

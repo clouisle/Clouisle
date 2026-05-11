@@ -545,14 +545,22 @@ async def build_file_content_for_context(
             parser_hash = build_parser_hash(parser_config, parse_config)
             updated_file_urls = []
             for f in file_urls:
-                file_item = dict(f) if isinstance(f, dict) else {
-                    "filename": _get_item_value(f, "filename", ""),
-                    "url": _get_item_value(f, "url", ""),
-                    "size": _get_item_value(f, "size", 0),
-                    "mime_type": _get_item_value(f, "mime_type", "application/octet-stream"),
-                }
+                file_item = (
+                    dict(f)
+                    if isinstance(f, dict)
+                    else {
+                        "filename": _get_item_value(f, "filename", ""),
+                        "url": _get_item_value(f, "url", ""),
+                        "size": _get_item_value(f, "size", 0),
+                        "mime_type": _get_item_value(
+                            f, "mime_type", "application/octet-stream"
+                        ),
+                    }
+                )
                 filename = _get_item_value(file_item, "filename", "")
-                mime_type = _get_item_value(file_item, "mime_type", "application/octet-stream")
+                mime_type = _get_item_value(
+                    file_item, "mime_type", "application/octet-stream"
+                )
                 size = _get_item_value(file_item, "size", 0)
                 url = _get_item_value(file_item, "url", "")
                 if not url:

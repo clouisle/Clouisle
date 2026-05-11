@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.i18n import t
+from app.schemas.response import BusinessError, ResponseCode
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +316,10 @@ async def execute_http_tool(
 
     raw_url = str(http_config.get("url", ""))
     if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
-        raise ValueError("HTTP tool URL templates are not supported")
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="http_tool_url_templates_not_supported",
+        )
     url = _validate_external_http_url(raw_url)
     method = http_config.get("method", "GET").upper()
 

@@ -65,8 +65,7 @@ async def test_current_upload_content_is_appended_to_current_user_message():
 
     assert messages[-1].role == MessageRole.USER
     assert messages[-1].content == (
-        "Please summarize this.\n\n"
-        "<uploaded_files>\nReport content\n</uploaded_files>"
+        "Please summarize this.\n\n<uploaded_files>\nReport content\n</uploaded_files>"
     )
 
 
@@ -133,8 +132,7 @@ async def test_history_override_file_urls_append_parsed_content(monkeypatch):
     )
 
     assert messages[1].content == (
-        "Earlier question\n\n"
-        "<uploaded_files>\nHistorical document\n</uploaded_files>"
+        "Earlier question\n\n<uploaded_files>\nHistorical document\n</uploaded_files>"
     )
     assert messages[2].content == "Follow up"
     assert calls[0]["tool_timeouts"] == {"download": 3}
@@ -214,7 +212,9 @@ async def test_historical_db_message_file_urls_append_parsed_content(monkeypatch
                 )
             ]
 
-    monkeypatch.setattr(chat_context.ConversationMessage, "filter", lambda **kwargs: FakeQuery())
+    monkeypatch.setattr(
+        chat_context.ConversationMessage, "filter", lambda **kwargs: FakeQuery()
+    )
 
     messages, _ = await _build_messages_with_file_content(
         agent=_agent(),
@@ -232,7 +232,6 @@ async def test_historical_db_message_file_urls_append_parsed_content(monkeypatch
     )
 
     assert messages[1].content == (
-        "Historical question\n\n"
-        "<uploaded_files>\nDB document\n</uploaded_files>"
+        "Historical question\n\n<uploaded_files>\nDB document\n</uploaded_files>"
     )
     assert messages[2].content == "Follow up"
