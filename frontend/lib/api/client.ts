@@ -95,9 +95,7 @@ function resolveApiErrorMessage(code: number, message: unknown): string {
 }
 
 function isAuthErrorCode(code: number): boolean {
-  if (code === 4001) return true
-  if (code === 401 || code === 403) return true
-  return code >= 2000 && code < 3000
+  return code === 401 || code === 403 || code === 2000 || code === 2001 || code === 2002
 }
 
 // 防止重复重定向
