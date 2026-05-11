@@ -2164,6 +2164,9 @@ msgstr "未找到 MCP 工具：{server_name}"
 msgid "mcp_tool_missing_configuration"
 msgstr "MCP 工具缺少配置：{tool_name}"
 
+msgid "http_tool_url_templates_not_supported"
+msgstr "HTTP 工具不支持 URL 模板"
+
 msgid "mcp_tool_execution_failed"
 msgstr "MCP 工具执行失败"
 

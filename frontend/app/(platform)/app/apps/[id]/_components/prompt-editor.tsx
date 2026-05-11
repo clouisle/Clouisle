@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { FileText, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { type VariableDefinition, type VariableType } from '@/lib/api'
 import { PromptVariableEditor, type PromptVariableItem } from '@/components/prompt-variable-editor'
 
@@ -30,7 +30,6 @@ export function PromptEditor({
   onAddVariable,
   placeholder,
   className,
-  enableFileUpload,
 }: PromptEditorProps) {
   const t = useTranslations('agents.orchestration.prompt')
 
@@ -44,17 +43,8 @@ export function PromptEditor({
       },
     ]
 
-    if (enableFileUpload) {
-      vars.push({
-        name: 'fileContent',
-        label: t('systemVars.fileContent'),
-        description: t('systemVars.fileContentDesc'),
-        icon: FileText,
-      })
-    }
-
     return vars
-  }, [enableFileUpload, t])
+  }, [t])
 
   const promptVariables = React.useMemo<PromptVariableItem[]>(() => {
     const mappedSystemVariables = systemVariables.map((variable) => ({

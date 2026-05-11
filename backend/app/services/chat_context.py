@@ -573,7 +573,6 @@ def _build_system_prompt(
     agent: Agent,
     conversation: Conversation,
     user_message: str,
-    file_content: str | None,
     user_locale: str | None,
 ) -> str:
     system_prompt = agent.system_prompt or ""
@@ -581,9 +580,7 @@ def _build_system_prompt(
         for key, value in conversation.variables.items():
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
         system_prompt = system_prompt.replace("{{query}}", user_message)
-        system_prompt = system_prompt.replace(
-            FILE_CONTENT_PLACEHOLDER, file_content or ""
-        )
+        system_prompt = system_prompt.replace(FILE_CONTENT_PLACEHOLDER, "")
 
     if agent.enable_memory:
         system_prompt = _append_prompt_section(system_prompt, MEMORY_SYSTEM_INSTRUCTION)
@@ -614,6 +611,52 @@ def _build_current_user_content(
     if current_images and model_supports_vision:
         return build_vision_content(user_message, current_images)
     return user_message
+
+
+def _append_file_content_to_user_content(
+    content: str | list[ContentPart],
+    file_content: str | None,
+) -> str | list[ContentPart]:
+    if not file_content:
+        return content
+    section = f"<uploaded_files>\n{file_content.strip()}\n</uploaded_files>"
+    if isinstance(content, list):
+        return [
+            *content,
+            ContentPart(type=ContentType.TEXT, text=section),
+        ]
+    if not content:
+        return section
+    return f"{content}\n\n{section}"
+
+
+async def _build_file_content_for_user_message(
+    *,
+    agent: Agent,
+    file_urls: Sequence[Any] | None,
+    legacy_files: Sequence[Any] | None = None,
+    user_locale: str | None,
+    tool_timeouts: dict[str, Any] | None,
+    user: Any,
+    source_message: ConversationMessage | None = None,
+) -> str:
+    if not file_urls and not legacy_files:
+        return ""
+    from app.api.v1.endpoints.chat_tools import build_file_content_for_context
+
+    content, updated_file_urls = await build_file_content_for_context(
+        agent=agent,
+        file_urls=list(file_urls) if file_urls else None,
+        legacy_files=list(legacy_files) if legacy_files else None,
+        user_locale=user_locale,
+        tool_timeouts=tool_timeouts,
+        user=user,
+    )
+    if source_message is not None and updated_file_urls is not None:
+        if source_message.file_urls != updated_file_urls:
+            source_message.file_urls = updated_file_urls
+            await source_message.save(update_fields=["file_urls"])
+    return content
 
 
 def _build_assistant_tool_calls(
@@ -1044,6 +1087,8 @@ async def _build_messages_with_file_content(
     include_current_user_message: bool,
     exclude_message_ids: Sequence[UUID] | None,
     history_before_message_created_at: datetime | None,
+    tool_timeouts: dict[str, Any] | None = None,
+    user: Any = None,
     protected_round_id: UUID | str | None = None,
 ) -> tuple[list[Message], set[int]]:
     messages: list[Message] = []
@@ -1058,16 +1103,18 @@ async def _build_messages_with_file_content(
                 agent=agent,
                 conversation=conversation,
                 user_message=user_message,
-                file_content=file_content,
                 user_locale=user_locale,
             ),
         ),
     )
 
-    current_content = _build_current_user_content(
-        user_message=user_message,
-        current_images=current_images,
-        model_supports_vision=model_supports_vision,
+    current_content = _append_file_content_to_user_content(
+        _build_current_user_content(
+            user_message=user_message,
+            current_images=current_images,
+            model_supports_vision=model_supports_vision,
+        ),
+        file_content,
     )
 
     if history_override is not None:
@@ -1101,10 +1148,24 @@ async def _build_messages_with_file_content(
                 )
                 current_user_inserted = True
             if role == "user":
+                override_file_content = await _build_file_content_for_user_message(
+                    agent=agent,
+                    file_urls=_get_override_value(hist_msg, "file_urls"),
+                    legacy_files=_get_override_value(hist_msg, "files"),
+                    user_locale=user_locale,
+                    tool_timeouts=tool_timeouts,
+                    user=user,
+                )
                 _append_message(
                     messages,
                     protected_indexes,
-                    Message(role=MessageRole.USER, content=content),
+                    Message(
+                        role=MessageRole.USER,
+                        content=_append_file_content_to_user_content(
+                            content or "",
+                            override_file_content,
+                        ),
+                    ),
                     protect=protect,
                 )
             elif role == "assistant":
@@ -1176,10 +1237,24 @@ async def _build_messages_with_file_content(
                         protect=protect or protected_round_id is not None,
                     )
                 continue
+            historical_file_content = await _build_file_content_for_user_message(
+                agent=agent,
+                file_urls=msg.file_urls,
+                user_locale=user_locale,
+                tool_timeouts=tool_timeouts,
+                user=user,
+                source_message=msg,
+            )
             _append_message(
                 messages,
                 protected_indexes,
-                Message(role=MessageRole.USER, content=msg.content),
+                Message(
+                    role=MessageRole.USER,
+                    content=_append_file_content_to_user_content(
+                        msg.content,
+                        historical_file_content,
+                    ),
+                ),
                 protect=protect,
             )
             continue
@@ -1715,6 +1790,8 @@ async def build_model_messages(
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
+    tool_timeouts: dict[str, Any] | None = None,
+    user: Any = None,
     protected_round_id: UUID | str | None = None,
 ) -> list[Message]:
     """Build model-ready messages for agent chat flows."""
@@ -1731,6 +1808,8 @@ async def build_model_messages(
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        tool_timeouts=tool_timeouts,
+        user=user,
         protected_round_id=protected_round_id,
     )
     return messages
@@ -1754,6 +1833,8 @@ async def prepare_model_context(
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
+    tool_timeouts: dict[str, Any] | None = None,
+    user: Any = None,
     aggressive: bool = False,
     protected_round_id: UUID | str | None = None,
 ) -> PreparedModelContext:
@@ -1832,6 +1913,8 @@ async def prepare_model_context(
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        tool_timeouts=tool_timeouts,
+        user=user,
         protected_round_id=protected_round_id,
     )
     untrimmed_tokens = _estimate_message_tokens(
@@ -1905,6 +1988,8 @@ async def prepare_model_context(
             include_current_user_message=include_current_user_message,
             exclude_message_ids=exclude_message_ids,
             history_before_message_created_at=history_before_message_created_at,
+            tool_timeouts=tool_timeouts,
+            user=user,
             protected_round_id=protected_round_id,
         )
 
@@ -2158,6 +2243,8 @@ async def retry_prepare_model_context(
     include_current_user_message: bool = False,
     exclude_message_ids: Sequence[UUID] | None = None,
     history_before_message_created_at: datetime | None = None,
+    tool_timeouts: dict[str, Any] | None = None,
+    user: Any = None,
     protected_round_id: UUID | str | None = None,
 ) -> PreparedModelContext:
     return await prepare_model_context(
@@ -2177,6 +2264,8 @@ async def retry_prepare_model_context(
         include_current_user_message=include_current_user_message,
         exclude_message_ids=exclude_message_ids,
         history_before_message_created_at=history_before_message_created_at,
+        tool_timeouts=tool_timeouts,
+        user=user,
         aggressive=True,
         protected_round_id=protected_round_id,
     )

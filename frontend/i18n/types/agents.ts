@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-02T07:54:58.807Z
+// GENERATED — 2026-05-11T12:17:49.511Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -159,8 +159,6 @@ export type AgentsMessages = {
         systemVars: {
           query: string
           queryDesc: string
-          fileContent: string
-          fileContentDesc: string
         }
       }
       variables: {
@@ -310,7 +308,7 @@ export type AgentsMessages = {
         truncateEnd: string
         truncateStart: string
         truncateMiddle: string
-        variableHint: string
+        contextHint: string
         supportedFormats: string
       }
       userInputRequest: {

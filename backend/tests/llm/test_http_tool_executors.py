@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from app.llm.tools.executors import execute_http_tool
+from app.schemas.response import BusinessError
 
 
 class _FakeResponse:
@@ -88,11 +89,12 @@ class TestHttpToolExecutors:
 
     @pytest.mark.anyio
     async def test_rejects_url_templates(self):
-        with pytest.raises(ValueError, match="URL templates"):
+        with pytest.raises(BusinessError) as exc:
             await execute_http_tool(
                 http_config={"url": "https://{{host}}/reviews", "method": "GET"},
                 arguments={"host": "example.com"},
             )
+        assert exc.value.msg_key == "http_tool_url_templates_not_supported"
 
     @pytest.mark.anyio
     async def test_multipart_form_data_handles_text_and_file_fields(self):

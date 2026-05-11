@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-07T12:48:18.604Z
+// GENERATED — 2026-05-11T12:17:49.513Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {

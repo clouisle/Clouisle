@@ -41,18 +41,48 @@ async def execute_tool_call(
     if tool_name == "knowledge_search":
         if not agent:
             return json.dumps({"error": t("agent_context_required")})
-        from app.services.rag import rag_service
 
         try:
+            from app.models.agent import AgentKnowledgeBase
+            from app.services.vector_store import VectorStore
+
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", 5)
-            result = await rag_service.search(
-                agent_id=agent.id,
-                query=query,
-                top_k=top_k,
-                user=user,
-            )
-            return json.dumps({"contexts": result}, ensure_ascii=False)
+            contexts = []
+            agent_kbs = await AgentKnowledgeBase.filter(
+                agent_id=agent.id
+            ).prefetch_related("knowledge_base")
+
+            for agent_kb in agent_kbs:
+                kb = agent_kb.knowledge_base
+                vector_store = VectorStore(
+                    embedding_model_id=str(kb.embedding_model_id)
+                    if kb.embedding_model_id
+                    else None,
+                    rerank_model_id=str(kb.rerank_model_id)
+                    if getattr(kb, "rerank_model_id", None)
+                    else None,
+                    team_id=str(kb.team_id) if kb.team_id else None,
+                )
+                results = await vector_store.search(
+                    kb_id=kb.id,
+                    query=query,
+                    search_mode=agent_kb.search_mode,
+                    top_k=top_k,
+                    score_threshold=agent_kb.score_threshold,
+                )
+                for result in results:
+                    contexts.append(
+                        {
+                            "kb_id": str(kb.id),
+                            "kb_name": kb.name,
+                            "document_id": str(result.get("document_id")),
+                            "document_name": result.get("document_name"),
+                            "content": result.get("content"),
+                            "score": result.get("score"),
+                        }
+                    )
+            return json.dumps({"contexts": contexts}, ensure_ascii=False)
         except Exception as e:
             logger.exception("RAG search failed: %s", e)
             return json.dumps({"error": t("rag_search_failed")})
@@ -165,7 +195,7 @@ async def execute_tool_call(
                         },
                         ensure_ascii=False,
                     )
-                result = await execute_mcp_tool(
+                mcp_result = await execute_mcp_tool(
                     mcp_config=server_tool.mcp_config,
                     tool_name=actual_tool_name,
                     arguments=arguments,
@@ -173,9 +203,9 @@ async def execute_tool_call(
                 )
                 return json.dumps(
                     {
-                        "success": result.success,
-                        "result": result.result,
-                        "error": result.error,
+                        "success": mcp_result.success,
+                        "result": mcp_result.result,
+                        "error": mcp_result.error,
                     },
                     ensure_ascii=False,
                 )
@@ -460,22 +490,26 @@ async def build_file_content_for_prompt(
     tool_timeouts: dict[str, Any] | None,
     user: Any,
 ) -> str:
-    """
-    Build file content string for LLM prompt.
+    content, _ = await build_file_content_for_context(
+        agent=agent,
+        file_urls=file_urls,
+        legacy_files=legacy_files,
+        user_locale=user_locale,
+        tool_timeouts=tool_timeouts,
+        user=user,
+    )
+    return content
 
-    Parses uploaded files and returns formatted content for the model.
 
-    Args:
-        agent: The agent
-        file_urls: List of file URL dictionaries with url, filename, mime_type, size
-        legacy_files: List of legacy file dictionaries with content already
-        user_locale: User's locale for i18n
-        tool_timeouts: Timeout configuration for downloads
-        user: User instance
-
-    Returns:
-        Formatted file content string for the prompt
-    """
+async def build_file_content_for_context(
+    agent: "Agent",
+    file_urls: list[Any] | None,
+    legacy_files: list[Any] | None,
+    user_locale: str | None,
+    tool_timeouts: dict[str, Any] | None,
+    user: Any,
+) -> tuple[str, list[dict[str, Any]] | None]:
+    """Build uploaded file content and return cache metadata updates."""
     from app.core.i18n import t
     from app.services.file_parser import (
         file_parser_service,
@@ -484,9 +518,10 @@ async def build_file_content_for_prompt(
     )
 
     if not agent.enable_file_upload:
-        return ""
+        return "", None
 
     parsed_files: list[ParsedFile] = []
+    updated_file_urls: list[dict[str, Any]] | None = None
     file_config = agent.file_upload_config or {}
     parser_config = file_config.get("parser")
     parse_config = FileParseConfig(
@@ -501,13 +536,35 @@ async def build_file_content_for_prompt(
 
         if parser_type == "builtin" and parser_name == "markitdown":
             from app.api.v1.endpoints.upload import UPLOAD_ROOT, _resolve_upload_path
+            from app.services.file_parse_cache import (
+                build_parser_hash,
+                read_cached_file,
+                write_cached_file,
+            )
 
+            parser_hash = build_parser_hash(parser_config, parse_config)
+            updated_file_urls = []
             for f in file_urls:
-                filename = _get_item_value(f, "filename", "")
-                mime_type = _get_item_value(f, "mime_type", "application/octet-stream")
-                size = _get_item_value(f, "size", 0)
-                url = _get_item_value(f, "url", "")
+                file_item = (
+                    dict(f)
+                    if isinstance(f, dict)
+                    else {
+                        "filename": _get_item_value(f, "filename", ""),
+                        "url": _get_item_value(f, "url", ""),
+                        "size": _get_item_value(f, "size", 0),
+                        "mime_type": _get_item_value(
+                            f, "mime_type", "application/octet-stream"
+                        ),
+                    }
+                )
+                filename = _get_item_value(file_item, "filename", "")
+                mime_type = _get_item_value(
+                    file_item, "mime_type", "application/octet-stream"
+                )
+                size = _get_item_value(file_item, "size", 0)
+                url = _get_item_value(file_item, "url", "")
                 if not url:
+                    updated_file_urls.append(file_item)
                     continue
                 try:
                     prefix = "/api/v1/upload/files/"
@@ -522,13 +579,26 @@ async def build_file_content_for_prompt(
                     if not file_path.is_file():
                         raise ValueError("upload_file_not_found")
                     file_path.relative_to(UPLOAD_ROOT)
-                    parsed_files.append(
-                        await file_parser_service.parse_file(
+                    parsed_file = read_cached_file(
+                        file_item,
+                        file_path=file_path,
+                        url=url,
+                        parser_hash=parser_hash,
+                    )
+                    if parsed_file is None:
+                        parsed_file = await file_parser_service.parse_file(
                             file_path.read_bytes(),
                             filename,
                             parse_config,
                         )
-                    )
+                        file_item = write_cached_file(
+                            file_item,
+                            parsed_file,
+                            file_path=file_path,
+                            url=url,
+                            parser_hash=parser_hash,
+                        )
+                    parsed_files.append(parsed_file)
                 except Exception as e:
                     logger.warning("Failed to parse file %s: %s", filename, e)
                     parsed_files.append(
@@ -539,6 +609,7 @@ async def build_file_content_for_prompt(
                             size=size,
                         )
                     )
+                updated_file_urls.append(file_item)
         elif parser_type == "custom" and parser_tool_id:
             from app.models.tool import Tool
 
@@ -594,9 +665,12 @@ async def build_file_content_for_prompt(
             )
 
     if not parsed_files:
-        return ""
+        return "", updated_file_urls
 
-    return file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale)
+    return (
+        file_parser_service.format_files_for_prompt(parsed_files, locale=user_locale),
+        updated_file_urls,
+    )
 
 
 def _get_item_value(item: Any, key: str, default: Any = None) -> Any:
