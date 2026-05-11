@@ -35,7 +35,7 @@ FRONTEND_URL=https://your-domain.com
 DEBUG=false
 
 # Database
-POSTGRES_HOST=localhost
+POSTGRES_SERVER=localhost
 POSTGRES_PORT=5432
 POSTGRES_DB=clouisle
 POSTGRES_USER=clouisle
@@ -142,7 +142,7 @@ LOG_LEVEL=INFO
 
 ### PostgreSQL
 
-#### POSTGRES_HOST
+#### POSTGRES_SERVER
 
 **Description**: PostgreSQL server hostname
 
@@ -152,7 +152,7 @@ LOG_LEVEL=INFO
 
 **Example**:
 ```bash
-POSTGRES_HOST=postgres
+POSTGRES_SERVER=postgres
 ```
 
 #### POSTGRES_PORT

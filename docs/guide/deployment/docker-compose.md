@@ -77,7 +77,7 @@ SITE_URL=https://your-domain.com
 FRONTEND_URL=https://your-domain.com
 
 # Database
-POSTGRES_HOST=postgres
+POSTGRES_SERVER=postgres
 POSTGRES_PORT=5432
 POSTGRES_DB=clouisle
 POSTGRES_USER=clouisle
