@@ -12,7 +12,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 
 <p align="center">
 <img src="https://img.shields.io/badge/Python-3.13-blue?logo=python&logoColor=white" />
-<img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" />
+<img src="https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white" />
 <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" />
 <img src="https://img.shields.io/badge/Bun-1.0-orange?logo=bun&logoColor=white" />
 <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" />
@@ -160,15 +160,17 @@ cp .env.example .env
 ### 3. Start Backend
 
 ```bash
+cd backend
+
 # Install dependencies
-uv sync --project backend
+uv sync
 
 # Start the API server (database will be auto-initialized on first run)
-uv run --project backend main.py server
+uv run uvicorn app.main:app --reload
 
 # In separate terminals, start Celery workers
-uv run --project backend main.py worker
-uv run --project backend main.py beat
+uv run celery -A app.core.celery:celery_app worker --loglevel=info
+uv run celery -A app.core.celery:celery_app beat --loglevel=info
 ```
 
 ### 4. Start Frontend
