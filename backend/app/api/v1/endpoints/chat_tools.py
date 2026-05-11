@@ -41,18 +41,48 @@ async def execute_tool_call(
     if tool_name == "knowledge_search":
         if not agent:
             return json.dumps({"error": t("agent_context_required")})
-        from app.services.rag import rag_service
 
         try:
+            from app.models.agent import AgentKnowledgeBase
+            from app.services.vector_store import VectorStore
+
             query = arguments.get("query", "")
             top_k = arguments.get("top_k", 5)
-            result = await rag_service.search(
-                agent_id=agent.id,
-                query=query,
-                top_k=top_k,
-                user=user,
-            )
-            return json.dumps({"contexts": result}, ensure_ascii=False)
+            contexts = []
+            agent_kbs = await AgentKnowledgeBase.filter(
+                agent_id=agent.id
+            ).prefetch_related("knowledge_base")
+
+            for agent_kb in agent_kbs:
+                kb = agent_kb.knowledge_base
+                vector_store = VectorStore(
+                    embedding_model_id=str(kb.embedding_model_id)
+                    if kb.embedding_model_id
+                    else None,
+                    rerank_model_id=str(kb.rerank_model_id)
+                    if getattr(kb, "rerank_model_id", None)
+                    else None,
+                    team_id=str(kb.team_id) if kb.team_id else None,
+                )
+                results = await vector_store.search(
+                    kb_id=kb.id,
+                    query=query,
+                    search_mode=agent_kb.search_mode,
+                    top_k=top_k,
+                    score_threshold=agent_kb.score_threshold,
+                )
+                for result in results:
+                    contexts.append(
+                        {
+                            "kb_id": str(kb.id),
+                            "kb_name": kb.name,
+                            "document_id": str(result.get("document_id")),
+                            "document_name": result.get("document_name"),
+                            "content": result.get("content"),
+                            "score": result.get("score"),
+                        }
+                    )
+            return json.dumps({"contexts": contexts}, ensure_ascii=False)
         except Exception as e:
             logger.exception("RAG search failed: %s", e)
             return json.dumps({"error": t("rag_search_failed")})
