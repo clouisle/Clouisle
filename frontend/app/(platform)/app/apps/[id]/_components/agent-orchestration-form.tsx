@@ -807,14 +807,10 @@ export function AgentOrchestrationForm({
                 </Select>
               </div>
 
-              {/* Variable Hint */}
               <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
                 <p className="text-xs text-cyan-700 dark:text-cyan-300">
-                  {t('fileUpload.variableHint')}
+                  {t('fileUpload.contextHint')}
                 </p>
-                <code className="mt-1 block text-xs font-mono text-cyan-600 dark:text-cyan-400">
-                  {'{{fileContent}}'}
-                </code>
               </div>
             </div>
           )}

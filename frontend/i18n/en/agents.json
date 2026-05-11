@@ -156,9 +156,7 @@
         "enableUserInputRequestDesc": "Allow the agent to request user input with predefined options during conversation",
         "systemVars": {
           "query": "User Input",
-          "queryDesc": "The user's current question",
-          "fileContent": "File Content",
-          "fileContentDesc": "Parsed content of uploaded files"
+          "queryDesc": "The user's current question"
         }
       },
       "variables": {
@@ -295,7 +293,7 @@
       "fileUpload": {
         "title": "File Upload",
         "tooltip": "Enable users to upload documents for the agent to analyze",
-        "description": "When enabled, users can upload documents (PDF, Word, Excel, PPT, etc.). The content will be parsed and injected into the prompt.",
+        "description": "When enabled, users can upload documents (PDF, Word, Excel, PPT, etc.). The content will be parsed and attached to the conversation context.",
         "parser": "File Parser",
         "selectParser": "Select file parser",
         "parserHint": "Select a tool to parse uploaded files. You can also create custom file parsing tools.",
@@ -308,8 +306,8 @@
         "truncateEnd": "Keep start (truncate end)",
         "truncateStart": "Keep end (truncate start)",
         "truncateMiddle": "Keep both ends (truncate middle)",
-        "variableHint": "Use the following variable in your prompt to inject file content:",
-        "supportedFormats": "Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html/.xml)"
+        "contextHint": "Uploaded files are automatically passed to the model as conversation context. No prompt variable is required.",
+        "supportedFormats": "Supported formats: PDF, Word (.docx/.doc), Excel (.xlsx/.xls), PowerPoint (.pptx/.ppt), text files (.txt/.md/.csv/.json/.html)"
       },
       "userInputRequest": {
         "title": "User Input Request",
@@ -449,7 +447,7 @@
         "conversationId": "Conversation ID for multi-turn dialogue. Leave empty (null) for first message, the response will return a conversation_id in the message_start event. Use this ID in subsequent requests to continue the conversation with context.",
         "variables": "Values for Agent variables (if defined)",
         "images": "Array of image objects for vision-enabled agents. Each object should contain a url field with either a data URL (data:image/png;base64,...) or remote URL.",
-        "fileUrls": "Array of file URL objects for file upload. Backend will download, parse and inject content into the fileContent variable. Each object should contain url, filename, mime_type, and size fields."
+        "fileUrls": "Array of file URL objects for file upload. Backend will download, parse, and attach content to the corresponding conversation message context. Each object should contain url, filename, mime_type, and size fields."
       },
       "responseFormat": "Response Format",
       "sseDescription": "Responses are streamed using Server-Sent Events (SSE) format. Here are the possible event types:",

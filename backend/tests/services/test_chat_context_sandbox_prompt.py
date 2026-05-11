@@ -22,7 +22,6 @@ def test_build_system_prompt_injects_sandbox_guidance_for_builtin_sandbox_tools(
         agent=_agent(tools_config=[{"type": "builtin", "name": "bash"}]),
         conversation=_conversation(),
         user_message="run a task",
-        file_content=None,
         user_locale="en",
     )
 
@@ -46,7 +45,6 @@ def test_build_system_prompt_injects_sandbox_guidance_for_skill_tools():
         agent=_agent(tools_config=[{"type": "skill", "skill_id": "skill-1"}]),
         conversation=_conversation(),
         user_message="run a task",
-        file_content=None,
         user_locale="en",
     )
 
@@ -58,7 +56,6 @@ def test_build_system_prompt_skips_sandbox_guidance_without_sandbox_tools():
         agent=_agent(tools_config=[{"type": "builtin", "name": "generate_image"}]),
         conversation=_conversation(),
         user_message="draw a cat",
-        file_content=None,
         user_locale="en",
     )
 
@@ -71,7 +68,6 @@ def test_build_system_prompt_formats_sections_with_clear_spacing():
         agent=_agent(tools_config=[{"type": "builtin", "name": "bash"}]),
         conversation=_conversation(),
         user_message="run a task",
-        file_content=None,
         user_locale="en",
     )
 

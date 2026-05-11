@@ -74,7 +74,7 @@ from app.api.v1.endpoints.chat_helpers import (
     send_heartbeat_if_needed,
 )
 from app.api.v1.endpoints.chat_tools import (
-    build_file_content_for_prompt,
+    build_file_content_for_context,
     execute_tool_call,
 )
 from app.api.v1.endpoints.chat_rag import (
@@ -1033,7 +1033,7 @@ async def chat(
         agent_id=str(agent.id),
         team_id=str(agent.team_id) if agent.team_id else None,
     )
-    file_content_str = await build_file_content_for_prompt(
+    file_content_str, updated_file_urls = await build_file_content_for_context(
         agent=agent,
         file_urls=chat_in.file_urls,
         legacy_files=chat_in.files,
@@ -1041,6 +1041,9 @@ async def chat(
         tool_timeouts=tool_timeouts,
         user=current_user,
     )
+    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
+        user_msg.file_urls = updated_file_urls
+        await user_msg.save(update_fields=["file_urls"])
 
     working_history_override = (
         [message.model_dump(exclude_none=True) for message in chat_in.history_override]
@@ -1102,6 +1105,8 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    tool_timeouts=tool_timeouts,
+                    user=current_user,
                     protected_round_id=round_id,
                 )
             except ContextLengthError:
@@ -1125,6 +1130,8 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    tool_timeouts=tool_timeouts,
+                    user=current_user,
                     protected_round_id=round_id,
                 )
                 context_retry_used = True
@@ -1156,6 +1163,8 @@ async def chat(
                     current_images=chat_in.images,
                     model_supports_vision=model_supports_vision,
                     current_user_message_id=user_msg.id,
+                    tool_timeouts=tool_timeouts,
+                    user=current_user,
                     protected_round_id=round_id,
                 )
                 context_retry_used = True
@@ -1582,7 +1591,7 @@ async def chat_stream(
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': message_id})}\n\n"
                     last_event_time = time.time()
 
-                    file_content_str = await build_file_content_for_prompt(
+                    file_content_str, updated_file_urls = await build_file_content_for_context(
                         agent=agent,
                         file_urls=chat_in.file_urls,
                         legacy_files=chat_in.files,
@@ -1590,6 +1599,9 @@ async def chat_stream(
                         tool_timeouts=tool_timeouts,
                         user=current_user,
                     )
+                    if updated_file_urls is not None and user_msg.file_urls != updated_file_urls:
+                        user_msg.file_urls = updated_file_urls
+                        await user_msg.save(update_fields=["file_urls"])
 
                     team_model = await get_agent_chat_model(agent)
                     model_id = (
@@ -1698,6 +1710,8 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -1740,6 +1754,8 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -1859,6 +1875,8 @@ async def chat_stream(
                                 current_user_message_id=user_msg.id,
                                 include_current_user_message=True,
                                 exclude_message_ids=[assistant_msg.id],
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -2250,6 +2268,8 @@ async def chat_stream(
                         current_user_message_id=user_msg.id,
                         include_current_user_message=True,
                         exclude_message_ids=[assistant_msg.id],
+                        tool_timeouts=tool_timeouts,
+                        user=current_user,
                         protected_round_id=round_id,
                     )
                     input_tokens = sum(
@@ -2944,6 +2964,8 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -2983,6 +3005,8 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -3080,6 +3104,8 @@ async def regenerate_message(
                                 current_user_message_id=user_message.id,
                                 include_current_user_message=True,
                                 history_before_message_created_at=message.created_at,
+                                tool_timeouts=tool_timeouts,
+                                user=current_user,
                                 protected_round_id=round_id,
                             )
                             compression_start, compression_end = (
@@ -3388,6 +3414,8 @@ async def regenerate_message(
                         current_user_message_id=user_message.id,
                         include_current_user_message=True,
                         history_before_message_created_at=message.created_at,
+                        tool_timeouts=tool_timeouts,
+                        user=current_user,
                         protected_round_id=round_id,
                     )
                     input_tokens = sum(
