@@ -160,15 +160,17 @@ cp .env.example .env
 ### 3. Start Backend
 
 ```bash
+cd backend
+
 # Install dependencies
-uv sync --project backend
+uv sync
 
 # Start the API server (database will be auto-initialized on first run)
-uv run --project backend main.py server
+uv run uvicorn app.main:app --reload
 
 # In separate terminals, start Celery workers
-uv run --project backend main.py worker
-uv run --project backend main.py beat
+uv run celery -A app.core.celery worker --loglevel=info
+uv run celery -A app.core.celery beat --loglevel=info
 ```
 
 ### 4. Start Frontend
