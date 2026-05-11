@@ -169,8 +169,8 @@ uv sync
 uv run uvicorn app.main:app --reload
 
 # In separate terminals, start Celery workers
-uv run celery -A app.core.celery worker --loglevel=info
-uv run celery -A app.core.celery beat --loglevel=info
+uv run celery -A app.core.celery:celery_app worker --loglevel=info
+uv run celery -A app.core.celery:celery_app beat --loglevel=info
 ```
 
 ### 4. Start Frontend

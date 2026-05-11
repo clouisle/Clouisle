@@ -164,8 +164,8 @@ uv sync
 uv run uvicorn app.main:app --reload
 
 # 在单独的终端中启动 Celery workers
-uv run celery -A app.core.celery worker --loglevel=info
-uv run celery -A app.core.celery beat --loglevel=info
+uv run celery -A app.core.celery:celery_app worker --loglevel=info
+uv run celery -A app.core.celery:celery_app beat --loglevel=info
 ```
 
 ### 4. 启动前端
