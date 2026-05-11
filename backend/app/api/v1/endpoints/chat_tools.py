@@ -195,7 +195,7 @@ async def execute_tool_call(
                         },
                         ensure_ascii=False,
                     )
-                result = await execute_mcp_tool(
+                mcp_result = await execute_mcp_tool(
                     mcp_config=server_tool.mcp_config,
                     tool_name=actual_tool_name,
                     arguments=arguments,
@@ -203,9 +203,9 @@ async def execute_tool_call(
                 )
                 return json.dumps(
                     {
-                        "success": result.success,
-                        "result": result.result,
-                        "error": result.error,
+                        "success": mcp_result.success,
+                        "result": mcp_result.result,
+                        "error": mcp_result.error,
                     },
                     ensure_ascii=False,
                 )
