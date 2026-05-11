@@ -8,11 +8,17 @@ from pathlib import Path
 from typing import Any
 
 from app.services.sandbox.gateway import sandbox_gateway
-from app.services.sandbox.models import SandboxJob, SandboxJobSource, SandboxLimits, SandboxTaskStatus
+from app.services.sandbox.models import (
+    SandboxJob,
+    SandboxJobSource,
+    SandboxLimits,
+    SandboxTaskStatus,
+)
 
 from .registry import ToolInfo, ToolParameter, tool_registry
 
 logger = logging.getLogger(__name__)
+
 
 class BashSandboxTool:
     """Bash 沙箱工具封装，支持 shell=True 模式"""
@@ -40,7 +46,9 @@ class BashSandboxTool:
         runtime_workspace_root = await self._runtime_workspace_root()
         logical_cwd = self._normalize_logical_cwd(cwd, runtime_workspace_root)
         runtime_command = self._normalize_install_commands(command)
-        runtime_command = self._map_workspace_paths(runtime_command, runtime_workspace_root)
+        runtime_command = self._map_workspace_paths(
+            runtime_command, runtime_workspace_root
+        )
         job = SandboxJob(
             source=SandboxJobSource.BASH,
             command=["bash", "-c", runtime_command],
@@ -67,12 +75,18 @@ class BashSandboxTool:
 
             return {
                 "success": result.success,
-                "stdout": self._restore_workspace_paths(result.stdout, runtime_workspace_root),
-                "stderr": self._restore_workspace_paths(result.stderr, runtime_workspace_root),
+                "stdout": self._restore_workspace_paths(
+                    result.stdout, runtime_workspace_root
+                ),
+                "stderr": self._restore_workspace_paths(
+                    result.stderr, runtime_workspace_root
+                ),
                 "exit_code": result.metadata.exit_code,
                 "timed_out": result.status == SandboxTaskStatus.FAILED
                 and "timeout" in (result.error or "").lower(),
-                "error": self._restore_workspace_paths(result.error, runtime_workspace_root),
+                "error": self._restore_workspace_paths(
+                    result.error, runtime_workspace_root
+                ),
             }
         except Exception as e:
             logger.exception("Bash sandbox execution failed: %s", e)
@@ -124,6 +138,7 @@ class BashSandboxTool:
             suffix = cwd.removeprefix(f"{runtime_root_str}/")
             return f"/workspace/{suffix}"
         return cwd
+
 
 def register_bash_tool() -> None:
     bash_tool_info = ToolInfo(

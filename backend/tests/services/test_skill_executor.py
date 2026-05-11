@@ -134,12 +134,15 @@ async def test_execute_skill_stages_package_resources_when_session_exists():
         def resolve_workspace_path(self, workspace, path):
             return workspace.root / path.removeprefix("/workspace/")
 
-    with patch(
-        "app.services.skill_executor.sandbox_gateway.get_session_workspace",
-        new=AsyncMock(return_value=workspace),
-    ), patch(
-        "app.services.skill_executor.sandbox_gateway._get_workspace_manager",
-        return_value=FakeWorkspaceManager(),
+    with (
+        patch(
+            "app.services.skill_executor.sandbox_gateway.get_session_workspace",
+            new=AsyncMock(return_value=workspace),
+        ),
+        patch(
+            "app.services.skill_executor.sandbox_gateway._get_workspace_manager",
+            return_value=FakeWorkspaceManager(),
+        ),
     ):
         result = await SkillExecutor.execute(
             skill=skill,

@@ -26,7 +26,9 @@ class InMemoryResultStore:
     def __init__(self):
         self.results: dict[str, SandboxResult] = {}
 
-    async def update_status(self, job_id: str, status: SandboxTaskStatus, *, metadata=None, **updates):
+    async def update_status(
+        self, job_id: str, status: SandboxTaskStatus, *, metadata=None, **updates
+    ):
         current = self.results.get(job_id, SandboxResult(job_id=job_id))
         current.status = status
         if metadata is not None:
@@ -168,7 +170,9 @@ class TestSandboxManager:
             input_files=[
                 SandboxInputFileSpec(
                     target_path="/workspace/run.py",
-                    content_base64=base64.b64encode(b"print('hello sandbox')").decode("ascii"),
+                    content_base64=base64.b64encode(b"print('hello sandbox')").decode(
+                        "ascii"
+                    ),
                 ),
             ],
         )
@@ -179,7 +183,9 @@ class TestSandboxManager:
         assert result.stdout.strip() == "hello sandbox"
         assert result.result == "hello sandbox"
 
-    def test_python_executable_prefers_runtime_python_over_backend_venv(self, tmp_path: Path):
+    def test_python_executable_prefers_runtime_python_over_backend_venv(
+        self, tmp_path: Path
+    ):
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
             cleanup_workspaces=False,
@@ -190,18 +196,25 @@ class TestSandboxManager:
 
         from unittest.mock import patch
 
-        with patch(
-            "app.services.sandbox.manager.Path",
-            side_effect=lambda value: FakePath(value, exists=value == "/usr/local/bin/python3"),
-        ), patch(
-            "app.services.sandbox.manager.shutil.which",
-            return_value="/app/backend/.venv/bin/python3",
+        with (
+            patch(
+                "app.services.sandbox.manager.Path",
+                side_effect=lambda value: FakePath(
+                    value, exists=value == "/usr/local/bin/python3"
+                ),
+            ),
+            patch(
+                "app.services.sandbox.manager.shutil.which",
+                return_value="/app/backend/.venv/bin/python3",
+            ),
         ):
             executable = manager._python_executable(env)
 
         assert executable == "/usr/local/bin/python3"
 
-    async def test_stages_inline_input_files_and_honors_command_cwd(self, tmp_path: Path):
+    async def test_stages_inline_input_files_and_honors_command_cwd(
+        self, tmp_path: Path
+    ):
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),
             cleanup_workspaces=False,
@@ -335,7 +348,9 @@ class TestSandboxManager:
                     content_base64=base64.b64encode(b"print('done')").decode("ascii"),
                 ),
             ],
-            artifacts=[SandboxArtifactSpec(path="/workspace/output/missing.txt", optional=True)],
+            artifacts=[
+                SandboxArtifactSpec(path="/workspace/output/missing.txt", optional=True)
+            ],
         )
 
         result = await manager.execute(job)
@@ -415,10 +430,14 @@ class TestSandboxManager:
         assert result.success is True
         assert result.metadata.install_ms is not None
         assert result.metadata.install_duration_ms == result.metadata.install_ms
-        assert python_env_manager.calls == [(["requests==2.32.3"], "standard", "https://mirror.example.com/simple")]
+        assert python_env_manager.calls == [
+            (["requests==2.32.3"], "standard", "https://mirror.example.com/simple")
+        ]
         assert len(python_env_manager.workspace_env_calls) == 1
 
-    async def test_injects_workspace_python_env_for_plain_commands(self, tmp_path: Path):
+    async def test_injects_workspace_python_env_for_plain_commands(
+        self, tmp_path: Path
+    ):
         launcher = FakeProcessLauncher(stdout="ok")
         python_env_manager = FakePythonEnvManager()
         manager = SandboxManager(
@@ -450,7 +469,9 @@ class TestSandboxManager:
         assert env["PATH"].startswith("/workspace/.venv/bin:")
         assert len(python_env_manager.workspace_env_calls) == 1
 
-    def test_workspace_env_repairs_missing_pip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_workspace_env_repairs_missing_pip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         manager = PythonEnvironmentManager(cache_root=tmp_path / "cache")
         monkeypatch.setattr(manager, "python_binary", lambda: "/usr/local/bin/python3")
         env_dir = tmp_path / "workspace" / ".venv"
@@ -518,7 +539,9 @@ class TestSandboxManager:
 
     async def test_returns_safe_artifact_collection_error(self, tmp_path: Path):
         artifact_store = FakeArtifactStore(
-            error=ValueError("Artifact '/workspace/output/big.bin' is 2048 bytes, exceeding per-file limit 1024 bytes")
+            error=ValueError(
+                "Artifact '/workspace/output/big.bin' is 2048 bytes, exceeding per-file limit 1024 bytes"
+            )
         )
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path)),

@@ -690,6 +690,36 @@ msgstr "Write File"
 msgid "builtin_tool_write_description"
 msgstr "Write UTF-8 text content to a file inside the sandbox workspace. Use this before running non-trivial Python or Node code: write the script to /workspace/name.py or /workspace/name.js, then execute it with bash using `python3 /workspace/name.py` or `node /workspace/name.js`. Parent directories are created automatically. Use /workspace/... paths when calling this tool, but inside generated Python or Node scripts, prefer relative output paths such as `output/report.docx` or derive paths from the current working directory instead of hardcoding `/workspace/...`. For generated output files, keep them under /workspace, commonly /workspace/output/."
 
+msgid "builtin_tool_bash_param_command_description"
+msgstr "Shell command to execute. Examples: `ls -la /workspace`, `python3 -m pip install python-docx`, `python3 /workspace/create_docx.py`, `npm install mammoth`, `node /workspace/convert.js`. Use /workspace paths when referencing files created by the read/write tools."
+
+msgid "builtin_tool_bash_param_timeout_description"
+msgstr "Execution timeout in seconds. Increase this value for package installation, builds, or document conversion tasks."
+
+msgid "builtin_tool_bash_param_cwd_description"
+msgstr "Command working directory. Defaults to /workspace; use /workspace/subdir for files in subdirectories."
+
+msgid "builtin_tool_read_param_path_description"
+msgstr "File path to read. Use /workspace/file.txt or a relative path such as file.txt; paths outside /workspace are rejected."
+
+msgid "builtin_tool_read_param_max_chars_description"
+msgstr "Maximum characters to return from the text file. Increase this only when you need more content from a large file."
+
+msgid "builtin_tool_write_param_path_description"
+msgstr "File path to write. Use /workspace/script.py, /workspace/output/result.txt, or a relative path; paths outside /workspace are rejected."
+
+msgid "builtin_tool_write_param_content_description"
+msgstr "Complete UTF-8 text content to write. For scripts, include the full Python or JavaScript source code."
+
+msgid "builtin_tool_artifact_param_paths_description"
+msgstr "Files or directories to collect for download. Prefer object format such as [{\"path\":\"/workspace/output/report.docx\",\"description\":\"Generated report\"}]. String paths such as [\"output/report.docx\"] are also accepted."
+
+msgid "builtin_tool_artifact_param_max_size_mb_description"
+msgstr "Maximum allowed size in MB for each collected artifact. Defaults to 10."
+
+msgid "builtin_tool_artifact_param_max_total_size_mb_description"
+msgstr "Maximum total upload size in MB for all collected artifacts. Defaults to 10."
+
 msgid "can_only_regenerate_assistant"
 msgstr "Can only regenerate assistant messages"
 

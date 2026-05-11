@@ -10,14 +10,14 @@ LOCALES_DIR = ROOT / "app" / "locales"
 DOMAIN = "messages"
 SUPPORTED_LANGS = ("en", "zh")
 
-HEADER_TEMPLATE = '''msgid ""
+HEADER_TEMPLATE = """msgid ""
 msgstr ""
 "Project-Id-Version: clouisle-backend\\n"
 "Language: {lang}\\n"
 "MIME-Version: 1.0\\n"
 "Content-Type: text/plain; charset=UTF-8\\n"
 "Content-Transfer-Encoding: 8bit\\n"
-'''
+"""
 
 
 def escape_po(value: str) -> str:

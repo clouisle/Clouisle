@@ -412,9 +412,7 @@ class HTTPRequestNodeExecutor(NodeExecutor):
             )
         except Exception as e:
             logger.exception(f"HTTP request error: {e}")
-            return ExecutionResult(
-                error=resolve_user_visible_error(str(e))
-            )
+            return ExecutionResult(error=resolve_user_visible_error(str(e)))
 
     async def _resolve_template(
         self,

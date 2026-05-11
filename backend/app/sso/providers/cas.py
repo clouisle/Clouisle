@@ -114,7 +114,9 @@ class CASProvider(BaseSSOProvider):
                         "username": username,
                     }
                 else:
-                    logger.warning("CAS validation failed without explicit error details")
+                    logger.warning(
+                        "CAS validation failed without explicit error details"
+                    )
                     raise ValueError(t("sso_cas_validation_failed"))
 
             else:

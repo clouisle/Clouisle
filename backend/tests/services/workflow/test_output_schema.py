@@ -7,8 +7,6 @@ Validates the structural TypeSpec returned for each node type, including:
 
 from __future__ import annotations
 
-import pytest
-
 from app.services.workflow.executor import NodeExecutor
 from app.services.workflow.executors.code import CodeNodeExecutor
 from app.services.workflow.executors.condition import ConditionNodeExecutor

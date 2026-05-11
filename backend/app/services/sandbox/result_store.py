@@ -20,7 +20,9 @@ class SandboxResultStore:
     def _status_key(self, job_id: str) -> str:
         return f"{self._key(job_id)}{self.STATUS_SUFFIX}"
 
-    async def save_result(self, result: SandboxResult, ttl_seconds: int | None = None) -> None:
+    async def save_result(
+        self, result: SandboxResult, ttl_seconds: int | None = None
+    ) -> None:
         redis = await get_redis()
         if result.metadata is not None:
             result.metadata.status = result.status
@@ -47,7 +49,9 @@ class SandboxResultStore:
         job_id: str,
         metadata: SandboxExecutionMetadata | None = None,
     ) -> SandboxResult:
-        result = SandboxResult(job_id=job_id, metadata=metadata or SandboxExecutionMetadata())
+        result = SandboxResult(
+            job_id=job_id, metadata=metadata or SandboxExecutionMetadata()
+        )
         await self.save_result(result)
         return result
 

@@ -411,7 +411,11 @@ class AgentService:
 
         # Get credentials for builtin tools
         if not tool_registry.get_tool(tool_name):
-            return {"error": t("tool_not_found"), "tool_name": tool_name, "success": False}
+            return {
+                "error": t("tool_not_found"),
+                "tool_name": tool_name,
+                "success": False,
+            }
 
         credentials = {}
         team_id = agent.team_id

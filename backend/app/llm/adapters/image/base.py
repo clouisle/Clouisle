@@ -48,7 +48,9 @@ class BaseImageAdapter(ABC):
             if value not in (None, ""):
                 return value
 
-        extra_params = request.extra_params if isinstance(request.extra_params, dict) else {}
+        extra_params = (
+            request.extra_params if isinstance(request.extra_params, dict) else {}
+        )
         extra_value = extra_params.get(param_key, _MISSING)
         if extra_value not in (_MISSING, None, ""):
             return extra_value
@@ -71,7 +73,9 @@ class BaseImageAdapter(ABC):
         include_keys: set[str] | None = None,
     ) -> dict[str, Any]:
         default_params = self._get_model_default_params()
-        extra_params = request.extra_params if isinstance(request.extra_params, dict) else {}
+        extra_params = (
+            request.extra_params if isinstance(request.extra_params, dict) else {}
+        )
 
         if include_keys is None:
             merged = dict(default_params)

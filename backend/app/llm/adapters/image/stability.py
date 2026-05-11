@@ -163,7 +163,13 @@ class StabilityImageAdapter(BaseImageAdapter):
             payload["model"] = self.model_id
 
         extra_params = dict(request.extra_params or {})
-        for managed_key in {"style_preset", "output_format", "seed", "aspect_ratio", "model"}:
+        for managed_key in {
+            "style_preset",
+            "output_format",
+            "seed",
+            "aspect_ratio",
+            "model",
+        }:
             extra_params.pop(managed_key, None)
         payload.update(extra_params)
         return payload

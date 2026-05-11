@@ -127,7 +127,9 @@ class UserInputNodeExecutor(NodeExecutor):
         """Get output specs with TypeSpec for type inference."""
         variables = config.get("variables", [])
         return [
-            NodeOutputDecl(name=var.get("name"), type=TypeSpec(kind=var.get("type", "string")))
+            NodeOutputDecl(
+                name=var.get("name"), type=TypeSpec(kind=var.get("type", "string"))
+            )
             for var in variables
             if var.get("name")
         ]
@@ -205,7 +207,9 @@ class TriggerNodeExecutor(NodeExecutor):
             NodeOutputDecl(name="_trigger_time", type=TypeSpec(kind="string")),
         ]
         specs.extend(
-            NodeOutputDecl(name=var.get("name"), type=TypeSpec(kind=var.get("type", "string")))
+            NodeOutputDecl(
+                name=var.get("name"), type=TypeSpec(kind=var.get("type", "string"))
+            )
             for var in variables
             if var.get("name")
         )

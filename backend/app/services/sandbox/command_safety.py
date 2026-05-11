@@ -7,24 +7,28 @@ import os
 import shlex
 from collections.abc import Collection
 
-PROTECTED_PATHS = frozenset({
-    "/",
-    "/workspace",
-})
+PROTECTED_PATHS = frozenset(
+    {
+        "/",
+        "/workspace",
+    }
+)
 
-DEFAULT_SAFE_SHELL_COMMANDS = frozenset({
-    "pwd",
-    "ls",
-    "find",
-    "grep",
-    "rg",
-    "wc",
-    "sort",
-    "uniq",
-    "cut",
-    "tr",
-    "date",
-})
+DEFAULT_SAFE_SHELL_COMMANDS = frozenset(
+    {
+        "pwd",
+        "ls",
+        "find",
+        "grep",
+        "rg",
+        "wc",
+        "sort",
+        "uniq",
+        "cut",
+        "tr",
+        "date",
+    }
+)
 
 SHELL_INTERPRETERS = frozenset({"bash", "sh"})
 PYTHON_INTERPRETERS = frozenset({"python", "python3"})
@@ -43,7 +47,9 @@ class ShellCommandSafetyAnalyzer:
     def __init__(self, workspace_root: str = "/workspace") -> None:
         self.workspace_root = workspace_root
 
-    def validate(self, command: str, *, allowed_commands: Collection[str] | None = None) -> None:
+    def validate(
+        self, command: str, *, allowed_commands: Collection[str] | None = None
+    ) -> None:
         words = self._split_command(command)
         if not words:
             return
@@ -57,13 +63,19 @@ class ShellCommandSafetyAnalyzer:
         elif command_name == "npm":
             self._validate_npm_install(words)
         elif self._is_disallowed_invocation(command_name, words):
-            raise ShellCommandSafetyError(f"Unsafe command invocation blocked: {command_name}")
-        if allowed_commands is not None and not self._is_allowed_command(command_name, allowed_commands):
+            raise ShellCommandSafetyError(
+                f"Unsafe command invocation blocked: {command_name}"
+            )
+        if allowed_commands is not None and not self._is_allowed_command(
+            command_name, allowed_commands
+        ):
             raise ShellCommandSafetyError(f"Command not in whitelist: {command_name}")
         self._validate_path_arguments(command_name, words)
 
     def _split_command(self, command: str) -> list[str]:
-        if any(token in command for token in ("&&", "||", ";", "|", "<", ">", "`", "$")):
+        if any(
+            token in command for token in ("&&", "||", ";", "|", "<", ">", "`", "$")
+        ):
             raise ShellCommandSafetyError("Unsupported shell syntax")
         try:
             return shlex.split(command, posix=True)
@@ -80,12 +92,16 @@ class ShellCommandSafetyAnalyzer:
         if command_name in {":", "eval", "source", "."}:
             return True
 
-        if command_name == "find" and any(word in {"-exec", "-execdir", "-delete"} for word in words[1:]):
+        if command_name == "find" and any(
+            word in {"-exec", "-execdir", "-delete"} for word in words[1:]
+        ):
             return True
 
         return False
 
-    def _pip_invocation_words(self, command_name: str, words: list[str]) -> list[str] | None:
+    def _pip_invocation_words(
+        self, command_name: str, words: list[str]
+    ) -> list[str] | None:
         if command_name in PIP_COMMANDS:
             return words
 
@@ -96,7 +112,9 @@ class ShellCommandSafetyAnalyzer:
 
     def _validate_pip_install(self, command_name: str, words: list[str]) -> None:
         if len(words) < 3 or words[1] != "install":
-            raise ShellCommandSafetyError(f"Unsafe pip invocation blocked: {command_name}")
+            raise ShellCommandSafetyError(
+                f"Unsafe pip invocation blocked: {command_name}"
+            )
 
         for index, word in enumerate(words[2:], start=2):
             if word in {"-e", "--editable"}:
@@ -106,11 +124,15 @@ class ShellCommandSafetyAnalyzer:
             if word in {"--target", "--prefix", "--root", "--src"}:
                 target = words[index + 1] if index + 1 < len(words) else ""
                 if not target or self._path_escapes_workspace(target):
-                    raise ShellCommandSafetyError(f"Path escapes workspace: {target or word}")
+                    raise ShellCommandSafetyError(
+                        f"Path escapes workspace: {target or word}"
+                    )
             if word.startswith(("--target=", "--prefix=", "--root=", "--src=")):
                 target = word.split("=", 1)[1]
                 if not target or self._path_escapes_workspace(target):
-                    raise ShellCommandSafetyError(f"Path escapes workspace: {target or word}")
+                    raise ShellCommandSafetyError(
+                        f"Path escapes workspace: {target or word}"
+                    )
 
     def _validate_npm_install(self, words: list[str]) -> None:
         if len(words) < 3 or words[1] not in NPM_INSTALL_COMMANDS:
@@ -119,16 +141,23 @@ class ShellCommandSafetyAnalyzer:
         for index, word in enumerate(words[2:], start=2):
             if word in {"-g", "--global"}:
                 raise ShellCommandSafetyError("Unsafe npm install option blocked")
-            if word.startswith(("git+", "github:", "gitlab:", "bitbucket:")) or "://" in word:
+            if (
+                word.startswith(("git+", "github:", "gitlab:", "bitbucket:"))
+                or "://" in word
+            ):
                 raise ShellCommandSafetyError("Unsafe npm install source blocked")
             if word in {"--prefix", "--cache"}:
                 target = words[index + 1] if index + 1 < len(words) else ""
                 if not target or self._path_escapes_workspace(target):
-                    raise ShellCommandSafetyError(f"Path escapes workspace: {target or word}")
+                    raise ShellCommandSafetyError(
+                        f"Path escapes workspace: {target or word}"
+                    )
             if word.startswith(("--prefix=", "--cache=")):
                 target = word.split("=", 1)[1]
                 if not target or self._path_escapes_workspace(target):
-                    raise ShellCommandSafetyError(f"Path escapes workspace: {target or word}")
+                    raise ShellCommandSafetyError(
+                        f"Path escapes workspace: {target or word}"
+                    )
 
     def _is_disallowed_invocation(self, command_name: str, words: list[str]) -> bool:
         if command_name in SHELL_INTERPRETERS:
@@ -148,8 +177,12 @@ class ShellCommandSafetyAnalyzer:
 
         return False
 
-    def _is_allowed_command(self, command_name: str, allowed_commands: Collection[str]) -> bool:
-        return any(fnmatch.fnmatch(command_name, pattern) for pattern in allowed_commands)
+    def _is_allowed_command(
+        self, command_name: str, allowed_commands: Collection[str]
+    ) -> bool:
+        return any(
+            fnmatch.fnmatch(command_name, pattern) for pattern in allowed_commands
+        )
 
     def _validate_path_arguments(self, command_name: str, words: list[str]) -> None:
         if command_name in {"pwd", "date", "sort", "uniq", "cut", "tr", "wc", "which"}:
@@ -190,7 +223,9 @@ class ShellCommandSafetyAnalyzer:
             path = os.path.join(self.workspace_root, path)
         normalized = os.path.normpath(path)
         workspace_root = os.path.normpath(self.workspace_root)
-        return normalized != workspace_root and not normalized.startswith(f"{workspace_root}/")
+        return normalized != workspace_root and not normalized.startswith(
+            f"{workspace_root}/"
+        )
 
     def _is_protected_path(self, path: str) -> bool:
         if not os.path.isabs(path):

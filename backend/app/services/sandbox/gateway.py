@@ -9,7 +9,12 @@ from uuid import uuid4
 
 from app.core.i18n import t
 
-from .models import SandboxExecutionMetadata, SandboxJob, SandboxResult, SandboxTaskStatus
+from .models import (
+    SandboxExecutionMetadata,
+    SandboxJob,
+    SandboxResult,
+    SandboxTaskStatus,
+)
 from .policies import sandbox_policy_engine
 from .result_store import sandbox_result_store
 from .session_store import sandbox_session_store
@@ -26,6 +31,7 @@ class SandboxGateway:
     def _get_workspace_manager(cls) -> "SandboxWorkspaceManager":
         if cls._workspace_manager is None:
             from .workspace import SandboxWorkspaceManager
+
             cls._workspace_manager = SandboxWorkspaceManager()
         return cls._workspace_manager
 
@@ -39,10 +45,14 @@ class SandboxGateway:
         if conversation_id:
             existing = await sandbox_session_store.get_by_conversation(conversation_id)
             if existing is not None:
-                workspace = self._get_workspace_manager().prepare_session(existing.session_id)
+                workspace = self._get_workspace_manager().prepare_session(
+                    existing.session_id
+                )
                 await sandbox_session_store.touch(
                     existing.session_id,
-                    disk_usage_bytes=self._get_workspace_manager().workspace_size_bytes(workspace),
+                    disk_usage_bytes=self._get_workspace_manager().workspace_size_bytes(
+                        workspace
+                    ),
                 )
                 return existing.session_id
 
@@ -108,11 +118,15 @@ class SandboxGateway:
         from app.tasks.sandbox import run_sandbox_job_task
 
         sandbox_policy_engine.validate(job)
-        if session_id and await self.get_session_workspace(
-            session_id,
-            agent_id=agent_id,
-            team_id=team_id,
-        ) is None:
+        if (
+            session_id
+            and await self.get_session_workspace(
+                session_id,
+                agent_id=agent_id,
+                team_id=team_id,
+            )
+            is None
+        ):
             raise ValueError("Sandbox session not found or expired")
 
         metadata = SandboxExecutionMetadata(queued_at=datetime.now(UTC))

@@ -50,7 +50,9 @@ async def get_agent_tools(agent: Agent) -> list[dict]:
 
     if has_skills:
         existing_names = {tool["name"] for tool in tools}
-        for tool_info in tool_registry.get_sandbox_tool_infos(["read", "write", "bash"]):
+        for tool_info in tool_registry.get_sandbox_tool_infos(
+            ["read", "write", "bash"]
+        ):
             if tool_info.name in existing_names:
                 continue
             tools.append(

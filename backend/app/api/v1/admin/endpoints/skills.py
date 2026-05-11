@@ -13,7 +13,13 @@ from app.api.v1.endpoints.skills import _serialize_artifacts
 from app.models.agent import Agent
 from app.models.skill import Skill
 from app.models.user import Team, User
-from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
+from app.schemas.response import (
+    BusinessError,
+    PageData,
+    Response,
+    ResponseCode,
+    success,
+)
 from app.schemas.skill import (
     AdminSkillDetailOut,
     AdminSkillOut,
@@ -61,7 +67,9 @@ def _filter_option(value: str, label: str | None = None) -> SkillFilterOption:
 
 
 async def _get_skill(skill_id: UUID) -> Skill:
-    skill = await Skill.filter(id=skill_id).prefetch_related("team", "created_by").first()
+    skill = (
+        await Skill.filter(id=skill_id).prefetch_related("team", "created_by").first()
+    )
     if not skill:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,
@@ -112,7 +120,11 @@ async def list_skills(
         )
 
     total = await query.count()
-    skills = await query.order_by("-updated_at").offset((page - 1) * page_size).limit(page_size)
+    skills = (
+        await query.order_by("-updated_at")
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     return success(
         data=PageData[AdminSkillOut](
             items=[_admin_skill_out(skill) for skill in skills],
@@ -132,7 +144,9 @@ async def get_skill_filter_options(
         {skill.created_by.username for skill in skills if skill.created_by}
     )
     teams = await Team.all().order_by("name")
-    source_types = sorted({skill.source_type.value for skill in skills if skill.source_type})
+    source_types = sorted(
+        {skill.source_type.value for skill in skills if skill.source_type}
+    )
     return success(
         data=SkillFilterOptionsOut(
             statuses=[_filter_option("enabled"), _filter_option("disabled")],
@@ -219,7 +233,9 @@ async def preview_git_import(
     return success(data=preview)
 
 
-@router.post("/import/{session_id}/install", response_model=Response[SkillImportInstallOut])
+@router.post(
+    "/import/{session_id}/install", response_model=Response[SkillImportInstallOut]
+)
 async def install_skill_import(
     *,
     request: Request,

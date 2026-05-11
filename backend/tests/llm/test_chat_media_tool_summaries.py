@@ -34,7 +34,6 @@ def test_summarize_tool_result_for_llm_keeps_non_media_payload_unchanged():
     assert summary == content
 
 
-
 def test_summarize_tool_result_for_llm_compacts_skill_instruction_payload():
     content = (
         '{"success":true,"result":{"type":"skill_instructions",'

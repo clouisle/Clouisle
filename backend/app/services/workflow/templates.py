@@ -750,7 +750,9 @@ class TemplateManager:
             "template_version": template.version,
         }
 
-    def _replace_variables(self, data: WorkflowValue, variables: dict[str, WorkflowValue]) -> WorkflowValue:
+    def _replace_variables(
+        self, data: WorkflowValue, variables: dict[str, WorkflowValue]
+    ) -> WorkflowValue:
         """Recursively replace {{variable}} placeholders."""
         if isinstance(data, str):
             for name, value in variables.items():

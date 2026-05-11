@@ -54,7 +54,7 @@ class FakeNodeEnvManager:
 
     def build_env_vars(self, env_dir: Path):
         return {
-            "NODE_PATH": str(env_dir / 'node_modules'),
+            "NODE_PATH": str(env_dir / "node_modules"),
             "SANDBOX_NODE_BINARY": "/usr/bin/node",
             "PATH": f"{env_dir / 'node_modules' / '.bin'}:/usr/bin",
         }
@@ -90,7 +90,9 @@ class TestSandboxEnvironmentCache:
         assert str(python_env / "bin") in env["PATH"]
         assert "/backend/.venv/bin" not in env["PATH"]
         assert execution_metadata.cache_hit_python is True
-        assert manager.python_env_manager.calls == [(["requests==2.32.3"], "standard", "https://mirror.example.com/simple")]
+        assert manager.python_env_manager.calls == [
+            (["requests==2.32.3"], "standard", "https://mirror.example.com/simple")
+        ]
 
     async def test_build_command_env_injects_node_env(self, tmp_path: Path):
         workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
@@ -119,9 +121,13 @@ class TestSandboxEnvironmentCache:
         assert env["NODE_PATH"] == str(node_env / "node_modules")
         assert str(node_env / "node_modules" / ".bin") in env["PATH"]
         assert execution_metadata.cache_hit_node is False
-        assert manager.node_env_manager.calls == [(["eslint@9.25.1"], "standard", "https://registry.example.com/npm")]
+        assert manager.node_env_manager.calls == [
+            (["eslint@9.25.1"], "standard", "https://registry.example.com/npm")
+        ]
 
-    async def test_build_command_env_injects_default_node_binary_without_js_packages(self, tmp_path: Path):
+    async def test_build_command_env_injects_default_node_binary_without_js_packages(
+        self, tmp_path: Path
+    ):
         workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
         workspace = workspace_manager.prepare("job-node-default")
         node_env = tmp_path / "cache" / "node-env"
@@ -162,7 +168,9 @@ class TestSandboxEnvironmentCache:
             result_store=InMemoryResultStore(),
         )
 
-        resolved = manager._resolve_command(["my-tool", "--flag"], {"PATH": str(sandbox_bin)})
+        resolved = manager._resolve_command(
+            ["my-tool", "--flag"], {"PATH": str(sandbox_bin)}
+        )
 
         assert resolved == [str(tool_path), "--flag"]
 
@@ -180,7 +188,9 @@ class TestSandboxEnvironmentCache:
         assert second["SANDBOX_NODE_BINARY"] == "/usr/local/bin/node"
         assert mock_check_output.call_count == 1
 
-    def test_python_executable_prefers_virtualenv_when_python_packages_are_installed(self, tmp_path: Path):
+    def test_python_executable_prefers_virtualenv_when_python_packages_are_installed(
+        self, tmp_path: Path
+    ):
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
             cleanup_workspaces=False,
@@ -200,13 +210,16 @@ class TestSandboxEnvironmentCache:
 
         from unittest.mock import patch
 
-        with patch.dict(
-            "app.services.sandbox.python_env.os.environ",
-            {"PATH": "/app/backend/.venv/bin:/usr/local/bin:/usr/bin:/bin"},
-            clear=False,
-        ), patch(
-            "app.services.sandbox.python_env.Path.exists",
-            return_value=True,
+        with (
+            patch.dict(
+                "app.services.sandbox.python_env.os.environ",
+                {"PATH": "/app/backend/.venv/bin:/usr/local/bin:/usr/bin:/bin"},
+                clear=False,
+            ),
+            patch(
+                "app.services.sandbox.python_env.Path.exists",
+                return_value=True,
+            ),
         ):
             runtime_path = manager.python_env_manager.runtime_path()
 

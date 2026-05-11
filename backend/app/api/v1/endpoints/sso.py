@@ -141,7 +141,9 @@ async def sso_login(
         return RedirectResponse(url=auth_url)
 
     except Exception:
-        logger.exception("Failed to initialize SSO login for provider %s", provider_name)
+        logger.exception(
+            "Failed to initialize SSO login for provider %s", provider_name
+        )
         raise BusinessError(
             code=ResponseCode.SSO_AUTHENTICATION_FAILED,
             msg_key="sso_login_failed",

@@ -229,7 +229,9 @@ async def send_verification_email(
 
     site_name = await SiteSetting.get_value("site_name", "Clouisle")
     site_url = await SiteSetting.get_value("site_url", "")
-    locale = normalize_language(locale or await SiteSetting.get_value("default_language", "en"))
+    locale = normalize_language(
+        locale or await SiteSetting.get_value("default_language", "en")
+    )
 
     # 根据用途选择模板
     if purpose == "register":

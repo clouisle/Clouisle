@@ -9,7 +9,9 @@ from app.services.sandbox.models import SandboxJob, SandboxJobSource, SandboxRes
 from app.services.sandbox.workspace import SandboxWorkspaceManager
 
 REAL_RUNTIME_TESTS_ENABLED = os.getenv("RUN_SANDBOX_REAL_RUNTIME_TESTS") == "1"
-NODE_RUNTIME_AVAILABLE = shutil.which("node") is not None and shutil.which("npm") is not None
+NODE_RUNTIME_AVAILABLE = (
+    shutil.which("node") is not None and shutil.which("npm") is not None
+)
 
 
 class InMemoryResultStore:
@@ -33,7 +35,9 @@ class TestSandboxRuntimeIntegration:
         not REAL_RUNTIME_TESTS_ENABLED,
         reason="Set RUN_SANDBOX_REAL_RUNTIME_TESTS=1 to run real sandbox runtime validation",
     )
-    async def test_python_runtime_installs_real_package_for_snippet_and_cli(self, tmp_path: Path):
+    async def test_python_runtime_installs_real_package_for_snippet_and_cli(
+        self, tmp_path: Path
+    ):
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
             cleanup_workspaces=False,
@@ -68,7 +72,9 @@ class TestSandboxRuntimeIntegration:
         not REAL_RUNTIME_TESTS_ENABLED or not NODE_RUNTIME_AVAILABLE,
         reason="Set RUN_SANDBOX_REAL_RUNTIME_TESTS=1 and install node/npm to run real sandbox runtime validation",
     )
-    async def test_node_runtime_installs_real_package_for_snippet_and_cli(self, tmp_path: Path):
+    async def test_node_runtime_installs_real_package_for_snippet_and_cli(
+        self, tmp_path: Path
+    ):
         manager = SandboxManager(
             workspace_manager=SandboxWorkspaceManager(root=str(tmp_path / "jobs")),
             cleanup_workspaces=False,

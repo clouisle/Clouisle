@@ -44,7 +44,9 @@ class SandboxJobSource(str, Enum):
 
 class SandboxArtifactSpec(BaseModel):
     path: str = Field(..., description="Artifact path inside workspace")
-    optional: bool = Field(default=False, description="Whether missing artifact is allowed")
+    optional: bool = Field(
+        default=False, description="Whether missing artifact is allowed"
+    )
     description: str | None = Field(default=None, description="Artifact description")
 
 
@@ -66,16 +68,22 @@ class SandboxArtifactLimits(BaseModel):
 class SandboxInputFileSpec(BaseModel):
     target_path: str = Field(..., description="Destination path inside workspace")
     content_base64: str = Field(..., description="Base64-encoded file content")
-    mode: int | None = Field(default=None, ge=0, le=0o777, description="Optional file mode")
+    mode: int | None = Field(
+        default=None, ge=0, le=0o777, description="Optional file mode"
+    )
 
 
 class SandboxArtifact(BaseModel):
     path: str = Field(..., description="Artifact path inside workspace")
-    optional: bool = Field(default=False, description="Whether missing artifact is allowed")
+    optional: bool = Field(
+        default=False, description="Whether missing artifact is allowed"
+    )
     description: str | None = Field(default=None, description="Artifact description")
     file_type: str = Field(..., description="Artifact type (file or directory)")
     size: int = Field(..., ge=0, description="Artifact size in bytes")
-    checksum: str | None = Field(default=None, description="Artifact checksum for files")
+    checksum: str | None = Field(
+        default=None, description="Artifact checksum for files"
+    )
     content_type: str | None = Field(default=None, description="Detected content type")
     storage_path: str = Field(..., description="Persisted storage path")
     url: str = Field(..., description="Backend file URL")
@@ -181,8 +189,12 @@ class SandboxExecutionMetadata(BaseModel):
 
     def _refresh_durations(self, *, reference_time: datetime | None = None) -> None:
         reference = reference_time or self.completed_at or datetime.now(UTC)
-        self.queue_wait_ms = self._duration_ms(self.queued_at, self.started_at or reference)
-        self.prepare_ms = self._duration_ms(self.prepare_started_at, self.prepare_completed_at or reference)
+        self.queue_wait_ms = self._duration_ms(
+            self.queued_at, self.started_at or reference
+        )
+        self.prepare_ms = self._duration_ms(
+            self.prepare_started_at, self.prepare_completed_at or reference
+        )
 
         install_start = self.install_started_at
         install_end = self.install_completed_at or reference
@@ -194,7 +206,9 @@ class SandboxExecutionMetadata(BaseModel):
             self.install_ms = install_duration
             self.install_duration_ms = install_duration
 
-        self.execute_ms = self._duration_ms(self.execute_started_at, self.execute_completed_at or reference)
+        self.execute_ms = self._duration_ms(
+            self.execute_started_at, self.execute_completed_at or reference
+        )
 
         collect_start = self.collect_started_at
         collect_end = self.collect_completed_at or reference
@@ -203,7 +217,9 @@ class SandboxExecutionMetadata(BaseModel):
         else:
             self.collect_ms = self._duration_ms(collect_start, collect_end)
 
-        self.total_ms = self._duration_ms(self.queued_at, self.completed_at or reference)
+        self.total_ms = self._duration_ms(
+            self.queued_at, self.completed_at or reference
+        )
         self.duration_ms = self.total_ms
 
     @staticmethod
@@ -240,7 +256,9 @@ class SandboxJob(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     input_files: list[SandboxInputFileSpec] = Field(default_factory=list)
     artifacts: list[SandboxArtifactSpec] = Field(default_factory=list)
-    artifact_limits: SandboxArtifactLimits = Field(default_factory=SandboxArtifactLimits)
+    artifact_limits: SandboxArtifactLimits = Field(
+        default_factory=SandboxArtifactLimits
+    )
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -254,7 +272,11 @@ class SandboxJob(BaseModel):
             return data
         normalized = []
         for item in input_files:
-            if isinstance(item, dict) and "content" in item and "content_base64" not in item:
+            if (
+                isinstance(item, dict)
+                and "content" in item
+                and "content_base64" not in item
+            ):
                 normalized.append({**item, "content_base64": item["content"]})
             else:
                 normalized.append(item)
@@ -268,7 +290,9 @@ class SandboxJob(BaseModel):
             raise ValueError("Sandbox command arguments must be non-empty strings")
         return value
 
-    @field_validator("python_package_index_url", "node_package_registry_url", mode="before")
+    @field_validator(
+        "python_package_index_url", "node_package_registry_url", mode="before"
+    )
     @classmethod
     def normalize_package_source(cls, value: str | None) -> str | None:
         if value is None:
@@ -303,7 +327,9 @@ class SandboxSkillSpec(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     limits: SandboxLimits = Field(default_factory=SandboxLimits)
     artifacts: list[SandboxArtifactSpec] = Field(default_factory=list)
-    artifact_limits: SandboxArtifactLimits = Field(default_factory=SandboxArtifactLimits)
+    artifact_limits: SandboxArtifactLimits = Field(
+        default_factory=SandboxArtifactLimits
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

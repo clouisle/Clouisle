@@ -140,9 +140,15 @@ class NodeExecutor(ABC):
                 source = mapping.source
 
                 if source == "variable" and mapping.variableRef:
-                    inputs[name] = await context.resolve_variable_ref(mapping.variableRef)
+                    inputs[name] = await context.resolve_variable_ref(
+                        mapping.variableRef
+                    )
                 else:  # constant
-                    inputs[name] = mapping.constantValue if mapping.constantValue is not None else ""
+                    inputs[name] = (
+                        mapping.constantValue
+                        if mapping.constantValue is not None
+                        else ""
+                    )
             else:
                 # Handle raw dict for backward compatibility
                 name = mapping.get("name")
@@ -151,7 +157,9 @@ class NodeExecutor(ABC):
 
                 source = mapping.get("source", "variable")
                 if source == "variable":
-                    variable_ref = mapping.get("variableRef") or mapping.get("value", "")
+                    variable_ref = mapping.get("variableRef") or mapping.get(
+                        "value", ""
+                    )
                     inputs[name] = await context.resolve_variable_ref(variable_ref)
                 else:
                     inputs[name] = mapping.get("constantValue", "")

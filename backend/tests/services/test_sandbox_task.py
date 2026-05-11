@@ -51,7 +51,9 @@ def test_run_sandbox_job_task_marks_result_failed_on_exception():
 
     with (
         patch("app.tasks.sandbox.SandboxManager", return_value=FailingManager()),
-        patch("app.tasks.sandbox.sandbox_result_store.update_status", new=AsyncMock()) as mock_update,
+        patch(
+            "app.tasks.sandbox.sandbox_result_store.update_status", new=AsyncMock()
+        ) as mock_update,
     ):
         with pytest.raises(RuntimeError, match="boom"):
             run_sandbox_job_task.run(payload)

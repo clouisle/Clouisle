@@ -282,7 +282,10 @@ except Exception as e:
                         success=False,
                         error=resolve_user_visible_error(
                             stderr_str
-                            or t("sandbox_process_exit_code", exit_code=process.returncode),
+                            or t(
+                                "sandbox_process_exit_code",
+                                exit_code=process.returncode,
+                            ),
                             fallback_key="code_tool_execution_failed",
                         ),
                         stdout=stdout_str,
@@ -361,7 +364,9 @@ async def execute_code(
                     stderr=runtime_result.stderr,
                 )
         except Exception as e:
-            logger.warning("Sandbox runtime gateway failed, falling back to legacy runner: %s", e)
+            logger.warning(
+                "Sandbox runtime gateway failed, falling back to legacy runner: %s", e
+            )
             if not settings.SANDBOX_LEGACY_FALLBACK_ENABLED:
                 return ExecutionResult(success=False, error=t("tool_execution_failed"))
 

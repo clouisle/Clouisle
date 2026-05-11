@@ -50,11 +50,15 @@ class SandboxSessionStore:
         await self.save(session, ttl_seconds=_ttl_seconds(ttl_hours))
         return session
 
-    async def save(self, session: SandboxSession, *, ttl_seconds: int | None = None) -> None:
+    async def save(
+        self, session: SandboxSession, *, ttl_seconds: int | None = None
+    ) -> None:
         redis = await get_redis()
         ttl = ttl_seconds or max(1, int((session.expires_at - now()).total_seconds()))
         await redis.setex(self._key(session.session_id), ttl, session.model_dump_json())
-        await redis.zadd(self.INDEX_KEY, {session.session_id: session.expires_at.timestamp()})
+        await redis.zadd(
+            self.INDEX_KEY, {session.session_id: session.expires_at.timestamp()}
+        )
         if session.conversation_id:
             await redis.setex(
                 self._conversation_key(session.conversation_id),
@@ -81,7 +85,9 @@ class SandboxSessionStore:
             return None
         return session
 
-    async def touch(self, session_id: str, *, disk_usage_bytes: int | None = None) -> SandboxSession | None:
+    async def touch(
+        self, session_id: str, *, disk_usage_bytes: int | None = None
+    ) -> SandboxSession | None:
         session = await self.get(session_id)
         if session is None:
             return None

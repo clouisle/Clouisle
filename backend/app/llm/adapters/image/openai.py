@@ -209,7 +209,11 @@ class OpenAIImageAdapter(BaseImageAdapter):
             payload["seed"] = request.seed
 
         passthrough_extra_params = dict(request.extra_params or {})
-        for managed_key in _OPENAI_IMAGE_DEFAULT_PARAM_KEYS | {"quality", "style", "seed"}:
+        for managed_key in _OPENAI_IMAGE_DEFAULT_PARAM_KEYS | {
+            "quality",
+            "style",
+            "seed",
+        }:
             passthrough_extra_params.pop(managed_key, None)
         payload.update(passthrough_extra_params)
 

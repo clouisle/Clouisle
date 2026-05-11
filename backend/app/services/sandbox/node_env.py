@@ -70,7 +70,11 @@ class NodeEnvironmentManager:
                 "name": "clouisle-sandbox-job",
                 "private": True,
                 "dependencies": {
-                    package.rsplit("@", 1)[0] if "@" in package[1:] else package: package.rsplit("@", 1)[1] if "@" in package[1:] else "latest"
+                    package.rsplit("@", 1)[0]
+                    if "@" in package[1:]
+                    else package: package.rsplit("@", 1)[1]
+                    if "@" in package[1:]
+                    else "latest"
                     for package in packages
                 },
             }

@@ -79,7 +79,9 @@ class SandboxWorkspaceManager:
     def cleanup(self, job_id: str) -> None:
         shutil.rmtree(self.job_root(job_id), ignore_errors=True)
 
-    def resolve_workspace_path(self, workspace: SandboxWorkspace, sandbox_path: str) -> Path:
+    def resolve_workspace_path(
+        self, workspace: SandboxWorkspace, sandbox_path: str
+    ) -> Path:
         if sandbox_path == "/workspace":
             resolved = workspace.root
         elif sandbox_path.startswith("/workspace/"):

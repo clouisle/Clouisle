@@ -46,9 +46,12 @@ async def test_collect_uploads_file_artifact_via_http(tmp_path: Path):
             }
         )
 
-    with patch("httpx.AsyncClient.post", new=fake_post), patch(
-        "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
-        "http://backend:8000",
+    with (
+        patch("httpx.AsyncClient.post", new=fake_post),
+        patch(
+            "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
+            "http://backend:8000",
+        ),
     ):
         artifacts = await store.collect(
             job_id="job-1",
@@ -89,7 +92,9 @@ async def test_collect_rejects_file_over_max_size(tmp_path: Path):
             job_id="job-2",
             artifacts=[SandboxArtifactSpec(path="/workspace/output/large.bin")],
             workspace=workspace,
-            artifact_limits=SandboxArtifactLimits(max_size_mb=0.001, max_total_size_mb=10),
+            artifact_limits=SandboxArtifactLimits(
+                max_size_mb=0.001, max_total_size_mb=10
+            ),
         )
 
 
@@ -115,10 +120,14 @@ async def test_collect_rejects_total_size_over_limit(tmp_path: Path):
             }
         )
 
-    with patch("httpx.AsyncClient.post", new=fake_post), patch(
-        "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
-        "http://backend:8000",
-    ), pytest.raises(ValueError, match="total limit"):
+    with (
+        patch("httpx.AsyncClient.post", new=fake_post),
+        patch(
+            "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
+            "http://backend:8000",
+        ),
+        pytest.raises(ValueError, match="total limit"),
+    ):
         await store.collect(
             job_id="job-3",
             artifacts=[
@@ -126,39 +135,51 @@ async def test_collect_rejects_total_size_over_limit(tmp_path: Path):
                 SandboxArtifactSpec(path="/workspace/output/b.txt"),
             ],
             workspace=workspace,
-            artifact_limits=SandboxArtifactLimits(max_size_mb=10, max_total_size_mb=0.0015),
+            artifact_limits=SandboxArtifactLimits(
+                max_size_mb=10, max_total_size_mb=0.0015
+            ),
         )
 
 
 def test_upload_base_url_prefers_explicit_env_override(tmp_path: Path):
     store = SandboxArtifactStore(SandboxWorkspaceManager(root=str(tmp_path)))
 
-    with patch(
-        "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
-        "http://artifact-backend:9000",
-    ), patch(
-        "app.services.sandbox.artifacts.settings.API_BASE_URL",
-        "http://localhost:8000",
+    with (
+        patch(
+            "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
+            "http://artifact-backend:9000",
+        ),
+        patch(
+            "app.services.sandbox.artifacts.settings.API_BASE_URL",
+            "http://localhost:8000",
+        ),
     ):
         assert store._upload_base_url() == "http://artifact-backend:9000"
 
 
-def test_upload_base_url_defaults_to_backend_service_in_container_for_localhost_api(tmp_path: Path):
+def test_upload_base_url_defaults_to_backend_service_in_container_for_localhost_api(
+    tmp_path: Path,
+):
     store = SandboxArtifactStore(SandboxWorkspaceManager(root=str(tmp_path)))
 
-    with patch(
-        "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
-        None,
-    ), patch(
-        "app.services.sandbox.artifacts.settings.API_BASE_URL",
-        "http://localhost:8000",
-    ), patch(
-        "app.services.sandbox.artifacts.os.path.exists",
-        return_value=True,
-    ), patch.dict(
-        "app.services.sandbox.artifacts.os.environ",
-        {},
-        clear=False,
+    with (
+        patch(
+            "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
+            None,
+        ),
+        patch(
+            "app.services.sandbox.artifacts.settings.API_BASE_URL",
+            "http://localhost:8000",
+        ),
+        patch(
+            "app.services.sandbox.artifacts.os.path.exists",
+            return_value=True,
+        ),
+        patch.dict(
+            "app.services.sandbox.artifacts.os.environ",
+            {},
+            clear=False,
+        ),
     ):
         assert store._upload_base_url() == "http://backend:8000"
 
@@ -166,11 +187,14 @@ def test_upload_base_url_defaults_to_backend_service_in_container_for_localhost_
 def test_upload_base_url_keeps_non_localhost_api_base_url(tmp_path: Path):
     store = SandboxArtifactStore(SandboxWorkspaceManager(root=str(tmp_path)))
 
-    with patch(
-        "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
-        None,
-    ), patch(
-        "app.services.sandbox.artifacts.settings.API_BASE_URL",
-        "http://backend:8000",
+    with (
+        patch(
+            "app.services.sandbox.artifacts.settings.SANDBOX_ARTIFACT_UPLOAD_BASE_URL",
+            None,
+        ),
+        patch(
+            "app.services.sandbox.artifacts.settings.API_BASE_URL",
+            "http://backend:8000",
+        ),
     ):
         assert store._upload_base_url() == "http://backend:8000"

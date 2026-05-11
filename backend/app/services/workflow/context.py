@@ -140,7 +140,8 @@ class ExecutionContext:
         # Load system variables from metadata
         meta_key = cls.META_KEY.format(run_id=ctx.run_id)
         meta = cast(
-            dict[str, WorkflowValue], await _resolve_redis_result(redis_client.hgetall(meta_key))
+            dict[str, WorkflowValue],
+            await _resolve_redis_result(redis_client.hgetall(meta_key)),
         )
 
         if meta:
@@ -436,7 +437,9 @@ class ExecutionContext:
             handles: List of active source handle IDs
         """
         key = self.BRANCHES_KEY.format(run_id=self.run_id)
-        await _resolve_redis_result(self.redis.hset(key, node_id, dumps_value(cast("WorkflowValue", handles))))
+        await _resolve_redis_result(
+            self.redis.hset(key, node_id, dumps_value(cast("WorkflowValue", handles)))
+        )
 
     async def get_active_branches(self, node_id: str) -> list[str] | None:
         """

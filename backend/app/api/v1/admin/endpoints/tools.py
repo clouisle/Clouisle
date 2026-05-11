@@ -60,9 +60,7 @@ logger = logging.getLogger(__name__)
 async def _build_admin_tools(user: User) -> list[ToolOut]:
     tools: list[ToolOut] = get_builtin_tools(user.locale)
     db_tools = (
-        await Tool.all()
-        .prefetch_related("team", "created_by")
-        .order_by("-updated_at")
+        await Tool.all().prefetch_related("team", "created_by").order_by("-updated_at")
     )
     for db_tool in db_tools:
         creator_name = db_tool.created_by.username if db_tool.created_by else None
@@ -132,9 +130,13 @@ async def list_tools(
             continue
         if not _matches_filter(_category_value(tool.category), category_filter):
             continue
-        if not _matches_filter("enabled" if tool.is_enabled else "disabled", status_filter):
+        if not _matches_filter(
+            "enabled" if tool.is_enabled else "disabled", status_filter
+        ):
             continue
-        if not _matches_filter(str(tool.team_id) if tool.team_id else None, team_filter):
+        if not _matches_filter(
+            str(tool.team_id) if tool.team_id else None, team_filter
+        ):
             continue
         if not _matches_filter(tool.created_by_name, creator_filter):
             continue
@@ -164,7 +166,9 @@ async def get_tool_filter_options(
 ) -> Any:
     tools = await _build_admin_tools(current_user)
     teams = await Team.all().order_by("name")
-    creator_values = sorted({tool.created_by_name for tool in tools if tool.created_by_name})
+    creator_values = sorted(
+        {tool.created_by_name for tool in tools if tool.created_by_name}
+    )
     categories = sorted({tool.category for tool in tools if tool.category})
     return success(
         data=ToolFilterOptionsOut(
@@ -243,7 +247,9 @@ async def create_tool(
         is_enabled=tool_in.is_enabled,
         created_by=current_user,
     )
-    return success(data=db_tool_to_detail(tool, current_user.username), msg_key="tool_created")
+    return success(
+        data=db_tool_to_detail(tool, current_user.username), msg_key="tool_created"
+    )
 
 
 @router.get("/id/{tool_id}", response_model=Response[ToolDetailOut])
@@ -357,7 +363,10 @@ async def duplicate_tool(
         is_enabled=False,
         created_by=current_user,
     )
-    return success(data=db_tool_to_detail(new_tool, current_user.username), msg_key="tool_duplicated")
+    return success(
+        data=db_tool_to_detail(new_tool, current_user.username),
+        msg_key="tool_duplicated",
+    )
 
 
 @router.post("/test", response_model=Response[ToolExecuteResponse])
@@ -374,14 +383,20 @@ async def test_tool(
 
             credentials = {}
             if team_id:
-                tool_config = await ToolConfig.filter(tool_name=request.name, team_id=team_id).first()
+                tool_config = await ToolConfig.filter(
+                    tool_name=request.name, team_id=team_id
+                ).first()
                 if tool_config:
                     credentials = tool_config.credentials or {}
             if not credentials:
-                global_config = await ToolConfig.filter(tool_name=request.name, team_id=None).first()
+                global_config = await ToolConfig.filter(
+                    tool_name=request.name, team_id=None
+                ).first()
                 if global_config:
                     credentials = global_config.credentials or {}
-            result = await tool_registry.execute(request.name, request.arguments, credentials=credentials)
+            result = await tool_registry.execute(
+                request.name, request.arguments, credentials=credentials
+            )
             return success(
                 data=ToolExecuteResponse(
                     name=request.name,
@@ -437,7 +452,9 @@ async def test_tool(
                 data=ToolExecuteResponse(
                     name=request.name,
                     success=False,
-                    error=resolve_user_visible_error(str(exc), fallback_key="mcp_tool_execution_failed"),
+                    error=resolve_user_visible_error(
+                        str(exc), fallback_key="mcp_tool_execution_failed"
+                    ),
                     duration_ms=int((time.time() - start_time) * 1000),
                 )
             )
@@ -486,7 +503,9 @@ async def test_tool(
                 result=exec_result.result,
                 error=exec_result.error,
                 logs=exec_result.stdout or None,
-                artifacts=_serialize_runtime_artifacts(getattr(exec_result, "artifacts", [])),
+                artifacts=_serialize_runtime_artifacts(
+                    getattr(exec_result, "artifacts", [])
+                ),
                 duration_ms=_runtime_duration_ms(exec_result),
             )
         )
@@ -511,7 +530,9 @@ async def execute_code_directly(
         return success(
             data=CodeExecuteResponse(
                 success=False,
-                error=t("unsupported_code_execution_language", language=request.language),
+                error=t(
+                    "unsupported_code_execution_language", language=request.language
+                ),
                 duration_ms=int((time.time() - start_time) * 1000),
             )
         )
@@ -525,7 +546,9 @@ async def execute_code_directly(
             "js_packages": request.js_packages,
             "python_package_index_url": request.python_package_index_url,
             "node_package_registry_url": request.node_package_registry_url,
-            "artifacts": [artifact.model_dump(exclude_none=True) for artifact in request.artifacts],
+            "artifacts": [
+                artifact.model_dump(exclude_none=True) for artifact in request.artifacts
+            ],
             "limits": request.limits.model_dump(),
         },
         params=request.params,
@@ -542,7 +565,9 @@ async def execute_code_directly(
             result=exec_result.result,
             error=exec_result.error,
             logs=exec_result.stdout or None,
-            artifacts=_serialize_runtime_artifacts(getattr(exec_result, "artifacts", [])),
+            artifacts=_serialize_runtime_artifacts(
+                getattr(exec_result, "artifacts", [])
+            ),
             duration_ms=_runtime_duration_ms(exec_result),
         )
     )
@@ -557,7 +582,9 @@ async def list_tool_configs(
     from app.schemas.tool_config import ToolConfigOut
 
     configs = await ToolConfig.filter(team_id=team_id).all()
-    return success(data=[ToolConfigOut.model_validate(config).model_dump() for config in configs])
+    return success(
+        data=[ToolConfigOut.model_validate(config).model_dump() for config in configs]
+    )
 
 
 @router.get("/config/{tool_name}", response_model=Response[dict])
@@ -572,7 +599,9 @@ async def get_tool_config(
     config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
     if not config:
         if team_id and tool_registry.get_tool(tool_name):
-            config = await ToolConfig.create(tool_name=tool_name, team_id=team_id, credentials={})
+            config = await ToolConfig.create(
+                tool_name=tool_name, team_id=team_id, credentials={}
+            )
         else:
             raise BusinessError(
                 code=ResponseCode.NOT_FOUND,
@@ -592,7 +621,9 @@ async def create_tool_config(
     from app.schemas.tool_config import ToolConfigCreate, ToolConfigOut
 
     config_data = ToolConfigCreate(**data)
-    existing = await ToolConfig.filter(tool_name=config_data.tool_name, team_id=team_id).first()
+    existing = await ToolConfig.filter(
+        tool_name=config_data.tool_name, team_id=team_id
+    ).first()
     if existing:
         raise BusinessError(
             code=ResponseCode.DUPLICATE_NAME,
@@ -604,7 +635,10 @@ async def create_tool_config(
         team_id=team_id,
         credentials=config_data.credentials,
     )
-    return success(data=ToolConfigOut.model_validate(config).model_dump(), msg_key="tool_config_created")
+    return success(
+        data=ToolConfigOut.model_validate(config).model_dump(),
+        msg_key="tool_config_created",
+    )
 
 
 @router.put("/config/{tool_name}", response_model=Response[dict])
@@ -627,7 +661,10 @@ async def update_tool_config(
         )
     config.credentials = config_data.credentials
     await config.save()
-    return success(data=ToolConfigOut.model_validate(config).model_dump(), msg_key="tool_config_updated")
+    return success(
+        data=ToolConfigOut.model_validate(config).model_dump(),
+        msg_key="tool_config_updated",
+    )
 
 
 @router.delete("/config/{tool_name}", response_model=Response[None])
@@ -722,7 +759,9 @@ async def list_tool_shares(
         )
         for share in shares
     ]
-    return success(data=ToolShareListOut(shares=share_list, total=len(share_list)).model_dump())
+    return success(
+        data=ToolShareListOut(shares=share_list, total=len(share_list)).model_dump()
+    )
 
 
 @router.delete("/{tool_id}/share/{team_id}", response_model=Response[None])

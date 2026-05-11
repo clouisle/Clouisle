@@ -47,10 +47,12 @@ async def test_skill_selection_exposes_sandbox_tools():
 @pytest.mark.anyio
 async def test_selected_sandbox_builtin_tools_are_exposed_independently():
     register_all_builtin_tools()
-    agent = _agent([
-        {"type": "builtin", "name": "bash"},
-        {"type": "builtin", "name": "read"},
-    ])
+    agent = _agent(
+        [
+            {"type": "builtin", "name": "bash"},
+            {"type": "builtin", "name": "read"},
+        ]
+    )
 
     tools = await get_agent_tools(agent)
 

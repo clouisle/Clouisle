@@ -94,7 +94,10 @@ def test_upload_sandbox_artifact_allows_zip(upload_test_client):
 
 
 def test_upload_sandbox_artifact_rejects_oversized_file(upload_test_client):
-    with patch("app.api.v1.endpoints.upload.settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB", 0.000001):
+    with patch(
+        "app.api.v1.endpoints.upload.settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB",
+        0.000001,
+    ):
         response = upload_test_client.post(
             "/api/v1/upload/sandbox-artifact",
             files={"file": ("large.txt", b"too-large", "text/plain")},
@@ -105,7 +108,9 @@ def test_upload_sandbox_artifact_rejects_oversized_file(upload_test_client):
     assert payload["msg"]
 
 
-def test_upload_sandbox_artifact_allows_internal_signature_without_auth_header(upload_test_client):
+def test_upload_sandbox_artifact_allows_internal_signature_without_auth_header(
+    upload_test_client,
+):
     content = b"ok"
     filename = "result.txt"
     timestamp = str(int(time.time()))
@@ -127,7 +132,9 @@ def test_upload_sandbox_artifact_allows_internal_signature_without_auth_header(u
             }
         ),
     ):
-        upload_test_client.app.dependency_overrides[deps.get_current_user_or_api_key_optional] = lambda: None
+        upload_test_client.app.dependency_overrides[
+            deps.get_current_user_or_api_key_optional
+        ] = lambda: None
         response = upload_test_client.post(
             "/api/v1/upload/sandbox-artifact",
             files={"file": (filename, content, "text/plain")},

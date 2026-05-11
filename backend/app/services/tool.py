@@ -135,7 +135,9 @@ class ToolExecutor:
             job = compile_code_config_job(
                 code_config=tool.code_config,
                 params=arguments,
-                timeout=float(tool.code_config.get("limits", {}).get("timeout_seconds", 30.0)),
+                timeout=float(
+                    tool.code_config.get("limits", {}).get("timeout_seconds", 30.0)
+                ),
                 source=SandboxJobSource.TOOL,
             )
             result = await sandbox_gateway.submit_and_wait(
@@ -162,9 +164,7 @@ class ToolExecutor:
     ) -> Any:
         """Execute an MCP tool."""
         if not tool.mcp_config:
-            raise ValueError(
-                t("mcp_tool_missing_configuration", tool_name=tool.name)
-            )
+            raise ValueError(t("mcp_tool_missing_configuration", tool_name=tool.name))
 
         return await execute_mcp_tool(
             tool_name=tool.name,

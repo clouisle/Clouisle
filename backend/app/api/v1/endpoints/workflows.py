@@ -48,7 +48,10 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
-from app.services.workflow.errors import get_public_workflow_error_key, translate_public_workflow_error
+from app.services.workflow.errors import (
+    get_public_workflow_error_key,
+    translate_public_workflow_error,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1305,7 +1308,9 @@ async def get_workflow_run(
     await check_workflow_access(run.workflow_id, current_user)
 
     return success(
-        data=sanitize_workflow_run_payload(WorkflowRunOut.model_validate(run).model_dump())
+        data=sanitize_workflow_run_payload(
+            WorkflowRunOut.model_validate(run).model_dump()
+        )
     )
 
 
@@ -1337,7 +1342,9 @@ async def list_run_node_executions(
 
     return success(
         data=[
-            sanitize_node_execution_payload(NodeExecutionOut.model_validate(e).model_dump())
+            sanitize_node_execution_payload(
+                NodeExecutionOut.model_validate(e).model_dump()
+            )
             for e in executions
         ]
     )

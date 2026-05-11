@@ -42,7 +42,9 @@ class SandboxArtifactStore:
         collected: list[SandboxArtifact] = []
         total_uploaded_bytes = 0
         for artifact in artifacts:
-            resolved = self.workspace_manager.resolve_workspace_path(workspace, artifact.path)
+            resolved = self.workspace_manager.resolve_workspace_path(
+                workspace, artifact.path
+            )
             if not resolved.exists():
                 if artifact.optional:
                     continue
@@ -108,7 +110,9 @@ class SandboxArtifactStore:
         async with aiofiles.open(resolved, "rb") as f:
             content = await f.read()
 
-        content_type = mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+        content_type = (
+            mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+        )
         upload_info = await self._upload_artifact(
             content=content,
             content_type=content_type,
@@ -140,7 +144,9 @@ class SandboxArtifactStore:
         total_uploaded_bytes: int,
     ) -> tuple[SandboxArtifact, int]:
         archive_base = resolved.parent / f"{resolved.name}__artifact"
-        archive_path = Path(shutil.make_archive(str(archive_base), "zip", root_dir=resolved))
+        archive_path = Path(
+            shutil.make_archive(str(archive_base), "zip", root_dir=resolved)
+        )
         try:
             archive_size = archive_path.stat().st_size
             self._validate_artifact_size(
@@ -164,7 +170,9 @@ class SandboxArtifactStore:
             content_type="application/zip",
             filename=f"{job_id}_{resolved.name}.zip",
         )
-        size = sum(path.stat().st_size for path in resolved.rglob("*") if path.is_file())
+        size = sum(
+            path.stat().st_size for path in resolved.rglob("*") if path.is_file()
+        )
         return (
             SandboxArtifact(
                 path=artifact.path,
@@ -184,7 +192,9 @@ class SandboxArtifactStore:
     def _artifact_limit_bytes(self, artifact_limits: SandboxArtifactLimits) -> int:
         return int(artifact_limits.max_size_mb * 1024 * 1024)
 
-    def _artifact_total_limit_bytes(self, artifact_limits: SandboxArtifactLimits) -> int:
+    def _artifact_total_limit_bytes(
+        self, artifact_limits: SandboxArtifactLimits
+    ) -> int:
         return int(artifact_limits.max_total_size_mb * 1024 * 1024)
 
     def _validate_artifact_size(

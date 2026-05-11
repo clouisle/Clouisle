@@ -431,7 +431,9 @@ class IterationNodeExecutor(NodeExecutor):
         else:
             item_var = config.get("itemVariable", "item")
             index_var = config.get("indexVariable", "index")
-            specs.insert(0, NodeOutputDecl(name=index_var, type=TypeSpec(kind="number")))
+            specs.insert(
+                0, NodeOutputDecl(name=index_var, type=TypeSpec(kind="number"))
+            )
             specs.insert(0, NodeOutputDecl(name=item_var, type=TypeSpec(kind="any")))
         return specs
 
@@ -634,9 +636,13 @@ class LoopNodeExecutor(NodeExecutor):
             elif operator == "not_equals":
                 return str(actual_value) != str(resolved_compare)
             elif operator == "greater_than":
-                return float(cast(float, actual_value)) > float(cast(float, resolved_compare))
+                return float(cast(float, actual_value)) > float(
+                    cast(float, resolved_compare)
+                )
             elif operator == "less_than":
-                return float(cast(float, actual_value)) < float(cast(float, resolved_compare))
+                return float(cast(float, actual_value)) < float(
+                    cast(float, resolved_compare)
+                )
             elif operator == "is_true":
                 return bool(actual_value)
             elif operator == "is_false":

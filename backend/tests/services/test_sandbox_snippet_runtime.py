@@ -51,9 +51,9 @@ class FakeProcessLauncher:
 @pytest.mark.anyio
 class TestSandboxSnippetRuntime:
     async def test_python_snippet_with_packages_uses_env_manager(self, tmp_path: Path):
-        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / 'jobs'))
-        env_dir = tmp_path / 'cache' / 'py-env'
-        bin_dir = env_dir / 'bin'
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
+        env_dir = tmp_path / "cache" / "py-env"
+        bin_dir = env_dir / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
         python_env_manager = FakePythonEnvManager(env_dir)
         payload = json.dumps({"success": True, "result": {"value": 42}, "logs": []})
@@ -68,25 +68,27 @@ class TestSandboxSnippetRuntime:
         )
         job = SandboxJob(
             source=SandboxJobSource.LEGACY_SNIPPET,
-            language='python',
+            language="python",
             code="return {'value': params['value']}",
-            command=['python'],
-            python_packages=['requests==2.32.3'],
-            metadata={'params': {'value': 42}},
+            command=["python"],
+            python_packages=["requests==2.32.3"],
+            metadata={"params": {"value": 42}},
         )
 
         result = await manager.execute(job)
 
         assert result.success is True
-        assert result.result == {'value': 42}
-        assert python_env_manager.calls == [(['requests==2.32.3'], 'standard', None)]
-        assert launcher.calls[0][0][0] == str(env_dir / 'bin' / 'python')
-        assert launcher.calls[0][1]['env']['VIRTUAL_ENV'] == str(env_dir)
+        assert result.result == {"value": 42}
+        assert python_env_manager.calls == [(["requests==2.32.3"], "standard", None)]
+        assert launcher.calls[0][0][0] == str(env_dir / "bin" / "python")
+        assert launcher.calls[0][1]["env"]["VIRTUAL_ENV"] == str(env_dir)
 
-    async def test_python_snippet_appends_script_path_after_custom_argv(self, tmp_path: Path):
-        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / 'jobs'))
-        env_dir = tmp_path / 'cache' / 'py-env'
-        bin_dir = env_dir / 'bin'
+    async def test_python_snippet_appends_script_path_after_custom_argv(
+        self, tmp_path: Path
+    ):
+        workspace_manager = SandboxWorkspaceManager(root=str(tmp_path / "jobs"))
+        env_dir = tmp_path / "cache" / "py-env"
+        bin_dir = env_dir / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
         python_env_manager = FakePythonEnvManager(env_dir)
         payload = json.dumps({"success": True, "result": {"value": 1}, "logs": []})
@@ -101,14 +103,18 @@ class TestSandboxSnippetRuntime:
         )
         job = SandboxJob(
             source=SandboxJobSource.LEGACY_SNIPPET,
-            language='python',
+            language="python",
             code="return {'value': 1}",
-            command=['python', '-X', 'utf8'],
-            python_packages=['requests==2.32.3'],
+            command=["python", "-X", "utf8"],
+            python_packages=["requests==2.32.3"],
         )
 
         result = await manager.execute(job)
 
         assert result.success is True
-        assert launcher.calls[0][0][:3] == [str(env_dir / 'bin' / 'python'), '-X', 'utf8']
-        assert launcher.calls[0][0][3].endswith('snippet.py')
+        assert launcher.calls[0][0][:3] == [
+            str(env_dir / "bin" / "python"),
+            "-X",
+            "utf8",
+        ]
+        assert launcher.calls[0][0][3].endswith("snippet.py")

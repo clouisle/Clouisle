@@ -144,7 +144,7 @@ class SiliconFlowImageAdapter(BaseImageAdapter):
             "image_size",
             "batch_size",
             "seed",
-            * _SILICONFLOW_IMAGE_EXTRA_PARAM_KEYS,
+            *_SILICONFLOW_IMAGE_EXTRA_PARAM_KEYS,
         }:
             passthrough_extra_params.pop(managed_key, None)
         payload.update(passthrough_extra_params)

@@ -508,7 +508,9 @@ class SkillImportService:
     def _copy_to_private_storage(
         *, skill_root: Path, team_id: UUID | None, skill_name: str, package_hash: str
     ) -> str:
-        base_dir = (Path(__file__).resolve().parents[3] / "uploads" / "skills").resolve()
+        base_dir = (
+            Path(__file__).resolve().parents[3] / "uploads" / "skills"
+        ).resolve()
         scope = str(team_id) if team_id else "system"
         relative_destination = PurePosixPath(
             scope,

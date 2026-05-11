@@ -14,12 +14,24 @@ from .general import (
     should_retry_context_length,
     get_compression_trigger,
 )
-from .stream_utils import StreamIdleTimeoutError, iter_with_idle_timeout, send_heartbeat_if_needed
+from .stream_utils import (
+    StreamIdleTimeoutError,
+    iter_with_idle_timeout,
+    send_heartbeat_if_needed,
+)
 from .message_builder import build_messages
 from .model_utils import get_model_identifier, get_model_capabilities
 from .tool_utils import get_agent_tools, get_tool_display_names
-from app.api.v1.endpoints.chat_tools import execute_tool_call, execute_http_tool, execute_code_tool
-from app.api.v1.endpoints.chat_rag import perform_rag_retrieval, aggregate_rag_contexts, build_rag_prompt
+from app.api.v1.endpoints.chat_tools import (
+    execute_tool_call,
+    execute_http_tool,
+    execute_code_tool,
+)
+from app.api.v1.endpoints.chat_rag import (
+    perform_rag_retrieval,
+    aggregate_rag_contexts,
+    build_rag_prompt,
+)
 from .version_utils import (
     get_message_versions,
     get_version_count,

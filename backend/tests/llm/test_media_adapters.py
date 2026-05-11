@@ -71,7 +71,9 @@ class TestImageFactory:
             GoogleImageAdapter,
         )
         assert isinstance(
-            create_image_adapter(build_model("siliconflow", "black-forest-labs/flux-1-schnell")),
+            create_image_adapter(
+                build_model("siliconflow", "black-forest-labs/flux-1-schnell")
+            ),
             SiliconFlowImageAdapter,
         )
 
@@ -159,7 +161,9 @@ class TestOpenAIImageAdapter:
 class TestRunwayImageAdapter:
     def test_builds_text_to_image_task_payload(self):
         adapter = RunwayImageAdapter(build_model("runway", "gen4_image"))
-        adapter.client = SimpleNamespace(create_task=AsyncMock(return_value={"id": "task-1"}))
+        adapter.client = SimpleNamespace(
+            create_task=AsyncMock(return_value={"id": "task-1"})
+        )
 
         task_id = asyncio.run(
             adapter._create_task(
@@ -180,7 +184,10 @@ class TestRunwayImageAdapter:
         path, payload = adapter.client.create_task.await_args.args
         assert path == "/v1/text_to_image"
         assert payload["model"] == "gen4_image"
-        assert payload["promptText"] == "A dramatic skyline\n\nStyle: cinematic\nAvoid: blurry"
+        assert (
+            payload["promptText"]
+            == "A dramatic skyline\n\nStyle: cinematic\nAvoid: blurry"
+        )
         assert payload["ratio"] == "1440:1080"
         assert payload["seed"] == 8
         assert payload["guidanceScale"] == 6.5

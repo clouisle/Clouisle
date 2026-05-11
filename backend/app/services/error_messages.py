@@ -35,7 +35,6 @@ def is_safe_user_visible_error(message: str | None) -> bool:
     return not any(pattern.search(normalized) for pattern in _UNSAFE_ERROR_PATTERNS)
 
 
-
 def resolve_user_visible_error(
     message: str | None,
     *,

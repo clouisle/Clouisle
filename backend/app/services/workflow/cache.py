@@ -189,7 +189,11 @@ class WorkflowCache:
                 definition = loads_value(data)
                 self._set_local(key, definition, self.config.workflow_definition_ttl)
                 logger.debug(f"Workflow cache hit (redis): {workflow_id}")
-                return cast("dict | None", definition) if isinstance(definition, dict) else None
+                return (
+                    cast("dict | None", definition)
+                    if isinstance(definition, dict)
+                    else None
+                )
         except Exception as e:
             logger.warning(f"Cache get error: {e}")
 

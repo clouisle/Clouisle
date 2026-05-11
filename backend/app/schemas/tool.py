@@ -105,7 +105,9 @@ class SandboxArtifactSchema(BaseModel):
     path: str = Field(..., description="产物路径（必须位于 /workspace 下）")
     optional: bool = Field(default=False, description="产物缺失是否允许")
     description: str | None = Field(default=None, description="产物说明")
-    file_type: str | None = Field(default=None, description="产物类型（file/directory）")
+    file_type: str | None = Field(
+        default=None, description="产物类型（file/directory）"
+    )
     size: int | None = Field(default=None, ge=0, description="产物大小（字节）")
     checksum: str | None = Field(default=None, description="文件校验和")
     content_type: str | None = Field(default=None, description="内容类型")
@@ -130,13 +132,27 @@ class CodeConfigSchema(BaseModel):
 
     language: str = Field(..., description="代码语言 (javascript/python)")
     code: str = Field(..., description="代码内容")
-    command: list[str] = Field(default_factory=list, description="自定义命令（argv 数组）")
-    python_packages: list[str] = Field(default_factory=list, description="Python 包列表")
-    js_packages: list[str] = Field(default_factory=list, description="JavaScript 包列表")
-    python_package_index_url: str | None = Field(default=None, description="Python 包镜像地址")
-    node_package_registry_url: str | None = Field(default=None, description="JavaScript 包镜像地址")
-    artifacts: list[SandboxArtifactSchema] = Field(default_factory=list, description="产物配置")
-    limits: SandboxLimitsSchema = Field(default_factory=SandboxLimitsSchema, description="资源限制")
+    command: list[str] = Field(
+        default_factory=list, description="自定义命令（argv 数组）"
+    )
+    python_packages: list[str] = Field(
+        default_factory=list, description="Python 包列表"
+    )
+    js_packages: list[str] = Field(
+        default_factory=list, description="JavaScript 包列表"
+    )
+    python_package_index_url: str | None = Field(
+        default=None, description="Python 包镜像地址"
+    )
+    node_package_registry_url: str | None = Field(
+        default=None, description="JavaScript 包镜像地址"
+    )
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物配置"
+    )
+    limits: SandboxLimitsSchema = Field(
+        default_factory=SandboxLimitsSchema, description="资源限制"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -273,7 +289,9 @@ class ToolCreateInput(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100, description="显示名称")
     description: str = Field(default="", description="工具描述")
     icon: str | None = Field(default=None, max_length=100, description="图标")
-    category: str = Field(default=ToolCategory.OTHER.value, max_length=100, description="分类")
+    category: str = Field(
+        default=ToolCategory.OTHER.value, max_length=100, description="分类"
+    )
     type: ToolType = Field(default=ToolType.CUSTOM, description="工具类型")
     custom_type: CustomToolType | None = Field(
         default=None, description="自定义工具类型（仅 type=custom 时有效）"
@@ -294,9 +312,7 @@ class ToolCreateInput(BaseModel):
     def validate_name(cls, v: str) -> str:
         """验证工具名称格式：只允许字母、数字、下划线，且必须以字母开头"""
         if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
-            raise ValueError(
-                "tool_name_invalid_format"
-            )
+            raise ValueError("tool_name_invalid_format")
         return v
 
 
@@ -321,9 +337,7 @@ class ToolUpdateInput(BaseModel):
     def validate_name(cls, v: str | None) -> str | None:
         """验证工具名称格式"""
         if v is not None and not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", v):
-            raise ValueError(
-                "tool_name_invalid_format"
-            )
+            raise ValueError("tool_name_invalid_format")
         return v
 
 
@@ -374,7 +388,9 @@ class ToolExecuteResponse(BaseModel):
     result: Any = Field(default=None, description="执行结果")
     error: str | None = Field(default=None, description="错误信息")
     logs: str | None = Field(default=None, description="日志输出")
-    artifacts: list[SandboxArtifactSchema] = Field(default_factory=list, description="产物列表")
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物列表"
+    )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
 
 
@@ -385,14 +401,27 @@ class CodeExecuteRequest(BaseModel):
     code: str = Field(..., description="代码内容")
     params: dict[str, Any] = Field(default_factory=dict, description="传入参数")
     timeout: float = Field(default=30.0, ge=1.0, le=60.0, description="超时时间（秒）")
-    command: list[str] = Field(default_factory=list, description="自定义命令（argv 数组）")
-    python_packages: list[str] = Field(default_factory=list, description="Python 包列表")
-    js_packages: list[str] = Field(default_factory=list, description="JavaScript 包列表")
-    python_package_index_url: str | None = Field(default=None, description="Python 包镜像地址")
-    node_package_registry_url: str | None = Field(default=None, description="JavaScript 包镜像地址")
-    artifacts: list[SandboxArtifactSchema] = Field(default_factory=list, description="产物配置")
-    limits: SandboxLimitsSchema = Field(default_factory=SandboxLimitsSchema, description="资源限制")
-
+    command: list[str] = Field(
+        default_factory=list, description="自定义命令（argv 数组）"
+    )
+    python_packages: list[str] = Field(
+        default_factory=list, description="Python 包列表"
+    )
+    js_packages: list[str] = Field(
+        default_factory=list, description="JavaScript 包列表"
+    )
+    python_package_index_url: str | None = Field(
+        default=None, description="Python 包镜像地址"
+    )
+    node_package_registry_url: str | None = Field(
+        default=None, description="JavaScript 包镜像地址"
+    )
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物配置"
+    )
+    limits: SandboxLimitsSchema = Field(
+        default_factory=SandboxLimitsSchema, description="资源限制"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -413,7 +442,9 @@ class CodeExecuteResponse(BaseModel):
     result: Any = Field(default=None, description="执行结果")
     error: str | None = Field(default=None, description="错误信息")
     logs: str | None = Field(default=None, description="日志输出")
-    artifacts: list[SandboxArtifactSchema] = Field(default_factory=list, description="产物列表")
+    artifacts: list[SandboxArtifactSchema] = Field(
+        default_factory=list, description="产物列表"
+    )
     duration_ms: int | None = Field(default=None, description="执行耗时（毫秒）")
 
 

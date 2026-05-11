@@ -10,7 +10,9 @@ LOCALES_DIR: Final = ROOT / "app" / "locales"
 LEGACY_PATH: Final = ROOT / "app" / "core" / "i18n_legacy.py"
 DOMAIN: Final = "messages"
 SUPPORTED_LANGS: Final[tuple[str, ...]] = ("en", "zh")
-HEADER: Final = '"""Generated legacy compatibility translations from Babel catalogs."""\n\n'
+HEADER: Final = (
+    '"""Generated legacy compatibility translations from Babel catalogs."""\n\n'
+)
 
 
 def load_catalog(lang: str) -> dict[str, str]:
@@ -42,4 +44,9 @@ def build_translations() -> dict[str, dict[str, str]]:
 
 
 def render_legacy_module(translations: dict[str, dict[str, str]]) -> str:
-    return HEADER + "TRANSLATIONS: dict[str, dict[str, str]] = " + repr(translations) + "\n"
+    return (
+        HEADER
+        + "TRANSLATIONS: dict[str, dict[str, str]] = "
+        + repr(translations)
+        + "\n"
+    )

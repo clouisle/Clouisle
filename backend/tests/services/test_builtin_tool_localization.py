@@ -31,4 +31,6 @@ def test_get_builtin_tools_uses_backend_translations_for_non_sandbox_description
         "Search the web. Use a search engine to find relevant information when you need up-to-date facts or research a topic."
     )
     assert web_search.parameters[0].description == "Search keywords or question"
-    assert web_search.parameters[1].description == "Number of results. Default 5, max 10."
+    assert (
+        web_search.parameters[1].description == "Number of results. Default 5, max 10."
+    )

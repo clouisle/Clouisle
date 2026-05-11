@@ -28,9 +28,7 @@ def build_model(provider: str, model_id: str, **extra):
 
 class _FakeAsyncOpenAI:
     def __init__(self, *args, **kwargs):
-        self.chat = SimpleNamespace(
-            completions=SimpleNamespace(create=AsyncMock())
-        )
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=AsyncMock()))
         self.chat.completions.create.return_value = SimpleNamespace(
             id="resp-1",
             choices=[
@@ -83,7 +81,6 @@ async def test_openai_adapter_passes_reasoning_effort_and_extra_body():
 
     with patch("openai.AsyncOpenAI", _FakeAsyncOpenAI):
         await adapter.chat([Message(role=MessageRole.USER, content="Hi")])
-        client = adapter  # keep local binding explicit for readability
 
     # Recreate client to inspect captured call via patched class instance
     with patch("openai.AsyncOpenAI", _FakeAsyncOpenAI) as _:

@@ -27,7 +27,9 @@ def normalize_package_source_url(url: str | None) -> str | None:
 
     parsed = urlsplit(normalized)
     path = parsed.path.rstrip("/") or "/"
-    return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment)
+    )
 
 
 @contextmanager

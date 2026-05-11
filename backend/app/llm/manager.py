@@ -273,7 +273,8 @@ class ModelManager:
             or "quota exceeded" in error_msg
             or "credit balance" in error_msg
             or "payment required" in error_msg
-            or "402" in error_msg and "balance" in error_msg
+            or "402" in error_msg
+            and "balance" in error_msg
         ):
             return InsufficientQuotaError(
                 message=str(e),

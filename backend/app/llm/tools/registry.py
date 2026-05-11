@@ -145,7 +145,11 @@ class ToolRegistry:
         """获取可暴露给模型的内部沙箱工具定义。"""
         if names is None:
             return list(self._sandbox_tool_infos.values())
-        return [self._sandbox_tool_infos[name] for name in names if name in self._sandbox_tool_infos]
+        return [
+            self._sandbox_tool_infos[name]
+            for name in names
+            if name in self._sandbox_tool_infos
+        ]
 
     def to_openai_sandbox_tools(self, names: list[str] | None = None) -> list[dict]:
         """转换内部沙箱工具为 OpenAI 工具格式。"""
@@ -295,7 +299,9 @@ class ToolRegistry:
                 session_id=session_id,
                 allowed_commands=allowed_commands,
                 agent_id=str(agent.id) if agent is not None else None,
-                team_id=str(agent.team_id) if agent is not None and agent.team_id else None,
+                team_id=str(agent.team_id)
+                if agent is not None and agent.team_id
+                else None,
             )
             return await tool_instance.execute(**arguments)
 

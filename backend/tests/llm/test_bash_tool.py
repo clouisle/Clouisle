@@ -210,7 +210,9 @@ async def test_bash_tool_allows_common_workspace_commands():
             )
         ),
     ) as mock_submit:
-        await tool.execute("mkdir -p output && cp create_docx.py output/create_docx.py && which python3")
+        await tool.execute(
+            "mkdir -p output && cp create_docx.py output/create_docx.py && which python3"
+        )
 
     job = mock_submit.await_args.args[0]
     assert job.command == [

@@ -175,7 +175,10 @@ class VariableAssignmentNodeExecutor(NodeExecutor):
             # Update the target location
             if target_node_id:
                 # Update specific node's outputs
-                node_outputs = cast(dict[str, WorkflowValue], await context.get_node_outputs(target_node_id) or {})
+                node_outputs = cast(
+                    dict[str, WorkflowValue],
+                    await context.get_node_outputs(target_node_id) or {},
+                )
                 node_outputs[name] = value
                 await context.set_node_outputs(target_node_id, node_outputs)
                 logger.info(f"Updated {target_node_id}.{name} = {value}")
@@ -306,7 +309,9 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
                 }
             )
 
-        resolved = await self.resolve_inputs(context, cast(list[NodeInputMapping], input_mappings))
+        resolved = await self.resolve_inputs(
+            context, cast(list[NodeInputMapping], input_mappings)
+        )
 
         logger.info(f"Variable aggregator resolved: {resolved}")
 
@@ -337,13 +342,21 @@ class VariableAggregatorNodeExecutor(NodeExecutor):
 
         return ExecutionResult(outputs={output_var: result})
 
-    def _deep_merge(self, base: dict[str, WorkflowValue], override: dict[str, WorkflowValue]) -> dict[str, WorkflowValue]:
+    def _deep_merge(
+        self, base: dict[str, WorkflowValue], override: dict[str, WorkflowValue]
+    ) -> dict[str, WorkflowValue]:
         """Deep merge two dictionaries."""
         result = base.copy()
         for key, value in override.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            if (
+                key in result
+                and isinstance(result[key], dict)
+                and isinstance(value, dict)
+            ):
                 # Cast to dict since we've verified both are dicts
-                result[key] = self._deep_merge(cast(dict[str, WorkflowValue], result[key]), value)
+                result[key] = self._deep_merge(
+                    cast(dict[str, WorkflowValue], result[key]), value
+                )
             else:
                 result[key] = value
         return result
@@ -569,7 +582,11 @@ class ParameterExtractorNodeExecutor(NodeExecutor):
         return ExecutionResult(outputs=outputs)
 
     async def _extract_with_llm(
-        self, input_value: WorkflowValue, parameters: list[dict], config: dict, run: "WorkflowRun"
+        self,
+        input_value: WorkflowValue,
+        parameters: list[dict],
+        config: dict,
+        run: "WorkflowRun",
     ) -> ExecutionResult:
         """Extract parameters using LLM."""
         from app.llm import model_manager

@@ -19,13 +19,16 @@ async def test_execute_maps_workspace_paths_to_session_root_for_command_and_cwd(
     )
     workspace = type("Workspace", (), {"root": Path("/tmp/sessions/abc")})()
 
-    with patch(
-        "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-        new=AsyncMock(return_value=workspace),
-    ), patch(
-        "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-        new=AsyncMock(return_value=fake_result),
-    ) as mock_submit:
+    with (
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
+            new=AsyncMock(return_value=workspace),
+        ),
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_submit,
+    ):
         result = await tool.execute(
             command="python3 /workspace/script.py && ls /workspace/output",
             cwd="/workspace/subdir",
@@ -53,12 +56,15 @@ async def test_execute_maps_session_root_back_to_workspace_in_output():
         stderr="Trace: /tmp/sessions/abc/script.py\n",
     )
 
-    with patch(
-        "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-        new=AsyncMock(return_value=workspace),
-    ), patch(
-        "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-        new=AsyncMock(return_value=fake_result),
+    with (
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
+            new=AsyncMock(return_value=workspace),
+        ),
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(return_value=fake_result),
+        ),
     ):
         result = await tool.execute(command="pwd", cwd="/workspace")
 
@@ -78,18 +84,25 @@ async def test_execute_keeps_runtime_cwd_without_double_mapping():
         stderr="",
     )
 
-    with patch(
-        "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
-        new=AsyncMock(return_value=workspace),
-    ), patch(
-        "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
-        new=AsyncMock(return_value=fake_result),
-    ) as mock_submit:
+    with (
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.get_session_workspace",
+            new=AsyncMock(return_value=workspace),
+        ),
+        patch(
+            "app.llm.tools.bash.sandbox_gateway.submit_and_wait",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_submit,
+    ):
         await tool.execute(
             command="python3 /workspace/script.py",
             cwd="/tmp/sessions/abc",
         )
 
     submitted_job = mock_submit.await_args.args[0]
-    assert submitted_job.command == ["bash", "-c", "python3 /tmp/sessions/abc/script.py"]
+    assert submitted_job.command == [
+        "bash",
+        "-c",
+        "python3 /tmp/sessions/abc/script.py",
+    ]
     assert submitted_job.cwd == "/workspace"

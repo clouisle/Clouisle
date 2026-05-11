@@ -121,7 +121,11 @@ async def test_model_config_routes_siliconflow_image_requests_to_image_validatio
 
 @pytest.mark.anyio
 async def test_model_config_routes_moonshot_chat_requests_to_native_adapter():
-    with patch.object(MoonshotAdapter, "chat", new=AsyncMock(return_value=SimpleNamespace(content="ok"))):
+    with patch.object(
+        MoonshotAdapter,
+        "chat",
+        new=AsyncMock(return_value=SimpleNamespace(content="ok")),
+    ):
         response = await run_test_model_config(
             ModelTestRequest(
                 provider=ModelProvider.MOONSHOT,
@@ -139,7 +143,9 @@ async def test_model_config_routes_moonshot_chat_requests_to_native_adapter():
 
 @pytest.mark.anyio
 async def test_model_config_routes_ollama_chat_requests_without_api_key():
-    with patch.object(OllamaAdapter, "chat", new=AsyncMock(return_value=SimpleNamespace(content="ok"))):
+    with patch.object(
+        OllamaAdapter, "chat", new=AsyncMock(return_value=SimpleNamespace(content="ok"))
+    ):
         response = await run_test_model_config(
             ModelTestRequest(
                 provider=ModelProvider.OLLAMA,

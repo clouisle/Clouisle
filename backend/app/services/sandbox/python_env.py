@@ -116,7 +116,9 @@ class PythonEnvironmentManager:
             "PATH": f"{env_dir / 'bin'}{os.pathsep}{self.runtime_path()}",
         }
 
-    def build_workspace_env_vars(self, workspace_root: Path, tmp_dir: Path) -> dict[str, str]:
+    def build_workspace_env_vars(
+        self, workspace_root: Path, tmp_dir: Path
+    ) -> dict[str, str]:
         env_dir = self.ensure_workspace_environment(workspace_root)
         pip_cache_dir = tmp_dir / "pip-cache"
         pip_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -132,15 +134,25 @@ class PythonEnvironmentManager:
 
     def python_version(self) -> str:
         if self._python_version_cache is None:
-            self._python_version_cache = subprocess.check_output(
-                [self.python_binary(), "--version"],
-                text=True,
-            ).strip().split()[-1]
+            self._python_version_cache = (
+                subprocess.check_output(
+                    [self.python_binary(), "--version"],
+                    text=True,
+                )
+                .strip()
+                .split()[-1]
+            )
         return self._python_version_cache
 
     def runtime_path(self) -> str:
         python_dir = str(Path(self.python_binary()).parent)
         current_path = os.environ.get("PATH", "")
-        parts = [part for part in current_path.split(os.pathsep) if part and "/backend/.venv/" not in part and not part.endswith("/backend/.venv/bin")]
+        parts = [
+            part
+            for part in current_path.split(os.pathsep)
+            if part
+            and "/backend/.venv/" not in part
+            and not part.endswith("/backend/.venv/bin")
+        ]
         filtered = os.pathsep.join(parts)
         return f"{python_dir}{os.pathsep}{filtered}" if filtered else python_dir

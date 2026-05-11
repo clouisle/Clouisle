@@ -308,9 +308,7 @@ class GeminiAdapter(BaseChatAdapter):
                     "thinking_budget": self.thinking_budget or 8192
                 }
             else:
-                generation_config["thinking_config"] = {
-                    "thinking_budget": 0
-                }
+                generation_config["thinking_config"] = {"thinking_budget": 0}
 
         # Response format/schema support
         # Gemini uses response_schema (not response_format like OpenAI)
@@ -433,9 +431,7 @@ class GeminiAdapter(BaseChatAdapter):
                     "thinking_budget": self.thinking_budget or 8192
                 }
             else:
-                generation_config["thinking_config"] = {
-                    "thinking_budget": 0
-                }
+                generation_config["thinking_config"] = {"thinking_budget": 0}
 
         # Response format/schema support
         # Gemini uses response_schema (not response_format like OpenAI)

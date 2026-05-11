@@ -17,7 +17,12 @@ from app.llm.tools.sandbox import ExecutionResult as LegacyExecutionResult
 from app.services.error_messages import resolve_user_visible_error
 
 from .artifacts import SandboxArtifactStore
-from .models import SandboxExecutionMetadata, SandboxJob, SandboxResult, SandboxTaskStatus
+from .models import (
+    SandboxExecutionMetadata,
+    SandboxJob,
+    SandboxResult,
+    SandboxTaskStatus,
+)
 from .node_env import NodeEnvironmentManager
 from .policies import sandbox_policy_engine
 from .process_launcher import SandboxProcessLauncher
@@ -26,17 +31,19 @@ from .result_store import sandbox_result_store
 from .session_store import sandbox_session_store
 from .workspace import SandboxWorkspace, SandboxWorkspaceManager
 
-BLOCKED_ENV = frozenset({
-    "LD_PRELOAD",
-    "LD_LIBRARY_PATH",
-    "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH",
-    "BASH_ENV",
-    "ENV",
-    "RUBYOPT",
-    "PERL5LIB",
-    "PYTHONPATH",
-})
+BLOCKED_ENV = frozenset(
+    {
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+        "DYLD_LIBRARY_PATH",
+        "BASH_ENV",
+        "ENV",
+        "RUBYOPT",
+        "PERL5LIB",
+        "PYTHONPATH",
+    }
+)
 
 
 class SandboxManager:
@@ -111,7 +118,9 @@ class SandboxManager:
             if session_id:
                 await sandbox_session_store.touch(
                     session_id,
-                    disk_usage_bytes=self.workspace_manager.workspace_size_bytes(workspace),
+                    disk_usage_bytes=self.workspace_manager.workspace_size_bytes(
+                        workspace
+                    ),
                 )
             if should_cleanup:
                 self.workspace_manager.cleanup(job.job_id)
@@ -206,7 +215,9 @@ class SandboxManager:
                 workspace, input_file.target_path
             )
             if target.exists():
-                raise FileExistsError(f"Sandbox input target already exists: {input_file.target_path}")
+                raise FileExistsError(
+                    f"Sandbox input target already exists: {input_file.target_path}"
+                )
             content = base64.b64decode(input_file.content_base64, validate=True)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
@@ -221,17 +232,23 @@ class SandboxManager:
     ) -> tuple[Path, list[str]]:
         script_name = "snippet.py" if job.language == "python" else "snippet.js"
         script_path = workspace.root / script_name
-        params: dict[str, Any] = (job.metadata.get("params") or {}) if isinstance(job.metadata, dict) else {}
+        params: dict[str, Any] = (
+            (job.metadata.get("params") or {}) if isinstance(job.metadata, dict) else {}
+        )
 
         if job.language == "python":
             wrapper = self._build_python_snippet_wrapper(job.code or "", params)
             script_path.write_text(wrapper, encoding="utf-8")
-            return script_path, self._build_python_snippet_command(job, script_path, env)
+            return script_path, self._build_python_snippet_command(
+                job, script_path, env
+            )
 
         wrapper = self._build_javascript_snippet_wrapper(job.code or "", params)
         script_path.write_text(wrapper, encoding="utf-8")
         self._link_node_modules_into_workspace(workspace, env)
-        return script_path, self._build_javascript_snippet_command(job, script_path, env)
+        return script_path, self._build_javascript_snippet_command(
+            job, script_path, env
+        )
 
     def _build_python_snippet_command(
         self,
@@ -259,7 +276,8 @@ class SandboxManager:
 
     def _build_python_snippet_wrapper(self, code: str, params: dict[str, Any]) -> str:
         indented_code = "\n".join(f"    {line}" for line in code.split("\n"))
-        return f"""
+        return (
+            f"""
 import json
 import sys
 from io import StringIO
@@ -284,10 +302,15 @@ except Exception as e:
     sys.stdout = _original_stdout
     output = {{"success": False, "error": str(e), "logs": _logs}}
     print('__RESULT__' + json.dumps(output, default=str) + '__END__')
-""".strip() + "\n"
+""".strip()
+            + "\n"
+        )
 
-    def _build_javascript_snippet_wrapper(self, code: str, params: dict[str, Any]) -> str:
-        return f"""
+    def _build_javascript_snippet_wrapper(
+        self, code: str, params: dict[str, Any]
+    ) -> str:
+        return (
+            f"""
 const params = {json.dumps(params)};
 const logs = [];
 const originalLog = console.log;
@@ -309,7 +332,9 @@ async function __execute__() {{
     process.stdout.write('__RESULT__' + JSON.stringify({{ success: false, error: e.message || String(e), logs }}) + '__END__');
   }}
 }})();
-""".strip() + "\n"
+""".strip()
+            + "\n"
+        )
 
     def _link_node_modules_into_workspace(
         self,
@@ -429,20 +454,26 @@ async function __execute__() {{
         for key in BLOCKED_ENV:
             env.pop(key, None)
 
-        needs_node_runtime = job.language == "javascript" or bool(job.command and job.command[0] in {"javascript", "node"})
+        needs_node_runtime = job.language == "javascript" or bool(
+            job.command and job.command[0] in {"javascript", "node"}
+        )
         if job.python_packages or job.js_packages:
             install_started_monotonic = time.perf_counter()
             metadata.mark_install_started(datetime.now(UTC))
             try:
                 if job.python_packages:
-                    python_env_dir, cache_hit = self.python_env_manager.ensure_environment(
-                        packages=job.python_packages,
-                        runtime_profile=job.runtime_profile,
-                        package_index_url=job.python_package_index_url,
+                    python_env_dir, cache_hit = (
+                        self.python_env_manager.ensure_environment(
+                            packages=job.python_packages,
+                            runtime_profile=job.runtime_profile,
+                            package_index_url=job.python_package_index_url,
+                        )
                     )
                     metadata.cache_hit_python = cache_hit
                     if python_env_dir is not None:
-                        env.update(self.python_env_manager.build_env_vars(python_env_dir))
+                        env.update(
+                            self.python_env_manager.build_env_vars(python_env_dir)
+                        )
 
                 if job.js_packages:
                     node_env_dir, cache_hit = self.node_env_manager.ensure_environment(
@@ -457,7 +488,9 @@ async function __execute__() {{
                     self._inject_default_node_runtime(env)
             finally:
                 metadata.mark_install_completed(datetime.now(UTC))
-                metadata.install_ms = max(0, int((time.perf_counter() - install_started_monotonic) * 1000))
+                metadata.install_ms = max(
+                    0, int((time.perf_counter() - install_started_monotonic) * 1000)
+                )
                 metadata.install_duration_ms = metadata.install_ms
         else:
             if needs_node_runtime:
@@ -465,7 +498,9 @@ async function __execute__() {{
             metadata.install_ms = 0
             metadata.install_duration_ms = 0
 
-        env.update({key: value for key, value in job.env.items() if key not in BLOCKED_ENV})
+        env.update(
+            {key: value for key, value in job.env.items() if key not in BLOCKED_ENV}
+        )
         return env
 
     def _inject_default_node_runtime(self, env: dict[str, str]) -> None:

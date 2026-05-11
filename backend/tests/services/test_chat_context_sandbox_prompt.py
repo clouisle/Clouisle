@@ -30,7 +30,10 @@ def test_build_system_prompt_injects_sandbox_guidance_for_builtin_sandbox_tools(
     assert "## Sandbox Environment Guidance" in prompt
     assert "`/workspace` is the intended working area" in prompt
     assert "logical alias used by the sandbox tools" in prompt
-    assert "Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...`" in prompt
+    assert (
+        "Do not assume code written inside a generated Python or Node script should hardcode `/workspace/...`"
+        in prompt
+    )
     assert "prefer paths relative to the script's working directory" in prompt
     assert "Path behavior must be observed, not assumed" in prompt
     assert "Do not rely on ad-hoc `PYTHONPATH` or `sys.path` hacks" in prompt

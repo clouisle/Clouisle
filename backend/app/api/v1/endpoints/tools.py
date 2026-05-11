@@ -75,9 +75,13 @@ AGENT_ONLY_BUILTIN_TOOLS = {"generate_image", "generate_video"}
 SANDBOX_BUILTIN_TOOLS = {"artifact", "bash", "read", "write"}
 
 
-def _serialize_runtime_artifacts(artifacts: list[SandboxArtifact | Any]) -> list[SandboxArtifactSchema]:
+def _serialize_runtime_artifacts(
+    artifacts: list[SandboxArtifact | Any],
+) -> list[SandboxArtifactSchema]:
     return [
-        artifact if isinstance(artifact, SandboxArtifactSchema) else SandboxArtifactSchema.model_validate(artifact)
+        artifact
+        if isinstance(artifact, SandboxArtifactSchema)
+        else SandboxArtifactSchema.model_validate(artifact)
         for artifact in artifacts
     ]
 
@@ -125,12 +129,13 @@ async def check_team_access(
     return team
 
 
-def _get_builtin_tool_description(tool_info: Any, user_locale: str | None = None) -> str:
+def _get_builtin_tool_description(
+    tool_info: Any, user_locale: str | None = None
+) -> str:
     description_key = get_builtin_tool_description_key(tool_info.name)
     if has_translation(description_key, user_locale):
         return t(description_key, lang=user_locale)
     return tool_info.description
-
 
 
 def _get_builtin_tool_parameters(
@@ -157,7 +162,6 @@ def _get_builtin_tool_parameters(
         )
         for p in tool_info.parameters
     ]
-
 
 
 def _tool_info_to_out(tool_info: Any, user_locale: str | None = None) -> ToolOut:
@@ -302,7 +306,9 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             tool_out.is_owned = True
             tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
             deduped_tools[f"custom:{db_tool.id}"] = tool_out
 
         mcp_db_tools = (
@@ -316,7 +322,9 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             tool_out.is_owned = True
             tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = team.name
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
             deduped_tools[f"mcp:{db_tool.id}"] = tool_out
 
         shares = await ToolShare.filter(shared_with_team_id=team.id).prefetch_related(
@@ -330,7 +338,9 @@ async def _build_accessible_tools(user: User, teams: Iterable[Team]) -> list[Too
             tool_out.owner_team_id = db_tool.team_id
             tool_out.owner_team_name = db_tool.team.name
             tool_out.share_permission = ToolSharePermission(share.permission)
-            tool_out.shared_with_count = await ToolShare.filter(tool_id=db_tool.id).count()
+            tool_out.shared_with_count = await ToolShare.filter(
+                tool_id=db_tool.id
+            ).count()
             unique_key = f"{db_tool.type.value}:{db_tool.id}"
             existing = deduped_tools.get(unique_key)
             if existing is None or (tool_out.is_owned and not existing.is_owned):
@@ -999,7 +1009,9 @@ async def test_tool(
                 job = compile_code_config_job(
                     code_config=code_config,
                     params=request.arguments,
-                    timeout=float(code_config.get("limits", {}).get("timeout_seconds", 30.0)),
+                    timeout=float(
+                        code_config.get("limits", {}).get("timeout_seconds", 30.0)
+                    ),
                     source=SandboxJobSource.TOOL,
                 )
                 exec_result = await sandbox_gateway.submit_and_wait(

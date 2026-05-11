@@ -3,7 +3,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.core.config import settings
-from app.services.sandbox.compiler import compile_code_config_job, compile_legacy_code_job
+from app.services.sandbox.compiler import (
+    compile_code_config_job,
+    compile_legacy_code_job,
+)
 from app.services.sandbox.gateway import SandboxGateway
 from app.services.sandbox.models import (
     SandboxArtifactSpec,
@@ -65,20 +68,28 @@ class TestSandboxPolicies:
             sandbox_policy_engine.validate(job)
 
     def test_allows_arbitrary_shell_jobs(self):
-        job = SandboxJob(command=["bash", "-c", "python3 -c 'print(1)' && npm run build"], shell=True)
+        job = SandboxJob(
+            command=["bash", "-c", "python3 -c 'print(1)' && npm run build"], shell=True
+        )
 
         sandbox_policy_engine.validate(job)
 
     def test_rejects_inline_code_for_non_shell_jobs(self):
-        job = SandboxJob(command=["python", "-c", "import os; os.system('curl https://example.com')"])
+        job = SandboxJob(
+            command=["python", "-c", "import os; os.system('curl https://example.com')"]
+        )
 
-        with pytest.raises(SandboxPolicyError, match="Inline command execution is not allowed"):
+        with pytest.raises(
+            SandboxPolicyError, match="Inline command execution is not allowed"
+        ):
             sandbox_policy_engine.validate(job)
 
     def test_rejects_job_without_command_or_code(self):
         job = SandboxJob()
 
-        with pytest.raises(SandboxPolicyError, match="must provide either command or code"):
+        with pytest.raises(
+            SandboxPolicyError, match="must provide either command or code"
+        ):
             sandbox_policy_engine.validate(job)
 
 
@@ -126,15 +137,23 @@ class InMemoryResultStore:
         self.status_calls += 1
         if self.result and self.status_calls >= self.terminal_after:
             return self.result.status
-        return SandboxTaskStatus.RUNNING if self.status_calls >= self.terminal_after else SandboxTaskStatus.QUEUED
+        return (
+            SandboxTaskStatus.RUNNING
+            if self.status_calls >= self.terminal_after
+            else SandboxTaskStatus.QUEUED
+        )
 
     async def get_result(self, job_id: str):
         del job_id
         self.get_result_calls += 1
         return self.result
 
-    async def update_status(self, job_id: str, status: SandboxTaskStatus, *, metadata=None, **updates):
-        result = self.result or SandboxResult(job_id=job_id, metadata=metadata or SandboxExecutionMetadata())
+    async def update_status(
+        self, job_id: str, status: SandboxTaskStatus, *, metadata=None, **updates
+    ):
+        result = self.result or SandboxResult(
+            job_id=job_id, metadata=metadata or SandboxExecutionMetadata()
+        )
         result.status = status
         if metadata is not None:
             result.metadata = metadata
@@ -150,7 +169,15 @@ class InMemorySessionStore:
         self.sessions: dict[str, object] = {}
         self.by_conversation: dict[str, str] = {}
 
-    async def create(self, *, session_id: str, conversation_id=None, agent_id=None, team_id=None, ttl_hours=None):
+    async def create(
+        self,
+        *,
+        session_id: str,
+        conversation_id=None,
+        agent_id=None,
+        team_id=None,
+        ttl_hours=None,
+    ):
         del ttl_hours
         from app.services.sandbox.models import SandboxSession
 
@@ -228,7 +255,9 @@ class TestSandboxGateway:
         original_store = gateway_module.sandbox_result_store
         gateway_module.sandbox_result_store = store
         try:
-            final = await gateway.await_result("job-1", timeout_seconds=1, poll_interval=0)
+            final = await gateway.await_result(
+                "job-1", timeout_seconds=1, poll_interval=0
+            )
         finally:
             gateway_module.sandbox_result_store = original_store
 
@@ -245,7 +274,9 @@ class TestSandboxGateway:
         original_store = gateway_module.sandbox_result_store
         gateway_module.sandbox_result_store = store
         try:
-            result = await gateway.await_result("job-timeout", timeout_seconds=0, poll_interval=0)
+            result = await gateway.await_result(
+                "job-timeout", timeout_seconds=0, poll_interval=0
+            )
         finally:
             gateway_module.sandbox_result_store = original_store
 

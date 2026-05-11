@@ -13,13 +13,17 @@ from .models import SandboxJob
 _PINNED_PYTHON_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+==[^=].+$")
 _PINNED_JS_PATTERN = re.compile(r"^[^\s@][^\s]*@[^\s].+$")
 
-ALLOWED_EXECUTABLES = frozenset({
-    "python",
-    "python3",
-    "javascript",
-    "node",
-    "nodejs",
-})
+ALLOWED_EXECUTABLES = frozenset(
+    {
+        "python",
+        "python3",
+        "javascript",
+        "node",
+        "nodejs",
+    }
+)
+
+
 def _validate_package_source_url(url: str | None, *, label: str) -> None:
     if not url:
         return
@@ -72,7 +76,9 @@ class SandboxPolicyEngine:
                 f"Requested disk exceeds sandbox capacity ({settings.SANDBOX_MAX_DISK_MB} MB)"
             )
 
-        if any(not artifact.path.startswith("/workspace") for artifact in job.artifacts):
+        if any(
+            not artifact.path.startswith("/workspace") for artifact in job.artifacts
+        ):
             raise SandboxPolicyError("Artifacts must stay inside /workspace")
 
     def _validate_command(self, command: list[str]) -> None:
@@ -83,7 +89,9 @@ class SandboxPolicyEngine:
         if not executable:
             return
 
-        basename = os.path.basename(executable) if os.path.isabs(executable) else executable
+        basename = (
+            os.path.basename(executable) if os.path.isabs(executable) else executable
+        )
         if basename not in ALLOWED_EXECUTABLES:
             raise SandboxPolicyError(
                 f"Command not in whitelist: {basename}. "

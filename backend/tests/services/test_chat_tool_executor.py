@@ -92,7 +92,10 @@ class TestChatToolExecutor:
 
         assert isinstance(result, ToolExecutionResult)
         assert result.display_result == {"success": True, "result": {"text": "hello"}}
-        assert json.loads(result.llm_result) == {"success": True, "result": {"text": "hello"}}
+        assert json.loads(result.llm_result) == {
+            "success": True,
+            "result": {"text": "hello"},
+        }
         mock_to_tool_info.assert_called_once_with(skill, config={"mode": "safe"})
 
     @pytest.mark.anyio

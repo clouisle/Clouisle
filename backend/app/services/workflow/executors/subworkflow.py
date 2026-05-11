@@ -376,5 +376,7 @@ class FileToURLNodeExecutor(NodeExecutor):
         if output_type == "url":
             specs.insert(0, NodeOutputDecl(name="url", type=TypeSpec(kind="string")))
         else:
-            specs.insert(0, NodeOutputDecl(name="content", type=TypeSpec(kind="string")))
+            specs.insert(
+                0, NodeOutputDecl(name="content", type=TypeSpec(kind="string"))
+            )
         return specs

@@ -169,7 +169,9 @@ class RetryableExecutor:
         self.attempts = 0
         self.last_error: str | None = None
 
-    async def execute(self, node: dict, context: ExecutionContext, run: WorkflowRun) -> ExecutionResult:
+    async def execute(
+        self, node: dict, context: ExecutionContext, run: WorkflowRun
+    ) -> ExecutionResult:
         """Execute with retry logic."""
         self.attempts = 0
         self.last_error = None
@@ -205,13 +207,9 @@ class RetryableExecutor:
                     await asyncio.sleep(delay)
                 else:
                     logger.error(f"All retries exhausted. Error: {e}")
-                    return ExecutionResult(
-                        error=translate_public_workflow_error(e)
-                    )
+                    return ExecutionResult(error=translate_public_workflow_error(e))
 
-        return ExecutionResult(
-            error=translate_public_workflow_error(self.last_error)
-        )
+        return ExecutionResult(error=translate_public_workflow_error(self.last_error))
 
 
 class CircuitBreaker:

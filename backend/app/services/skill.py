@@ -208,7 +208,9 @@ class SkillService:
                 skill=skill,
                 arguments=arguments,
                 config=config,
-                tenant_id=str(agent.team_id) if agent is not None and agent.team_id else None,
+                tenant_id=str(agent.team_id)
+                if agent is not None and agent.team_id
+                else None,
                 session_id=session_id,
             )
             return skill_result.to_chat_payload()
@@ -343,7 +345,9 @@ class SkillService:
 
         # 尝试从 skill_md 解析 (Markdown 格式)
         skill_md = skill.skill_md or ""
-        match = re.search(r"^allowed-tools:\s*$((?:\s*-\s*.+\n?)+)", skill_md, re.MULTILINE)
+        match = re.search(
+            r"^allowed-tools:\s*$((?:\s*-\s*.+\n?)+)", skill_md, re.MULTILINE
+        )
         if match:
             tools = []
             for line in match.group(1).strip().split("\n"):

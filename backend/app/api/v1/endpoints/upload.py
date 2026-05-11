@@ -388,9 +388,15 @@ async def upload_file(
 @router.post("/sandbox-artifact", response_model=Response[dict])
 async def upload_sandbox_artifact(
     file: UploadFile = File(...),
-    authenticated: tuple[User, APIKey | None] | None = Depends(deps.get_current_user_or_api_key_optional),
-    sandbox_artifact_timestamp: str | None = Header(None, alias="X-Sandbox-Artifact-Timestamp"),
-    sandbox_artifact_signature: str | None = Header(None, alias="X-Sandbox-Artifact-Signature"),
+    authenticated: tuple[User, APIKey | None] | None = Depends(
+        deps.get_current_user_or_api_key_optional
+    ),
+    sandbox_artifact_timestamp: str | None = Header(
+        None, alias="X-Sandbox-Artifact-Timestamp"
+    ),
+    sandbox_artifact_signature: str | None = Header(
+        None, alias="X-Sandbox-Artifact-Signature"
+    ),
 ) -> Any:
     if not file.filename:
         raise BusinessError(
@@ -398,7 +404,11 @@ async def upload_sandbox_artifact(
             msg_key="file_required",
         )
 
-    content_type = file.content_type or mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+    content_type = (
+        file.content_type
+        or mimetypes.guess_type(file.filename)[0]
+        or "application/octet-stream"
+    )
     content = await file.read()
     _validate_upload_size(
         content,

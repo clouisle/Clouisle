@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 def _memory_tool_error() -> str:
     return t("memory_tool_execution_failed")
 
+
 _qdrant_client: Any = None
 _memory_collections: set[str] = set()
 

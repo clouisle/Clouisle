@@ -18,7 +18,9 @@ from app.services.sandbox.models import SandboxArtifact
 
 @pytest.mark.anyio
 async def test_write_tool_maps_workspace_path_to_session_relative_path():
-    tool = SandboxWriteTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+    tool = SandboxWriteTool(
+        session_id="session-1", agent_id="agent-1", team_id="team-1"
+    )
 
     with patch(
         "app.llm.tools.sandbox_files.sandbox_gateway.submit_and_wait",
@@ -96,7 +98,9 @@ async def test_artifact_tool_rejects_empty_paths():
 
 @pytest.mark.anyio
 async def test_artifact_tool_collects_paths_as_markdown_links():
-    tool = SandboxArtifactTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+    tool = SandboxArtifactTool(
+        session_id="session-1", agent_id="agent-1", team_id="team-1"
+    )
     artifact = SandboxArtifact(
         path="/workspace/output/report.docx",
         file_type="file",
@@ -118,14 +122,16 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
             )
         ),
     ) as mock_submit:
-        result = await tool.execute([
-            "output/report.docx",
-            {
-                "path": "/workspace/output/optional.txt",
-                "description": "Optional file",
-                "optional": True,
-            },
-        ])
+        result = await tool.execute(
+            [
+                "output/report.docx",
+                {
+                    "path": "/workspace/output/optional.txt",
+                    "description": "Optional file",
+                    "optional": True,
+                },
+            ]
+        )
 
     assert isinstance(result, ToolExecutionResult)
     assert "artifacts" not in result.display_result
@@ -144,12 +150,17 @@ async def test_artifact_tool_collects_paths_as_markdown_links():
     assert job.artifacts[1].optional is True
     assert job.artifacts[1].description == "Optional file"
     assert job.artifact_limits.max_size_mb == settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB
-    assert job.artifact_limits.max_total_size_mb == settings.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB
+    assert (
+        job.artifact_limits.max_total_size_mb
+        == settings.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB
+    )
 
 
 @pytest.mark.anyio
 async def test_artifact_tool_allows_custom_limits():
-    tool = SandboxArtifactTool(session_id="session-1", agent_id="agent-1", team_id="team-1")
+    tool = SandboxArtifactTool(
+        session_id="session-1", agent_id="agent-1", team_id="team-1"
+    )
     artifact = SandboxArtifact(
         path="/workspace/output/report.txt",
         file_type="file",
@@ -188,7 +199,10 @@ def test_artifact_tool_schema_is_registered():
     paths_schema = properties["paths"]
     assert paths_schema["type"] == "array"
     assert paths_schema["items"]["required"] == ["path"]
-    assert properties["max_size_mb"]["default"] == settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB
+    assert (
+        properties["max_size_mb"]["default"]
+        == settings.SANDBOX_ARTIFACT_MAX_FILE_SIZE_MB
+    )
     assert (
         properties["max_total_size_mb"]["default"]
         == settings.SANDBOX_ARTIFACT_MAX_TOTAL_SIZE_MB

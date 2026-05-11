@@ -886,8 +886,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 document.error_message = t(
                     "all_chunks_failed_to_embed",
                     lang=user_locale,
-                    error=last_error
-                    or t("unknown_error_generic", lang=user_locale),
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
                 )[:500]
                 await document.save()
 
@@ -900,8 +899,7 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
                 localized_error = t(
                     "all_chunks_failed_to_embed",
                     lang=user_locale,
-                    error=last_error
-                    or t("unknown_error_generic", lang=user_locale),
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
                 )
                 await _send_doc_failed_notification(
                     document=document,
@@ -1145,8 +1143,7 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                     lang=user_locale,
                     failed_count=still_failed,
                     total_chunks=total_chunks,
-                    error=last_error
-                    or t("unknown_error_generic", lang=user_locale),
+                    error=last_error or t("unknown_error_generic", lang=user_locale),
                 )[:500]
                 await document.save()
 

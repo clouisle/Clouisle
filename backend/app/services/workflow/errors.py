@@ -86,9 +86,7 @@ class WorkflowNotPublishedError(WorkflowError):
 class WorkflowValidationError(WorkflowError):
     """Workflow definition is invalid."""
 
-    def __init__(
-        self, message: str | None = None, details: dict | None = None
-    ):
+    def __init__(self, message: str | None = None, details: dict | None = None):
         errors = (details or {}).get("errors") or []
         if message is not None:
             super().__init__(message, details, msg_key="validation_error")

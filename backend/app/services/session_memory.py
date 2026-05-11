@@ -79,9 +79,7 @@ async def extract_session_memory_for_message(
         return {"status": "skipped", "reason": "conversation_not_found"}
 
     agent = (
-        await Agent.filter(id=conversation.agent_id)
-        .prefetch_related("team")
-        .first()
+        await Agent.filter(id=conversation.agent_id).prefetch_related("team").first()
     )
     if not agent:
         logger.warning(
@@ -161,9 +159,7 @@ async def extract_session_memory_for_message(
     team_model = None
     if agent.model_id:
         team_model = (
-            await TeamModel.filter(id=agent.model_id)
-            .prefetch_related("model")
-            .first()
+            await TeamModel.filter(id=agent.model_id).prefetch_related("model").first()
         )
     model_identifier = _get_model_identifier(team_model)
     tokenizer_model_id = team_model.model.model_id if team_model else "gpt-4"
@@ -230,13 +226,15 @@ async def extract_session_memory_for_message(
             if snapshot.summary_text
             else ConversationSessionMemoryStatus.FAILED
         )
-        await snapshot.save(update_fields=[
-            "source_message_id",
-            "failure_count",
-            "last_error",
-            "status",
-            "updated_at",
-        ])
+        await snapshot.save(
+            update_fields=[
+                "source_message_id",
+                "failure_count",
+                "last_error",
+                "status",
+                "updated_at",
+            ]
+        )
         logger.exception(
             "Session memory extraction failed for conversation %s message %s",
             conversation_uuid,
@@ -384,9 +382,10 @@ def _fit_summary_to_budget(
         return ""
 
     fitted = text[: max(max_tokens * 4, 256)].strip()
-    while fitted and count_tokens(
-        fitted, model_id=model_id, provider=provider
-    ) > max_tokens:
+    while (
+        fitted
+        and count_tokens(fitted, model_id=model_id, provider=provider) > max_tokens
+    ):
         fitted = fitted[: int(len(fitted) * 0.85)].rstrip()
 
     return fitted

@@ -44,7 +44,9 @@ class TestExecuteCodeDirectly:
                         error=None,
                         stdout="hello",
                         artifacts=[],
-                        metadata=SandboxExecutionMetadata(duration_ms=321, total_ms=321),
+                        metadata=SandboxExecutionMetadata(
+                            duration_ms=321, total_ms=321
+                        ),
                     )
                 ),
             ) as mock_submit,

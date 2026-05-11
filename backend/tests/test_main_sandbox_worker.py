@@ -19,8 +19,11 @@ def test_start_sandbox_worker_uses_solo_pool_by_default():
     mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
     mock_run.assert_called_once_with(
         [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python", "-m", "celery",
-            "-A", "app.core.celery:celery_app",
+            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
+            "-m",
+            "celery",
+            "-A",
+            "app.core.celery:celery_app",
             "worker",
             "--loglevel=info",
             "--concurrency=1",
@@ -37,8 +40,11 @@ def test_start_sandbox_worker_keeps_prefork_for_higher_concurrency():
     mock_chdir.assert_called_once_with(str(PROJECT_ROOT) + "/backend")
     mock_run.assert_called_once_with(
         [
-            str(PROJECT_ROOT) + "/backend/.venv/bin/python", "-m", "celery",
-            "-A", "app.core.celery:celery_app",
+            str(PROJECT_ROOT) + "/backend/.venv/bin/python",
+            "-m",
+            "celery",
+            "-A",
+            "app.core.celery:celery_app",
             "worker",
             "--loglevel=info",
             "--concurrency=2",
@@ -53,9 +59,12 @@ def test_build_sandbox_worker_image_uses_repo_context():
 
     mock_run.assert_called_once_with(
         [
-            "docker", "build",
-            "-f", "deploy/dockerfiles/sandbox-worker.Dockerfile",
-            "-t", "sandbox:test",
+            "docker",
+            "build",
+            "-f",
+            "deploy/dockerfiles/sandbox-worker.Dockerfile",
+            "-t",
+            "sandbox:test",
             ".",
         ],
         cwd=PROJECT_ROOT,
@@ -70,7 +79,9 @@ def test_build_sandbox_worker_image_supports_no_cache():
     assert "--no-cache" in mock_run.call_args.args[0]
 
 
-def test_start_sandbox_worker_container_runs_without_bind_mounts(monkeypatch: pytest.MonkeyPatch):
+def test_start_sandbox_worker_container_runs_without_bind_mounts(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setenv("REDIS_HOST", "redis.local")
 
     with (
@@ -91,9 +102,13 @@ def test_start_sandbox_worker_container_runs_without_bind_mounts(monkeypatch: py
     mock_run.assert_called_once_with(cmd, cwd=PROJECT_ROOT, check=True)
 
 
-def test_start_sandbox_worker_container_reads_root_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
+def test_start_sandbox_worker_container_reads_root_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
     env_file = tmp_path / ".env"
-    env_file.write_text("REDIS_PASSWORD=secret\nPOSTGRES_USER=postgres\nREDIS_HOST=redis.local\n")
+    env_file.write_text(
+        "REDIS_PASSWORD=secret\nPOSTGRES_USER=postgres\nREDIS_HOST=redis.local\n"
+    )
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("POSTGRES_USER", raising=False)
@@ -110,7 +125,9 @@ def test_start_sandbox_worker_container_reads_root_env(monkeypatch: pytest.Monke
     assert "REDIS_HOST=redis.local" in cmd
 
 
-def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(monkeypatch: pytest.MonkeyPatch, tmp_path):
+def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
     env_file = tmp_path / ".env"
     env_file.write_text(
         "REDIS_HOST=localhost\n"
@@ -140,7 +157,9 @@ def test_start_sandbox_worker_container_maps_localhost_env_to_host_gateway(monke
     assert "SANDBOX_ARTIFACT_UPLOAD_BASE_URL=http://host.docker.internal:9000" in cmd
 
 
-def test_start_sandbox_worker_container_defaults_host_service_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
+def test_start_sandbox_worker_container_defaults_host_service_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
     monkeypatch.setattr("main.PROJECT_ROOT", str(tmp_path))
     monkeypatch.delenv("REDIS_HOST", raising=False)
     monkeypatch.delenv("POSTGRES_SERVER", raising=False)
@@ -159,7 +178,9 @@ def test_start_sandbox_worker_container_defaults_host_service_env(monkeypatch: p
     assert "QDRANT_URL=http://host.docker.internal:6333" in cmd
 
 
-def test_sandbox_worker_local_dev_cli_dispatches_container_mode(monkeypatch: pytest.MonkeyPatch):
+def test_sandbox_worker_local_dev_cli_dispatches_container_mode(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(
         sys,
         "argv",

@@ -207,7 +207,9 @@ class GoogleImageAdapter(BaseImageAdapter):
         )
         if aspect_ratio:
             image_config["aspect_ratio"] = aspect_ratio
-        elif request.width > 0 and request.height > 0 and "aspect_ratio" not in overrides:
+        elif (
+            request.width > 0 and request.height > 0 and "aspect_ratio" not in overrides
+        ):
             image_config["aspect_ratio"] = self._closest_aspect_ratio(
                 request.width,
                 request.height,

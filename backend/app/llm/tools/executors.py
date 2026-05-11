@@ -50,7 +50,9 @@ def _validate_external_http_url(value: str) -> str:
         if "not allowed" in str(exc):
             raise
     try:
-        resolved = socket.getaddrinfo(host, parsed.port or None, type=socket.SOCK_STREAM)
+        resolved = socket.getaddrinfo(
+            host, parsed.port or None, type=socket.SOCK_STREAM
+        )
     except socket.gaierror as exc:
         raise ValueError("HTTP URL host cannot be resolved") from exc
     for *_, sockaddr in resolved:
