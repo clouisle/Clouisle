@@ -12,7 +12,7 @@
 
 <p align="center">
 <img src="https://img.shields.io/badge/Python-3.13-blue?logo=python&logoColor=white" />
-<img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" />
+<img src="https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white" />
 <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" />
 <img src="https://img.shields.io/badge/Bun-1.0-orange?logo=bun&logoColor=white" />
 <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" />
@@ -155,15 +155,17 @@ cp .env.example .env
 ### 3. 启动后端
 
 ```bash
+cd backend
+
 # 安装依赖
-uv sync --project backend
+uv sync
 
 # 启动 API 服务器（首次运行时数据库会自动初始化）
-uv run --project backend main.py server
+uv run uvicorn app.main:app --reload
 
 # 在单独的终端中启动 Celery workers
-uv run --project backend main.py worker
-uv run --project backend main.py beat
+uv run celery -A app.core.celery worker --loglevel=info
+uv run celery -A app.core.celery beat --loglevel=info
 ```
 
 ### 4. 启动前端

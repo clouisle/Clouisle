@@ -12,7 +12,7 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 
 <p align="center">
 <img src="https://img.shields.io/badge/Python-3.13-blue?logo=python&logoColor=white" />
-<img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" />
+<img src="https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white" />
 <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white" />
 <img src="https://img.shields.io/badge/Bun-1.0-orange?logo=bun&logoColor=white" />
 <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" />

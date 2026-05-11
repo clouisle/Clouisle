@@ -31,7 +31,7 @@ cp .env.example .env
 ```bash
 cd backend
 uv sync
-uv run main.py server
+uv run uvicorn app.main:app --reload
 ```
 
 5. **Start frontend**:
