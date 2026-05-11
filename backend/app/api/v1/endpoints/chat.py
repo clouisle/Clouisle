@@ -2357,8 +2357,8 @@ async def chat_stream(
                     )
                     logger.warning("Rate limit error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
-                except LLMError as e:
-                    logger.exception(f"LLM error during stream: {e}")
+                except LLMError:
+                    logger.exception("LLM error during stream")
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -2383,8 +2383,8 @@ async def chat_stream(
                         fallback_content=t("stream_timeout_exceeded"),
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
-                except Exception as e:
-                    logger.exception(f"Unexpected error during stream: {e}")
+                except Exception:
+                    logger.exception("Unexpected error during stream")
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
@@ -3439,7 +3439,7 @@ async def regenerate_message(
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.warning("Quota exceeded during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except LLMError as e:
+                except LLMError:
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
@@ -3454,7 +3454,7 @@ async def regenerate_message(
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
-                    logger.exception("LLM error during regenerate: %s", e)
+                    logger.exception("LLM error during regenerate")
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
                 except StreamIdleTimeoutError:
                     preserved_partial = await persist_partial_round_error(
@@ -3477,7 +3477,7 @@ async def regenerate_message(
                         message_id,
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
-                except Exception as e:
+                except Exception:
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
@@ -3492,7 +3492,7 @@ async def regenerate_message(
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
-                    logger.exception("Unexpected error during regenerate: %s", e)
+                    logger.exception("Unexpected error during regenerate")
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
         except TimeoutError:

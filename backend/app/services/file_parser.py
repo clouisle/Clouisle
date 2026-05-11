@@ -64,6 +64,21 @@ class FileParserService:
         ".html": "text/html",
         ".htm": "text/html",
     }
+    SUPPORTED_TEMP_SUFFIXES = {
+        ".pdf": ".pdf",
+        ".docx": ".docx",
+        ".doc": ".doc",
+        ".pptx": ".pptx",
+        ".ppt": ".ppt",
+        ".xlsx": ".xlsx",
+        ".xls": ".xls",
+        ".txt": ".txt",
+        ".md": ".md",
+        ".csv": ".csv",
+        ".json": ".json",
+        ".html": ".html",
+        ".htm": ".htm",
+    }
 
     def __init__(self):
         self._md = None
@@ -182,8 +197,9 @@ class FileParserService:
             # Use MarkItDown for other formats
             md = self._get_markitdown()
 
-            # Write to temp file for MarkItDown
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                suffix=self.SUPPORTED_TEMP_SUFFIXES[ext], delete=False
+            ) as tmp:
                 tmp.write(file_content)
                 tmp_path = tmp.name
 

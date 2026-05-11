@@ -309,9 +309,10 @@ async def execute_http_tool(
     if credentials:
         all_vars.update(credentials)
 
-    url = _validate_external_http_url(
-        _render_text_template(http_config.get("url", ""), all_vars)
-    )
+    raw_url = str(http_config.get("url", ""))
+    if _extract_placeholder_name(raw_url) or "{{" in raw_url or "}}" in raw_url:
+        raise ValueError("HTTP tool URL templates are not supported")
+    url = _validate_external_http_url(raw_url)
     method = http_config.get("method", "GET").upper()
 
     headers = {
