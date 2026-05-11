@@ -329,6 +329,23 @@ class GeminiAdapter(BaseChatAdapter):
                         generation_config["response_schema"] = schema
                         generation_config["response_mime_type"] = "application/json"
 
+        # Response format/schema support
+        # Gemini uses response_schema (not response_format like OpenAI)
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            response_format = kwargs["response_format"]
+            # Convert OpenAI format to Gemini format
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_object":
+                    # For simple JSON mode, we can set response_mime_type
+                    generation_config["response_mime_type"] = "application/json"
+                elif response_format.get("type") == "json_schema":
+                    # For JSON schema, extract the schema
+                    json_schema_config = response_format.get("json_schema", {})
+                    schema = json_schema_config.get("schema")
+                    if schema:
+                        generation_config["response_schema"] = schema
+                        generation_config["response_mime_type"] = "application/json"
+
         # 构建请求参数
         request_kwargs: dict[str, Any] = {
             "model": self.model_id,
@@ -419,6 +436,23 @@ class GeminiAdapter(BaseChatAdapter):
                 generation_config["thinking_config"] = {
                     "thinking_budget": 0
                 }
+
+        # Response format/schema support
+        # Gemini uses response_schema (not response_format like OpenAI)
+        if "response_format" in kwargs and kwargs["response_format"] is not None:
+            response_format = kwargs["response_format"]
+            # Convert OpenAI format to Gemini format
+            if isinstance(response_format, dict):
+                if response_format.get("type") == "json_object":
+                    # For simple JSON mode, we can set response_mime_type
+                    generation_config["response_mime_type"] = "application/json"
+                elif response_format.get("type") == "json_schema":
+                    # For JSON schema, extract the schema
+                    json_schema_config = response_format.get("json_schema", {})
+                    schema = json_schema_config.get("schema")
+                    if schema:
+                        generation_config["response_schema"] = schema
+                        generation_config["response_mime_type"] = "application/json"
 
         # Response format/schema support
         # Gemini uses response_schema (not response_format like OpenAI)

@@ -47,6 +47,10 @@ Build, deploy, and manage intelligent AI agents with advanced knowledge retrieva
 
 ---
 
+<img src="./imgs/clouisle.png" />
+
+---
+
 ## Why Clouisle?
 
 Modern enterprises face a common challenge: **data fragmentation, low reusability, and zero intelligence execution**. Knowledge is scattered across documents, databases, wikis, and internal tools — but when decisions need to be made, that knowledge remains static and non-actionable.
