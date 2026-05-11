@@ -908,7 +908,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               </MessageAttachments>
             )}
 
-            <MessageContent className={cn(isErroredMessage && 'rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2')}>
+            <MessageContent>
               {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought isStreaming={isChainOfThoughtStreaming}>
