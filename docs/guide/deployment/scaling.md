@@ -366,7 +366,7 @@ services:
 
   backend:
     environment:
-      POSTGRES_HOST: pgbouncer
+      POSTGRES_SERVER: pgbouncer
       POSTGRES_PORT: 6432
 ```
 

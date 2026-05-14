@@ -67,11 +67,25 @@ When docs are out of sync:
 2. Keep existing document structure and style.
 3. Update both English and Chinese versions when a paired `_zh-CN.md` file exists and the same content is affected.
 4. Do not rewrite broad sections unless the code change requires it.
-5. Do not invent undocumented behavior; verify against code or workflow files.
+5. Do not invent undocumented behavior; verify against current code, configuration, workflow files, or lightweight command checks.
+
+## Verification requirements
+
+For documentation changes involving runnable commands, do not rely on static inference. Verify the documented working directory and use the lightest safe check available, such as importing the target module, running a non-mutating `--help` command, checking that a referenced script exists, or reading the referenced configuration file. If a command starts long-running services, databases, Docker containers, or network-dependent processes, do not run the full command; instead verify its executable path, module import path, script name, and required working directory.
+
+For configuration and environment documentation, verify names and defaults against the source configuration files, examples, deployment manifests, or workflow definitions. If related files disagree, treat the change as uncertain until the current project behavior is clear.
+
+## Cross-document consistency
+
+When changing setup, quick start, deployment, environment variable, or command documentation, search related docs for the same concept before opening a PR. At minimum check `README.md`, `docs/guide/README.md`, `docs/guide/README_zh-CN.md`, `docs/guide/getting-started/**/*.md`, and relevant deployment docs when the affected topic appears there. Update all affected copies, including paired Chinese docs, or explain why a related copy is intentionally unchanged.
+
+## Confidence policy
+
+Open a normal PR only when each changed fact is verified against current code, config, workflow files, or a lightweight command check. If the proposed change is inference-heavy, only partially verified, or depends on an unsafe long-running command, prefer reporting the evidence and uncertainty with `noop` instead of opening a normal PR.
 
 ## Pull request requirements
 
-If documentation updates are needed, request a pull request through the `create_pull_request` safe-output tool.
+If documentation updates are needed and the confidence policy is satisfied, request a pull request through the `create_pull_request` safe-output tool.
 
 The PR should include:
 
