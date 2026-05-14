@@ -2458,8 +2458,8 @@ async def chat_stream(
                 else:
                     await assistant_msg.delete()
             return
-        except Exception:
-            logger.exception("Unhandled stream error")
+        except Exception as exc:
+            logger.error("Unhandled stream error: %s", type(exc).__name__)
             if assistant_msg:
                 await persist_partial_round_error(
                     assistant_msg,
@@ -2469,6 +2469,7 @@ async def chat_stream(
                     start_time=start_time,
                     fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                 )
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
             return
 
         finally:
@@ -3585,8 +3586,8 @@ async def regenerate_message(
                     await Message.filter(id=message.id).update(is_active=True)
             return
 
-        except Exception:
-            logger.exception("Unhandled regenerate stream error")
+        except Exception as exc:
+            logger.error("Unhandled regenerate stream error: %s", type(exc).__name__)
             preserved_partial = await persist_partial_round_error(
                 new_message,
                 content=full_content,
@@ -3600,6 +3601,7 @@ async def regenerate_message(
             elif new_message_id:
                 await Message.filter(id=new_message_id).delete()
                 await Message.filter(id=message.id).update(is_active=True)
+            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
             return
 
         finally:

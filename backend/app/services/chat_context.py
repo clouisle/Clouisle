@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Sequence
@@ -1224,6 +1225,21 @@ async def _build_messages_with_file_content(
         history_query = history_query.exclude(id__in=list(exclude_message_ids))
 
     history = await history_query.order_by("created_at")
+    historical_file_content_tasks = {
+        msg.id: asyncio.create_task(
+            _build_file_content_for_user_message(
+                agent=agent,
+                file_urls=msg.file_urls,
+                user_locale=user_locale,
+                tool_timeouts=tool_timeouts,
+                user=user,
+                source_message=msg,
+            )
+        )
+        for msg in history
+        if msg.role == ConversationMessageRole.USER
+        and not (current_user_message_id and msg.id == current_user_message_id)
+    }
 
     for msg in history:
         protect = _matches_protected_round(msg.round_id, protected_round_id)
@@ -1237,14 +1253,7 @@ async def _build_messages_with_file_content(
                         protect=protect or protected_round_id is not None,
                     )
                 continue
-            historical_file_content = await _build_file_content_for_user_message(
-                agent=agent,
-                file_urls=msg.file_urls,
-                user_locale=user_locale,
-                tool_timeouts=tool_timeouts,
-                user=user,
-                source_message=msg,
-            )
+            historical_file_content = await historical_file_content_tasks[msg.id]
             _append_message(
                 messages,
                 protected_indexes,
