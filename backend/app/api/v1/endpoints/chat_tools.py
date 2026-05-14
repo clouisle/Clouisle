@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -53,6 +54,7 @@ async def execute_tool_call(
                 agent_id=agent.id
             ).prefetch_related("knowledge_base")
 
+            search_tasks = []
             for agent_kb in agent_kbs:
                 kb = agent_kb.knowledge_base
                 vector_store = VectorStore(
@@ -64,13 +66,19 @@ async def execute_tool_call(
                     else None,
                     team_id=str(kb.team_id) if kb.team_id else None,
                 )
-                results = await vector_store.search(
-                    kb_id=kb.id,
-                    query=query,
-                    search_mode=agent_kb.search_mode,
-                    top_k=top_k,
-                    score_threshold=agent_kb.score_threshold,
+                search_tasks.append(
+                    vector_store.search(
+                        kb_id=kb.id,
+                        query=query,
+                        search_mode=agent_kb.search_mode,
+                        top_k=top_k,
+                        score_threshold=agent_kb.score_threshold,
+                    )
                 )
+
+            search_results = await asyncio.gather(*search_tasks)
+            for agent_kb, results in zip(agent_kbs, search_results, strict=False):
+                kb = agent_kb.knowledge_base
                 for result in results:
                     contexts.append(
                         {
@@ -579,7 +587,7 @@ async def build_file_content_for_context(
                     if not file_path.is_file():
                         raise ValueError("upload_file_not_found")
                     file_path.relative_to(UPLOAD_ROOT)
-                    parsed_file = read_cached_file(
+                    parsed_file = await read_cached_file(
                         file_item,
                         file_path=file_path,
                         url=url,
@@ -591,7 +599,7 @@ async def build_file_content_for_context(
                             filename,
                             parse_config,
                         )
-                        file_item = write_cached_file(
+                        file_item = await write_cached_file(
                             file_item,
                             parsed_file,
                             file_path=file_path,

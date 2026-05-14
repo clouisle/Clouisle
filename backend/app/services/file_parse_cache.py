@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
+
 from app.api.v1.endpoints.upload import UPLOAD_ROOT
 from app.services.file_parser import ParsedFile
 
@@ -55,7 +57,7 @@ def _cache_path(cache_key: str) -> Path:
     return CACHE_DIR / cache_key[:2] / f"{cache_key}.json"
 
 
-def read_cached_file(
+async def read_cached_file(
     file_item: dict[str, Any],
     *,
     file_path: Path,
@@ -86,13 +88,14 @@ def read_cached_file(
         return None
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = await run_in_threadpool(path.read_text, encoding="utf-8")
+        data = json.loads(raw)
         return ParsedFile(**data["parsed_file"])
     except (OSError, KeyError, TypeError, json.JSONDecodeError, ValueError):
         return None
 
 
-def write_cached_file(
+async def write_cached_file(
     file_item: dict[str, Any],
     parsed_file: ParsedFile,
     *,
@@ -108,14 +111,18 @@ def write_cached_file(
         source_signature=source_signature,
     )
     path = _cache_path(cache_key)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    await run_in_threadpool(path.parent.mkdir, parents=True, exist_ok=True)
     payload = {
         "version": CACHE_VERSION,
         "parser_hash": parser_hash,
         "source": source_signature,
         "parsed_file": parsed_file.model_dump(mode="json"),
     }
-    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    await run_in_threadpool(
+        path.write_text,
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     updated = dict(file_item)
     updated["parse_cache"] = {
