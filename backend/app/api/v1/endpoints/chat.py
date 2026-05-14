@@ -2469,7 +2469,7 @@ async def chat_stream(
                     start_time=start_time,
                     fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                 )
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+            return
 
         finally:
             # Resource cleanup and logging
@@ -3600,7 +3600,7 @@ async def regenerate_message(
             elif new_message_id:
                 await Message.filter(id=new_message_id).delete()
                 await Message.filter(id=message.id).update(is_active=True)
-            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+            return
 
         finally:
             # Resource cleanup and logging
