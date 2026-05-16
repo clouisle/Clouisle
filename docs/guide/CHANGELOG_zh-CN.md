@@ -7,6 +7,32 @@
 
 ---
 
+## [0.2.2] - 2026-05-17
+
+### 新增
+
+#### 认证
+- 新增可配置的分栏认证布局，部署时可在居中布局和分屏布局之间切换。
+
+#### 自动化
+- 新增 GitHub issue 和 pull request 自动分配工作流支持。
+
+### 变更
+
+#### 前端与站点设置
+- 更新站点设置界面和 API 接入，支持配置认证布局选项。
+- 优化后台和平台表单中的数字输入处理。
+- 更新前端依赖，包括 React、React DOM、shadcn、lucide-react、TypeScript 和 Next.js lint 配置。
+
+#### CI/CD
+- 更新 GitHub Actions 发布和自动化依赖。
+
+### 修复
+
+#### 文档
+- 修正部署文档中的 PostgreSQL 环境变量引用，将 `POSTGRES_HOST` 改为 `POSTGRES_SERVER`。
+- 完善仓库自动化相关的文档同步校验说明。
+
 ## [0.1.0] - 2025-02-07
 
 Clouisle 首个公开发布版本 - 企业级知识库与 AI Agent 平台。
