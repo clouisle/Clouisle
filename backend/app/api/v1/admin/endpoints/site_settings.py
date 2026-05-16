@@ -606,3 +606,35 @@ async def trigger_archive_audit_logs(
         data={"task_id": task_id, "status": "pending"},
         msg_key="archive_task_started",
     )
+
+
+@router.get("/archive-audit-logs/{task_id}", response_model=Response[dict])
+async def get_archive_task_status(
+    task_id: str,
+    current_user: User = Depends(PermissionChecker("audit:export")),
+):
+    """查询归档任务状态"""
+    from celery.result import AsyncResult
+
+    task = AsyncResult(task_id, app=archive_old_audit_logs.app)  # type: ignore[attr-defined]
+
+    response_data = {
+        "task_id": task_id,
+        "status": task.state,
+    }
+
+    if task.state == "PENDING":
+        response_data["message"] = "Task is waiting to be executed"
+    elif task.state == "STARTED":
+        response_data["message"] = "Task is running"
+    elif task.state == "SUCCESS":
+        response_data["result"] = task.result
+        response_data["message"] = "Task completed successfully"
+    elif task.state == "FAILURE":
+        response_data["error"] = str(task.info)
+        response_data["message"] = "Task failed"
+    else:
+        response_data["message"] = f"Task state: {task.state}"
+
+    return success(data=response_data)
+
