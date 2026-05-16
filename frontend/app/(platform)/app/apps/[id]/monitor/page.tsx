@@ -81,33 +81,47 @@ interface StatCardProps {
   description?: string
   trend?: number
   className?: string
+  color?: 'blue' | 'green' | 'orange' | 'purple' | 'cyan' | 'slate'
 }
 
-function StatCard({ title, value, icon, description, trend, className }: StatCardProps) {
+function StatCard({ title, value, icon, description, trend, className, color = 'blue' }: StatCardProps) {
+  const colorClasses = {
+    blue: 'bg-blue-500/10 text-blue-500',
+    green: 'bg-green-500/10 text-green-500',
+    orange: 'bg-orange-500/10 text-orange-500',
+    purple: 'bg-purple-500/10 text-purple-500',
+    cyan: 'bg-cyan-500/10 text-cyan-500',
+    slate: 'bg-slate-500/10 text-slate-500',
+  }
+
   return (
-    <Card className={cn('', className)}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className="text-muted-foreground">{icon}</div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {(description || trend !== undefined) && (
-          <div className="flex items-center mt-1">
-            {trend !== undefined && (
-              <span
-                className={cn(
-                  'flex items-center text-xs mr-2',
-                  trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-muted-foreground'
-                )}
-              >
-                {trend > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : trend < 0 ? <TrendingDown className="h-3 w-3 mr-0.5" /> : null}
-                {trend > 0 ? '+' : ''}{trend}%
-              </span>
-            )}
-            {description && <p className="text-xs text-muted-foreground">{description}</p>}
+    <Card size="sm" className={className}>
+      <CardContent className="py-0">
+        <div className="flex items-center gap-3">
+          <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', colorClasses[color])}>
+            {icon}
           </div>
-        )}
+          <div className="min-w-0 flex-1 text-right">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <div className="mt-1 text-2xl font-bold">{value}</div>
+            {(description || trend !== undefined) && (
+              <div className="mt-1 flex items-center justify-end">
+                {trend !== undefined && (
+                  <span
+                    className={cn(
+                      'mr-2 flex items-center text-xs',
+                      trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-muted-foreground'
+                    )}
+                  >
+                    {trend > 0 ? <TrendingUp className="mr-0.5 h-3 w-3" /> : trend < 0 ? <TrendingDown className="mr-0.5 h-3 w-3" /> : null}
+                    {trend > 0 ? '+' : ''}{trend}%
+                  </span>
+                )}
+                {description && <p className="text-xs text-muted-foreground">{description}</p>}
+              </div>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   )
@@ -303,32 +317,38 @@ export default function MonitorPage({ params }: MonitorPageProps) {
                   title={t('stats.conversations')}
                   value={formatNumber(stats?.overview.total_conversations || 0)}
                   icon={<MessagesSquare className="h-4 w-4" />}
+                  color="blue"
                 />
                 <StatCard
                   title={t('stats.messages')}
                   value={formatNumber(stats?.overview.total_messages || 0)}
                   icon={<MessageSquare className="h-4 w-4" />}
+                  color="cyan"
                 />
                 <StatCard
                   title={t('stats.tokens')}
                   value={formatNumber(stats?.tokens.total_tokens || 0)}
                   icon={<Coins className="h-4 w-4" />}
                   description={`↑${formatNumber(stats?.tokens.prompt_tokens || 0)} ↓${formatNumber(stats?.tokens.completion_tokens || 0)}`}
+                  color="purple"
                 />
                 <StatCard
                   title={t('stats.avgResponseTime')}
                   value={formatDuration(stats?.performance.avg_response_time_ms || 0)}
                   icon={<Timer className="h-4 w-4" />}
+                  color="orange"
                 />
                 <StatCard
                   title={t('stats.activeUsers')}
                   value={stats?.overview.active_users || 0}
                   icon={<Users className="h-4 w-4" />}
+                  color="green"
                 />
                 <StatCard
                   title={t('stats.toolCalls')}
                   value={formatNumber(stats?.tools.tool_call_count || 0)}
                   icon={<Wrench className="h-4 w-4" />}
+                  color="slate"
                 />
               </div>
 

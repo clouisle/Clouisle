@@ -144,24 +144,24 @@ function StatCard({
   }
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${colorClasses[color as keyof typeof colorClasses]}`}>
-                <Icon className="h-5 w-5" />
-              </div>
-              {trend !== undefined && (
-                <Badge variant={trend >= 0 ? 'default' : 'secondary'} className="text-xs">
-                  <TrendingUp className={`h-3 w-3 mr-1 ${trend < 0 ? 'rotate-180' : ''}`} />
-                  {Math.abs(trend)}%
-                  {trendLabel && <span className="ml-1">{trendLabel}</span>}
-                </Badge>
-              )}
+    <Card size="sm">
+      <CardContent className="py-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 self-start">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${colorClasses[color as keyof typeof colorClasses]}`}>
+              <Icon className="h-5 w-5" />
             </div>
+            {trend !== undefined && (
+              <Badge variant={trend >= 0 ? 'default' : 'secondary'} className="text-xs">
+                <TrendingUp className={`mr-1 h-3 w-3 ${trend < 0 ? 'rotate-180' : ''}`} />
+                {Math.abs(trend)}%
+                {trendLabel && <span className="ml-1">{trendLabel}</span>}
+              </Badge>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-right">
             <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold mt-1">
+            <p className="mt-1 text-2xl font-bold">
               {typeof value === 'number' ? formatNumber(value) : value}
             </p>
           </div>
