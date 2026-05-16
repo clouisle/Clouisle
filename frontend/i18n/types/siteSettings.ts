@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-11T12:17:49.519Z
+// GENERATED — 2026-05-16T13:52:26.519Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -362,6 +362,11 @@ export type SiteSettingsMessages = {
     confirm: string
     archiveSuccess: string
     archiveError: string
+    archiveStarting: string
+    archivePending: string
+    archiveRunning: string
+    archiveFailed: string
+    archiveTimeout: string
     ssoSettings: string
     ssoSettingsDescription: string
     enableSSO: string

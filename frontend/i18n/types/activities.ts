@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-11T12:17:49.507Z
+// GENERATED — 2026-05-16T13:52:26.507Z
 // Source: i18n/en/activities.json
 export type ActivitiesMessages = {
   activities: {
