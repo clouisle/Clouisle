@@ -34,6 +34,7 @@ class PublicSiteSettingsResponse(BaseModel):
     site_description: str = ""
     site_url: str = ""
     site_icon: str = ""
+    auth_page_layout: str = "centered"
     allow_registration: bool = True
     require_approval: bool = False
     email_verification: bool = True

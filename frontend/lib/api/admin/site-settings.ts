@@ -61,6 +61,7 @@ export const siteSettingsApi = {
       site_url: (settings.site_url as string) ?? '',
       site_icon: (settings.site_icon as string) ?? '',
       default_language: (settings.default_language as string) ?? 'en',
+      auth_page_layout: settings.auth_page_layout === 'split' ? 'split' : 'centered',
     }
   },
 
@@ -229,6 +230,21 @@ export const siteSettingsApi = {
 
   async archiveAuditLogs(): Promise<{ task_id: string; status: string }> {
     return api.post<{ task_id: string; status: string }>('/admin/site-settings/archive-audit-logs', null)
+  },
+
+  async getArchiveTaskStatus(taskId: string): Promise<{
+    task_id: string
+    status: string
+    message?: string
+    result?: {
+   status: string
+      archived_count?: number
+      retention_days?: number
+    cutoff_date?: string
+    }
+    error?: string
+  }> {
+    return api.get(`/admin/site-settings/archive-audit-logs/${taskId}`)
   },
 
   async getAutoNotifications(): Promise<AutoNotificationConfig> {

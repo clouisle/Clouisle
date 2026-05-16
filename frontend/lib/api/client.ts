@@ -95,7 +95,7 @@ function resolveApiErrorMessage(code: number, message: unknown): string {
 }
 
 function isAuthErrorCode(code: number): boolean {
-  return code === 401 || code === 403 || code === 2000 || code === 2001 || code === 2002
+  return code === 401 || code === 403 || code === 2000 || code === 2001 || code === 2002 || code === 2003 || code === 2004
 }
 
 // 防止重复重定向

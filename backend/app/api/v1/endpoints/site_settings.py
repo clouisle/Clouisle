@@ -31,6 +31,7 @@ async def get_public_settings():
             site_description=settings.get("site_description", ""),
             site_url=settings.get("site_url", ""),
             site_icon=settings.get("site_icon", ""),
+            auth_page_layout=settings.get("auth_page_layout", "centered"),
             allow_registration=settings.get("allow_registration", True),
             require_approval=settings.get("require_approval", False),
             email_verification=settings.get("email_verification", True),

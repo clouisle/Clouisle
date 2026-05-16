@@ -39,6 +39,7 @@ export default function SiteSettingsGeneralPage() {
     site_url: '',
     site_icon: '',
     default_language: 'en',
+    auth_page_layout: 'centered',
   })
 
   const errorPathMap = React.useMemo(
@@ -52,7 +53,7 @@ export default function SiteSettingsGeneralPage() {
   )
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['site_name', 'site_description', 'site_url', 'site_icon', 'default_language']),
+    () => getValidationSummaryEntries(fieldErrors, ['site_name', 'site_description', 'site_url', 'site_icon', 'default_language', 'auth_page_layout']),
     [fieldErrors]
   )
 
@@ -228,6 +229,30 @@ export default function SiteSettingsGeneralPage() {
               </SelectContent>
             </Select>
             <FieldError>{fieldErrors.default_language}</FieldError>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="authPageLayout">{t('authPageLayout')}</Label>
+            <p className="text-sm text-muted-foreground">{t('authPageLayoutDescription')}</p>
+            <Select
+              value={settings.auth_page_layout}
+              onValueChange={(value) => {
+                if (value === 'centered' || value === 'split') {
+                  updateSetting('auth_page_layout', value)
+                }
+              }}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger id="authPageLayout" className="w-56">
+                <SelectValue>
+                  {settings.auth_page_layout === 'split' ? t('authPageLayoutSplit') : t('authPageLayoutCentered')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="centered">{t('authPageLayoutCentered')}</SelectItem>
+                <SelectItem value="split">{t('authPageLayoutSplit')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <FieldError>{fieldErrors.auth_page_layout}</FieldError>
           </div>
         </CardContent>
       </Card>

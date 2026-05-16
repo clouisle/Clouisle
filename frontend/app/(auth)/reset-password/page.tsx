@@ -23,7 +23,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <Card>
+    <Card className="bg-transparent shadow-none ring-0">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t('resetPasswordTitle')}</CardTitle>
         <CardDescription>{t('resetPasswordByLinkDescription')}</CardDescription>

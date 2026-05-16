@@ -11,7 +11,34 @@ from app.models.site_setting import SiteSetting
 logger = logging.getLogger(__name__)
 
 
-async def archive_old_audit_logs():
+def _get_event_loop():
+    """获取或创建事件循环"""
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
+
+
+@celery_app.task(name="tasks.archive_old_audit_logs")
+def archive_old_audit_logs():
+    """归档超过保留期限的审计日志（Celery任务）"""
+    loop = _get_event_loop()
+    try:
+        return loop.run_until_complete(_archive_old_audit_logs())
+    except Exception as e:
+        logger.error(f"Failed to archive audit logs: {e}", exc_info=True)
+        raise
+
+
+async def _archive_old_audit_logs():
     """归档超过保留期限的审计日志（同步执行）"""
     try:
         # 从站点设置获取保留天数

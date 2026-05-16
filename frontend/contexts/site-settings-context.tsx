@@ -24,6 +24,7 @@ const defaultSettings: PublicSiteSettings = {
   sso_enabled: false,
   sso_allow_password_login: true,
   kb_document_max_upload_size_mb: KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB,
+  auth_page_layout: 'centered',
 }
 
 const SiteSettingsContext = React.createContext<SiteSettingsContextType>({

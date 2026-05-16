@@ -468,7 +468,6 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
               <div className="space-y-2">
                 <Label>{t('dailyTokenLimit')}</Label>
                 <Input
-                  type="number"
                   placeholder={t('unlimited')}
                   value={editForm.daily_token_limit ?? ''}
                   onChange={(e) =>
@@ -482,7 +481,6 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
               <div className="space-y-2">
                 <Label>{t('monthlyTokenLimit')}</Label>
                 <Input
-                  type="number"
                   placeholder={t('unlimited')}
                   value={editForm.monthly_token_limit ?? ''}
                   onChange={(e) =>
@@ -498,7 +496,6 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
               <div className="space-y-2">
                 <Label>{t('dailyRequestLimit')}</Label>
                 <Input
-                  type="number"
                   placeholder={t('unlimited')}
                   value={editForm.daily_request_limit ?? ''}
                   onChange={(e) =>
@@ -512,7 +509,6 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
               <div className="space-y-2">
                 <Label>{t('monthlyRequestLimit')}</Label>
                 <Input
-                  type="number"
                   placeholder={t('unlimited')}
                   value={editForm.monthly_request_limit ?? ''}
                   onChange={(e) =>
@@ -527,7 +523,6 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
             <div className="space-y-2">
               <Label>{t('priority')}</Label>
               <Input
-                type="number"
                 value={editForm.priority ?? 0}
                 onChange={(e) =>
                   setEditForm({

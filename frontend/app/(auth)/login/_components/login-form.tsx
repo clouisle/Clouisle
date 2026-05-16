@@ -568,7 +568,7 @@ export function LoginForm() {
             setUsername(e.target.value)
             clearFieldError('username')
           }}
-          placeholder="admin"
+          placeholder={t('usernameOrEmailPlaceholder')}
           required
           disabled={loading}
           aria-invalid={!!fieldErrors.username}
@@ -587,6 +587,7 @@ export function LoginForm() {
             clearFieldError('password')
           }}
           required
+          placeholder={t('passwordPlaceholder')}
           disabled={loading}
           aria-invalid={!!fieldErrors.password}
         />

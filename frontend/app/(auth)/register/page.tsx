@@ -7,7 +7,7 @@ export default async function RegisterPage() {
   const t = await getTranslations('auth')
 
   return (
-    <Card>
+    <Card className="bg-transparent shadow-none ring-0">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t('registerTitle')}</CardTitle>
         <CardDescription>{t('registerDescription')}</CardDescription>

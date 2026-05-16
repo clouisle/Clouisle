@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -50,6 +51,7 @@ export default function SiteSettingsStoragePage() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [archiving, setArchiving] = React.useState(false)
+  const [archiveProgress, setArchiveProgress] = React.useState<string>('')
   const [showArchiveDialog, setShowArchiveDialog] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<StorageSettings>({
@@ -139,13 +141,50 @@ export default function SiteSettingsStoragePage() {
   const handleArchive = async () => {
     try {
       setArchiving(true)
-      await siteSettingsApi.archiveAuditLogs()
-      toast.success(t('archiveSuccess'))
-      setShowArchiveDialog(false)
+      setArchiveProgress(t('archiveStarting'))
+
+      const { task_id } = await siteSettingsApi.archiveAuditLogs()
+
+      // Poll for task status
+      const pollInterval = setInterval(async () => {
+        try {
+       const status = await siteSettingsApi.getArchiveTaskStatus(task_id)
+
+       if (status.status === 'PENDING') {
+            setArchiveProgress(t('archivePending'))
+          } else if (status.status === 'STARTED') {
+            setArchiveProgress(t('archiveRunning'))
+          } else if (status.status === 'SUCCESS') {
+            clearInterval(pollInterval)
+            const archivedCount = status.result?.archived_count ?? 0
+            toast.success(t('archiveSuccess', { count: archivedCount }))
+            setShowArchiveDialog(false)
+            setArchiving(false)
+            setArchiveProgress('')
+          } else if (status.status === 'FAILURE') {
+            clearInterval(pollInterval)
+        toast.error(t('archiveFailed'))
+            setArchiving(false)
+        setArchiveProgress('')
+        }
+        } catch (error) {
+        console.error('Failed to check archive status:', error)
+        }
+      }, 2000) // Poll every 2 seconds
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        clearInterval(pollInterval)
+        if (archiving) {
+          setArchiving(false)
+          setArchiveProgress('')
+          toast.error(t('archiveTimeout'))
+      }
+      }, 300000)
     } catch (error) {
-      console.error('Failed to archive logs:', error)
-    } finally {
+      console.error('Failed to start archive:', error)
       setArchiving(false)
+      setArchiveProgress('')
     }
   }
 
@@ -192,14 +231,10 @@ export default function SiteSettingsStoragePage() {
           <div className="space-y-2">
             <Label htmlFor="kbDocumentMaxUploadSize">{t('kbDocumentMaxUploadSize')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="kbDocumentMaxUploadSize"
-                type="number"
                 value={settings.kb_document_max_upload_size_mb}
-                onChange={(e) => updateSetting(
-                  'kb_document_max_upload_size_mb',
-                  Number.isNaN(parseInt(e.target.value)) ? 0 : parseInt(e.target.value)
-                )}
+                onChange={(value) => updateSetting('kb_document_max_upload_size_mb', value === '' ? 10 : value)}
                 min={KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB}
                 max={KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB}
                 className="w-32"
@@ -226,11 +261,10 @@ export default function SiteSettingsStoragePage() {
           <div className="space-y-2">
             <Label htmlFor="retentionDays">{t('auditLogRetentionDays')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="retentionDays"
-                type="number"
                 value={settings.audit_log_retention_days}
-                onChange={(e) => updateSetting('audit_log_retention_days', parseInt(e.target.value) || 365)}
+              onChange={(value) => updateSetting('audit_log_retention_days', value === '' ? 365 : value)}
                 min={30}
                 max={3650}
                 className="w-32"
@@ -301,6 +335,12 @@ export default function SiteSettingsStoragePage() {
                 {t('confirmArchiveDescription', { days: settings.audit_log_retention_days })}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {archiveProgress && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{archiveProgress}</span>
+           </div>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={archiving}>{t('cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleArchive} disabled={archiving}>

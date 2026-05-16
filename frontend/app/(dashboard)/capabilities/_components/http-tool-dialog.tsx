@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
@@ -89,7 +90,7 @@ export function HttpToolDialog({
   const [headers, setHeaders] = useState<KeyValuePair[]>([{ key: '', value: '' }])
   const [queryParams, setQueryParams] = useState<KeyValuePair[]>([{ key: '', value: '' }])
   const [bodyTemplate, setBodyTemplate] = useState('')
-  const [timeout, setTimeout] = useState(30)
+  const [timeout, setTimeout] = useState<number | ''>(30)
 
   // UI 状态
   const [isLoading, setIsLoading] = useState(false)
@@ -166,7 +167,7 @@ export function HttpToolDialog({
           .filter((p) => p.key.trim())
           .reduce((acc, p) => ({ ...acc, [p.key]: p.value }), {}),
         body_template: bodyTemplate || undefined,
-        timeout,
+        timeout: timeout === '' ? undefined : timeout,
       }
 
       const data: ToolCreateInput | ToolUpdateInput = {
@@ -466,12 +467,11 @@ export function HttpToolDialog({
               <Label htmlFor="timeout" className="whitespace-nowrap">
                 {t('httpDialog.timeout')}
               </Label>
-              <Input
+              <NumberInput
                 id="timeout"
-                type="number"
                 value={timeout}
-                onChange={(e) => {
-                  setTimeout(parseInt(e.target.value) || 30)
+                onChange={(value) => {
+                  setTimeout(value)
                   setFieldErrors((prev) => clearValidationError(prev, 'timeout'))
                 }}
                 className="w-20"

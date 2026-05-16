@@ -365,7 +365,6 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
                     </Label>
                     <Input
                       id="topK"
-                      type="number"
                       min={1}
                       max={20}
                       value={topK}
@@ -443,7 +442,6 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
                       </Label>
                       <Input
                         id="rerankCandidateK"
-                        type="number"
                         min={1}
                         max={100}
                         value={rerankCandidateK}

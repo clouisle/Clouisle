@@ -78,7 +78,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full max-w-md bg-transparent shadow-none ring-0">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">
           {reason === 'expired' ? t('passwordExpired') : t('forcePasswordChange')}

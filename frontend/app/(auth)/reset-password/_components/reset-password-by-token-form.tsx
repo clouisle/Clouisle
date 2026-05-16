@@ -126,6 +126,7 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
             setFieldErrors((prev) => clearValidationError(prev, 'newPassword'))
           }}
           required
+          placeholder={t('newPasswordPlaceholder')}
           disabled={loading}
           aria-invalid={!!fieldErrors.newPassword}
         />
@@ -143,6 +144,7 @@ export function ResetPasswordByTokenForm({ token }: ResetPasswordByTokenFormProp
             setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
           }}
           required
+          placeholder={t('confirmPasswordPlaceholder')}
           disabled={loading}
           aria-invalid={!!fieldErrors.confirmPassword}
         />
