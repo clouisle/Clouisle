@@ -1263,7 +1263,6 @@ export function ModelDialog({
                   <Label htmlFor="openaiImageOutputCompression">{t('imageOutputCompression')}</Label>
                   <Input
                     id="openaiImageOutputCompression"
-                    type="number"
                     min="0"
                     max="100"
                     value={openaiImageOutputCompression}
@@ -1352,7 +1351,6 @@ export function ModelDialog({
                   <Label htmlFor="googleOutputCompressionQuality">{t('googleOutputCompressionQuality')}</Label>
                   <Input
                     id="googleOutputCompressionQuality"
-                    type="number"
                     min="0"
                     max="100"
                     value={googleOutputCompressionQuality}
@@ -1424,7 +1422,6 @@ export function ModelDialog({
               <div className="flex items-center gap-2">
                 <Input
                   id="videoDuration"
-                  type="number"
                   step="1"
                   min="1"
                   max="30"
@@ -1489,7 +1486,6 @@ export function ModelDialog({
               <Label htmlFor="speed">{t('defaultSpeed')}</Label>
               <Input
                 id="speed"
-                type="number"
                 step="0.1"
                 min="0.25"
                 max="4"
@@ -1514,7 +1510,6 @@ export function ModelDialog({
             <Label htmlFor="contextLength">{t('contextLength')}</Label>
             <Input
               id="contextLength"
-              type="number"
               value={contextLength}
               onChange={(e) => {
                 setContextLength(e.target.value)
@@ -1529,7 +1524,6 @@ export function ModelDialog({
             <Label htmlFor="maxOutputTokens">{t('maxOutputTokens')}</Label>
             <Input
               id="maxOutputTokens"
-              type="number"
               value={maxOutputTokens}
               onChange={(e) => {
                 setMaxOutputTokens(e.target.value)
@@ -1550,7 +1544,6 @@ export function ModelDialog({
             <Label htmlFor="inputPrice">{t('inputPrice')}</Label>
             <Input
               id="inputPrice"
-              type="number"
               step="0.000001"
               value={inputPrice}
               onChange={(e) => {
@@ -1567,7 +1560,6 @@ export function ModelDialog({
             <Label htmlFor="outputPrice">{t('outputPrice')}</Label>
             <Input
               id="outputPrice"
-              type="number"
               step="0.000001"
               value={outputPrice}
               onChange={(e) => {
@@ -1591,7 +1583,6 @@ export function ModelDialog({
               <Label htmlFor="temperature">Temperature</Label>
               <Input
                 id="temperature"
-                type="number"
                 step="0.1"
                 min="0"
                 max="2"
@@ -1604,7 +1595,6 @@ export function ModelDialog({
               <Label htmlFor="topP">Top P</Label>
               <Input
                 id="topP"
-                type="number"
                 step="0.1"
                 min="0"
                 max="1"
@@ -1617,7 +1607,6 @@ export function ModelDialog({
               <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
               <Input
                 id="frequencyPenalty"
-                type="number"
                 step="0.1"
                 min="-2"
                 max="2"
@@ -1630,7 +1619,6 @@ export function ModelDialog({
               <Label htmlFor="presencePenalty">Presence Penalty</Label>
               <Input
                 id="presencePenalty"
-                type="number"
                 step="0.1"
                 min="-2"
                 max="2"
@@ -1644,7 +1632,6 @@ export function ModelDialog({
             <Label htmlFor="maxTokens">{t('maxTokens')}</Label>
             <Input
               id="maxTokens"
-              type="number"
               value={maxTokens}
               onChange={(e) => setMaxTokens(e.target.value)}
               placeholder={t('maxTokensPlaceholder')}
@@ -1794,7 +1781,6 @@ export function ModelDialog({
                     <Label htmlFor="thinkingBudget">{t('thinkingBudget')}</Label>
                     <Input
                       id="thinkingBudget"
-                      type="number"
                       value={thinkingBudget}
                       onChange={(e) => setThinkingBudget(e.target.value)}
                       placeholder={t('thinkingBudgetPlaceholder')}
