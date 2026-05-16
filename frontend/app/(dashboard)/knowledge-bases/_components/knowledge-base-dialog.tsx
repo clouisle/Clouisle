@@ -9,6 +9,7 @@ import { clearValidationError, getValidationSummaryEntries, mapValidationErrors,
 } from '@/lib/validation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
@@ -65,11 +66,11 @@ export function KnowledgeBaseDialog({
   const [teamId, setTeamId] = React.useState<string>('')
   const [embeddingModelId, setEmbeddingModelId] = React.useState<string>('')
   const [rerankModelId, setRerankModelId] = React.useState<string | null>(null)
-  const [chunkSize, setChunkSize] = React.useState(1000)
-  const [chunkOverlap, setChunkOverlap] = React.useState(100)
+  const [chunkSize, setChunkSize] = React.useState<number | ''>(1000)
+  const [chunkOverlap, setChunkOverlap] = React.useState<number | ''>(100)
   const [separator, setSeparator] = React.useState<string>('')
   const [rerankEnabled, setRerankEnabled] = React.useState(true)
-  const [rerankCandidateK, setRerankCandidateK] = React.useState(10)
+  const [rerankCandidateK, setRerankCandidateK] = React.useState<number | ''>(10)
   const [rerankFailOpen, setRerankFailOpen] = React.useState(true)
   const [rerankScoreThreshold, setRerankScoreThreshold] = React.useState('')
   const [isActive, setIsActive] = React.useState(true)
@@ -413,11 +414,10 @@ export function KnowledgeBaseDialog({
               <div className="space-y-2">
                 <Label htmlFor="chunkSize">{t('chunkSize')}</Label>
                 <Input
-                  id="chunkSize"
                   type="number"
                   value={chunkSize}
-                  onChange={(e) => {
-                    setChunkSize(Number(e.target.value))
+                  onChange={(value) => {
+                    setChunkSize(value)
                     setFieldErrors((prev) => clearValidationError(prev, 'chunk_size'))
                   }}
                   min={100}
@@ -431,11 +431,10 @@ export function KnowledgeBaseDialog({
               <div className="space-y-2">
                 <Label htmlFor="chunkOverlap">{t('chunkOverlap')}</Label>
                 <Input
-                  id="chunkOverlap"
                   type="number"
                   value={chunkOverlap}
-                  onChange={(e) => {
-                    setChunkOverlap(Number(e.target.value))
+                  onChange={(value) => {
+                    setChunkOverlap(value)
                     setFieldErrors((prev) => clearValidationError(prev, 'chunk_overlap'))
                   }}
                   min={0}
@@ -480,12 +479,11 @@ export function KnowledgeBaseDialog({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="rerankCandidateK">{t('rerankCandidateK')}</Label>
-                  <Input
-                    id="rerankCandidateK"
+                  <NumberInput
                     type="number"
                     value={rerankCandidateK}
-                    onChange={(e) => {
-                      setRerankCandidateK(Number(e.target.value))
+                    onChange={(value) => {
+                      setRerankCandidateK(value)
                       setFieldErrors((prev) => clearValidationError(prev, 'rerank_candidate_k'))
                     }}
                     min={1}
@@ -500,7 +498,6 @@ export function KnowledgeBaseDialog({
                   <Label htmlFor="rerankScoreThreshold">{t('rerankScoreThreshold')}</Label>
                   <Input
                     id="rerankScoreThreshold"
-                    type="number"
                     step="0.01"
                     min={0}
                     max={1}
