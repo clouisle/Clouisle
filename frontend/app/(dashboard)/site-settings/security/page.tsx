@@ -38,14 +38,14 @@ export default function SiteSettingsSecurityPage() {
     email_verification: true,
     allow_account_deletion: true,
     default_role_id: '',
-    min_password_length: 8 as number | '',
-    require_uppercase: true,
+    min_password_length: 8,
+  require_uppercase: true,
     require_number: true,
     require_special_char: false,
-    session_timeout_days: 30 as number | '',
+    session_timeout_days: 30,
     single_session: false,
-    max_login_attempts: 5 as number | '',
-    lockout_duration_minutes: 15 as number | '',
+    max_login_attempts: 5,
+    lockout_duration_minutes: 15,
     enable_captcha: false,
     sso_enabled: false,
     sso_allow_password_login: true,
@@ -53,10 +53,10 @@ export default function SiteSettingsSecurityPage() {
     sso_require_approval: false,
     sso_match_by_email: true,
     password_expiration_enabled: false,
-    password_expiration_days: 90 as number | '',
-    password_expiration_warning_days: 7 as number | '',
-    password_history_count: 5 as number | '',
-    password_min_age_days: 0 as number | '',
+    password_expiration_days: 90,
+    password_expiration_warning_days: 7,
+    password_history_count: 5,
+  password_min_age_days: 0,
     force_password_change_first_login: false,
     require_totp: false,
   })
@@ -309,7 +309,7 @@ export default function SiteSettingsSecurityPage() {
             <NumberInput
               id="minLength"
         value={settings.min_password_length}
-            onChange={(value) => updateSetting('min_password_length', value)}
+            onChange={(value) => updateSetting('min_password_length', value === '' ? 8 : value)}
               min={6}
               max={32}
               className="w-32"
@@ -391,7 +391,7 @@ export default function SiteSettingsSecurityPage() {
                   <NumberInput
                     id="expirationDays"
           value={settings.password_expiration_days}
-                    onChange={(value) => updateSetting('password_expiration_days', value)}
+                    onChange={(value) => updateSetting('password_expiration_days', value === '' ? 90 : value)}
                     min={1}
                     max={365}
                     className="w-32"
@@ -409,7 +409,7 @@ export default function SiteSettingsSecurityPage() {
                   <NumberInput
                     id="warningDays"
                     value={settings.password_expiration_warning_days}
-                    onChange={(value) => updateSetting('password_expiration_warning_days', value)}
+                    onChange={(value) => updateSetting('password_expiration_warning_days', value === '' ? 7 : value)}
                     min={1}
                     max={30}
                     className="w-32"
@@ -426,7 +426,7 @@ export default function SiteSettingsSecurityPage() {
                 <NumberInput
                   id="historyCount"
                   value={settings.password_history_count}
-                  onChange={(value) => updateSetting('password_history_count', value)}
+                  onChange={(value) => updateSetting('password_history_count', value === '' ? 5 : value)}
                   min={0}
                   max={24}
                   className="w-32"
@@ -442,7 +442,7 @@ export default function SiteSettingsSecurityPage() {
                   <NumberInput
                     id="minAgeDays"
                     value={settings.password_min_age_days}
-                    onChange={(value) => updateSetting('password_min_age_days', value)}
+                    onChange={(value) => updateSetting('password_min_age_days', value === '' ? 0 : value)}
                     min={0}
                     max={30}
                     className="w-32"
@@ -470,7 +470,7 @@ export default function SiteSettingsSecurityPage() {
               <NumberInput
                 id="sessionTimeout"
                 value={settings.session_timeout_days}
-                onChange={(value) => updateSetting('session_timeout_days', value)}
+                onChange={(value) => updateSetting('session_timeout_days', value === '' ? 30 : value)}
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}
@@ -505,7 +505,7 @@ export default function SiteSettingsSecurityPage() {
             <NumberInput
               id="maxAttempts"
               value={settings.max_login_attempts}
-              onChange={(value) => updateSetting('max_login_attempts', value)}
+              onChange={(value) => updateSetting('max_login_attempts', value === '' ? 5 : value)}
               min={3}
               max={10}
               className="w-32"
@@ -520,7 +520,7 @@ export default function SiteSettingsSecurityPage() {
               <NumberInput
                 id="lockoutDuration"
                 value={settings.lockout_duration_minutes}
-                onChange={(value) => updateSetting('lockout_duration_minutes', value)}
+                onChange={(value) => updateSetting('lockout_duration_minutes', value === '' ? 15 : value)}
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}

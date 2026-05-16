@@ -645,4 +645,3 @@ async def get_archive_task_status(
         response_data["message"] = f"Task state: {task.state}"
 
     return success(data=response_data)
-

@@ -167,7 +167,7 @@ export function HttpToolDialog({
           .filter((p) => p.key.trim())
           .reduce((acc, p) => ({ ...acc, [p.key]: p.value }), {}),
         body_template: bodyTemplate || undefined,
-        timeout,
+        timeout: timeout === '' ? undefined : timeout,
       }
 
       const data: ToolCreateInput | ToolUpdateInput = {

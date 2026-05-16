@@ -43,6 +43,7 @@ export default async function AuthLayout({
     <AuthLayoutShell
       layout={settings.auth_page_layout}
       siteName={settings.site_name}
+      siteDescription={settings.site_description}
     >
       {children}
     </AuthLayoutShell>

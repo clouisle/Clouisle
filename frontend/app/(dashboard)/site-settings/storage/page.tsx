@@ -37,9 +37,9 @@ import {
 } from '@/components/ui/alert-dialog'
 
 interface StorageSettings {
-  audit_log_retention_days: number | ''
+  audit_log_retention_days: number
   audit_log_archive_path: string
-  kb_document_max_upload_size_mb: number | ''
+  kb_document_max_upload_size_mb: number
 }
 
 export default function SiteSettingsStoragePage() {
@@ -234,7 +234,7 @@ export default function SiteSettingsStoragePage() {
               <NumberInput
                 id="kbDocumentMaxUploadSize"
                 value={settings.kb_document_max_upload_size_mb}
-                onChange={(value) => updateSetting('kb_document_max_upload_size_mb', value)}
+                onChange={(value) => updateSetting('kb_document_max_upload_size_mb', value === '' ? 10 : value)}
                 min={KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB}
                 max={KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB}
                 className="w-32"
@@ -264,7 +264,7 @@ export default function SiteSettingsStoragePage() {
               <NumberInput
                 id="retentionDays"
                 value={settings.audit_log_retention_days}
-              onChange={(value) => updateSetting('audit_log_retention_days', value)}
+              onChange={(value) => updateSetting('audit_log_retention_days', value === '' ? 365 : value)}
                 min={30}
                 max={3650}
                 className="w-32"

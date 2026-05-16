@@ -166,10 +166,10 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         // 编辑
         const updateData: APIKeyUpdateInput = {
           name: formData.name,
-          rate_limit: formData.rate_limit,
-          expires_at: formData.expires_at ? new Date(formData.expires_at).toISOString() : null,
+          rate_limit: formData.rate_limit === '' ? undefined : formData.rate_limit,
+       expires_at: formData.expires_at ? new Date(formData.expires_at).toISOString() : null,
           is_active: formData.is_active,
-          agent_ids: formData.agent_ids,
+        agent_ids: formData.agent_ids,
           workflow_ids: formData.workflow_ids,
         }
         await apiKeysApi.updateAPIKey(apiKey.id, updateData)
@@ -177,12 +177,12 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
         onSuccess?.()
       } else {
         // 创建
-        const createData: APIKeyCreateInput = {
+           const createData: APIKeyCreateInput = {
           name: formData.name,
-          rate_limit: formData.rate_limit,
+          rate_limit: formData.rate_limit === '' ? undefined : formData.rate_limit,
           expires_at: formData.expires_at ? new Date(formData.expires_at).toISOString() : null,
           agent_ids: formData.agent_ids,
-          workflow_ids: formData.workflow_ids,
+        workflow_ids: formData.workflow_ids,
         }
         const result = await apiKeysApi.createAPIKey(createData)
         toast.success(t('keyCreated'))

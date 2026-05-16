@@ -195,11 +195,11 @@ export function KnowledgeBaseDialog({
         embedding_model_id: embeddingModelId || null,
         rerank_model_id: rerankModelId || null,
         settings: {
-          chunk_size: chunkSize,
-          chunk_overlap: chunkOverlap,
+          chunk_size: chunkSize === '' ? undefined : chunkSize,
+        chunk_overlap: chunkOverlap === '' ? undefined : chunkOverlap,
           separator: separator.trim() || null,
           rerank_enabled: rerankEnabled,
-          rerank_candidate_k: rerankCandidateK,
+          rerank_candidate_k: rerankCandidateK === '' ? undefined : rerankCandidateK,
           rerank_fail_open: rerankFailOpen,
           rerank_score_threshold: rerankScoreThreshold
             ? parseFloat(rerankScoreThreshold)
@@ -429,7 +429,7 @@ export function KnowledgeBaseDialog({
               
               <div className="space-y-2">
                 <Label htmlFor="chunkOverlap">{t('chunkOverlap')}</Label>
-                <Input
+                <NumberInput
                   value={chunkOverlap}
                   onChange={(value) => {
                     setChunkOverlap(value)
