@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -38,14 +38,14 @@ export default function SiteSettingsSecurityPage() {
     email_verification: true,
     allow_account_deletion: true,
     default_role_id: '',
-    min_password_length: 8,
+    min_password_length: 8 as number | '',
     require_uppercase: true,
     require_number: true,
     require_special_char: false,
-    session_timeout_days: 30,
+    session_timeout_days: 30 as number | '',
     single_session: false,
-    max_login_attempts: 5,
-    lockout_duration_minutes: 15,
+    max_login_attempts: 5 as number | '',
+    lockout_duration_minutes: 15 as number | '',
     enable_captcha: false,
     sso_enabled: false,
     sso_allow_password_login: true,
@@ -53,10 +53,10 @@ export default function SiteSettingsSecurityPage() {
     sso_require_approval: false,
     sso_match_by_email: true,
     password_expiration_enabled: false,
-    password_expiration_days: 90,
-    password_expiration_warning_days: 7,
-    password_history_count: 5,
-    password_min_age_days: 0,
+    password_expiration_days: 90 as number | '',
+    password_expiration_warning_days: 7 as number | '',
+    password_history_count: 5 as number | '',
+    password_min_age_days: 0 as number | '',
     force_password_change_first_login: false,
     require_totp: false,
   })
@@ -306,11 +306,10 @@ export default function SiteSettingsSecurityPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="minLength">{t('minPasswordLength')}</Label>
-            <Input
+            <NumberInput
               id="minLength"
-              type="number"
-              value={settings.min_password_length}
-              onChange={(e) => updateSetting('min_password_length', parseInt(e.target.value) || 8)}
+        value={settings.min_password_length}
+            onChange={(value) => updateSetting('min_password_length', value)}
               min={6}
               max={32}
               className="w-32"
@@ -389,11 +388,10 @@ export default function SiteSettingsSecurityPage() {
                 <Label htmlFor="expirationDays">{t('passwordExpirationDays')}</Label>
                 <p className="text-sm text-muted-foreground">{t('passwordExpirationDaysDescription')}</p>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <NumberInput
                     id="expirationDays"
-                    type="number"
-                    value={settings.password_expiration_days}
-                    onChange={(e) => updateSetting('password_expiration_days', parseInt(e.target.value) || 90)}
+          value={settings.password_expiration_days}
+                    onChange={(value) => updateSetting('password_expiration_days', value)}
                     min={1}
                     max={365}
                     className="w-32"
@@ -408,11 +406,10 @@ export default function SiteSettingsSecurityPage() {
                 <Label htmlFor="warningDays">{t('passwordExpirationWarningDays')}</Label>
                 <p className="text-sm text-muted-foreground">{t('passwordExpirationWarningDaysDescription')}</p>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <NumberInput
                     id="warningDays"
-                    type="number"
                     value={settings.password_expiration_warning_days}
-                    onChange={(e) => updateSetting('password_expiration_warning_days', parseInt(e.target.value) || 7)}
+                    onChange={(value) => updateSetting('password_expiration_warning_days', value)}
                     min={1}
                     max={30}
                     className="w-32"
@@ -426,11 +423,10 @@ export default function SiteSettingsSecurityPage() {
               <div className="space-y-2">
                 <Label htmlFor="historyCount">{t('passwordHistoryCount')}</Label>
                 <p className="text-sm text-muted-foreground">{t('passwordHistoryCountDescription')}</p>
-                <Input
+                <NumberInput
                   id="historyCount"
-                  type="number"
                   value={settings.password_history_count}
-                  onChange={(e) => updateSetting('password_history_count', Number.isNaN(parseInt(e.target.value)) ? 5 : parseInt(e.target.value))}
+                  onChange={(value) => updateSetting('password_history_count', value)}
                   min={0}
                   max={24}
                   className="w-32"
@@ -443,11 +439,10 @@ export default function SiteSettingsSecurityPage() {
                 <Label htmlFor="minAgeDays">{t('passwordMinAgeDays')}</Label>
                 <p className="text-sm text-muted-foreground">{t('passwordMinAgeDaysDescription')}</p>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <NumberInput
                     id="minAgeDays"
-                    type="number"
                     value={settings.password_min_age_days}
-                    onChange={(e) => updateSetting('password_min_age_days', parseInt(e.target.value) || 0)}
+                    onChange={(value) => updateSetting('password_min_age_days', value)}
                     min={0}
                     max={30}
                     className="w-32"
@@ -472,11 +467,10 @@ export default function SiteSettingsSecurityPage() {
           <div className="space-y-2">
             <Label htmlFor="sessionTimeout">{t('sessionTimeout')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="sessionTimeout"
-                type="number"
                 value={settings.session_timeout_days}
-                onChange={(e) => updateSetting('session_timeout_days', parseInt(e.target.value) || 30)}
+                onChange={(value) => updateSetting('session_timeout_days', value)}
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}
@@ -508,11 +502,10 @@ export default function SiteSettingsSecurityPage() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="maxAttempts">{t('maxLoginAttempts')}</Label>
-            <Input
+            <NumberInput
               id="maxAttempts"
-              type="number"
               value={settings.max_login_attempts}
-              onChange={(e) => updateSetting('max_login_attempts', parseInt(e.target.value) || 5)}
+              onChange={(value) => updateSetting('max_login_attempts', value)}
               min={3}
               max={10}
               className="w-32"
@@ -524,11 +517,10 @@ export default function SiteSettingsSecurityPage() {
           <div className="space-y-2">
             <Label htmlFor="lockoutDuration">{t('lockoutDuration')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="lockoutDuration"
-                type="number"
                 value={settings.lockout_duration_minutes}
-                onChange={(e) => updateSetting('lockout_duration_minutes', parseInt(e.target.value) || 15)}
+                onChange={(value) => updateSetting('lockout_duration_minutes', value)}
                 min={1}
                 className="w-32"
                 disabled={!canUpdate}
