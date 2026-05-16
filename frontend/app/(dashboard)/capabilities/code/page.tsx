@@ -948,7 +948,6 @@ function CodeToolPageContent() {
                     <Label htmlFor="timeoutSeconds" className="text-xs text-muted-foreground">{t('codeEditor.timeoutSeconds')}</Label>
                     <Input
                       id="timeoutSeconds"
-                      type="number"
                       value={timeoutSeconds}
                       onChange={(e) => {
                         setTimeoutSeconds(e.target.value)
@@ -963,7 +962,6 @@ function CodeToolPageContent() {
                     <Label htmlFor="diskMb" className="text-xs text-muted-foreground">{t('codeEditor.diskMb')}</Label>
                     <Input
                       id="diskMb"
-                      type="number"
                       value={diskMb}
                       onChange={(e) => {
                         setDiskMb(e.target.value)
@@ -978,7 +976,6 @@ function CodeToolPageContent() {
                     <Label htmlFor="maxStdoutKb" className="text-xs text-muted-foreground">{t('codeEditor.maxStdoutKb')}</Label>
                     <Input
                       id="maxStdoutKb"
-                      type="number"
                       value={maxStdoutKb}
                       onChange={(e) => {
                         setMaxStdoutKb(e.target.value)
@@ -993,7 +990,6 @@ function CodeToolPageContent() {
                     <Label htmlFor="maxStderrKb" className="text-xs text-muted-foreground">{t('codeEditor.maxStderrKb')}</Label>
                     <Input
                       id="maxStderrKb"
-                      type="number"
                       value={maxStderrKb}
                       onChange={(e) => {
                         setMaxStderrKb(e.target.value)
