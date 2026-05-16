@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -36,9 +37,9 @@ import {
 } from '@/components/ui/alert-dialog'
 
 interface StorageSettings {
-  audit_log_retention_days: number
+  audit_log_retention_days: number | ''
   audit_log_archive_path: string
-  kb_document_max_upload_size_mb: number
+  kb_document_max_upload_size_mb: number | ''
 }
 
 export default function SiteSettingsStoragePage() {
@@ -230,14 +231,10 @@ export default function SiteSettingsStoragePage() {
           <div className="space-y-2">
             <Label htmlFor="kbDocumentMaxUploadSize">{t('kbDocumentMaxUploadSize')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="kbDocumentMaxUploadSize"
-                type="number"
                 value={settings.kb_document_max_upload_size_mb}
-                onChange={(e) => updateSetting(
-                  'kb_document_max_upload_size_mb',
-                  Number.isNaN(parseInt(e.target.value)) ? 0 : parseInt(e.target.value)
-                )}
+                onChange={(value) => updateSetting('kb_document_max_upload_size_mb', value)}
                 min={KNOWLEDGE_BASE_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB}
                 max={KNOWLEDGE_BASE_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB}
                 className="w-32"
@@ -264,9 +261,8 @@ export default function SiteSettingsStoragePage() {
           <div className="space-y-2">
             <Label htmlFor="retentionDays">{t('auditLogRetentionDays')}</Label>
             <div className="flex items-center gap-2">
-              <Input
+              <NumberInput
                 id="retentionDays"
-                type="number"
                 value={settings.audit_log_retention_days}
                 onChange={(e) => updateSetting('audit_log_retention_days', parseInt(e.target.value) || 365)}
                 min={30}
