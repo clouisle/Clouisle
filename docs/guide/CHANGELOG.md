@@ -7,6 +7,32 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.2] - 2026-05-17
+
+### Added
+
+#### Authentication
+- Added a configurable split authentication layout so deployments can switch between centered and split-screen auth pages.
+
+#### Automation
+- Added automatic GitHub issue and pull request assignment workflow support.
+
+### Changed
+
+#### Frontend and Site Settings
+- Updated site settings UI and API wiring for configurable auth layout options.
+- Refined numeric input handling across admin and platform forms.
+- Updated frontend dependencies including React, React DOM, shadcn, lucide-react, TypeScript, and Next.js lint configuration.
+
+#### CI/CD
+- Updated GitHub Actions release and automation dependencies.
+
+### Fixed
+
+#### Documentation
+- Corrected PostgreSQL environment variable references in deployment documentation from `POSTGRES_HOST` to `POSTGRES_SERVER`.
+- Tightened documentation sync verification notes for repository automation.
+
 ## [0.1.0] - 2025-02-07
 
 First public release of Clouisle - an enterprise-grade knowledge base and AI Agent platform.
