@@ -6,14 +6,15 @@ interface AuthLayoutShellProps {
   layout: AuthPageLayout
   siteName: string
   siteDescription: string
+  previewImageAlt: string
 }
 
-function AuthPreviewPanel({ siteName }: Pick<AuthLayoutShellProps, 'siteName'>) {
+function AuthPreviewPanel({ siteName, previewImageAlt }: Pick<AuthLayoutShellProps, 'siteName' | 'previewImageAlt'>) {
   return (
     <aside className="relative hidden min-h-screen flex-1 overflow-hidden bg-muted/45 dark:bg-muted/25 lg:block">
       <img
         src="/clouisle.png"
-        alt={siteName}
+        alt={previewImageAlt}
         className="absolute left-12 top-40 max-w-none rounded-2xl border border-slate-300/80 shadow-[0_32px_90px_rgba(15,23,42,0.28)] dark:border-white/20 dark:shadow-[0_32px_100px_rgba(0,0,0,0.78)] xl:left-16 xl:top-48"
         style={{ height: '80vh', width: 'auto' }}
       />
@@ -25,6 +26,7 @@ export function AuthLayoutShell({
   children,
   layout,
   siteName,
+  previewImageAlt,
 }: AuthLayoutShellProps) {
   const isSplit = layout === 'split'
 
@@ -51,7 +53,7 @@ export function AuthLayoutShell({
           {children}
         </div>
       </main>
-      <AuthPreviewPanel siteName={siteName} />
+      <AuthPreviewPanel siteName={siteName} previewImageAlt={previewImageAlt} />
     </div>
   )
 }

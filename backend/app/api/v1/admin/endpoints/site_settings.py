@@ -31,7 +31,21 @@ router = APIRouter()
 
 
 def _validate_setting_value(key: str, value: object) -> None:
+    """Validate site setting values.
+
+    Args:
+        key: Setting key name
+        value: Setting value to validate
+
+    Raises:
+        BusinessError: If validation fails
+    """
     if key == "auth_page_layout":
+        if not isinstance(value, str):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
         if value not in {"centered", "split"}:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,

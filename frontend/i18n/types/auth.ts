@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-16T16:43:12.909Z
+// GENERATED — 2026-05-16T18:35:25.634Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {
@@ -26,11 +26,11 @@ export type AuthMessages = {
     password_require_special: string
     forgotPassword: string
     email: string
-    password: string
     username: string
     usernamePlaceholder: string
     usernameOrEmailPlaceholder: string
     emailPlaceholder: string
+    password: string
     passwordPlaceholder: string
     newPasswordPlaceholder: string
     confirmPassword: string
@@ -141,5 +141,6 @@ export type AuthMessages = {
     twoFactorEnabledSuccess: string
     setupFailed: string
     sessionExpired: string
+    previewImageAlt: string
   }
 }
