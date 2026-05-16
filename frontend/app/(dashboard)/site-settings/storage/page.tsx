@@ -264,7 +264,7 @@ export default function SiteSettingsStoragePage() {
               <NumberInput
                 id="retentionDays"
                 value={settings.audit_log_retention_days}
-                onChange={(e) => updateSetting('audit_log_retention_days', parseInt(e.target.value) || 365)}
+              onChange={(value) => updateSetting('audit_log_retention_days', value)}
                 min={30}
                 max={3650}
                 className="w-32"
