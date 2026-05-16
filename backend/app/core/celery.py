@@ -64,6 +64,11 @@ celery_app.conf.task_routes = {
     "app.tasks.session_memory.*": {"queue": "default"},
     "app.tasks.sandbox.*": {"queue": "sandbox"},
     "tasks.cleanup_expired_sandbox_sessions": {"queue": "sandbox"},
+    "tasks.archive_old_audit_logs": {"queue": "default"},
+    "tasks.check_api_key_expiration": {"queue": "default"},
+    "tasks.check_password_expiration": {"queue": "default"},
+    "tasks.reset_daily_usage": {"queue": "default"},
+    "tasks.reset_monthly_usage": {"queue": "default"},
     "send_notification_dingtalk": {"queue": "default"},
     "send_notification_email": {"queue": "default"},
 }
