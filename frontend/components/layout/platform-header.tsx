@@ -361,8 +361,13 @@ export function PlatformHeader() {
                   router.push('/app/notifications')
                 }}
               >
-                <Bell className="mr-2 h-4 w-4" />
-                {t('nav.notifications')}
+           <Bell className="mr-2 h-4 w-4" />
+                <span className="flex-1">{t('nav.notifications')}</span>
+       {unreadCount > 0 && (
+                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white">
+              {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/app/memories')}>
                 <Brain className="mr-2 h-4 w-4" />
