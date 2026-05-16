@@ -413,8 +413,7 @@ export function KnowledgeBaseDialog({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="chunkSize">{t('chunkSize')}</Label>
-                <Input
-                  type="number"
+                <NumberInput
                   value={chunkSize}
                   onChange={(value) => {
                     setChunkSize(value)
@@ -431,7 +430,6 @@ export function KnowledgeBaseDialog({
               <div className="space-y-2">
                 <Label htmlFor="chunkOverlap">{t('chunkOverlap')}</Label>
                 <Input
-                  type="number"
                   value={chunkOverlap}
                   onChange={(value) => {
                     setChunkOverlap(value)
@@ -480,7 +478,6 @@ export function KnowledgeBaseDialog({
                 <div className="space-y-2">
                   <Label htmlFor="rerankCandidateK">{t('rerankCandidateK')}</Label>
                   <NumberInput
-                    type="number"
                     value={rerankCandidateK}
                     onChange={(value) => {
                       setRerankCandidateK(value)

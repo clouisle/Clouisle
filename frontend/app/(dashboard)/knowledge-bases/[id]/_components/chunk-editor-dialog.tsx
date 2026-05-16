@@ -449,7 +449,6 @@ export function ChunkEditorDialog({
                     <Label htmlFor="chunk_size">{t('chunkSize')}</Label>
                     <Input
                       id="chunk_size"
-                      type="number"
                       min={100}
                       max={2000}
                       value={rechunkSettings.chunk_size}
@@ -467,7 +466,6 @@ export function ChunkEditorDialog({
                     <Label htmlFor="chunk_overlap">{t('chunkOverlap')}</Label>
                     <Input
                       id="chunk_overlap"
-                      type="number"
                       min={0}
                       max={500}
                       value={rechunkSettings.chunk_overlap}
