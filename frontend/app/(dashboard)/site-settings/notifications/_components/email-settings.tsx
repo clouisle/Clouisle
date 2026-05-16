@@ -165,7 +165,6 @@ export function EmailSettingsTab({ settings, onSettingsChange, canUpdate }: Emai
               <Label htmlFor="smtp-port">{t('email.smtpPort')}</Label>
               <Input
                 id="smtp-port"
-                type="number"
                 placeholder="587"
                 value={settings.smtp_port}
                 onChange={(e) => updateSetting('smtp_port', parseInt(e.target.value) || 587)}
