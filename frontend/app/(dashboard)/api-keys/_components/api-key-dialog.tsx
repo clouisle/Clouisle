@@ -15,6 +15,7 @@ import {
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -48,7 +49,7 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
   
   const [formData, setFormData] = React.useState({
     name: '',
-    rate_limit: 0,
+    rate_limit: 0 as number | '',
     expires_at: '',
     is_active: true,
     agent_ids: [] as string[],
@@ -237,15 +238,14 @@ export function APIKeyDialog({ open, onOpenChange, apiKey, onSuccess }: APIKeyDi
             <FieldError>{fieldErrors.name}</FieldError>
           </div>
           
-          <div className="grid gap-2">
-            <Label htmlFor="rate_limit">{t('rateLimit')}</Label>
-            <Input
-              id="rate_limit"
-              type="number"
-              min="0"
+        <div className="grid gap-2">
+        <Label htmlFor="rate_limit">{t('rateLimit')}</Label>
+              <NumberInput
+            id="rate_limit"
+              min={0}
               value={formData.rate_limit}
-              onChange={(e) => {
-                setFormData({ ...formData, rate_limit: parseInt(e.target.value) || 0 })
+              onChange={(value) => {
+                setFormData({ ...formData, rate_limit: value })
                 setFieldErrors((prev) => clearValidationError(prev, 'rate_limit'))
               }}
               aria-invalid={!!fieldErrors.rate_limit}
