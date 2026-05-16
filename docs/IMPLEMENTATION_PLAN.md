@@ -2,6 +2,13 @@
 
 ## Active
 
+- **auth-layout-switcher** — Complete. Add a configurable centered/split authentication page layout, managed from admin site settings. See `docs/plan/auth-layout-switcher.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Public site setting and admin general settings UI
+  - [x] 3. Shared auth layout and split preview panel
+  - [x] 4. Auth page integration and i18n
+  - [x] 5. Validation and responsive checks
+
 - **pr-124-security-review** — Complete. Address PR #124 security review findings for path traversal, SSRF, ReDoS, XXE, sensitive logging, and duration timing. See `docs/plan/pr-124-security-review.md`
   - [x] 1. Security review plan
   - [x] 2. Path traversal hardening

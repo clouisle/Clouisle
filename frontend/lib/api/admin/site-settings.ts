@@ -61,6 +61,7 @@ export const siteSettingsApi = {
       site_url: (settings.site_url as string) ?? '',
       site_icon: (settings.site_icon as string) ?? '',
       default_language: (settings.default_language as string) ?? 'en',
+      auth_page_layout: settings.auth_page_layout === 'split' ? 'split' : 'centered',
     }
   },
 

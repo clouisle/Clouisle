@@ -187,7 +187,7 @@ export function ForgotPasswordForm() {
               setEmail(e.target.value)
               setFieldErrors((prev) => clearValidationError(prev, 'email'))
             }}
-            placeholder="john@example.com"
+            placeholder={t('emailPlaceholder')}
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.email}
@@ -300,6 +300,7 @@ export function ForgotPasswordForm() {
                     setFieldErrors((prev) => clearValidationError(prev, 'newPassword'))
                   }}
                   required
+                  placeholder={t('newPasswordPlaceholder')}
                   disabled={loading}
                   aria-invalid={!!fieldErrors.newPassword}
                 />
@@ -317,6 +318,7 @@ export function ForgotPasswordForm() {
                     setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
                   }}
                   required
+                  placeholder={t('confirmPasswordPlaceholder')}
                   disabled={loading}
                   aria-invalid={!!fieldErrors.confirmPassword}
                 />

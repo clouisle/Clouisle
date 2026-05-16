@@ -1,19 +1,50 @@
-import { LocaleSwitcher } from '@/components/locale-switcher'
+import { API_BASE_URL } from '@/lib/constants'
+import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
+import { AuthLayoutShell } from './_components/auth-layout-shell'
 
-export default function AuthLayout({
+function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
+  return value === 'split' ? 'split' : 'centered'
+}
+
+async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'site_description' | 'auth_page_layout'>> {
+  const response = await fetch(`${API_BASE_URL}/site-settings/public`, { cache: 'no-store' })
+
+  if (!response.ok) {
+    throw new Error('Failed to load public site settings')
+  }
+
+  const body = await response.json() as { data?: Partial<PublicSiteSettings> }
+
+  return {
+    site_name: body.data?.site_name || 'Clouisle',
+    site_description: body.data?.site_description || '',
+    auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
+  }
+}
+
+export default async function AuthLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  let settings = {
+    site_name: 'Clouisle',
+    site_description: '',
+    auth_page_layout: 'centered' as AuthPageLayout,
+  }
+
+  try {
+    settings = await getPublicSettings()
+  } catch {
+    settings.auth_page_layout = 'centered'
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/50">
-      {/* 语言切换 - 固定在右上角 */}
-      <div className="fixed top-4 right-4">
-        <LocaleSwitcher />
-      </div>
-      <div className="w-full max-w-md p-4">
-        {children}
-      </div>
-    </div>
+    <AuthLayoutShell
+      layout={settings.auth_page_layout}
+      siteName={settings.site_name}
+    >
+      {children}
+    </AuthLayoutShell>
   )
 }

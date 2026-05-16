@@ -31,6 +31,14 @@ router = APIRouter()
 
 
 def _validate_setting_value(key: str, value: object) -> None:
+    if key == "auth_page_layout":
+        if value not in {"centered", "split"}:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
     if key != "kb_document_max_upload_size_mb":
         return
     if not isinstance(value, int) or isinstance(value, bool):

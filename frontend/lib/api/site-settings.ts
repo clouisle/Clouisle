@@ -1,5 +1,7 @@
 import { api } from './client'
 
+export type AuthPageLayout = 'centered' | 'split'
+
 export interface SiteSetting {
   key: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,6 +22,7 @@ export interface PublicSiteSettings {
   site_description: string
   site_url: string
   site_icon: string
+  auth_page_layout: AuthPageLayout
   allow_registration: boolean
   require_approval: boolean
   email_verification: boolean
@@ -36,6 +39,7 @@ export interface GeneralSettings {
   site_url: string
   site_icon: string
   default_language: string
+  auth_page_layout: AuthPageLayout
 }
 
 export interface SecuritySettings {

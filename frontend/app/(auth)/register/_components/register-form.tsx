@@ -222,7 +222,7 @@ export function RegisterForm() {
               setUsername(e.target.value)
               setFieldErrors((prev) => clearValidationError(prev, 'username'))
             }}
-            placeholder="johndoe"
+            placeholder={t('usernamePlaceholder')}
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.username}
@@ -240,7 +240,7 @@ export function RegisterForm() {
               setEmail(e.target.value)
               setFieldErrors((prev) => clearValidationError(prev, 'email'))
             }}
-            placeholder="john@example.com"
+            placeholder={t('emailPlaceholder')}
             required
             disabled={loading}
             aria-invalid={!!fieldErrors.email}
@@ -259,6 +259,7 @@ export function RegisterForm() {
               setFieldErrors((prev) => clearValidationError(prev, 'password'))
             }}
             required
+            placeholder={t('passwordPlaceholder')}
             disabled={loading}
             aria-invalid={!!fieldErrors.password}
           />
@@ -276,6 +277,7 @@ export function RegisterForm() {
               setFieldErrors((prev) => clearValidationError(prev, 'confirmPassword'))
             }}
             required
+            placeholder={t('confirmPasswordPlaceholder')}
             disabled={loading}
             aria-invalid={!!fieldErrors.confirmPassword}
           />

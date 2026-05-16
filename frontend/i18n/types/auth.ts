@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-16T13:52:26.513Z
+// GENERATED — 2026-05-16T16:43:12.909Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {
@@ -28,7 +28,13 @@ export type AuthMessages = {
     email: string
     password: string
     username: string
+    usernamePlaceholder: string
+    usernameOrEmailPlaceholder: string
+    emailPlaceholder: string
+    passwordPlaceholder: string
+    newPasswordPlaceholder: string
     confirmPassword: string
+    confirmPasswordPlaceholder: string
     rememberMe: string
     loginTitle: string
     loginDescription: string

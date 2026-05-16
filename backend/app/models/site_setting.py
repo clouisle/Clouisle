@@ -163,6 +163,13 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": True,
         "desc": "Default language for system messages (en, zh)",
     },
+    "auth_page_layout": {
+        "value": "centered",
+        "type": "string",
+        "category": "general",
+        "public": True,
+        "desc": "Authentication page layout (centered, split)",
+    },
     # Registration & Security
     "allow_registration": {
         "value": True,
