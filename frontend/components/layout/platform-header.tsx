@@ -320,7 +320,7 @@ export function PlatformHeader() {
                     </AvatarFallback>
                   </Avatar>
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white">
+                    <span className="absolute -top-1 -right-1 inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white hover:!text-white">
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
@@ -364,7 +364,7 @@ export function PlatformHeader() {
            <Bell className="mr-2 h-4 w-4" />
                 <span className="flex-1">{t('nav.notifications')}</span>
        {unreadCount > 0 && (
-                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] text-white">
+                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] !text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}

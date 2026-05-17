@@ -263,7 +263,7 @@ export default function KnowledgeBasePage() {
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive"
+                        variant="destructive"
                         onClick={(e) => { e.preventDefault(); handleDeleteClick(kb) }}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />

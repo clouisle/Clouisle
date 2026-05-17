@@ -504,7 +504,7 @@ export function TeamDetailDialog({
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
+                                    variant="destructive"
                                     onClick={() => openRemoveMemberDialog(member)}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />

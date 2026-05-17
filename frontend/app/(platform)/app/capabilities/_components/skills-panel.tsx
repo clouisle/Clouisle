@@ -489,7 +489,7 @@ export function SkillsPanel() {
                             />
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                className="text-destructive"
+                                variant="destructive"
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   handleDelete(skill)
