@@ -228,7 +228,7 @@ export default function SSOSettingsPage() {
                           onClick={() => setDeleteId(provider.id)}
                           title={t('deleteProvider')}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     )}
