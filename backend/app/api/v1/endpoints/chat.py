@@ -1476,6 +1476,9 @@ async def chat_stream(
         message_id = None
         assistant_msg: Message | None = None
         model_id: str | None = None
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
+
         try:
             # Import here to avoid circular import at module level
             from app.llm import model_manager
@@ -2783,6 +2786,9 @@ async def regenerate_message(
         new_message_id = None
         new_message: Message | None = None
         model_id: str | None = None
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
+
         try:
             from app.llm import model_manager
             from app.llm.errors import QuotaExceededError, LLMError
