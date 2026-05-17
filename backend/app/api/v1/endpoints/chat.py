@@ -1467,6 +1467,18 @@ async def chat_stream(
     )
 
     async def event_generator():
+        # Record start time and last event time
+        start_time = time.time()
+        first_token_time: float | None = None
+        last_event_time = start_time
+        full_content = ""
+        full_reasoning = ""
+        message_id = None
+        assistant_msg: Message | None = None
+        model_id: str | None = None
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
+
         try:
             # Import here to avoid circular import at module level
             from app.llm import model_manager
@@ -1499,16 +1511,6 @@ async def chat_stream(
                 ttl_hours=24,
                 conversation_id=str(conversation.id),
             )
-
-            # Record start time and last event time
-            start_time = time.time()
-            first_token_time: float | None = None
-            last_event_time = start_time
-            full_content = ""
-            full_reasoning = ""
-            message_id = None
-            assistant_msg: Message | None = None
-            model_id: str | None = None
 
             logger.info(
                 f"Starting stream for conversation {conversation.id}, "
@@ -2776,6 +2778,17 @@ async def regenerate_message(
         )
 
     async def event_generator():
+        start_time = time.time()
+        first_token_time: float | None = None
+        last_event_time = start_time
+        full_content = ""
+        full_reasoning = ""
+        new_message_id = None
+        new_message: Message | None = None
+        model_id: str | None = None
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
+
         try:
             from app.llm import model_manager
             from app.llm.errors import QuotaExceededError, LLMError
@@ -2792,15 +2805,6 @@ async def regenerate_message(
             tool_timeouts = streaming_config["tool_timeouts"]
             idle_timeout = streaming_config["idle_timeout"]
 
-            # Record start time and last event time
-            start_time = time.time()
-            first_token_time: float | None = None
-            last_event_time = start_time
-            full_content = ""
-            full_reasoning = ""
-            new_message_id = None
-            new_message: Message | None = None
-            model_id: str | None = None
             from app.services.sandbox.gateway import sandbox_gateway
 
             sandbox_session_id = await sandbox_gateway.create_session(
