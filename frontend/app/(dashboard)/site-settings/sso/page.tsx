@@ -256,7 +256,7 @@ export default function SSOSettingsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
+            <AlertDialogAction variant="destructive" onClick={handleDelete}>
               {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
