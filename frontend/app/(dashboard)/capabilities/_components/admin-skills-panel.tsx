@@ -646,7 +646,7 @@ export function AdminSkillsPanel() {
                               </DropdownMenuItem>
                             )}
                             {canPerform('admin:capability:delete') && (
-                              <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(skill)}>
+                              <DropdownMenuItem variant="destructive" onClick={() => handleDelete(skill)}>
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 {t('delete')}
                               </DropdownMenuItem>

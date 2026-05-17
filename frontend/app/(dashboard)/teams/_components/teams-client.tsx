@@ -348,8 +348,8 @@ export function TeamsClient() {
                         <>
                           {canPerform('admin:team:update') && <DropdownMenuSeparator />}
                           <DropdownMenuItem
+                            variant="destructive"
                             onClick={(e) => { e.stopPropagation(); handleDelete(team) }}
-                            className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
                             {commonT('delete')}
