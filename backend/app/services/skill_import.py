@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import ipaddress
+import logging
+import os
 import shutil
 import stat
 import tempfile
@@ -47,6 +49,7 @@ _MAX_ZIP_SINGLE_FILE_BYTES = 10 * 1024 * 1024
 _MAX_PACKAGE_PAYLOAD_BYTES = 50 * 1024 * 1024
 _IMPORT_SESSION_TTL = timedelta(hours=1)
 _GIT_TIMEOUT_SECONDS = 180
+logger = logging.getLogger(__name__)
 
 
 class SkillImportService:
@@ -137,14 +140,31 @@ class SkillImportService:
 
         temp_root = Path(tempfile.mkdtemp(prefix="clouisle-skill-import-"))
         repo_root = temp_root / "repo"
+        redacted_url = SkillImportService._redact_url(repo_url)
+        logger.info(
+            "Skill Git import preview started: source=%s ref=%s temp_root=%s",
+            redacted_url,
+            ref,
+            temp_root,
+        )
         await SkillImportService._clone_git_repo(repo_url, ref, repo_root)
+        logger.info(
+            "Skill Git import clone completed: source=%s repo_root=%s",
+            redacted_url,
+            repo_root,
+        )
         resolved_ref = await SkillImportService._resolve_git_ref(repo_root)
+        logger.info(
+            "Skill Git import ref resolved: source=%s resolved_ref=%s",
+            redacted_url,
+            resolved_ref,
+        )
         return await SkillImportService._create_preview_session(
             team_id=team_id,
             team=team,
             user=user,
             source_type=SkillSourceType.GIT,
-            source_uri=SkillImportService._redact_url(repo_url),
+            source_uri=redacted_url,
             source_ref=resolved_ref or ref,
             source_subdir=None,
             source_root=repo_root,
@@ -251,10 +271,43 @@ class SkillImportService:
         source_root: Path,
         temp_storage_path: Path,
     ) -> SkillImportPreviewOut:
-        parsed_packages = [
-            SkillPackageService.parse_skill_root(source_root, skill_root)
-            for skill_root in SkillPackageService.find_skill_roots(source_root)
-        ]
+        source_root = source_root.resolve()
+        logger.info(
+            "Skill import preview scan started: source_type=%s source_uri=%s source_root=%s",
+            source_type.value,
+            source_uri,
+            source_root,
+        )
+        skill_roots = SkillPackageService.find_skill_roots(source_root)
+        logger.info(
+            "Skill import preview scan found roots: source_type=%s source_uri=%s count=%s roots=%s",
+            source_type.value,
+            source_uri,
+            len(skill_roots),
+            [path.relative_to(source_root).as_posix() or "." for path in skill_roots],
+        )
+        parsed_packages = []
+        for skill_root in skill_roots:
+            relative_root = skill_root.relative_to(source_root).as_posix() or "."
+            logger.info(
+                "Skill import package parse started: source_type=%s source_uri=%s package_path=%s",
+                source_type.value,
+                source_uri,
+                relative_root,
+            )
+            parsed_package = SkillPackageService.parse_skill_root(
+                source_root, skill_root
+            )
+            logger.info(
+                "Skill import package parse completed: source_type=%s source_uri=%s package_path=%s valid=%s errors=%s file_count=%s",
+                source_type.value,
+                source_uri,
+                parsed_package.package_path,
+                parsed_package.valid,
+                parsed_package.errors,
+                parsed_package.package_manifest.get("file_count", 0),
+            )
+            parsed_packages.append(parsed_package)
         await SkillImportService._attach_conflicts(team_id, parsed_packages)
         SkillImportService._attach_duplicate_warnings(parsed_packages)
 
@@ -286,6 +339,14 @@ class SkillImportService:
             temp_storage_path=str(temp_storage_path),
             expires_at=datetime.now(UTC) + _IMPORT_SESSION_TTL,
             created_by=user,
+        )
+        logger.info(
+            "Skill import preview session created: source_type=%s source_uri=%s session_id=%s valid_count=%s invalid_count=%s",
+            source_type.value,
+            source_uri,
+            session.id,
+            len(valid_items),
+            len(invalid_items),
         )
         return SkillImportPreviewOut(
             session_id=session.id,
@@ -525,7 +586,12 @@ class SkillImportService:
             )
         if destination.exists():
             shutil.rmtree(destination)
-        shutil.copytree(skill_root, destination, symlinks=False)
+        shutil.copytree(
+            skill_root,
+            destination,
+            ignore=shutil.ignore_patterns(*IGNORED_DIR_NAMES),
+            symlinks=False,
+        )
         return str(destination)
 
     @staticmethod
@@ -533,46 +599,50 @@ class SkillImportService:
         files = []
         total_size = 0
         skill_root = skill_root.resolve()
-        for raw_path in sorted(skill_root.rglob("*")):
-            if raw_path.is_symlink():
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_symlink_not_allowed",
-                )
-            path = raw_path.resolve()
-            try:
-                relative_path = path.relative_to(skill_root)
-            except ValueError as exc:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_path_invalid",
-                ) from exc
-            if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
-                continue
-            if not path.is_file():
-                continue
-            if (
-                path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES
-                and path.name != "SKILL.md"
-            ):
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_package_nested_archive_not_allowed",
-                )
-            content = path.read_bytes()
-            total_size += len(content)
-            if total_size > _MAX_PACKAGE_PAYLOAD_BYTES:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="skill_zip_too_large",
-                )
-            files.append(
-                {
-                    "path": relative_path.as_posix(),
-                    "content_base64": base64.b64encode(content).decode("ascii"),
-                    "mode": stat.S_IMODE(path.stat().st_mode),
-                }
+        for current, dirnames, filenames in os.walk(skill_root):
+            dirnames[:] = sorted(
+                name for name in dirnames if name not in IGNORED_DIR_NAMES
             )
+            current_path = Path(current)
+            for filename in sorted(filenames):
+                raw_path = current_path / filename
+                if raw_path.is_symlink():
+                    raise BusinessError(
+                        code=ResponseCode.BAD_REQUEST,
+                        msg_key="skill_package_symlink_not_allowed",
+                    )
+                path = raw_path.resolve()
+                try:
+                    relative_path = path.relative_to(skill_root)
+                except ValueError as exc:
+                    raise BusinessError(
+                        code=ResponseCode.BAD_REQUEST,
+                        msg_key="skill_package_path_invalid",
+                    ) from exc
+                if not path.is_file():
+                    continue
+                if (
+                    path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES
+                    and path.name != "SKILL.md"
+                ):
+                    raise BusinessError(
+                        code=ResponseCode.BAD_REQUEST,
+                        msg_key="skill_package_nested_archive_not_allowed",
+                    )
+                content = path.read_bytes()
+                total_size += len(content)
+                if total_size > _MAX_PACKAGE_PAYLOAD_BYTES:
+                    raise BusinessError(
+                        code=ResponseCode.BAD_REQUEST,
+                        msg_key="skill_zip_too_large",
+                    )
+                files.append(
+                    {
+                        "path": relative_path.as_posix(),
+                        "content_base64": base64.b64encode(content).decode("ascii"),
+                        "mode": stat.S_IMODE(path.stat().st_mode),
+                    }
+                )
         return {"package_files": files}
 
     @staticmethod

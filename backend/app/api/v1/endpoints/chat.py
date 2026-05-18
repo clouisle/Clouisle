@@ -1467,38 +1467,6 @@ async def chat_stream(
     )
 
     async def event_generator():
-        # Import here to avoid circular import at module level
-        from app.llm import model_manager
-        from app.llm.errors import (
-            QuotaExceededError,
-            LLMError,
-            ModelNotFoundError,
-            AuthenticationError,
-            RateLimitError,
-        )
-        from app.llm.types import (
-            ToolDefinition,
-            FunctionDefinition,
-            FinishReason,
-        )
-
-        # Get streaming configuration
-        streaming_config = get_streaming_config(agent)
-        global_timeout = streaming_config["global_timeout"]
-        heartbeat_interval = streaming_config["heartbeat_interval"]
-        tool_timeouts = streaming_config["tool_timeouts"]
-        idle_timeout = streaming_config["idle_timeout"]
-
-        # Create sandbox session for stateful execution
-        from app.services.sandbox.gateway import sandbox_gateway
-
-        sandbox_session_id = await sandbox_gateway.create_session(
-            agent_id=str(agent.id),
-            team_id=str(agent.team_id) if agent.team_id else None,
-            ttl_hours=24,
-            conversation_id=str(conversation.id),
-        )
-
         # Record start time and last event time
         start_time = time.time()
         first_token_time: float | None = None
@@ -1508,13 +1476,47 @@ async def chat_stream(
         message_id = None
         assistant_msg: Message | None = None
         model_id: str | None = None
-
-        logger.info(
-            f"Starting stream for conversation {conversation.id}, "
-            f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
-        )
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
 
         try:
+            # Import here to avoid circular import at module level
+            from app.llm import model_manager
+            from app.llm.errors import (
+                QuotaExceededError,
+                LLMError,
+                ModelNotFoundError,
+                AuthenticationError,
+                RateLimitError,
+            )
+            from app.llm.types import (
+                ToolDefinition,
+                FunctionDefinition,
+                FinishReason,
+            )
+
+            # Get streaming configuration
+            streaming_config = get_streaming_config(agent)
+            global_timeout = streaming_config["global_timeout"]
+            heartbeat_interval = streaming_config["heartbeat_interval"]
+            tool_timeouts = streaming_config["tool_timeouts"]
+            idle_timeout = streaming_config["idle_timeout"]
+
+            # Create sandbox session for stateful execution
+            from app.services.sandbox.gateway import sandbox_gateway
+
+            sandbox_session_id = await sandbox_gateway.create_session(
+                agent_id=str(agent.id),
+                team_id=str(agent.team_id) if agent.team_id else None,
+                ttl_hours=24,
+                conversation_id=str(conversation.id),
+            )
+
+            logger.info(
+                f"Starting stream for conversation {conversation.id}, "
+                f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
+            )
+
             # Use asyncio.timeout to wrap entire streaming logic
             import asyncio
 
@@ -2776,22 +2778,6 @@ async def regenerate_message(
         )
 
     async def event_generator():
-        from app.llm import model_manager
-        from app.llm.errors import QuotaExceededError, LLMError
-        from app.llm.types import (
-            ToolDefinition,
-            FunctionDefinition,
-            FinishReason,
-        )
-
-        # Get streaming configuration
-        streaming_config = get_streaming_config(agent)
-        global_timeout = streaming_config["global_timeout"]
-        heartbeat_interval = streaming_config["heartbeat_interval"]
-        tool_timeouts = streaming_config["tool_timeouts"]
-        idle_timeout = streaming_config["idle_timeout"]
-
-        # Record start time and last event time
         start_time = time.time()
         first_token_time: float | None = None
         last_event_time = start_time
@@ -2800,20 +2786,38 @@ async def regenerate_message(
         new_message_id = None
         new_message: Message | None = None
         model_id: str | None = None
-        from app.services.sandbox.gateway import sandbox_gateway
-
-        sandbox_session_id = await sandbox_gateway.create_session(
-            agent_id=str(agent.id),
-            team_id=str(agent.team_id) if agent.team_id else None,
-            conversation_id=str(conversation.id),
-        )
-
-        logger.info(
-            f"Starting regenerate stream for message {message_id}, "
-            f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
-        )
+        global_timeout: float = 1800.0  # Default 30 minutes
+        idle_timeout: float = 300.0  # Default 5 minutes
 
         try:
+            from app.llm import model_manager
+            from app.llm.errors import QuotaExceededError, LLMError
+            from app.llm.types import (
+                ToolDefinition,
+                FunctionDefinition,
+                FinishReason,
+            )
+
+            # Get streaming configuration
+            streaming_config = get_streaming_config(agent)
+            global_timeout = streaming_config["global_timeout"]
+            heartbeat_interval = streaming_config["heartbeat_interval"]
+            tool_timeouts = streaming_config["tool_timeouts"]
+            idle_timeout = streaming_config["idle_timeout"]
+
+            from app.services.sandbox.gateway import sandbox_gateway
+
+            sandbox_session_id = await sandbox_gateway.create_session(
+                agent_id=str(agent.id),
+                team_id=str(agent.team_id) if agent.team_id else None,
+                conversation_id=str(conversation.id),
+            )
+
+            logger.info(
+                f"Starting regenerate stream for message {message_id}, "
+                f"global_timeout={global_timeout}s, heartbeat_interval={heartbeat_interval}s"
+            )
+
             # Use asyncio.timeout to wrap entire streaming logic
             import asyncio
 
