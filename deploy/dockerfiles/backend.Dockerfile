@@ -16,7 +16,7 @@ FROM python:3.13-slim
 
 # Install runtime dependencies + Node.js (for code sandbox and MCP stdio)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 libxml2 libxmlsec1 libxmlsec1-openssl curl \
+    libpq5 libxml2 libxmlsec1 libxmlsec1-openssl curl git \
     ca-certificates gnupg \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
