@@ -346,33 +346,35 @@ class SkillPackageService:
         errors: list[str] = []
 
         skill_root = skill_root.resolve()
-        for raw_path in sorted(skill_root.rglob("*")):
-            if raw_path.is_symlink():
-                errors.append("skill_package_symlink_not_allowed")
-                continue
-            path = raw_path.resolve()
-            try:
-                relative_path = path.relative_to(skill_root)
-            except ValueError:
-                errors.append("skill_package_path_invalid")
-                continue
-            relative = relative_path.as_posix()
-            if any(part in IGNORED_DIR_NAMES for part in relative_path.parts):
-                continue
-            if not path.is_file():
-                continue
-            if (
-                path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES
-                and path.name != "SKILL.md"
-            ):
-                errors.append("skill_package_nested_archive_not_allowed")
-                continue
-            stat = path.stat()
-            files.append({"path": relative, "size": stat.st_size})
-            digest.update(relative.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(path.read_bytes())
-            digest.update(b"\0")
+        for current, dirnames, filenames in os.walk(skill_root):
+            dirnames[:] = [name for name in dirnames if name not in IGNORED_DIR_NAMES]
+            current_path = Path(current)
+            for filename in sorted(filenames):
+                raw_path = current_path / filename
+                if raw_path.is_symlink():
+                    errors.append("skill_package_symlink_not_allowed")
+                    continue
+                path = raw_path.resolve()
+                try:
+                    relative_path = path.relative_to(skill_root)
+                except ValueError:
+                    errors.append("skill_package_path_invalid")
+                    continue
+                relative = relative_path.as_posix()
+                if not path.is_file():
+                    continue
+                if (
+                    path.suffix.lower() in NESTED_ARCHIVE_SUFFIXES
+                    and path.name != "SKILL.md"
+                ):
+                    errors.append("skill_package_nested_archive_not_allowed")
+                    continue
+                stat = path.stat()
+                files.append({"path": relative, "size": stat.st_size})
+                digest.update(relative.encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(path.read_bytes())
+                digest.update(b"\0")
 
         manifest = {"files": files, "file_count": len(files)}
         manifest_json = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
