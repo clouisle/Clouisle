@@ -600,7 +600,9 @@ class SkillImportService:
         total_size = 0
         skill_root = skill_root.resolve()
         for current, dirnames, filenames in os.walk(skill_root):
-            dirnames[:] = [name for name in dirnames if name not in IGNORED_DIR_NAMES]
+            dirnames[:] = sorted(
+                name for name in dirnames if name not in IGNORED_DIR_NAMES
+            )
             current_path = Path(current)
             for filename in sorted(filenames):
                 raw_path = current_path / filename
