@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### Chat and Logs
-- Resolved the logs page 404 route issue.
+- Fixed Docker builds excluding `logs` route directories and causing logs pages to return 404 in production.
 - Prevented `UnboundLocalError` during chat streaming failures.
 - Fixed Docker deployment failures for auth and public chat SSR metadata fetches.
 - Restored workflow log run details when selecting a run from the workflow logs page.
