@@ -113,6 +113,7 @@ const chatStreamdownPlugins: PluginConfig = {
   code: chatCodeHighlighter,
 }
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
+const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
 type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
 
 type ParsedCodeFence = {
@@ -160,6 +161,37 @@ function getSpeechSynthesis() {
   }
 
   return window.speechSynthesis
+}
+
+type SpeechSentence = {
+  text: string
+  start: number
+  end: number
+}
+
+function splitSpeechSentences(text: string): SpeechSentence[] {
+  const sentences: SpeechSentence[] = []
+  const regex = /[^.!?。！？；;\n]+[.!?。！？；;\n]*/g
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(text)) !== null) {
+    const sentence = match[0]
+    const trimmed = sentence.trim()
+    if (!trimmed) {
+      continue
+    }
+    sentences.push({
+      text: trimmed,
+      start: match.index,
+      end: match.index + sentence.length,
+    })
+  }
+
+  return sentences.length > 0 ? sentences : [{ text, start: 0, end: text.length }]
+}
+
+function findSpeechSentence(sentences: SpeechSentence[], charIndex: number) {
+  return sentences.find((sentence) => charIndex >= sentence.start && charIndex < sentence.end) ?? sentences.at(-1) ?? null
 }
 
 function getToolArtifacts(output: unknown): FilePart[] {
@@ -339,6 +371,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
     const [isSpeakingThisMessage, setIsSpeakingThisMessage] = React.useState(false)
+    const [activeSpeechSentence, setActiveSpeechSentence] = React.useState<string | null>(null)
     const speechUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null)
     const speechSessionRef = React.useRef(0)
     const isUser = message.role === 'user'
@@ -384,6 +417,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const resetSpeechState = React.useCallback(() => {
       speechUtteranceRef.current = null
       setIsSpeakingThisMessage(false)
+      setActiveSpeechSentence(null)
     }, [])
 
     React.useEffect(() => {
@@ -436,6 +470,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       speechSynthesis.cancel()
 
       const utterance = new SpeechSynthesisUtterance(textContent)
+      const sentences = splitSpeechSentences(textContent)
       const preferredLanguages = getSpeechPreferredLanguages(locale)
       const voice = findSpeechVoice(speechVoices, preferredLanguages)
       const fallbackLanguage = preferredLanguages[0] || 'en-US'
@@ -447,6 +482,13 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       utterance.rate = 1
       utterance.pitch = 1
       utterance.volume = 1
+      utterance.onboundary = (event) => {
+        if (speechSessionRef.current !== sessionId || event.charIndex < 0) {
+          return
+        }
+        const sentence = findSpeechSentence(sentences, event.charIndex)
+        setActiveSpeechSentence(sentence?.text ?? null)
+      }
       utterance.onend = () => {
         if (speechSessionRef.current === sessionId) {
           resetSpeechState()
@@ -459,6 +501,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
 
       speechUtteranceRef.current = utterance
+      setActiveSpeechSentence(sentences[0]?.text ?? null)
       setIsSpeakingThisMessage(true)
       window.dispatchEvent(new CustomEvent(SPEECH_STARTED_EVENT, { detail: { messageId: message.id } }))
       speechSynthesis.speak(utterance)
@@ -580,6 +623,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             text={part.text}
             sources={documentSources}
             isStreaming={isStreaming && part.state !== 'done'}
+            activeSpeechSentence={activeSpeechSentence}
             onOpenCodePreview={onOpenCodePreview}
           />
         )
@@ -1377,11 +1421,13 @@ function TextWithCitations({
   text,
   sources,
   isStreaming = false,
+  activeSpeechSentence,
   onOpenCodePreview,
 }: {
   text: string
   sources: SourceDocumentPart[]
   isStreaming?: boolean
+  activeSpeechSentence?: string | null
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -1408,6 +1454,66 @@ function TextWithCitations({
     }
     return normalized
   }, [text, hasSources])
+
+  const clearSpeechHighlight = React.useCallback(() => {
+    const highlighted = containerRef.current?.querySelector('mark[data-speech-highlight="true"]')
+    if (!highlighted?.parentNode) {
+      return
+    }
+
+    highlighted.replaceWith(document.createTextNode(highlighted.textContent ?? ''))
+    highlighted.parentNode?.normalize()
+  }, [])
+
+  const applySpeechHighlight = React.useCallback(() => {
+    clearSpeechHighlight()
+    if (!containerRef.current || !activeSpeechSentence) {
+      return
+    }
+
+    const walker = document.createTreeWalker(
+      containerRef.current,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          const parent = node.parentElement
+          if (!parent || parent.closest('[data-streamdown="code-block"], .cite-portal, [data-speech-highlight="true"]')) {
+            return NodeFilter.FILTER_REJECT
+          }
+          return node.textContent?.includes(activeSpeechSentence)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP
+        },
+      }
+    )
+
+    const textNode = walker.nextNode() as Text | null
+    if (!textNode?.textContent || !textNode.parentNode) {
+      return
+    }
+
+    const sentenceIndex = textNode.textContent.indexOf(activeSpeechSentence)
+    if (sentenceIndex < 0) {
+      return
+    }
+
+    const fragment = document.createDocumentFragment()
+    const before = textNode.textContent.slice(0, sentenceIndex)
+    const after = textNode.textContent.slice(sentenceIndex + activeSpeechSentence.length)
+    const mark = document.createElement('mark')
+    mark.dataset.speechHighlight = 'true'
+    mark.className = SPEECH_HIGHLIGHT_CLASS
+    mark.textContent = activeSpeechSentence
+
+    if (before) {
+      fragment.appendChild(document.createTextNode(before))
+    }
+    fragment.appendChild(mark)
+    if (after) {
+      fragment.appendChild(document.createTextNode(after))
+    }
+    textNode.parentNode.replaceChild(fragment, textNode)
+  }, [activeSpeechSentence, clearSpeechHighlight])
 
   // Function to find and replace citation markers in DOM
   const processCitations = React.useCallback(() => {
@@ -1533,6 +1639,14 @@ function TextWithCitations({
       observer.disconnect()
     }
   }, [processedText, hasSources, processCitations])
+
+  React.useEffect(() => {
+    const timeoutId = setTimeout(applySpeechHighlight, 0)
+    return () => {
+      clearTimeout(timeoutId)
+      clearSpeechHighlight()
+    }
+  }, [activeSpeechSentence, applySpeechHighlight, clearSpeechHighlight, processedText])
 
   React.useEffect(() => {
     if (!isStreaming || !containerRef.current) {
