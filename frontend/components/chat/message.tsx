@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
-import { useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye } from 'lucide-react'
+import { useLocale, useTranslations } from 'next-intl'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -112,6 +112,9 @@ const chatCodeHighlighter: CodeHighlighterPlugin = {
 const chatStreamdownPlugins: PluginConfig = {
   code: chatCodeHighlighter,
 }
+const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
+type ChatSpeechStartedEvent = CustomEvent<{ messageId: string }>
+
 type ParsedCodeFence = {
   language: string
   code: string
@@ -128,6 +131,35 @@ type ToolArtifact = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function getSpeechPreferredLanguages(locale: string) {
+  const languages = [locale]
+
+  if (typeof navigator !== 'undefined') {
+    languages.push(...navigator.languages)
+    if (navigator.language) {
+      languages.push(navigator.language)
+    }
+  }
+
+  return Array.from(new Set(languages.filter(Boolean)))
+}
+
+function findSpeechVoice(voices: SpeechSynthesisVoice[], preferredLanguages: string[]) {
+  const normalizedLanguages = preferredLanguages.map((language) => language.toLowerCase())
+
+  return voices.find((voice) => normalizedLanguages.includes(voice.lang.toLowerCase()))
+    ?? voices.find((voice) => normalizedLanguages.some((language) => voice.lang.toLowerCase().startsWith(`${language.split('-')[0]}-`)))
+    ?? null
+}
+
+function getSpeechSynthesis() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window) || !('SpeechSynthesisUtterance' in window)) {
+    return null
+  }
+
+  return window.speechSynthesis
 }
 
 function getToolArtifacts(output: unknown): FilePart[] {
@@ -300,9 +332,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     ref
   ) => {
     const t = useTranslations('chat.message')
+    const locale = useLocale()
     const tReasoning = useTranslations('chat.reasoning')
     const tTask = useTranslations('chat.task')
     const [copied, setCopied] = React.useState(false)
+    const [isSpeechSupported, setIsSpeechSupported] = React.useState(false)
+    const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
+    const [isSpeakingThisMessage, setIsSpeakingThisMessage] = React.useState(false)
+    const speechUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null)
+    const speechSessionRef = React.useRef(0)
     const isUser = message.role === 'user'
     const isAssistant = message.role === 'assistant'
     
@@ -342,6 +380,89 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         console.error('Failed to copy:', err)
       }
     }
+
+    const resetSpeechState = React.useCallback(() => {
+      speechUtteranceRef.current = null
+      setIsSpeakingThisMessage(false)
+    }, [])
+
+    React.useEffect(() => {
+      const speechSynthesis = getSpeechSynthesis()
+      if (!speechSynthesis) {
+        return
+      }
+
+      setIsSpeechSupported(true)
+      const syncVoices = () => setSpeechVoices(speechSynthesis.getVoices())
+      syncVoices()
+      speechSynthesis.addEventListener('voiceschanged', syncVoices)
+
+      return () => {
+        speechSynthesis.removeEventListener('voiceschanged', syncVoices)
+        if (speechUtteranceRef.current) {
+          speechSynthesis.cancel()
+          resetSpeechState()
+        }
+      }
+    }, [resetSpeechState])
+
+    React.useEffect(() => {
+      const handleSpeechStarted = (event: Event) => {
+        const speechEvent = event as ChatSpeechStartedEvent
+        if (speechEvent.detail.messageId !== message.id) {
+          resetSpeechState()
+        }
+      }
+
+      window.addEventListener(SPEECH_STARTED_EVENT, handleSpeechStarted)
+      return () => window.removeEventListener(SPEECH_STARTED_EVENT, handleSpeechStarted)
+    }, [message.id, resetSpeechState])
+
+    const handleToggleSpeech = React.useCallback(() => {
+      const speechSynthesis = getSpeechSynthesis()
+      if (!speechSynthesis || !textContent) {
+        return
+      }
+
+      if (isSpeakingThisMessage) {
+        speechSessionRef.current += 1
+        speechSynthesis.cancel()
+        resetSpeechState()
+        return
+      }
+
+      speechSessionRef.current += 1
+      const sessionId = speechSessionRef.current
+      speechSynthesis.cancel()
+
+      const utterance = new SpeechSynthesisUtterance(textContent)
+      const preferredLanguages = getSpeechPreferredLanguages(locale)
+      const voice = findSpeechVoice(speechVoices, preferredLanguages)
+      const fallbackLanguage = preferredLanguages[0] || 'en-US'
+
+      utterance.lang = voice?.lang ?? fallbackLanguage
+      if (voice) {
+        utterance.voice = voice
+      }
+      utterance.rate = 1
+      utterance.pitch = 1
+      utterance.volume = 1
+      utterance.onend = () => {
+        if (speechSessionRef.current === sessionId) {
+          resetSpeechState()
+        }
+      }
+      utterance.onerror = () => {
+        if (speechSessionRef.current === sessionId) {
+          resetSpeechState()
+        }
+      }
+
+      speechUtteranceRef.current = utterance
+      setIsSpeakingThisMessage(true)
+      window.dispatchEvent(new CustomEvent(SPEECH_STARTED_EVENT, { detail: { messageId: message.id } }))
+      speechSynthesis.speak(utterance)
+    }, [isSpeakingThisMessage, locale, message.id, resetSpeechState, speechVoices, textContent])
 
     const renderToolResultContent = (output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
@@ -950,7 +1071,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
             {/* Actions for assistant messages */}
             {isAssistant && !isStreaming && textContent && (
-              <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
+           <MessageActions className={cn("transition-opacity", isSpeakingThisMessage ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
                 {/* Version switcher */}
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
                   <div className="flex items-center gap-0.5 text-muted-foreground">
@@ -973,6 +1094,13 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                     </button>
                   </div>
                 )}
+                <MessageAction
+                  tooltip={isSpeechSupported ? (isSpeakingThisMessage ? t('stopListening') : t('listen')) : t('speechUnavailable')}
+                  onClick={handleToggleSpeech}
+                  disabled={!isSpeechSupported}
+                >
+                  {isSpeakingThisMessage ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
+                </MessageAction>
                 {showCopy && (
                   <MessageAction
                     tooltip={copied ? t('copied') : t('copy')}
