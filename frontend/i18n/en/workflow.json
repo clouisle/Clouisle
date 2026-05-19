@@ -134,6 +134,8 @@
     "status": "Status",
     "allStatus": "All Status",
     "pending": "Pending",
+    "cancelled": "Cancelled",
+    "timeout": "Timeout",
     "allTime": "All Time",
     "last7Days": "Last 7 Days",
     "last30Days": "Last 30 Days",

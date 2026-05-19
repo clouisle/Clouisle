@@ -1,5 +1,5 @@
-import { API_BASE_URL } from '@/lib/constants'
 import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
+import { getServerApiBaseUrl } from '@/lib/api/server-url'
 import { AuthLayoutShell } from './_components/auth-layout-shell'
 import { getTranslations } from 'next-intl/server'
 
@@ -8,7 +8,7 @@ function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
 }
 
 async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'auth_page_layout'>> {
-  const response = await fetch(`${API_BASE_URL}/site-settings/public`, {
+  const response = await fetch(`${getServerApiBaseUrl()}/site-settings/public`, {
     next: { revalidate: 300 } // Cache for 5 minutes
   })
 

@@ -170,6 +170,8 @@ services:
         NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-0.0.0-dev}
         NEXT_PUBLIC_BUILD_DATE: ${NEXT_PUBLIC_BUILD_DATE:-unknown}
     restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}
     ports:
       - "3000:3000"
     depends_on:

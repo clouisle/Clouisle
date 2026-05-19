@@ -16,6 +16,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  Ban,
+  AlertTriangle,
   Loader2 as LoaderIcon
 } from 'lucide-react'
 import Image from 'next/image'
@@ -44,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
+import { WorkflowRunDrawer } from '@/app/(dashboard)/activities/_components/workflow-run-drawer'
 
 const PAGE_SIZE = 20
 
@@ -75,38 +78,49 @@ function formatDateTime(dateString: string, locale: string): string {
 function StatusBadge({ status }: { status: string }) {
   const t = useTranslations('workflow')
 
-  switch (status) {
-    case 'completed':
-      return (
-        <Badge variant="default" className="bg-green-500 hover:bg-green-600">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          {t('completed')}
-        </Badge>
-      )
-    case 'failed':
-      return (
-        <Badge variant="destructive">
-          <XCircle className="h-3 w-3 mr-1" />
-          {t('failed')}
-        </Badge>
-      )
-    case 'running':
-      return (
-        <Badge variant="secondary" className="bg-blue-500 hover:bg-blue-600 text-white">
-          <LoaderIcon className="h-3 w-3 mr-1 animate-spin" />
-          {t('running')}
-        </Badge>
-      )
-    case 'pending':
-      return (
-        <Badge variant="outline">
-          <Clock className="h-3 w-3 mr-1" />
-          {t('pending')}
-        </Badge>
-      )
-    default:
-      return <Badge variant="outline">{status}</Badge>
+  const statusConfig: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
+    success: {
+      icon: <CheckCircle className="h-3 w-3" />,
+      className: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
+      label: t('completed'),
+    },
+    failed: {
+      icon: <XCircle className="h-3 w-3" />,
+      className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20',
+      label: t('failed'),
+    },
+    running: {
+      icon: <LoaderIcon className="h-3 w-3 animate-spin" />,
+      className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+      label: t('running'),
+    },
+    pending: {
+      icon: <Clock className="h-3 w-3" />,
+      className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
+      label: t('pending'),
+    },
+    cancelled: {
+      icon: <Ban className="h-3 w-3" />,
+      className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
+      label: t('cancelled'),
+    },
+    timeout: {
+      icon: <AlertTriangle className="h-3 w-3" />,
+      className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
+      label: t('timeout'),
+    },
   }
+
+  const config = statusConfig[status] || statusConfig.pending
+
+  return (
+    <Badge variant="outline" className={config.className}>
+      <span className="flex items-center gap-1">
+        {config.icon}
+        {config.label}
+      </span>
+    </Badge>
+  )
 }
 
 export default function WorkflowLogsPage() {
@@ -127,6 +141,8 @@ export default function WorkflowLogsPage() {
   // Search and filter state
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [dateFilter, setDateFilter] = React.useState('all')
+  const [drawerOpen, setDrawerOpen] = React.useState(false)
+  const [selectedRunId, setSelectedRunId] = React.useState<string | null>(null)
 
   // Fetch workflow data
   const fetchWorkflow = React.useCallback(async () => {
@@ -159,6 +175,11 @@ export default function WorkflowLogsPage() {
       setIsLoadingRuns(false)
     }
   }, [workflowId, statusFilter])
+
+  const handleRowClick = (runId: string) => {
+    setSelectedRunId(runId)
+    setDrawerOpen(true)
+  }
 
   React.useEffect(() => {
     fetchWorkflow()
@@ -263,7 +284,7 @@ export default function WorkflowLogsPage() {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="gap-2"
-              onClick={() => router.push(`/app/apps/${workflowId}/monitor`)}
+              onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
             >
               <Activity className="h-4 w-4" />
               <span>{t('monitor')}</span>
@@ -283,7 +304,7 @@ export default function WorkflowLogsPage() {
                 <Activity className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue>
                   {statusFilter === 'all' && t('allStatus')}
-                  {statusFilter === 'completed' && t('completed')}
+                  {statusFilter === 'success' && t('completed')}
                   {statusFilter === 'failed' && t('failed')}
                   {statusFilter === 'running' && t('running')}
                   {statusFilter === 'pending' && t('pending')}
@@ -291,7 +312,7 @@ export default function WorkflowLogsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('allStatus')}</SelectItem>
-                <SelectItem value="completed">{t('completed')}</SelectItem>
+                <SelectItem value="success">{t('completed')}</SelectItem>
                 <SelectItem value="failed">{t('failed')}</SelectItem>
                 <SelectItem value="running">{t('running')}</SelectItem>
                 <SelectItem value="pending">{t('pending')}</SelectItem>
@@ -350,10 +371,7 @@ export default function WorkflowLogsPage() {
                   <TableRow
                     key={run.id}
                     className="cursor-pointer"
-                    onClick={() => {
-                      // TODO: Open run detail drawer
-                      console.log('Open run detail:', run.id)
-                    }}
+                    onClick={() => handleRowClick(run.id)}
                   >
                     <TableCell className="font-mono text-xs">
                       {run.id.slice(0, 8)}...
@@ -415,6 +433,18 @@ export default function WorkflowLogsPage() {
           </div>
         )}
       </div>
+
+      {selectedRunId && (
+        <WorkflowRunDrawer
+          runId={selectedRunId}
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          onDelete={() => {
+            fetchRuns(currentPage)
+            setDrawerOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { API_BASE_URL } from '@/lib/constants'
+import { getServerApiBaseUrl, getServerBackendOrigin } from '@/lib/api/server-url'
 
 interface PublicAgentInfo {
   id: string
@@ -11,7 +11,7 @@ interface PublicAgentInfo {
 
 async function getAgentInfo(id: string): Promise<PublicAgentInfo | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}/agents/${id}/public`, {
+    const response = await fetch(`${getServerApiBaseUrl()}/agents/${id}/public`, {
       headers: {
         'Content-Type': 'application/json',
       },
@@ -49,13 +49,13 @@ export async function generateMetadata({
   let iconUrl: string | undefined
   if (agent.avatar_url) {
     // avatar_url is already a full path like /api/v1/upload/files/...
-    iconUrl = agent.avatar_url.startsWith('http') 
-      ? agent.avatar_url 
-      : `${API_BASE_URL.replace('/api/v1', '')}${agent.avatar_url}`
+    iconUrl = agent.avatar_url.startsWith('http')
+      ? agent.avatar_url
+      : `${getServerBackendOrigin()}${agent.avatar_url}`
   } else if (agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))) {
-    iconUrl = agent.icon.startsWith('http') 
-      ? agent.icon 
-      : `${API_BASE_URL.replace('/api/v1', '')}${agent.icon}`
+    iconUrl = agent.icon.startsWith('http')
+      ? agent.icon
+      : `${getServerBackendOrigin()}${agent.icon}`
   }
   
   return {
