@@ -39,6 +39,8 @@ COPY main.py ./
 
 RUN mkdir -p /app/uploads \
     && find /app -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true \
+    && python -m compileall -b --invalidation-mode=checked-hash -q /app/backend/app \
+    && find /app/backend/app -type f -name '*.py' -delete \
     && chown -R clouisle:clouisle /app
 
 ENV PYTHONUNBUFFERED=1 \
