@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Chat Streaming
 - Removed stack trace exposure from chat streaming error responses.
 
+## [0.2.3] - 2026-05-19
+
+### Fixed
+
+#### Authentication
+- Redirect unauthenticated users away from protected app and dashboard pages before rendering credential-dependent content.
+- Preserve backend invalid-credential messages on login instead of replacing them with the session-expired notice.
+- Keep authentication form borders on the centered card layout while preserving the borderless split layout.
+
+#### Dashboard
+- Give dashboard trend charts measurable containers to avoid invalid Recharts width and height warnings.
+
 ## [0.2.2] - 2026-05-17
 
 ### Added

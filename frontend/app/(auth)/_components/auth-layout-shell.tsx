@@ -4,12 +4,10 @@ import type { AuthPageLayout } from '@/lib/api/site-settings'
 interface AuthLayoutShellProps {
   children: React.ReactNode
   layout: AuthPageLayout
-  siteName: string
-  siteDescription: string
   previewImageAlt: string
 }
 
-function AuthPreviewPanel({ siteName, previewImageAlt }: Pick<AuthLayoutShellProps, 'siteName' | 'previewImageAlt'>) {
+function AuthPreviewPanel({ previewImageAlt }: Pick<AuthLayoutShellProps, 'previewImageAlt'>) {
   return (
     <aside className="relative hidden min-h-screen flex-1 overflow-hidden bg-muted/45 dark:bg-muted/25 lg:block">
       <img
@@ -25,7 +23,6 @@ function AuthPreviewPanel({ siteName, previewImageAlt }: Pick<AuthLayoutShellPro
 export function AuthLayoutShell({
   children,
   layout,
-  siteName,
   previewImageAlt,
 }: AuthLayoutShellProps) {
   const isSplit = layout === 'split'
@@ -49,11 +46,11 @@ export function AuthLayoutShell({
         <LocaleSwitcher />
       </div>
       <main className="flex min-h-screen w-full items-center justify-center bg-background px-4 py-12 lg:w-[48%] lg:px-10 lg:pr-16 xl:pr-20">
-        <div className="w-full max-w-md lg:mr-24 xl:mr-32">
+        <div className="auth-layout-split w-full max-w-md lg:mr-24 xl:mr-32">
           {children}
         </div>
       </main>
-      <AuthPreviewPanel siteName={siteName} previewImageAlt={previewImageAlt} />
+      <AuthPreviewPanel previewImageAlt={previewImageAlt} />
     </div>
   )
 }

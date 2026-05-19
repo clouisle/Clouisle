@@ -4,6 +4,7 @@ import * as React from 'react'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { useSettings } from '@/hooks/use-settings'
+import { AuthGuard } from '@/components/auth-guard'
 
 export default function DashboardLayout({
   children,
@@ -36,15 +37,17 @@ export default function DashboardLayout({
   }, [sidebarOpen])
 
   return (
-    <SidebarProvider open={open} onOpenChange={setOpen}>
-      <AppSidebar 
-        variant={effectiveSidebarVariant} 
-        collapsible={collapsible} 
-        side={sidebarSide}
-      />
-      <SidebarInset>
-        {children}
-      </SidebarInset>
-    </SidebarProvider>
+    <AuthGuard>
+      <SidebarProvider open={open} onOpenChange={setOpen}>
+        <AppSidebar
+          variant={effectiveSidebarVariant}
+          collapsible={collapsible}
+          side={sidebarSide}
+        />
+        <SidebarInset>
+          {children}
+        </SidebarInset>
+      </SidebarProvider>
+    </AuthGuard>
   )
 }

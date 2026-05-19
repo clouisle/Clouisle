@@ -8,7 +8,7 @@ export default async function LoginPage() {
   const t = await getTranslations('auth')
 
   return (
-    <Card className="bg-transparent shadow-none ring-0">
+    <Card className="[.auth-layout-split_&]:bg-transparent [.auth-layout-split_&]:shadow-none [.auth-layout-split_&]:ring-0">
       <LoginRedirect />
       <CardHeader className="text-center">
         <CardTitle className="text-2xl">{t('loginTitle')}</CardTitle>
