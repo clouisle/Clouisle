@@ -76,6 +76,12 @@ tmp
 **/tmp
 temp
 **/temp
+!frontend/app/**/logs/
+!frontend/app/**/logs/**
+!frontend/app/**/tmp/
+!frontend/app/**/tmp/**
+!frontend/app/**/temp/
+!frontend/app/**/temp/**
 
 # Local uploads, generated files, and sandbox workspaces
 uploads

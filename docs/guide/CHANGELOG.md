@@ -18,7 +18,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 #### Chat and Logs
-- Resolved the logs page 404 route issue.
+- Fixed Docker builds excluding `logs` route directories and causing logs pages to return 404 in production.
 - Prevented `UnboundLocalError` during chat streaming failures.
 
 #### Skills and Automation
