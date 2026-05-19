@@ -163,6 +163,10 @@ function getSpeechSynthesis() {
   return window.speechSynthesis
 }
 
+function getSpeechText(text: string) {
+  return text.replace(/```[\s\S]*?```/g, '').trim()
+}
+
 type SpeechSentence = {
   text: string
   start: number
@@ -454,7 +458,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
 
     const handleToggleSpeech = React.useCallback(() => {
       const speechSynthesis = getSpeechSynthesis()
-      if (!speechSynthesis || !textContent) {
+      const speechText = getSpeechText(textContent)
+      if (!speechSynthesis || !speechText) {
         return
       }
 
@@ -469,8 +474,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       const sessionId = speechSessionRef.current
       speechSynthesis.cancel()
 
-      const utterance = new SpeechSynthesisUtterance(textContent)
-      const sentences = splitSpeechSentences(textContent)
+      const utterance = new SpeechSynthesisUtterance(speechText)
+      const sentences = splitSpeechSentences(speechText)
       const preferredLanguages = getSpeechPreferredLanguages(locale)
       const voice = findSpeechVoice(speechVoices, preferredLanguages)
       const fallbackLanguage = preferredLanguages[0] || 'en-US'
@@ -1456,13 +1461,16 @@ function TextWithCitations({
   }, [text, hasSources])
 
   const clearSpeechHighlight = React.useCallback(() => {
-    const highlighted = containerRef.current?.querySelector('mark[data-speech-highlight="true"]')
-    if (!highlighted?.parentNode) {
+    const highlightedElements = containerRef.current?.querySelectorAll('mark[data-speech-highlight="true"]')
+    if (!highlightedElements) {
       return
     }
 
-    highlighted.replaceWith(document.createTextNode(highlighted.textContent ?? ''))
-    highlighted.parentNode?.normalize()
+    highlightedElements.forEach((highlighted) => {
+      const parent = highlighted.parentNode
+      highlighted.replaceWith(document.createTextNode(highlighted.textContent ?? ''))
+      parent?.normalize()
+    })
   }, [])
 
   const applySpeechHighlight = React.useCallback(() => {
@@ -1471,6 +1479,7 @@ function TextWithCitations({
       return
     }
 
+    const textNodes: Text[] = []
     const walker = document.createTreeWalker(
       containerRef.current,
       NodeFilter.SHOW_TEXT,
@@ -1480,39 +1489,57 @@ function TextWithCitations({
           if (!parent || parent.closest('[data-streamdown="code-block"], .cite-portal, [data-speech-highlight="true"]')) {
             return NodeFilter.FILTER_REJECT
           }
-          return node.textContent?.includes(activeSpeechSentence)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_SKIP
+          return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
         },
       }
     )
 
-    const textNode = walker.nextNode() as Text | null
-    if (!textNode?.textContent || !textNode.parentNode) {
+    let node: Text | null
+    while ((node = walker.nextNode() as Text | null)) {
+      textNodes.push(node)
+    }
+
+    const renderedText = textNodes.map((textNode) => textNode.textContent ?? '').join('')
+    const normalizedSentence = activeSpeechSentence.replace(/`([^`]+)`/g, '$1')
+    const start = renderedText.indexOf(normalizedSentence)
+    if (start < 0) {
       return
     }
+    const end = start + normalizedSentence.length
+    let cursor = 0
 
-    const sentenceIndex = textNode.textContent.indexOf(activeSpeechSentence)
-    if (sentenceIndex < 0) {
-      return
-    }
+    textNodes.forEach((textNode) => {
+      const content = textNode.textContent ?? ''
+      const nodeStart = cursor
+      const nodeEnd = cursor + content.length
+      cursor = nodeEnd
 
-    const fragment = document.createDocumentFragment()
-    const before = textNode.textContent.slice(0, sentenceIndex)
-    const after = textNode.textContent.slice(sentenceIndex + activeSpeechSentence.length)
-    const mark = document.createElement('mark')
-    mark.dataset.speechHighlight = 'true'
-    mark.className = SPEECH_HIGHLIGHT_CLASS
-    mark.textContent = activeSpeechSentence
+      const highlightStart = Math.max(start, nodeStart)
+      const highlightEnd = Math.min(end, nodeEnd)
+      if (highlightStart >= highlightEnd || !textNode.parentNode) {
+        return
+      }
 
-    if (before) {
-      fragment.appendChild(document.createTextNode(before))
-    }
-    fragment.appendChild(mark)
-    if (after) {
-      fragment.appendChild(document.createTextNode(after))
-    }
-    textNode.parentNode.replaceChild(fragment, textNode)
+      const localStart = highlightStart - nodeStart
+      const localEnd = highlightEnd - nodeStart
+      const fragment = document.createDocumentFragment()
+      const before = content.slice(0, localStart)
+      const highlightedText = content.slice(localStart, localEnd)
+      const after = content.slice(localEnd)
+      const mark = document.createElement('mark')
+      mark.dataset.speechHighlight = 'true'
+      mark.className = SPEECH_HIGHLIGHT_CLASS
+      mark.textContent = highlightedText
+
+      if (before) {
+        fragment.appendChild(document.createTextNode(before))
+      }
+      fragment.appendChild(mark)
+      if (after) {
+        fragment.appendChild(document.createTextNode(after))
+      }
+      textNode.parentNode.replaceChild(fragment, textNode)
+    })
   }, [activeSpeechSentence, clearSpeechHighlight])
 
   // Function to find and replace citation markers in DOM
