@@ -18,6 +18,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isVerified, setIsVerified] = React.useState(false)
 
   React.useEffect(() => {
+    if (isVerified) return
+
     let cancelled = false
     const loginUrl = getLoginUrl(pathname, searchParams)
 
@@ -40,7 +42,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [pathname, router, searchParams])
+  }, [isVerified, pathname, router, searchParams])
 
   if (!isVerified) return null
 
