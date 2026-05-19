@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
@@ -36,10 +36,6 @@ import {
 import { AgentSidebar } from '../_components/agent-sidebar'
 import { ConversationDrawer } from './_components/conversation-drawer'
 
-interface LogsPageProps {
-  params: Promise<{ id: string }>
-}
-
 const PAGE_SIZE = 20
 
 // Helper to format datetime
@@ -66,10 +62,12 @@ function formatDateTime(dateString: string, locale: string): string {
   }
 }
 
-export default function LogsPage({ params }: LogsPageProps) {
+export default function LogsPage() {
   const t = useTranslations('agents.logs')
   const locale = useLocale()
   const router = useRouter()
+  const params = useParams()
+  const agentId = params.id as string
 
   const [agent, setAgent] = React.useState<Agent | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
@@ -77,12 +75,12 @@ export default function LogsPage({ params }: LogsPageProps) {
   const [totalConversations, setTotalConversations] = React.useState(0)
   const [currentPage, setCurrentPage] = React.useState(1)
   const [isLoadingConversations, setIsLoadingConversations] = React.useState(false)
-  
+
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
   const [dateFilter, setDateFilter] = React.useState('all')
   const [sortBy, setSortBy] = React.useState('created_at')
-  
+
   // Drawer state
   const [drawerOpen, setDrawerOpen] = React.useState(false)
   const [selectedConversation, setSelectedConversation] = React.useState<ConversationWithMessages | null>(null)
@@ -91,35 +89,28 @@ export default function LogsPage({ params }: LogsPageProps) {
   // Delete dialog state
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
 
-  // Unwrap params
-  const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
-
-  React.useEffect(() => {
-    params.then(setResolvedParams)
-  }, [params])
-
   // Fetch agent data
   const fetchAgent = React.useCallback(async () => {
-    if (!resolvedParams) return
+    if (!agentId) return
 
     try {
       setIsLoading(true)
-      const data = await agentsApi.getAgent(resolvedParams.id)
+      const data = await agentsApi.getAgent(agentId)
       setAgent(data)
     } catch {
       router.push('/app/apps')
     } finally {
       setIsLoading(false)
     }
-  }, [resolvedParams, router])
+  }, [agentId, router])
 
   // Fetch conversations
   const fetchConversations = React.useCallback(async (page: number = 1) => {
-    if (!resolvedParams) return
+    if (!agentId) return
 
     try {
       setIsLoadingConversations(true)
-      const result = await agentsApi.getAgentConversations(resolvedParams.id, {
+      const result = await agentsApi.getAgentConversations(agentId, {
         page,
         pageSize: PAGE_SIZE,
       })
@@ -131,7 +122,7 @@ export default function LogsPage({ params }: LogsPageProps) {
     } finally {
       setIsLoadingConversations(false)
     }
-  }, [resolvedParams])
+  }, [agentId])
 
   // Fetch conversation detail
   const handleRowClick = async (conversationId: string) => {
