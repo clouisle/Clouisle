@@ -70,8 +70,7 @@ uv-cache
 
 # Logs and runtime artifacts
 *.log
-logs
-**/logs
+/logs
 tmp
 **/tmp
 temp
