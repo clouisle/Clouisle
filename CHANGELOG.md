@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### UI Consistency
+- Unified destructive delete affordances across platform menus and dialogs, including SSO provider, knowledge base, and capability actions.
+- Kept notification badge text legible when hovering destructive menu items.
+
+### Fixed
+
+#### Chat and Logs
+- Resolved the logs page 404 route issue.
+- Prevented `UnboundLocalError` during chat streaming failures.
+
+#### Skills and Automation
+- Installed Git in the skill import environment so Git-backed skill imports can complete successfully.
+
+### Security
+
+#### Chat Streaming
+- Removed stack trace exposure from chat streaming error responses.
+
 ## [0.2.2] - 2026-05-17
 
 ### Added
