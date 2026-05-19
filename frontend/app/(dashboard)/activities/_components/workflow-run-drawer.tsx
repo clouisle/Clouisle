@@ -72,32 +72,32 @@ function StatusBadge({ status, tWorkflow }: { status: string; tWorkflow: ReturnT
     success: {
       icon: <CheckCircle className="h-3 w-3" />,
       className: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
-      label: tWorkflow('status.success'),
+      label: tWorkflow('completed'),
     },
     failed: {
       icon: <XCircle className="h-3 w-3" />,
       className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20',
-      label: tWorkflow('status.failed'),
+      label: tWorkflow('failed'),
     },
     running: {
       icon: <Loader className="h-3 w-3 animate-spin" />,
       className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
-      label: tWorkflow('status.running'),
+      label: tWorkflow('running'),
     },
     pending: {
       icon: <Clock className="h-3 w-3" />,
       className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
-      label: tWorkflow('status.pending'),
+      label: tWorkflow('pending'),
     },
     cancelled: {
       icon: <Ban className="h-3 w-3" />,
       className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
-      label: tWorkflow('status.cancelled'),
+      label: tWorkflow('cancelled'),
     },
     timeout: {
       icon: <AlertTriangle className="h-3 w-3" />,
       className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
-      label: tWorkflow('status.failed'),
+      label: tWorkflow('timeout'),
     },
   }
 
@@ -213,13 +213,13 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                 </div>
                 {run.started_at && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Started At</span>
+                    <span className="text-muted-foreground">{t('runDetail.startedAt')}</span>
                     <span>{formatDateTime(run.started_at)}</span>
                   </div>
                 )}
                 {run.finished_at && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Finished At</span>
+                    <span className="text-muted-foreground">{t('runDetail.finishedAt')}</span>
                     <span>{formatDateTime(run.finished_at)}</span>
                   </div>
                 )}
@@ -229,8 +229,8 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                 </div>
                 {run.is_debug && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Debug Mode</span>
-                    <Badge variant="secondary">Debug</Badge>
+                    <span className="text-muted-foreground">{t('runDetail.debugMode')}</span>
+                    <Badge variant="secondary">{t('runDetail.debug')}</Badge>
                   </div>
                 )}
               </div>
@@ -270,7 +270,7 @@ export function WorkflowRunDrawer({ runId, open, onOpenChange, onDelete }: Workf
                   <h3 className="text-sm font-semibold mb-3">{t('runDetail.errorInfo')}</h3>
                   <Alert variant="destructive">
                     <XCircle className="h-4 w-4" />
-                    <AlertTitle>{tWorkflow('status.failed')}</AlertTitle>
+                    <AlertTitle>{tWorkflow('failed')}</AlertTitle>
                     <AlertDescription className="mt-2 text-sm">
                       {run.error_message}
                     </AlertDescription>

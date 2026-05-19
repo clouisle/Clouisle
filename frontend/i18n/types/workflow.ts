@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-16T13:52:26.521Z
+// GENERATED — 2026-05-19T16:16:40.931Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -193,6 +193,8 @@ export type WorkflowMessages = {
     status: string
     allStatus: string
     pending: string
+    cancelled: string
+    timeout: string
     allTime: string
     last7Days: string
     last30Days: string

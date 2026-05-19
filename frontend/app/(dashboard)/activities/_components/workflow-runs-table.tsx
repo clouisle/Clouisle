@@ -94,44 +94,48 @@ function formatDuration(ms: number | null | undefined): string {
 
 // Status badge component
 function StatusBadge({ status }: { status: RunStatus }) {
-  const statusConfig: Record<RunStatus, { icon: React.ReactNode; variant: 'default' | 'destructive' | 'secondary' | 'outline'; className?: string }> = {
+  const tWorkflow = useTranslations('workflow')
+
+  const statusConfig: Record<RunStatus, { icon: React.ReactNode; className: string; label: string }> = {
     success: {
       icon: <CheckCircle className="h-3 w-3" />,
-      variant: 'default',
       className: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
+      label: tWorkflow('completed'),
     },
     failed: {
       icon: <XCircle className="h-3 w-3" />,
-      variant: 'destructive',
+      className: 'bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20',
+      label: tWorkflow('failed'),
     },
     running: {
       icon: <Loader className="h-3 w-3 animate-spin" />,
-      variant: 'default',
       className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
+      label: tWorkflow('running'),
     },
     pending: {
       icon: <Clock className="h-3 w-3" />,
-      variant: 'secondary',
+      className: 'bg-gray-500/10 text-gray-700 dark:text-gray-400 border-gray-500/20',
+      label: tWorkflow('pending'),
     },
     cancelled: {
       icon: <Ban className="h-3 w-3" />,
-      variant: 'outline',
       className: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20',
+      label: tWorkflow('cancelled'),
     },
     timeout: {
       icon: <AlertTriangle className="h-3 w-3" />,
-      variant: 'outline',
       className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
+      label: tWorkflow('timeout'),
     },
   }
 
   const config = statusConfig[status]
 
   return (
-    <Badge variant={config.variant} className={config.className}>
+    <Badge variant="outline" className={config.className}>
       <span className="flex items-center gap-1">
         {config.icon}
-        {status}
+        {config.label}
       </span>
     </Badge>
   )

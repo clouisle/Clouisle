@@ -134,6 +134,8 @@
     "status": "状态",
     "allStatus": "全部状态",
     "pending": "待执行",
+    "cancelled": "已取消",
+    "timeout": "超时",
     "allTime": "全部时间",
     "last7Days": "最近 7 天",
     "last30Days": "最近 30 天",

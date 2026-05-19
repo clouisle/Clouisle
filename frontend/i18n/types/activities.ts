@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-16T13:52:26.507Z
+// GENERATED — 2026-05-19T16:16:40.916Z
 // Source: i18n/en/activities.json
 export type ActivitiesMessages = {
   activities: {
@@ -58,6 +58,10 @@ export type ActivitiesMessages = {
       executedNodes: string
       failedNodes: string
       totalTokens: string
+      startedAt: string
+      finishedAt: string
+      debugMode: string
+      debug: string
       viewDetails: string
       deleteRun: string
       confirmDelete: string
