@@ -8,19 +8,34 @@ function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
 }
 
 async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'auth_page_layout'>> {
-  const response = await fetch(`${getServerApiBaseUrl()}/site-settings/public`, {
-    next: { revalidate: 300 } // Cache for 5 minutes
-  })
+  try {
+    const response = await fetch(`${getServerApiBaseUrl()}/site-settings/public`, {
+      next: { revalidate: 300 }, // Cache for 5 minutes
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
 
-  if (!response.ok) {
-    throw new Error('Failed to load public site settings')
-  }
+    if (!response.ok) {
+      console.warn(`Failed to fetch public settings: ${response.status}`)
+      return {
+        site_name: 'Clouisle',
+        auth_page_layout: 'centered',
+      }
+    }
 
-  const body = await response.json() as { data?: Partial<PublicSiteSettings> }
+    const body = await response.json() as { data?: Partial<PublicSiteSettings> }
 
-  return {
+    return {
     site_name: body.data?.site_name || 'Clouisle',
-    auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
+      auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
+    }
+  } catch (error) {
+    console.error('Error fetching public settings:', error)
+    return {
+      site_name: 'Clouisle',
+      auth_page_layout: 'centered',
+    }
   }
 }
 
@@ -31,21 +46,7 @@ export default async function AuthLayout({
 }) {
   const t = await getTranslations('auth')
 
-  let settings = {
-    site_name: 'Clouisle',
-    auth_page_layout: 'centered' as AuthPageLayout,
-  }
-
-  try {
-    settings = await getPublicSettings()
-  } catch (error) {
-    console.error('Failed to load public settings for auth layout:', error)
-    // Keep all defaults on error
-    settings = {
-      site_name: 'Clouisle',
-      auth_page_layout: 'centered',
-    }
-  }
+  const settings = await getPublicSettings()
 
   return (
     <AuthLayoutShell
