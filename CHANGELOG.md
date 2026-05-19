@@ -7,17 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-05-20
+
 ### Changed
 
 #### UI Consistency
 - Unified destructive delete affordances across platform menus and dialogs, including SSO provider, knowledge base, and capability actions.
 - Kept notification badge text legible when hovering destructive menu items.
+- Aligned workflow run status labels and badge styling across workflow logs, run details, and activity logs.
+
+#### Deployment
+- Packaged the backend application as bytecode in Docker images.
+- Enabled Docker standalone frontend deployments to proxy `/api/*` requests to the internal backend service.
+- Added a server-side API URL resolver for frontend SSR fetches when the public API URL is relative.
 
 ### Fixed
 
 #### Chat and Logs
 - Resolved the logs page 404 route issue.
 - Prevented `UnboundLocalError` during chat streaming failures.
+- Fixed Docker deployment failures for auth and public chat SSR metadata fetches.
+- Restored workflow log run details when selecting a run from the workflow logs page.
+- Fixed workflow log filtering to use backend run status values and corrected workflow monitor navigation from the logs page.
+- Localized workflow run detail labels for started time, finished time, and debug mode.
 
 #### Skills and Automation
 - Installed Git in the skill import environment so Git-backed skill imports can complete successfully.
