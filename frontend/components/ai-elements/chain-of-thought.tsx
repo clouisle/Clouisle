@@ -1,12 +1,6 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import {
   BrainIcon,
@@ -17,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useState } from "react";
 import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
@@ -38,8 +32,11 @@ export const useChainOfThought = () => {
 };
 
 // Main Container
-export type ChainOfThoughtProps = ComponentProps<typeof Collapsible> & {
+export type ChainOfThoughtProps = ComponentProps<"div"> & {
   isStreaming?: boolean;
+  open?: boolean;
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 const AUTO_CLOSE_DELAY = 3000;
@@ -54,11 +51,12 @@ export const ChainOfThought = memo(
     children,
     ...props
   }: ChainOfThoughtProps) => {
-    const [isOpen, setIsOpen] = useControllableState({
-      prop: open,
-      defaultProp: defaultOpen,
-      onChange: onOpenChange,
-    });
+    const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+    const isOpen = open ?? uncontrolledOpen;
+    const setIsOpen = useCallback((nextOpen: boolean) => {
+      setUncontrolledOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    }, [onOpenChange]);
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
 
@@ -76,14 +74,13 @@ export const ChainOfThought = memo(
 
     return (
       <ChainOfThoughtContext.Provider value={{ isOpen, setIsOpen, isStreaming }}>
-        <Collapsible
+        <div
           className={cn("not-prose mb-4 w-full", className)}
-          open={isOpen}
-          onOpenChange={setIsOpen}
+          data-state={isOpen ? "open" : "closed"}
           {...props}
         >
           {children}
-        </Collapsible>
+        </div>
       </ChainOfThoughtContext.Provider>
     );
   }
@@ -91,7 +88,7 @@ export const ChainOfThought = memo(
 ChainOfThought.displayName = "ChainOfThought";
 
 // Header with collapsible trigger
-export type ChainOfThoughtHeaderProps = ComponentProps<typeof CollapsibleTrigger> & {
+export type ChainOfThoughtHeaderProps = ComponentProps<"button"> & {
   title?: string;
   icon?: LucideIcon;
 };
@@ -104,15 +101,17 @@ export const ChainOfThoughtHeader = memo(
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
-    const { isOpen, isStreaming } = useChainOfThought();
+    const { isOpen, setIsOpen, isStreaming } = useChainOfThought();
     const t = useTranslations('chat.reasoning');
 
     return (
-      <CollapsibleTrigger
+      <button
+        type="button"
         className={cn(
           "flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
           className
         )}
+        onClick={() => setIsOpen(!isOpen)}
         {...props}
       >
         <Icon className="size-4" />
@@ -129,28 +128,32 @@ export const ChainOfThoughtHeader = memo(
             isOpen ? "rotate-180" : "rotate-0"
           )}
         />
-      </CollapsibleTrigger>
+      </button>
     );
   }
 );
 ChainOfThoughtHeader.displayName = "ChainOfThoughtHeader";
 
 // Content container
-export type ChainOfThoughtContentProps = ComponentProps<typeof CollapsibleContent>;
+export type ChainOfThoughtContentProps = ComponentProps<"div">;
 
 export const ChainOfThoughtContent = memo(
-  ({ className, children, ...props }: ChainOfThoughtContentProps) => (
-    <CollapsibleContent
-      className={cn(
-        "mt-3 space-y-2 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </CollapsibleContent>
-  )
+  ({ className, children, ...props }: ChainOfThoughtContentProps) => {
+    const { isOpen } = useChainOfThought();
+
+    return (
+      <div
+        className={cn(
+          "mt-3 space-y-2 text-sm outline-none",
+          !isOpen && "hidden",
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </div>
+    );
+  }
 );
 ChainOfThoughtContent.displayName = "ChainOfThoughtContent";
 
