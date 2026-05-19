@@ -251,7 +251,7 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
               <CardDescription className="text-xs">{t('userGrowthDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 pt-0">
-              <div className="h-full min-h-[160px] w-full">
+              <div className="h-[180px] min-w-0 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={trendsData}>
                   <defs>
@@ -340,7 +340,7 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
               <CardDescription className="text-xs">{t('activityTrendDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 pt-0">
-              <div className="h-full min-h-[160px] w-full">
+              <div className="h-[180px] min-w-0 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={trendsData}>
                   <defs>

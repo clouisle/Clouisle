@@ -7,7 +7,7 @@ function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
   return value === 'split' ? 'split' : 'centered'
 }
 
-async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'site_description' | 'auth_page_layout'>> {
+async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'auth_page_layout'>> {
   const response = await fetch(`${API_BASE_URL}/site-settings/public`, {
     next: { revalidate: 300 } // Cache for 5 minutes
   })
@@ -20,7 +20,6 @@ async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name'
 
   return {
     site_name: body.data?.site_name || 'Clouisle',
-    site_description: body.data?.site_description || '',
     auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
   }
 }
@@ -34,7 +33,6 @@ export default async function AuthLayout({
 
   let settings = {
     site_name: 'Clouisle',
-    site_description: '',
     auth_page_layout: 'centered' as AuthPageLayout,
   }
 
@@ -45,7 +43,6 @@ export default async function AuthLayout({
     // Keep all defaults on error
     settings = {
       site_name: 'Clouisle',
-      site_description: '',
       auth_page_layout: 'centered',
     }
   }
@@ -53,8 +50,6 @@ export default async function AuthLayout({
   return (
     <AuthLayoutShell
       layout={settings.auth_page_layout}
-      siteName={settings.site_name}
-      siteDescription={settings.site_description}
       previewImageAlt={t('previewImageAlt', { siteName: settings.site_name })}
     >
       {children}
