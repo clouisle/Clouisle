@@ -164,7 +164,18 @@ function getSpeechSynthesis() {
 }
 
 function getSpeechText(text: string) {
-  return text.replace(/```[\s\S]*?```/g, '').trim()
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/[*_~]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 type SpeechSentence = {
@@ -173,22 +184,81 @@ type SpeechSentence = {
   end: number
 }
 
+const SPEECH_ABBREVIATIONS = new Set([
+  'mr',
+  'mrs',
+  'ms',
+  'dr',
+  'prof',
+  'sr',
+  'jr',
+  'st',
+  'vs',
+  'etc',
+  'e.g',
+  'i.e',
+  'u.s',
+  'u.k',
+])
+
+function getTrimmedSentence(text: string, start: number, end: number): SpeechSentence | null {
+  const raw = text.slice(start, end)
+  const leading = raw.search(/\S/)
+  if (leading < 0) {
+    return null
+  }
+
+  const trimmed = raw.trimEnd()
+  return {
+    text: trimmed.slice(leading),
+    start: start + leading,
+    end: start + trimmed.length,
+  }
+}
+
+function shouldSplitSpeechSentence(text: string, index: number) {
+  const char = text[index]
+  if (char === '\n' || /[。！？；]/.test(char)) {
+    return true
+  }
+
+  if (!/[.!?;]/.test(char)) {
+    return false
+  }
+
+  const previous = text[index - 1] ?? ''
+  const next = text[index + 1] ?? ''
+  if (char === '.' && /\d/.test(previous) && /\d/.test(next)) {
+    return false
+  }
+
+  const token = text.slice(0, index).match(/([A-Za-z][A-Za-z.]*)$/)?.[1].toLowerCase()
+  if (char === '.' && token && SPEECH_ABBREVIATIONS.has(token)) {
+    return false
+  }
+
+  return !next || /[\s"'”’)]/.test(next)
+}
+
 function splitSpeechSentences(text: string): SpeechSentence[] {
   const sentences: SpeechSentence[] = []
-  const regex = /[^.!?。！？；;\n]+[.!?。！？；;\n]*/g
-  let match: RegExpExecArray | null
+  let sentenceStart = 0
 
-  while ((match = regex.exec(text)) !== null) {
-    const sentence = match[0]
-    const trimmed = sentence.trim()
-    if (!trimmed) {
+  for (let index = 0; index < text.length; index += 1) {
+    if (!shouldSplitSpeechSentence(text, index)) {
       continue
     }
-    sentences.push({
-      text: trimmed,
-      start: match.index,
-      end: match.index + sentence.length,
-    })
+
+    const sentence = getTrimmedSentence(text, sentenceStart, index + 1)
+    if (sentence) {
+      sentences.push(sentence)
+    }
+    sentenceStart = index + 1
+  }
+
+  const finalSentence = getTrimmedSentence(text, sentenceStart, text.length)
+  if (finalSentence) {
+    sentences.push(finalSentence)
   }
 
   return sentences.length > 0 ? sentences : [{ text, start: 0, end: text.length }]
@@ -1509,12 +1579,11 @@ function TextWithCitations({
     }
 
     const renderedText = textNodes.map((textNode) => textNode.textContent ?? '').join('')
-    const normalizedSentence = activeSpeechSentence.replace(/`([^`]+)`/g, '$1')
-    const start = renderedText.indexOf(normalizedSentence)
+    const start = renderedText.indexOf(activeSpeechSentence)
     if (start < 0) {
       return
     }
-    const end = start + normalizedSentence.length
+    const end = start + activeSpeechSentence.length
     let cursor = 0
 
     textNodes.forEach((textNode) => {
