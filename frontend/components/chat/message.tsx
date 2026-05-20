@@ -346,6 +346,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
+  /** Called when this message starts speaking so the parent can scroll it into view */
+  onRequestScrollIntoView?: () => void
 }
 
 export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
@@ -362,6 +364,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls = false,
+      onRequestScrollIntoView,
       className,
       ...props
     },
@@ -511,6 +514,12 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       window.dispatchEvent(new CustomEvent(SPEECH_STARTED_EVENT, { detail: { messageId: message.id } }))
       speechSynthesis.speak(utterance)
     }, [isSpeakingThisMessage, locale, message.id, resetSpeechState, speechVoices, textContent])
+
+    React.useEffect(() => {
+      if (isSpeakingThisMessage) {
+        onRequestScrollIntoView?.()
+      }
+    }, [isSpeakingThisMessage, onRequestScrollIntoView])
 
     const renderToolResultContent = (output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
