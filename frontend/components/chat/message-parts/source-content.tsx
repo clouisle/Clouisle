@@ -3,11 +3,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -43,8 +38,8 @@ function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: n
   };
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
-      <CollapsibleTrigger className="w-full text-left">
+    <div className="w-full">
+      <button type="button" className="w-full text-left" onClick={() => setIsOpen(!isOpen)}>
         <div className="flex items-start gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors">
           <div className="mt-0.5 shrink-0">
             {isOpen ? (
@@ -69,15 +64,15 @@ function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: n
             )}
           </div>
         </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
+      </button>
+      <div className={cn(!isOpen && 'hidden')}>
         <div className="p-3 ml-6 border-l-2 border-muted">
           <div className="text-sm whitespace-pre-wrap break-all">
             {segment.content}
           </div>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </div>
   );
 }
 
@@ -127,12 +122,12 @@ export function SourceContent({ sources, className }: SourceContentProps) {
 
   return (
     <div className={cn('overflow-hidden', className)}>
-      <Collapsible
-        open={isOpen}
-        onOpenChange={setIsOpen}
-        className="mt-3"
-      >
-        <CollapsibleTrigger className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors">
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors"
+        >
           <span>{t('usedSources', { count: uniqueSourceCount })}</span>
           <ChevronDown
             className={cn(
@@ -140,9 +135,9 @@ export function SourceContent({ sources, className }: SourceContentProps) {
               isOpen && 'rotate-180'
             )}
           />
-        </CollapsibleTrigger>
+        </button>
 
-        <CollapsibleContent className="mt-2 space-y-1">
+        <div className={cn('mt-2 space-y-1', !isOpen && 'hidden')}>
           {/* URL Sources */}
           {urlSources.map((source, index) => (
             <UrlSourceItem key={`url-${index}`} source={source} />
@@ -156,8 +151,8 @@ export function SourceContent({ sources, className }: SourceContentProps) {
               onClick={() => setSelectedDocument(doc)}
             />
           ))}
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      </div>
 
       {/* Document Segments Dialog */}
       <Dialog open={!!selectedDocument} onOpenChange={(open) => !open && setSelectedDocument(null)}>

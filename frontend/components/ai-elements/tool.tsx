@@ -1,11 +1,6 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import type { ToolUIPart } from "ai";
 import { useTranslations } from "next-intl";
@@ -18,17 +13,50 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement } from "react";
+import { createContext, isValidElement, useCallback, useContext, useState } from "react";
 import { CodeBlock } from "./code-block";
 
-export type ToolProps = ComponentProps<typeof Collapsible>;
+export type ToolProps = ComponentProps<"div"> & {
+  defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+};
 
-export const Tool = ({ className, ...props }: ToolProps) => (
-  <Collapsible
-    className={cn("not-prose mb-4 w-full rounded-md border", className)}
-    {...props}
-  />
-);
+type ToolContextValue = {
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+};
+
+const ToolContext = createContext<ToolContextValue | null>(null);
+
+function useToolContext() {
+  const context = useContext(ToolContext);
+  if (!context) {
+    throw new Error("Tool components must be used within Tool");
+  }
+  return context;
+}
+
+export const Tool = ({ className, defaultOpen = false, open, onOpenChange, children, ...props }: ToolProps) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const isOpen = open ?? uncontrolledOpen;
+  const setIsOpen = useCallback((nextOpen: boolean) => {
+    setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }, [onOpenChange]);
+
+  return (
+    <ToolContext.Provider value={{ isOpen, setIsOpen }}>
+      <div
+        className={cn("not-prose mb-4 w-full rounded-md border", className)}
+        data-state={isOpen ? "open" : "closed"}
+        {...props}
+      >
+        {children}
+      </div>
+    </ToolContext.Provider>
+  );
+};
 
 export type ToolHeaderProps = {
   title?: string;
@@ -77,13 +105,16 @@ export const ToolHeader = ({
   ...props
 }: ToolHeaderProps) => {
   const t = useTranslations("chat.tool");
+  const { isOpen, setIsOpen } = useToolContext();
 
   return (
-    <CollapsibleTrigger
+    <button
+      type="button"
       className={cn(
         "flex w-full items-center justify-between gap-4 p-3",
         className
       )}
+      onClick={() => setIsOpen(!isOpen)}
       {...props}
     >
       <div className="flex items-center gap-2">
@@ -93,22 +124,27 @@ export const ToolHeader = ({
         </span>
         {getStatusBadge(state, t)}
       </div>
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-    </CollapsibleTrigger>
+      <ChevronDownIcon className={cn("size-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+    </button>
   );
 };
 
-export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
+export type ToolContentProps = ComponentProps<"div">;
 
-export const ToolContent = ({ className, ...props }: ToolContentProps) => (
-  <CollapsibleContent
-    className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-      className
-    )}
-    {...props}
-  />
-);
+export const ToolContent = ({ className, ...props }: ToolContentProps) => {
+  const { isOpen } = useToolContext();
+
+  return (
+    <div
+      className={cn(
+        "text-popover-foreground outline-none",
+        !isOpen && "hidden",
+        className
+      )}
+      {...props}
+    />
+  );
+};
 
 export type ToolInputProps = ComponentProps<"div"> & {
   input: ToolUIPart["input"];
