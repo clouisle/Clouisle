@@ -39,7 +39,7 @@ function SegmentItem({ segment, index }: { segment: SourceDocumentPart; index: n
 
   return (
     <div className="w-full">
-      <button type="button" className="w-full text-left" onClick={() => setIsOpen(!isOpen)}>
+      <button type="button" className="w-full text-left" onClick={() => setIsOpen(!isOpen)} aria-expanded={isOpen}>
         <div className="flex items-start gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors">
           <div className="mt-0.5 shrink-0">
             {isOpen ? (
@@ -126,6 +126,7 @@ export function SourceContent({ sources, className }: SourceContentProps) {
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
+          aria-expanded={isOpen}
           className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors"
         >
           <span>{t('usedSources', { count: uniqueSourceCount })}</span>
