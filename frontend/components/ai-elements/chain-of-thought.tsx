@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
@@ -59,6 +59,10 @@ export const ChainOfThought = memo(
     }, [onOpenChange]);
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
+    const contextValue = useMemo(
+      () => ({ isOpen, setIsOpen, isStreaming }),
+      [isOpen, setIsOpen, isStreaming]
+    );
 
     // Auto-close when streaming ends (once only)
     useEffect(() => {
@@ -73,7 +77,7 @@ export const ChainOfThought = memo(
     }, [isStreaming, isOpen, defaultOpen, setIsOpen, hasAutoClosed]);
 
     return (
-      <ChainOfThoughtContext.Provider value={{ isOpen, setIsOpen, isStreaming }}>
+      <ChainOfThoughtContext.Provider value={contextValue}>
         <div
           className={cn("not-prose mb-4 w-full", className)}
           data-state={isOpen ? "open" : "closed"}
@@ -112,6 +116,7 @@ export const ChainOfThoughtHeader = memo(
           className
         )}
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
         {...props}
       >
         <Icon className="size-4" />

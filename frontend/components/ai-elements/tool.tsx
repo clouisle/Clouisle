@@ -13,7 +13,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, isValidElement, useCallback, useContext, useState } from "react";
+import { createContext, isValidElement, useCallback, useContext, useMemo, useState } from "react";
 import { CodeBlock } from "./code-block";
 
 export type ToolProps = ComponentProps<"div"> & {
@@ -44,9 +44,10 @@ export const Tool = ({ className, defaultOpen = false, open, onOpenChange, child
     setUncontrolledOpen(nextOpen);
     onOpenChange?.(nextOpen);
   }, [onOpenChange]);
+  const contextValue = useMemo(() => ({ isOpen, setIsOpen }), [isOpen, setIsOpen]);
 
   return (
-    <ToolContext.Provider value={{ isOpen, setIsOpen }}>
+    <ToolContext.Provider value={contextValue}>
       <div
         className={cn("not-prose mb-4 w-full rounded-md border", className)}
         data-state={isOpen ? "open" : "closed"}
@@ -115,6 +116,7 @@ export const ToolHeader = ({
         className
       )}
       onClick={() => setIsOpen(!isOpen)}
+      aria-expanded={isOpen}
       {...props}
     >
       <div className="flex items-center gap-2">
