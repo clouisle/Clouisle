@@ -13,7 +13,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, isValidElement, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, isValidElement, useCallback, useContext, useId, useMemo, useState } from "react";
 import { CodeBlock } from "./code-block";
 
 export type ToolProps = ComponentProps<"div"> & {
@@ -25,6 +25,7 @@ export type ToolProps = ComponentProps<"div"> & {
 type ToolContextValue = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  contentId: string;
 };
 
 const ToolContext = createContext<ToolContextValue | null>(null);
@@ -39,12 +40,13 @@ function useToolContext() {
 
 export const Tool = ({ className, defaultOpen = false, open, onOpenChange, children, ...props }: ToolProps) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const contentId = useId();
   const isOpen = open ?? uncontrolledOpen;
   const setIsOpen = useCallback((nextOpen: boolean) => {
     setUncontrolledOpen(nextOpen);
     onOpenChange?.(nextOpen);
   }, [onOpenChange]);
-  const contextValue = useMemo(() => ({ isOpen, setIsOpen }), [isOpen, setIsOpen]);
+  const contextValue = useMemo(() => ({ isOpen, setIsOpen, contentId }), [isOpen, setIsOpen, contentId]);
 
   return (
     <ToolContext.Provider value={contextValue}>
@@ -106,7 +108,7 @@ export const ToolHeader = ({
   ...props
 }: ToolHeaderProps) => {
   const t = useTranslations("chat.tool");
-  const { isOpen, setIsOpen } = useToolContext();
+  const { isOpen, setIsOpen, contentId } = useToolContext();
 
   return (
     <button
@@ -117,6 +119,7 @@ export const ToolHeader = ({
       )}
       onClick={() => setIsOpen(!isOpen)}
       aria-expanded={isOpen}
+      aria-controls={contentId}
       {...props}
     >
       <div className="flex items-center gap-2">
@@ -134,12 +137,15 @@ export const ToolHeader = ({
 export type ToolContentProps = ComponentProps<"div">;
 
 export const ToolContent = ({ className, ...props }: ToolContentProps) => {
-  const { isOpen } = useToolContext();
+  const { isOpen, contentId } = useToolContext();
 
   return (
     <div
+      id={contentId}
+      data-state={isOpen ? "open" : "closed"}
       className={cn(
         "text-popover-foreground outline-none",
+        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
         !isOpen && "hidden",
         className
       )}

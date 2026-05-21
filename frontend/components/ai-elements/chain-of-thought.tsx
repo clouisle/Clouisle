@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
 import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
@@ -19,6 +19,7 @@ type ChainOfThoughtContextValue = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   isStreaming: boolean;
+  contentId: string;
 };
 
 const ChainOfThoughtContext = createContext<ChainOfThoughtContextValue | null>(null);
@@ -52,6 +53,7 @@ export const ChainOfThought = memo(
     ...props
   }: ChainOfThoughtProps) => {
     const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+    const contentId = useId();
     const isOpen = open ?? uncontrolledOpen;
     const setIsOpen = useCallback((nextOpen: boolean) => {
       setUncontrolledOpen(nextOpen);
@@ -60,8 +62,8 @@ export const ChainOfThought = memo(
 
     const [hasAutoClosed, setHasAutoClosed] = useState(false);
     const contextValue = useMemo(
-      () => ({ isOpen, setIsOpen, isStreaming }),
-      [isOpen, setIsOpen, isStreaming]
+      () => ({ isOpen, setIsOpen, isStreaming, contentId }),
+      [isOpen, setIsOpen, isStreaming, contentId]
     );
 
     // Auto-close when streaming ends (once only)
@@ -105,7 +107,7 @@ export const ChainOfThoughtHeader = memo(
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
-    const { isOpen, setIsOpen, isStreaming } = useChainOfThought();
+    const { isOpen, setIsOpen, isStreaming, contentId } = useChainOfThought();
     const t = useTranslations('chat.reasoning');
 
     return (
@@ -117,6 +119,7 @@ export const ChainOfThoughtHeader = memo(
         )}
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
+        aria-controls={contentId}
         {...props}
       >
         <Icon className="size-4" />
@@ -144,12 +147,15 @@ export type ChainOfThoughtContentProps = ComponentProps<"div">;
 
 export const ChainOfThoughtContent = memo(
   ({ className, children, ...props }: ChainOfThoughtContentProps) => {
-    const { isOpen } = useChainOfThought();
+    const { isOpen, contentId } = useChainOfThought();
 
     return (
       <div
+        id={contentId}
+        data-state={isOpen ? "open" : "closed"}
         className={cn(
           "mt-3 space-y-2 text-sm outline-none",
+          "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
           !isOpen && "hidden",
           className
         )}
