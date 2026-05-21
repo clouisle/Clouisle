@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState, useLayoutEffect } from 'react';
+import { forwardRef, useCallback, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Message } from './message';
@@ -52,10 +53,24 @@ function hasOpenCodeFence(content: string) {
   return openFence !== null;
 }
 
-function hasScrollableStreamingCodeBlock(container: HTMLDivElement) {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>('[data-chat-streaming="true"] [data-streamdown="code-block-body"]')
-  ).some((block) => block.scrollHeight > block.clientHeight + 1);
+const VirtuosoScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  function VirtuosoScroller({ className, style, ...props }, ref) {
+    return (
+      <div
+        ref={ref}
+        style={style}
+        className={cn(
+          'overflow-y-auto overflow-x-hidden [overflow-anchor:none]',
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
+
+function VirtuosoFooter() {
+  return <div className="h-4" />;
 }
 
 export function ChatContainer({
@@ -72,124 +87,110 @@ export function ChatContainer({
   onOpenCodePreview,
   hideToolCalls = false,
 }: ChatContainerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const userScrolledRef = useRef(false);
-  const followStreamingRef = useRef(true);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
-  const isNearBottom = useCallback(() => {
-    if (!containerRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    return scrollHeight - scrollTop - clientHeight < 100;
-  }, []);
+  // Last text content for "do not snap during open code fence" rule
+  const lastMessageText = useMemo(() => {
+    if (messages.length === 0) return '';
+    return messages[messages.length - 1].parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as { text: string }).text)
+      .join('');
+  }, [messages]);
 
-  // Scroll to bottom within container only (not the page)
   const scrollToBottom = useCallback(() => {
-    if (containerRef.current) {
-      containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
+    virtuosoRef.current?.scrollToIndex({
+      index: 'LAST',
+      behavior: 'smooth',
+    });
   }, []);
 
-  // Track if user has manually scrolled up
-  const handleScroll = useCallback(() => {
-    const atBottom = isNearBottom();
-    userScrolledRef.current = !atBottom;
-    followStreamingRef.current = atBottom;
-    setShowScrollButton(!atBottom && messages.length > 0);
-  }, [isNearBottom, messages.length]);
+  const handleAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      isAtBottomRef.current = atBottom;
+      setShowScrollButton(!atBottom && messages.length > 0);
+    },
+    [messages.length],
+  );
 
-  // Get the last message's parts length for dependency tracking during streaming
-  const lastMessagePartsLength = messages.length > 0
-    ? messages[messages.length - 1].parts.length
-    : 0;
+  const followOutput = useCallback(
+    (isAtBottom: boolean) => {
+      if (!autoScroll) return false as const;
+      if (!isAtBottom) return false as const;
+      if (isStreaming && hasOpenCodeFence(lastMessageText)) return false as const;
+      return 'auto' as const;
+    },
+    [autoScroll, isStreaming, lastMessageText],
+  );
 
-  // Get last text content for streaming detection
-  const lastMessageText = messages.length > 0
-    ? messages[messages.length - 1].parts
-        .filter(p => p.type === 'text')
-        .map(p => (p as { text: string }).text)
-        .join('')
-    : '';
+  const itemContent = useCallback(
+    (index: number, message: ChatMessage) => {
+      const isLast = index === messages.length - 1;
+      const isCurrentStreaming = isStreaming && isLast;
 
-  // Auto scroll to bottom before paint so streaming height changes do not flash at the old position.
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!autoScroll || userScrolledRef.current || !followStreamingRef.current || !container) {
-      return;
-    }
+      return (
+        <Message
+          message={message}
+          isStreaming={isCurrentStreaming}
+          renderPart={renderPart}
+          onRegenerate={
+            message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined
+          }
+          onSwitchVersion={
+            message.role === 'assistant' && onSwitchVersion
+              ? (versionIndex) => onSwitchVersion(message.id, versionIndex)
+              : undefined
+          }
+          onSelectOption={onSelectOption}
+          onOpenCodePreview={onOpenCodePreview}
+          hideToolCalls={hideToolCalls}
+          onRequestScrollIntoView={() =>
+            virtuosoRef.current?.scrollToIndex({
+              index,
+              align: 'start',
+              behavior: 'smooth',
+            })
+          }
+        />
+      );
+    },
+    [
+      messages.length,
+      isStreaming,
+      renderPart,
+      onRegenerate,
+      onSwitchVersion,
+      onSelectOption,
+      onOpenCodePreview,
+      hideToolCalls,
+    ],
+  );
 
-    if (isStreaming && hasOpenCodeFence(lastMessageText) && hasScrollableStreamingCodeBlock(container)) {
-      return;
-    }
-
-    container.scrollTop = container.scrollHeight;
-  }, [messages.length, lastMessagePartsLength, lastMessageText, autoScroll, isStreaming]);
-
-  // Reset user scroll tracking when streaming starts
-  useEffect(() => {
-    if (isStreaming && isNearBottom()) {
-      userScrolledRef.current = false;
-      followStreamingRef.current = true;
-      setShowScrollButton(false);
-    }
-  }, [isStreaming, isNearBottom]);
-
-  // Hide scroll button when no messages
-  useEffect(() => {
-    if (messages.length === 0) {
-      setShowScrollButton(false);
-    }
-  }, [messages.length]);
+  const computeItemKey = useCallback((_: number, message: ChatMessage) => message.id, []);
 
   if (messages.length === 0 && emptyState) {
     return (
-      <div
-        className={cn(
-          'h-full flex items-center justify-center',
-          className
-        )}
-      >
-        {emptyState}
-      </div>
+      <div className={cn('h-full flex items-center justify-center', className)}>{emptyState}</div>
     );
   }
 
   return (
-    <div className={cn("relative h-full", className)}>
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none]"
-      >
-        <div className="flex flex-col min-w-0">
-          {messages.map((message, index) => {
-            const isLast = index === messages.length - 1;
-            const isCurrentStreaming = isStreaming && isLast;
+    <div className={cn('relative h-full', className)}>
+      <Virtuoso
+        ref={virtuosoRef}
+        data={messages}
+        itemContent={itemContent}
+        computeItemKey={computeItemKey}
+        initialTopMostItemIndex={Math.max(messages.length - 1, 0)}
+        followOutput={followOutput}
+        atBottomStateChange={handleAtBottomStateChange}
+        increaseViewportBy={{ top: 400, bottom: 400 }}
+        components={{ Scroller: VirtuosoScroller, Footer: VirtuosoFooter }}
+        className="absolute inset-0"
+      />
 
-            return (
-              <Message
-                key={message.id}
-                message={message}
-                isStreaming={isCurrentStreaming}
-                renderPart={renderPart}
-                onRegenerate={message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined}
-                onSwitchVersion={message.role === 'assistant' && onSwitchVersion ? (versionIndex) => onSwitchVersion(message.id, versionIndex) : undefined}
-                onSelectOption={onSelectOption}
-                onOpenCodePreview={onOpenCodePreview}
-                hideToolCalls={hideToolCalls}
-              />
-            );
-          })}
-        </div>
-
-        {/* Bottom padding */}
-        <div className="h-4" />
-      </div>
-
-      {/* Scroll to bottom button */}
       {showScrollToBottom && showScrollButton && (
         <Button
           variant="outline"
