@@ -16,7 +16,7 @@ from app.llm.types import (
 )
 from app.models.model import Model
 
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_data_uri
 from ..pika_client import PikaClient
 from .base import BaseVideoAdapter
 
@@ -32,6 +32,8 @@ class PikaVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
+        if request.start_image is None:
+            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
         generation = await self.client.create_generation("/generate", payload)
         generation_id = generation.get("id")
@@ -71,6 +73,15 @@ class PikaVideoAdapter(BaseVideoAdapter):
             "aspectRatio": request.aspect_ratio,
         }
 
+        if request.start_image is not None:
+            field_name = self._start_image_field_name()
+            payload[field_name] = image_content_to_data_uri(
+                request.start_image,
+                provider="pika",
+                model=self.model_id,
+                field_name=field_name,
+            )
+
         if request.seed is not None:
             payload["seed"] = request.seed
 
@@ -78,6 +89,12 @@ class PikaVideoAdapter(BaseVideoAdapter):
             payload.update(request.extra_params)
 
         return payload
+
+    def _start_image_field_name(self) -> str:
+        value = self.client.config.get("start_image_field")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return "image_url"
 
     def _map_status(self, raw_status: Any) -> TaskStatus:
         status = str(raw_status or "").lower()

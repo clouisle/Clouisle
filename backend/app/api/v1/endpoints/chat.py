@@ -1250,6 +1250,7 @@ async def chat(
                         tool_timeouts=tool_timeouts,
                         user=current_user,
                         session_id=sandbox_session_id,
+                        current_images=chat_in.images,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
 
@@ -2076,7 +2077,7 @@ async def chat_stream(
                                 yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
                                 last_event_time = time.time()
 
-                                # Execute the tool (pass agent and tool_timeouts)
+                                # Execute the tool (pass agent, tool_timeouts, and current uploaded images)
                                 result = await execute_tool_call(
                                     tool_name,
                                     arguments,
@@ -2084,6 +2085,7 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
+                                    current_images=chat_in.images,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -3248,6 +3250,7 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
+                                    current_images=user_message.images,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)

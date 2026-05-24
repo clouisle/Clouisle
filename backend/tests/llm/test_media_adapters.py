@@ -669,7 +669,7 @@ class TestModelManagerVideoRouting:
         assert result.task_id == "task-1"
         mock_get_model.assert_awaited_once_with(None, ModelType.TEXT_TO_VIDEO)
 
-    def test_generate_video_rejects_image_input(self):
+    def test_generate_video_rejects_legacy_image_input(self):
         manager = ModelManager()
         with pytest.raises(InvalidRequestError):
             asyncio.run(
@@ -678,6 +678,16 @@ class TestModelManagerVideoRouting:
                         "prompt": "Animate this still image",
                         "image": {"url": "https://example.com/input.png"},
                     }
+                )
+            )
+
+    def test_video_adapter_base_guard_rejects_start_image(self):
+        adapter = RunwayVideoAdapter(build_model("runway", "gen4.5"))
+        with pytest.raises(InvalidRequestError):
+            adapter._ensure_reference_images_supported(
+                VideoGenerationRequest(
+                    prompt="Animate this still image",
+                    start_image=ImageContent(base64="cmVm", format="png"),
                 )
             )
 
@@ -695,6 +705,34 @@ class TestRunwayVideoAdapter:
         assert path == "/v1/text_to_video"
         assert payload["ratio"] == "1280:720"
         assert payload["duration"] == 5
+
+    def test_builds_image_to_video_request_with_prompt_image(self):
+        adapter = RunwayVideoAdapter(build_model("runway", "gen4_turbo"))
+
+        path, payload = adapter._build_request(
+            VideoGenerationRequest(
+                prompt="A drifting spaceship",
+                duration=5,
+                aspect_ratio="16:9",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert path == "/v1/image_to_video"
+        assert payload["promptImage"] == "data:image/png;base64,cmVm"
+        assert payload["ratio"] == "1280:720"
+        assert payload["duration"] == 5
+
+    def test_rejects_image_request_for_non_image_video_model(self):
+        adapter = RunwayVideoAdapter(build_model("runway", "gen4.5"))
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_request(
+                VideoGenerationRequest(
+                    prompt="Use this image",
+                    start_image=ImageContent(base64="cmVm", format="png"),
+                )
+            )
 
     def test_rejects_text_request_for_non_text_video_model(self):
         adapter = RunwayVideoAdapter(build_model("runway", "gen4_turbo"))
@@ -717,6 +755,28 @@ class TestKlingVideoAdapter:
         assert payload["prompt"] == "A sunset over mountains"
         assert payload["duration"] == 6
         assert payload["aspect_ratio"] == "16:9"
+
+    def test_builds_payload_with_start_image(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A sunset over mountains",
+                duration=5,
+                aspect_ratio="16:9",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["image"] == "cmVm"
+
+    def test_encodes_image_to_video_task_ids(self):
+        adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
+
+        assert adapter._encode_task_id("task-1", "text2video") == "task-1"
+        assert adapter._encode_task_id("task-1", "image2video") == "image2video:task-1"
+        assert adapter._decode_task_id("task-1") == ("text2video", "task-1")
+        assert adapter._decode_task_id("image2video:task-1") == ("image2video", "task-1")
 
     def test_maps_kling_statuses(self):
         adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
@@ -746,6 +806,36 @@ class TestKlingVideoAdapter:
         assert adapter._extract_error({}) is None
 
 
+class TestLumaVideoAdapter:
+    def test_builds_payload_with_remote_start_image_keyframe(self):
+        adapter = LumaVideoAdapter(build_model("luma", "ray-2"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A cinematic reveal",
+                start_image=ImageContent(url="https://cdn.example.com/start.png"),
+            )
+        )
+
+        assert payload["keyframes"] == {
+            "frame0": {
+                "type": "image",
+                "url": "https://cdn.example.com/start.png",
+            }
+        }
+
+    def test_rejects_base64_start_image_for_direct_luma(self):
+        adapter = LumaVideoAdapter(build_model("luma", "ray-2"))
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_payload(
+                VideoGenerationRequest(
+                    prompt="A cinematic reveal",
+                    start_image=ImageContent(base64="cmVm", format="png"),
+                )
+            )
+
+
 class TestPikaVideoAdapter:
     def test_builds_payload_with_camel_case_aspect_ratio(self):
         adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
@@ -760,6 +850,32 @@ class TestPikaVideoAdapter:
         assert payload["prompt"] == "A robot dancing"
         assert payload["duration"] == 4
         assert payload["aspectRatio"] == "9:16"
+
+    def test_builds_default_start_image_field(self):
+        adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A robot dancing",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["image_url"] == "data:image/png;base64,cmVm"
+
+    def test_builds_configured_start_image_field(self):
+        adapter = PikaVideoAdapter(
+            build_model("pika", "pika-v1", config={"start_image_field": "image_url"})
+        )
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A robot dancing",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["image_url"] == "data:image/png;base64,cmVm"
 
     def test_maps_pika_statuses(self):
         adapter = PikaVideoAdapter(build_model("pika", "pika-v1"))
@@ -805,6 +921,30 @@ class TestSiliconFlowVideoAdapter:
         assert payload["model"] == "Wan2.1-T2V-14B"
         assert payload["prompt"] == "A cat playing piano"
         assert payload["image_size"] == "1280x720"
+
+    def test_builds_payload_with_start_image(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan-AI/Wan2.2-I2V-A14B"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A cat playing piano",
+                aspect_ratio="16:9",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["image"] == "data:image/png;base64,cmVm"
+
+    def test_rejects_start_image_for_text_video_model(self):
+        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_payload(
+                VideoGenerationRequest(
+                    prompt="A cat playing piano",
+                    start_image=ImageContent(base64="cmVm", format="png"),
+                )
+            )
 
     def test_maps_siliconflow_statuses(self):
         adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan2.1-T2V-14B"))
@@ -852,6 +992,24 @@ class TestVolcengineVideoAdapter:
         assert payload["parameters"]["duration"] == 5
         assert payload["parameters"]["aspect_ratio"] == "16:9"
 
+    def test_builds_payload_with_start_image_content(self):
+        adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="Ocean waves at sunset",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["content"] == [
+            {"type": "text", "text": "Ocean waves at sunset"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,cmVm"},
+            },
+        ]
+
     def test_maps_volcengine_statuses(self):
         adapter = VolcengineVideoAdapter(build_model("volcengine", "seedance-1-lite"))
 
@@ -895,6 +1053,54 @@ class TestDashScopeVideoAdapter:
         assert payload["input"]["prompt"] == "A futuristic city"
         assert payload["parameters"]["duration"] == 4
         assert payload["parameters"]["size"] == "16:9"
+
+    def test_builds_payload_with_start_image(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.6-i2v-flash"))
+
+        payload = adapter._build_payload(
+            VideoGenerationRequest(
+                prompt="A futuristic city",
+                start_image=ImageContent(base64="cmVm", format="png"),
+            )
+        )
+
+        assert payload["input"]["img_url"] == "data:image/png;base64,cmVm"
+
+    def test_uses_image_to_video_endpoint_for_start_image(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.6-i2v-flash"))
+        adapter.client = SimpleNamespace(
+            create_task=AsyncMock(return_value={"output": {"task_id": "task-1"}})
+        )
+        adapter.get_status = AsyncMock(
+            return_value=VideoGenerationResponse(
+                task_id="task-1",
+                status=TaskStatus.PENDING,
+                model="wan2.6-i2v-flash",
+            )
+        )
+
+        asyncio.run(
+            adapter.generate(
+                VideoGenerationRequest(
+                    prompt="A futuristic city",
+                    start_image=ImageContent(base64="cmVm", format="png"),
+                )
+            )
+        )
+
+        _, kwargs = adapter.client.create_task.await_args
+        assert kwargs["path"] == "/services/aigc/video-generation/video-synthesis"
+
+    def test_rejects_start_image_for_text_video_model(self):
+        adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))
+
+        with pytest.raises(InvalidRequestError):
+            adapter._build_payload(
+                VideoGenerationRequest(
+                    prompt="A futuristic city",
+                    start_image=ImageContent(base64="cmVm", format="png"),
+                )
+            )
 
     def test_maps_dashscope_statuses(self):
         adapter = DashScopeVideoAdapter(build_model("qwen", "wan2.1-t2v-plus"))

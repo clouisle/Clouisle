@@ -909,6 +909,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Reference images are disabled for this agent",
         "zh": "当前智能体已禁用参考图",
     },
+    "image_reference_images_conflict": {
+        "en": "Use either explicit reference images or uploaded image indexes, not both",
+        "zh": "请仅使用显式参考图或上传图片索引之一，不能同时使用",
+    },
+    "image_reference_image_index_out_of_range": {
+        "en": "Reference image index {index} is out of range. Available uploaded images: {count}",
+        "zh": "参考图片索引 {index} 超出范围。可用上传图片数量：{count}",
+    },
+    "image_reference_invalid_uploaded_image": {
+        "en": "Uploaded image #{index} does not contain usable image data",
+        "zh": "上传图片 #{index} 不包含可用的图片数据",
+    },
+    "image_reference_no_uploaded_images": {
+        "en": "No uploaded images are available for the selected reference indexes",
+        "zh": "当前没有可用于所选参考索引的上传图片",
+    },
     "image_to_video_removed_from_project": {
         "en": "Image-to-video has been removed from the project",
         "zh": "项目已移除图生视频功能",
@@ -2395,6 +2411,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "video_generation_not_enabled_for_agent": {
         "en": "Video generation is not enabled for this agent",
         "zh": "当前智能体未启用视频生成",
+    },
+    "video_reference_images_not_supported_for_model": {
+        "en": "The selected video model does not support uploaded images as starting-frame references yet",
+        "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
+    },
+    "video_reference_image_requires_remote_url": {
+        "en": "Provider {provider} requires a public image URL for video start-frame references",
+        "zh": "服务商 {provider} 需要公网图片 URL 才能作为视频首帧参考",
     },
     "video_generation_started": {
         "en": "Video generation started. Task {task_id} is {status}. Prompt: {prompt}",

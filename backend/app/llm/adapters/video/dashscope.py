@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.i18n import t
-from app.llm.errors import ProviderError
+from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import (
     TaskStatus,
     VideoContent,
@@ -16,9 +16,12 @@ from app.llm.types import (
 )
 from app.models.model import Model
 
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_data_uri
 from ..dashscope_video_client import DashScopeVideoClient
 from .base import BaseVideoAdapter
+
+
+_DASHSCOPE_IMAGE_TO_VIDEO_MODEL_MARKERS = ("i2v", "image-to-video")
 
 
 class DashScopeVideoAdapter(BaseVideoAdapter):
@@ -32,8 +35,15 @@ class DashScopeVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
+        if request.start_image is None:
+            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
-        result = await self.client.create_task(payload)
+        path = (
+            "/services/aigc/video-generation/video-synthesis"
+            if request.start_image is not None
+            else "/services/aigc/video-generation/generation"
+        )
+        result = await self.client.create_task(payload, path=path)
         output = result.get("output", {})
         task_id = output.get("task_id")
         if not task_id:
@@ -71,6 +81,15 @@ class DashScopeVideoAdapter(BaseVideoAdapter):
             "parameters": {},
         }
 
+        if request.start_image is not None:
+            self._ensure_image_to_video_model()
+            payload["input"]["img_url"] = image_content_to_data_uri(
+                request.start_image,
+                provider="qwen",
+                model=self.model_id,
+                field_name="img_url",
+            )
+
         if request.aspect_ratio:
             payload["parameters"]["size"] = request.aspect_ratio
         if request.duration:
@@ -83,6 +102,17 @@ class DashScopeVideoAdapter(BaseVideoAdapter):
             payload["parameters"].update(request.extra_params)
 
         return payload
+
+    def _ensure_image_to_video_model(self) -> None:
+        normalized = self.model_id.lower()
+        if any(marker in normalized for marker in _DASHSCOPE_IMAGE_TO_VIDEO_MODEL_MARKERS):
+            return
+        raise InvalidRequestError(
+            message=t("video_reference_images_not_supported_for_model"),
+            field="start_image",
+            provider="qwen",
+            model=self.model_id,
+        )
 
     def _map_status(self, raw_status: Any) -> TaskStatus:
         status = str(raw_status or "").upper()

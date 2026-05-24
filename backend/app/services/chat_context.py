@@ -375,32 +375,51 @@ When you need the user to choose from predefined options, use this XML format:
 - When guiding the conversation flow"""
 
 
+def _infer_image_format_from_mime(mime_type: str | None) -> str | None:
+    if not mime_type:
+        return None
+    normalized = mime_type.split(";", 1)[0].strip().lower()
+    if normalized in {"image/jpeg", "image/jpg"}:
+        return "jpg"
+    if normalized.startswith("image/"):
+        return normalized.split("/", 1)[1]
+    return None
+
+
+def _parse_image_data_url(value: str) -> tuple[str, str | None] | None:
+    if not value.startswith("data:"):
+        return None
+    try:
+        metadata, data_part = value.split(",", 1)
+    except ValueError:
+        return None
+    header = metadata[5:]
+    mime_type = header.split(";", 1)[0]
+    return data_part, _infer_image_format_from_mime(mime_type)
+
+
 def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     """Build multimodal content for vision-capable models."""
     content_parts: list[ContentPart] = [ContentPart(type=ContentType.TEXT, text=text)]
-    for img in images:
+    for index, img in enumerate(images, start=1):
         img_url = getattr(img, "url", None)
         if not img_url and isinstance(img, dict):
             img_url = img.get("url")
         if not img_url:
             continue
 
-        if img_url.startswith("data:"):
-            try:
-                _, data_part = img_url.split(",", 1)
-                content_parts.append(
-                    ContentPart(
-                        type=ContentType.IMAGE,
-                        image=ImageContent(base64=data_part),
-                    )
+        content_parts.append(
+            ContentPart(type=ContentType.TEXT, text=f"Uploaded image #{index}:")
+        )
+        parsed_data_url = _parse_image_data_url(img_url)
+        if parsed_data_url:
+            data_part, image_format = parsed_data_url
+            content_parts.append(
+                ContentPart(
+                    type=ContentType.IMAGE,
+                    image=ImageContent(base64=data_part, format=image_format or "png"),
                 )
-            except ValueError:
-                content_parts.append(
-                    ContentPart(
-                        type=ContentType.IMAGE,
-                        image=ImageContent(url=img_url),
-                    )
-                )
+            )
         else:
             content_parts.append(
                 ContentPart(

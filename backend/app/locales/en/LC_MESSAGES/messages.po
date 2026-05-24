@@ -2503,6 +2503,18 @@ msgstr "Image generation request exceeds the agent limit ({max_images})"
 msgid "image_reference_images_disabled"
 msgstr "Reference images are disabled for this agent"
 
+msgid "image_reference_images_conflict"
+msgstr "Use either explicit reference images or uploaded image indexes, not both"
+
+msgid "image_reference_image_index_out_of_range"
+msgstr "Reference image index {index} is out of range. Available uploaded images: {count}"
+
+msgid "image_reference_invalid_uploaded_image"
+msgstr "Uploaded image #{index} does not contain usable image data"
+
+msgid "image_reference_no_uploaded_images"
+msgstr "No uploaded images are available for the selected reference indexes"
+
 msgid "image_generation_invalid_quality"
 msgstr "Image quality '{quality}' is not supported. Supported values: {supported}"
 
@@ -2514,6 +2526,12 @@ msgstr "Image generation succeeded. Generated {count} images using model {model}
 
 msgid "video_generation_not_enabled_for_agent"
 msgstr "Video generation is not enabled for this agent"
+
+msgid "video_reference_images_not_supported_for_model"
+msgstr "The selected video model does not support uploaded images as starting-frame references yet"
+
+msgid "video_reference_image_requires_remote_url"
+msgstr "Provider {provider} requires a public image URL for video start-frame references"
 
 msgid "embedding_model_locked_after_kb_creation"
 msgstr "Embedding model cannot be changed after knowledge base creation"

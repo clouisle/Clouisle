@@ -17,7 +17,7 @@ from app.llm.types import (
 from app.models.model import Model
 
 from ..luma_client import LumaClient
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, require_remote_url
 from .base import BaseVideoAdapter
 
 
@@ -32,6 +32,8 @@ class LumaVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
+        if request.start_image is None:
+            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
         generation = await self.client.create_generation("/generations", payload)
         generation_id = generation.get("id")
@@ -73,6 +75,19 @@ class LumaVideoAdapter(BaseVideoAdapter):
             "duration": self._format_duration(request.duration),
             "aspect_ratio": request.aspect_ratio,
         }
+
+        if request.start_image is not None:
+            payload["keyframes"] = {
+                "frame0": {
+                    "type": "image",
+                    "url": require_remote_url(
+                        request.start_image,
+                        provider="luma",
+                        model=self.model_id,
+                        field_name="start_image",
+                    ),
+                }
+            }
 
         if request.seed is not None:
             payload["seed"] = request.seed

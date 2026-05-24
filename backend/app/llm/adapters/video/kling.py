@@ -17,7 +17,7 @@ from app.llm.types import (
 from app.models.model import Model
 
 from ..kling_client import KlingClient
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_raw_base64
 from .base import BaseVideoAdapter
 
 
@@ -32,8 +32,11 @@ class KlingVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
+        if request.start_image is None:
+            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
-        task = await self.client.create_task("/v1/videos/text2video", payload)
+        task_type = "image2video" if request.start_image is not None else "text2video"
+        task = await self.client.create_task(f"/v1/videos/{task_type}", payload)
         task_id = task.get("task_id")
         if not task_id:
             raise ProviderError(
@@ -41,10 +44,11 @@ class KlingVideoAdapter(BaseVideoAdapter):
                 provider="kling",
                 model=self.model_id,
             )
-        return await self.get_status(str(task_id))
+        return await self.get_status(self._encode_task_id(str(task_id), task_type))
 
     async def get_status(self, task_id: str) -> VideoGenerationResponse:
-        task = await self.client.get_task(task_id)
+        task_type, raw_task_id = self._decode_task_id(task_id)
+        task = await self.client.get_task(raw_task_id, task_type=task_type)
         status = self._map_status(task.get("task_status"))
         video_url = self._extract_video_url(task)
         return VideoGenerationResponse(
@@ -69,6 +73,14 @@ class KlingVideoAdapter(BaseVideoAdapter):
             "aspect_ratio": request.aspect_ratio,
         }
 
+        if request.start_image is not None:
+            payload["image"] = image_content_to_raw_base64(
+                request.start_image,
+                provider="kling",
+                model=self.model_id,
+                field_name="image",
+            )
+
         if request.seed is not None:
             payload["seed"] = request.seed
 
@@ -76,6 +88,19 @@ class KlingVideoAdapter(BaseVideoAdapter):
             payload.update(request.extra_params)
 
         return payload
+
+    def _encode_task_id(self, task_id: str, task_type: str) -> str:
+        if task_type == "text2video":
+            return task_id
+        return f"{task_type}:{task_id}"
+
+    def _decode_task_id(self, task_id: str) -> tuple[str, str]:
+        if ":" not in task_id:
+            return "text2video", task_id
+        task_type, raw_task_id = task_id.split(":", 1)
+        if task_type in {"text2video", "image2video"} and raw_task_id:
+            return task_type, raw_task_id
+        return "text2video", task_id
 
     def _map_status(self, raw_status: Any) -> TaskStatus:
         status = str(raw_status or "").lower()

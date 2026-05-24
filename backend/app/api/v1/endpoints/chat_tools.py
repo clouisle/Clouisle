@@ -22,6 +22,7 @@ async def execute_tool_call(
     tool_timeouts: dict | None = None,
     user: Any = None,
     session_id: str | None = None,
+    current_images: list[Any] | None = None,
 ) -> Any:
     """Execute a tool and return the result payload."""
     from app.core.i18n import t
@@ -330,6 +331,7 @@ async def execute_tool_call(
                 session_id=session_id,
                 agent=agent,
                 user=user,
+                current_images=current_images,
             )
         except Exception as e:
             logger.exception("Builtin tool execution failed: %s", e)
