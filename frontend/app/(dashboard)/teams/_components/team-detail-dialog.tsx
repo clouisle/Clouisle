@@ -302,7 +302,7 @@ export function TeamDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
           {isLoading ? (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-4">
@@ -338,7 +338,7 @@ export function TeamDetailDialog({
                 </div>
               </DialogHeader>
               
-              <Tabs defaultValue="members" className="w-full">
+              <Tabs defaultValue="members" className="min-h-0 w-full overflow-hidden">
                 {canManageTeam ? (
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="members" className="flex items-center gap-2">
@@ -359,10 +359,10 @@ export function TeamDetailDialog({
                   </TabsList>
                 )}
                 
-                <TabsContent value="members" className="mt-4 space-y-4">
+                <TabsContent value="members" className="mt-4 flex min-h-0 flex-col gap-4 overflow-hidden">
                   {/* 成员列表 */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="mb-3 flex items-center justify-between">
                       <h3 className="font-medium">{t('members')} ({team.members.length})</h3>
                       <PermissionGuard permission="team:manage">
                         <Popover open={addMemberOpen} onOpenChange={setAddMemberOpen}>
@@ -455,7 +455,7 @@ export function TeamDetailDialog({
                       </PermissionGuard>
                     </div>
                   
-                  <ScrollArea className="h-64">
+                  <ScrollArea className="min-h-0 flex-1">
                     <div className="space-y-2">
                       {team.members.map((member) => (
                         <div
@@ -557,7 +557,7 @@ export function TeamDetailDialog({
               </TabsContent>
 
               {canManageTeam && (
-                <TabsContent value="models" className="mt-4">
+                <TabsContent value="models" className="mt-4 min-h-0 overflow-hidden">
                   <TeamModelsTab teamId={teamId!} />
                 </TabsContent>
               )}
