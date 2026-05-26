@@ -44,8 +44,6 @@ class SiliconFlowVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
-        if request.start_image is None:
-            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
         result = await self.client.create_task(payload)
         request_id = result.get("requestId")

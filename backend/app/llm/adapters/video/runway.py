@@ -39,7 +39,6 @@ class RunwayVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
-        self._ensure_reference_images_supported(request)
         task = await self.client.create_task(*self._build_request(request))
         task_id = task.get("id")
         if not task_id:

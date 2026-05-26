@@ -32,8 +32,6 @@ class LumaVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
-        if request.start_image is None:
-            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
         generation = await self.client.create_generation("/generations", payload)
         generation_id = generation.get("id")

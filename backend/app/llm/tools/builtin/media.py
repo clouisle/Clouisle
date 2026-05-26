@@ -16,6 +16,7 @@ from typing import Any
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.llm.adapters.media_utils import parse_image_data_url
 from app.models.model import ModelType
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
@@ -139,31 +140,6 @@ async def _normalize_image_quality(
     return mapped_quality
 
 
-def _infer_image_format_from_mime(mime_type: str | None) -> str | None:
-    if not mime_type:
-        return None
-    normalized = mime_type.split(";", 1)[0].strip().lower()
-    if normalized in {"image/jpeg", "image/jpg"}:
-        return "jpg"
-    if normalized.startswith("image/"):
-        return normalized.split("/", 1)[1]
-    return None
-
-
-def _parse_data_url_image(value: str) -> tuple[str, str] | None:
-    if not value.startswith("data:"):
-        return None
-    try:
-        metadata, data_part = value.split(",", 1)
-    except ValueError:
-        return None
-    header = metadata[5:]
-    if ";base64" not in header.lower():
-        return None
-    image_format = _infer_image_format_from_mime(header.split(";", 1)[0]) or "png"
-    return data_part, image_format
-
-
 def _get_image_source_value(image: Any, key: str) -> Any:
     if isinstance(image, dict):
         return image.get(key)
@@ -173,19 +149,19 @@ def _get_image_source_value(image: Any, key: str) -> Any:
 def _chat_image_to_generation_image(image: Any, *, index: int) -> ImageContent:
     base64_value = _get_image_source_value(image, "base64")
     if isinstance(base64_value, str) and base64_value:
-        parsed = _parse_data_url_image(base64_value)
+        parsed = parse_image_data_url(base64_value)
         if parsed:
             payload, image_format = parsed
-            return ImageContent(base64=payload, format=image_format)
+            return ImageContent(base64=payload, format=image_format or "png")
         image_format = _get_image_source_value(image, "format") or "png"
         return ImageContent(base64=base64_value, format=image_format)
 
     url = _get_image_source_value(image, "url")
     if isinstance(url, str) and url:
-        parsed = _parse_data_url_image(url)
+        parsed = parse_image_data_url(url)
         if parsed:
             payload, image_format = parsed
-            return ImageContent(base64=payload, format=image_format)
+            return ImageContent(base64=payload, format=image_format or "png")
 
     raise ValueError(t("image_reference_invalid_uploaded_image", index=index))
 

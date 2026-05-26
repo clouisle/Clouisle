@@ -55,6 +55,30 @@ def infer_format(value: str | None, default: str) -> str:
     return default
 
 
+def infer_image_format_from_mime(mime_type: str | None) -> str | None:
+    if not mime_type:
+        return None
+    normalized = mime_type.split(";", 1)[0].strip().lower()
+    if normalized in {"image/jpeg", "image/jpg"}:
+        return "jpg"
+    if normalized.startswith("image/"):
+        return normalized.split("/", 1)[1]
+    return None
+
+
+def parse_image_data_url(value: str) -> tuple[str, str | None] | None:
+    if not value.startswith("data:"):
+        return None
+    try:
+        metadata, data_part = value.split(",", 1)
+    except ValueError:
+        return None
+    header = metadata[5:]
+    if ";base64" not in header.lower():
+        return None
+    return data_part, infer_image_format_from_mime(header.split(";", 1)[0])
+
+
 def media_content_to_data_uri(
     content: MediaContent,
     *,

@@ -32,8 +32,6 @@ class KlingVideoAdapter(BaseVideoAdapter):
     async def generate(
         self, request: VideoGenerationRequest
     ) -> VideoGenerationResponse:
-        if request.start_image is None:
-            self._ensure_reference_images_supported(request)
         payload = self._build_payload(request)
         task_type = "image2video" if request.start_image is not None else "text2video"
         task = await self.client.create_task(f"/v1/videos/{task_type}", payload)
