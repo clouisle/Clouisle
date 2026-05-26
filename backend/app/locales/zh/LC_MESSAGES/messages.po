@@ -2242,6 +2242,12 @@ msgstr "...[内容已截断]..."
 msgid "truncation_middle_marker"
 msgstr "...[中间内容已截断，共 {count} 字符]..."
 
+msgid "model_service_request_failed"
+msgstr "模型服务请求失败：{message}"
+
+msgid "model_call_failed"
+msgstr "模型调用失败"
+
 msgid "unauthorized"
 msgstr "未授权"
 

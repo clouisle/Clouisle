@@ -5,6 +5,7 @@ Provides streaming and non-streaming chat with AI agents.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import time
@@ -103,6 +104,28 @@ def _is_model_stream_activity(chunk: ChatStreamChunk) -> bool:
         or delta.stream_activity
         or chunk.finish_reason
     )
+
+
+def _extract_llm_error_message(error: Exception) -> str:
+    message = getattr(error, "message", None) or str(error)
+    marker = " - "
+    if marker in message:
+        payload_text = message.split(marker, 1)[1]
+        try:
+            payload = ast.literal_eval(payload_text)
+        except (SyntaxError, ValueError):
+            return message
+        provider_message = payload.get("error", {}).get("message")
+        if isinstance(provider_message, str) and provider_message:
+            return provider_message
+    return message
+
+
+def _format_llm_error_message(error: Exception) -> str:
+    message = _extract_llm_error_message(error)
+    if not message:
+        return t("model_call_failed")
+    return t("model_service_request_failed", message=message)
 
 
 async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
@@ -2387,17 +2410,18 @@ async def chat_stream(
                     )
                     logger.warning("Rate limit error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
-                except LLMError:
+                except LLMError as e:
                     logger.exception("LLM error during stream")
+                    error_message = _format_llm_error_message(e)
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+                        fallback_content=error_message,
                     )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
                     logger.warning(
                         "Stream idle timeout (%ss) for conversation %s",
@@ -3493,14 +3517,15 @@ async def regenerate_message(
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.warning("Quota exceeded during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except LLMError:
+                except LLMError as e:
+                    error_message = _format_llm_error_message(e)
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+                        fallback_content=error_message,
                     )
                     if preserved_partial:
                         await Message.filter(id=message.id).update(is_active=False)
@@ -3509,7 +3534,7 @@ async def regenerate_message(
                             await Message.filter(id=new_message_id).delete()
                         await Message.filter(id=message.id).update(is_active=True)
                     logger.exception("LLM error during regenerate")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
                     preserved_partial = await persist_partial_round_error(
                         new_message,

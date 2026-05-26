@@ -2242,6 +2242,12 @@ msgstr "...[content truncated]..."
 msgid "truncation_middle_marker"
 msgstr "...[middle content truncated, {count} characters]..."
 
+msgid "model_service_request_failed"
+msgstr "Model service request failed: {message}"
+
+msgid "model_call_failed"
+msgstr "Model call failed"
+
 msgid "unauthorized"
 msgstr "Unauthorized"
 

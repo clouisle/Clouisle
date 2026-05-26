@@ -2322,6 +2322,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Cannot convert between {from_unit} and {to_unit}",
         "zh": "无法在 {from_unit} 和 {to_unit} 之间转换",
     },
+    "model_service_request_failed": {
+        "en": "Model service request failed: {message}",
+        "zh": "模型服务请求失败：{message}",
+    },
+    "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "unknown": {"en": "Unknown", "zh": "未知"},
     "unknown_error": {"en": "Unknown error", "zh": "未知错误"},
     "unknown_error_generic": {"en": "Unknown error", "zh": "未知错误"},
