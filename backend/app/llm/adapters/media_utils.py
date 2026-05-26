@@ -123,7 +123,9 @@ def image_content_to_data_uri(
     field_name: str,
 ) -> str:
     mime_format = content.format or "png"
-    mime_type = "image/jpeg" if mime_format in {"jpg", "jpeg"} else f"image/{mime_format}"
+    mime_type = (
+        "image/jpeg" if mime_format in {"jpg", "jpeg"} else f"image/{mime_format}"
+    )
     return media_content_to_data_uri(
         content,
         default_mime=mime_type,

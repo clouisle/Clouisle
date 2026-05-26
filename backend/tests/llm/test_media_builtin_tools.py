@@ -287,7 +287,6 @@ async def test_generate_image_normalizes_inline_base64_to_backend_url():
     assert image_payload["file_path"] is None
 
 
-
 @pytest.mark.anyio
 async def test_generate_video_passes_selected_start_image_reference():
     agent = SimpleNamespace(
@@ -315,7 +314,11 @@ async def test_generate_video_passes_selected_start_image_reference():
         ) as mock_generate,
         patch(
             "app.llm.tools.builtin.media.media_asset_service.normalize_video",
-            AsyncMock(return_value=VideoContent(url="/api/v1/upload/files/generated-videos/out.mp4")),
+            AsyncMock(
+                return_value=VideoContent(
+                    url="/api/v1/upload/files/generated-videos/out.mp4"
+                )
+            ),
         ),
     ):
         result = await generate_video(
@@ -591,7 +594,6 @@ async def test_generate_image_gpt_image_quality_falls_back_to_model_ref_suffix()
     assert request.quality == "medium"
 
 
-
 @pytest.mark.anyio
 async def test_generate_image_uses_selected_uploaded_image_reference():
     agent = SimpleNamespace(
@@ -616,7 +618,11 @@ async def test_generate_image_uses_selected_uploaded_image_reference():
         ) as mock_generate,
         patch(
             "app.llm.tools.builtin.media.media_asset_service.normalize_image",
-            AsyncMock(return_value=ImageContent(url="/api/v1/upload/files/generated-images/out.png")),
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/out.png"
+                )
+            ),
         ),
     ):
         result = await generate_image(
@@ -661,7 +667,11 @@ async def test_generate_image_deduplicates_reference_indexes_in_order():
         ) as mock_generate,
         patch(
             "app.llm.tools.builtin.media.media_asset_service.normalize_image",
-            AsyncMock(return_value=ImageContent(url="/api/v1/upload/files/generated-images/out.png")),
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/out.png"
+                )
+            ),
         ),
     ):
         await generate_image(
@@ -762,7 +772,11 @@ async def test_generate_image_preserves_explicit_images_input():
         ) as mock_generate,
         patch(
             "app.llm.tools.builtin.media.media_asset_service.normalize_image",
-            AsyncMock(return_value=ImageContent(url="/api/v1/upload/files/generated-images/out.png")),
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/out.png"
+                )
+            ),
         ),
     ):
         await generate_image(
@@ -802,7 +816,9 @@ async def test_generate_image_rejects_reference_indexes_when_disabled():
 
     mock_generate.assert_not_awaited()
     assert result.display_result["success"] is False
-    assert result.display_result["error"] == "Reference images are disabled for this agent"
+    assert (
+        result.display_result["error"] == "Reference images are disabled for this agent"
+    )
 
 
 @pytest.mark.anyio

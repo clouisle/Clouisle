@@ -776,7 +776,10 @@ class TestKlingVideoAdapter:
         assert adapter._encode_task_id("task-1", "text2video") == "task-1"
         assert adapter._encode_task_id("task-1", "image2video") == "image2video:task-1"
         assert adapter._decode_task_id("task-1") == ("text2video", "task-1")
-        assert adapter._decode_task_id("image2video:task-1") == ("image2video", "task-1")
+        assert adapter._decode_task_id("image2video:task-1") == (
+            "image2video",
+            "task-1",
+        )
 
     def test_maps_kling_statuses(self):
         adapter = KlingVideoAdapter(build_model("kling", "kling-v1"))
@@ -923,7 +926,9 @@ class TestSiliconFlowVideoAdapter:
         assert payload["image_size"] == "1280x720"
 
     def test_builds_payload_with_start_image(self):
-        adapter = SiliconFlowVideoAdapter(build_model("siliconflow", "Wan-AI/Wan2.2-I2V-A14B"))
+        adapter = SiliconFlowVideoAdapter(
+            build_model("siliconflow", "Wan-AI/Wan2.2-I2V-A14B")
+        )
 
         payload = adapter._build_payload(
             VideoGenerationRequest(

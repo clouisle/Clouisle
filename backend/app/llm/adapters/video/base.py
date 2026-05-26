@@ -12,7 +12,9 @@ from app.llm.types import VideoGenerationRequest, VideoGenerationResponse
 class BaseVideoAdapter(ABC):
     """Base class for text-to-video adapters."""
 
-    def _ensure_reference_images_supported(self, request: VideoGenerationRequest) -> None:
+    def _ensure_reference_images_supported(
+        self, request: VideoGenerationRequest
+    ) -> None:
         if request.start_image is None:
             return
         raise InvalidRequestError(

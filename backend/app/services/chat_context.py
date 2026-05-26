@@ -622,7 +622,11 @@ def _build_current_user_content(
     if current_images:
         image_reference_text = build_uploaded_image_reference_text(current_images)
         if image_reference_text:
-            return f"{user_message}\n\n{image_reference_text}" if user_message else image_reference_text
+            return (
+                f"{user_message}\n\n{image_reference_text}"
+                if user_message
+                else image_reference_text
+            )
     return user_message
 
 

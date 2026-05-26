@@ -103,7 +103,9 @@ class DashScopeVideoAdapter(BaseVideoAdapter):
 
     def _ensure_image_to_video_model(self) -> None:
         normalized = self.model_id.lower()
-        if any(marker in normalized for marker in _DASHSCOPE_IMAGE_TO_VIDEO_MODEL_MARKERS):
+        if any(
+            marker in normalized for marker in _DASHSCOPE_IMAGE_TO_VIDEO_MODEL_MARKERS
+        ):
             return
         raise InvalidRequestError(
             message=t("video_reference_images_not_supported_for_model"),
