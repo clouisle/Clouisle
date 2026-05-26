@@ -16,7 +16,7 @@ from app.llm.types import (
 )
 from app.models.model import Model
 
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_data_uri
 from ..volcengine_client import VolcengineClient
 from .base import BaseVideoAdapter
 
@@ -68,6 +68,21 @@ class VolcengineVideoAdapter(BaseVideoAdapter):
             "content": [{"type": "text", "text": prompt}],
             "parameters": {},
         }
+
+        if request.start_image is not None:
+            payload["content"].append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_content_to_data_uri(
+                            request.start_image,
+                            provider="volcengine",
+                            model=self.model_id,
+                            field_name="start_image",
+                        )
+                    },
+                }
+            )
 
         if request.duration:
             payload["parameters"]["duration"] = request.duration

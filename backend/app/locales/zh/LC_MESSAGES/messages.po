@@ -2242,6 +2242,12 @@ msgstr "...[内容已截断]..."
 msgid "truncation_middle_marker"
 msgstr "...[中间内容已截断，共 {count} 字符]..."
 
+msgid "model_service_request_failed"
+msgstr "模型服务请求失败：{message}"
+
+msgid "model_call_failed"
+msgstr "模型调用失败"
+
 msgid "unauthorized"
 msgstr "未授权"
 
@@ -2503,6 +2509,18 @@ msgstr "图片生成请求超出当前智能体限制（{max_images}）"
 msgid "image_reference_images_disabled"
 msgstr "当前智能体已禁用参考图"
 
+msgid "image_reference_images_conflict"
+msgstr "请仅使用显式参考图或上传图片索引之一，不能同时使用"
+
+msgid "image_reference_image_index_out_of_range"
+msgstr "参考图片索引 {index} 超出范围。可用上传图片数量：{count}"
+
+msgid "image_reference_invalid_uploaded_image"
+msgstr "上传图片 #{index} 不包含可用的图片数据"
+
+msgid "image_reference_no_uploaded_images"
+msgstr "当前没有可用于所选参考索引的上传图片"
+
 msgid "image_generation_invalid_quality"
 msgstr "图片质量“{quality}”不受支持。支持的值：{supported}"
 
@@ -2514,6 +2532,12 @@ msgstr "图片生成成功。使用模型 {model} 生成了 {count} 张图片。
 
 msgid "video_generation_not_enabled_for_agent"
 msgstr "当前智能体未启用视频生成"
+
+msgid "video_reference_images_not_supported_for_model"
+msgstr "当前选择的视频模型暂不支持将上传图片作为首帧参考"
+
+msgid "video_reference_image_requires_remote_url"
+msgstr "服务商 {provider} 需要公网图片 URL 才能作为视频首帧参考"
 
 msgid "embedding_model_locked_after_kb_creation"
 msgstr "知识库创建后不可修改嵌入模型"

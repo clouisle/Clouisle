@@ -70,6 +70,34 @@ async def test_current_upload_content_is_appended_to_current_user_message():
 
 
 @pytest.mark.anyio
+async def test_non_vision_upload_content_uses_reference_labels_without_image_parts():
+    messages, _ = await _build_messages_with_file_content(
+        agent=_agent(),
+        conversation=_conversation(),
+        user_message="Use the last image as a drawing reference.",
+        file_content=None,
+        user_locale="en",
+        history_override=[],
+        current_images=[
+            {"url": "data:image/png;base64,first"},
+            {"url": "data:image/png;base64,last"},
+        ],
+        model_supports_vision=False,
+        current_user_message_id=None,
+        include_current_user_message=True,
+        exclude_message_ids=None,
+        history_before_message_created_at=None,
+    )
+
+    assert messages[-1].role == MessageRole.USER
+    assert messages[-1].content == (
+        "Use the last image as a drawing reference.\n\n"
+        "Uploaded image #1: available as a reference image.\n"
+        "Uploaded image #2: available as a reference image."
+    )
+
+
+@pytest.mark.anyio
 async def test_vision_upload_content_preserves_image_parts():
     messages, _ = await _build_messages_with_file_content(
         agent=_agent(),
@@ -90,9 +118,11 @@ async def test_vision_upload_content_preserves_image_parts():
     assert isinstance(content, list)
     assert content[0].type == ContentType.TEXT
     assert content[0].text == "Describe this."
-    assert content[1].type == ContentType.IMAGE
-    assert content[2].type == ContentType.TEXT
-    assert content[2].text == "<uploaded_files>\nDocument content\n</uploaded_files>"
+    assert content[1].type == ContentType.TEXT
+    assert content[1].text == "Uploaded image #1:"
+    assert content[2].type == ContentType.IMAGE
+    assert content[3].type == ContentType.TEXT
+    assert content[3].text == "<uploaded_files>\nDocument content\n</uploaded_files>"
 
 
 @pytest.mark.anyio

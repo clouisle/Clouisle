@@ -169,6 +169,29 @@ class TestChatToolExecutor:
         }
 
     @pytest.mark.anyio
+    async def test_execute_tool_call_passes_current_images_to_registered_tool(self):
+        async def handler(current_images=None):
+            return {"current_images": current_images}
+
+        previous_tool = tool_registry.get_tool("current_image_probe")
+        tool_registry.register(
+            name="current_image_probe",
+            description="Probe current images",
+        )(handler)
+        try:
+            result = await execute_tool_call(
+                "current_image_probe",
+                {},
+                current_images=[{"url": "data:image/png;base64,cmVm"}],
+            )
+        finally:
+            tool_registry.unregister("current_image_probe")
+            if previous_tool is not None:
+                tool_registry.register_tool(previous_tool)
+
+        assert result == {"current_images": [{"url": "data:image/png;base64,cmVm"}]}
+
+    @pytest.mark.anyio
     async def test_execute_custom_code_tool_passes_session_to_sandbox_runtime(self):
         tool = SimpleNamespace(
             config={"language": "python", "code": "return {'value': 42}"},

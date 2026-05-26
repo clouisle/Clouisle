@@ -16,6 +16,7 @@ from typing import Any
 
 from app.core.i18n import t
 from app.llm import model_manager
+from app.llm.adapters.media_utils import parse_image_data_url
 from app.models.model import ModelType
 from app.services.error_messages import resolve_user_visible_error
 from app.llm.types import (
@@ -137,6 +138,99 @@ async def _normalize_image_quality(
             )
         )
     return mapped_quality
+
+
+def _get_image_source_value(image: Any, key: str) -> Any:
+    if isinstance(image, dict):
+        return image.get(key)
+    return getattr(image, key, None)
+
+
+def _chat_image_to_generation_image(image: Any, *, index: int) -> ImageContent:
+    base64_value = _get_image_source_value(image, "base64")
+    if isinstance(base64_value, str) and base64_value:
+        parsed = parse_image_data_url(base64_value)
+        if parsed:
+            payload, image_format = parsed
+            return ImageContent(base64=payload, format=image_format or "png")
+        image_format = _get_image_source_value(image, "format") or "png"
+        return ImageContent(base64=base64_value, format=image_format)
+
+    url = _get_image_source_value(image, "url")
+    if isinstance(url, str) and url:
+        parsed = parse_image_data_url(url)
+        if parsed:
+            payload, image_format = parsed
+            return ImageContent(base64=payload, format=image_format or "png")
+
+    raise ValueError(t("image_reference_invalid_uploaded_image", index=index))
+
+
+def _deduplicate_indexes(indexes: Sequence[Any]) -> list[int]:
+    selected: list[int] = []
+    seen: set[int] = set()
+    for raw_index in indexes:
+        if isinstance(raw_index, bool):
+            continue
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            continue
+        if index not in seen:
+            selected.append(index)
+            seen.add(index)
+    return selected
+
+
+def _resolve_generation_reference_images(
+    *,
+    images: list[dict[str, Any]] | None,
+    reference_image_indexes: Sequence[Any] | None,
+    current_images: Sequence[Any] | None,
+) -> list[ImageContent] | None:
+    if images and reference_image_indexes:
+        raise ValueError(t("image_reference_images_conflict"))
+    if images:
+        return [ImageContent.model_validate(image) for image in images]
+    if reference_image_indexes is None:
+        return None
+
+    selected_indexes = _deduplicate_indexes(reference_image_indexes)
+    if not selected_indexes:
+        return None
+    if not current_images:
+        raise ValueError(t("image_reference_no_uploaded_images"))
+
+    resolved: list[ImageContent] = []
+    available_count = len(current_images)
+    for index in selected_indexes:
+        if index < 1 or index > available_count:
+            raise ValueError(
+                t(
+                    "image_reference_image_index_out_of_range",
+                    index=index,
+                    count=available_count,
+                )
+            )
+        resolved.append(
+            _chat_image_to_generation_image(current_images[index - 1], index=index)
+        )
+    return resolved
+
+
+def _resolve_start_image_reference(
+    *,
+    start_image_index: Any,
+    current_images: Sequence[Any] | None,
+) -> ImageContent | None:
+    if start_image_index is None:
+        return None
+    reference_images = _resolve_generation_reference_images(
+        images=None,
+        reference_image_indexes=[start_image_index],
+        current_images=current_images,
+    )
+    return reference_images[0] if reference_images else None
 
 
 class ToolExecutionResult(dict):
@@ -316,8 +410,10 @@ async def generate_image(
     negative_prompt: str | None = None,
     seed: int | None = None,
     images: list[dict[str, Any]] | None = None,
+    reference_image_indexes: list[int] | None = None,
     extra_params: dict[str, Any] | None = None,
     agent: Any | None = None,
+    current_images: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Generate images through the unified model manager."""
     resolved_model_ref: str | None = None
@@ -330,12 +426,14 @@ async def generate_image(
         _validate_allowed_providers(resolved_model_ref, config)
 
         max_images = int(config.get("max_images", 4))
-        if num_images > max_images:
-            raise ValueError(
-                t("image_generation_exceeds_agent_limit", max_images=max_images)
-            )
+        final_num_images = min(num_images, max_images)
 
-        if images and not config.get("allow_reference_images", True):
+        reference_images = _resolve_generation_reference_images(
+            images=images,
+            reference_image_indexes=reference_image_indexes,
+            current_images=current_images,
+        )
+        if reference_images and not config.get("allow_reference_images", True):
             raise ValueError(t("image_reference_images_disabled"))
 
         normalized_quality = await _normalize_image_quality(
@@ -361,13 +459,11 @@ async def generate_image(
             negative_prompt=negative_prompt,
             width=width or int(default_width or 1024),
             height=height or int(default_height or 1024),
-            num_images=num_images,
+            num_images=final_num_images,
             style=style,
             quality=normalized_quality,
             seed=seed,
-            images=[ImageContent.model_validate(image) for image in images]
-            if images
-            else None,
+            images=reference_images,
             extra_params=extra_params,
         )
         image_response = await model_manager.generate_image(
@@ -412,8 +508,10 @@ async def generate_video(
     camera_motion: str | None = None,
     style: str | None = None,
     seed: int | None = None,
+    start_image_index: int | None = None,
     extra_params: dict[str, Any] | None = None,
     agent: Any | None = None,
+    current_images: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Generate videos through the unified model manager."""
     resolved_model_ref: str | None = None
@@ -441,6 +539,11 @@ async def generate_video(
         poll_interval_ms = int(config.get("poll_interval_ms", 3000))
         poll_timeout_s = int(config.get("poll_timeout_s", 120))
 
+        start_image = _resolve_start_image_reference(
+            start_image_index=start_image_index,
+            current_images=current_images,
+        )
+
         request = VideoGenerationRequest(
             prompt=prompt,
             duration=final_duration,
@@ -449,6 +552,7 @@ async def generate_video(
             camera_motion=camera_motion,
             style=style,
             seed=seed,
+            start_image=start_image,
             extra_params=extra_params,
         )
         response: VideoGenerationResponse | None = await model_manager.generate_video(
@@ -512,7 +616,9 @@ def register_media_tools() -> None:
         description=(
             "Generate one or more images from a prompt. Use this when the user asks "
             "you to create illustrations, product shots, mockups, concept art, "
-            "or edit/reference-based image outputs."
+            "or edit/reference-based image outputs. Uploaded chat images are "
+            "available as 1-based indexes; use reference_image_indexes for only "
+            "the specific uploaded images the user wants to reference."
         ),
         parameters=[
             ToolParameter(
@@ -559,8 +665,21 @@ def register_media_tools() -> None:
             ToolParameter(
                 name="images",
                 type="array",
-                description="Optional reference images for edit/reference generation",
+                description=(
+                    "Optional explicit reference image objects. For images uploaded "
+                    "in the current chat, use reference_image_indexes instead."
+                ),
                 items={"type": "object"},
+            ),
+            ToolParameter(
+                name="reference_image_indexes",
+                type="array",
+                description=(
+                    "1-based indexes of uploaded chat images to use as references. "
+                    "Choose only the specific images needed, e.g. [3] for uploaded "
+                    "image #3 or [5] for the last image when five images were uploaded."
+                ),
+                items={"type": "integer"},
             ),
             ToolParameter(
                 name="extra_params",
@@ -574,7 +693,10 @@ def register_media_tools() -> None:
         name="generate_video",
         description=(
             "Generate a short video clip from a prompt. Use this when the user asks "
-            "for cinematic motion, animated scenes, or motion-based concept clips."
+            "for cinematic motion, animated scenes, or motion-based concept clips. "
+            "When the user asks to use an uploaded image as the video's first frame, "
+            "set start_image_index to that uploaded image's 1-based index. Current "
+            "video providers may reject image references explicitly if unsupported."
         ),
         parameters=[
             ToolParameter(
@@ -612,6 +734,14 @@ def register_media_tools() -> None:
                 name="seed",
                 type="integer",
                 description="Optional random seed",
+            ),
+            ToolParameter(
+                name="start_image_index",
+                type="integer",
+                description=(
+                    "1-based index of the uploaded chat image to use as the video's "
+                    "starting frame/reference image when the selected video model supports it."
+                ),
             ),
             ToolParameter(
                 name="extra_params",

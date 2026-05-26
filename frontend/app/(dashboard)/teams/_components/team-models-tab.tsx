@@ -283,7 +283,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-medium">
@@ -299,7 +299,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                 </Button>
               }
             />
-            <PopoverContent className="w-80 p-0" align="end">
+            <PopoverContent className="w-80 max-h-[min(28rem,calc(100vh-8rem))] overflow-hidden p-0 flex flex-col" align="end">
               <div className="p-3 border-b space-y-2">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -323,7 +323,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
                   </div>
                 )}
               </div>
-              <ScrollArea className="h-64">
+              <ScrollArea className="min-h-0 flex-1">
                 {filteredModels.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
                     {availableModels.length === 0
@@ -380,7 +380,7 @@ export function TeamModelsTab({ teamId }: TeamModelsTabProps) {
           <p className="text-sm">{t('addModelHint')}</p>
         </div>
       ) : (
-        <div className="border rounded-md overflow-x-auto">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
