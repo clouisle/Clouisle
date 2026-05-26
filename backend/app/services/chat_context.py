@@ -430,6 +430,17 @@ def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     return content_parts
 
 
+def build_uploaded_image_reference_text(images: Sequence[Any]) -> str:
+    labels: list[str] = []
+    for index, image in enumerate(images, start=1):
+        has_image = bool(getattr(image, "url", None) or getattr(image, "base64", None))
+        if isinstance(image, dict):
+            has_image = bool(image.get("url") or image.get("base64"))
+        if has_image:
+            labels.append(f"Uploaded image #{index}: available as a reference image.")
+    return "\n".join(labels)
+
+
 def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
     if not value:
         return None
@@ -630,6 +641,10 @@ def _build_current_user_content(
 ) -> str | list[ContentPart]:
     if current_images and model_supports_vision:
         return build_vision_content(user_message, current_images)
+    if current_images:
+        image_reference_text = build_uploaded_image_reference_text(current_images)
+        if image_reference_text:
+            return f"{user_message}\n\n{image_reference_text}" if user_message else image_reference_text
     return user_message
 
 

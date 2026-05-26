@@ -450,10 +450,7 @@ async def generate_image(
         _validate_allowed_providers(resolved_model_ref, config)
 
         max_images = int(config.get("max_images", 4))
-        if num_images > max_images:
-            raise ValueError(
-                t("image_generation_exceeds_agent_limit", max_images=max_images)
-            )
+        final_num_images = min(num_images, max_images)
 
         reference_images = _resolve_generation_reference_images(
             images=images,
@@ -486,7 +483,7 @@ async def generate_image(
             negative_prompt=negative_prompt,
             width=width or int(default_width or 1024),
             height=height or int(default_height or 1024),
-            num_images=num_images,
+            num_images=final_num_images,
             style=style,
             quality=normalized_quality,
             seed=seed,

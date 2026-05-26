@@ -194,6 +194,53 @@ async def test_generate_image_uses_legacy_size_default_when_width_height_missing
 
 
 @pytest.mark.anyio
+async def test_generate_image_clamps_num_images_to_agent_limit():
+    agent = SimpleNamespace(
+        enable_image_generation=True,
+        image_generation_config={
+            "default_model_ref": "openai/gpt-image-1",
+            "default_width": 1024,
+            "default_height": 1024,
+            "max_images": 1,
+            "allow_reference_images": True,
+        },
+    )
+    response = ImageGenerationResponse(
+        images=[
+            GeneratedImage(
+                image=ImageContent(url="https://example.com/cat.png", format="png"),
+            )
+        ],
+        model="gpt-image-1",
+    )
+
+    with (
+        patch(
+            "app.llm.tools.builtin.media.model_manager.generate_image",
+            AsyncMock(return_value=response),
+        ) as mock_generate,
+        patch(
+            "app.llm.tools.builtin.media.media_asset_service.normalize_image",
+            AsyncMock(
+                return_value=ImageContent(
+                    url="/api/v1/upload/files/generated-images/2026/03/cat.png",
+                    format="png",
+                )
+            ),
+        ),
+    ):
+        result = await generate_image(
+            prompt="A cat portrait",
+            num_images=4,
+            agent=agent,
+        )
+
+    request = mock_generate.await_args.args[0]
+    assert request.num_images == 1
+    assert result.display_result["success"] is True
+
+
+@pytest.mark.anyio
 async def test_generate_image_normalizes_inline_base64_to_backend_url():
     agent = SimpleNamespace(
         enable_image_generation=True,

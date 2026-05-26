@@ -1041,12 +1041,6 @@ async def chat(
     if chat_in.images and agent.enable_vision:
         model_capabilities = await get_model_capabilities(agent)
         model_supports_vision = model_capabilities.get("vision", False)
-        if not model_supports_vision:
-            raise BusinessError(
-                code=ResponseCode.MODEL_VISION_NOT_SUPPORTED,
-                msg_key="model_vision_not_supported",
-                status_code=400,
-            )
 
     streaming_config = get_streaming_config(agent)
     tool_timeouts = streaming_config["tool_timeouts"]
@@ -1548,14 +1542,11 @@ async def chat_stream(
                 try:
                     from app.models.agent import RAGMode
 
-                    # Check if model supports vision when images are provided (before creating messages)
+                    # Check if model supports vision before creating multimodal messages.
                     model_supports_vision = False
                     if chat_in.images and agent.enable_vision:
                         model_capabilities = await get_model_capabilities(agent)
                         model_supports_vision = model_capabilities.get("vision", False)
-                        if not model_supports_vision:
-                            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': t('model_vision_not_supported')})}\n\n"
-                            return
 
                     # Handle RAG based on mode
                     rag_contexts: list[dict] = []
