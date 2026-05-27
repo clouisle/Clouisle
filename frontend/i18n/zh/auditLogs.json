@@ -142,6 +142,16 @@
     "actionagent_create_memory_entity": "Agent 创建记忆实体",
     "actionagent_create_memory_relation": "Agent 创建记忆关系",
     "actionagent_update_memory_entity": "Agent 更新记忆实体",
+    "actionpreview_skill_import": "预览技能导入",
+    "actioninstall_skill_import": "安装技能导入",
+    "actionupdate_skill": "更新技能",
+    "actiondelete_skill": "删除技能",
+    "actiontest_skill": "测试技能",
+    "actionadmin_preview_skill_import": "管理员预览技能导入",
+    "actionadmin_install_skill_import": "管理员安装技能导入",
+    "actionadmin_update_skill": "管理员更新技能",
+    "actionadmin_delete_skill": "管理员删除技能",
+    "actionadmin_test_skill": "管理员测试技能",
     "rowsPerPage": "每页显示",
     "pageInfo": "第 {page} 页，共 {total} 页"
   }

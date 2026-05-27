@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-19T18:46:49.954Z
+// GENERATED — 2026-05-27T18:09:10.976Z
 // Source: i18n/en/auditLogs.json
 export type AuditLogsMessages = {
   auditLogs: {
@@ -144,6 +144,16 @@ export type AuditLogsMessages = {
     actionagent_create_memory_entity: string
     actionagent_create_memory_relation: string
     actionagent_update_memory_entity: string
+    actionpreview_skill_import: string
+    actioninstall_skill_import: string
+    actionupdate_skill: string
+    actiondelete_skill: string
+    actiontest_skill: string
+    actionadmin_preview_skill_import: string
+    actionadmin_install_skill_import: string
+    actionadmin_update_skill: string
+    actionadmin_delete_skill: string
+    actionadmin_test_skill: string
     rowsPerPage: string
     pageInfo: string
   }
