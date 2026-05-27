@@ -31,6 +31,11 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
     return <Badge variant="destructive">{t("statusFailed")}</Badge>;
   };
 
+  const getOperationLabel = (operation: string) => {
+    const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
+    return t.has(key) ? t(key) : operation;
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
@@ -58,7 +63,7 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">{t("operation")}</span>
-                <span className="text-sm font-medium">{log.operation}</span>
+                <span className="text-sm font-medium">{getOperationLabel(log.operation)}</span>
               </div>
             </div>
           </div>
