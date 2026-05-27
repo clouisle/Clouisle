@@ -62,6 +62,15 @@ from app.services.chat_context import (
     prepare_model_context,
     retry_prepare_model_context,
 )
+from app.services.message_branching import (
+    activate_conversation_branch,
+    find_descendant_branch_from,
+    get_last_active_canonical_message,
+    get_prefix_path_before,
+    get_version_count as get_branch_version_count,
+    get_version_root_id,
+    stale_session_memory_if_source_outside_active_branch,
+)
 
 # Import helper functions from modules
 from app.api.v1.endpoints.chat_helpers import (
@@ -273,6 +282,11 @@ async def get_or_create_conversation(
     )
 
     return conversation
+
+
+async def get_next_user_branch_parent_id(conversation: Conversation) -> UUID | None:
+    last_message = await get_last_active_canonical_message(conversation.id)
+    return last_message.id if last_message else None
 
 
 async def update_message_stats(agent: Agent, token_usage: dict | None = None):
@@ -1009,6 +1023,7 @@ async def chat(
 
     round_id = uuid4()
     next_round_index = 1
+    user_branch_parent_id = await get_next_user_branch_parent_id(conversation)
 
     # Save user message with images and file_urls
     user_msg = await Message.create(
@@ -1020,6 +1035,7 @@ async def chat(
         if chat_in.file_urls
         else None,
         rag_context=rag_contexts if rag_contexts else None,
+        branch_parent_id=user_branch_parent_id,
         round_id=round_id,
         round_index=0,
         round_role=MessageRoundRole.USER_INPUT,
@@ -1371,6 +1387,7 @@ async def chat(
             },
             duration_ms=duration_ms,
             tool_calls=final_tool_calls,
+            branch_parent_id=user_msg.id,
             round_id=round_id,
             round_index=next_round_index,
             round_role=MessageRoundRole.ASSISTANT_FINAL,
@@ -1404,6 +1421,11 @@ async def chat(
         # Update agent stats atomically
         await Agent.filter(id=agent.id).update(message_count=F("message_count") + 2)
 
+        branch_prefix = await get_prefix_path_before(user_msg)
+        await activate_conversation_branch(
+            conversation.id,
+            [*branch_prefix, user_msg, assistant_msg],
+        )
         enqueue_session_memory_extraction(agent, conversation, assistant_msg)
 
         return success(
@@ -1573,6 +1595,9 @@ async def chat_stream(
 
                     round_id = uuid4()
                     next_round_index = 1
+                    user_branch_parent_id = await get_next_user_branch_parent_id(
+                        conversation
+                    )
 
                     # Save user message with images and file_urls
                     user_msg = await Message.create(
@@ -1586,6 +1611,7 @@ async def chat_stream(
                         if chat_in.file_urls
                         else None,
                         rag_context=rag_contexts if rag_contexts else None,
+                        branch_parent_id=user_branch_parent_id,
                         round_id=round_id,
                         round_index=0,
                         round_role=MessageRoundRole.USER_INPUT,
@@ -1597,6 +1623,7 @@ async def chat_stream(
                         conversation=conversation,
                         role=MessageRole.ASSISTANT,
                         content="",  # Will be updated
+                        branch_parent_id=user_msg.id,
                         round_id=round_id,
                         round_index=0,
                         round_role=MessageRoundRole.ASSISTANT_FINAL,
@@ -2315,6 +2342,11 @@ async def chat_stream(
                         "completion": output_tokens,
                     }
                     await assistant_msg.save()
+                    branch_prefix = await get_prefix_path_before(user_msg)
+                    await activate_conversation_branch(
+                        conversation.id,
+                        [*branch_prefix, user_msg, assistant_msg],
+                    )
                     enqueue_session_memory_extraction(
                         agent, conversation, assistant_msg
                     )
@@ -2666,8 +2698,8 @@ async def switch_message_version(
         )
 
     # Verify target version belongs to the same version group
-    root_id = message.parent_id or message.id
-    target_root_id = target_version.parent_id or target_version.id
+    root_id = get_version_root_id(message)
+    target_root_id = get_version_root_id(target_version)
     if root_id != target_root_id:
         raise BusinessError(
             code=ResponseCode.BAD_REQUEST,
@@ -2675,45 +2707,13 @@ async def switch_message_version(
             status_code=400,
         )
 
-    # Deactivate all versions in this group
-    await Message.filter(id=root_id).update(is_active=False)
-    await Message.filter(parent_id=root_id).update(is_active=False)
-
-    # Activate the target version
-    target_version.is_active = True
-    await target_version.save()
-
-    # Get the root message to use its created_at for deactivating subsequent messages
-    root_message = await Message.filter(id=root_id).first()
-    if root_message:
-        # Get all tool_call_ids from the target version
-        target_tool_call_ids = set()
-        if target_version.tool_calls:
-            for tc in target_version.tool_calls:
-                if isinstance(tc, dict) and "id" in tc:
-                    target_tool_call_ids.add(tc["id"])
-
-        # Deactivate all messages after the root message in the conversation
-        # EXCEPT the target version itself and tool messages that belong to it
-        messages_to_deactivate = await Message.filter(
-            conversation_id=message.conversation_id,
-            created_at__gt=root_message.created_at,
-            is_active=True,
-        ).all()
-
-        for msg in messages_to_deactivate:
-            # Keep the target version itself
-            if msg.id == target_version.id:
-                continue
-            # Keep tool messages that belong to the target version
-            if (
-                msg.role == MessageRole.TOOL
-                and msg.tool_call_id in target_tool_call_ids
-            ):
-                continue
-            # Deactivate all other messages
-            msg.is_active = False
-            await msg.save()
+    prefix = await get_prefix_path_before(target_version)
+    descendant_branch = await find_descendant_branch_from(target_version)
+    await activate_conversation_branch(
+        message.conversation_id,
+        [*prefix, *descendant_branch],
+    )
+    await stale_session_memory_if_source_outside_active_branch(message.conversation_id)
 
     return success(
         data=await build_message_out_with_versions(
@@ -2774,17 +2774,14 @@ async def regenerate_message(
             status_code=404,
         )
 
-    # Find the user message before this assistant message
-    # We need to get the active user message that preceded this response
-    user_message = (
-        await Message.filter(
-            conversation_id=conversation.id,
-            role=MessageRole.USER,
-            created_at__lt=message.created_at,
-            is_active=True,
-        )
-        .order_by("-created_at")
-        .first()
+    prefix_for_message = await get_prefix_path_before(message)
+    user_message = next(
+        (
+            item
+            for item in reversed(prefix_for_message)
+            if item.role == MessageRole.USER
+        ),
+        None,
     )
 
     if not user_message:
@@ -2815,6 +2812,26 @@ async def regenerate_message(
                 FinishReason,
             )
 
+            async def activate_regenerated_path() -> None:
+                if not new_message:
+                    return
+                prefix = await get_prefix_path_before(new_message)
+                await activate_conversation_branch(
+                    conversation.id,
+                    [*prefix, new_message],
+                )
+                await stale_session_memory_if_source_outside_active_branch(
+                    conversation.id
+                )
+
+            async def restore_original_path() -> None:
+                prefix = await get_prefix_path_before(message)
+                descendant_branch = await find_descendant_branch_from(message)
+                await activate_conversation_branch(
+                    conversation.id,
+                    [*prefix, *descendant_branch],
+                )
+
             # Get streaming configuration
             streaming_config = get_streaming_config(agent)
             global_timeout = streaming_config["global_timeout"]
@@ -2843,17 +2860,15 @@ async def regenerate_message(
                     from app.models.agent import RAGMode
 
                     # Determine the root message ID for versioning
-                    root_id = message.parent_id or message.id
+                    root_id = get_version_root_id(message)
 
                     # Get current version count
-                    current_version_count = (
-                        await Message.filter(parent_id=root_id).count() + 1
-                    )
+                    current_version_count = await get_branch_version_count(message)
                     new_version_number = current_version_count + 1
-
-                    # Deactivate all versions in this group
-                    await Message.filter(id=root_id).update(is_active=False)
-                    await Message.filter(parent_id=root_id).update(is_active=False)
+                    branch_parent_id = message.branch_parent_id
+                    if branch_parent_id is None:
+                        prefix = await get_prefix_path_before(message)
+                        branch_parent_id = prefix[-1].id if prefix else None
 
                     round_id = uuid4()
                     next_round_index = 1
@@ -2866,6 +2881,7 @@ async def regenerate_message(
                         parent_id=root_id,
                         is_active=True,
                         version_number=new_version_number,
+                        branch_parent_id=branch_parent_id,
                         round_id=round_id,
                         round_index=0,
                         round_role=MessageRoundRole.ASSISTANT_FINAL,
@@ -2959,6 +2975,7 @@ async def regenerate_message(
                             )
                             new_message.created_at = now_utc()
                             await new_message.save()
+                            await activate_regenerated_path()
                             return
 
                         # If we need to send heartbeat
@@ -3331,6 +3348,7 @@ async def regenerate_message(
                                     ],
                                     parent_id=new_message.parent_id or new_message.id,
                                     version_number=new_version_number,
+                                    branch_parent_id=new_message.id,
                                     round_id=round_id,
                                     round_index=assistant_step_index,
                                     round_role=MessageRoundRole.ASSISTANT_STEP,
@@ -3347,6 +3365,7 @@ async def regenerate_message(
                                     tool_name=tool_name,
                                     parent_id=new_message.parent_id or new_message.id,
                                     version_number=new_version_number,
+                                    branch_parent_id=new_message.id,
                                     round_id=round_id,
                                     round_index=tool_step_index,
                                     round_role=MessageRoundRole.TOOL_RESULT,
@@ -3466,6 +3485,14 @@ async def regenerate_message(
                         "completion": output_tokens,
                     }
                     await new_message.save()
+                    prefix = await get_prefix_path_before(new_message)
+                    await activate_conversation_branch(
+                        conversation.id,
+                        [*prefix, new_message],
+                    )
+                    await stale_session_memory_if_source_outside_active_branch(
+                        conversation.id
+                    )
                     enqueue_session_memory_extraction(agent, conversation, new_message)
 
                     # Update agent and team stats for regenerated message
@@ -3501,11 +3528,11 @@ async def regenerate_message(
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     if preserved_partial:
-                        await Message.filter(id=message.id).update(is_active=False)
+                        await activate_regenerated_path()
                     else:
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
-                        await Message.filter(id=message.id).update(is_active=True)
+                        await restore_original_path()
                     logger.warning("Quota exceeded during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
                 except LLMError as e:
@@ -3519,11 +3546,11 @@ async def regenerate_message(
                         fallback_content=error_message,
                     )
                     if preserved_partial:
-                        await Message.filter(id=message.id).update(is_active=False)
+                        await activate_regenerated_path()
                     else:
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
-                        await Message.filter(id=message.id).update(is_active=True)
+                        await restore_original_path()
                     logger.exception("LLM error during regenerate")
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
@@ -3536,11 +3563,11 @@ async def regenerate_message(
                         fallback_content=t("stream_timeout_exceeded"),
                     )
                     if preserved_partial:
-                        await Message.filter(id=message.id).update(is_active=False)
+                        await activate_regenerated_path()
                     else:
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
-                        await Message.filter(id=message.id).update(is_active=True)
+                        await restore_original_path()
                     logger.warning(
                         "Regenerate stream idle timeout (%ss) for message %s",
                         idle_timeout,
@@ -3557,11 +3584,11 @@ async def regenerate_message(
                         fallback_content=t(GENERIC_STREAM_ERROR_KEY),
                     )
                     if preserved_partial:
-                        await Message.filter(id=message.id).update(is_active=False)
+                        await activate_regenerated_path()
                     else:
                         if new_message_id:
                             await Message.filter(id=new_message_id).delete()
-                        await Message.filter(id=message.id).update(is_active=True)
+                        await restore_original_path()
                     logger.exception("Unexpected error during regenerate")
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
 
@@ -3579,10 +3606,10 @@ async def regenerate_message(
                 fallback_content=t("stream_timeout_exceeded"),
             )
             if preserved_partial:
-                await Message.filter(id=message.id).update(is_active=False)
+                await activate_regenerated_path()
             elif new_message_id:
                 await Message.filter(id=new_message_id).delete()
-                await Message.filter(id=message.id).update(is_active=True)
+                await restore_original_path()
             # Send timeout error event
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': global_timeout})}\n\n"
         except asyncio.CancelledError:
@@ -3604,9 +3631,10 @@ async def regenerate_message(
                     or new_message.tool_calls
                 ):
                     await new_message.save()
+                    await activate_regenerated_path()
                 else:
                     await Message.filter(id=new_message.id).delete()
-                    await Message.filter(id=message.id).update(is_active=True)
+                    await restore_original_path()
             return
 
         except Exception as exc:
@@ -3620,10 +3648,10 @@ async def regenerate_message(
                 fallback_content=t(GENERIC_STREAM_ERROR_KEY),
             )
             if preserved_partial:
-                await Message.filter(id=message.id).update(is_active=False)
+                await activate_regenerated_path()
             elif new_message_id:
                 await Message.filter(id=new_message_id).delete()
-                await Message.filter(id=message.id).update(is_active=True)
+                await restore_original_path()
             yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
             return
 

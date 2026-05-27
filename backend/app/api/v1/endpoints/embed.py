@@ -29,6 +29,7 @@ from app.models.workflow import Workflow, WorkflowStatus
 from app.schemas.agent import ChatRequest, EmbedAgentInfo
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.schemas.response import BusinessError, ResponseCode, success
+from app.services.message_branching import get_visible_conversation_messages
 
 logger = logging.getLogger(__name__)
 
@@ -232,8 +233,6 @@ async def get_embed_conversation_messages(
     user, api_key = auth_result
     agent = await _get_embed_agent(agent_id, api_key, request)
 
-    from app.models.agent import Message
-
     conversation = await Conversation.filter(
         id=conversation_id,
         agent_id=agent.id,
@@ -247,10 +246,7 @@ async def get_embed_conversation_messages(
             status_code=404,
         )
 
-    messages = await Message.filter(
-        conversation=conversation,
-        is_active=True,
-    ).order_by("created_at")
+    messages = await get_visible_conversation_messages(conversation.id)
 
     return success(
         data=await build_message_round_payloads(messages),

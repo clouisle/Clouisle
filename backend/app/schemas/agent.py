@@ -832,6 +832,7 @@ class MessageOut(BaseModel):
     steps: list[MessageRoundStep] | None = None
     # Version info
     parent_id: UUID | None = None
+    branch_parent_id: UUID | None = None
     is_active: bool = True
     version_number: int = 1
     version_count: int = 1  # Total versions in this group

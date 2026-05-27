@@ -2,6 +2,14 @@
 
 ## Active
 
+- **agent-message-version-branch-aware-context** — Complete. Make Agent message version switching branch-aware and prevent stale session memory from leaking previous-version context. See `docs/plan/agent-message-version-branch-aware-context.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Message branch schema and migration
+  - [x] 3. Branch helper service and active path activation
+  - [x] 4. Chat regenerate/switch-version branch behavior
+  - [x] 5. Branch-aware history and session memory guards
+  - [x] 6. Validation and regression checks
+
 - **agent-reference-image-inputs** — In progress. Let Agent media generation tools use selected uploaded chat images as reference inputs via indexed references and backend base64 conversion. See `docs/plan/agent-reference-image-inputs.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Uploaded image labeling and tool context plumbing

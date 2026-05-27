@@ -516,6 +516,82 @@ async def init_message_round_fields():
     logger.info("Message round metadata migration complete")
 
 
+async def init_message_branch_parent_field():
+    """
+    Add branch_parent_id to messages and backfill a best-effort visible branch.
+    Must be called BEFORE Tortoise.generate_schemas() to avoid schema mismatch.
+    """
+    logger.info("Initializing message branch parent field...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping branch parent migration"
+        )
+        return
+
+    await conn.execute_query("""
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS branch_parent_id UUID NULL
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_branch_parent
+        ON messages (conversation_id, branch_parent_id)
+    """)
+
+    await conn.execute_query("""
+        WITH active_canonical AS (
+            SELECT
+                id,
+                LAG(id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS previous_id
+            FROM messages
+            WHERE is_active = TRUE
+              AND (round_id IS NULL OR is_round_canonical = TRUE)
+        )
+        UPDATE messages AS m
+        SET branch_parent_id = active_canonical.previous_id
+        FROM active_canonical
+        WHERE m.id = active_canonical.id
+          AND m.branch_parent_id IS NULL
+    """)
+
+    await conn.execute_query("""
+        UPDATE messages AS m
+        SET branch_parent_id = root.branch_parent_id
+        FROM messages AS root
+        WHERE m.parent_id = root.id
+          AND m.branch_parent_id IS NULL
+    """)
+
+    await conn.execute_query("""
+        WITH round_canonical AS (
+            SELECT DISTINCT ON (conversation_id, round_id)
+                conversation_id,
+                round_id,
+                id AS canonical_id
+            FROM messages
+            WHERE round_id IS NOT NULL
+              AND is_round_canonical = TRUE
+            ORDER BY conversation_id, round_id, created_at, id
+        )
+        UPDATE messages AS m
+        SET branch_parent_id = round_canonical.canonical_id
+        FROM round_canonical
+        WHERE m.conversation_id = round_canonical.conversation_id
+          AND m.round_id = round_canonical.round_id
+          AND m.is_round_canonical = FALSE
+          AND m.branch_parent_id IS NULL
+    """)
+
+    logger.info("Message branch parent migration complete")
+
+
 async def init_conversation_session_memory_table():
     """Create the conversation_session_memories table if it does not exist."""
     logger.info("Initializing conversation session memory table...")
