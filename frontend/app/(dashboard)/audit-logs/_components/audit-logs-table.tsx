@@ -155,11 +155,15 @@ export function AuditLogsTable() {
     };
 
     const getOperationBadge = (operation: string) => {
+        if (!operation) return null;
         const colors: Record<string, string> = {
-            create: "bg-blue-500",
-            read: "bg-gray-500",
-            update: "bg-yellow-500",
-            delete: "bg-red-500",
+            create: "bg-green-600",
+            read: "bg-blue-500",
+            update: "bg-amber-500",
+            delete: "bg-red-600",
+            execute: "bg-purple-600",
+            import_preview: "bg-sky-500",
+            import_install: "bg-emerald-600",
         };
         const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
         return (
@@ -302,7 +306,16 @@ export function AuditLogsTable() {
                                     </TableRow>
                                 ) : (
                                     logs.map((log) => (
-                                        <TableRow key={log.id}>
+                                        <TableRow
+                                            key={log.id}
+                                            className="cursor-pointer hover:bg-muted/50"
+                                            onClick={() => {
+                                                const selection = window.getSelection();
+                                                if (!selection || selection.toString() === "") {
+                                                    handleViewDetails(log);
+                                                }
+                                            }}
+                                        >
                                             <TableCell className="whitespace-nowrap">
                                                 {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
                                             </TableCell>
@@ -319,7 +332,10 @@ export function AuditLogsTable() {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleViewDetails(log)}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleViewDetails(log);
+                                                    }}
                                                 >
                                                     <Eye className="h-4 w-4" />
                                                 </Button>

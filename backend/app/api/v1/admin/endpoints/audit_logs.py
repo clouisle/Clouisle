@@ -409,6 +409,56 @@ AUDIT_ACTION_OPTIONS: list[AuditLogActionOption] = [
         translation_key="auditLogs.actionagent_update_memory_entity",
         fallback_label="Agent Updated Memory Entity",
     ),
+    AuditLogActionOption(
+        value="preview_skill_import",
+        translation_key="auditLogs.actionpreview_skill_import",
+        fallback_label="Preview Skill Import",
+    ),
+    AuditLogActionOption(
+        value="install_skill_import",
+        translation_key="auditLogs.actioninstall_skill_import",
+        fallback_label="Install Skill Import",
+    ),
+    AuditLogActionOption(
+        value="update_skill",
+        translation_key="auditLogs.actionupdate_skill",
+        fallback_label="Update Skill",
+    ),
+    AuditLogActionOption(
+        value="delete_skill",
+        translation_key="auditLogs.actiondelete_skill",
+        fallback_label="Delete Skill",
+    ),
+    AuditLogActionOption(
+        value="test_skill",
+        translation_key="auditLogs.actiontest_skill",
+        fallback_label="Test Skill",
+    ),
+    AuditLogActionOption(
+        value="admin_preview_skill_import",
+        translation_key="auditLogs.actionadmin_preview_skill_import",
+        fallback_label="Admin Preview Skill Import",
+    ),
+    AuditLogActionOption(
+        value="admin_install_skill_import",
+        translation_key="auditLogs.actionadmin_install_skill_import",
+        fallback_label="Admin Install Skill Import",
+    ),
+    AuditLogActionOption(
+        value="admin_update_skill",
+        translation_key="auditLogs.actionadmin_update_skill",
+        fallback_label="Admin Update Skill",
+    ),
+    AuditLogActionOption(
+        value="admin_delete_skill",
+        translation_key="auditLogs.actionadmin_delete_skill",
+        fallback_label="Admin Delete Skill",
+    ),
+    AuditLogActionOption(
+        value="admin_test_skill",
+        translation_key="auditLogs.actionadmin_test_skill",
+        fallback_label="Admin Test Skill",
+    ),
 ]
 
 
