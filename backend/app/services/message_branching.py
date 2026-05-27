@@ -61,7 +61,9 @@ async def get_last_active_canonical_message(conversation_id: UUID) -> Message | 
 
 async def get_prefix_path_before(message: Message) -> list[Message]:
     if message.branch_parent_id:
-        all_messages = await Message.filter(conversation_id=message.conversation_id).all()
+        all_messages = await Message.filter(
+            conversation_id=message.conversation_id
+        ).all()
         message_by_id = {item.id: item for item in all_messages}
         prefix: list[Message] = []
         current_id = message.branch_parent_id
@@ -115,9 +117,7 @@ async def activate_conversation_branch(
 ) -> None:
     canonical_ids = [message.id for message in canonical_path]
     round_ids = [
-        message.round_id
-        for message in canonical_path
-        if message.round_id is not None
+        message.round_id for message in canonical_path if message.round_id is not None
     ]
 
     active_ids = set(canonical_ids)
