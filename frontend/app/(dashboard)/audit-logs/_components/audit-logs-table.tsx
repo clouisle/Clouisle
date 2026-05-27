@@ -302,7 +302,11 @@ export function AuditLogsTable() {
                                     </TableRow>
                                 ) : (
                                     logs.map((log) => (
-                                        <TableRow key={log.id}>
+                                        <TableRow
+                                            key={log.id}
+                                            className="cursor-pointer hover:bg-muted/50"
+                                            onClick={() => handleViewDetails(log)}
+                                        >
                                             <TableCell className="whitespace-nowrap">
                                                 {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
                                             </TableCell>
@@ -319,7 +323,10 @@ export function AuditLogsTable() {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleViewDetails(log)}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleViewDetails(log);
+                                                    }}
                                                 >
                                                     <Eye className="h-4 w-4" />
                                                 </Button>
