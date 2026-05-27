@@ -1126,9 +1126,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       setError(null)
       setStatus('loading')
 
-      // Update message to loading state
-      setMessages((prev) =>
-        prev.map((msg) => {
+      // Update message to loading state and remove descendants from the stale branch
+      setMessages((prev) => {
+        const targetIndex = prev.findIndex((msg) => msg.id === messageId)
+        if (targetIndex === -1) return prev
+
+        return prev.slice(0, targetIndex + 1).map((msg) => {
           if (msg.id !== messageId) return msg
 
           const nextMetadata = { ...msg.metadata }
@@ -1142,7 +1145,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             metadata: { ...nextMetadata, isLoading: true, isManuallyStopped: false },
           }
         })
-      )
+      })
 
       streamingStateRef.current = {
         assistantMessageId: messageId,

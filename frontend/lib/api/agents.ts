@@ -406,6 +406,7 @@ export interface Message {
   steps?: MessageRoundStep[] | null
   // Version fields
   parent_id?: string | null
+  branch_parent_id?: string | null
   is_active?: boolean
   version_number?: number
   version_count?: number

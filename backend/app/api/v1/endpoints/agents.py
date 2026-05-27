@@ -51,6 +51,7 @@ from app.services.auto_notification import AutoNotificationService
 from app.models.notification import AutoNotificationType
 from app.core.i18n import t
 from app.api.v1.endpoints.chat import build_message_round_payloads
+from app.services.message_branching import get_visible_conversation_messages
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1057,10 +1058,7 @@ async def get_conversation(
             status_code=404,
         )
 
-    messages = await Message.filter(
-        conversation_id=conversation.id,
-        is_active=True,
-    ).order_by("created_at")
+    messages = await get_visible_conversation_messages(conversation.id)
 
     # Batch calculate version counts to avoid N+1 queries
     # Get all parent_ids we need to count

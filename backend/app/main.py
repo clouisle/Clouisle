@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
         init_agent_context_compression_config,
         init_message_manual_stop_field,
         init_message_round_fields,
+        init_message_branch_parent_field,
         init_conversation_session_memory_table,
         init_agent_user_input_request,
         init_agent_hide_tool_calls_field,
@@ -125,6 +126,11 @@ async def lifespan(app: FastAPI):
         await init_message_round_fields()
     except Exception as e:
         logger.warning(f"Message round metadata migration failed: {e}")
+
+    try:
+        await init_message_branch_parent_field()
+    except Exception as e:
+        logger.warning(f"Message branch parent migration failed: {e}")
 
     try:
         await init_conversation_session_memory_table()

@@ -389,6 +389,10 @@ class Message(models.Model):
     version_number = fields.IntField(
         default=1, description="Version number within the group"
     )
+    branch_parent_id = fields.UUIDField(
+        null=True,
+        description="Previous visible message version in the conversation branch",
+    )
 
     # Attachments (for user messages with images/files)
     images: list | None = fields.JSONField(
