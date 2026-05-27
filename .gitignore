@@ -68,6 +68,7 @@ uploads/
 # ai
 CLAUDE.md
 .claude
+.codegraph/
 
 # Celery beat schedule files
 backend/celerybeat-schedule
