@@ -61,12 +61,24 @@ async def get_last_active_canonical_message(conversation_id: UUID) -> Message | 
 
 async def get_prefix_path_before(message: Message) -> list[Message]:
     if message.branch_parent_id:
-        path = await get_active_canonical_path(message.conversation_id)
+        all_messages = await Message.filter(conversation_id=message.conversation_id).all()
+        message_by_id = {item.id: item for item in all_messages}
         prefix: list[Message] = []
-        for item in path:
-            prefix.append(item)
-            if item.id == message.branch_parent_id:
-                return prefix
+        current_id = message.branch_parent_id
+        seen: set[UUID] = set()
+
+        while current_id and current_id not in seen:
+            current = message_by_id.get(current_id)
+            if not current:
+                break
+            seen.add(current_id)
+            if _is_canonical_visible(current):
+                prefix.append(current)
+            current_id = current.branch_parent_id
+
+        if prefix:
+            prefix.reverse()
+            return prefix
 
     path = await get_active_canonical_path(message.conversation_id)
     return [item for item in path if item.created_at < message.created_at]

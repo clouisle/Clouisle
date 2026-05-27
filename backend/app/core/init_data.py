@@ -524,11 +524,18 @@ async def init_message_branch_parent_field():
     logger.info("Initializing message branch parent field...")
 
     conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    is_sqlite = dialect == "sqlite" or "sqlite" in conn.__class__.__name__.lower()
 
-    _, tables = await conn.execute_query("""
-        SELECT table_name FROM information_schema.tables
-        WHERE table_name = 'messages' AND table_schema = 'public'
-    """)
+    if is_sqlite:
+        _, tables = await conn.execute_query("""
+            SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'
+        """)
+    else:
+        _, tables = await conn.execute_query("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_name = 'messages' AND table_schema = 'public'
+        """)
 
     if not tables:
         logger.info(
@@ -536,10 +543,24 @@ async def init_message_branch_parent_field():
         )
         return
 
-    await conn.execute_query("""
-        ALTER TABLE messages
-        ADD COLUMN IF NOT EXISTS branch_parent_id UUID NULL
-    """)
+    if is_sqlite:
+        _, columns = await conn.execute_query("PRAGMA table_info(messages)")
+        column_exists = any(
+            (column.get("name") if isinstance(column, dict) else column[1])
+            == "branch_parent_id"
+            for column in columns
+        )
+        if not column_exists:
+            await conn.execute_query("""
+                ALTER TABLE messages
+                ADD COLUMN branch_parent_id CHAR(36) NULL
+            """)
+    else:
+        await conn.execute_query("""
+            ALTER TABLE messages
+            ADD COLUMN IF NOT EXISTS branch_parent_id UUID NULL
+        """)
+
     await conn.execute_query("""
         CREATE INDEX IF NOT EXISTS idx_messages_conversation_branch_parent
         ON messages (conversation_id, branch_parent_id)
@@ -571,20 +592,24 @@ async def init_message_branch_parent_field():
 
     await conn.execute_query("""
         WITH round_canonical AS (
-            SELECT DISTINCT ON (conversation_id, round_id)
+            SELECT
                 conversation_id,
                 round_id,
-                id AS canonical_id
+                id AS canonical_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY conversation_id, round_id
+                    ORDER BY created_at, id
+                ) AS rn
             FROM messages
             WHERE round_id IS NOT NULL
               AND is_round_canonical = TRUE
-            ORDER BY conversation_id, round_id, created_at, id
         )
         UPDATE messages AS m
         SET branch_parent_id = round_canonical.canonical_id
         FROM round_canonical
         WHERE m.conversation_id = round_canonical.conversation_id
           AND m.round_id = round_canonical.round_id
+          AND round_canonical.rn = 1
           AND m.is_round_canonical = FALSE
           AND m.branch_parent_id IS NULL
     """)
