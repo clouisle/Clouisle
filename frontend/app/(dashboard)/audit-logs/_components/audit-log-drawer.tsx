@@ -32,6 +32,7 @@ export function AuditLogDrawer({ log, open, onOpenChange }: AuditLogDrawerProps)
   };
 
   const getOperationLabel = (operation: string) => {
+    if (!operation) return "";
     const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     return t.has(key) ? t(key) : operation;
   };

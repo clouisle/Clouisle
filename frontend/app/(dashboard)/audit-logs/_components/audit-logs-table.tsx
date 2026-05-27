@@ -155,6 +155,7 @@ export function AuditLogsTable() {
     };
 
     const getOperationBadge = (operation: string) => {
+        if (!operation) return null;
         const colors: Record<string, string> = {
             create: "bg-green-600",
             read: "bg-blue-500",
@@ -308,7 +309,12 @@ export function AuditLogsTable() {
                                         <TableRow
                                             key={log.id}
                                             className="cursor-pointer hover:bg-muted/50"
-                                            onClick={() => handleViewDetails(log)}
+                                            onClick={() => {
+                                                const selection = window.getSelection();
+                                                if (!selection || selection.toString() === "") {
+                                                    handleViewDetails(log);
+                                                }
+                                            }}
                                         >
                                             <TableCell className="whitespace-nowrap">
                                                 {format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}
