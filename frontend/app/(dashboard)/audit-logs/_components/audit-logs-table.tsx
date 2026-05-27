@@ -156,13 +156,13 @@ export function AuditLogsTable() {
 
     const getOperationBadge = (operation: string) => {
         const colors: Record<string, string> = {
-            create: "bg-blue-500",
-            read: "bg-gray-500",
-            update: "bg-yellow-500",
-            delete: "bg-red-500",
-            execute: "bg-purple-500",
-            import_preview: "bg-cyan-500",
-            import_install: "bg-green-500",
+            create: "bg-green-600",
+            read: "bg-blue-500",
+            update: "bg-amber-500",
+            delete: "bg-red-600",
+            execute: "bg-purple-600",
+            import_preview: "bg-sky-500",
+            import_install: "bg-emerald-600",
         };
         const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
         return (
