@@ -33,6 +33,8 @@
     "operationUpdate": "Update",
     "operationDelete": "Delete",
     "operationExecute": "Execute",
+    "operationImport_preview": "Import Preview",
+    "operationImport_install": "Import Install",
     "export": "Export",
     "exportCSV": "Export CSV",
     "exportJSON": "Export JSON",

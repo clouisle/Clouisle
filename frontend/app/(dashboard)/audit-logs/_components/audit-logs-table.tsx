@@ -161,6 +161,8 @@ export function AuditLogsTable() {
             update: "bg-yellow-500",
             delete: "bg-red-500",
             execute: "bg-purple-500",
+            import_preview: "bg-cyan-500",
+            import_install: "bg-green-500",
         };
         const key = `operation${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
         return (

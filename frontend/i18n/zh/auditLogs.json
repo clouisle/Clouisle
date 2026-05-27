@@ -33,6 +33,8 @@
     "operationUpdate": "更新",
     "operationDelete": "删除",
     "operationExecute": "执行",
+    "operationImport_preview": "导入预览",
+    "operationImport_install": "导入安装",
     "export": "导出",
     "exportCSV": "导出CSV",
     "exportJSON": "导出JSON",
