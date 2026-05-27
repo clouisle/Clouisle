@@ -28,6 +28,10 @@ from app.models.agent import (
     Message as ConversationMessage,
     MessageRole as ConversationMessageRole,
 )
+from app.services.message_branching import (
+    get_visible_conversation_messages,
+    is_message_on_active_branch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -972,6 +976,7 @@ async def _apply_session_memory_compaction(
     recent_raw_turns: int = DEFAULT_RECENT_RAW_TURNS,
     recent_tool_turns: int = DEFAULT_RECENT_TOOL_TURNS,
     protected_indexes: set[int] | None = None,
+    before_created_at=None,
 ) -> tuple[list[Message], bool, set[int]]:
     """
     Apply conversation-scoped session memory compaction.
@@ -989,7 +994,16 @@ async def _apply_session_memory_compaction(
     protected_indexes = protected_indexes or set()
     try:
         snapshot = await get_ready_session_memory(conversation.id)
-        if not snapshot or not snapshot.summary_text:
+        if not snapshot or not snapshot.summary_text or not snapshot.source_message_id:
+            cloned_messages, cloned_protected_indexes = _clone_messages(
+                messages, protected_indexes
+            )
+            return cloned_messages, False, cloned_protected_indexes
+        if not await is_message_on_active_branch(
+            conversation.id,
+            snapshot.source_message_id,
+            before_created_at=before_created_at,
+        ):
             cloned_messages, cloned_protected_indexes = _clone_messages(
                 messages, protected_indexes
             )
@@ -1213,18 +1227,11 @@ async def _build_messages_with_file_content(
             )
         return messages, protected_indexes
 
-    history_query = ConversationMessage.filter(
-        conversation_id=conversation.id,
-        is_active=True,
+    history = await get_visible_conversation_messages(
+        conversation.id,
+        before_created_at=history_before_message_created_at,
+        exclude_message_ids=exclude_message_ids,
     )
-    if history_before_message_created_at is not None:
-        history_query = history_query.filter(
-            created_at__lt=history_before_message_created_at
-        )
-    if exclude_message_ids:
-        history_query = history_query.exclude(id__in=list(exclude_message_ids))
-
-    history = await history_query.order_by("created_at")
     historical_file_content_tasks = {
         msg.id: asyncio.create_task(
             _build_file_content_for_user_message(
@@ -1558,6 +1565,7 @@ async def _apply_micro_compaction(
     policy_used: str = DEFAULT_COMPACTION_POLICY,
     trigger_budget: int | None = None,
     protected_indexes: set[int] | None = None,
+    before_created_at=None,
 ) -> tuple[list[Message], CompressionMeta, set[int]]:
     protected_indexes = protected_indexes or set()
     before_tokens = _estimate_message_tokens(
@@ -1623,6 +1631,7 @@ async def _apply_micro_compaction(
         recent_raw_turns=recent_raw_turns,
         recent_tool_turns=recent_tool_turns,
         protected_indexes=tool_protected_indexes,
+        before_created_at=before_created_at,
     )
     after_tokens = _estimate_message_tokens(
         session_memory_messages,
@@ -2066,6 +2075,7 @@ async def prepare_model_context(
             policy_used=policy_used,
             trigger_budget=thresholds.trigger_input_budget,
             protected_indexes=base_protected_indexes,
+            before_created_at=history_before_message_created_at,
         )
         compression.file_content_trimmed = file_content_trimmed
         if file_content_trimmed and "trim_file_content" not in (

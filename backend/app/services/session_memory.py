@@ -22,6 +22,10 @@ from app.models.agent import (
     MessageRole,
 )
 from app.models.model import TeamModel
+from app.services.message_branching import (
+    get_visible_conversation_messages,
+    is_message_on_active_branch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +104,12 @@ async def extract_session_memory_for_message(
     source_message = await Message.filter(
         id=source_uuid,
         conversation_id=conversation_uuid,
-        is_active=True,
     ).first()
-    if not source_message or source_message.role != MessageRole.ASSISTANT:
+    if (
+        not source_message
+        or source_message.role != MessageRole.ASSISTANT
+        or not await is_message_on_active_branch(conversation_uuid, source_uuid)
+    ):
         logger.warning(
             "Skip session memory extraction: source message %s invalid for "
             "conversation %s",
@@ -111,11 +118,15 @@ async def extract_session_memory_for_message(
         )
         return {"status": "skipped", "reason": "invalid_source_message"}
 
-    history = await Message.filter(
-        conversation_id=conversation_uuid,
-        is_active=True,
-        created_at__lte=source_message.created_at,
-    ).order_by("created_at")
+    history = await get_visible_conversation_messages(
+        conversation_uuid,
+        before_created_at=None,
+    )
+    history = [
+        message
+        for message in history
+        if message.created_at <= source_message.created_at
+    ]
 
     turn_blocks = _split_turn_blocks(history)
     min_turns = int(compression_config.get("session_memory_min_turns", 4) or 4)

@@ -31,6 +31,7 @@ from app.schemas.response import (
     success,
 )
 from app.api.v1.endpoints.chat import build_message_round_payloads
+from app.services.message_branching import get_visible_conversation_messages
 
 
 router = APIRouter()
@@ -483,11 +484,8 @@ async def get_conversation_detail(
                     status_code=404,
                 )
 
-    # Get only active messages
-    messages = await Message.filter(
-        conversation_id=conversation.id,
-        is_active=True,
-    ).order_by("created_at")
+    # Get visible branch messages
+    messages = await get_visible_conversation_messages(conversation.id)
 
     # Batch calculate version counts
     root_ids = set()

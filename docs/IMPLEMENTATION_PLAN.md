@@ -2,6 +2,14 @@
 
 ## Active
 
+- **agent-message-version-branch-aware-context** — Complete. Make Agent message version switching branch-aware and prevent stale session memory from leaking previous-version context. See `docs/plan/agent-message-version-branch-aware-context.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Message branch schema and migration
+  - [x] 3. Branch helper service and active path activation
+  - [x] 4. Chat regenerate/switch-version branch behavior
+  - [x] 5. Branch-aware history and session memory guards
+  - [x] 6. Validation and regression checks
+
 - **auth-layout-switcher** — Complete. Add a configurable centered/split authentication page layout, managed from admin site settings. See `docs/plan/auth-layout-switcher.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Public site setting and admin general settings UI
