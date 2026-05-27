@@ -12,6 +12,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from app.llm.errors import ContextLengthError
+from app.llm.adapters.media_utils import parse_image_data_url
 from app.llm.token_counter import count_message_tokens
 from app.llm.types import (
     ContentPart,
@@ -382,29 +383,25 @@ When you need the user to choose from predefined options, use this XML format:
 def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
     """Build multimodal content for vision-capable models."""
     content_parts: list[ContentPart] = [ContentPart(type=ContentType.TEXT, text=text)]
-    for img in images:
+    for index, img in enumerate(images, start=1):
         img_url = getattr(img, "url", None)
         if not img_url and isinstance(img, dict):
             img_url = img.get("url")
         if not img_url:
             continue
 
-        if img_url.startswith("data:"):
-            try:
-                _, data_part = img_url.split(",", 1)
-                content_parts.append(
-                    ContentPart(
-                        type=ContentType.IMAGE,
-                        image=ImageContent(base64=data_part),
-                    )
+        content_parts.append(
+            ContentPart(type=ContentType.TEXT, text=f"Uploaded image #{index}:")
+        )
+        parsed_data_url = parse_image_data_url(img_url)
+        if parsed_data_url:
+            data_part, image_format = parsed_data_url
+            content_parts.append(
+                ContentPart(
+                    type=ContentType.IMAGE,
+                    image=ImageContent(base64=data_part, format=image_format or "png"),
                 )
-            except ValueError:
-                content_parts.append(
-                    ContentPart(
-                        type=ContentType.IMAGE,
-                        image=ImageContent(url=img_url),
-                    )
-                )
+            )
         else:
             content_parts.append(
                 ContentPart(
@@ -413,6 +410,17 @@ def build_vision_content(text: str, images: Sequence[Any]) -> list[ContentPart]:
                 )
             )
     return content_parts
+
+
+def build_uploaded_image_reference_text(images: Sequence[Any]) -> str:
+    labels: list[str] = []
+    for index, image in enumerate(images, start=1):
+        has_image = bool(getattr(image, "url", None) or getattr(image, "base64", None))
+        if isinstance(image, dict):
+            has_image = bool(image.get("url") or image.get("base64"))
+        if has_image:
+            labels.append(f"Uploaded image #{index}: available as a reference image.")
+    return "\n".join(labels)
 
 
 def _safe_json_loads(value: str | None) -> dict[str, Any] | None:
@@ -615,6 +623,14 @@ def _build_current_user_content(
 ) -> str | list[ContentPart]:
     if current_images and model_supports_vision:
         return build_vision_content(user_message, current_images)
+    if current_images:
+        image_reference_text = build_uploaded_image_reference_text(current_images)
+        if image_reference_text:
+            return (
+                f"{user_message}\n\n{image_reference_text}"
+                if user_message
+                else image_reference_text
+            )
     return user_message
 
 

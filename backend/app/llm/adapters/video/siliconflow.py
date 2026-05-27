@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.i18n import t
-from app.llm.errors import ProviderError
+from app.llm.errors import InvalidRequestError, ProviderError
 from app.llm.types import (
     TaskStatus,
     VideoContent,
@@ -16,7 +16,7 @@ from app.llm.types import (
 )
 from app.models.model import Model
 
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_data_uri
 from ..siliconflow_client import SiliconFlowClient
 from .base import BaseVideoAdapter
 
@@ -28,6 +28,9 @@ _ASPECT_RATIO_TO_SIZE: dict[str, str] = {
     "3:4": "720x960",
     "21:9": "1260x540",
 }
+
+
+_SILICONFLOW_IMAGE_TO_VIDEO_MODEL_MARKERS = ("i2v", "image-to-video")
 
 
 class SiliconFlowVideoAdapter(BaseVideoAdapter):
@@ -84,10 +87,32 @@ class SiliconFlowVideoAdapter(BaseVideoAdapter):
         if request.seed is not None:
             payload["seed"] = request.seed
 
+        if request.start_image is not None:
+            self._ensure_image_to_video_model()
+            payload["image"] = image_content_to_data_uri(
+                request.start_image,
+                provider="siliconflow",
+                model=self.model_id,
+                field_name="start_image",
+            )
+
         if request.extra_params:
             payload.update(request.extra_params)
 
         return payload
+
+    def _ensure_image_to_video_model(self) -> None:
+        normalized = self.model_id.lower()
+        if any(
+            marker in normalized for marker in _SILICONFLOW_IMAGE_TO_VIDEO_MODEL_MARKERS
+        ):
+            return
+        raise InvalidRequestError(
+            message=t("video_reference_images_not_supported_for_model"),
+            field="start_image",
+            provider="siliconflow",
+            model=self.model_id,
+        )
 
     def _map_status(self, raw_status: Any) -> TaskStatus:
         status = str(raw_status or "")

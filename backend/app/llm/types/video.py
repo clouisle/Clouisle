@@ -4,7 +4,7 @@
 
 from pydantic import BaseModel, Field
 
-from .base import VideoContent, TaskStatus
+from .base import ImageContent, VideoContent, TaskStatus
 
 
 class AspectRatio(str):
@@ -33,6 +33,10 @@ class VideoGenerationRequest(BaseModel):
     camera_motion: str | None = Field(default=None, description="镜头运动描述")
     style: str | None = Field(default=None, description="风格")
     seed: int | None = Field(default=None, description="随机种子")
+    start_image: ImageContent | None = Field(
+        default=None,
+        description="起始参考图像（用于支持首帧参考的视频模型）",
+    )
     # 供应商特定参数
     extra_params: dict | None = Field(default=None, description="供应商特定参数")
 

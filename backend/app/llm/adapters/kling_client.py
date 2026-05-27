@@ -120,8 +120,13 @@ class KlingClient:
     async def create_task(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", path, json=payload)
 
-    async def get_task(self, task_id: str) -> dict[str, Any]:
-        return await self._request("GET", f"/v1/videos/text2video/{task_id}")
+    async def get_task(
+        self,
+        task_id: str,
+        *,
+        task_type: str = "text2video",
+    ) -> dict[str, Any]:
+        return await self._request("GET", f"/v1/videos/{task_type}/{task_id}")
 
     async def wait_for_task(self, task_id: str) -> dict[str, Any]:
         elapsed = 0.0

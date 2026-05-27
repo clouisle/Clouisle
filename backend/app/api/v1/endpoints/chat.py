@@ -5,6 +5,7 @@ Provides streaming and non-streaming chat with AI agents.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import time
@@ -112,6 +113,28 @@ def _is_model_stream_activity(chunk: ChatStreamChunk) -> bool:
         or delta.stream_activity
         or chunk.finish_reason
     )
+
+
+def _extract_llm_error_message(error: Exception) -> str:
+    message = getattr(error, "message", None) or str(error)
+    marker = " - "
+    if marker in message:
+        payload_text = message.split(marker, 1)[1]
+        try:
+            payload = ast.literal_eval(payload_text)
+        except (SyntaxError, ValueError):
+            return message
+        provider_message = payload.get("error", {}).get("message")
+        if isinstance(provider_message, str) and provider_message:
+            return provider_message
+    return message
+
+
+def _format_llm_error_message(error: Exception) -> str:
+    message = _extract_llm_error_message(error)
+    if not message:
+        return t("model_call_failed")
+    return t("model_service_request_failed", message=message)
 
 
 async def check_agent_chat_access(agent_id: UUID, user: User) -> Agent:
@@ -1034,12 +1057,6 @@ async def chat(
     if chat_in.images and agent.enable_vision:
         model_capabilities = await get_model_capabilities(agent)
         model_supports_vision = model_capabilities.get("vision", False)
-        if not model_supports_vision:
-            raise BusinessError(
-                code=ResponseCode.MODEL_VISION_NOT_SUPPORTED,
-                msg_key="model_vision_not_supported",
-                status_code=400,
-            )
 
     streaming_config = get_streaming_config(agent)
     tool_timeouts = streaming_config["tool_timeouts"]
@@ -1266,6 +1283,7 @@ async def chat(
                         tool_timeouts=tool_timeouts,
                         user=current_user,
                         session_id=sandbox_session_id,
+                        current_images=chat_in.images,
                     )
                     display_result, llm_result = get_tool_execution_payloads(result)
 
@@ -1546,14 +1564,11 @@ async def chat_stream(
                 try:
                     from app.models.agent import RAGMode
 
-                    # Check if model supports vision when images are provided (before creating messages)
+                    # Check if model supports vision before creating multimodal messages.
                     model_supports_vision = False
                     if chat_in.images and agent.enable_vision:
                         model_capabilities = await get_model_capabilities(agent)
                         model_supports_vision = model_capabilities.get("vision", False)
-                        if not model_supports_vision:
-                            yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_VISION_NOT_SUPPORTED, 'msg': t('model_vision_not_supported')})}\n\n"
-                            return
 
                     # Handle RAG based on mode
                     rag_contexts: list[dict] = []
@@ -2103,7 +2118,7 @@ async def chat_stream(
                                 yield f"event: {SSEEventType.TOOL_CALL}\ndata: {json.dumps({'tool_call_id': tc.id, 'tool_name': tool_name, 'tool_display_name': tool_display_name, 'arguments': arguments})}\n\n"
                                 last_event_time = time.time()
 
-                                # Execute the tool (pass agent and tool_timeouts)
+                                # Execute the tool (pass agent, tool_timeouts, and current uploaded images)
                                 result = await execute_tool_call(
                                     tool_name,
                                     arguments,
@@ -2111,6 +2126,7 @@ async def chat_stream(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
+                                    current_images=chat_in.images,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -2417,17 +2433,18 @@ async def chat_stream(
                     )
                     logger.warning("Rate limit error during stream: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('rate_limit_exceeded')})}\n\n"
-                except LLMError:
+                except LLMError as e:
                     logger.exception("LLM error during stream")
+                    error_message = _format_llm_error_message(e)
                     await persist_partial_round_error(
                         assistant_msg,
                         content=full_content,
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+                        fallback_content=error_message,
                     )
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
                     logger.warning(
                         "Stream idle timeout (%ss) for conversation %s",
@@ -3265,6 +3282,7 @@ async def regenerate_message(
                                     tool_timeouts=tool_timeouts,
                                     user=current_user,
                                     session_id=sandbox_session_id,
+                                    current_images=user_message.images,
                                 )
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
@@ -3517,14 +3535,15 @@ async def regenerate_message(
                         await restore_original_path()
                     logger.warning("Quota exceeded during regenerate: %s", e)
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.MODEL_QUOTA_EXCEEDED, 'msg': t('model_quota_exceeded'), 'quota_type': e.quota_type})}\n\n"
-                except LLMError:
+                except LLMError as e:
+                    error_message = _format_llm_error_message(e)
                     preserved_partial = await persist_partial_round_error(
                         new_message,
                         content=full_content,
                         reasoning=full_reasoning,
                         model_id=model_id,
                         start_time=start_time,
-                        fallback_content=t(GENERIC_STREAM_ERROR_KEY),
+                        fallback_content=error_message,
                     )
                     if preserved_partial:
                         await activate_regenerated_path()
@@ -3533,7 +3552,7 @@ async def regenerate_message(
                             await Message.filter(id=new_message_id).delete()
                         await restore_original_path()
                     logger.exception("LLM error during regenerate")
-                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t(GENERIC_STREAM_ERROR_KEY)})}\n\n"
+                    yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': error_message})}\n\n"
                 except StreamIdleTimeoutError:
                     preserved_partial = await persist_partial_round_error(
                         new_message,

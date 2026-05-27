@@ -16,11 +16,12 @@ from app.llm.types import (
 )
 from app.models.model import Model
 
-from ..media_utils import append_prompt_directives
+from ..media_utils import append_prompt_directives, image_content_to_data_uri
 from ..runway_client import RunwayClient
 from .base import BaseVideoAdapter
 
 _TEXT_TO_VIDEO_MODELS = {"gen4.5", "veo3", "veo3.1", "veo3.1_fast"}
+_IMAGE_TO_VIDEO_MODELS = {"gen4_turbo", "gen4.5_turbo", "gen4_aleph"}
 _TEXT_TO_VIDEO_RATIOS = {
     "16:9": "1280:720",
     "9:16": "720:1280",
@@ -72,6 +73,9 @@ class RunwayVideoAdapter(BaseVideoAdapter):
         )
         duration = int(round(request.duration))
 
+        if request.start_image is not None:
+            return self._build_image_to_video_request(request, prompt, duration)
+
         if self.model_id not in _TEXT_TO_VIDEO_MODELS:
             raise InvalidRequestError(
                 message=f"Model {self.model_id} does not support text-to-video on Runway",
@@ -92,6 +96,39 @@ class RunwayVideoAdapter(BaseVideoAdapter):
         if request.extra_params:
             payload.update(request.extra_params)
         return "/v1/text_to_video", payload
+
+    def _build_image_to_video_request(
+        self,
+        request: VideoGenerationRequest,
+        prompt: str,
+        duration: int,
+    ) -> tuple[str, dict[str, Any]]:
+        if self.model_id not in _IMAGE_TO_VIDEO_MODELS:
+            raise InvalidRequestError(
+                message=f"Model {self.model_id} does not support image-to-video on Runway",
+                provider="runway",
+                model=self.model_id,
+            )
+
+        payload = {
+            "model": self.model_id,
+            "promptText": prompt,
+            "promptImage": image_content_to_data_uri(
+                request.start_image,
+                provider="runway",
+                model=self.model_id,
+                field_name="promptImage",
+            ),
+            "ratio": _TEXT_TO_VIDEO_RATIOS.get(
+                request.aspect_ratio, _TEXT_TO_VIDEO_RATIOS["16:9"]
+            ),
+            "duration": duration,
+        }
+        if request.seed is not None:
+            payload["seed"] = request.seed
+        if request.extra_params:
+            payload.update(request.extra_params)
+        return "/v1/image_to_video", payload
 
     def _map_status(self, raw_status: Any) -> TaskStatus:
         status = str(raw_status or "").upper()

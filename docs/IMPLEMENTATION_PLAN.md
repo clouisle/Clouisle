@@ -10,6 +10,20 @@
   - [x] 5. Branch-aware history and session memory guards
   - [x] 6. Validation and regression checks
 
+- **agent-reference-image-inputs** — In progress. Let Agent media generation tools use selected uploaded chat images as reference inputs via indexed references and backend base64 conversion. See `docs/plan/agent-reference-image-inputs.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Uploaded image labeling and tool context plumbing
+  - [x] 3. Image generation indexed reference resolution and i18n
+  - [x] 4. Tests and backend validation
+  - [x] 5. Video start-image entrypoint and explicit unsupported-provider failure
+  - [x] 6. SiliconFlow video start-image support
+  - [x] 7. Runway video start-image support
+  - [x] 8. DashScope video start-image support
+  - [x] 9. Kling video start-image support
+  - [x] 10. Luma video start-image support
+  - [x] 11. Pika video start-image support
+  - [x] 12. Volcengine video start-image support
+
 - **auth-layout-switcher** — Complete. Add a configurable centered/split authentication page layout, managed from admin site settings. See `docs/plan/auth-layout-switcher.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Public site setting and admin general settings UI
