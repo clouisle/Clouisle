@@ -99,20 +99,19 @@ export function ChatContainer({
     }));
   }, []);
 
-  useEffect(() => {
-    if (!isStreaming || messages.length === 0) {
-      return;
-    }
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageId = lastMessage?.id;
+  const lastMessageRole = lastMessage?.role;
 
-    const message = messages[messages.length - 1];
-    if (message.role !== 'assistant') {
+  useEffect(() => {
+    if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
       return;
     }
 
     setChainOfThoughtOpenByMessageId((current) => (
-      message.id in current ? current : { ...current, [message.id]: true }
+      lastMessageId in current ? current : { ...current, [lastMessageId]: true }
     ));
-  }, [isStreaming, messages]);
+  }, [isStreaming, lastMessageId, lastMessageRole]);
 
   // Last text content for "do not snap during open code fence" rule
   const lastMessageText = useMemo(() => {
