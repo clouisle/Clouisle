@@ -127,7 +127,9 @@ class BaseChatAdapter(ABC):
     def timeout(self) -> int:
         """超时时间"""
         timeout = self.get_effective_param("timeout")
-        return int(timeout) if timeout is not None else settings.STREAM_HTTP_READ_TIMEOUT
+        return (
+            int(timeout) if timeout is not None else settings.STREAM_HTTP_READ_TIMEOUT
+        )
 
     @property
     def model_uses_reasoning_timeout(self) -> bool:
