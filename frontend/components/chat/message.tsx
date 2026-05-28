@@ -1168,9 +1168,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought
                   isStreaming={isChainOfThoughtStreaming}
-                  open={chainOfThoughtOpen}
+                  open={chainOfThoughtOpen ?? false}
                   onOpenChange={onChainOfThoughtOpenChange}
-                  defaultOpen={false}
                 >
                   <ChainOfThoughtHeader title={tReasoning('thought')} />
                   <ChainOfThoughtContent>
