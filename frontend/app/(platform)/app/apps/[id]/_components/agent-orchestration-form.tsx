@@ -147,7 +147,7 @@ const DEFAULT_VIDEO_GENERATION_CONFIG: VideoGenerationConfig = {
 const DEFAULT_MEDIA_MODEL_VALUE = '__default__'
 
 function getMediaModelOptionLabel(teamModel: TeamModel) {
-  return `${teamModel.model.name} · ${teamModel.model.provider}/${teamModel.model.model_id}`
+  return teamModel?.model?.name ?? ''
 }
 
 function getMediaModelSelectLabel(
