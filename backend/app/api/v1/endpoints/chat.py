@@ -2450,6 +2450,7 @@ async def chat_stream(
                         "Stream idle timeout (%ss) for conversation %s",
                         idle_timeout,
                         conversation.id,
+                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
                     )
                     await persist_partial_round_error(
                         assistant_msg,
@@ -2475,7 +2476,10 @@ async def chat_stream(
         except TimeoutError:
             # Global timeout
             logger.warning(
-                f"Stream global timeout ({global_timeout}s) for conversation {conversation.id}"
+                "Stream global timeout (%ss) for conversation %s",
+                global_timeout,
+                conversation.id,
+                extra={"timeout_type": "global", "timeout_seconds": global_timeout},
             )
             await persist_partial_round_error(
                 assistant_msg,
@@ -3572,6 +3576,7 @@ async def regenerate_message(
                         "Regenerate stream idle timeout (%ss) for message %s",
                         idle_timeout,
                         message_id,
+                        extra={"timeout_type": "idle", "timeout_seconds": idle_timeout},
                     )
                     yield f"event: {SSEEventType.ERROR}\ndata: {json.dumps({'code': ResponseCode.UNKNOWN_ERROR, 'msg': t('stream_timeout_exceeded'), 'timeout': idle_timeout})}\n\n"
                 except Exception:
@@ -3595,7 +3600,10 @@ async def regenerate_message(
         except TimeoutError:
             # Global timeout
             logger.warning(
-                f"Regenerate stream global timeout ({global_timeout}s) for message {message_id}"
+                "Regenerate stream global timeout (%ss) for message %s",
+                global_timeout,
+                message_id,
+                extra={"timeout_type": "global", "timeout_seconds": global_timeout},
             )
             preserved_partial = await persist_partial_round_error(
                 new_message,
