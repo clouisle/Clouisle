@@ -71,9 +71,16 @@ class Settings(BaseSettings):
         return f"postgres://{data.get('POSTGRES_USER')}:{data.get('POSTGRES_PASSWORD')}@{data.get('POSTGRES_SERVER')}:{data.get('POSTGRES_PORT')}/{data.get('POSTGRES_DB')}"
 
     # Streaming timeouts (seconds)
-    STREAM_GLOBAL_TIMEOUT: int = 1800  # 30 minutes
+    STREAM_GLOBAL_TIMEOUT: int = 3600  # 60 minutes
     STREAM_HEARTBEAT_INTERVAL: int = 15  # 15 seconds
-    STREAM_IDLE_TIMEOUT: int = 90  # max seconds between model stream chunks
+    STREAM_IDLE_TIMEOUT: int = 180  # max seconds between model stream chunks
+
+    # LLM HTTP client timeouts (seconds)
+    STREAM_HTTP_CONNECT_TIMEOUT: int = 10
+    STREAM_HTTP_READ_TIMEOUT: int = 200
+    STREAM_HTTP_REASONING_READ_TIMEOUT: int = 300
+    STREAM_HTTP_WRITE_TIMEOUT: int = 10
+    STREAM_GLOBAL_TIMEOUT_WITH_TOOLS: int = 5400  # 90 minutes
 
     # Tool execution timeouts (seconds)
     STREAM_TOOL_TIMEOUT_HTTP: int = 30

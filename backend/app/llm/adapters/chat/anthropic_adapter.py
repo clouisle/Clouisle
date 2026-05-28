@@ -299,7 +299,7 @@ class AnthropicAdapter(BaseChatAdapter):
         client = AsyncAnthropic(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:
@@ -456,7 +456,7 @@ class AnthropicAdapter(BaseChatAdapter):
         client = AsyncAnthropic(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:

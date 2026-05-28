@@ -130,7 +130,7 @@ class MoonshotAdapter(BaseChatAdapter):
         client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url or self.DEFAULT_BASE_URL,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:
@@ -230,7 +230,7 @@ class MoonshotAdapter(BaseChatAdapter):
         client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url or self.DEFAULT_BASE_URL,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:

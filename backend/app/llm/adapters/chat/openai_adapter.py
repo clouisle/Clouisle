@@ -122,7 +122,7 @@ class OpenAIAdapter(BaseChatAdapter):
         client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:
@@ -220,7 +220,7 @@ class OpenAIAdapter(BaseChatAdapter):
         client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
-            timeout=self.timeout,
+            timeout=self.http_timeout,
         )
 
         try:

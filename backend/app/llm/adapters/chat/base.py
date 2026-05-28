@@ -10,6 +10,9 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
+import httpx
+
+from app.core.config import settings
 from app.llm.types import (
     Message,
     ChatResponse,
@@ -124,7 +127,47 @@ class BaseChatAdapter(ABC):
     def timeout(self) -> int:
         """超时时间"""
         timeout = self.get_effective_param("timeout")
-        return int(timeout) if timeout is not None else 60
+        return (
+            int(timeout) if timeout is not None else settings.STREAM_HTTP_READ_TIMEOUT
+        )
+
+    @property
+    def model_uses_reasoning_timeout(self) -> bool:
+        model_id = self.model_id.lower()
+        return bool(
+            self.thinking_enabled
+            or self.reasoning_effort
+            or model_id.startswith(("o1", "o3", "o4"))
+            or "reasoning" in model_id
+        )
+
+    @property
+    def http_read_timeout(self) -> float:
+        read_timeout = self.get_effective_param("read_timeout")
+        legacy_timeout = self.get_effective_param("timeout")
+        if read_timeout is not None:
+            return float(read_timeout)
+        if legacy_timeout is not None:
+            return float(legacy_timeout)
+        if self.model_uses_reasoning_timeout:
+            return float(settings.STREAM_HTTP_REASONING_READ_TIMEOUT)
+        return float(settings.STREAM_HTTP_READ_TIMEOUT)
+
+    @property
+    def http_timeout(self) -> httpx.Timeout:
+        """HTTP 客户端超时配置"""
+        connect_timeout = self.get_effective_param("connect_timeout")
+        write_timeout = self.get_effective_param("write_timeout")
+        return httpx.Timeout(
+            connect=float(connect_timeout)
+            if connect_timeout is not None
+            else settings.STREAM_HTTP_CONNECT_TIMEOUT,
+            read=self.http_read_timeout,
+            write=float(write_timeout)
+            if write_timeout is not None
+            else settings.STREAM_HTTP_WRITE_TIMEOUT,
+            pool=None,
+        )
 
     def get_effective_thinking(self, **kwargs: Any) -> bool | dict[str, Any] | None:
         """获取 thinking 配置，优先 default_params，再回退 config"""
