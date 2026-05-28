@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useCallback, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
@@ -90,6 +90,28 @@ export function ChatContainer({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
+
+  const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
+    setChainOfThoughtOpenByMessageId((current) => ({
+      ...current,
+      [messageId]: open,
+    }));
+  }, []);
+
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageId = lastMessage?.id;
+  const lastMessageRole = lastMessage?.role;
+
+  useEffect(() => {
+    if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
+      return;
+    }
+
+    setChainOfThoughtOpenByMessageId((current) => (
+      lastMessageId in current ? current : { ...current, [lastMessageId]: true }
+    ));
+  }, [isStreaming, lastMessageId, lastMessageRole]);
 
   // Last text content for "do not snap during open code fence" rule
   const lastMessageText = useMemo(() => {
@@ -143,6 +165,8 @@ export function ChatContainer({
               ? (versionIndex) => onSwitchVersion(message.id, versionIndex)
               : undefined
           }
+          chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
+          onChainOfThoughtOpenChange={(open) => setChainOfThoughtOpen(message.id, open)}
           onSelectOption={onSelectOption}
           onOpenCodePreview={onOpenCodePreview}
           hideToolCalls={hideToolCalls}
@@ -165,6 +189,8 @@ export function ChatContainer({
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls,
+      chainOfThoughtOpenByMessageId,
+      setChainOfThoughtOpen,
     ],
   );
 
