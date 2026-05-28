@@ -416,6 +416,10 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
   /** Hide tool call cards and tool execution details */
   hideToolCalls?: boolean
+  /** Controlled open state for chain of thought */
+  chainOfThoughtOpen?: boolean
+  /** Callback when chain of thought open state changes */
+  onChainOfThoughtOpenChange?: (open: boolean) => void
   /** Called when this message starts speaking so the parent can scroll it into view */
   onRequestScrollIntoView?: () => void
 }
@@ -434,6 +438,8 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       onSelectOption,
       onOpenCodePreview,
       hideToolCalls = false,
+      chainOfThoughtOpen,
+      onChainOfThoughtOpenChange,
       onRequestScrollIntoView,
       className,
       ...props
@@ -1160,7 +1166,12 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             <MessageContent>
               {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
               {isAssistant && hasChainOfThought && (
-                <ChainOfThought isStreaming={isChainOfThoughtStreaming}>
+                <ChainOfThought
+                  isStreaming={isChainOfThoughtStreaming}
+                  open={chainOfThoughtOpen}
+                  onOpenChange={onChainOfThoughtOpenChange}
+                  defaultOpen={false}
+                >
                   <ChainOfThoughtHeader title={tReasoning('thought')} />
                   <ChainOfThoughtContent>
                     {buildChainOfThoughtSteps()}
