@@ -143,8 +143,10 @@ class BaseChatAdapter(ABC):
     def http_read_timeout(self) -> float:
         read_timeout = self.get_effective_param("read_timeout")
         legacy_timeout = self.get_effective_param("timeout")
-        if read_timeout is not None or legacy_timeout is not None:
-            return float(read_timeout or legacy_timeout)
+        if read_timeout is not None:
+            return float(read_timeout)
+        if legacy_timeout is not None:
+            return float(legacy_timeout)
         if self.model_uses_reasoning_timeout:
             return float(settings.STREAM_HTTP_REASONING_READ_TIMEOUT)
         return float(settings.STREAM_HTTP_READ_TIMEOUT)
