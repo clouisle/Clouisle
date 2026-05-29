@@ -370,6 +370,8 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
                     <Label className="text-xs text-muted-foreground">{t('apiKey')}</Label>
                     <Link
                       href="/app/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className={buttonVariants({ variant: 'outline', size: 'xs' })}
                     >
                       {t('manageApiKeys')}
