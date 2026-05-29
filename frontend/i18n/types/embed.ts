@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T17:26:33.338Z
+// GENERATED — 2026-05-29T19:06:47.779Z
 // Source: i18n/en/embed.json
 export type EmbedMessages = {
   embed: {
@@ -30,6 +30,7 @@ export type EmbedMessages = {
       bubbleGreetingPlaceholder: string
       apiKey: string
       apiKeyDescription: string
+      manageApiKeys: string
       codeSnippet: string
       codeSnippetDescription: string
       copied: string

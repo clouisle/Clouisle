@@ -28,6 +28,7 @@
       "bubbleGreetingPlaceholder": "你好！有什么可以帮你的？",
       "apiKey": "API 密钥",
       "apiKeyDescription": "粘贴你的 API 密钥，它会自动填入下方代码片段中。",
+      "manageApiKeys": "管理 API 密钥",
       "codeSnippet": "代码片段",
       "codeSnippetDescription": "复制并粘贴此代码到你的网站",
       "copied": "已复制！",
