@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
@@ -12,7 +13,7 @@ import {
   normalizeValidationErrors,
 } from '@/lib/api'
 import { workflowsApi, type Workflow } from '@/lib/api/workflows'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -365,7 +366,15 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
 
                 {/* API Key input */}
                 <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">{t('apiKey')}</Label>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-xs text-muted-foreground">{t('apiKey')}</Label>
+                    <Link
+                      href="/app/api-keys"
+                      className={buttonVariants({ variant: 'outline', size: 'xs' })}
+                    >
+                      {t('manageApiKeys')}
+                    </Link>
+                  </div>
                   <Input
                     type="password"
                     value={apiKeyInput}

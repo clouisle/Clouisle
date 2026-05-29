@@ -28,6 +28,7 @@
       "bubbleGreetingPlaceholder": "Hi! How can I help you?",
       "apiKey": "API Key",
       "apiKeyDescription": "Paste your API key here. It will be included in the code snippet below.",
+      "manageApiKeys": "Manage API Keys",
       "codeSnippet": "Code Snippet",
       "codeSnippetDescription": "Copy and paste this code into your website",
       "copied": "Copied!",
