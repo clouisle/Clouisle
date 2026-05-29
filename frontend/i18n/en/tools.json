@@ -3,8 +3,8 @@
     "common": {
       "openMenu": "Open menu"
     },
-    "title": "Capability Management",
-    "description": "Manage tools and Skills across teams",
+    "title": "Tool Management",
+    "description": "Manage tools across teams",
     "tabs": {
       "tools": "Tools",
       "skills": "Skills"
