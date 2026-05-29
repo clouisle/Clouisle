@@ -180,6 +180,11 @@
 - 读取和管理系统级资源
 - 管理团队内业务资源
 
+主要权限：
+
+- 所有 `admin:*` 系统级权限
+- 所有平台业务权限：`agent:*`、`workflow:*`、`kb:*`、`tool:*`、`skill:*` 等
+
 注意：当前代码中 `Admin` 角色既承担后台能力，也会被团队角色同步逻辑自动授予，见下文。
 
 ### 4.3 Member
@@ -189,14 +194,30 @@
 当前意图包括：
 
 - 访问团队内常用业务资源
-- 创建与修改部分业务对象
-- 不具备后台访问能力
+- 对 Agent、Workflow、KB、Tool、Skill 拥有完整 CRUD 权限
+- 不具备后台访问能力（无 `admin:*` 权限）
+
+主要权限：
+
+- `agent:read/create/update/delete/chat`
+- `workflow:read/create/update/delete/run`
+- `kb:read/create/update/delete`
+- `tool:read/create/update/delete/execute`
+- `skill:read/create/update/delete/execute`
+- `team:read`、`apikey:*`、`conversation:read/delete`
 
 ### 4.4 Viewer
 
-只读型平台角色。
+只读型平台角色，系统默认角色（新用户注册时自动分配）。
 
-当前更接近默认基础角色。
+主要权限：
+
+- `agent:read/chat`
+- `workflow:read/run`
+- `kb:read`
+- `tool:read/execute`
+- `skill:read/execute`
+- `team:read`、`conversation:read`
 
 ### 4.5 现状说明
 
@@ -256,6 +277,7 @@
 - 权限管理权限
 - 团队管理权限（后台）
 - 模型管理权限（后台）
+- 能力管理权限（后台）：`admin:capability:read/create/update/delete/execute`，覆盖工具与技能的系统级管理
 - 系统设置权限
 - SSO 管理权限
 - 会话查看权限（后台）
@@ -266,7 +288,8 @@
 - Agent 权限
 - Workflow 权限
 - Knowledge Base 权限
-- Tool 权限
+- Tool 权限：`tool:read/create/update/delete/execute`
+- Skill 权限：`skill:read/create/update/delete/execute`
 - Memory 权限
 
 ### 5.3 现状限制
@@ -462,6 +485,8 @@ Workflow 采用与 Agent 类似的模式：
 - `admin:role:*`
 - `admin:permission:*`
 - `admin:model:*`
+- `admin:capability:*`
+- `admin:knowledge-base:*`
 - `admin:settings:*`
 - `audit:*`
 
@@ -476,11 +501,36 @@ Workflow 采用与 Agent 类似的模式：
 - `workflow:*`
 - `kb:*`
 - `tool:*`
+- `skill:*`
 - `memory:*`
 
-### 10.3 实际运行方式
+### 10.3 管理后台知识库接口与平台知识库接口
 
-虽然后台权限与平台权限已经分层，但 `Admin` 角色当前可能同时拥有两边的权限，因此在角色语义上仍偏重叠。
+知识库管理接口按使用场景分为两套：
+
+- 工作台使用 `/api/v1/knowledge-bases/*`，检查 `kb:*`，并执行 team membership / resource visibility 校验。
+- 管理后台使用 `/api/v1/admin/knowledge-bases/*`，检查 `admin:knowledge-base:*`，用于跨团队的系统级管理。
+
+### 10.4 管理后台包接口与平台包接口
+
+导入导出接口按使用场景分为两套：
+
+- 工作台使用 `/api/v1/packages/*`，只检查平台业务权限，例如 `tool:*`、`agent:*`、`workflow:*`、`kb:*`，并继续执行 team membership / resource visibility 校验。
+- 管理后台使用 `/api/v1/admin/packages/*`，只检查后台权限，例如 `admin:capability:*` 与 `admin:knowledge-base:*`，用于跨团队的系统级管理。
+
+这些接口不通过 `_has_permission()` 做隐式权限映射。后台权限不会让平台接口自动通过，平台权限也不会让后台接口自动通过。
+
+### 10.5 `admin:capability:*` 与 `tool:*` / `skill:*` 的关系
+
+`admin:capability:*` 是工具与技能的**管理后台权限**，`tool:*` / `skill:*` 是工作台侧 team-scoped 权限。
+
+- 管理后台工具导入导出通过 `/api/v1/admin/packages/*` 检查 `admin:capability:read/create/update`。
+- 工作台工具导入导出通过 `/api/v1/packages/*` 检查 `tool:read/create/update`。
+- 两者权限 code 不互相覆盖，避免后台权限泄漏到工作台路径。
+
+### 10.6 实际运行方式
+
+`Admin` 角色当前同时拥有后台权限和平台业务权限，因此该内置角色可以访问管理后台，也可以在工作台操作团队资源。若未来要表达“只能管理后台操作、不能工作台操作”的角色，应只授予 `admin:*` 权限，不授予对应的平台业务权限。
 
 ---
 
@@ -499,7 +549,7 @@ Workflow 采用与 Agent 类似的模式：
 
 - `/dashboard` -> `admin:dashboard:access`
 - `/teams` -> `team:read`
-- `/knowledge-bases` -> `kb:read`
+- `/knowledge-bases` -> `admin:knowledge-base:read`
 - `/users` -> `admin:user:read`
 - `/roles` -> `admin:role:read`
 - `/permissions` -> `admin:permission:read`
@@ -579,9 +629,13 @@ Workflow 采用与 Agent 类似的模式：
 
 变更权限时至少需要核对：
 
-- 后端权限定义
-- 系统角色初始化逻辑
+- 后端权限定义（`backend/app/core/permissions.py`）
+- 系统角色初始化逻辑（`backend/app/core/init_data.py`）
 - 前端路由/菜单权限映射
+
+### 13.5 后台权限与平台权限不要隐式互认
+
+后台接口应使用 `admin:*` 权限，平台接口应使用平台业务权限。需要两个场景都可操作的角色，应显式同时授予两套权限，而不是在权限检查 helper 里做隐式覆盖。
 
 ---
 

@@ -20,7 +20,7 @@ import {
   Plus,
 } from 'lucide-react'
 import {
-  knowledgeBasesApi,
+  adminKnowledgeBasesApi,
   type Document,
   type ProcessInput,
   type KnowledgeBase,
@@ -105,7 +105,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     setIsLoading(true)
     try {
       // 加载知识库信息
-      const kbData = await knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId)
+      const kbData = await adminKnowledgeBasesApi.getKnowledgeBase(knowledgeBaseId)
       setKnowledgeBase(kbData)
 
       // 从知识库设置初始化分块设置
@@ -119,7 +119,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
 
       // 并行加载所有文档
       const docsPromises = documentIds.map(id => 
-        knowledgeBasesApi.getDocument(knowledgeBaseId, id).catch(() => null)
+        adminKnowledgeBasesApi.getDocument(knowledgeBaseId, id).catch(() => null)
       )
       const docs = await Promise.all(docsPromises)
 
@@ -163,7 +163,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     }))
 
     try {
-      const result = await knowledgeBasesApi.previewChunks(
+      const result = await adminKnowledgeBasesApi.previewChunks(
         knowledgeBaseId,
         docId,
         {
@@ -241,7 +241,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
         chunk_index: chunk.chunk_index,
       }))
 
-      const result = await knowledgeBasesApi.processDocumentWithChunks(
+      const result = await adminKnowledgeBasesApi.processDocumentWithChunks(
         knowledgeBaseId,
         docId,
         chunks
@@ -267,7 +267,7 @@ export function DocumentsPreviewClient({ knowledgeBaseId, documentIds }: Documen
     } catch {
       // 获取最新文档状态以显示错误信息
       try {
-        const docData = await knowledgeBasesApi.getDocument(knowledgeBaseId, docId)
+        const docData = await adminKnowledgeBasesApi.getDocument(knowledgeBaseId, docId)
         setDocumentsState(prev => ({
           ...prev,
           [docId]: { ...prev[docId], document: docData, isProcessing: false }

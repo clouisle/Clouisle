@@ -2,6 +2,16 @@
 
 ## Active
 
+- **yun-78-clouisle-packages** — In progress. Add `.clouisle` import/export for Tools, Agents, Workflows, and Knowledge Bases with manifest validation, dependency preview, conflict handling, secret-safe packages, and audit logs. See `docs/plan/yun-78-clouisle-packages.md`
+  - [x] 1. Planning docs
+  - [x] 2. Backend schemas, session model, and migration
+  - [x] 3. Shared package validation service
+  - [x] 4. Resource adapters for Tool, Agent, Workflow, and Knowledge Base
+  - [x] 5. Packages API and audit logging
+  - [x] 6. Frontend API and shared import dialog
+  - [x] 7. Resource page import/export integration
+  - [x] 8. Tests and validation
+
 - **agent-message-version-branch-aware-context** — Complete. Make Agent message version switching branch-aware and prevent stale session memory from leaking previous-version context. See `docs/plan/agent-message-version-branch-aware-context.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Message branch schema and migration

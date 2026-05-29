@@ -64,6 +64,12 @@ class SystemPermissions:
     ADMIN_CAPABILITY_DELETE = "admin:capability:delete"
     ADMIN_CAPABILITY_EXECUTE = "admin:capability:execute"
 
+    # ============ Admin Knowledge Base Management ============
+    ADMIN_KNOWLEDGE_BASE_READ = "admin:knowledge-base:read"
+    ADMIN_KNOWLEDGE_BASE_CREATE = "admin:knowledge-base:create"
+    ADMIN_KNOWLEDGE_BASE_UPDATE = "admin:knowledge-base:update"
+    ADMIN_KNOWLEDGE_BASE_DELETE = "admin:knowledge-base:delete"
+
     # ============ Admin Settings Management ============
     ADMIN_SETTINGS_READ = "admin:settings:read"
     ADMIN_SETTINGS_UPDATE = "admin:settings:update"
@@ -294,6 +300,27 @@ class SystemPermissions:
                 "code": cls.ADMIN_CAPABILITY_EXECUTE,
                 "scope": "admin",
                 "description": "Test and execute tools and skills from admin",
+            },
+            # Admin Knowledge Base Management
+            {
+                "code": cls.ADMIN_KNOWLEDGE_BASE_READ,
+                "scope": "admin",
+                "description": "View knowledge bases from admin",
+            },
+            {
+                "code": cls.ADMIN_KNOWLEDGE_BASE_CREATE,
+                "scope": "admin",
+                "description": "Create and import knowledge bases from admin",
+            },
+            {
+                "code": cls.ADMIN_KNOWLEDGE_BASE_UPDATE,
+                "scope": "admin",
+                "description": "Update knowledge bases from admin",
+            },
+            {
+                "code": cls.ADMIN_KNOWLEDGE_BASE_DELETE,
+                "scope": "admin",
+                "description": "Delete knowledge bases from admin",
             },
             # Admin Settings Management
             {

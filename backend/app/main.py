@@ -1,8 +1,9 @@
+import asyncio
+import contextlib
 import json
 import logging
 import time
 import traceback
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -40,7 +41,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
+async def cleanup_expired_clouisle_import_sessions_loop() -> None:
+    from app.services.clouisle_package import ClouislePackageService
+
+    while True:
+        try:
+            cleaned = await ClouislePackageService.cleanup_expired_sessions()
+            if cleaned:
+                logger.info("Cleaned %s expired Clouisle import sessions", cleaned)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("Clouisle import session cleanup failed: %s", e)
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+
+
+SESSION_CLEANUP_INTERVAL_SECONDS = 60 * 30
+
+
+@contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for database initialization and cleanup"""
     from tortoise import Tortoise
@@ -80,6 +99,7 @@ async def lifespan(app: FastAPI):
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
         init_skills_table,
+        init_clouisle_import_sessions_table,
     )
 
     try:
@@ -207,6 +227,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Skills table migration failed: {e}")
 
+    try:
+        await init_clouisle_import_sessions_table()
+    except Exception as e:
+        logger.warning(f"Clouisle import sessions table migration failed: {e}")
+
     # Generate schemas
     await Tortoise.generate_schemas()
 
@@ -216,7 +241,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error seeding data: {e}")
 
+    cleanup_task = asyncio.create_task(cleanup_expired_clouisle_import_sessions_loop())
+
     yield
+
+    cleanup_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await cleanup_task
 
     # Cleanup
     await Tortoise.close_connections()

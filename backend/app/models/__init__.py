@@ -56,6 +56,7 @@ from .skill import (
     SkillImportSessionStatus,
     SkillSourceType,
 )
+from .package_import import ClouisleImportSession, ClouisleImportSessionStatus
 from .api_key import APIKey
 from .audit_log import AuditLog
 from .notification import (
@@ -131,6 +132,8 @@ __all__ = [
     "SkillImportSession",
     "SkillImportSessionStatus",
     "SkillSourceType",
+    "ClouisleImportSession",
+    "ClouisleImportSessionStatus",
     "APIKey",
     "AuditLog",
     "Notification",

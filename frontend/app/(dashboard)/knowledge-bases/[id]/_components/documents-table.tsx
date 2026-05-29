@@ -28,7 +28,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
+import { adminKnowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -141,7 +141,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
       if (statusFilter.size > 0) params.status = Array.from(statusFilter) as DocumentStatus[]
       if (typeFilter.size > 0) params.doc_type = Array.from(typeFilter) as DocumentType[]
       
-      const data = await knowledgeBasesApi.getDocuments(knowledgeBaseId, params)
+      const data = await adminKnowledgeBasesApi.getDocuments(knowledgeBaseId, params)
       setDocuments(data.items)
       setPageData(data)
     } catch {
@@ -238,7 +238,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const confirmDelete = async () => {
     if (!selectedDoc) return
     try {
-      await knowledgeBasesApi.deleteDocument(knowledgeBaseId, selectedDoc.id)
+      await adminKnowledgeBasesApi.deleteDocument(knowledgeBaseId, selectedDoc.id)
       toast.success(t('documentDeleted'))
       setDeleteDialogOpen(false)
       onRefresh()
@@ -255,7 +255,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 重试失败分段
   const handleRetryFailedChunks = async (doc: Document) => {
     try {
-      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
+      await adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
       toast.success(t('retryStarted'))
       loadDocuments()
     } catch {
@@ -271,7 +271,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 快速处理（使用默认设置）
   const handleQuickProcess = async (doc: Document) => {
     try {
-      await knowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)
+      await adminKnowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)
       toast.success(t('processStartedSingle'))
       loadDocuments()
     } catch {
@@ -287,7 +287,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   // 下载原文件
   const handleDownload = async (doc: Document) => {
     try {
-      await knowledgeBasesApi.downloadDocument(knowledgeBaseId, doc.id, doc.name)
+      await adminKnowledgeBasesApi.downloadDocument(knowledgeBaseId, doc.id, doc.name)
       toast.success(t('downloadStarted'))
     } catch {
       toast.error(t('downloadFailed'))
@@ -298,7 +298,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const confirmBulkDelete = async () => {
     try {
       const promises = Array.from(selectedDocs).map(id => 
-        knowledgeBasesApi.deleteDocument(knowledgeBaseId, id)
+        adminKnowledgeBasesApi.deleteDocument(knowledgeBaseId, id)
       )
       await Promise.all(promises)
       toast.success(t('bulkDocumentsDeleted', { count: selectedDocs.size }))

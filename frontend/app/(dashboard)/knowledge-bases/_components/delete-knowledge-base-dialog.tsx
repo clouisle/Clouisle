@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
+import { adminKnowledgeBasesApi, type KnowledgeBase } from '@/lib/api'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +34,7 @@ export function DeleteKnowledgeBaseDialog({
     if (!knowledgeBase) return
     
     try {
-      await knowledgeBasesApi.deleteKnowledgeBase(knowledgeBase.id)
+      await adminKnowledgeBasesApi.deleteKnowledgeBase(knowledgeBase.id)
       toast.success(t('kbDeleted'))
       onOpenChange(false)
       onSuccess()

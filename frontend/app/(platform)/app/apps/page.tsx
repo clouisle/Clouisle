@@ -18,6 +18,8 @@ import {
   FileEdit,
   MessageSquare,
   Loader2,
+  Upload,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -52,6 +54,8 @@ import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
 import { AppCreateDialog } from './_components/app-create-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
+import { downloadBlob, packagesApi, type ClouisleResourceType } from '@/lib/api/packages'
 
 type AppType = 'all' | 'agent' | 'workflow'
 
@@ -76,6 +80,7 @@ interface AppItem {
 
 export default function AppsPage() {
   const t = useTranslations('apps')
+  const packageT = useTranslations('packages')
   const tCommon = useTranslations('common')
   const { currentTeam } = useTeam()
   const router = useRouter()
@@ -90,6 +95,7 @@ export default function AppsPage() {
   const [apps, setApps] = React.useState<AppItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingApp, setDeletingApp] = React.useState<AppItem | null>(null)
 
@@ -203,6 +209,15 @@ export default function AppsPage() {
     }
   }
 
+  const handleExport = async (app: AppItem) => {
+    try {
+      const { blob, filename } = await packagesApi.export(app.type, app.id)
+      downloadBlob(blob, filename)
+    } catch {
+      // toast handled by API interceptor
+    }
+  }
+
   // Handle publish/unpublish
   const handleTogglePublish = async (app: AppItem) => {
     try {
@@ -245,6 +260,8 @@ export default function AppsPage() {
     router.push(`?tab=${newTab}`, { scroll: false })
   }
 
+  const expectedImportType: ClouisleResourceType | undefined = activeTab === 'agent' || activeTab === 'workflow' ? activeTab : undefined
+
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
       {/* Header */}
@@ -253,12 +270,20 @@ export default function AppsPage() {
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
         </div>
-        <PermissionGuard permission={['agent:create', 'workflow:create']}>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('createApp')}
-          </Button>
-        </PermissionGuard>
+        <div className="flex items-center gap-2">
+          {currentTeam && canPerform(['agent:create', 'workflow:create']) && (
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              {packageT('import')}
+            </Button>
+          )}
+          <PermissionGuard permission={['agent:create', 'workflow:create']}>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('createApp')}
+            </Button>
+          </PermissionGuard>
+        </div>
       </div>
 
       {/* Filters */}
@@ -440,6 +465,16 @@ export default function AppsPage() {
                           {t('duplicate')}
                         </DropdownMenuItem>
                       )}
+                      {((app.type === 'agent' && canPerform('agent:read')) ||
+                        (app.type === 'workflow' && canPerform('workflow:read'))) && (
+                        <DropdownMenuItem onClick={(e) => {
+                          e.preventDefault()
+                          handleExport(app)
+                        }}>
+                          <Download className="mr-2 h-4 w-4" />
+                          {packageT('export')}
+                        </DropdownMenuItem>
+                      )}
                       {((app.type === 'agent' && canPerform('agent:delete')) ||
                         (app.type === 'workflow' && canPerform('workflow:delete'))) && (
                         <>
@@ -475,6 +510,16 @@ export default function AppsPage() {
           fetchApps()
         }}
       />
+
+      {currentTeam && (
+        <ImportPackageDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          teamId={currentTeam.id}
+          expectedResourceType={expectedImportType}
+          onImported={fetchApps}
+        />
+      )}
 
       {/* Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

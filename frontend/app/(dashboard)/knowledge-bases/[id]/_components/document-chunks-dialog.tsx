@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
-import { knowledgeBasesApi, type Document, type DocumentChunk, type PageData } from '@/lib/api'
+import { adminKnowledgeBasesApi, type Document, type DocumentChunk, type PageData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -42,7 +42,7 @@ export function DocumentChunksDialog({
     
     setIsLoading(true)
     try {
-      const data = await knowledgeBasesApi.getDocumentChunks(
+      const data = await adminKnowledgeBasesApi.getDocumentChunks(
         knowledgeBaseId,
         document.id,
         { page, pageSize }

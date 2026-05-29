@@ -15,7 +15,7 @@ import {
   GripVertical,
   AlertTriangle,
 } from 'lucide-react'
-import { knowledgeBasesApi, type Document, type DocumentChunk, type PageData } from '@/lib/api'
+import { adminKnowledgeBasesApi, type Document, type DocumentChunk, type PageData } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -103,7 +103,7 @@ export function ChunkEditorDialog({
 
     setIsLoading(true)
     try {
-      const data = await knowledgeBasesApi.getDocumentChunks(
+      const data = await adminKnowledgeBasesApi.getDocumentChunks(
         knowledgeBaseId,
         document.id,
         { page, pageSize }
@@ -168,7 +168,7 @@ export function ChunkEditorDialog({
 
     setIsSaving(true)
     try {
-      const updated = await knowledgeBasesApi.updateChunk(
+      const updated = await adminKnowledgeBasesApi.updateChunk(
         knowledgeBaseId,
         document.id,
         chunk.id,
@@ -192,7 +192,7 @@ export function ChunkEditorDialog({
 
     setIsSaving(true)
     try {
-      await knowledgeBasesApi.deleteChunk(knowledgeBaseId, document.id, deleteChunkId)
+      await adminKnowledgeBasesApi.deleteChunk(knowledgeBaseId, document.id, deleteChunkId)
       toast.success(t('chunkDeleted'))
       setDeleteChunkId(null)
       // Refresh chunks list to get accurate data
@@ -211,7 +211,7 @@ export function ChunkEditorDialog({
 
     setIsSaving(true)
     try {
-      await knowledgeBasesApi.createChunk(
+      await adminKnowledgeBasesApi.createChunk(
         knowledgeBaseId,
         document.id,
         { content: t('newChunkPlaceholder') },
@@ -234,7 +234,7 @@ export function ChunkEditorDialog({
 
     setIsRechunking(true)
     try {
-      await knowledgeBasesApi.rechunkDocument(
+      await adminKnowledgeBasesApi.rechunkDocument(
         knowledgeBaseId,
         document.id,
         {

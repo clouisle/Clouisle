@@ -25,7 +25,7 @@ import {
   Eye,
 } from 'lucide-react'
 import {
-  knowledgeBasesApi,
+  adminKnowledgeBasesApi,
   type Document,
   type DocumentChunk,
   type PageData,
@@ -110,8 +110,8 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
     setIsLoading(true)
     try {
       const [kbData, docData] = await Promise.all([
-        knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId),
-        knowledgeBasesApi.getDocument(knowledgeBaseId, documentId),
+        adminKnowledgeBasesApi.getKnowledgeBase(knowledgeBaseId),
+        adminKnowledgeBasesApi.getDocument(knowledgeBaseId, documentId),
       ])
       setKnowledgeBase(kbData)
       setDocument(docData)
@@ -138,7 +138,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
     setIsLoadingChunks(true)
     try {
-      const data = await knowledgeBasesApi.getDocumentChunks(
+      const data = await adminKnowledgeBasesApi.getDocumentChunks(
         knowledgeBaseId,
         documentId,
         { page, pageSize }
@@ -167,7 +167,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
     if (document?.status === 'processing' || document?.status === 'pending') {
       const timer = setInterval(async () => {
         try {
-          const docData = await knowledgeBasesApi.getDocument(knowledgeBaseId, documentId)
+          const docData = await adminKnowledgeBasesApi.getDocument(knowledgeBaseId, documentId)
           setDocument(docData)
           if (docData.status === 'completed') {
             toast.success(t('documentProcessed'))
@@ -239,7 +239,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
     setIsProcessing(true)
     try {
-      await knowledgeBasesApi.processDocument(
+      await adminKnowledgeBasesApi.processDocument(
         knowledgeBaseId,
         documentId,
         {
@@ -267,7 +267,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
     setIsPreviewing(true)
     try {
-      const result = await knowledgeBasesApi.previewChunks(
+      const result = await adminKnowledgeBasesApi.previewChunks(
         knowledgeBaseId,
         documentId,
         {
@@ -308,7 +308,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   // 重试失败分段
   const handleRetryFailedChunks = async () => {
     try {
-      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, documentId)
+      await adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, documentId)
       toast.success(t('retryStarted'))
       loadData()
     } catch {
@@ -319,7 +319,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   // 删除文档
   const handleDelete = async () => {
     try {
-      await knowledgeBasesApi.deleteDocument(knowledgeBaseId, documentId)
+      await adminKnowledgeBasesApi.deleteDocument(knowledgeBaseId, documentId)
       toast.success(t('documentDeleted'))
       router.push(`/knowledge-bases/${knowledgeBaseId}`)
     } catch {
@@ -354,7 +354,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
     setIsSaving(true)
     try {
-      const updated = await knowledgeBasesApi.updateChunk(
+      const updated = await adminKnowledgeBasesApi.updateChunk(
         knowledgeBaseId,
         documentId,
         chunk.id,
@@ -376,7 +376,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
     setIsSaving(true)
     try {
-      await knowledgeBasesApi.deleteChunk(knowledgeBaseId, documentId, deleteChunkId)
+      await adminKnowledgeBasesApi.deleteChunk(knowledgeBaseId, documentId, deleteChunkId)
       toast.success(t('chunkDeleted'))
       setDeleteChunkId(null)
       // Refresh chunks list to get accurate data
@@ -391,7 +391,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const addNewChunk = async (afterIndex: number) => {
     setIsSaving(true)
     try {
-      await knowledgeBasesApi.createChunk(
+      await adminKnowledgeBasesApi.createChunk(
         knowledgeBaseId,
         documentId,
         { content: t('newChunkPlaceholder') },

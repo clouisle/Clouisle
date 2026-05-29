@@ -219,10 +219,11 @@ export interface ChunkPreviewResponse {
 
 // ============ Knowledge Base API ============
 
-export const knowledgeBasesApi = {
-  /**
-   * 获取知识库列表
-   */
+function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-bases') {
+  return {
+    /**
+     * 获取知识库列表
+     */
   getKnowledgeBases: async (params: KnowledgeBaseQueryParams = {}): Promise<PageData<KnowledgeBase>> => {
     const { page = 1, pageSize = 20, search, status, teamId } = params
     const queryParams = new URLSearchParams()
@@ -231,42 +232,42 @@ export const knowledgeBasesApi = {
     if (search) queryParams.append('search', search)
     status?.forEach((value) => queryParams.append('status', value))
     if (teamId) queryParams.append('team_id', teamId)
-    return api.get<PageData<KnowledgeBase>>(`/knowledge-bases?${queryParams.toString()}`)
+    return api.get<PageData<KnowledgeBase>>(`${prefix}?${queryParams.toString()}`)
   },
 
   /**
    * 获取单个知识库
    */
   getKnowledgeBase: async (id: string): Promise<KnowledgeBase> => {
-    return api.get<KnowledgeBase>(`/knowledge-bases/${id}`)
+    return api.get<KnowledgeBase>(`${prefix}/${id}`)
   },
 
   /**
    * 创建知识库
    */
   createKnowledgeBase: async (data: KnowledgeBaseCreateInput): Promise<KnowledgeBase> => {
-    return api.post<KnowledgeBase>('/knowledge-bases', data)
+    return api.post<KnowledgeBase>(prefix, data)
   },
 
   /**
    * 更新知识库
    */
   updateKnowledgeBase: async (id: string, data: KnowledgeBaseUpdateInput): Promise<KnowledgeBase> => {
-    return api.put<KnowledgeBase>(`/knowledge-bases/${id}`, data)
+    return api.put<KnowledgeBase>(`${prefix}/${id}`, data)
   },
 
   /**
    * 删除知识库
    */
   deleteKnowledgeBase: async (id: string): Promise<void> => {
-    return api.delete<void>(`/knowledge-bases/${id}`)
+    return api.delete<void>(`${prefix}/${id}`)
   },
 
   /**
    * 获取知识库统计
    */
   getStats: async (id: string): Promise<KnowledgeBaseStats> => {
-    return api.get<KnowledgeBaseStats>(`/knowledge-bases/${id}/stats`)
+    return api.get<KnowledgeBaseStats>(`${prefix}/${id}/stats`)
   },
 
   /**
@@ -284,7 +285,7 @@ export const knowledgeBasesApi = {
       rerank_fail_open: params.rerank_fail_open,
       rerank_score_threshold: params.rerank_score_threshold,
     }
-    return api.post<SearchResponse>(`/knowledge-bases/${id}/search`, requestBody)
+    return api.post<SearchResponse>(`${prefix}/${id}/search`, requestBody)
   },
 
   // ============ Document API ============
@@ -300,14 +301,14 @@ export const knowledgeBasesApi = {
     status?.forEach((value) => queryParams.append('status', value))
     doc_type?.forEach((value) => queryParams.append('doc_type', value))
     if (search) queryParams.append('search', search)
-    return api.get<PageData<Document>>(`/knowledge-bases/${kbId}/documents?${queryParams.toString()}`)
+    return api.get<PageData<Document>>(`${prefix}/${kbId}/documents?${queryParams.toString()}`)
   },
 
   /**
    * 获取单个文档
    */
   getDocument: async (kbId: string, docId: string): Promise<Document> => {
-    return api.get<Document>(`/knowledge-bases/${kbId}/documents/${docId}`)
+    return api.get<Document>(`${prefix}/${kbId}/documents/${docId}`)
   },
 
   /**
@@ -316,7 +317,7 @@ export const knowledgeBasesApi = {
   uploadDocument: async (kbId: string, file: File): Promise<Document> => {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post<Document>(`/knowledge-bases/${kbId}/documents/upload`, formData, {
+    return api.post<Document>(`${prefix}/${kbId}/documents/upload`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -327,21 +328,21 @@ export const knowledgeBasesApi = {
    * 导入 URL
    */
   importUrl: async (kbId: string, url: string, name?: string): Promise<Document> => {
-    return api.post<Document>(`/knowledge-bases/${kbId}/documents/url`, { source_url: url, name })
+    return api.post<Document>(`${prefix}/${kbId}/documents/url`, { source_url: url, name })
   },
 
   /**
    * 删除文档
    */
   deleteDocument: async (kbId: string, docId: string): Promise<void> => {
-    return api.delete<void>(`/knowledge-bases/${kbId}/documents/${docId}`)
+    return api.delete<void>(`${prefix}/${kbId}/documents/${docId}`)
   },
 
   /**
    * 开始处理文档 (用于待处理的文档)
    */
   processDocument: async (kbId: string, docId: string, settings?: ProcessInput): Promise<Document> => {
-    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/process`, settings || {})
+    return api.post<Document>(`${prefix}/${kbId}/documents/${docId}/process`, settings || {})
   },
 
   /**
@@ -353,7 +354,7 @@ export const knowledgeBasesApi = {
     chunks: Array<{ content: string; chunk_index: number }>
   ): Promise<Document> => {
     return api.post<Document>(
-      `/knowledge-bases/${kbId}/documents/${docId}/process-with-chunks`,
+      `${prefix}/${kbId}/documents/${docId}/process-with-chunks`,
       { chunks }
     )
   },
@@ -362,14 +363,14 @@ export const knowledgeBasesApi = {
    * 重新处理文档
    */
   reprocessDocument: async (kbId: string, docId: string): Promise<Document> => {
-    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/reprocess`)
+    return api.post<Document>(`${prefix}/${kbId}/documents/${docId}/reprocess`)
   },
 
   /**
    * 重试失败的分块
    */
   retryFailedChunks: async (kbId: string, docId: string): Promise<Document> => {
-    return api.post<Document>(`/knowledge-bases/${kbId}/documents/${docId}/retry-failed-chunks`)
+    return api.post<Document>(`${prefix}/${kbId}/documents/${docId}/retry-failed-chunks`)
   },
 
   /**
@@ -385,7 +386,7 @@ export const knowledgeBasesApi = {
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     return api.get<PageData<DocumentChunk>>(
-      `/knowledge-bases/${kbId}/documents/${docId}/chunks?${queryParams.toString()}`
+      `${prefix}/${kbId}/documents/${docId}/chunks?${queryParams.toString()}`
     )
   },
 
@@ -399,7 +400,7 @@ export const knowledgeBasesApi = {
     data: DocumentChunkUpdateInput
   ): Promise<DocumentChunk> => {
     return api.put<DocumentChunk>(
-      `/knowledge-bases/${kbId}/documents/${docId}/chunks/${chunkId}`,
+      `${prefix}/${kbId}/documents/${docId}/chunks/${chunkId}`,
       data
     )
   },
@@ -413,7 +414,7 @@ export const knowledgeBasesApi = {
     chunkId: string
   ): Promise<void> => {
     return api.delete<void>(
-      `/knowledge-bases/${kbId}/documents/${docId}/chunks/${chunkId}`
+      `${prefix}/${kbId}/documents/${docId}/chunks/${chunkId}`
     )
   },
 
@@ -428,7 +429,7 @@ export const knowledgeBasesApi = {
   ): Promise<DocumentChunk> => {
     const queryParams = afterIndex !== undefined ? `?after_index=${afterIndex}` : ''
     return api.post<DocumentChunk>(
-      `/knowledge-bases/${kbId}/documents/${docId}/chunks${queryParams}`,
+      `${prefix}/${kbId}/documents/${docId}/chunks${queryParams}`,
       data
     )
   },
@@ -442,7 +443,7 @@ export const knowledgeBasesApi = {
     settings: RechunkInput
   ): Promise<Document> => {
     return api.post<Document>(
-      `/knowledge-bases/${kbId}/documents/${docId}/rechunk`,
+      `${prefix}/${kbId}/documents/${docId}/rechunk`,
       settings
     )
   },
@@ -456,7 +457,7 @@ export const knowledgeBasesApi = {
     settings: ChunkPreviewInput
   ): Promise<ChunkPreviewResponse> => {
     return api.post<ChunkPreviewResponse>(
-      `/knowledge-bases/${kbId}/documents/${docId}/preview-chunks`,
+      `${prefix}/${kbId}/documents/${docId}/preview-chunks`,
       settings
     )
   },
@@ -467,7 +468,7 @@ export const knowledgeBasesApi = {
   downloadDocument: async (kbId: string, docId: string, filename: string): Promise<void> => {
     const token = localStorage.getItem('access_token')
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
-    const url = `${baseUrl}/knowledge-bases/${kbId}/documents/${docId}/download`
+    const url = `${baseUrl}${prefix}/${kbId}/documents/${docId}/download`
     
     const response = await fetch(url, {
       method: 'GET',
@@ -489,5 +490,9 @@ export const knowledgeBasesApi = {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(downloadUrl)
-  },
+  }
+  }
 }
+
+export const knowledgeBasesApi = createKnowledgeBasesApi('/knowledge-bases')
+export const adminKnowledgeBasesApi = createKnowledgeBasesApi('/admin/knowledge-bases')

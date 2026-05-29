@@ -168,6 +168,57 @@ msgstr "Git 仓库地址无效"
 msgid "skill_import_installed"
 msgstr "Skills 导入成功"
 
+msgid "clouisle_checksum_mismatch"
+msgstr "包校验和验证失败"
+
+msgid "clouisle_dependency_forbidden"
+msgstr "无权访问必要的包依赖"
+
+msgid "clouisle_dependency_missing"
+msgstr "缺少必要的包依赖"
+
+msgid "clouisle_import_installed"
+msgstr "包导入成功"
+
+msgid "clouisle_import_session_expired"
+msgstr "包导入会话已过期"
+
+msgid "clouisle_import_session_not_found"
+msgstr "包导入会话不存在"
+
+msgid "clouisle_invalid_extension"
+msgstr "仅支持 .clouisle 文件"
+
+msgid "clouisle_invalid_resource_type"
+msgstr "包资源类型无效"
+
+msgid "clouisle_invalid_zip"
+msgstr "包 ZIP 文件无效"
+
+msgid "clouisle_kb_documents_not_updated"
+msgstr "知识库文档未更新"
+
+msgid "clouisle_missing_manifest"
+msgstr "包 manifest.json 缺失或无效"
+
+msgid "clouisle_missing_resource"
+msgstr "包资源内容缺失或无效"
+
+msgid "clouisle_name_conflict"
+msgstr "已存在同名资源"
+
+msgid "clouisle_plaintext_secret_detected"
+msgstr "包中包含明文密钥，已拒绝导入"
+
+msgid "clouisle_unsupported_format_version"
+msgstr "不支持该包格式版本"
+
+msgid "clouisle_zip_path_invalid"
+msgstr "包中包含不安全的文件路径"
+
+msgid "clouisle_zip_too_large"
+msgstr "包文件过大"
+
 msgid "skill_import_session_expired"
 msgstr "Skill 导入会话已过期"
 

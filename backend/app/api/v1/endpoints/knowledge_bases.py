@@ -4,10 +4,11 @@ Provides CRUD operations for knowledge bases and documents.
 """
 
 import logging
+from contextvars import ContextVar
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile, File, Body
+from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
 from tortoise.expressions import F
 
@@ -66,6 +67,8 @@ from app.services.vector_store import VectorStore, DimensionMismatchError
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_kb_access_mode: ContextVar[str] = ContextVar("kb_access_mode", default="platform")
+
 BYTES_PER_MB = 1024 * 1024
 
 
@@ -119,6 +122,70 @@ async def serialize_chunk(chunk: DocumentChunk) -> dict[str, Any]:
 # ============ Helper Functions ============
 
 
+def _has_permission(user: User, permission: str) -> bool:
+    if user.is_superuser:
+        return True
+    return any(
+        perm.code in (permission, "*")
+        for role in getattr(user, "roles", [])
+        for perm in getattr(role, "permissions", [])
+    )
+
+
+async def require_kb_permission(request: Request, current_user: User) -> User:
+    mode = "admin" if request.url.path.startswith("/api/v1/admin/") else "platform"
+    _kb_access_mode.set(mode)
+    return current_user
+
+
+def _require_kb_action(user: User, action: str) -> None:
+    mode = _kb_access_mode.get()
+    permission = f"admin:knowledge-base:{action}" if mode == "admin" else f"kb:{action}"
+    if not _has_permission(user, permission):
+        raise BusinessError(
+            code=ResponseCode.PERMISSION_DENIED,
+            msg_key="operation_not_permitted",
+            status_code=403,
+            permission=permission,
+        )
+
+
+async def require_kb_read(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "read")
+    return user
+
+
+async def require_kb_create(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "create")
+    return user
+
+
+async def require_kb_update(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "update")
+    return user
+
+
+async def require_kb_delete(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> User:
+    user = await require_kb_permission(request, current_user)
+    _require_kb_action(user, "delete")
+    return user
+
+
 async def check_team_access(
     team_id: UUID, user: User, require_admin: bool = False
 ) -> Team:
@@ -134,7 +201,7 @@ async def check_team_access(
             status_code=404,
         )
 
-    if user.is_superuser:
+    if user.is_superuser or _kb_access_mode.get() == "admin":
         return team
 
     membership = await TeamMember.filter(team=team, user=user).first()
@@ -278,7 +345,7 @@ async def list_knowledge_bases(
     status: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     List knowledge bases.
@@ -291,7 +358,7 @@ async def list_knowledge_bases(
         # Check team access
         await check_team_access(team_id, current_user)
         query = query.filter(team_id=team_id)
-    elif not current_user.is_superuser:
+    elif not current_user.is_superuser and _kb_access_mode.get() != "admin":
         # Get all teams user belongs to
         memberships = await TeamMember.filter(user=current_user).values_list(
             "team_id", flat=True
@@ -345,7 +412,7 @@ async def list_knowledge_bases(
 async def create_knowledge_base(
     *,
     kb_in: KnowledgeBaseCreate,
-    current_user: User = Depends(deps.PermissionChecker("kb:create")),
+    current_user: User = Depends(require_kb_create),
 ) -> Any:
     """
     Create a new knowledge base.
@@ -390,7 +457,7 @@ async def create_knowledge_base(
 @router.get("/{kb_id}", response_model=Response[KnowledgeBaseSchema])
 async def get_knowledge_base(
     kb_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Get knowledge base by ID.
@@ -405,7 +472,7 @@ async def update_knowledge_base(
     *,
     kb_id: UUID,
     kb_in: KnowledgeBaseUpdate,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Update knowledge base.
@@ -468,7 +535,7 @@ async def update_knowledge_base(
 @router.delete("/{kb_id}", response_model=Response[dict])
 async def delete_knowledge_base(
     kb_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
+    current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
     Delete knowledge base and all its documents.
@@ -485,7 +552,7 @@ async def delete_knowledge_base(
 @router.get("/{kb_id}/stats", response_model=Response[KnowledgeBaseStats])
 async def get_knowledge_base_stats(
     kb_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Get knowledge base statistics.
@@ -549,7 +616,7 @@ async def list_documents(
     doc_type: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     List documents in a knowledge base.
@@ -583,7 +650,7 @@ async def list_documents(
 async def upload_document(
     kb_id: UUID,
     file: UploadFile = File(...),
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Upload a document to the knowledge base.
@@ -648,7 +715,7 @@ async def upload_document(
 async def add_url_document(
     kb_id: UUID,
     doc_in: DocumentCreate,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Add a URL-based document to the knowledge base.
@@ -689,7 +756,7 @@ async def add_url_document(
 async def get_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Get document details.
@@ -717,7 +784,7 @@ async def update_document(
     kb_id: UUID,
     doc_id: UUID,
     doc_in: DocumentUpdate,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Update document name.
@@ -744,7 +811,7 @@ async def update_document(
 async def delete_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
+    current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
     Delete a document and all its chunks.
@@ -796,7 +863,7 @@ async def delete_document(
 async def download_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> FileResponse:
     """
     Download the original document file.
@@ -856,7 +923,7 @@ async def process_document(
     kb_id: UUID,
     doc_id: UUID,
     process_in: Optional[ProcessRequest] = Body(default=None),
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Start processing a pending document.
@@ -918,7 +985,7 @@ async def process_document_with_chunks(
     kb_id: UUID,
     doc_id: UUID,
     request: ProcessWithChunksRequest,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Process a document with pre-defined chunks from the frontend.
@@ -1062,7 +1129,7 @@ async def preview_document_chunks(
     kb_id: UUID,
     doc_id: UUID,
     preview_in: ChunkPreviewRequest,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Preview how a document will be chunked with given settings.
@@ -1151,7 +1218,7 @@ async def preview_document_chunks(
 async def reprocess_document(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Reprocess a document (re-chunk and re-embed).
@@ -1211,7 +1278,7 @@ async def reprocess_document(
 async def retry_failed_chunks(
     kb_id: UUID,
     doc_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Retry embedding for failed chunks only.
@@ -1282,7 +1349,7 @@ async def list_document_chunks(
     doc_id: UUID,
     page: int = 1,
     page_size: int = 50,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     List chunks of a document.
@@ -1323,7 +1390,7 @@ async def update_document_chunk(
     doc_id: UUID,
     chunk_id: UUID,
     chunk_in: DocumentChunkUpdate,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Update a document chunk's content.
@@ -1401,7 +1468,7 @@ async def delete_document_chunk(
     kb_id: UUID,
     doc_id: UUID,
     chunk_id: UUID,
-    current_user: User = Depends(deps.PermissionChecker("kb:delete")),
+    current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
     Delete a document chunk.
@@ -1467,7 +1534,7 @@ async def create_document_chunk(
     doc_id: UUID,
     chunk_in: DocumentChunkUpdate,
     after_index: int | None = None,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Create a new chunk in a document.
@@ -1546,7 +1613,7 @@ async def rechunk_document(
     kb_id: UUID,
     doc_id: UUID,
     rechunk_in: RechunkRequest,
-    current_user: User = Depends(deps.PermissionChecker("kb:update")),
+    current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
     Re-chunk a document with new chunking settings.
@@ -1616,7 +1683,7 @@ async def rechunk_document(
 async def search_knowledge_base(
     kb_id: UUID,
     search_in: SearchRequest,
-    current_user: User = Depends(deps.PermissionChecker("kb:read")),
+    current_user: User = Depends(require_kb_read),
 ) -> Any:
     """
     Search the knowledge base.

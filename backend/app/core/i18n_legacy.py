@@ -571,6 +571,71 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "{failed_count}/{total_chunks} chunks still failed: {error}",
         "zh": "重试后仍有 {failed_count}/{total_chunks} 个分块失败：{error}",
     },
+    "clouisle_checksum_mismatch": {
+        "en": "Package checksum verification failed",
+        "zh": "包校验和验证失败",
+    },
+    "clouisle_dependency_forbidden": {
+        "en": "A required package dependency is not accessible",
+        "zh": "无权访问必要的包依赖",
+    },
+    "clouisle_dependency_missing": {
+        "en": "A required package dependency is missing",
+        "zh": "缺少必要的包依赖",
+    },
+    "clouisle_import_installed": {
+        "en": "Package imported successfully",
+        "zh": "包导入成功",
+    },
+    "clouisle_import_session_expired": {
+        "en": "Package import session has expired",
+        "zh": "包导入会话已过期",
+    },
+    "clouisle_import_session_not_found": {
+        "en": "Package import session not found",
+        "zh": "包导入会话不存在",
+    },
+    "clouisle_invalid_extension": {
+        "en": "Only .clouisle files are supported",
+        "zh": "仅支持 .clouisle 文件",
+    },
+    "clouisle_invalid_resource_type": {
+        "en": "Package resource type is invalid",
+        "zh": "包资源类型无效",
+    },
+    "clouisle_invalid_zip": {
+        "en": "Package ZIP file is invalid",
+        "zh": "包 ZIP 文件无效",
+    },
+    "clouisle_kb_documents_not_updated": {
+        "en": "Knowledge base documents were not updated",
+        "zh": "知识库文档未更新",
+    },
+    "clouisle_missing_manifest": {
+        "en": "Package manifest.json is missing or invalid",
+        "zh": "包 manifest.json 缺失或无效",
+    },
+    "clouisle_missing_resource": {
+        "en": "Package resource payload is missing or invalid",
+        "zh": "包资源内容缺失或无效",
+    },
+    "clouisle_name_conflict": {
+        "en": "A resource with this name already exists",
+        "zh": "已存在同名资源",
+    },
+    "clouisle_plaintext_secret_detected": {
+        "en": "Package contains a plaintext secret and was rejected",
+        "zh": "包中包含明文密钥，已拒绝导入",
+    },
+    "clouisle_unsupported_format_version": {
+        "en": "Package format version is not supported",
+        "zh": "不支持该包格式版本",
+    },
+    "clouisle_zip_path_invalid": {
+        "en": "Package contains an unsafe file path",
+        "zh": "包中包含不安全的文件路径",
+    },
+    "clouisle_zip_too_large": {"en": "Package file is too large", "zh": "包文件过大"},
     "code_execution_failed": {"en": "Code execution failed", "zh": "代码执行失败"},
     "code_tool_execution_failed": {
         "en": "Code tool execution failed",
@@ -885,6 +950,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Google reference image must include url, base64, or file_path",
         "zh": "Google 参考图像必须包含 url、base64 或 file_path",
     },
+    "http_tool_url_templates_not_supported": {
+        "en": "HTTP tool URL templates are not supported",
+        "zh": "HTTP 工具不支持 URL 模板",
+    },
     "image_generation_exceeds_agent_limit": {
         "en": "Image generation request exceeds the agent limit ({max_images})",
         "zh": "图片生成请求超出当前智能体限制（{max_images}）",
@@ -905,17 +974,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Image generation succeeded. Generated {count} images using model {model}. Prompt: {prompt}",
         "zh": "图片生成成功。使用模型 {model} 生成了 {count} 张图片。提示词：{prompt}",
     },
-    "image_reference_images_disabled": {
-        "en": "Reference images are disabled for this agent",
-        "zh": "当前智能体已禁用参考图",
+    "image_reference_image_index_out_of_range": {
+        "en": "Reference image index {index} is out of range. Available uploaded images: {count}",
+        "zh": "参考图片索引 {index} 超出范围。可用上传图片数量：{count}",
     },
     "image_reference_images_conflict": {
         "en": "Use either explicit reference images or uploaded image indexes, not both",
         "zh": "请仅使用显式参考图或上传图片索引之一，不能同时使用",
     },
-    "image_reference_image_index_out_of_range": {
-        "en": "Reference image index {index} is out of range. Available uploaded images: {count}",
-        "zh": "参考图片索引 {index} 超出范围。可用上传图片数量：{count}",
+    "image_reference_images_disabled": {
+        "en": "Reference images are disabled for this agent",
+        "zh": "当前智能体已禁用参考图",
     },
     "image_reference_invalid_uploaded_image": {
         "en": "Uploaded image #{index} does not contain usable image data",
@@ -1087,10 +1156,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "MCP tool has no configuration: {tool_name}",
         "zh": "MCP 工具缺少配置：{tool_name}",
     },
-    "http_tool_url_templates_not_supported": {
-        "en": "HTTP tool URL templates are not supported",
-        "zh": "HTTP 工具不支持 URL 模板",
-    },
     "mcp_tool_not_found": {
         "en": "MCP tool not found: {server_name}",
         "zh": "未找到 MCP 工具：{server_name}",
@@ -1209,6 +1274,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "API key is required to test connection",
         "zh": "测试连接需要 API Key",
     },
+    "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "model_created": {"en": "Model created successfully", "zh": "模型创建成功"},
     "model_deleted": {"en": "Model deleted successfully", "zh": "模型删除成功"},
     "model_not_authorized": {
@@ -1217,6 +1283,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "model_not_found": {"en": "Model not found", "zh": "模型未找到"},
     "model_quota_exceeded": {"en": "Model quota exceeded", "zh": "模型配额已用尽"},
+    "model_service_request_failed": {
+        "en": "Model service request failed: {message}",
+        "zh": "模型服务请求失败：{message}",
+    },
     "model_set_default": {
         "en": "Model set as default successfully",
         "zh": "已设为默认模型",
@@ -2322,11 +2392,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Cannot convert between {from_unit} and {to_unit}",
         "zh": "无法在 {from_unit} 和 {to_unit} 之间转换",
     },
-    "model_service_request_failed": {
-        "en": "Model service request failed: {message}",
-        "zh": "模型服务请求失败：{message}",
-    },
-    "model_call_failed": {"en": "Model call failed", "zh": "模型调用失败"},
     "unknown": {"en": "Unknown", "zh": "未知"},
     "unknown_error": {"en": "Unknown error", "zh": "未知错误"},
     "unknown_error_generic": {"en": "Unknown error", "zh": "未知错误"},
@@ -2417,14 +2482,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "en": "Video generation is not enabled for this agent",
         "zh": "当前智能体未启用视频生成",
     },
-    "video_reference_images_not_supported_for_model": {
-        "en": "The selected video model does not support uploaded images as starting-frame references yet",
-        "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
-    },
-    "video_reference_image_requires_remote_url": {
-        "en": "Provider {provider} requires a public image URL for video start-frame references",
-        "zh": "服务商 {provider} 需要公网图片 URL 才能作为视频首帧参考",
-    },
     "video_generation_started": {
         "en": "Video generation started. Task {task_id} is {status}. Prompt: {prompt}",
         "zh": "视频生成已开始。任务 {task_id} 当前状态为 {status}。提示词：{prompt}",
@@ -2432,6 +2489,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "video_generation_succeeded": {
         "en": "Video generation succeeded using model {model}. Prompt: {prompt}",
         "zh": "视频生成成功。使用模型 {model}。提示词：{prompt}",
+    },
+    "video_reference_image_requires_remote_url": {
+        "en": "Provider {provider} requires a public image URL for video start-frame references",
+        "zh": "服务商 {provider} 需要公网图片 URL 才能作为视频首帧参考",
+    },
+    "video_reference_images_not_supported_for_model": {
+        "en": "The selected video model does not support uploaded images as starting-frame references yet",
+        "zh": "当前选择的视频模型暂不支持将上传图片作为首帧参考",
     },
     "volcengine_api_error": {"en": "Volcengine API error", "zh": "Volcengine API 错误"},
     "volcengine_endpoint_not_found": {

@@ -1,0 +1,60 @@
+{
+  "packages": {
+    "import": "导入",
+    "export": "导出",
+    "dialogTitle": "导入资源",
+    "dialogTitleWithResource": "导入{resource}",
+    "dialogDescription": "上传 Clouisle 包，预览依赖和冲突后再安装。",
+    "preview": "预览",
+    "previewing": "正在预览...",
+    "chooseFile": "选择文件",
+    "noFileSelected": "未选择文件",
+    "install": "安装",
+    "valid": "有效",
+    "invalid": "无效",
+    "format": "格式",
+    "exported": "导出时间",
+    "dependencies": "依赖项",
+    "dependencyLabel": "{type}：{name}",
+    "dependencyType": {
+      "agent": "智能体",
+      "knowledge_base": "知识库",
+      "model": "模型",
+      "tool": "工具",
+      "workflow": "工作流"
+    },
+    "dependencyStatus": {
+      "resolved": "已解决",
+      "missing": "缺失",
+      "forbidden": "无权限",
+      "unsupported": "不支持"
+    },
+    "unknown": "未知",
+    "nameConflict": "名称冲突：{name}",
+    "selectClouisleFile": "请选择 .clouisle 文件",
+    "typeMismatch": "此包类型为 {actual}，不是 {expected}",
+    "importSkipped": "已跳过导入",
+    "packageImported": "包已导入",
+    "targetTeam": "目标团队",
+    "selectTargetTeam": "请选择目标团队",
+    "messages": {
+      "clouisle_checksum_mismatch": "包校验和验证失败",
+      "clouisle_dependency_forbidden": "无权访问必要的包依赖",
+      "clouisle_dependency_missing": "缺少必要的包依赖",
+      "clouisle_kb_documents_not_updated": "知识库文档未更新",
+      "clouisle_name_conflict": "已存在同名资源"
+    },
+    "conflictAction": {
+      "install": "直接安装",
+      "rename": "重命名导入",
+      "update": "覆盖更新",
+      "skip": "跳过导入"
+    },
+    "resource": {
+      "tool": "工具",
+      "agent": "智能体",
+      "workflow": "工作流",
+      "knowledge_base": "知识库"
+    }
+  }
+}

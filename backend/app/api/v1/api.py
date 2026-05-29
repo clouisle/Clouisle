@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     agent_stats,
     chat,
     tools,
+    packages,
     skills,
     api_keys,
     prompt_generator,
@@ -44,6 +45,7 @@ api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(agent_stats.router, prefix="/agents", tags=["agent-stats"])
 api_router.include_router(chat.router, prefix="/agents", tags=["chat"])
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
+api_router.include_router(packages.router, prefix="/packages", tags=["packages"])
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 api_router.include_router(api_keys.router, prefix="/api-keys", tags=["api-keys"])
 api_router.include_router(

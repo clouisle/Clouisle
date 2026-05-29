@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Link, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi } from '@/lib/api'
+import { adminKnowledgeBasesApi } from '@/lib/api'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -91,7 +91,7 @@ export function ImportUrlDialog({
     setFieldErrors({})
     
     try {
-      const doc = await knowledgeBasesApi.importUrl(knowledgeBaseId, url.trim(), name.trim() || undefined)
+      const doc = await adminKnowledgeBasesApi.importUrl(knowledgeBaseId, url.trim(), name.trim() || undefined)
       toast.success(t('urlImported'))
       onOpenChange(false)
       onSuccess()

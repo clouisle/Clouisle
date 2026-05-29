@@ -13,6 +13,8 @@ import {
   Pencil,
   Trash2,
   Search,
+  Upload,
+  Download,
 } from 'lucide-react'
 import { useTeam } from '@/contexts/team-context'
 import { useRequireTeam } from '@/hooks/use-require-team'
@@ -40,6 +42,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { KnowledgeBaseDialog } from './_components/kb-dialog'
 import { useCanPerform } from '@/components/permission-guard'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
+import { downloadBlob, packagesApi } from '@/lib/api/packages'
 
 // 格式化 token 数量
 function formatTokens(tokens: number): string {
@@ -55,6 +59,7 @@ function formatTokens(tokens: number): string {
 export default function KnowledgeBasePage() {
   const t = useTranslations('platform')
   const kbT = useTranslations('knowledgeBases')
+  const packageT = useTranslations('packages')
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
   const { canPerform } = useCanPerform()
@@ -66,6 +71,7 @@ export default function KnowledgeBasePage() {
   const [isLoading, setIsLoading] = React.useState(true)
   const [searchQuery, setSearchQuery] = React.useState('')
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [editingKb, setEditingKb] = React.useState<KnowledgeBase | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingKb, setDeletingKb] = React.useState<KnowledgeBase | null>(null)
@@ -104,6 +110,15 @@ export default function KnowledgeBasePage() {
   const handleDeleteClick = (kb: KnowledgeBase) => {
     setDeletingKb(kb)
     setDeleteDialogOpen(true)
+  }
+
+  const handleExport = async (kb: KnowledgeBase) => {
+    try {
+      const { blob, filename } = await packagesApi.export('knowledge_base', kb.id)
+      downloadBlob(blob, filename)
+    } catch {
+      // Error handled by API client
+    }
   }
 
   const handleDelete = async () => {
@@ -166,6 +181,12 @@ export default function KnowledgeBasePage() {
             {t('kb.description')}
           </p>
         </div>
+        {currentTeam && canPerform('kb:create') && (
+          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            {packageT('import')}
+          </Button>
+        )}
       </div>
 
       {/* Search */}
@@ -259,6 +280,12 @@ export default function KnowledgeBasePage() {
                       {kbT('searchTest')}
                     </DropdownMenuItem>
                   </Link>
+                  {canPerform('kb:read') && (
+                    <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleExport(kb) }}>
+                      <Download className="mr-2 h-4 w-4" />
+                      {packageT('export')}
+                    </DropdownMenuItem>
+                  )}
                   {canPerform('kb:delete') && (
                     <>
                       <DropdownMenuSeparator />
@@ -303,6 +330,16 @@ export default function KnowledgeBasePage() {
         knowledgeBase={editingKb}
         onSuccess={handleSuccess}
       />
+
+      {currentTeam && (
+        <ImportPackageDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          teamId={currentTeam.id}
+          expectedResourceType="knowledge_base"
+          onImported={handleSuccess}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

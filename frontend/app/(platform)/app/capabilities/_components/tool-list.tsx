@@ -16,11 +16,12 @@ interface ToolListProps {
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
+  onExport?: (tool: Tool) => void
 }
 
 type FilterType = 'all' | ToolType
 
-export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigure, onShare }: ToolListProps) {
+export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigure, onShare, onExport }: ToolListProps) {
   const t = useTranslations('platform.tools')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
@@ -127,6 +128,7 @@ export function ToolList({ tools, onSelect, onTest, onEdit, onDelete, onConfigur
                     onDelete={onDelete}
                     onConfigure={onConfigure}
                     onShare={onShare}
+                    onExport={onExport}
                   />
                 ))}
               </div>

@@ -37,6 +37,7 @@ export {
 } from './models'
 export {
   knowledgeBasesApi,
+  adminKnowledgeBasesApi,
   type KnowledgeBase,
   type KnowledgeBaseStats,
   type KnowledgeBaseCreateInput,
@@ -146,6 +147,21 @@ export {
   type ToolSharePermission,
   type ToolShareListResponse,
 } from './tools'
+
+export {
+  packagesApi,
+  adminPackagesApi,
+  downloadBlob,
+  type PackagesApi,
+  type ClouisleResourceType,
+  type ClouisleDependencyStatus,
+  type ClouisleConflictAction,
+  type ClouislePackageDependency,
+  type ClouislePackageConflict,
+  type ClouisleImportPreview,
+  type ClouisleImportInstallRequest,
+  type ClouisleImportInstallResult,
+} from './packages'
 
 export {
   skillsApi,
