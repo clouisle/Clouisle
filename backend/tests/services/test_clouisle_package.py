@@ -2,15 +2,22 @@ import io
 import json
 import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from app.api.v1.endpoints.packages import _content_disposition
+from app.models.package_import import ClouisleImportSessionStatus
 from app.schemas.clouisle_package import ClouisleResourceType
 from app.schemas.response import BusinessError
 from app.services.clouisle_package import ClouislePackageService
-from app.services.clouisle_package_resources import _asset_package_path
+from app.services.clouisle_package_resources import (
+    _asset_package_path,
+    _replace_agent_kbs,
+    _restore_kb_document_file,
+)
 
 
 def _resource_bytes(payload: dict) -> bytes:
@@ -137,6 +144,14 @@ def test_read_package_rejects_plaintext_secret_payload():
     )
 
 
+def test_read_package_rejects_plaintext_secret_list_payload():
+    payload = {"name": "demo", "api_keys": ["sk-test"]}
+    content = _package(payload)
+    _assert_package_error(
+        "demo.clouisle", content, "clouisle_plaintext_secret_detected"
+    )
+
+
 def test_upload_file_url_maps_to_asset_package_path():
     assert (
         _asset_package_path("icon", "/api/v1/upload/files/avatar/2026/05/logo.png")
@@ -187,6 +202,74 @@ def test_stage_package_files_accepts_safe_asset_paths():
         assert f.read() == b"image-bytes"
 
 
+@pytest.mark.asyncio
+async def test_replace_agent_kbs_preserves_zero_score_threshold(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakeQuery:
+        async def delete(self):
+            return None
+
+    class FakeAgentKnowledgeBase:
+        @staticmethod
+        def filter(**_kwargs):
+            return FakeQuery()
+
+        @staticmethod
+        async def create(**kwargs):
+            calls.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.services.clouisle_package_resources.AgentKnowledgeBase",
+        FakeAgentKnowledgeBase,
+    )
+
+    target_id = uuid4()
+    await _replace_agent_kbs(
+        SimpleNamespace(id=uuid4()),
+        {
+            "knowledge_base_configs": [
+                {
+                    "knowledge_base_id": "source-kb",
+                    "score_threshold": 0.0,
+                }
+            ]
+        },
+        {"source-kb": target_id},
+    )
+
+    assert calls["knowledge_base_id"] == target_id
+    assert calls["score_threshold"] == 0.0
+
+
+def test_restore_kb_document_file_sanitizes_document_name(tmp_path, monkeypatch):
+    package_dir = tmp_path / "package"
+    source = package_dir / "documents" / "doc.txt"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"document-bytes")
+    captured: dict[str, str] = {}
+
+    def fake_storage_path(_kb_id, filename):
+        captured["filename"] = filename
+        return str(tmp_path / "storage" / filename)
+
+    monkeypatch.setattr(
+        "app.services.clouisle_package_resources.document_processor.get_storage_path",
+        fake_storage_path,
+    )
+
+    target_path = _restore_kb_document_file(
+        package_dir,
+        uuid4(),
+        "documents/doc.txt",
+        "../../../../app/main.py",
+    )
+
+    assert captured["filename"] == "main.py"
+    assert target_path == str(tmp_path / "storage" / "main.py")
+    assert Path(target_path).read_bytes() == b"document-bytes"
+
+
 def test_read_package_rejects_extra_file_checksum_mismatch():
     payload = {"name": "demo"}
     resource = _resource_bytes(payload)
@@ -207,6 +290,50 @@ def test_read_package_rejects_extra_file_checksum_mismatch():
     _assert_package_error(
         "demo.clouisle", buffer.getvalue(), "clouisle_checksum_mismatch"
     )
+
+
+@pytest.mark.asyncio
+async def test_cleanup_expired_sessions_marks_expired_and_removes_staged_files(
+    tmp_path, monkeypatch
+):
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "doc.txt").write_text("pending", encoding="utf-8")
+
+    class FakeSession:
+        def __init__(self):
+            self.temp_storage_path = str(staged)
+            self.status = ClouisleImportSessionStatus.PREVIEWED
+            self.saved_fields: list[str] | None = None
+
+        async def save(self, update_fields):
+            self.saved_fields = update_fields
+
+    session = FakeSession()
+
+    class FakeQuery:
+        def __await__(self):
+            async def resolve():
+                return [session]
+
+            return resolve().__await__()
+
+    class FakeImportSession:
+        @staticmethod
+        def filter(**_kwargs):
+            return FakeQuery()
+
+    monkeypatch.setattr(
+        "app.services.clouisle_package.ClouisleImportSession",
+        FakeImportSession,
+    )
+
+    cleaned = await ClouislePackageService.cleanup_expired_sessions()
+
+    assert cleaned == 1
+    assert session.status == ClouisleImportSessionStatus.EXPIRED
+    assert session.saved_fields == ["status", "updated_at"]
+    assert not staged.exists()
 
 
 def test_build_package_round_trips_resource_payload():

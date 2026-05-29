@@ -1011,11 +1011,12 @@ async def _replace_agent_kbs(
         target_id = mapping.get(source_id)
         if not target_id:
             continue
+        score_threshold = kb_config.get("score_threshold")
         await AgentKnowledgeBase.create(
             agent=agent,
             knowledge_base_id=target_id,
             retrieval_top_k=kb_config.get("retrieval_top_k") or 5,
-            score_threshold=kb_config.get("score_threshold") or 0.3,
+            score_threshold=score_threshold if score_threshold is not None else 0.3,
             search_mode=kb_config.get("search_mode") or "hybrid",
         )
 
@@ -1211,7 +1212,8 @@ def _restore_kb_document_file(
         return None
     if not source.is_file():
         return None
-    target_path = document_processor.get_storage_path(kb_id, document_name)
+    safe_name = _safe_package_filename(document_name)
+    target_path = document_processor.get_storage_path(kb_id, safe_name)
     target = Path(target_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(source.read_bytes())

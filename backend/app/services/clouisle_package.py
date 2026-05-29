@@ -71,21 +71,32 @@ def _is_placeholder(value: str) -> bool:
     return "{{" in stripped and "}}" in stripped
 
 
-def _scan_for_plaintext_secrets(payload: Any, path: str = "") -> list[str]:
+def _scan_for_plaintext_secrets(
+    payload: Any, path: str = "", parent_is_sensitive: bool = False
+) -> list[str]:
     """Return dotted paths of fields that look like plaintext secrets."""
     findings: list[str] = []
     if isinstance(payload, dict):
         for key, value in payload.items():
             key_lower = str(key).lower()
             current = f"{path}.{key}" if path else str(key)
+            is_sensitive = parent_is_sensitive or any(
+                frag in key_lower for frag in _SENSITIVE_FIELD_FRAGMENTS
+            )
             if isinstance(value, str) and value.strip():
-                if any(frag in key_lower for frag in _SENSITIVE_FIELD_FRAGMENTS):
-                    if not _is_placeholder(value):
-                        findings.append(current)
-            findings.extend(_scan_for_plaintext_secrets(value, current))
+                if is_sensitive and not _is_placeholder(value):
+                    findings.append(current)
+            findings.extend(_scan_for_plaintext_secrets(value, current, is_sensitive))
     elif isinstance(payload, list):
         for index, item in enumerate(payload):
-            findings.extend(_scan_for_plaintext_secrets(item, f"{path}[{index}]"))
+            findings.extend(
+                _scan_for_plaintext_secrets(
+                    item, f"{path}[{index}]", parent_is_sensitive
+                )
+            )
+    elif isinstance(payload, str) and payload.strip():
+        if parent_is_sensitive and not _is_placeholder(payload):
+            findings.append(path)
     return findings
 
 
@@ -248,16 +259,16 @@ class ClouislePackageService:
                 msg_key="clouisle_checksum_mismatch",
             )
 
-        for path, expected_hash in manifest.checksums.items():
-            if path == RESOURCE_FILENAME:
-                continue
-            if path not in names:
-                raise BusinessError(
-                    code=ResponseCode.BAD_REQUEST,
-                    msg_key="clouisle_checksum_mismatch",
-                )
-            with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                if expected_hash != _sha256(zf.read(path)):
+        with zipfile.ZipFile(io.BytesIO(content)) as checksum_zf:
+            for path, expected_hash in manifest.checksums.items():
+                if path == RESOURCE_FILENAME:
+                    continue
+                if path not in names:
+                    raise BusinessError(
+                        code=ResponseCode.BAD_REQUEST,
+                        msg_key="clouisle_checksum_mismatch",
+                    )
+                if expected_hash != _sha256(checksum_zf.read(path)):
                     raise BusinessError(
                         code=ResponseCode.BAD_REQUEST,
                         msg_key="clouisle_checksum_mismatch",
@@ -574,6 +585,20 @@ class ClouislePackageService:
         await session.save(update_fields=["status", "updated_at"])
         ClouislePackageService._cleanup_staged_package(session.temp_storage_path)
         return result
+
+    @staticmethod
+    async def cleanup_expired_sessions() -> int:
+        expired_sessions = await ClouisleImportSession.filter(
+            status=ClouisleImportSessionStatus.PREVIEWED,
+            expires_at__lt=now_utc(),
+        )
+        cleaned = 0
+        for session in expired_sessions:
+            ClouislePackageService._cleanup_staged_package(session.temp_storage_path)
+            session.status = ClouisleImportSessionStatus.EXPIRED
+            await session.save(update_fields=["status", "updated_at"])
+            cleaned += 1
+        return cleaned
 
     @staticmethod
     def _cleanup_staged_package(temp_storage_path: str | None) -> None:

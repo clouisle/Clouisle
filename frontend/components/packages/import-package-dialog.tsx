@@ -132,7 +132,10 @@ export function ImportPackageDialog({
     setSelectedTeamId(teamId || teams[0]?.id || '')
   }, [teamId, teams])
 
-  const translateMessage = (message: string) => t(`messages.${message}`, { fallback: message })
+  const translateMessage = (message: string) => {
+    const key = `messages.${message}`
+    return t.has(key) ? t(key) : message
+  }
 
   const previewFile = async (selectedFile: File) => {
     if (!selectedFile.name.toLowerCase().endsWith('.clouisle')) {
