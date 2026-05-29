@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, modelsApi, teamsApi, type KnowledgeBase, type KnowledgeBaseCreateInput, type ModelBrief, type UserTeamInfo } from '@/lib/api'
+import { adminKnowledgeBasesApi, modelsApi, type KnowledgeBase, type KnowledgeBaseCreateInput, type ModelBrief } from '@/lib/api'
+import { teamsApi as adminTeamsApi, type Team } from '@/lib/api/admin'
 import { clearValidationError, getValidationSummaryEntries, mapValidationErrors, normalizeValidationErrors,
   formatValidationSummaryMessage
 } from '@/lib/validation'
@@ -80,7 +81,7 @@ export function KnowledgeBaseDialog({
   // 模型列表和团队列表
   const [embeddingModels, setEmbeddingModels] = React.useState<ModelBrief[]>([])
   const [rerankModels, setRerankModels] = React.useState<ModelBrief[]>([])
-  const [teams, setTeams] = React.useState<UserTeamInfo[]>([])
+  const [teams, setTeams] = React.useState<Team[]>([])
   
   // 获取当前选中模型的名称
   const selectedModelName = React.useMemo(() => {
@@ -109,20 +110,16 @@ export function KnowledgeBaseDialog({
   React.useEffect(() => {
     const loadData = async () => {
       try {
-        const [models, availableRerankModels, userTeams] = await Promise.all([
+        const [models, availableRerankModels, adminTeams] = await Promise.all([
           modelsApi.getAvailableModels('embedding'),
           modelsApi.getAvailableModels('rerank'),
-          teamsApi.getMyTeams(),
+          adminTeamsApi.getTeams(1, 100),
         ])
         setEmbeddingModels(models)
         setRerankModels(availableRerankModels)
-        setTeams(userTeams)
-        // 如果没有选择团队，默认选择第一个可写团队
-        if (!isEditing && userTeams.length > 0) {
-          const writableTeam = userTeams.find(t => ['owner', 'admin', 'member'].includes(t.role))
-          if (writableTeam) {
-            setTeamId(writableTeam.id)
-          }
+        setTeams(adminTeams.items)
+        if (!isEditing && adminTeams.items.length > 0) {
+          setTeamId(adminTeams.items[0].id)
         }
       } catch {
         // 忽略错误
@@ -208,13 +205,13 @@ export function KnowledgeBaseDialog({
       }
       
       if (isEditing) {
-        await knowledgeBasesApi.updateKnowledgeBase(knowledgeBase!.id, {
+        await adminKnowledgeBasesApi.updateKnowledgeBase(knowledgeBase!.id, {
           ...data,
           status: isActive ? 'active' : 'archived',
         })
         toast.success(t('kbUpdated'))
       } else {
-        await knowledgeBasesApi.createKnowledgeBase({ ...data, team_id: teamId! })
+        await adminKnowledgeBasesApi.createKnowledgeBase({ ...data, team_id: teamId! })
         toast.success(t('kbCreated'))
       }
       
@@ -307,14 +304,12 @@ export function KnowledgeBaseDialog({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent side="bottom" alignItemWithTrigger={false}>
-                    {teams.filter(team => ['owner', 'admin', 'member'].includes(team.role)).length > 0 ? (
-                      teams
-                        .filter(team => ['owner', 'admin', 'member'].includes(team.role))
-                        .map((team) => (
-                          <SelectItem key={team.id} value={team.id}>
-                            {team.name}
-                          </SelectItem>
-                        ))
+                    {teams.length > 0 ? (
+                      teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))
                     ) : (
                       <SelectEmpty>{t('noTeams')}</SelectEmpty>
                     )}

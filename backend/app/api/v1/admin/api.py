@@ -16,7 +16,10 @@ from app.api.v1.admin.endpoints import (
     skills,
     tools,
     totp,
+    packages,
 )
+
+from app.api.v1.endpoints import knowledge_bases as platform_knowledge_bases
 
 admin_router = APIRouter()
 
@@ -49,3 +52,11 @@ admin_router.include_router(
 admin_router.include_router(tools.router, prefix="/tools", tags=["admin-tools"])
 admin_router.include_router(skills.router, prefix="/skills", tags=["admin-skills"])
 admin_router.include_router(totp.router, prefix="/totp", tags=["admin-totp"])
+admin_router.include_router(
+    packages.router, prefix="/packages", tags=["admin-packages"]
+)
+admin_router.include_router(
+    platform_knowledge_bases.router,
+    prefix="/knowledge-bases",
+    tags=["admin-knowledge-bases"],
+)

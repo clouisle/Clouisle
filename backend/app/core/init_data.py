@@ -1977,6 +1977,65 @@ async def init_kb_rerank_fields():
     logger.info("Knowledge base rerank fields migration complete")
 
 
+async def init_clouisle_import_sessions_table():
+    """Create short-lived Clouisle package import sessions table."""
+    logger.info("Initializing Clouisle import sessions table...")
+
+    conn = Tortoise.get_connection("default")
+
+    _, rows = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'clouisle_import_sessions'
+    """)
+
+    if rows:
+        await conn.execute_query("""
+            ALTER TABLE clouisle_import_sessions
+            ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'platform'
+        """)
+        await conn.execute_query("""
+            CREATE INDEX IF NOT EXISTS idx_clouisle_import_sessions_source_status
+            ON clouisle_import_sessions(source, status)
+        """)
+        logger.info("Clouisle import sessions table already exists, ensured columns")
+        return
+
+    await conn.execute_query("""
+        CREATE TABLE IF NOT EXISTS clouisle_import_sessions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+            resource_type VARCHAR(50) NOT NULL,
+            resource_name VARCHAR(255) NOT NULL,
+            package_id UUID NOT NULL,
+            source VARCHAR(20) NOT NULL DEFAULT 'platform',
+            status VARCHAR(20) NOT NULL DEFAULT 'previewed',
+            manifest JSONB NOT NULL DEFAULT '{}',
+            resource_payload JSONB NOT NULL DEFAULT '{}',
+            preview JSONB NOT NULL DEFAULT '{}',
+            temp_storage_path VARCHAR(1000),
+            package_checksum VARCHAR(128),
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_clouisle_import_sessions_team_status
+        ON clouisle_import_sessions(team_id, status)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_clouisle_import_sessions_source_status
+        ON clouisle_import_sessions(source, status)
+    """)
+    await conn.execute_query("""
+        CREATE INDEX IF NOT EXISTS idx_clouisle_import_sessions_expires_at
+        ON clouisle_import_sessions(expires_at)
+    """)
+
+    logger.info("Clouisle import sessions table initialization complete")
+
+
 async def init_db():
     """
     Initialize database with default permissions and roles.
@@ -2012,6 +2071,13 @@ async def init_db():
         await init_kb_rerank_fields()
     except Exception as e:
         logger.warning(f"KB rerank migration failed (may be first run): {e}")
+
+    try:
+        await init_clouisle_import_sessions_table()
+    except Exception as e:
+        logger.warning(
+            f"Clouisle import sessions migration failed (may be first run): {e}"
+        )
 
     # 1. Initialize Permissions
     logger.info("Initializing permissions from SystemPermissions...")
@@ -2066,6 +2132,10 @@ async def init_db():
         "admin:capability:update",
         "admin:capability:delete",
         "admin:capability:execute",
+        "admin:knowledge-base:read",
+        "admin:knowledge-base:create",
+        "admin:knowledge-base:update",
+        "admin:knowledge-base:delete",
         "admin:settings:read",
         "admin:sso:read",
         "audit:read",
@@ -2093,6 +2163,7 @@ async def init_db():
         "workflow:delete",
         "workflow:publish",
         "workflow:run",
+        "workflow:execute",
         "kb:read",
         "kb:create",
         "kb:update",
@@ -2133,17 +2204,26 @@ async def init_db():
         "agent:read",
         "agent:create",
         "agent:update",
+        "agent:delete",
         "agent:chat",
         "workflow:read",
         "workflow:create",
         "workflow:update",
+        "workflow:delete",
         "workflow:run",
         "kb:read",
         "kb:create",
         "kb:update",
+        "kb:delete",
         "tool:read",
+        "tool:create",
+        "tool:update",
+        "tool:delete",
         "tool:execute",
         "skill:read",
+        "skill:create",
+        "skill:update",
+        "skill:delete",
         "skill:execute",
         "apikey:read",
         "apikey:create",

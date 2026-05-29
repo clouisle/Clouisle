@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen } from 'lucide-react'
+import { Wrench, Plus, RefreshCw, Loader2, Globe, Code, Plug, ChevronDown, PackageOpen, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
@@ -27,6 +27,8 @@ import {
 import {
   toolsApi,
   teamsApi,
+  packagesApi,
+  downloadBlob,
   Tool,
   ToolDetail,
   ToolCreateInput,
@@ -40,6 +42,7 @@ import { ToolConfigDialog } from './_components/tool-config-dialog'
 import { HttpToolDialog } from './_components/http-tool-dialog'
 import { McpToolDialog } from './_components/mcp-tool-dialog'
 import { ToolShareDialog } from './_components/tool-share-dialog'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type CapabilityTab = 'tools' | 'skills'
@@ -47,6 +50,7 @@ type CapabilityTab = 'tools' | 'skills'
 export default function CapabilitiesPage() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
+  const packagesT = useTranslations('packages')
   const { currentTeam } = useTeam()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -62,6 +66,7 @@ export default function CapabilitiesPage() {
   const [loading, setLoading] = useState(true)
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
   const [testPanelOpen, setTestPanelOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   // Config dialog (for builtin tools)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
@@ -327,6 +332,12 @@ export default function CapabilitiesPage() {
     loadTools() // 重新加载工具列表以更新共享计数
   }
 
+  const handleExportTool = async (tool: Tool) => {
+    if (!tool.id) return
+    const { blob, filename } = await packagesApi.export('tool', tool.id)
+    downloadBlob(blob, filename)
+  }
+
   return (
     <div className="py-6 px-8 h-full overflow-y-auto">
       <div className="mb-6">
@@ -362,6 +373,13 @@ export default function CapabilitiesPage() {
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 {t('tools.refresh')}
               </Button>
+
+              <PermissionGuard permission="tool:create">
+                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  {packagesT('import')}
+                </Button>
+              </PermissionGuard>
 
               <PermissionGuard permission="tool:create">
                 <DropdownMenu>
@@ -457,6 +475,7 @@ export default function CapabilitiesPage() {
               onDelete={canPerform('tool:delete') ? handleDeleteClick : undefined}
               onConfigure={canPerform('tool:update') ? handleConfigureTool : undefined}
               onShare={canPerform('tool:update') ? handleShareTool : undefined}
+              onExport={canPerform('tool:read') ? handleExportTool : undefined}
             />
           )}
         </TabsContent>
@@ -468,6 +487,14 @@ export default function CapabilitiesPage() {
           </TabsContent>
         )}
       </Tabs>
+
+      <ImportPackageDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        teamId={currentTeam?.id || ''}
+        expectedResourceType="tool"
+        onImported={() => loadTools()}
+      />
 
       {/* 工具测试面板 */}
       <ToolTestPanel

@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
         init_model_type_unique_constraint,
         init_kb_rerank_fields,
         init_skills_table,
+        init_clouisle_import_sessions_table,
     )
 
     try:
@@ -206,6 +207,11 @@ async def lifespan(app: FastAPI):
         await init_skills_table()
     except Exception as e:
         logger.warning(f"Skills table migration failed: {e}")
+
+    try:
+        await init_clouisle_import_sessions_table()
+    except Exception as e:
+        logger.warning(f"Clouisle import sessions table migration failed: {e}")
 
     # Generate schemas
     await Tortoise.generate_schemas()

@@ -19,7 +19,7 @@ import {
   Cpu,
   ArrowUpDown,
 } from 'lucide-react'
-import { knowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '@/lib/api'
+import { adminKnowledgeBasesApi, type KnowledgeBase, type KnowledgeBaseStats } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -57,8 +57,8 @@ export function KnowledgeBaseDetailClient({ knowledgeBaseId }: KnowledgeBaseDeta
     }
     try {
       const [kbData, statsData] = await Promise.all([
-        knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId),
-        knowledgeBasesApi.getStats(knowledgeBaseId),
+        adminKnowledgeBasesApi.getKnowledgeBase(knowledgeBaseId),
+        adminKnowledgeBasesApi.getStats(knowledgeBaseId),
       ])
       setKnowledgeBase(kbData)
       setStats(statsData)

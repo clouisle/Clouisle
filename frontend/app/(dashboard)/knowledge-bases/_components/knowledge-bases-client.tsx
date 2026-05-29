@@ -18,9 +18,12 @@ import {
   FileText,
   Power,
   PowerOff,
+  Upload,
+  Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, type KnowledgeBase, type PageData } from '@/lib/api'
+import { adminPackagesApi, downloadBlob, adminKnowledgeBasesApi, type KnowledgeBase, type PageData } from '@/lib/api'
+import { teamsApi as adminTeamsApi, type Team } from '@/lib/api/admin'
 import { formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -67,16 +70,19 @@ import {
 import { KnowledgeBaseDialog } from './knowledge-base-dialog'
 import { DeleteKnowledgeBaseDialog } from './delete-knowledge-base-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 export function KnowledgeBasesClient() {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
+  const packagesT = useTranslations('packages')
   const router = useRouter()
   const { canPerform } = useCanPerform()
   
   // 数据状态
   const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBase[]>([])
+  const [teams, setTeams] = React.useState<Team[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
@@ -91,9 +97,22 @@ export function KnowledgeBasesClient() {
   
   // Dialog 状态
   const [kbDialogOpen, setKbDialogOpen] = React.useState(false)
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
   const [selectedKb, setSelectedKb] = React.useState<KnowledgeBase | null>(null)
+  
+  React.useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const data = await adminTeamsApi.getTeams(1, 100)
+        setTeams(data.items)
+      } catch {
+        // 错误已由 API 客户端处理
+      }
+    }
+    loadTeams()
+  }, [])
   
   // 加载知识库列表
   const loadKnowledgeBases = React.useCallback(async () => {
@@ -114,7 +133,7 @@ export function KnowledgeBasesClient() {
         params.status = Array.from(statusFilter)
       }
       
-      const data = await knowledgeBasesApi.getKnowledgeBases(params)
+      const data = await adminKnowledgeBasesApi.getKnowledgeBases(params)
       setKnowledgeBases(data.items)
       setPageData(data)
     } catch {
@@ -201,7 +220,7 @@ export function KnowledgeBasesClient() {
   const handleToggleStatus = async (kb: KnowledgeBase) => {
     try {
       const newStatus = kb.status === 'active' ? 'archived' : 'active'
-      await knowledgeBasesApi.updateKnowledgeBase(kb.id, { status: newStatus })
+      await adminKnowledgeBasesApi.updateKnowledgeBase(kb.id, { status: newStatus })
       toast.success(kb.status === 'active' ? t('kbDeactivated') : t('kbActivated'))
       loadKnowledgeBases()
     } catch {
@@ -215,6 +234,18 @@ export function KnowledgeBasesClient() {
     setSelectedKbs(new Set())
   }
   
+  const handleExport = async (kb: KnowledgeBase) => {
+    const { blob, filename } = await adminPackagesApi.export('knowledge_base', kb.id)
+    downloadBlob(blob, filename)
+  }
+
+  const handleBulkExport = async () => {
+    for (const id of Array.from(selectedKbs)) {
+      const { blob, filename } = await adminPackagesApi.export('knowledge_base', id)
+      downloadBlob(blob, filename)
+    }
+  }
+  
   // 批量删除
   const handleBulkDelete = () => {
     setBulkDeleteDialogOpen(true)
@@ -223,7 +254,7 @@ export function KnowledgeBasesClient() {
   // 确认批量删除
   const confirmBulkDelete = async () => {
     try {
-      const promises = Array.from(selectedKbs).map(id => knowledgeBasesApi.deleteKnowledgeBase(id))
+      const promises = Array.from(selectedKbs).map(id => adminKnowledgeBasesApi.deleteKnowledgeBase(id))
       await Promise.all(promises)
       toast.success(t('bulkDeleted', { count: selectedKbs.size }))
       setSelectedKbs(new Set())
@@ -252,7 +283,13 @@ export function KnowledgeBasesClient() {
           <p className="text-muted-foreground">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <PermissionGuard permission="kb:create">
+          <PermissionGuard permission="admin:knowledge-base:create">
+            <Button variant="outline" onClick={() => setImportDialogOpen(true)} disabled={teams.length === 0}>
+              <Upload className="mr-2 h-4 w-4" />
+              {packagesT('import')}
+            </Button>
+          </PermissionGuard>
+          <PermissionGuard permission="admin:knowledge-base:create">
             <Button onClick={handleCreate}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createKb')}
@@ -372,21 +409,28 @@ export function KnowledgeBasesClient() {
                     {formatDateTime(kb.created_at)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    {(canPerform('kb:update') || canPerform('kb:delete')) && (
+                    {(canPerform('admin:knowledge-base:read') || canPerform('admin:knowledge-base:update') || canPerform('admin:knowledge-base:delete')) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">{t('common.openMenu')}</span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {canPerform('kb:update') && (
+                          {canPerform('admin:knowledge-base:update') && (
                             <DropdownMenuItem onClick={() => handleEdit(kb)}>
                               <Pencil className="mr-2 h-4 w-4" />
                               {commonT('edit')}
                             </DropdownMenuItem>
                           )}
 
-                          {canPerform('kb:update') && (
+                          {canPerform('admin:knowledge-base:read') && (
+                            <DropdownMenuItem onClick={() => handleExport(kb)}>
+                              <Download className="mr-2 h-4 w-4" />
+                              {packagesT('export')}
+                            </DropdownMenuItem>
+                          )}
+
+                          {canPerform('admin:knowledge-base:update') && (
                             <DropdownMenuItem onClick={() => handleToggleStatus(kb)}>
                               {kb.status === 'active' ? (
                                 <>
@@ -402,7 +446,7 @@ export function KnowledgeBasesClient() {
                             </DropdownMenuItem>
                           )}
 
-                          {canPerform('kb:delete') && (
+                          {canPerform('admin:knowledge-base:delete') && (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -498,6 +542,15 @@ export function KnowledgeBasesClient() {
         onSuccess={handleDialogSuccess}
       />
       
+      <ImportPackageDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        teams={teams}
+        expectedResourceType="knowledge_base"
+        api={adminPackagesApi}
+        onImported={() => loadKnowledgeBases()}
+      />
+      
       {/* 删除确认 Dialog */}
       <DeleteKnowledgeBaseDialog
         open={deleteDialogOpen}
@@ -507,7 +560,7 @@ export function KnowledgeBasesClient() {
       />
       
       {/* 批量操作浮动工具栏 */}
-      {selectedKbs.size > 0 && canPerform('kb:delete') && (
+      {selectedKbs.size > 0 && (canPerform('admin:knowledge-base:read') || canPerform('kb:delete')) && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
           <div className="flex items-center gap-1 rounded-lg border bg-background px-2 py-1.5 shadow-lg">
             <Button
@@ -523,21 +576,41 @@ export function KnowledgeBasesClient() {
               {selectedKbs.size} {t('kbsSelected')}
             </Badge>
 
-            <Tooltip>
-              <TooltipTrigger
-                onClick={handleBulkDelete}
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                }
-              />
-              <TooltipContent>{commonT('delete')}</TooltipContent>
-            </Tooltip>
+            {canPerform('admin:knowledge-base:read') && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkExport}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{packagesT('export')}</TooltipContent>
+              </Tooltip>
+            )}
+
+            {canPerform('admin:knowledge-base:delete') && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkDelete}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent>{commonT('delete')}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
       )}

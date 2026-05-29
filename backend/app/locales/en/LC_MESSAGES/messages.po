@@ -168,6 +168,57 @@ msgstr "Git repository URL is invalid"
 msgid "skill_import_installed"
 msgstr "Skills imported successfully"
 
+msgid "clouisle_checksum_mismatch"
+msgstr "Package checksum verification failed"
+
+msgid "clouisle_dependency_forbidden"
+msgstr "A required package dependency is not accessible"
+
+msgid "clouisle_dependency_missing"
+msgstr "A required package dependency is missing"
+
+msgid "clouisle_import_installed"
+msgstr "Package imported successfully"
+
+msgid "clouisle_import_session_expired"
+msgstr "Package import session has expired"
+
+msgid "clouisle_import_session_not_found"
+msgstr "Package import session not found"
+
+msgid "clouisle_invalid_extension"
+msgstr "Only .clouisle files are supported"
+
+msgid "clouisle_invalid_resource_type"
+msgstr "Package resource type is invalid"
+
+msgid "clouisle_invalid_zip"
+msgstr "Package ZIP file is invalid"
+
+msgid "clouisle_kb_documents_not_updated"
+msgstr "Knowledge base documents were not updated"
+
+msgid "clouisle_missing_manifest"
+msgstr "Package manifest.json is missing or invalid"
+
+msgid "clouisle_missing_resource"
+msgstr "Package resource payload is missing or invalid"
+
+msgid "clouisle_name_conflict"
+msgstr "A resource with this name already exists"
+
+msgid "clouisle_plaintext_secret_detected"
+msgstr "Package contains a plaintext secret and was rejected"
+
+msgid "clouisle_unsupported_format_version"
+msgstr "Package format version is not supported"
+
+msgid "clouisle_zip_path_invalid"
+msgstr "Package contains an unsafe file path"
+
+msgid "clouisle_zip_too_large"
+msgstr "Package file is too large"
+
 msgid "skill_import_session_expired"
 msgstr "Skill import session has expired"
 

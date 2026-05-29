@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Upload, FileText, X, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { knowledgeBasesApi, type Document } from '@/lib/api'
+import { adminKnowledgeBasesApi, type Document } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -147,7 +147,7 @@ export function UploadDocumentDialog({
     
     for (let i = 0; i < files.length; i++) {
       try {
-        const doc = await knowledgeBasesApi.uploadDocument(knowledgeBaseId, files[i])
+        const doc = await adminKnowledgeBasesApi.uploadDocument(knowledgeBaseId, files[i])
         uploadedDocs.push(doc)
       } catch {
         failCount++

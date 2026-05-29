@@ -1,0 +1,60 @@
+{
+  "packages": {
+    "import": "Import",
+    "export": "Export",
+    "dialogTitle": "Import resource",
+    "dialogTitleWithResource": "Import {resource}",
+    "dialogDescription": "Upload a Clouisle package, review dependencies and conflicts, then install it.",
+    "preview": "Preview",
+    "previewing": "Previewing...",
+    "chooseFile": "Choose file",
+    "noFileSelected": "No file selected",
+    "install": "Install",
+    "valid": "Valid",
+    "invalid": "Invalid",
+    "format": "Format",
+    "exported": "Exported",
+    "dependencies": "Dependencies",
+    "dependencyLabel": "{type}: {name}",
+    "dependencyType": {
+      "agent": "Agent",
+      "knowledge_base": "Knowledge Base",
+      "model": "Model",
+      "tool": "Tool",
+      "workflow": "Workflow"
+    },
+    "dependencyStatus": {
+      "resolved": "Resolved",
+      "missing": "Missing",
+      "forbidden": "Forbidden",
+      "unsupported": "Unsupported"
+    },
+    "unknown": "Unknown",
+    "nameConflict": "Name conflict: {name}",
+    "selectClouisleFile": "Please select a .clouisle file",
+    "typeMismatch": "This package is {actual}, not {expected}",
+    "importSkipped": "Import skipped",
+    "packageImported": "Package imported",
+    "targetTeam": "Target team",
+    "selectTargetTeam": "Select a target team",
+    "messages": {
+      "clouisle_checksum_mismatch": "Package checksum verification failed",
+      "clouisle_dependency_forbidden": "A required package dependency is not accessible",
+      "clouisle_dependency_missing": "A required package dependency is missing",
+      "clouisle_kb_documents_not_updated": "Knowledge base documents were not updated",
+      "clouisle_name_conflict": "A resource with this name already exists"
+    },
+    "conflictAction": {
+      "install": "Install",
+      "rename": "Import as renamed",
+      "update": "Overwrite existing",
+      "skip": "Skip import"
+    },
+    "resource": {
+      "tool": "Tool",
+      "agent": "Agent",
+      "workflow": "Workflow",
+      "knowledge_base": "Knowledge Base"
+    }
+  }
+}

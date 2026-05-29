@@ -31,6 +31,8 @@ import {
     FolderOpen,
     Link,
     ChartColumn,
+    Upload,
+    Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -93,6 +95,8 @@ import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
 import { ToolConfigDialog } from '@/app/(platform)/app/capabilities/_components/tool-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
+import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 // 工具类型图标映射
@@ -119,6 +123,7 @@ const categoryIcons: Record<PresetToolCategory, React.ReactNode> = {
 
 export function ToolsClient() {
     const t = useTranslations('tools')
+    const packageT = useTranslations('packages')
     const commonT = useTranslations('common')
     const router = useRouter()
     const { canPerform } = useCanPerform()
@@ -158,6 +163,7 @@ export function ToolsClient() {
     const [sharingTool, setSharingTool] = React.useState<Tool | null>(null)
     const [configDialogOpen, setConfigDialogOpen] = React.useState(false)
     const [configuringTool, setConfiguringTool] = React.useState<Tool | null>(null)
+    const [importDialogOpen, setImportDialogOpen] = React.useState(false)
 
     // 加载团队列表
     React.useEffect(() => {
@@ -470,6 +476,16 @@ export function ToolsClient() {
         }
     }
 
+    const handleExport = async (tool: Tool) => {
+        if (!tool.id) return
+        try {
+            const { blob, filename } = await adminPackagesApi.export('tool', tool.id)
+            downloadBlob(blob, filename)
+        } catch {
+            // 错误已由 API 客户端处理
+        }
+    }
+
     // 共享工具
     const handleShare = (tool: Tool) => {
         if (!tool.id) return
@@ -552,6 +568,12 @@ export function ToolsClient() {
                     <p className="text-muted-foreground">{t('description')}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {canPerform('admin:capability:create') && currentTeamId && (
+                        <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            {packageT('import')}
+                        </Button>
+                    )}
                     <PermissionGuard permission="admin:capability:create">
                         <DropdownMenu>
                             <DropdownMenuTrigger
@@ -747,7 +769,7 @@ export function ToolsClient() {
                                         </TableCell>
                                         <TableCell>{getEnabledBadge(tool.is_enabled)}</TableCell>
                                         <TableCell>
-                                            {((tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
+                                            {((tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:read') || canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
                                                 (tool.type === 'builtin' && tool.requires_config && canPerform('admin:capability:update'))) && (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
@@ -768,6 +790,13 @@ export function ToolsClient() {
                                                                                 <Copy className="mr-2 h-4 w-4" />
                                                                                 {t('duplicate')}
                                                                             </DropdownMenuItem>
+
+                                                                            {canPerform('admin:capability:read') && (
+                                                                                <DropdownMenuItem onClick={() => handleExport(tool)}>
+                                                                                    <Download className="mr-2 h-4 w-4" />
+                                                                                    {packageT('export')}
+                                                                                </DropdownMenuItem>
+                                                                            )}
 
                                                                             <DropdownMenuItem onClick={() => handleShare(tool)}>
                                                                                 <Share2 className="mr-2 h-4 w-4" />
@@ -914,6 +943,16 @@ export function ToolsClient() {
                 open={configDialogOpen}
                 onOpenChange={setConfigDialogOpen}
                 onSave={handleSaveConfig}
+            />
+
+            <ImportPackageDialog
+                open={importDialogOpen}
+                onOpenChange={setImportDialogOpen}
+                teamId={currentTeamId}
+                teams={teams}
+                expectedResourceType="tool"
+                onImported={handleDialogSuccess}
+                api={adminPackagesApi}
             />
 
             {/* 工具共享对话框 */}

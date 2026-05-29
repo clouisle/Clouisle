@@ -16,7 +16,7 @@ import {
   FileSearch,
   Sparkles,
 } from 'lucide-react'
-import { knowledgeBasesApi, type KnowledgeBase, type SearchResult, type SearchMode } from '@/lib/api'
+import { adminKnowledgeBasesApi, type KnowledgeBase, type SearchResult, type SearchMode } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -69,7 +69,7 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
   React.useEffect(() => {
     const loadKnowledgeBase = async () => {
       try {
-        const kb = await knowledgeBasesApi.getKnowledgeBase(knowledgeBaseId)
+        const kb = await adminKnowledgeBasesApi.getKnowledgeBase(knowledgeBaseId)
         setKnowledgeBase(kb)
         setRerankEnabled(kb.settings?.rerank_enabled ?? true)
         setRerankCandidateK(kb.settings?.rerank_candidate_k ?? 10)
@@ -96,7 +96,7 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
     setHasSearched(true)
     setExpandedResults(new Set()) // 重置展开状态
     try {
-      const response = await knowledgeBasesApi.search(knowledgeBaseId, {
+      const response = await adminKnowledgeBasesApi.search(knowledgeBaseId, {
         query: query.trim(),
         search_mode: searchMode,
         top_k: topK,

@@ -21,6 +21,7 @@ import {
   Play,
   Settings,
   Share2,
+  Download,
   Users,
   Clock3,
   Calculator,
@@ -41,6 +42,7 @@ interface ToolCardProps {
   onDelete?: (tool: Tool) => void
   onConfigure?: (tool: Tool) => void
   onShare?: (tool: Tool) => void
+  onExport?: (tool: Tool) => void
 }
 
 // 分类图标和颜色映射
@@ -103,9 +105,11 @@ export function ToolCard({
   onDelete,
   onConfigure,
   onShare,
+  onExport,
 }: ToolCardProps) {
   const t = useTranslations('platform.tools')
   const tCommon = useTranslations('common')
+  const packagesT = useTranslations('packages')
   const category = isPresetToolCategory(tool.category) ? categoryConfig[tool.category] : categoryConfig.other
   const categoryLabel = isPresetToolCategory(tool.category) ? t(`categories.${tool.category}`) : tool.category
   const typeColor = typeColorConfig[tool.type]
@@ -275,6 +279,15 @@ export function ToolCard({
                       >
                         <Share2 className="h-4 w-4 mr-2" />
                         {t('share.title')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onExport?.(tool)
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        {packagesT('export')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"
