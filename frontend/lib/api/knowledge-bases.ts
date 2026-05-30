@@ -374,6 +374,13 @@ function createKnowledgeBasesApi(prefix: '/knowledge-bases' | '/admin/knowledge-
   },
 
   /**
+   * 重试单个失败分块
+   */
+  retryFailedChunk: async (kbId: string, docId: string, chunkId: string): Promise<Document> => {
+    return api.post<Document>(`${prefix}/${kbId}/documents/${docId}/chunks/${chunkId}/retry-embedding`)
+  },
+
+  /**
    * 获取文档分块
    */
   getDocumentChunks: async (

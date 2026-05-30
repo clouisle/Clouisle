@@ -553,6 +553,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "chat_success": {"en": "Chat completed successfully", "zh": "对话完成"},
     "chunk_created": {"en": "Chunk created successfully", "zh": "分块创建成功"},
     "chunk_deleted": {"en": "Chunk deleted successfully", "zh": "分块删除成功"},
+    "chunk_not_failed": {
+        "en": "Only failed chunks can be retried",
+        "zh": "只能重试失败的分块",
+    },
     "chunk_not_found": {"en": "Chunk not found", "zh": "分块未找到"},
     "chunk_preview_failed": {
         "en": "Failed to generate chunk preview",
@@ -1734,6 +1738,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "reset_password_email_sent": {
         "en": "If the email exists, a password reset link has been sent",
         "zh": "如果邮箱存在，密码重置链接已发送",
+    },
+    "retry_failed_chunk_started": {
+        "en": "Retry failed chunk started",
+        "zh": "重试失败分块已开始",
     },
     "retry_failed_chunks_started": {
         "en": "Retry failed chunks started",

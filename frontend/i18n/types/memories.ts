@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T17:26:33.339Z
+// GENERATED — 2026-05-29T20:09:51.582Z
 // Source: i18n/en/memories.json
 export type MemoriesMessages = {
   memories: {

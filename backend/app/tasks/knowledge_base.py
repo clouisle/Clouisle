@@ -1217,3 +1217,193 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
         asyncio.set_event_loop(loop)
 
     return loop.run_until_complete(_retry())
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
+    """
+    Celery task to retry embedding for one failed chunk.
+
+    Args:
+        document_id: UUID string of document with a failed chunk
+        chunk_id: UUID string of failed chunk to retry
+
+    Returns:
+        Result dict with status and stats
+    """
+    import asyncio
+
+    async def _retry():
+        from app.models.knowledge_base import DocumentChunk
+
+        doc_uuid = UUID(document_id)
+        chunk_uuid = UUID(chunk_id)
+
+        document = (
+            await Document.filter(id=doc_uuid)
+            .prefetch_related("knowledge_base", "uploaded_by")
+            .first()
+        )
+
+        if not document:
+            logger.error(f"Document {document_id} not found")
+            default_lang = await get_default_language()
+            return {
+                "status": "error",
+                "message": t("document_not_found", lang=default_lang),
+            }
+
+        kb = document.knowledge_base
+        user_locale = (
+            getattr(document.uploaded_by, "locale", "en")
+            if document.uploaded_by
+            else "en"
+        )
+
+        chunk = await DocumentChunk.filter(id=chunk_uuid, document_id=doc_uuid).first()
+        if not chunk:
+            logger.error(f"Chunk {chunk_id} not found for document {document_id}")
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": t("chunk_not_found", lang=user_locale),
+            }
+
+        if chunk.status != "failed":
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "chunk_id": chunk_id,
+                "message": t("chunk_not_failed", lang=user_locale),
+            }
+
+        try:
+            document.status = DocumentStatus.PROCESSING.value
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
+            await document.save()
+
+            chunk.status = "pending"
+            await chunk.save(update_fields=["status"])
+
+            embedding_model_id = (
+                str(kb.embedding_model_id) if kb.embedding_model_id else None
+            )
+            team_id = str(kb.team_id) if kb.team_id else None
+            vector_store = VectorStore(
+                embedding_model_id=embedding_model_id,
+                team_id=team_id,
+            )
+
+            await vector_store.add_chunk_vector(kb.id, chunk)
+            chunk.status = "embedded"
+            chunk.error_message = None
+            await chunk.save(update_fields=["status", "error_message"])
+
+            total_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
+            remaining_failed = await DocumentChunk.filter(
+                document_id=doc_uuid, status="failed"
+            ).count()
+
+            if remaining_failed > 0:
+                remaining_chunk = (
+                    await DocumentChunk.filter(document_id=doc_uuid, status="failed")
+                    .order_by("chunk_index")
+                    .first()
+                )
+                remaining_error = (
+                    remaining_chunk.error_message
+                    if remaining_chunk and remaining_chunk.error_message
+                    else t("unknown_error_generic", lang=user_locale)
+                )
+                document.status = DocumentStatus.ERROR.value
+                document.error_message = t(
+                    "chunks_still_failed_after_retry",
+                    lang=user_locale,
+                    failed_count=remaining_failed,
+                    total_chunks=total_chunks,
+                    error=remaining_error,
+                )[:500]
+                await document.save()
+                return {
+                    "status": "partial_success",
+                    "document_id": document_id,
+                    "chunk_id": chunk_id,
+                    "remaining_failed": remaining_failed,
+                }
+
+            document.status = DocumentStatus.COMPLETED.value
+            document.error_message = None
+            document.processed_at = datetime.now(timezone.utc)
+            await document.save()
+
+            docs = await Document.filter(
+                knowledge_base_id=kb.id,
+                status=DocumentStatus.COMPLETED.value,
+            ).all()
+            kb.total_chunks = sum(doc.chunk_count for doc in docs)
+            kb.total_tokens = sum(doc.token_count for doc in docs)
+            await kb.save()
+
+            await _send_doc_indexed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                chunk_count=document.chunk_count,
+                token_count=document.token_count,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "success",
+                "document_id": document_id,
+                "chunk_id": chunk_id,
+                "total_chunks": total_chunks,
+            }
+
+        except Exception as e:
+            logger.exception(f"Error retrying failed chunk {chunk_id}: {e}")
+            chunk.status = "failed"
+            chunk.error_message = _get_generic_processing_error(document, user_locale)[
+                :500
+            ]
+            await chunk.save(update_fields=["status", "error_message"])
+
+            total_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
+            remaining_failed = await DocumentChunk.filter(
+                document_id=doc_uuid, status="failed"
+            ).count()
+            document.metadata = document.metadata or {}
+            document.metadata.pop("embed_progress", None)
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = t(
+                "chunks_still_failed_after_retry",
+                lang=user_locale,
+                failed_count=remaining_failed,
+                total_chunks=total_chunks,
+                error=str(e) or t("unknown_error_generic", lang=user_locale),
+            )[:500]
+            await document.save()
+
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb.team_id,
+                error=document.error_message,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "chunk_id": chunk_id,
+                "message": document.error_message,
+            }
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    return loop.run_until_complete(_retry())

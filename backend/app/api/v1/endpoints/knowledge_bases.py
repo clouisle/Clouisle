@@ -1337,6 +1337,71 @@ async def retry_failed_chunks(
     )
 
 
+@router.post(
+    "/{kb_id}/documents/{doc_id}/chunks/{chunk_id}/retry-embedding",
+    response_model=Response[DocumentSchema],
+)
+async def retry_failed_chunk(
+    kb_id: UUID,
+    doc_id: UUID,
+    chunk_id: UUID,
+    current_user: User = Depends(require_kb_update),
+) -> Any:
+    """
+    Retry embedding for one failed chunk.
+    """
+    await check_kb_access(kb_id, current_user, require_write=True)
+
+    doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
+    if not doc:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_NOT_FOUND,
+            msg_key="document_not_found",
+            status_code=404,
+        )
+
+    if doc.status == DocumentStatus.PROCESSING.value:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_PROCESSING,
+            msg_key="document_processing",
+        )
+
+    chunk = await DocumentChunk.filter(id=chunk_id, document_id=doc_id).first()
+    if not chunk:
+        raise BusinessError(
+            code=ResponseCode.CHUNK_NOT_FOUND,
+            msg_key="chunk_not_found",
+            status_code=404,
+        )
+
+    if chunk.status != "failed":
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="chunk_not_failed",
+        )
+
+    doc.status = DocumentStatus.PROCESSING.value
+    doc.error_message = None  # type: ignore[assignment]
+    await doc.save()
+
+    try:
+        from app.tasks.knowledge_base import retry_failed_chunk_task
+
+        task = retry_failed_chunk_task.delay(str(doc.id), str(chunk.id))
+        doc.metadata = doc.metadata or {}
+        doc.metadata["task_id"] = task.id
+        await doc.save()
+    except Exception:
+        import logging
+
+        logging.warning("Celery task not dispatched - worker may not be running")
+
+    doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
+    return success(
+        data=await serialize_document(doc), msg_key="retry_failed_chunk_started"
+    )
+
+
 # ============ Document Chunks ============
 
 

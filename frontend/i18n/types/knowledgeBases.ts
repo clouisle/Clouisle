@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T17:26:33.339Z
+// GENERATED — 2026-05-29T20:09:51.582Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -226,6 +226,9 @@ export type KnowledgeBasesMessages = {
     failedCount: string
     totalCount: string
     retryFailedChunks: string
+    retryFailedChunk: string
+    retryChunkStarted: string
+    chunkErrorMessage: string
     retryStarted: string
     chunkStatusEmbedded: string
     chunkStatusFailed: string

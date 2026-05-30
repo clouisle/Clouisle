@@ -846,6 +846,9 @@ msgstr "Chunk deleted successfully"
 msgid "chunk_not_found"
 msgstr "Chunk not found"
 
+msgid "chunk_not_failed"
+msgstr "Only failed chunks can be retried"
+
 msgid "chunk_preview_failed"
 msgstr "Failed to generate chunk preview"
 
@@ -1697,6 +1700,9 @@ msgstr "If the email exists, a password reset link has been sent"
 
 msgid "retry_failed_chunks_started"
 msgstr "Retry failed chunks started"
+
+msgid "retry_failed_chunk_started"
+msgstr "Retry failed chunk started"
 
 msgid "role_created"
 msgstr "Role created successfully"

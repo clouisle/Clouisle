@@ -2,6 +2,12 @@
 
 ## Active
 
+- **yun-80-retry-failed-chunk** — In progress. Add single failed knowledge-base chunk retry without reprocessing the whole document. See `docs/plan/yun-80-retry-failed-chunk.md`
+  - [x] 1. Backend chunk retry task and API
+  - [x] 2. Frontend API and detail-page controls
+  - [x] 3. Document-list recovery access
+  - [x] 4. Validation and regression checks
+
 - **yun-78-clouisle-packages** — In progress. Add `.clouisle` import/export for Tools, Agents, Workflows, and Knowledge Bases with manifest validation, dependency preview, conflict handling, secret-safe packages, and audit logs. See `docs/plan/yun-78-clouisle-packages.md`
   - [x] 1. Planning docs
   - [x] 2. Backend schemas, session model, and migration
