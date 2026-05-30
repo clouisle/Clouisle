@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T17:26:33.340Z
+// GENERATED — 2026-05-29T20:09:51.583Z
 // Source: i18n/en/notifications.json
 export type NotificationsMessages = {
   notifications: {

@@ -513,7 +513,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           </>
                         )}
 
-                        {doc.status === 'completed' && (
+                        {(doc.status === 'completed' || doc.status === 'error') && (
                           <DropdownMenuItem onClick={() => handleViewChunks(doc)}>
                             <Eye className="mr-2 h-4 w-4" />
                             {t('viewChunks')}

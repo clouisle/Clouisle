@@ -6,7 +6,7 @@ Provides CRUD operations for knowledge bases and documents.
 import logging
 from contextvars import ContextVar
 from typing import Any, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File, Body, Request
 from fastapi.responses import FileResponse
@@ -66,6 +66,25 @@ from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+async def _dispatch_document_task(doc: Document, task_func: Any, *args: str) -> str:
+    task_id = str(uuid4())
+    doc.metadata = doc.metadata or {}
+    doc.metadata["task_id"] = task_id
+    doc.metadata["task_name"] = task_func.name
+    doc.metadata["task_args"] = list(args)
+    await doc.save()
+    try:
+        task_func.apply_async(args=args, task_id=task_id)
+    except Exception:
+        doc.metadata.pop("task_id", None)
+        doc.metadata.pop("task_name", None)
+        doc.metadata.pop("task_args", None)
+        await doc.save(update_fields=["metadata"])
+        raise
+    return task_id
+
 
 _kb_access_mode: ContextVar[str] = ContextVar("kb_access_mode", default="platform")
 
@@ -962,10 +981,7 @@ async def process_document(
     try:
         from app.tasks.knowledge_base import process_document_task
 
-        task = process_document_task.delay(str(doc.id))
-        # Save task ID for potential cancellation
-        doc.metadata["task_id"] = task.id
-        await doc.save()
+        await _dispatch_document_task(doc, process_document_task, str(doc.id))
     except Exception:
         logger.warning("Celery task not dispatched - worker may not be running")
 
@@ -1015,7 +1031,7 @@ async def process_document_with_chunks(
         )
 
     # Cancel existing task if any (for reprocessing completed/error documents)
-    old_task_id = (doc.metadata or {}).get("embed_task_id")
+    old_task_id = (doc.metadata or {}).get("task_id")
     if old_task_id:
         try:
             from app.core.celery import celery_app
@@ -1078,19 +1094,13 @@ async def process_document_with_chunks(
 
         # Trigger async vector embedding task
         try:
-            # Import celery_app first to ensure tasks are bound to the correct app
-            from app.core.celery import celery_app  # noqa: F401
             from app.tasks.knowledge_base import embed_document_chunks_task
 
             logger.info(f"Dispatching embed_document_chunks_task for document {doc.id}")
-            logger.info(
-                f"Task app broker: {embed_document_chunks_task.app.conf.broker_url}"
+            task_id = await _dispatch_document_task(
+                doc, embed_document_chunks_task, str(doc.id)
             )
-            task = embed_document_chunks_task.delay(str(doc.id))
-            logger.info(f"Task dispatched successfully, task_id: {task.id}")
-            doc.metadata = doc.metadata or {}
-            doc.metadata["embed_task_id"] = task.id
-            await doc.save()
+            logger.info(f"Task dispatched successfully, task_id: {task_id}")
         except Exception as e:
             logger.error(f"Vector embedding task not dispatched: {e}", exc_info=True)
             # If task dispatch fails, mark as error and raise exception
@@ -1255,11 +1265,7 @@ async def reprocess_document(
     try:
         from app.tasks.knowledge_base import reprocess_document_task
 
-        task = reprocess_document_task.delay(str(doc.id))
-        # Save new task ID
-        doc.metadata = doc.metadata or {}
-        doc.metadata["task_id"] = task.id
-        await doc.save()
+        await _dispatch_document_task(doc, reprocess_document_task, str(doc.id))
     except Exception:
         import logging
 
@@ -1322,10 +1328,7 @@ async def retry_failed_chunks(
     try:
         from app.tasks.knowledge_base import retry_failed_chunks_task
 
-        task = retry_failed_chunks_task.delay(str(doc.id))
-        doc.metadata = doc.metadata or {}
-        doc.metadata["task_id"] = task.id
-        await doc.save()
+        await _dispatch_document_task(doc, retry_failed_chunks_task, str(doc.id))
     except Exception:
         import logging
 
@@ -1334,6 +1337,70 @@ async def retry_failed_chunks(
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
         data=await serialize_document(doc), msg_key="retry_failed_chunks_started"
+    )
+
+
+@router.post(
+    "/{kb_id}/documents/{doc_id}/chunks/{chunk_id}/retry-embedding",
+    response_model=Response[DocumentSchema],
+)
+async def retry_failed_chunk(
+    kb_id: UUID,
+    doc_id: UUID,
+    chunk_id: UUID,
+    current_user: User = Depends(require_kb_update),
+) -> Any:
+    """
+    Retry embedding for one failed chunk.
+    """
+    await check_kb_access(kb_id, current_user, require_write=True)
+
+    doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
+    if not doc:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_NOT_FOUND,
+            msg_key="document_not_found",
+            status_code=404,
+        )
+
+    if doc.status == DocumentStatus.PROCESSING.value:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_PROCESSING,
+            msg_key="document_processing",
+        )
+
+    chunk = await DocumentChunk.filter(id=chunk_id, document_id=doc_id).first()
+    if not chunk:
+        raise BusinessError(
+            code=ResponseCode.CHUNK_NOT_FOUND,
+            msg_key="chunk_not_found",
+            status_code=404,
+        )
+
+    if chunk.status != "failed":
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="chunk_not_failed",
+        )
+
+    doc.status = DocumentStatus.PROCESSING.value
+    doc.error_message = None  # type: ignore[assignment]
+    await doc.save()
+
+    try:
+        from app.tasks.knowledge_base import retry_failed_chunk_task
+
+        await _dispatch_document_task(
+            doc, retry_failed_chunk_task, str(doc.id), str(chunk.id)
+        )
+    except Exception:
+        import logging
+
+        logging.warning("Celery task not dispatched - worker may not be running")
+
+    doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
+    return success(
+        data=await serialize_document(doc), msg_key="retry_failed_chunk_started"
     )
 
 
@@ -1661,10 +1728,7 @@ async def rechunk_document(
     try:
         from app.tasks.knowledge_base import rechunk_document_task
 
-        task = rechunk_document_task.delay(str(doc.id))
-        # Save new task ID
-        doc.metadata["task_id"] = task.id
-        await doc.save()
+        await _dispatch_document_task(doc, rechunk_document_task, str(doc.id))
     except Exception:
         import logging
 

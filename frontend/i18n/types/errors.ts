@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T17:26:33.339Z
+// GENERATED — 2026-05-29T20:09:51.581Z
 // Source: i18n/en/errors.json
 export type ErrorsMessages = {
   errors: {

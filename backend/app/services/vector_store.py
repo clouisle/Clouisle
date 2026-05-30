@@ -7,6 +7,7 @@ embedding model with different dimensions. Each dimension maps to a dedicated
 Qdrant collection (e.g., kb_dim_1536).
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -35,6 +36,8 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+EMBEDDING_REQUEST_TIMEOUT_SECONDS = 120.0
 
 # Initialize jieba (disable verbose output)
 jieba.setLogLevel(logging.WARNING)
@@ -558,14 +561,18 @@ class VectorStore:
         try:
             # Use team-level embedding if team_id is provided
             if self.team_id and self.embedding_model_id:
-                embeddings = await model_manager.team_embed(
-                    team_id=self.team_id,
-                    texts=texts,
-                    model_id=self.embedding_model_id,
+                embeddings = await asyncio.wait_for(
+                    model_manager.team_embed(
+                        team_id=self.team_id,
+                        texts=texts,
+                        model_id=self.embedding_model_id,
+                    ),
+                    timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS,
                 )
             else:
-                embeddings = await model_manager.embed(
-                    texts, model_id=self.embedding_model_id
+                embeddings = await asyncio.wait_for(
+                    model_manager.embed(texts, model_id=self.embedding_model_id),
+                    timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS,
                 )
             return embeddings
         except QuotaExceededError:
@@ -590,15 +597,19 @@ class VectorStore:
         try:
             # Use team-level embedding if team_id is provided
             if self.team_id and self.embedding_model_id:
-                embeddings = await model_manager.team_embed(
-                    team_id=self.team_id,
-                    texts=[query],
-                    model_id=self.embedding_model_id,
+                embeddings = await asyncio.wait_for(
+                    model_manager.team_embed(
+                        team_id=self.team_id,
+                        texts=[query],
+                        model_id=self.embedding_model_id,
+                    ),
+                    timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS,
                 )
                 return embeddings[0]
             else:
-                embedding = await model_manager.embed_query(
-                    query, model_id=self.embedding_model_id
+                embedding = await asyncio.wait_for(
+                    model_manager.embed_query(query, model_id=self.embedding_model_id),
+                    timeout=EMBEDDING_REQUEST_TIMEOUT_SECONDS,
                 )
                 return embedding
         except QuotaExceededError:

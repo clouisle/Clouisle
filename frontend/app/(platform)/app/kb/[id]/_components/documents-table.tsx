@@ -25,6 +25,7 @@ import {
   Play,
   Download,
   ExternalLink,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeBasesApi, type Document, type PageData, type DocumentStatus, type DocumentType } from '@/lib/api'
@@ -249,7 +250,18 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const handleReprocess = (doc: Document) => {
     router.push(`/app/kb/${knowledgeBaseId}/documents/preview?docs=${doc.id}`)
   }
-  
+
+  // 重试失败分段
+  const handleRetryFailedChunks = async (doc: Document) => {
+    try {
+      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
+      toast.success(t('retryStarted'))
+      loadDocuments()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
   // 配置文档
   const handleConfigure = (doc: Document) => {
     router.push(`/app/kb/${knowledgeBaseId}/documents/${doc.id}`)
@@ -500,7 +512,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           </>
                         )}
 
-                        {doc.status === 'completed' && (
+                        {(doc.status === 'completed' || doc.status === 'error') && (
                           <DropdownMenuItem onClick={() => handleViewChunks(doc)}>
                             <Eye className="mr-2 h-4 w-4" />
                             {t('viewChunks')}
@@ -511,6 +523,13 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                           <DropdownMenuItem onClick={() => handleReprocess(doc)}>
                             <RefreshCw className="mr-2 h-4 w-4" />
                             {t('reprocess')}
+                          </DropdownMenuItem>
+                        )}
+
+                        {doc.status === 'error' && canUpdateKb && (
+                          <DropdownMenuItem onClick={() => handleRetryFailedChunks(doc)}>
+                            <RotateCcw className="mr-2 h-4 w-4" />
+                            {t('retryFailedChunks')}
                           </DropdownMenuItem>
                         )}
 

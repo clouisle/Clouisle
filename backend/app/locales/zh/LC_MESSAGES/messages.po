@@ -846,6 +846,9 @@ msgstr "分块删除成功"
 msgid "chunk_not_found"
 msgstr "分块未找到"
 
+msgid "chunk_not_failed"
+msgstr "只能重试失败的分块"
+
 msgid "chunk_preview_failed"
 msgstr "生成分块预览失败"
 
@@ -1696,6 +1699,9 @@ msgid "reset_password_email_sent"
 msgstr "如果邮箱存在，密码重置链接已发送"
 
 msgid "retry_failed_chunks_started"
+msgstr "重试失败分块已开始"
+
+msgid "retry_failed_chunk_started"
 msgstr "重试失败分块已开始"
 
 msgid "role_created"

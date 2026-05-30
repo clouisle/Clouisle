@@ -2,11 +2,15 @@
 Celery application configuration for Clouisle backend.
 """
 
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_process_init, worker_process_shutdown
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Redis URL for Celery broker and result backend
 if settings.REDIS_PASSWORD:
@@ -43,6 +47,7 @@ celery_app.conf.update(
     # Task execution settings
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    task_track_started=True,
     # Result settings
     result_expires=3600 * 24,  # 24 hours
     # Worker settings
@@ -50,6 +55,13 @@ celery_app.conf.update(
     worker_max_tasks_per_child=100,
     # Retry settings
     broker_connection_retry_on_startup=True,
+    broker_transport_options={
+        "visibility_timeout": settings.CELERY_VISIBILITY_TIMEOUT_SECONDS,
+    },
+    result_backend_transport_options={
+        "visibility_timeout": settings.CELERY_VISIBILITY_TIMEOUT_SECONDS,
+    },
+    visibility_timeout=settings.CELERY_VISIBILITY_TIMEOUT_SECONDS,
 )
 
 # Optional: Configure task routes
@@ -119,9 +131,59 @@ def init_tortoise(**kwargs):
             _enable_global_fallback=True,  # Enable global state for compatibility
         )
 
+    async def _recover_processing_documents():
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        from app.core.redis import get_redis
+        from app.models.knowledge_base import Document, DocumentStatus
+
+        try:
+            redis = await get_redis()
+            lock_acquired = await redis.set(
+                "kb:processing-recovery:lock",
+                "1",
+                ex=settings.KB_PROCESSING_RECOVERY_AFTER_SECONDS,
+                nx=True,
+            )
+        except Exception as e:
+            logger.warning("KB document task recovery skipped: %s", e)
+            return
+
+        if not lock_acquired:
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.KB_PROCESSING_RECOVERY_AFTER_SECONDS
+        )
+        documents = await Document.filter(
+            status=DocumentStatus.PROCESSING.value,
+            updated_at__lt=cutoff,
+        ).limit(100)
+
+        for document in documents:
+            metadata = document.metadata or {}
+            task_name = metadata.get("task_name")
+            task_args = metadata.get("task_args")
+            if not task_name or not isinstance(task_args, list):
+                continue
+
+            task_id = str(uuid4())
+            metadata["task_id"] = task_id
+            document.metadata = metadata
+            await document.save(update_fields=["metadata"])
+            celery_app.send_task(task_name, args=task_args, task_id=task_id)
+            logger.warning(
+                "Recovered stale KB document task: document_id=%s task_name=%s task_id=%s",
+                document.id,
+                task_name,
+                task_id,
+            )
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(_init())
+    loop.run_until_complete(_recover_processing_documents())
     register_all_builtin_tools()
 
 

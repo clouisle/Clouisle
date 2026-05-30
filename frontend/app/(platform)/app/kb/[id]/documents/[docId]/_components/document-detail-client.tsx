@@ -84,6 +84,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   // 操作状态
   const [isProcessing, setIsProcessing] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
+  const [retryingChunkId, setRetryingChunkId] = React.useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deleteChunkId, setDeleteChunkId] = React.useState<string | null>(null)
 
@@ -134,7 +135,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
 
   // 加载分块
   const loadChunks = React.useCallback(async () => {
-    if (!document || document.status !== 'completed') return
+    if (!document || (document.status !== 'completed' && document.status !== 'error')) return
 
     setIsLoadingChunks(true)
     try {
@@ -157,7 +158,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   }, [loadData])
 
   React.useEffect(() => {
-    if (document?.status === 'completed') {
+    if (document?.status === 'completed' || document?.status === 'error') {
       loadChunks()
     }
   }, [document?.status, loadChunks])
@@ -299,6 +300,30 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
   const handleReprocess = () => {
     if (!document) return
     router.push(`/app/kb/${knowledgeBaseId}/documents/preview?docs=${documentId}`)
+  }
+
+  // 重试失败分段
+  const handleRetryFailedChunks = async () => {
+    try {
+      await knowledgeBasesApi.retryFailedChunks(knowledgeBaseId, documentId)
+      toast.success(t('retryStarted'))
+      loadData()
+    } catch {
+      // 错误已由 API 客户端处理
+    }
+  }
+
+  const handleRetryChunk = async (chunkId: string) => {
+    setRetryingChunkId(chunkId)
+    try {
+      await knowledgeBasesApi.retryFailedChunk(knowledgeBaseId, documentId, chunkId)
+      toast.success(t('retryChunkStarted'))
+      await loadData()
+    } catch {
+      // 错误已由 API 客户端处理
+    } finally {
+      setRetryingChunkId(null)
+    }
   }
 
   // 删除文档
@@ -533,21 +558,29 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
           )}
 
           {isFailed && (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
-              <XCircle className="h-12 w-12 text-destructive mb-4" />
-              <h3 className="text-lg font-medium mb-2">{t('documentFailedTitle')}</h3>
-              <p className="text-muted-foreground mb-2 max-w-md">
-                {t('documentFailedDescription')}
-              </p>
-              {document.error_message && (
-                <p className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 max-w-md">
-                  {document.error_message}
-                </p>
-              )}
+            <div className="p-4 border-b bg-destructive/5">
+              <div className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-background p-3">
+                <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-medium text-destructive">{t('documentFailedTitle')}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {t('documentFailedDescription')}
+                  </p>
+                  {document.error_message && (
+                    <p className="text-sm text-destructive mt-2 break-all">
+                      {document.error_message}
+                    </p>
+                  )}
+                </div>
+                <Button variant="outline" size="sm" onClick={handleRetryFailedChunks}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  {t('retryFailedChunks')}
+                </Button>
+              </div>
             </div>
           )}
 
-          {isCompleted && (
+          {(isCompleted || isFailed) && (
             <>
               {isLoadingChunks ? (
                 <div className="flex items-center justify-center h-full">
@@ -557,10 +590,12 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-2">{t('noChunks')}</h3>
-                  <Button variant="outline" onClick={() => addNewChunk(-1)} disabled={isSaving}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('addFirstChunk')}
-                  </Button>
+                  {isCompleted && (
+                    <Button variant="outline" onClick={() => addNewChunk(-1)} disabled={isSaving}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {t('addFirstChunk')}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <ScrollArea className="h-full w-full">
@@ -578,8 +613,42 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                             <span className="text-xs text-muted-foreground">
                               {chunk.token_count} tokens
                             </span>
+                            {chunk.status === 'failed' && (
+                              <Badge variant="destructive" className="text-xs gap-1">
+                                <XCircle className="h-3 w-3" />
+                                {t('chunkStatusFailed')}
+                              </Badge>
+                            )}
+                            {chunk.status === 'pending' && (
+                              <Badge variant="outline" className="text-xs text-muted-foreground gap-1">
+                                <Clock className="h-3 w-3" />
+                                {t('chunkStatusPending')}
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {chunk.status === 'failed' && !chunk.isEditing && (
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-destructive hover:text-destructive"
+                                      onClick={() => handleRetryChunk(chunk.id)}
+                                      disabled={isSaving || retryingChunkId === chunk.id}
+                                    >
+                                      {retryingChunkId === chunk.id ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <RotateCcw className="h-3.5 w-3.5" />
+                                      )}
+                                    </Button>
+                                  }
+                                />
+                                <TooltipContent>{t('retryFailedChunk')}</TooltipContent>
+                              </Tooltip>
+                            )}
                             {chunk.isEditing ? (
                               <>
                                 <Button
@@ -602,44 +671,53 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                               </>
                             ) : (
                               <>
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => addNewChunk(chunk.chunk_index)}
-                                        disabled={isSaving}
-                                      >
-                                        <Plus className="h-3.5 w-3.5" />
-                                      </Button>
-                                    }
-                                  />
-                                  <TooltipContent>{t('insertChunkAfter')}</TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7 text-destructive hover:text-destructive"
-                                        onClick={() => setDeleteChunkId(chunk.id)}
-                                        disabled={isSaving}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </Button>
-                                    }
-                                  />
-                                  <TooltipContent>{t('deleteChunk')}</TooltipContent>
-                                </Tooltip>
+                                {isCompleted && (
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7"
+                                          onClick={() => addNewChunk(chunk.chunk_index)}
+                                          disabled={isSaving}
+                                        >
+                                          <Plus className="h-3.5 w-3.5" />
+                                        </Button>
+                                      }
+                                    />
+                                    <TooltipContent>{t('insertChunkAfter')}</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {isCompleted && (
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-destructive hover:text-destructive"
+                                          onClick={() => setDeleteChunkId(chunk.id)}
+                                          disabled={isSaving}
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      }
+                                    />
+                                    <TooltipContent>{t('deleteChunk')}</TooltipContent>
+                                  </Tooltip>
+                                )}
                               </>
                             )}
                           </div>
                         </div>
 
                         {/* 分块内容 */}
+                        {chunk.error_message && (
+                          <div className="px-4 py-2 border-b bg-destructive/5 text-xs text-destructive break-all">
+                            {t('chunkErrorMessage', { message: chunk.error_message })}
+                          </div>
+                        )}
                         <div className="p-4 overflow-hidden">
                           {chunk.isEditing ? (
                             <Textarea
@@ -651,7 +729,7 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
                           ) : (
                             <p
                               className="text-sm whitespace-pre-wrap break-all wrap-anywhere cursor-pointer hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
-                              onClick={() => startEditing(chunk.id)}
+                              onClick={() => isCompleted && startEditing(chunk.id)}
                             >
                               {chunk.content}
                             </p>
