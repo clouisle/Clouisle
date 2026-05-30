@@ -122,7 +122,8 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
   const [selectedDoc, setSelectedDoc] = React.useState<Document | null>(null)
-  
+  const [isBulkActionLoading, setIsBulkActionLoading] = React.useState(false)
+
   // 加载文档列表 (showLoading 参数控制是否显示加载状态)
   const loadDocuments = React.useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -257,12 +258,46 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     try {
       await adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)
       toast.success(t('retryStarted'))
-      loadDocuments()
+      await loadDocuments(false)
     } catch {
       // 错误已由 API 客户端处理
     }
   }
-  
+
+  const handleBulkQuickProcess = async () => {
+    const pendingDocs = documents.filter(doc => selectedDocs.has(doc.id) && doc.status === 'pending')
+    if (pendingDocs.length === 0) return
+
+    setIsBulkActionLoading(true)
+    try {
+      await Promise.all(pendingDocs.map(doc => adminKnowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)))
+      toast.success(t('processStarted', { count: pendingDocs.length }))
+      setSelectedDocs(new Set())
+      await loadDocuments(false)
+    } catch {
+      // 错误已由 API 客户端处理
+    } finally {
+      setIsBulkActionLoading(false)
+    }
+  }
+
+  const handleBulkRetryFailedChunks = async () => {
+    const failedDocs = documents.filter(doc => selectedDocs.has(doc.id) && doc.status === 'error')
+    if (failedDocs.length === 0) return
+
+    setIsBulkActionLoading(true)
+    try {
+      await Promise.all(failedDocs.map(doc => adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)))
+      toast.success(t('retryStarted'))
+      setSelectedDocs(new Set())
+      await loadDocuments(false)
+    } catch {
+      // 错误已由 API 客户端处理
+    } finally {
+      setIsBulkActionLoading(false)
+    }
+  }
+
   // 配置文档（跳转到详情页）
   const handleConfigure = (doc: Document) => {
     router.push(`/knowledge-bases/${knowledgeBaseId}/documents/${doc.id}`)
@@ -273,7 +308,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
     try {
       await adminKnowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)
       toast.success(t('processStartedSingle'))
-      loadDocuments()
+      await loadDocuments(false)
     } catch {
       // 错误已由 API 客户端处理
     }
@@ -498,7 +533,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
                         <MoreHorizontal className="h-4 w-4" />
                         <span className="sr-only">{t('common.openMenu')}</span>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-48">
                         {doc.status === 'pending' && canUpdateKb && (
                           <>
                             <DropdownMenuItem onClick={() => handleConfigure(doc)}>
@@ -644,24 +679,38 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
             {canUpdateKb && documents.filter(d => selectedDocs.has(d.id) && d.status === 'pending').length > 0 && (
               <Tooltip>
                 <TooltipTrigger
-                  onClick={() => {
-                    const pendingDocIds = documents
-                      .filter(d => selectedDocs.has(d.id) && d.status === 'pending')
-                      .map(d => d.id)
-                      .join(',')
-                    router.push(`/knowledge-bases/${knowledgeBaseId}/documents/preview?docs=${pendingDocIds}`)
-                  }}
+                  onClick={handleBulkQuickProcess}
                   render={
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
+                      disabled={isBulkActionLoading}
                     >
-                      <Play className="h-4 w-4" />
+                      {isBulkActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                     </Button>
                   }
                 />
-                <TooltipContent>{t('batchProcess')}</TooltipContent>
+                <TooltipContent>{t('bulkQuickProcess')}</TooltipContent>
+              </Tooltip>
+            )}
+
+            {canUpdateKb && documents.filter(d => selectedDocs.has(d.id) && d.status === 'error').length > 0 && (
+              <Tooltip>
+                <TooltipTrigger
+                  onClick={handleBulkRetryFailedChunks}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      disabled={isBulkActionLoading}
+                    >
+                      {isBulkActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    </Button>
+                  }
+                />
+                <TooltipContent>{t('bulkRetryFailedChunks')}</TooltipContent>
               </Tooltip>
             )}
 

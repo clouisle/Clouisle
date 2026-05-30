@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T20:09:51.580Z
+// GENERATED — 2026-05-30T13:34:09.431Z
 // Source: i18n/en/conversations.json
 export type ConversationsMessages = {
   conversations: {

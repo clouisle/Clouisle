@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T20:09:51.584Z
+// GENERATED — 2026-05-30T13:34:09.436Z
 // Source: i18n/en/permissions.json
 export type PermissionsMessages = {
   permissions: {

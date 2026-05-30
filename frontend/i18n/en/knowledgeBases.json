@@ -178,6 +178,8 @@
     "exitPreview": "Exit Preview",
     "noPreviewChunks": "No chunks generated",
     "batchProcess": "Batch Process",
+    "bulkQuickProcess": "Batch Quick Process",
+    "bulkRetryFailedChunks": "Batch Retry Failed Chunks",
     "batchProcessTitle": "Batch Process Documents",
     "batchProcessDescription": "Configure unified chunk settings for {count} documents",
     "previewAll": "Preview All",

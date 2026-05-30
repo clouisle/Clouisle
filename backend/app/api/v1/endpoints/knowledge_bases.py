@@ -975,6 +975,8 @@ async def process_document(
             doc.metadata["separator"] = process_in.separator
         if process_in.clean_text is not None:
             doc.metadata["clean_text"] = process_in.clean_text
+    doc.status = DocumentStatus.PROCESSING.value
+    doc.error_message = None  # type: ignore[assignment]
     await doc.save()
 
     # Trigger async document processing task

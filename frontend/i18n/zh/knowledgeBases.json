@@ -178,6 +178,8 @@
     "exitPreview": "退出预览",
     "noPreviewChunks": "未生成任何分块",
     "batchProcess": "批量处理",
+    "bulkQuickProcess": "批量快速处理",
+    "bulkRetryFailedChunks": "批量重试失败分段",
     "batchProcessTitle": "批量处理文档",
     "batchProcessDescription": "为 {count} 个文档配置统一的分块设置",
     "previewAll": "预览全部",
