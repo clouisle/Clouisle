@@ -1396,9 +1396,10 @@ async def retry_failed_chunk(
             doc, retry_failed_chunk_task, str(doc.id), str(chunk.id)
         )
     except Exception:
-        import logging
-
-        logging.warning("Celery task not dispatched - worker may not be running")
+        logger.warning("Celery task not dispatched - worker may not be running")
+        doc.status = DocumentStatus.ERROR.value
+        doc.error_message = "task_dispatch_failed"
+        await doc.save()
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
