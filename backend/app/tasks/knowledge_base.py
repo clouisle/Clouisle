@@ -1447,7 +1447,7 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             ).values("sum_chunks", "sum_tokens")
             kb.total_chunks = stats[0].get("sum_chunks") or 0 if stats else 0
             kb.total_tokens = stats[0].get("sum_tokens") or 0 if stats else 0
-            await kb.save()
+            await kb.save(update_fields=["total_chunks", "total_tokens"])
 
             await _send_doc_indexed_notification(
                 document=document,
