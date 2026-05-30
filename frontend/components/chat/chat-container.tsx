@@ -60,7 +60,7 @@ const VirtuosoScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDiv
         ref={ref}
         style={style}
         className={cn(
-          'overflow-y-scroll overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]',
+          'overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]',
           className,
         )}
         {...props}

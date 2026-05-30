@@ -10,8 +10,8 @@ import {
   Loader2Icon,
   type LucideIcon,
 } from "lucide-react";
-import type { ComponentProps, ReactNode, WheelEvent } from "react";
-import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
@@ -150,24 +150,32 @@ export type ChainOfThoughtContentProps = ComponentProps<"div"> & {
 export const ChainOfThoughtContent = memo(
   ({ className, children, containScroll = false, onWheel, ...props }: ChainOfThoughtContentProps) => {
     const { isOpen, contentId } = useChainOfThought();
+    const ref = useRef<HTMLDivElement>(null);
 
-    const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
-      onWheel?.(event);
-      if (!containScroll || event.isPropagationStopped()) {
+    useEffect(() => {
+      const element = ref.current;
+      if (!element || !containScroll) {
         return;
       }
 
-      const target = event.currentTarget;
-      const canScrollUp = target.scrollTop > 0;
-      const canScrollDown = target.scrollTop + target.clientHeight < target.scrollHeight;
+      const handleNativeWheel = (event: WheelEvent) => {
+        const canScrollUp = element.scrollTop > 0.5;
+        const canScrollDown = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
 
-      if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
-        event.stopPropagation();
-      }
-    }, [containScroll, onWheel]);
+        if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
+          event.stopPropagation();
+        }
+      };
+
+      element.addEventListener("wheel", handleNativeWheel, { passive: true });
+      return () => {
+        element.removeEventListener("wheel", handleNativeWheel);
+      };
+    }, [containScroll]);
 
     return (
       <div
+        ref={ref}
         id={contentId}
         data-state={isOpen ? "open" : "closed"}
         className={cn(
@@ -176,7 +184,7 @@ export const ChainOfThoughtContent = memo(
           !isOpen && "hidden",
           className
         )}
-        onWheel={handleWheel}
+        onWheel={onWheel}
         {...props}
       >
         {children}
