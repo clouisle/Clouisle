@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-29T20:09:51.582Z
+// GENERATED — 2026-05-30T13:34:09.433Z
 // Source: i18n/en/knowledgeBases.json
 export type KnowledgeBasesMessages = {
   knowledgeBases: {
@@ -180,6 +180,8 @@ export type KnowledgeBasesMessages = {
     exitPreview: string
     noPreviewChunks: string
     batchProcess: string
+    bulkQuickProcess: string
+    bulkRetryFailedChunks: string
     batchProcessTitle: string
     batchProcessDescription: string
     previewAll: string
