@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from celery import shared_task
+from tortoise.functions import Sum
 
 from app.core.i18n import t, get_default_language
 from app.models.knowledge_base import (
@@ -1437,13 +1438,20 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             _clear_task_metadata(document)
             await document.save()
 
-            docs = await Document.filter(
-                knowledge_base_id=kb.id,
-                status=DocumentStatus.COMPLETED.value,
-            ).all()
-            kb.total_chunks = sum(doc.chunk_count for doc in docs)
-            kb.total_tokens = sum(doc.token_count for doc in docs)
-            await kb.save()
+            stats = (
+                await Document.filter(
+                    knowledge_base_id=kb.id,
+                    status=DocumentStatus.COMPLETED.value,
+                )
+                .annotate(
+                    sum_chunks=Sum("chunk_count"),
+                    sum_tokens=Sum("token_count"),
+                )
+                .values("sum_chunks", "sum_tokens")
+            )
+            kb.total_chunks = stats[0].get("sum_chunks") or 0 if stats else 0
+            kb.total_tokens = stats[0].get("sum_tokens") or 0 if stats else 0
+            await kb.save(update_fields=["total_chunks", "total_tokens"])
 
             await _send_doc_indexed_notification(
                 document=document,

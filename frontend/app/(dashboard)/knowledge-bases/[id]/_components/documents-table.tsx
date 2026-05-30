@@ -95,6 +95,14 @@ const docTypeIcons: Record<string, React.ReactNode> = {
   url: <Link className="h-4 w-4 text-purple-500" />,
 }
 
+const BULK_ACTION_CONCURRENCY = 3
+
+async function runBulkActions<T>(items: T[], action: (item: T) => Promise<unknown>) {
+  for (let index = 0; index < items.length; index += BULK_ACTION_CONCURRENCY) {
+    await Promise.allSettled(items.slice(index, index + BULK_ACTION_CONCURRENCY).map(action))
+  }
+}
+
 export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: DocumentsTableProps) {
   const t = useTranslations('knowledgeBases')
   const commonT = useTranslations('common')
@@ -270,7 +278,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
 
     setIsBulkActionLoading(true)
     try {
-      await Promise.all(pendingDocs.map(doc => adminKnowledgeBasesApi.processDocument(knowledgeBaseId, doc.id)))
+      await runBulkActions(pendingDocs, doc => adminKnowledgeBasesApi.processDocument(knowledgeBaseId, doc.id))
       toast.success(t('processStarted', { count: pendingDocs.length }))
       setSelectedDocs(new Set())
       await loadDocuments(false)
@@ -287,7 +295,7 @@ export function DocumentsTable({ knowledgeBaseId, refreshTrigger, onRefresh }: D
 
     setIsBulkActionLoading(true)
     try {
-      await Promise.all(failedDocs.map(doc => adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id)))
+      await runBulkActions(failedDocs, doc => adminKnowledgeBasesApi.retryFailedChunks(knowledgeBaseId, doc.id))
       toast.success(t('retryStarted'))
       setSelectedDocs(new Set())
       await loadDocuments(false)
