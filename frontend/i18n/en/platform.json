@@ -495,6 +495,13 @@
       "source": "Source",
       "updatedAt": "Updated At",
       "actions": "Actions",
+      "view": "View",
+      "includedSkills": "Included skills",
+      "includedSkillsDescription": "Skills exposed by this package and the descriptions Agents see before using them.",
+      "details": "Details",
+      "parameters": "Parameters",
+      "noParameters": "No parameters",
+      "instructions": "Instructions",
       "import": {
         "open": "Import Skills",
         "title": "Import Skills",

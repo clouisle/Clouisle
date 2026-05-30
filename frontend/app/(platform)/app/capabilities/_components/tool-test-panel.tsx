@@ -7,7 +7,7 @@ import { Tool, ToolParameter, toolsApi, ToolExecuteResponse, McpToolInfo, Sandbo
 import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
-import { useTeam } from '@/contexts/team-context'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,12 +30,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Play, Loader2, CheckCircle, XCircle, Clock, Copy, Check, RefreshCw } from 'lucide-react'
-import { toast } from 'sonner'
+
+interface ToolTestApi {
+  listMcpTools: typeof toolsApi.listMcpTools
+  test: typeof toolsApi.test
+}
 
 interface ToolTestPanelProps {
   tool: Tool | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  teamId?: string
+  api?: ToolTestApi
 }
 
 function formatResultPayload(result: ToolExecuteResponse): unknown {
@@ -50,14 +56,14 @@ function formatResultPayload(result: ToolExecuteResponse): unknown {
   }
 }
 
-export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) {
+export function ToolTestPanel({ tool, open, onOpenChange, teamId, api = toolsApi }: ToolTestPanelProps) {
   const t = useTranslations('platform.tools')
   const [args, setArgs] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [result, setResult] = useState<ToolExecuteResponse | null>(null)
   const [copied, setCopied] = useState(false)
-  const { currentTeam } = useTeam()
+  const effectiveTeamId = teamId
 
   // MCP 相关状态
   const [mcpTools, setMcpTools] = useState<McpToolInfo[]>([])
@@ -70,7 +76,7 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
 
     setLoadingMcpTools(true)
     try {
-      const response = await toolsApi.listMcpTools(tool.mcp_config)
+      const response = await api.listMcpTools(tool.mcp_config)
       setMcpTools(response.tools)
       if (response.tools.length > 0) {
         setSelectedMcpTool(response.tools[0].name)
@@ -158,10 +164,10 @@ export function ToolTestPanel({ tool, open, onOpenChange }: ToolTestPanelProps) 
         })
       }
 
-      const response = await toolsApi.test({
+      const response = await api.test({
         name: tool.name,
         arguments: typedArgs,
-      }, currentTeam?.id)
+      }, effectiveTeamId)
       setResult(response)
     } catch (error) {
       const errors = normalizeValidationErrors(error)

@@ -26,6 +26,7 @@
     "toolEnabled": "Tool enabled",
     "toolDisabled": "Tool disabled",
     "toolDuplicated": "Tool duplicated",
+    "runTest": "Run Test",
     "share": {
       "title": "Share",
       "description": "Share \"{toolName}\" with other teams.",

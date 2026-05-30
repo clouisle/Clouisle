@@ -501,6 +501,7 @@ export default function CapabilitiesPage() {
         tool={selectedTool}
         open={testPanelOpen}
         onOpenChange={setTestPanelOpen}
+        teamId={currentTeam?.id}
       />
 
       {/* 内置工具配置弹窗 */}

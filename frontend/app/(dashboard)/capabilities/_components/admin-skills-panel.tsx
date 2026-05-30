@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, FileArchive, GitBranch, Loader2, MoreHorizontal, PackageOpen, Play, Plus, RefreshCw, Search, Trash2, ToggleLeft, ToggleRight, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, FileArchive, GitBranch, Loader2, PackageOpen, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -19,12 +20,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -40,12 +35,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filter'
 
-import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
+import { PermissionGuard } from '@/components/permission-guard'
 import { SKILL_ZIP_MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants'
-import { ApiError, type PageData, type SkillInstallAction, type SkillImportPreviewResponse, type SkillPreviewItem, type SkillSourceType, type SkillTestResponse, type ToolFilterOption } from '@/lib/api'
+import { ApiError, type PageData, type SkillInstallAction, type SkillImportPreviewResponse, type SkillPreviewItem, type SkillSourceType, type ToolFilterOption } from '@/lib/api'
 import { adminSkillsApi, teamsApi as adminTeamsApi, type AdminSkill } from '@/lib/api/admin'
 import type { Team } from '@/lib/api/teams'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
@@ -57,34 +51,6 @@ interface PreviewSelection {
 
 function getPreviewGroupKey(item: SkillPreviewItem) {
   return item.name || item.package_path
-}
-
-function defaultTestArguments(skill: AdminSkill | null) {
-  const required = (skill?.input_schema?.required as unknown) || []
-  const properties = (skill?.input_schema?.properties as Record<string, unknown> | undefined) || {}
-  const args: Record<string, unknown> = {}
-  if (Array.isArray(required)) {
-    required.forEach((key) => {
-      if (typeof key === 'string') args[key] = key === 'prompt' ? 'Run this skill on a simple sample.' : ''
-    })
-  }
-  if (Object.keys(args).length === 0 && properties.prompt) args.prompt = 'Run this skill on a simple sample.'
-  return JSON.stringify(args, null, 2)
-}
-
-function parseJsonObject(value: string, label: string): Record<string, unknown> {
-  const parsed = JSON.parse(value || '{}')
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object`)
-  }
-  return parsed as Record<string, unknown>
-}
-
-function formatBytes(value?: number) {
-  if (value == null) return '-'
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
 function getErrorMessage(error: unknown) {
@@ -160,7 +126,6 @@ function PreviewRow({
 export function AdminSkillsPanel() {
   const t = useTranslations('platform.skills')
   const tCommon = useTranslations('common')
-  const { canPerform } = useCanPerform()
 
   const [skills, setSkills] = useState<AdminSkill[]>([])
   const [teams, setTeams] = useState<Team[]>([])
@@ -185,12 +150,6 @@ export function AdminSkillsPanel() {
   const [previewSelections, setPreviewSelections] = useState<Record<string, PreviewSelection>>({})
   const [previewLoading, setPreviewLoading] = useState(false)
   const [installLoading, setInstallLoading] = useState(false)
-  const [testingSkill, setTestingSkill] = useState<AdminSkill | null>(null)
-  const [testArguments, setTestArguments] = useState('{}')
-  const [testResult, setTestResult] = useState<SkillTestResponse | null>(null)
-  const [testLoading, setTestLoading] = useState(false)
-  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null)
-  const [toggleLoadingId, setToggleLoadingId] = useState<string | null>(null)
 
   const loadTeams = useCallback(async () => {
     try {
@@ -402,38 +361,6 @@ export function AdminSkillsPanel() {
     }
   }
 
-  const handleToggle = async (skill: AdminSkill) => {
-    setToggleLoadingId(skill.id)
-    try {
-      await adminSkillsApi.update(skill.id, { is_enabled: !skill.is_enabled })
-      toast.success(skill.is_enabled ? t('disabled') : t('enabled'))
-      await loadSkills()
-    } catch (error) {
-      toast.error(getErrorMessage(error))
-    } finally {
-      setToggleLoadingId(null)
-    }
-  }
-
-  const handleDelete = async (skill: AdminSkill) => {
-    setDeleteLoadingId(skill.id)
-    try {
-      await adminSkillsApi.delete(skill.id)
-      toast.success(t('deleted'))
-      await loadSkills()
-    } catch (error) {
-      toast.error(getErrorMessage(error))
-    } finally {
-      setDeleteLoadingId(null)
-    }
-  }
-
-  const openTestDialog = (skill: AdminSkill) => {
-    setTestingSkill(skill)
-    setTestArguments(defaultTestArguments(skill))
-    setTestResult(null)
-  }
-
   const formatImportIssue = (key: string) => {
     const messages: Record<string, string> = {
       skill_duplicate_name_in_source: t('import.errors.duplicateNameInSource'),
@@ -443,20 +370,6 @@ export function AdminSkillsPanel() {
       skill_name_exists: t('import.errors.nameExists'),
     }
     return messages[key] || key
-  }
-
-  const handleRunTest = async () => {
-    if (!testingSkill) return
-    setTestLoading(true)
-    try {
-      const args = parseJsonObject(testArguments, 'arguments')
-      const result = await adminSkillsApi.test(testingSkill.id, { arguments: args })
-      setTestResult(result)
-    } catch (error) {
-      toast.error(getErrorMessage(error))
-    } finally {
-      setTestLoading(false)
-    }
   }
 
   return (
@@ -580,8 +493,6 @@ export function AdminSkillsPanel() {
                   </TableRow>
                 ) : skills.map((skill) => {
                   const isSystem = !skill.team_id
-                  const isBusy = deleteLoadingId === skill.id || toggleLoadingId === skill.id
-                  const hasActions = canPerform('admin:capability:execute') || canPerform('admin:capability:update') || canPerform('admin:capability:delete')
                   return (
                     <TableRow key={skill.id} className={!skill.is_enabled ? 'opacity-60' : undefined}>
                       <TableCell>
@@ -590,13 +501,9 @@ export function AdminSkillsPanel() {
                             {skill.icon ? skill.icon : <PackageOpen className="h-4 w-4" />}
                           </div>
                           <div className="min-w-0">
-                            <button
-                              type="button"
-                              className="truncate text-left font-medium hover:underline"
-                              onClick={() => canPerform('admin:capability:execute') && openTestDialog(skill)}
-                            >
+                            <Link href={`/capabilities/skills/${skill.id}`} className="truncate font-medium hover:underline">
                               {skill.display_name}
-                            </button>
+                            </Link>
                             <div className="max-w-md truncate text-xs text-muted-foreground">
                               {skill.description || t('noDescription')}
                             </div>
@@ -619,41 +526,13 @@ export function AdminSkillsPanel() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {hasActions && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                            render={
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={isBusy}>
-                                {isBusy ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <MoreHorizontal className="h-4 w-4" />
-                                )}
-                              </Button>
-                            }
-                            />
-                            <DropdownMenuContent align="end">
-                            {canPerform('admin:capability:execute') && (
-                              <DropdownMenuItem onClick={() => openTestDialog(skill)}>
-                                <Play className="mr-2 h-4 w-4" />
-                                {t('test')}
-                              </DropdownMenuItem>
-                            )}
-                            {canPerform('admin:capability:update') && (
-                              <DropdownMenuItem onClick={() => handleToggle(skill)}>
-                                {skill.is_enabled ? <ToggleLeft className="mr-2 h-4 w-4" /> : <ToggleRight className="mr-2 h-4 w-4" />}
-                                {skill.is_enabled ? t('disable') : t('enable')}
-                              </DropdownMenuItem>
-                            )}
-                            {canPerform('admin:capability:delete') && (
-                              <DropdownMenuItem variant="destructive" onClick={() => handleDelete(skill)}>
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                {t('delete')}
-                              </DropdownMenuItem>
-                            )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
+                        <Link
+                          href={`/capabilities/skills/${skill.id}`}
+                          className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'h-8 w-8' })}
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span className="sr-only">{t('view')}</span>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   )
@@ -841,76 +720,6 @@ export function AdminSkillsPanel() {
             <Button onClick={handleInstall} disabled={!preview || installLoading || !Object.values(previewSelections).some((item) => item.checked)}>
               {installLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('import.installSelected')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!testingSkill} onOpenChange={(open) => !open && setTestingSkill(null)}>
-        <DialogContent className="sm:max-w-2xl" open={!!testingSkill}>
-          <DialogHeader>
-            <DialogTitle>{t('testTitle', { name: testingSkill?.display_name || '' })}</DialogTitle>
-            <DialogDescription>{t('testDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t('arguments')}</Label>
-              <Textarea
-                rows={6}
-                className="font-mono text-xs"
-                value={testArguments}
-                onChange={(event) => setTestArguments(event.target.value)}
-              />
-            </div>
-            {testResult && (
-              <div className="rounded-lg border bg-muted/40 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Badge variant={testResult.success ? 'default' : 'destructive'}>
-                    {testResult.success ? t('success') : t('failed')}
-                  </Badge>
-                  {testResult.duration_ms != null && (
-                    <span className="text-xs text-muted-foreground">{testResult.duration_ms}ms</span>
-                  )}
-                </div>
-                {testResult.artifacts.length > 0 && (
-                  <div className="mb-3 space-y-2">
-                    <div className="text-sm font-medium">{t('artifacts')}</div>
-                    <div className="space-y-2">
-                      {testResult.artifacts.map((artifact) => (
-                        <div key={`${artifact.path}-${artifact.url || artifact.filename}`} className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-                          <div className="min-w-0">
-                            <div className="truncate font-medium">{artifact.filename || artifact.path}</div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              {artifact.path} · {formatBytes(artifact.size)}
-                            </div>
-                          </div>
-                          {artifact.url && (
-                            <a
-                              href={artifact.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              {t('download')}
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs">
-                  {JSON.stringify(testResult, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTestingSkill(null)}>{t('close')}</Button>
-            <Button onClick={handleRunTest} disabled={testLoading || !canPerform('admin:capability:execute')}>
-              {testLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('runTest')}
             </Button>
           </DialogFooter>
         </DialogContent>
