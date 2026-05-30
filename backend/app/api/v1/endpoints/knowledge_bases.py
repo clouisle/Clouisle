@@ -1387,7 +1387,7 @@ async def retry_failed_chunk(
 
     doc.status = DocumentStatus.PROCESSING.value
     doc.error_message = None  # type: ignore[assignment]
-    await doc.save()
+    await doc.save(update_fields=["status", "error_message"])
 
     try:
         from app.tasks.knowledge_base import retry_failed_chunk_task
@@ -1399,7 +1399,7 @@ async def retry_failed_chunk(
         logger.warning("Celery task not dispatched - worker may not be running")
         doc.status = DocumentStatus.ERROR.value
         doc.error_message = "task_dispatch_failed"
-        await doc.save()
+        await doc.save(update_fields=["status", "error_message"])
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
