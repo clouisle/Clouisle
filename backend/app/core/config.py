@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str | None = None
 
+    # Celery
+    CELERY_VISIBILITY_TIMEOUT_SECONDS: int = 3600
+    KB_PROCESSING_RECOVERY_AFTER_SECONDS: int = 600
+
     # Vector DB (Qdrant)
     VECTOR_BACKEND: str = "qdrant"
     QDRANT_URL: str = "http://localhost:6333"
