@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Shimmer } from "./shimmer";
 
 // Chain of Thought Context
@@ -143,14 +143,39 @@ export const ChainOfThoughtHeader = memo(
 ChainOfThoughtHeader.displayName = "ChainOfThoughtHeader";
 
 // Content container
-export type ChainOfThoughtContentProps = ComponentProps<"div">;
+export type ChainOfThoughtContentProps = ComponentProps<"div"> & {
+  containScroll?: boolean;
+};
 
 export const ChainOfThoughtContent = memo(
-  ({ className, children, ...props }: ChainOfThoughtContentProps) => {
+  ({ className, children, containScroll = false, onWheel, ...props }: ChainOfThoughtContentProps) => {
     const { isOpen, contentId } = useChainOfThought();
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      const element = ref.current;
+      if (!element || !containScroll) {
+        return;
+      }
+
+      const handleNativeWheel = (event: WheelEvent) => {
+        const canScrollUp = element.scrollTop > 0.5;
+        const canScrollDown = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
+
+        if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
+          event.stopPropagation();
+        }
+      };
+
+      element.addEventListener("wheel", handleNativeWheel, { passive: true });
+      return () => {
+        element.removeEventListener("wheel", handleNativeWheel);
+      };
+    }, [containScroll]);
 
     return (
       <div
+        ref={ref}
         id={contentId}
         data-state={isOpen ? "open" : "closed"}
         className={cn(
@@ -159,6 +184,7 @@ export const ChainOfThoughtContent = memo(
           !isOpen && "hidden",
           className
         )}
+        onWheel={onWheel}
         {...props}
       >
         {children}

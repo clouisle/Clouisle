@@ -1170,9 +1170,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                   isStreaming={isChainOfThoughtStreaming}
                   open={chainOfThoughtOpen ?? false}
                   onOpenChange={onChainOfThoughtOpenChange}
+                  defaultOpen={false}
                 >
                   <ChainOfThoughtHeader title={tReasoning('thought')} />
-                  <ChainOfThoughtContent>
+                  <ChainOfThoughtContent containScroll className="max-h-80 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
                     {buildChainOfThoughtSteps()}
                   </ChainOfThoughtContent>
                 </ChainOfThought>
