@@ -1438,13 +1438,17 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
             _clear_task_metadata(document)
             await document.save()
 
-            stats = await Document.filter(
-                knowledge_base_id=kb.id,
-                status=DocumentStatus.COMPLETED.value,
-            ).annotate(
-                sum_chunks=Sum("chunk_count"),
-                sum_tokens=Sum("token_count"),
-            ).values("sum_chunks", "sum_tokens")
+            stats = (
+                await Document.filter(
+                    knowledge_base_id=kb.id,
+                    status=DocumentStatus.COMPLETED.value,
+                )
+                .annotate(
+                    sum_chunks=Sum("chunk_count"),
+                    sum_tokens=Sum("token_count"),
+                )
+                .values("sum_chunks", "sum_tokens")
+            )
             kb.total_chunks = stats[0].get("sum_chunks") or 0 if stats else 0
             kb.total_tokens = stats[0].get("sum_tokens") or 0 if stats else 0
             await kb.save(update_fields=["total_chunks", "total_tokens"])
