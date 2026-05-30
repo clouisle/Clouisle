@@ -1,8 +1,7 @@
 'use client';
 
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Message } from './message';
@@ -53,26 +52,6 @@ function hasOpenCodeFence(content: string) {
   return openFence !== null;
 }
 
-const VirtuosoScroller = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  function VirtuosoScroller({ className, style, ...props }, ref) {
-    return (
-      <div
-        ref={ref}
-        style={style}
-        className={cn(
-          'overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]',
-          className,
-        )}
-        {...props}
-      />
-    );
-  },
-);
-
-function VirtuosoFooter() {
-  return <div className="h-4" />;
-}
-
 export function ChatContainer({
   messages,
   className,
@@ -87,7 +66,8 @@ export function ChatContainer({
   onOpenCodePreview,
   hideToolCalls = false,
 }: ChatContainerProps) {
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
@@ -122,30 +102,37 @@ export function ChatContainer({
       .join('');
   }, [messages]);
 
-  const scrollToBottom = useCallback(() => {
-    virtuosoRef.current?.scrollToIndex({
-      index: 'LAST',
-      behavior: 'smooth',
-    });
+  const atBottomThreshold = 24;
+
+  const updateAtBottomState = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < atBottomThreshold;
+    isAtBottomRef.current = atBottom;
+    setShowScrollButton(!atBottom && messages.length > 0);
+  }, [messages.length]);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior });
   }, []);
 
-  const handleAtBottomStateChange = useCallback(
-    (atBottom: boolean) => {
-      isAtBottomRef.current = atBottom;
-      setShowScrollButton(!atBottom && messages.length > 0);
-    },
-    [messages.length],
-  );
+  useLayoutEffect(() => {
+    if (!autoScroll || !isAtBottomRef.current) {
+      updateAtBottomState();
+      return;
+    }
 
-  const followOutput = useCallback(
-    (isAtBottom: boolean) => {
-      if (!autoScroll) return false as const;
-      if (!isAtBottom) return false as const;
-      if (isStreaming && hasOpenCodeFence(lastMessageText)) return false as const;
-      return 'auto' as const;
-    },
-    [autoScroll, isStreaming, lastMessageText],
-  );
+    if (isStreaming && hasOpenCodeFence(lastMessageText)) {
+      updateAtBottomState();
+      return;
+    }
+
+    scrollToBottom('auto');
+  }, [autoScroll, isStreaming, lastMessageText, messages, scrollToBottom, updateAtBottomState]);
 
   const itemContent = useCallback(
     (index: number, message: ChatMessage) => {
@@ -170,13 +157,13 @@ export function ChatContainer({
           onSelectOption={onSelectOption}
           onOpenCodePreview={onOpenCodePreview}
           hideToolCalls={hideToolCalls}
-          onRequestScrollIntoView={() =>
-            virtuosoRef.current?.scrollToIndex({
-              index,
-              align: 'start',
-              behavior: 'smooth',
-            })
-          }
+          onRequestScrollIntoView={() => {
+            const scroller = scrollerRef.current;
+            const target = messageRefs.current[message.id];
+            if (!scroller || !target) return;
+
+            scroller.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+          }}
         />
       );
     },
@@ -194,8 +181,6 @@ export function ChatContainer({
     ],
   );
 
-  const computeItemKey = useCallback((_: number, message: ChatMessage) => message.id, []);
-
   if (messages.length === 0 && emptyState) {
     return (
       <div className={cn('h-full flex items-center justify-center', className)}>{emptyState}</div>
@@ -204,25 +189,30 @@ export function ChatContainer({
 
   return (
     <div className={cn('relative h-full', className)}>
-      <Virtuoso
-        ref={virtuosoRef}
-        data={messages}
-        itemContent={itemContent}
-        computeItemKey={computeItemKey}
-        initialTopMostItemIndex={Math.max(messages.length - 1, 0)}
-        followOutput={followOutput}
-        atBottomStateChange={handleAtBottomStateChange}
-        increaseViewportBy={{ top: 400, bottom: 400 }}
-        components={{ Scroller: VirtuosoScroller, Footer: VirtuosoFooter }}
-        className="absolute inset-0"
-      />
+      <div
+        ref={scrollerRef}
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]"
+        onScroll={updateAtBottomState}
+      >
+        {messages.map((message, index) => (
+          <div
+            key={message.id}
+            ref={(element) => {
+              messageRefs.current[message.id] = element;
+            }}
+          >
+            {itemContent(index, message)}
+          </div>
+        ))}
+        <div className="h-4" />
+      </div>
 
       {showScrollToBottom && showScrollButton && (
         <Button
           variant="outline"
           size="icon"
           className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 w-8 rounded-full shadow-md bg-background/95 backdrop-blur-sm border-border/50 hover:bg-accent"
-          onClick={scrollToBottom}
+          onClick={() => scrollToBottom()}
         >
           <ArrowDown className="h-4 w-4" />
         </Button>
