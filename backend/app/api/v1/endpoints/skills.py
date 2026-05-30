@@ -178,7 +178,7 @@ async def get_skill(
     team_id: UUID | None = Query(default=None),
     current_user: User = Depends(deps.PermissionChecker("skill:read")),
 ) -> Any:
-    skill = await Skill.filter(id=skill_id).first()
+    skill = await Skill.filter(id=skill_id).prefetch_related("created_by").first()
     if not skill:
         raise BusinessError(
             code=ResponseCode.NOT_FOUND,

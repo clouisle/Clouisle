@@ -26,6 +26,7 @@
     "toolEnabled": "工具已启用",
     "toolDisabled": "工具已禁用",
     "toolDuplicated": "工具已复制",
+    "runTest": "运行测试",
     "share": {
       "title": "共享",
       "description": "将工具“{toolName}”共享给其他团队。",

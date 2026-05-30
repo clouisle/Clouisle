@@ -33,6 +33,7 @@ import {
     ChartColumn,
     Upload,
     Download,
+    Play,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -93,6 +94,7 @@ import { HttpToolDialog } from '@/app/(platform)/app/capabilities/_components/ht
 import { McpToolDialog } from '@/app/(platform)/app/capabilities/_components/mcp-tool-dialog'
 import { DeleteToolDialog } from './delete-tool-dialog'
 import { ToolShareDialog } from './tool-share-dialog'
+import { ToolTestPanel } from '@/app/(platform)/app/capabilities/_components/tool-test-panel'
 import { ToolConfigDialog } from '@/app/(platform)/app/capabilities/_components/tool-config-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
@@ -163,6 +165,7 @@ export function ToolsClient() {
     const [sharingTool, setSharingTool] = React.useState<Tool | null>(null)
     const [configDialogOpen, setConfigDialogOpen] = React.useState(false)
     const [configuringTool, setConfiguringTool] = React.useState<Tool | null>(null)
+    const [testingTool, setTestingTool] = React.useState<Tool | null>(null)
     const [importDialogOpen, setImportDialogOpen] = React.useState(false)
 
     // 加载团队列表
@@ -327,6 +330,10 @@ export function ToolsClient() {
     const handleConfigureTool = (tool: Tool) => {
         setConfiguringTool(tool)
         setConfigDialogOpen(true)
+    }
+
+    const handleTest = (tool: Tool) => {
+        setTestingTool(tool)
     }
 
     // 编辑工具
@@ -769,7 +776,8 @@ export function ToolsClient() {
                                         </TableCell>
                                         <TableCell>{getEnabledBadge(tool.is_enabled)}</TableCell>
                                         <TableCell>
-                                            {((tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:read') || canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
+                                            {((canPerform('admin:capability:execute')) ||
+                                                (tool.type !== 'builtin' && tool.id && (canPerform('admin:capability:read') || canPerform('admin:capability:update') || canPerform('admin:capability:delete'))) ||
                                                 (tool.type === 'builtin' && tool.requires_config && canPerform('admin:capability:update'))) && (
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger className="ring-offset-background focus-visible:ring-ring data-[state=open]:bg-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none">
@@ -777,6 +785,13 @@ export function ToolsClient() {
                                                             <span className="sr-only">{t('common.openMenu')}</span>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
+                                                            {canPerform('admin:capability:execute') && (
+                                                                <DropdownMenuItem onClick={() => handleTest(tool)}>
+                                                                    <Play className="mr-2 h-4 w-4" />
+                                                                    {t('runTest')}
+                                                                </DropdownMenuItem>
+                                                            )}
+
                                                             {canPerform('admin:capability:update') && (
                                                                 <>
                                                                     <DropdownMenuItem onClick={() => handleEdit(tool)}>
@@ -943,6 +958,14 @@ export function ToolsClient() {
                 open={configDialogOpen}
                 onOpenChange={setConfigDialogOpen}
                 onSave={handleSaveConfig}
+            />
+
+            <ToolTestPanel
+                tool={testingTool}
+                open={!!testingTool}
+                onOpenChange={(open) => !open && setTestingTool(null)}
+                teamId={testingTool?.team_id || testingTool?.owner_team_id}
+                api={adminToolsApi}
             />
 
             <ImportPackageDialog
