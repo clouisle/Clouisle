@@ -28,6 +28,8 @@ interface ChatContainerProps {
   hideToolCalls?: boolean;
 }
 
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 function hasOpenCodeFence(content: string) {
   let openFence: '`' | '~' | null = null;
   let openFenceLength = 0;
@@ -70,6 +72,7 @@ export function ChatContainer({
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const showScrollButtonRef = useRef(false);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
 
   const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
@@ -110,7 +113,12 @@ export function ChatContainer({
 
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < atBottomThreshold;
     isAtBottomRef.current = atBottom;
-    setShowScrollButton(!atBottom && messages.length > 0);
+
+    const nextShowButton = !atBottom && messages.length > 0;
+    if (showScrollButtonRef.current !== nextShowButton) {
+      showScrollButtonRef.current = nextShowButton;
+      setShowScrollButton(nextShowButton);
+    }
   }, [messages.length]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
@@ -120,7 +128,7 @@ export function ChatContainer({
     scroller.scrollTo({ top: scroller.scrollHeight, behavior });
   }, []);
 
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!autoScroll || !isAtBottomRef.current) {
       updateAtBottomState();
       return;
