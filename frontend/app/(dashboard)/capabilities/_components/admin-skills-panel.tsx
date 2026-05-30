@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl'
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, FileArchive, GitBranch, Loader2, PackageOpen, Plus, RefreshCw, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -526,12 +526,13 @@ export function AdminSkillsPanel() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" nativeButton={false} render={
-                          <Link href={`/capabilities/skills/${skill.id}`}>
-                            <Eye className="h-4 w-4" />
-                            <span className="sr-only">{t('view')}</span>
-                          </Link>
-                        } />
+                        <Link
+                          href={`/capabilities/skills/${skill.id}`}
+                          className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'h-8 w-8' })}
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span className="sr-only">{t('view')}</span>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   )

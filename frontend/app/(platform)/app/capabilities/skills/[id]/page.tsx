@@ -1,6 +1,6 @@
 'use client'
 
-import { use } from 'react'
+import { use, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { SkillDetailClient } from '@/components/skill-detail-client'
 import { useTeam } from '@/contexts/team-context'
@@ -14,8 +14,14 @@ export default function PlatformSkillDetailPage({
   const router = useRouter()
   const { currentTeam, isLoading } = useTeam()
 
-  if (!isLoading && !currentTeam?.id) {
-    router.push('/app/capabilities?tab=skills')
+  useEffect(() => {
+    if (!isLoading && !currentTeam?.id) {
+      router.push('/app/capabilities?tab=skills')
+    }
+  }, [currentTeam?.id, isLoading, router])
+
+  if (isLoading || !currentTeam?.id) {
+    return null
   }
 
   return (
