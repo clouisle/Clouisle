@@ -10,7 +10,7 @@ import {
   Loader2Icon,
   type LucideIcon,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, WheelEvent } from "react";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
 import { Shimmer } from "./shimmer";
 
@@ -143,11 +143,28 @@ export const ChainOfThoughtHeader = memo(
 ChainOfThoughtHeader.displayName = "ChainOfThoughtHeader";
 
 // Content container
-export type ChainOfThoughtContentProps = ComponentProps<"div">;
+export type ChainOfThoughtContentProps = ComponentProps<"div"> & {
+  containScroll?: boolean;
+};
 
 export const ChainOfThoughtContent = memo(
-  ({ className, children, ...props }: ChainOfThoughtContentProps) => {
+  ({ className, children, containScroll = false, onWheel, ...props }: ChainOfThoughtContentProps) => {
     const { isOpen, contentId } = useChainOfThought();
+
+    const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+      onWheel?.(event);
+      if (!containScroll || event.isPropagationStopped()) {
+        return;
+      }
+
+      const target = event.currentTarget;
+      const canScrollUp = target.scrollTop > 0;
+      const canScrollDown = target.scrollTop + target.clientHeight < target.scrollHeight;
+
+      if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
+        event.stopPropagation();
+      }
+    }, [containScroll, onWheel]);
 
     return (
       <div
@@ -159,6 +176,7 @@ export const ChainOfThoughtContent = memo(
           !isOpen && "hidden",
           className
         )}
+        onWheel={handleWheel}
         {...props}
       >
         {children}
