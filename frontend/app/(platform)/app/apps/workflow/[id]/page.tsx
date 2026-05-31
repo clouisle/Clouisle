@@ -67,7 +67,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { workflowsApi, Workflow, VariableDefinition } from '@/lib/api/workflows'
+import { workflowsApi, Workflow, WorkflowUpdateInput, VariableDefinition } from '@/lib/api/workflows'
 import { authApi, User } from '@/lib/api/auth'
 import { useCanPerform } from '@/components/permission-guard'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -221,15 +221,33 @@ function ZoomControl() {
   )
 }
 
-function WorkflowEditorContent() {
-  const params = useParams()
+interface WorkflowEditorApi {
+  getWorkflow: (id: string) => Promise<Workflow>
+  updateWorkflow: (id: string, data: WorkflowUpdateInput) => Promise<Workflow>
+  publishWorkflow: (id: string) => Promise<Workflow>
+  unpublishWorkflow: (id: string) => Promise<Workflow>
+}
+
+interface WorkflowEditorContentProps {
+  workflowId: string
+  api?: WorkflowEditorApi
+  backHref?: string
+  updatePermission?: string
+  baseUrl?: string
+}
+
+export function WorkflowEditorContent({
+  workflowId,
+  api = workflowsApi,
+  backHref = '/app/apps',
+  updatePermission = 'workflow:update',
+  baseUrl = `/app/apps/workflow/${workflowId}`,
+}: WorkflowEditorContentProps) {
   const router = useRouter()
   const t = useTranslations('workflow')
   const tCommon = useTranslations('common')
   const { canPerform } = useCanPerform()
-  const canUpdateWorkflow = canPerform('workflow:update')
-
-  const workflowId = params.id as string
+  const canUpdateWorkflow = canPerform(updatePermission)
 
   // Workflow definitions earlier than schema_version 2 predate the typed-
   // variable refactor (see docs/dev/design/app-platform/WORKFLOW_TYPE_SYSTEM.md).
@@ -426,7 +444,7 @@ function WorkflowEditorContent() {
       try {
         setIsLoading(true)
         const [workflowData, userData] = await Promise.all([
-          workflowsApi.getWorkflow(workflowId),
+          api.getWorkflow(workflowId),
           authApi.getCurrentUser({ skipAuthRedirect: true }),
         ])
         setWorkflow(workflowData)
@@ -442,7 +460,7 @@ function WorkflowEditorContent() {
         }
       } catch {
         // toast handled by API interceptor
-        router.push('/app/apps')
+        router.push(backHref)
       } finally {
         setIsLoading(false)
       }
@@ -451,7 +469,7 @@ function WorkflowEditorContent() {
     if (workflowId) {
       loadData()
     }
-  }, [workflowId, router, setNodes, setEdges])
+  }, [workflowId, api, backHref, router, setNodes, setEdges])
 
   // Handle start node type selection
   const handleStartNodeSelect = React.useCallback((type: StartNodeType) => {
@@ -946,7 +964,7 @@ function WorkflowEditorContent() {
         viewport: { x: 0, y: 0, zoom: 1 },
       }
 
-      await workflowsApi.updateWorkflow(workflowId, {
+      await api.updateWorkflow(workflowId, {
         definition: newDefinition,
         variables,
       })
@@ -962,7 +980,7 @@ function WorkflowEditorContent() {
     } finally {
       setIsSaving(false)
     }
-  }, [workflow, workflowId, nodes, edges, t, extractVariablesFromNodes])
+  }, [workflow, workflowId, api, nodes, edges, t, extractVariablesFromNodes])
 
   // Publish/Unpublish workflow
   const handlePublish = React.useCallback(async () => {
@@ -976,7 +994,7 @@ function WorkflowEditorContent() {
       
       // 如果有未保存的更改，先保存
       if (hasChanges) {
-        await workflowsApi.updateWorkflow(workflowId, {
+        await api.updateWorkflow(workflowId, {
           definition: {
             nodes: nodes as never[],
             edges: edges as never[],
@@ -990,11 +1008,11 @@ function WorkflowEditorContent() {
       
       // 发布或取消发布
       if (workflow.status === 'published') {
-        const updated = await workflowsApi.unpublishWorkflow(workflowId)
+        const updated = await api.unpublishWorkflow(workflowId)
         setWorkflow(updated)
         toast.success(t('unpublished'))
       } else {
-        const updated = await workflowsApi.publishWorkflow(workflowId)
+        const updated = await api.publishWorkflow(workflowId)
         setWorkflow(updated)
         toast.success(t('published'))
       }
@@ -1003,7 +1021,7 @@ function WorkflowEditorContent() {
     } finally {
       setIsPublishing(false)
     }
-  }, [workflow, workflowId, nodes, edges, hasChanges, t, extractVariablesFromNodes])
+  }, [workflow, workflowId, api, nodes, edges, hasChanges, t, extractVariablesFromNodes])
 
   // Add comment helper (shared by toolbar button and keyboard shortcut)
   const handleAddComment = React.useCallback(() => {
@@ -1353,7 +1371,7 @@ function WorkflowEditorContent() {
       <div className="flex h-full bg-background items-center justify-center">
         <StartNodeSelector
           onSelect={handleStartNodeSelect}
-          onCancel={() => router.push('/app/apps')}
+          onCancel={() => router.push(backHref)}
         />
       </div>
     )
@@ -1376,7 +1394,7 @@ function WorkflowEditorContent() {
                   if (hasChanges) {
                     setShowExitConfirm(true)
                   } else {
-                    router.push('/app/apps')
+                    router.push(backHref)
                   }
                 }}
               >
@@ -1413,21 +1431,21 @@ function WorkflowEditorContent() {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/api`)}
+                    onClick={() => router.push(`${baseUrl}/api`)}
                   >
                     <ExternalLink className="h-4 w-4" />
                     <span>{t('accessApi')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/logs`)}
+                    onClick={() => router.push(`${baseUrl}/logs`)}
                   >
                     <FileText className="h-4 w-4" />
                     <span>{t('logs')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
+                    onClick={() => router.push(`${baseUrl}/monitor`)}
                   >
                     <Activity className="h-4 w-4" />
                     <span>{t('monitor')}</span>
@@ -1699,6 +1717,7 @@ function WorkflowEditorContent() {
             onClose={() => setSettingsDrawerOpen(false)}
             onUpdate={(updated) => setWorkflow(updated)}
             readOnly={!canUpdateWorkflow}
+            updateWorkflow={api.updateWorkflow}
           />
 
           {/* Test Run Panel - floating inside canvas */}
@@ -1713,7 +1732,7 @@ function WorkflowEditorContent() {
               // backend `schema_inference.merge_run_into_workflow`).
               // Refetch so the editor shows the freshly inferred fields.
               try {
-                const fresh = await workflowsApi.getWorkflow(workflowId)
+                const fresh = await api.getWorkflow(workflowId)
                 setWorkflow(fresh)
                 if (fresh.definition?.nodes) {
                   setNodes(fresh.definition.nodes as unknown as WorkflowNode[])
@@ -1777,7 +1796,7 @@ function WorkflowEditorContent() {
             <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => router.push('/app/apps')}
+              onClick={() => router.push(backHref)}
             >
               {t('editor.leaveWithoutSaving')}
             </AlertDialogAction>
@@ -1791,6 +1810,7 @@ function WorkflowEditorContent() {
           open={showEmbed}
           onOpenChange={setShowEmbed}
           workflow={workflow}
+          updateWorkflow={api.updateWorkflow}
           onUpdate={(updated) => setWorkflow(updated as Workflow)}
         />
       )}
@@ -1800,9 +1820,12 @@ function WorkflowEditorContent() {
 
 // Wrapper component with ReactFlowProvider
 export default function WorkflowEditorPage() {
+  const params = useParams()
+  const workflowId = params.id as string
+
   return (
     <ReactFlowProvider>
-      <WorkflowEditorContent />
+      <WorkflowEditorContent workflowId={workflowId} />
     </ReactFlowProvider>
   )
 }

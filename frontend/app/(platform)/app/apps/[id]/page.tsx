@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import {
   agentsApi,
   type Agent,
+  type AgentUpdateInput,
   type AgentVisibility,
   type VariableDefinition,
   type AgentKnowledgeBaseConfig,
@@ -31,7 +32,28 @@ interface AgentConfigPageProps {
   params: Promise<{ id: string }>
 }
 
-export default function AgentConfigPage({ params }: AgentConfigPageProps) {
+interface AgentEditorApi {
+  getAgent: (id: string) => Promise<Agent>
+  updateAgent: (id: string, data: AgentUpdateInput) => Promise<Agent>
+  publishAgent: (id: string) => Promise<Agent>
+  unpublishAgent: (id: string) => Promise<Agent>
+}
+
+interface AgentEditorProps {
+  agentId: string
+  api?: AgentEditorApi
+  backHref?: string
+  updatePermission?: string
+  baseUrl?: string
+}
+
+export function AgentEditor({
+  agentId,
+  api = agentsApi,
+  backHref = '/app/apps',
+  updatePermission = 'agent:update',
+  baseUrl = `/app/apps/${agentId}`,
+}: AgentEditorProps) {
   const t = useTranslations('agents')
   const router = useRouter()
 
@@ -68,20 +90,11 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   const [enableVideoGeneration, setEnableVideoGeneration] = React.useState(false)
   const [videoGenerationConfig, setVideoGenerationConfig] = React.useState<VideoGenerationConfig | null>(null)
 
-  // Unwrap params
-  const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
-
-  React.useEffect(() => {
-    params.then(setResolvedParams)
-  }, [params])
-
   // Fetch agent data
   const fetchAgent = React.useCallback(async () => {
-    if (!resolvedParams) return
-
     try {
       setIsLoading(true)
-      const data = await agentsApi.getAgent(resolvedParams.id)
+      const data = await api.getAgent(agentId)
       setAgent(data)
       // Initialize form state
       setName(data.name)
@@ -114,11 +127,11 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
       setEnableVideoGeneration(data.enable_video_generation || false)
       setVideoGenerationConfig(data.video_generation_config || null)
     } catch {
-      router.push('/app/apps')
+      router.push(backHref)
     } finally {
       setIsLoading(false)
     }
-  }, [resolvedParams, router])
+  }, [agentId, api, backHref, router])
 
   React.useEffect(() => {
     fetchAgent()
@@ -130,7 +143,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
 
     setIsSaving(true)
     try {
-      const updated = await agentsApi.updateAgent(agent.id, {
+      const updated = await api.updateAgent(agent.id, {
         name,
         description: description || null,
         icon: icon || null,
@@ -171,6 +184,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     }
   }, [
     agent,
+    api,
     isSaving,
     name,
     description,
@@ -205,11 +219,11 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
 
     try {
       if (agent.status === 'draft') {
-        const updated = await agentsApi.publishAgent(agent.id)
+        const updated = await api.publishAgent(agent.id)
         setAgent(updated)
         toast.success(t('agentPublished'))
       } else {
-        const updated = await agentsApi.unpublishAgent(agent.id)
+        const updated = await api.unpublishAgent(agent.id)
         setAgent(updated)
         toast.success(t('agentUnpublished'))
       }
@@ -289,7 +303,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
   return (
     <div className="h-full flex overflow-hidden">
       {/* Left Sidebar - Agent Info & Navigation */}
-      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} />
+      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} backHref={backHref} baseUrl={baseUrl} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -303,6 +317,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
           onEmbedClick={() => setShowEmbed(true)}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+          updatePermission={updatePermission}
         />
 
         {/* Content */}
@@ -355,6 +370,7 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
         open={showEmbed}
         onOpenChange={setShowEmbed}
         agent={agent}
+        updateAgent={api.updateAgent}
         onUpdate={(updated) => {
           if ('max_iterations' in updated) {
             setAgent(updated)
@@ -364,3 +380,16 @@ export default function AgentConfigPage({ params }: AgentConfigPageProps) {
     </div>
   )
 }
+
+export default function AgentConfigPage({ params }: AgentConfigPageProps) {
+  const [resolvedParams, setResolvedParams] = React.useState<{ id: string } | null>(null)
+
+  React.useEffect(() => {
+    params.then(setResolvedParams)
+  }, [params])
+
+  if (!resolvedParams) return null
+
+  return <AgentEditor agentId={resolvedParams.id} />
+}
+

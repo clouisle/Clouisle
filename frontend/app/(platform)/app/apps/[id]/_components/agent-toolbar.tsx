@@ -38,6 +38,7 @@ interface AgentToolbarProps {
   onEmbedClick: () => void
   sidebarCollapsed: boolean
   onToggleSidebar: () => void
+  updatePermission?: string
 }
 
 export function AgentToolbar({
@@ -49,6 +50,7 @@ export function AgentToolbar({
   onEmbedClick,
   sidebarCollapsed,
   onToggleSidebar,
+  updatePermission = 'agent:update',
 }: AgentToolbarProps) {
   const t = useTranslations('agents.orchestration')
 
@@ -96,7 +98,7 @@ export function AgentToolbar({
           </Button>
         </Link>
 
-        <PermissionGuard permission="agent:update">
+        <PermissionGuard permission={updatePermission}>
           {/* Embed Button */}
           <Button variant="outline" size="sm" onClick={onEmbedClick} className="cursor-pointer">
             <Code className="mr-1.5 h-3.5 w-3.5" />

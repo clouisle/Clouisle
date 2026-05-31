@@ -24,6 +24,7 @@ export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
   { path: '/roles', permission: 'admin:role:read' },
   { path: '/permissions', permission: 'admin:permission:read' },
   { path: '/models', permission: 'admin:model:read' },
+  { path: '/apps', permission: 'admin:app:read', matchMode: 'prefix' },
   { path: '/capabilities', permission: 'admin:capability:read', matchMode: 'prefix' },
   { path: '/api-keys', permission: 'apikey:read' },
   { path: '/memories', permission: 'admin:memory:read' },

@@ -5,14 +5,14 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Agent } from '@/lib/api'
+import type { Agent, AgentUpdateInput } from '@/lib/api'
 import {
   agentsApi,
   clearValidationError,
   getValidationSummaryEntries,
   normalizeValidationErrors,
 } from '@/lib/api'
-import { workflowsApi, type Workflow } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type WorkflowUpdateInput } from '@/lib/api/workflows'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   Dialog,
@@ -43,6 +43,8 @@ interface EmbedConfigDialogProps {
   agent?: Agent
   workflow?: Workflow
   onUpdate: (updated: Agent | Workflow) => void
+  updateAgent?: (id: string, data: AgentUpdateInput) => Promise<Agent>
+  updateWorkflow?: (id: string, data: WorkflowUpdateInput) => Promise<Workflow>
 }
 
 interface EmbedConfig {
@@ -76,7 +78,15 @@ function parseEmbedConfig(raw: Record<string, unknown> | undefined): EmbedConfig
   }
 }
 
-export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdate }: EmbedConfigDialogProps) {
+export function EmbedConfigDialog({
+  open,
+  onOpenChange,
+  agent,
+  workflow,
+  onUpdate,
+  updateAgent = agentsApi.updateAgent,
+  updateWorkflow = workflowsApi.updateWorkflow,
+}: EmbedConfigDialogProps) {
   const t = useTranslations('embed.settings')
 
   const target = agent || workflow
@@ -137,8 +147,8 @@ export function EmbedConfigDialog({ open, onOpenChange, agent, workflow, onUpdat
       }
 
       const updated = targetType === 'agent'
-        ? await agentsApi.updateAgent(targetId, { embed_config: embedConfig })
-        : await workflowsApi.updateWorkflow(targetId, { embed_config: embedConfig })
+        ? await updateAgent(targetId, { embed_config: embedConfig })
+        : await updateWorkflow(targetId, { embed_config: embedConfig })
       onUpdate(updated)
       toast.success(t('save'))
       onOpenChange(false)

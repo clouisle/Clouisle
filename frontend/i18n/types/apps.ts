@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-30T13:34:09.428Z
+// GENERATED — 2026-05-31T04:20:24.496Z
 // Source: i18n/en/apps.json
 export type AppsMessages = {
   apps: {
@@ -68,5 +68,76 @@ export type AppsMessages = {
       tools: string
     }
     searchPlaceholder: string
+    admin: {
+      title: string
+      description: string
+      tabs: {
+        agents: string
+        workflows: string
+      }
+      agents: {
+        title: string
+        description: string
+        searchPlaceholder: string
+        stats: string
+        deleteConfirm: string
+        bulkDeleteConfirm: string
+      }
+      workflows: {
+        title: string
+        description: string
+        searchPlaceholder: string
+        stats: string
+        deleteConfirm: string
+        bulkDeleteConfirm: string
+      }
+      columns: {
+        name: string
+        visibility: string
+        trigger: string
+        team: string
+        creator: string
+        stats: string
+        updatedAt: string
+      }
+      status: {
+        draft: string
+        published: string
+        archived: string
+      }
+      visibility: {
+        private: string
+        team: string
+        public: string
+      }
+      trigger: {
+        manual: string
+        cron: string
+        webhook: string
+      }
+      actions: {
+        refresh: string
+        reset: string
+        publish: string
+        unpublish: string
+        duplicate: string
+        edit: string
+        export: string
+        delete: string
+        published: string
+        unpublished: string
+        duplicated: string
+        deleted: string
+      }
+      pagination: {
+        total: string
+        previous: string
+        next: string
+      }
+      bulk: {
+        selected: string
+      }
+      empty: string
+    }
   }
 }

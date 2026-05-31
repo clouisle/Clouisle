@@ -168,6 +168,12 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
       permission: ROUTE_PERMISSION_MAP['/models'],
     },
     {
+      title: t('apps'),
+      url: '/apps',
+      icon: AppWindow,
+      permission: ROUTE_PERMISSION_MAP['/apps'],
+    },
+    {
       title: t('capabilities'),
       url: '/capabilities',
       icon: Wrench,

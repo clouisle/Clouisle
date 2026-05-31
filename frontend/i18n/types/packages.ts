@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-30T13:34:09.435Z
+// GENERATED — 2026-05-31T04:20:24.501Z
 // Source: i18n/en/packages.json
 export type PackagesMessages = {
   packages: {

@@ -19,12 +19,18 @@ import type { Agent } from '@/lib/api'
 interface AgentSidebarProps {
   agent: Agent
   collapsed?: boolean
+  backHref?: string
+  baseUrl?: string
 }
 
-export function AgentSidebar({ agent, collapsed = false }: AgentSidebarProps) {
+export function AgentSidebar({
+  agent,
+  collapsed = false,
+  backHref = '/app/apps',
+  baseUrl = `/app/apps/${agent.id}`,
+}: AgentSidebarProps) {
   const t = useTranslations('agents.orchestration.sidebar')
   const pathname = usePathname()
-  const baseUrl = `/app/apps/${agent.id}`
 
   // Check if icon is a URL or emoji
   const isIconUrl = agent.icon && (agent.icon.startsWith('http') || agent.icon.startsWith('/'))
@@ -65,7 +71,7 @@ export function AgentSidebar({ agent, collapsed = false }: AgentSidebarProps) {
       <div className="p-4">
         <div className="flex items-center justify-between">
           <Link 
-            href="/app/apps" 
+            href={backHref}
             className="flex items-center gap-3 min-w-0 group"
           >
             <div className="shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center relative overflow-hidden">
