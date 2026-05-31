@@ -320,12 +320,12 @@ export function AdminWorkflowsPanel() {
                     } />
                     <DropdownMenuContent align="end">
                       <PermissionGuard permission="admin:app:update">
-                        <Link href={`/apps/workflows/${workflow.id}/edit`}>
-                          <DropdownMenuItem>
+                        <DropdownMenuItem render={
+                          <Link href={`/apps/workflows/${workflow.id}/edit`}>
                             <FileEdit className="h-4 w-4" />
                             {t('actions.edit')}
-                          </DropdownMenuItem>
-                        </Link>
+                          </Link>
+                        } />
                       </PermissionGuard>
                       <PermissionGuard permission="admin:app:publish">
                         <DropdownMenuItem onClick={() => runAction(() => workflow.status === 'published' ? adminWorkflowsApi.unpublish(workflow.id) : adminWorkflowsApi.publish(workflow.id), workflow.status === 'published' ? 'actions.unpublished' : 'actions.published')}>

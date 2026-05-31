@@ -311,12 +311,12 @@ export function AdminAgentsPanel() {
                     } />
                     <DropdownMenuContent align="end">
                       <PermissionGuard permission="admin:app:update">
-                        <Link href={`/apps/agents/${agent.id}/edit`}>
-                          <DropdownMenuItem>
+                        <DropdownMenuItem render={
+                          <Link href={`/apps/agents/${agent.id}/edit`}>
                             <FileEdit className="h-4 w-4" />
                             {t('actions.edit')}
-                          </DropdownMenuItem>
-                        </Link>
+                          </Link>
+                        } />
                       </PermissionGuard>
                       <PermissionGuard permission="admin:app:publish">
                         <DropdownMenuItem onClick={() => runAction(() => agent.status === 'published' ? adminAgentsApi.unpublish(agent.id) : adminAgentsApi.publish(agent.id), agent.status === 'published' ? 'actions.unpublished' : 'actions.published')}>

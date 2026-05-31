@@ -107,11 +107,11 @@ async def list_agents(
 async def get_agent_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
-    agents = await Agent.all().prefetch_related("created_by")
     teams = await Team.all().order_by("name")
-    creator_values = sorted(
-        {agent.created_by.username for agent in agents if agent.created_by}
+    creator_values = await Agent.filter(created_by__isnull=False).distinct().values_list(
+        "created_by__username", flat=True
     )
+    creator_values = sorted(creator_values)
     return success(
         data={
             "statuses": [_option(AgentStatus.DRAFT.value), _option(AgentStatus.PUBLISHED.value)],
@@ -383,7 +383,6 @@ async def update_agent(
     await agent.save()
 
     if agent_in.knowledge_base_configs is not None:
-        await AgentKnowledgeBase.filter(agent_id=agent.id).delete()
         for kb_config in agent_in.knowledge_base_configs:
             kb = await KnowledgeBase.filter(
                 id=kb_config.knowledge_base_id,
@@ -395,6 +394,9 @@ async def update_agent(
                     msg_key="kb_not_found",
                     status_code=404,
                 )
+
+        await AgentKnowledgeBase.filter(agent_id=agent.id).delete()
+        for kb_config in agent_in.knowledge_base_configs:
             await AgentKnowledgeBase.create(
                 agent=agent,
                 knowledge_base_id=kb_config.knowledge_base_id,

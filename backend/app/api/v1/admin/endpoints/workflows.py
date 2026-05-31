@@ -103,11 +103,11 @@ async def list_workflows(
 async def get_workflow_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
-    workflows = await Workflow.all().prefetch_related("created_by")
     teams = await Team.all().order_by("name")
-    creator_values = sorted(
-        {workflow.created_by.username for workflow in workflows if workflow.created_by}
+    creator_values = await Workflow.filter(created_by__isnull=False).distinct().values_list(
+        "created_by__username", flat=True
     )
+    creator_values = sorted(creator_values)
     return success(
         data={
             "statuses": [
