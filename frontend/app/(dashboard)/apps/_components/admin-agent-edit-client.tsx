@@ -16,6 +16,7 @@ export function AdminAgentEditClient({ agentId }: { agentId: string }) {
       }}
       backHref="/apps"
       updatePermission="admin:app:update"
+      baseUrl={`/apps/agents/${agentId}/edit`}
     />
   )
 }

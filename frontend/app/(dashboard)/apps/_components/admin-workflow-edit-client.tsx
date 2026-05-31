@@ -18,6 +18,7 @@ export function AdminWorkflowEditClient({ workflowId }: { workflowId: string }) 
         }}
         backHref="/apps?tab=workflows"
         updatePermission="admin:app:update"
+        baseUrl={`/apps/workflows/${workflowId}/edit`}
       />
     </ReactFlowProvider>
   )

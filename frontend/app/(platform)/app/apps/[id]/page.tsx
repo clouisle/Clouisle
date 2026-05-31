@@ -44,6 +44,7 @@ interface AgentEditorProps {
   api?: AgentEditorApi
   backHref?: string
   updatePermission?: string
+  baseUrl?: string
 }
 
 export function AgentEditor({
@@ -51,6 +52,7 @@ export function AgentEditor({
   api = agentsApi,
   backHref = '/app/apps',
   updatePermission = 'agent:update',
+  baseUrl = `/app/apps/${agentId}`,
 }: AgentEditorProps) {
   const t = useTranslations('agents')
   const router = useRouter()
@@ -301,7 +303,7 @@ export function AgentEditor({
   return (
     <div className="h-full flex overflow-hidden">
       {/* Left Sidebar - Agent Info & Navigation */}
-      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} />
+      <AgentSidebar agent={agent} collapsed={sidebarCollapsed} backHref={backHref} baseUrl={baseUrl} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">

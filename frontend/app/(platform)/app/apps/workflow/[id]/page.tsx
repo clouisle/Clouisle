@@ -233,6 +233,7 @@ interface WorkflowEditorContentProps {
   api?: WorkflowEditorApi
   backHref?: string
   updatePermission?: string
+  baseUrl?: string
 }
 
 export function WorkflowEditorContent({
@@ -240,6 +241,7 @@ export function WorkflowEditorContent({
   api = workflowsApi,
   backHref = '/app/apps',
   updatePermission = 'workflow:update',
+  baseUrl = `/app/apps/workflow/${workflowId}`,
 }: WorkflowEditorContentProps) {
   const router = useRouter()
   const t = useTranslations('workflow')
@@ -1369,7 +1371,7 @@ export function WorkflowEditorContent({
       <div className="flex h-full bg-background items-center justify-center">
         <StartNodeSelector
           onSelect={handleStartNodeSelect}
-          onCancel={() => router.push('/app/apps')}
+          onCancel={() => router.push(backHref)}
         />
       </div>
     )
@@ -1429,21 +1431,21 @@ export function WorkflowEditorContent({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/api`)}
+                    onClick={() => router.push(`${baseUrl}/api`)}
                   >
                     <ExternalLink className="h-4 w-4" />
                     <span>{t('accessApi')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/logs`)}
+                    onClick={() => router.push(`${baseUrl}/logs`)}
                   >
                     <FileText className="h-4 w-4" />
                     <span>{t('logs')}</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="gap-2"
-                    onClick={() => router.push(`/app/apps/workflow/${workflowId}/monitor`)}
+                    onClick={() => router.push(`${baseUrl}/monitor`)}
                   >
                     <Activity className="h-4 w-4" />
                     <span>{t('monitor')}</span>
@@ -1794,7 +1796,7 @@ export function WorkflowEditorContent({
             <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => router.push('/app/apps')}
+              onClick={() => router.push(backHref)}
             >
               {t('editor.leaveWithoutSaving')}
             </AlertDialogAction>
