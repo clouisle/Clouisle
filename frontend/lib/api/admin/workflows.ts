@@ -1,7 +1,7 @@
 import { api } from '../client'
 import type { PageData } from '../users'
 import type { ToolFilterOption } from '../tools'
-import type { TriggerType, Workflow, WorkflowListItem, WorkflowStatus, WorkflowVisibility } from '../workflows'
+import type { TriggerType, Workflow, WorkflowListItem, WorkflowStatus, WorkflowUpdateInput, WorkflowVisibility } from '../workflows'
 
 export interface AdminWorkflow extends WorkflowListItem {
   team_id?: string
@@ -53,6 +53,9 @@ export const adminWorkflowsApi = {
 
   getById: async (id: string): Promise<AdminWorkflowDetail> =>
     api.get<AdminWorkflowDetail>(`/admin/workflows/${id}`),
+
+  update: async (id: string, data: WorkflowUpdateInput): Promise<AdminWorkflowDetail> =>
+    api.put<AdminWorkflowDetail>(`/admin/workflows/${id}`, data),
 
   publish: async (id: string): Promise<AdminWorkflowDetail> =>
     api.post<AdminWorkflowDetail>(`/admin/workflows/${id}/publish`),

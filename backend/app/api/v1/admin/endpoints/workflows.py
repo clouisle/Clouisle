@@ -19,7 +19,7 @@ from app.models.workflow import (
     WorkflowVisibility,
 )
 from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
-from app.schemas.workflow import WorkflowListItem, WorkflowOut
+from app.schemas.workflow import WorkflowListItem, WorkflowOut, WorkflowUpdate
 from app.services.audit_log import AuditLogService
 
 router = APIRouter()
@@ -138,6 +138,88 @@ async def get_workflow(
 ) -> Any:
     workflow = await _get_workflow(workflow_id, detail=True)
     return success(data=WorkflowOut.model_validate(workflow).model_dump())
+
+
+@router.put("/{workflow_id}", response_model=Response[WorkflowOut])
+async def update_workflow(
+    request: Request,
+    workflow_id: UUID,
+    workflow_in: WorkflowUpdate,
+    current_user: User = Depends(deps.PermissionChecker("admin:app:update")),
+) -> Any:
+    workflow = await _get_workflow(workflow_id, detail=True)
+
+    if workflow_in.name is not None and workflow_in.name != workflow.name:
+        existing = (
+            await Workflow.filter(team_id=workflow.team_id, name=workflow_in.name)
+            .exclude(id=workflow_id)
+            .first()
+        )
+        if existing:
+            raise BusinessError(
+                code=ResponseCode.DUPLICATE_NAME,
+                msg_key="workflow_name_exists",
+            )
+
+    updated_fields = []
+    old_version = workflow.version
+
+    if workflow_in.name is not None:
+        workflow.name = workflow_in.name
+        updated_fields.append("name")
+    if workflow_in.description is not None:
+        workflow.description = workflow_in.description
+        updated_fields.append("description")
+    if workflow_in.icon is not None:
+        workflow.icon = workflow_in.icon
+        updated_fields.append("icon")
+    if workflow_in.definition is not None:
+        workflow.definition = workflow_in.definition
+        workflow.version += 1
+        updated_fields.append("definition")
+    if workflow_in.variables is not None:
+        workflow.variables = workflow_in.variables
+        updated_fields.append("variables")
+    if workflow_in.trigger_type is not None:
+        workflow.trigger_type = workflow_in.trigger_type
+        updated_fields.append("trigger_type")
+    if workflow_in.trigger_config is not None:
+        workflow.trigger_config = workflow_in.trigger_config
+        updated_fields.append("trigger_config")
+    if workflow_in.visibility is not None:
+        workflow.visibility = WorkflowVisibility(workflow_in.visibility)
+        updated_fields.append("visibility")
+    if workflow_in.embed_config is not None:
+        workflow.embed_config = workflow_in.embed_config
+        updated_fields.append("embed_config")
+
+    await workflow.save()
+    workflow = await Workflow.get(id=workflow_id).prefetch_related("team", "created_by")
+    await AuditLogService.log(
+        user=current_user,
+        action="admin_update_workflow",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+        changes={
+            "before": {"version": old_version},
+            "after": {"version": workflow.version},
+        },
+        metadata={
+            "fields_updated": updated_fields,
+            "team_id": str(workflow.team_id),
+            "visibility": workflow.visibility.value,
+            "trigger_type": workflow.trigger_type.value,
+            "version": workflow.version,
+        },
+    )
+    return success(
+        data=WorkflowOut.model_validate(workflow).model_dump(),
+        msg_key="workflow_updated",
+    )
 
 
 @router.post("/{workflow_id}/publish", response_model=Response[WorkflowOut])

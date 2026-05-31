@@ -284,14 +284,14 @@ export function AdminWorkflowsPanel() {
                 <TableCell className="text-sm text-muted-foreground">{formatDate(workflow.updated_at)}</TableCell>
                 <TableCell>
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                    <DropdownMenuTrigger render={
                       <Button variant="ghost" size="icon" className="h-8 w-8">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
-                    </DropdownMenuTrigger>
+                    } />
                     <DropdownMenuContent align="end">
                       <PermissionGuard permission="admin:app:update">
-                        <Link href={`/app/apps/workflow/${workflow.id}`}>
+                        <Link href={`/apps/workflows/${workflow.id}/edit`}>
                           <DropdownMenuItem>
                             <FileEdit className="h-4 w-4" />
                             {t('actions.edit')}
