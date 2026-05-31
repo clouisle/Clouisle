@@ -19,7 +19,7 @@ from app.models.workflow import (
     WorkflowVisibility,
 )
 from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
-from app.schemas.workflow import WorkflowListItem, WorkflowOut, WorkflowUpdate
+from app.schemas.workflow import WorkflowCreate, WorkflowListItem, WorkflowOut, WorkflowUpdate
 from app.services.audit_log import AuditLogService
 
 router = APIRouter()
@@ -128,6 +128,89 @@ async def get_workflow_filter_options(
             "teams": [_option(str(team.id), team.name) for team in teams],
             "creators": [_option(value) for value in creator_values],
         }
+    )
+
+
+@router.post("", response_model=Response[WorkflowOut])
+async def create_workflow(
+    request: Request,
+    workflow_in: WorkflowCreate,
+    current_user: User = Depends(deps.PermissionChecker("admin:app:create")),
+) -> Any:
+    team = await Team.filter(id=workflow_in.team_id).first()
+    if not team:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    existing = await Workflow.filter(
+        team_id=workflow_in.team_id,
+        name=workflow_in.name,
+    ).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="workflow_name_exists",
+        )
+
+    default_definition = {
+        "nodes": [
+            {
+                "id": "user_input-1",
+                "type": "user_input",
+                "position": {"x": 250, "y": 100},
+                "data": {
+                    "type": "user_input",
+                    "label": t("node_label_start"),
+                    "config": {},
+                    "parameters": [
+                        {
+                            "id": "query",
+                            "name": "query",
+                            "type": "text",
+                            "required": True,
+                        }
+                    ],
+                },
+            },
+        ],
+        "edges": [],
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+    }
+
+    workflow = await Workflow.create(
+        name=workflow_in.name,
+        description=workflow_in.description,
+        icon=workflow_in.icon,
+        visibility=WorkflowVisibility(workflow_in.visibility),
+        team=team,
+        definition=default_definition,
+        variables=[],
+        created_by=current_user,
+    )
+    workflow = await Workflow.get(id=workflow.id).prefetch_related("team", "created_by")
+    await AuditLogService.log(
+        user=current_user,
+        action="admin_create_workflow",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        resource_name=workflow.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team.id),
+            "team_name": team.name,
+            "visibility": workflow.visibility.value,
+            "trigger_type": workflow.trigger_type.value,
+            "version": workflow.version,
+        },
+    )
+    return success(
+        data=WorkflowOut.model_validate(workflow).model_dump(),
+        msg_key="workflow_created",
     )
 
 

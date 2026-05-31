@@ -19,7 +19,7 @@ from app.models.knowledge_base import KnowledgeBase
 from app.models.model import TeamModel
 from app.models.notification import AutoNotificationType
 from app.models.user import Team, User
-from app.schemas.agent import AgentOut, AgentUpdate, AgentListOut, ModelInfo
+from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate, AgentListOut, ModelInfo
 from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
@@ -123,6 +123,128 @@ async def get_agent_filter_options(
             "creators": [_option(value) for value in creator_values],
         }
     )
+
+
+@router.post("", response_model=Response[AgentOut])
+async def create_agent(
+    request: Request,
+    agent_in: AgentCreate,
+    current_user: User = Depends(deps.PermissionChecker("admin:app:create")),
+) -> Any:
+    team = await Team.filter(id=agent_in.team_id).first()
+    if not team:
+        raise BusinessError(
+            code=ResponseCode.NOT_FOUND,
+            msg_key="team_not_found",
+            status_code=404,
+        )
+
+    existing = await Agent.filter(team_id=agent_in.team_id, name=agent_in.name).first()
+    if existing:
+        raise BusinessError(
+            code=ResponseCode.DUPLICATE_NAME,
+            msg_key="agent_name_exists",
+        )
+
+    if agent_in.model_id:
+        team_model = await TeamModel.filter(
+            id=agent_in.model_id,
+            team_id=agent_in.team_id,
+            is_enabled=True,
+        ).first()
+        if not team_model:
+            raise BusinessError(
+                code=ResponseCode.MODEL_NOT_AUTHORIZED,
+                msg_key="model_not_authorized",
+            )
+
+    for kb_config in agent_in.knowledge_base_configs:
+        kb = await KnowledgeBase.filter(
+            id=kb_config.knowledge_base_id,
+            team_id=agent_in.team_id,
+        ).first()
+        if not kb:
+            raise BusinessError(
+                code=ResponseCode.KB_NOT_FOUND,
+                msg_key="kb_not_found",
+                status_code=404,
+            )
+
+    from app.services.skill import SkillService
+
+    await SkillService.validate_agent_skill_configs(
+        None,
+        [tool.model_dump() for tool in agent_in.tools_config],
+        agent_in.team_id,
+    )
+
+    agent = await Agent.create(
+        name=agent_in.name,
+        description=agent_in.description,
+        icon=agent_in.icon,
+        avatar_url=agent_in.avatar_url,
+        team=team,
+        model_id=agent_in.model_id,
+        system_prompt=agent_in.system_prompt,
+        max_iterations=agent_in.max_iterations,
+        hide_tool_calls=agent_in.hide_tool_calls,
+        tools_config=[tool.model_dump() for tool in agent_in.tools_config],
+        enable_vision=agent_in.enable_vision,
+        enable_file_upload=agent_in.enable_file_upload,
+        file_upload_config=agent_in.file_upload_config.model_dump()
+        if agent_in.file_upload_config
+        else {},
+        enable_user_input_request=agent_in.enable_user_input_request,
+        enable_memory=agent_in.enable_memory,
+        memory_config=agent_in.memory_config.model_dump()
+        if agent_in.memory_config
+        else {},
+        context_compression_config=agent_in.context_compression_config.model_dump()
+        if agent_in.context_compression_config
+        else {},
+        enable_image_generation=agent_in.enable_image_generation,
+        image_generation_config=agent_in.image_generation_config.model_dump()
+        if agent_in.image_generation_config
+        else {},
+        enable_video_generation=agent_in.enable_video_generation,
+        video_generation_config=agent_in.video_generation_config.model_dump()
+        if agent_in.video_generation_config
+        else {},
+        rag_mode=agent_in.rag_mode,
+        variables=[variable.model_dump() for variable in agent_in.variables],
+        opening_message=agent_in.opening_message,
+        suggested_questions=agent_in.suggested_questions,
+        visibility=normalize_agent_visibility(agent_in.visibility),
+        created_by=current_user,
+    )
+
+    for kb_config in agent_in.knowledge_base_configs:
+        await AgentKnowledgeBase.create(
+            agent=agent,
+            knowledge_base_id=kb_config.knowledge_base_id,
+            retrieval_top_k=kb_config.retrieval_top_k,
+            score_threshold=kb_config.score_threshold,
+            search_mode=kb_config.search_mode,
+        )
+
+    agent = await Agent.get(id=agent.id).prefetch_related("team", "created_by")
+    await AuditLogService.log(
+        user=current_user,
+        action="admin_create_agent",
+        resource_type="agent",
+        resource_id=agent.id,
+        resource_name=agent.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team.id),
+            "team_name": team.name,
+            "visibility": normalize_agent_visibility(agent_in.visibility),
+            "kb_count": len(agent_in.knowledge_base_configs),
+        },
+    )
+    return success(data=await build_agent_out(agent), msg_key="agent_created")
 
 
 @router.get("/{agent_id}", response_model=Response[AgentOut])

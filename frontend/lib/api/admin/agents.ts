@@ -1,6 +1,6 @@
 import { api } from '../client'
 import type { PageData } from '../users'
-import type { Agent, AgentListItem, AgentStatus, AgentUpdateInput, AgentVisibility } from '../agents'
+import type { Agent, AgentCreateInput, AgentListItem, AgentStatus, AgentUpdateInput, AgentVisibility } from '../agents'
 import type { ToolFilterOption } from '../tools'
 
 export interface AdminAgent extends AgentListItem {
@@ -45,6 +45,9 @@ export const adminAgentsApi = {
 
   getById: async (id: string): Promise<AdminAgentDetail> =>
     api.get<AdminAgentDetail>(`/admin/agents/${id}`),
+
+  create: async (data: AgentCreateInput): Promise<AdminAgentDetail> =>
+    api.post<AdminAgentDetail>('/admin/agents', data),
 
   update: async (id: string, data: AgentUpdateInput): Promise<AdminAgentDetail> =>
     api.put<AdminAgentDetail>(`/admin/agents/${id}`, data),

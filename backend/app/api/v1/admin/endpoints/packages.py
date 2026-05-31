@@ -31,7 +31,12 @@ _ADMIN_EXPORT_ALLOWED_TYPES = {
     ClouisleResourceType.WORKFLOW,
     ClouisleResourceType.KNOWLEDGE_BASE,
 }
-_ADMIN_IMPORT_ALLOWED_TYPES = {ClouisleResourceType.TOOL, ClouisleResourceType.KNOWLEDGE_BASE}
+_ADMIN_IMPORT_ALLOWED_TYPES = {
+    ClouisleResourceType.TOOL,
+    ClouisleResourceType.AGENT,
+    ClouisleResourceType.WORKFLOW,
+    ClouisleResourceType.KNOWLEDGE_BASE,
+}
 
 _EXPORT_PERMISSION: dict[ClouisleResourceType, str] = {
     ClouisleResourceType.TOOL: "admin:capability:read",
@@ -41,10 +46,14 @@ _EXPORT_PERMISSION: dict[ClouisleResourceType, str] = {
 }
 _IMPORT_PERMISSION: dict[ClouisleResourceType, str] = {
     ClouisleResourceType.TOOL: "admin:capability:create",
+    ClouisleResourceType.AGENT: "admin:app:create",
+    ClouisleResourceType.WORKFLOW: "admin:app:create",
     ClouisleResourceType.KNOWLEDGE_BASE: "admin:knowledge-base:create",
 }
 _UPDATE_PERMISSION: dict[ClouisleResourceType, str] = {
     ClouisleResourceType.TOOL: "admin:capability:update",
+    ClouisleResourceType.AGENT: "admin:app:update",
+    ClouisleResourceType.WORKFLOW: "admin:app:update",
     ClouisleResourceType.KNOWLEDGE_BASE: "admin:knowledge-base:update",
 }
 

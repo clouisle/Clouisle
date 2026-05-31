@@ -2133,6 +2133,7 @@ async def init_db():
         "admin:capability:delete",
         "admin:capability:execute",
         "admin:app:read",
+        "admin:app:create",
         "admin:app:update",
         "admin:app:delete",
         "admin:app:publish",

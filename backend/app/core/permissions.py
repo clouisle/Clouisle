@@ -66,6 +66,7 @@ class SystemPermissions:
 
     # ============ Admin App Management ============
     ADMIN_APP_READ = "admin:app:read"
+    ADMIN_APP_CREATE = "admin:app:create"
     ADMIN_APP_UPDATE = "admin:app:update"
     ADMIN_APP_DELETE = "admin:app:delete"
     ADMIN_APP_PUBLISH = "admin:app:publish"
@@ -313,6 +314,11 @@ class SystemPermissions:
                 "code": cls.ADMIN_APP_READ,
                 "scope": "admin",
                 "description": "View agents and workflows across the system",
+            },
+            {
+                "code": cls.ADMIN_APP_CREATE,
+                "scope": "admin",
+                "description": "Create and import agents and workflows across the system",
             },
             {
                 "code": cls.ADMIN_APP_UPDATE,

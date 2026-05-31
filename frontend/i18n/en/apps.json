@@ -16,6 +16,7 @@
       }
     },
     "name": "Name",
+    "team": "Team",
     "namePlaceholder": "Enter app name",
     "nameRequired": "Name is required",
     "teamRequired": "Please select a team",
@@ -116,6 +117,7 @@
       "actions": {
         "refresh": "Refresh",
         "reset": "Reset",
+        "create": "Create",
         "publish": "Publish",
         "unpublish": "Unpublish",
         "duplicate": "Duplicate",

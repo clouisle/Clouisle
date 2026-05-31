@@ -18,44 +18,81 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { FieldError } from '@/components/ui/field'
 import { cn } from '@/lib/utils'
 import { normalizeValidationErrors, clearValidationError, getValidationSummaryEntries,
   formatValidationSummaryMessage
 } from '@/lib/validation'
-import { agentsApi } from '@/lib/api/agents'
-import { workflowsApi } from '@/lib/api/workflows'
-import { useTeam } from '@/contexts/team-context'
+import { agentsApi, type Agent, type AgentCreateInput } from '@/lib/api/agents'
+import { workflowsApi, type Workflow, type WorkflowCreateInput } from '@/lib/api/workflows'
+import type { Team } from '@/lib/api/teams'
+import { useOptionalTeam } from '@/contexts/team-context'
+
+interface AppCreateApi {
+  createAgent: (data: AgentCreateInput) => Promise<Agent>
+  createWorkflow: (data: WorkflowCreateInput) => Promise<Workflow>
+}
 
 interface AppCreateDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  api?: AppCreateApi
+  teamId?: string
+  teams?: Team[]
+  initialType?: AppType
+  allowedTypes?: AppType[]
+  agentEditHref?: (id: string) => string
+  workflowEditHref?: (id: string) => string
 }
 
 type AppType = 'agent' | 'workflow'
 
-export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDialogProps) {
+export function AppCreateDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+  api = {
+    createAgent: agentsApi.createAgent,
+    createWorkflow: workflowsApi.createWorkflow,
+  },
+  teamId,
+  teams = [],
+  initialType = 'agent',
+  allowedTypes = ['agent', 'workflow'],
+  agentEditHref = (id: string) => `/app/apps/${id}`,
+  workflowEditHref = (id: string) => `/app/apps/workflow/${id}`,
+}: AppCreateDialogProps) {
   const t = useTranslations('apps')
   const tCommon = useTranslations('common')
   const router = useRouter()
-  const { currentTeam } = useTeam()
+  const teamContext = useOptionalTeam()
+  const currentTeam = teamContext?.currentTeam
 
   const [appType, setAppType] = React.useState<AppType>('agent')
   const [name, setName] = React.useState('')
   const [description, setDescription] = React.useState('')
+  const [selectedTeamId, setSelectedTeamId] = React.useState(teamId || teams[0]?.id || '')
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
 
   // Reset form when dialog opens
   React.useEffect(() => {
     if (open) {
-      setAppType('agent')
+      setAppType(initialType)
+      setSelectedTeamId(teamId || teams[0]?.id || '')
       setName('')
       setDescription('')
       setFieldErrors({})
     }
-  }, [open])
+  }, [open, initialType, teamId, teams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,8 +102,9 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
       return
     }
 
-    if (!currentTeam) {
-      setFieldErrors({ __all__: t('teamRequired') })
+    const targetTeamId = teamId || selectedTeamId || currentTeam?.id
+    if (!targetTeamId) {
+      setFieldErrors({ team_id: t('teamRequired') })
       return
     }
 
@@ -75,26 +113,23 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
 
     try {
       if (appType === 'agent') {
-        const agent = await agentsApi.createAgent({
-          team_id: currentTeam.id,
+        const agent = await api.createAgent({
+          team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
         })
         toast.success(t('appCreated'))
         onSuccess?.()
-        // Navigate to app config page
-        router.push(`/app/apps/${agent.id}`)
+        router.push(agentEditHref(agent.id))
       } else {
-        // Create workflow
-        const workflow = await workflowsApi.createWorkflow({
-          team_id: currentTeam.id,
+        const workflow = await api.createWorkflow({
+          team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
         })
         toast.success(t('appCreated'))
         onSuccess?.()
-        // Navigate to workflow editor page
-        router.push(`/app/apps/workflow/${workflow.id}`)
+        router.push(workflowEditHref(workflow.id))
       }
     } catch (error) {
       const errors = normalizeValidationErrors(error)
@@ -107,7 +142,7 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
   }
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['name', 'description']),
+    () => getValidationSummaryEntries(fieldErrors, ['team_id', 'name', 'description']),
     [fieldErrors]
   )
 
@@ -125,6 +160,8 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
       description: t('types.workflow.description'),
     },
   ]
+
+  const availableAppTypes = appTypes.filter((item) => allowedTypes.includes(item.type))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,51 +182,76 @@ export function AppCreateDialog({ open, onOpenChange, onSuccess }: AppCreateDial
                 ))}
               </div>
             )}
-            {/* App Type Selection */}
-            <div className="space-y-3">
-              <Label>{t('selectType')}</Label>
-              <RadioGroup
-                value={appType}
-                onValueChange={(v) => setAppType(v as AppType)}
-                className="grid grid-cols-2 gap-3"
-              >
-                {appTypes.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <label
-                      key={item.type}
-                      className={cn(
-                        'flex flex-col items-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-all',
-                        appType === item.type
-                          ? 'border-primary bg-primary/5'
-                          : 'border-muted hover:border-muted-foreground/50'
-                      )}
-                    >
-                      <RadioGroupItem
-                        value={item.type}
-                        className="sr-only"
-                      />
-                      <div
+            {availableAppTypes.length > 1 && (
+              <div className="space-y-3">
+                <Label>{t('selectType')}</Label>
+                <RadioGroup
+                  value={appType}
+                  onValueChange={(v) => setAppType(v as AppType)}
+                  className="grid grid-cols-2 gap-3"
+                >
+                  {availableAppTypes.map((item) => {
+                    const Icon = item.icon
+                    return (
+                      <label
+                        key={item.type}
                         className={cn(
-                          'flex h-10 w-10 items-center justify-center rounded-lg',
+                          'flex flex-col items-center gap-2 rounded-lg border-2 p-4 cursor-pointer transition-all',
                           appType === item.type
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-muted-foreground/50'
                         )}
                       >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="text-center">
-                        <div className="font-medium text-sm">{item.title}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {item.description}
+                        <RadioGroupItem
+                          value={item.type}
+                          className="sr-only"
+                        />
+                        <div
+                          className={cn(
+                            'flex h-10 w-10 items-center justify-center rounded-lg',
+                            appType === item.type
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
+                          <Icon className="h-5 w-5" />
                         </div>
-                      </div>
-                    </label>
-                  )
-                })}
-              </RadioGroup>
-            </div>
+                        <div className="text-center">
+                          <div className="font-medium text-sm">{item.title}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {item.description}
+                          </div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </RadioGroup>
+              </div>
+            )}
+
+            {teams.length > 0 && !teamId && (
+              <div className="space-y-2">
+                <Label htmlFor="team_id">{t('team')}</Label>
+                <Select
+                  value={selectedTeamId}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    setSelectedTeamId(value)
+                    setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
+                  }}
+                >
+                  <SelectTrigger id="team_id" aria-invalid={!!fieldErrors.team_id} className="min-w-64">
+                    <SelectValue>{teams.find((team) => team.id === selectedTeamId)?.name || t('teamRequired')}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError>{fieldErrors.team_id}</FieldError>
+              </div>
+            )}
 
             {/* Name */}
             <div className="space-y-2">

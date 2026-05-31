@@ -4,7 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Copy, Download, FileEdit, Loader2, MoreHorizontal, RefreshCw, Search, Send, Trash2, X } from 'lucide-react'
+import { Copy, Download, FileEdit, Loader2, MoreHorizontal, Plus, Search, Send, Trash2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,8 +35,10 @@ import {
 import { PermissionGuard } from '@/components/permission-guard'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ApiError, type PageData } from '@/lib/api'
-import { adminWorkflowsApi, type AdminWorkflow } from '@/lib/api/admin'
+import { adminAgentsApi, adminWorkflowsApi, teamsApi as adminTeamsApi, type AdminWorkflow, type Team } from '@/lib/api/admin'
 import { adminPackagesApi, downloadBlob } from '@/lib/api/packages'
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog'
+import { AppCreateDialog } from '@/app/(platform)/app/apps/_components/app-create-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
 
 function getErrorMessage(error: unknown) {
@@ -63,8 +65,10 @@ function AppIcon({ icon, name }: { icon?: string | null; name: string }) {
 
 export function AdminWorkflowsPanel() {
   const t = useTranslations('apps.admin')
+  const packageT = useTranslations('packages')
   const tCommon = useTranslations('common')
   const [workflows, setWorkflows] = useState<AdminWorkflow[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
   const [statusOptions, setStatusOptions] = useState<Array<{ value: string; label: string }>>([])
   const [visibilityOptions, setVisibilityOptions] = useState<Array<{ value: string; label: string }>>([])
   const [triggerOptions, setTriggerOptions] = useState<Array<{ value: string; label: string }>>([])
@@ -81,12 +85,27 @@ export function AdminWorkflowsPanel() {
   const [teamFilter, setTeamFilter] = useState<Set<string>>(new Set())
   const [creatorFilter, setCreatorFilter] = useState<Set<string>>(new Set())
   const [selectedWorkflows, setSelectedWorkflows] = useState<Set<string>>(new Set())
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
 
   const selectedStatuses = useMemo(() => Array.from(statusFilter), [statusFilter])
   const selectedVisibilities = useMemo(() => Array.from(visibilityFilter), [visibilityFilter])
   const selectedTriggers = useMemo(() => Array.from(triggerFilter), [triggerFilter])
   const selectedTeams = useMemo(() => Array.from(teamFilter), [teamFilter])
   const selectedCreators = useMemo(() => Array.from(creatorFilter), [creatorFilter])
+  const defaultTeamId = teams[0]?.id
+
+  useEffect(() => {
+    const loadTeams = async () => {
+      try {
+        const data = await adminTeamsApi.getTeams(1, 100)
+        setTeams(data.items)
+      } catch (error) {
+        toast.error(getErrorMessage(error))
+      }
+    }
+    void loadTeams()
+  }, [])
 
   const loadWorkflows = useCallback(async () => {
     setLoading(true)
@@ -199,10 +218,20 @@ export function AdminWorkflowsPanel() {
           <h2 className="text-xl font-semibold tracking-tight">{t('workflows.title')}</h2>
           <p className="mt-1 text-sm text-muted-foreground">{t('workflows.description')}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={loadWorkflows} disabled={loading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          {t('actions.refresh')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <PermissionGuard permission="admin:app:create">
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} disabled={!defaultTeamId}>
+              <Upload className="mr-2 h-4 w-4" />
+              {packageT('import')}
+            </Button>
+          </PermissionGuard>
+          <PermissionGuard permission="admin:app:create">
+            <Button size="sm" onClick={() => setCreateDialogOpen(true)} disabled={!defaultTeamId}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('actions.create')}
+            </Button>
+          </PermissionGuard>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -380,6 +409,31 @@ export function AdminWorkflowsPanel() {
             </PermissionGuard>
           </div>
         </div>
+      )}
+      {defaultTeamId && (
+        <>
+          <ImportPackageDialog
+            open={importDialogOpen}
+            onOpenChange={setImportDialogOpen}
+            teams={teams}
+            expectedResourceType="workflow"
+            onImported={loadWorkflows}
+            api={adminPackagesApi}
+          />
+          <AppCreateDialog
+            open={createDialogOpen}
+            onOpenChange={setCreateDialogOpen}
+            teams={teams}
+            initialType="workflow"
+            allowedTypes={["workflow"]}
+            api={{
+              createAgent: adminAgentsApi.create,
+              createWorkflow: adminWorkflowsApi.create,
+            }}
+            workflowEditHref={(id) => `/apps/workflows/${id}/edit`}
+            onSuccess={loadWorkflows}
+          />
+        </>
       )}
     </div>
   )

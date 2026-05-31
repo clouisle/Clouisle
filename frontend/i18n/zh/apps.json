@@ -16,6 +16,7 @@
       }
     },
     "name": "名称",
+    "team": "团队",
     "namePlaceholder": "请输入应用名称",
     "nameRequired": "名称不能为空",
     "teamRequired": "请选择团队",
@@ -116,6 +117,7 @@
       "actions": {
         "refresh": "刷新",
         "reset": "重置",
+        "create": "创建",
         "publish": "发布",
         "unpublish": "取消发布",
         "duplicate": "复制",
