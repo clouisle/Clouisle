@@ -1,6 +1,7 @@
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
 import { AdminWorkflowEditClient } from '../../../_components/admin-workflow-edit-client'
+import { AdminAppEditProviders } from '../../../_components/admin-app-edit-providers'
 
 export default async function AdminWorkflowEditPage({
   params,
@@ -13,8 +14,10 @@ export default async function AdminWorkflowEditPage({
     <RoutePermissionGuard>
       <div className="flex h-full flex-col">
         <Header />
-        <div className="flex-1 overflow-auto p-4">
-          <AdminWorkflowEditClient workflowId={id} />
+        <div className="flex-1 overflow-hidden">
+          <AdminAppEditProviders>
+            <AdminWorkflowEditClient workflowId={id} />
+          </AdminAppEditProviders>
         </div>
       </div>
     </RoutePermissionGuard>

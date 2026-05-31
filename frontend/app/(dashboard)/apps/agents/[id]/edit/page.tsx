@@ -1,6 +1,7 @@
 import { RoutePermissionGuard } from '@/components/auth/permission-guard'
 import { Header } from '@/components/layout/header'
 import { AdminAgentEditClient } from '../../../_components/admin-agent-edit-client'
+import { AdminAppEditProviders } from '../../../_components/admin-app-edit-providers'
 
 export default async function AdminAgentEditPage({
   params,
@@ -13,8 +14,10 @@ export default async function AdminAgentEditPage({
     <RoutePermissionGuard>
       <div className="flex h-full flex-col">
         <Header />
-        <div className="flex-1 overflow-auto p-4">
-          <AdminAgentEditClient agentId={id} />
+        <div className="flex-1 overflow-hidden">
+          <AdminAppEditProviders>
+            <AdminAgentEditClient agentId={id} />
+          </AdminAppEditProviders>
         </div>
       </div>
     </RoutePermissionGuard>
