@@ -18,8 +18,19 @@ from app.models.workflow import (
     WorkflowVersion,
     WorkflowVisibility,
 )
-from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
-from app.schemas.workflow import WorkflowCreate, WorkflowListItem, WorkflowOut, WorkflowUpdate
+from app.schemas.response import (
+    BusinessError,
+    PageData,
+    Response,
+    ResponseCode,
+    success,
+)
+from app.schemas.workflow import (
+    WorkflowCreate,
+    WorkflowListItem,
+    WorkflowOut,
+    WorkflowUpdate,
+)
 from app.services.audit_log import AuditLogService
 
 router = APIRouter()
@@ -48,7 +59,9 @@ def _workflow_list_item(workflow: Workflow) -> dict[str, Any]:
     item["team_id"] = workflow.team_id
     item["team_name"] = workflow.team.name if workflow.team else None
     item["created_by_id"] = workflow.created_by_id
-    item["created_by_name"] = workflow.created_by.username if workflow.created_by else None
+    item["created_by_name"] = (
+        workflow.created_by.username if workflow.created_by else None
+    )
     item["total_tokens"] = workflow.total_tokens
     item["version"] = workflow.version
     return item
@@ -69,7 +82,9 @@ async def list_workflows(
     query = Workflow.all()
 
     if search:
-        query = query.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
     if status:
         query = query.filter(status__in=status)
     if visibility:
@@ -104,8 +119,10 @@ async def get_workflow_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
     teams = await Team.all().order_by("name")
-    creator_values = await Workflow.filter(created_by__isnull=False).distinct().values_list(
-        "created_by__username", flat=True
+    creator_values = (
+        await Workflow.filter(created_by__isnull=False)
+        .distinct()
+        .values_list("created_by__username", flat=True)
     )
     creator_values = sorted(creator_values)
     return success(

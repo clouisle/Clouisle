@@ -14,13 +14,31 @@ from app.api.v1.endpoints.agents import (
     build_agent_list_out,
     normalize_agent_visibility,
 )
-from app.models.agent import Agent, AgentKnowledgeBase, AgentStatus, AgentVisibility, RAGMode
+from app.models.agent import (
+    Agent,
+    AgentKnowledgeBase,
+    AgentStatus,
+    AgentVisibility,
+    RAGMode,
+)
 from app.models.knowledge_base import KnowledgeBase
 from app.models.model import TeamModel
 from app.models.notification import AutoNotificationType
 from app.models.user import Team, User
-from app.schemas.agent import AgentCreate, AgentOut, AgentUpdate, AgentListOut, ModelInfo
-from app.schemas.response import BusinessError, PageData, Response, ResponseCode, success
+from app.schemas.agent import (
+    AgentCreate,
+    AgentOut,
+    AgentUpdate,
+    AgentListOut,
+    ModelInfo,
+)
+from app.schemas.response import (
+    BusinessError,
+    PageData,
+    Response,
+    ResponseCode,
+    success,
+)
 from app.services.audit_log import AuditLogService
 from app.services.auto_notification import AutoNotificationService
 from app.core.i18n import t
@@ -79,7 +97,9 @@ async def list_agents(
     query = Agent.all()
 
     if search:
-        query = query.filter(Q(name__icontains=search) | Q(description__icontains=search))
+        query = query.filter(
+            Q(name__icontains=search) | Q(description__icontains=search)
+        )
     if status:
         query = query.filter(status__in=status)
     if visibility:
@@ -100,7 +120,9 @@ async def list_agents(
     model_info_map = await _get_model_info_map(agents)
     items = [await build_agent_list_out(agent, model_info_map) for agent in agents]
 
-    return success(data={"items": items, "total": total, "page": page, "page_size": page_size})
+    return success(
+        data={"items": items, "total": total, "page": page, "page_size": page_size}
+    )
 
 
 @router.get("/filters", response_model=Response[dict[str, list[dict[str, str]]]])
@@ -108,13 +130,18 @@ async def get_agent_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
     teams = await Team.all().order_by("name")
-    creator_values = await Agent.filter(created_by__isnull=False).distinct().values_list(
-        "created_by__username", flat=True
+    creator_values = (
+        await Agent.filter(created_by__isnull=False)
+        .distinct()
+        .values_list("created_by__username", flat=True)
     )
     creator_values = sorted(creator_values)
     return success(
         data={
-            "statuses": [_option(AgentStatus.DRAFT.value), _option(AgentStatus.PUBLISHED.value)],
+            "statuses": [
+                _option(AgentStatus.DRAFT.value),
+                _option(AgentStatus.PUBLISHED.value),
+            ],
             "visibilities": [
                 _option(AgentVisibility.PRIVATE.value),
                 _option(AgentVisibility.TEAM.value),
@@ -307,7 +334,9 @@ async def update_agent(
         agent.suggested_questions = agent_in.suggested_questions
         updated_fields.append("suggested_questions")
     if agent_in.visibility is not None:
-        agent.visibility = AgentVisibility(normalize_agent_visibility(agent_in.visibility))
+        agent.visibility = AgentVisibility(
+            normalize_agent_visibility(agent_in.visibility)
+        )
         updated_fields.append("visibility")
 
     if agent_in.model_id is not None:
@@ -328,7 +357,9 @@ async def update_agent(
         from app.services.skill import SkillService
 
         tools_config = [tool.model_dump() for tool in agent_in.tools_config]
-        await SkillService.validate_agent_skill_configs(agent, tools_config, agent.team_id)
+        await SkillService.validate_agent_skill_configs(
+            agent, tools_config, agent.team_id
+        )
         agent.tools_config = tools_config
         updated_fields.append("tools_config")
 
@@ -356,7 +387,9 @@ async def update_agent(
         agent.memory_config = agent_in.memory_config.model_dump()
         updated_fields.append("memory_config")
     if agent_in.context_compression_config is not None:
-        agent.context_compression_config = agent_in.context_compression_config.model_dump()
+        agent.context_compression_config = (
+            agent_in.context_compression_config.model_dump()
+        )
         updated_fields.append("context_compression_config")
     if agent_in.enable_image_generation is not None:
         agent.enable_image_generation = agent_in.enable_image_generation
