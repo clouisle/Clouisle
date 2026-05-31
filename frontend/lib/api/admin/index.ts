@@ -41,3 +41,5 @@ export type { AdminConversationListItem, AdminConversationWithMessages, Conversa
 
 export { adminToolsApi } from './tools'
 export { adminSkillsApi, type AdminSkill, type AdminSkillDetail, type AdminSkillListParams } from './skills'
+export { adminAgentsApi, type AdminAgent, type AdminAgentDetail, type AdminAgentListParams } from './agents'
+export { adminWorkflowsApi, type AdminWorkflow, type AdminWorkflowDetail, type AdminWorkflowListParams } from './workflows'

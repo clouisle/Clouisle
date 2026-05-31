@@ -2,6 +2,14 @@
 
 ## Active
 
+- **yun-85-admin-agent-workflow-management** — In progress. Add admin dashboard management for Agents and Workflows with tabbed lists and admin-prefixed APIs. See `docs/plan/yun-85-admin-agent-workflow-management.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend admin permissions and APIs
+  - [x] 3. Frontend admin API clients
+  - [x] 4. Dashboard Apps management route and tab panels
+  - [x] 5. Navigation, route permissions, i18n, and generated types
+  - [x] 6. Validation and regression checks
+
 - **yun-80-retry-failed-chunk** — In progress. Add single failed knowledge-base chunk retry without reprocessing the whole document. See `docs/plan/yun-80-retry-failed-chunk.md`
   - [x] 1. Backend chunk retry task and API
   - [x] 2. Frontend API and detail-page controls

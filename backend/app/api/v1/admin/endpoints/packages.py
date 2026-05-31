@@ -25,12 +25,18 @@ from app.services.clouisle_package_resources import get_adapter
 
 router = APIRouter()
 
-# Only tool and knowledge_base are managed from the admin dashboard.
-# Agent and Workflow are team-scoped and managed from the platform side.
-_ADMIN_ALLOWED_TYPES = {ClouisleResourceType.TOOL, ClouisleResourceType.KNOWLEDGE_BASE}
+_ADMIN_EXPORT_ALLOWED_TYPES = {
+    ClouisleResourceType.TOOL,
+    ClouisleResourceType.AGENT,
+    ClouisleResourceType.WORKFLOW,
+    ClouisleResourceType.KNOWLEDGE_BASE,
+}
+_ADMIN_IMPORT_ALLOWED_TYPES = {ClouisleResourceType.TOOL, ClouisleResourceType.KNOWLEDGE_BASE}
 
 _EXPORT_PERMISSION: dict[ClouisleResourceType, str] = {
     ClouisleResourceType.TOOL: "admin:capability:read",
+    ClouisleResourceType.AGENT: "admin:app:read",
+    ClouisleResourceType.WORKFLOW: "admin:app:read",
     ClouisleResourceType.KNOWLEDGE_BASE: "admin:knowledge-base:read",
 }
 _IMPORT_PERMISSION: dict[ClouisleResourceType, str] = {
@@ -58,8 +64,10 @@ def _require_admin_permission(user: User, permission: str) -> None:
     )
 
 
-def _check_admin_resource_type(resource_type: ClouisleResourceType) -> None:
-    if resource_type not in _ADMIN_ALLOWED_TYPES:
+def _check_admin_resource_type(
+    resource_type: ClouisleResourceType, allowed_types: set[ClouisleResourceType]
+) -> None:
+    if resource_type not in allowed_types:
         raise BusinessError(msg_key="clouisle_invalid_resource_type", status_code=400)
 
 
@@ -71,7 +79,7 @@ async def admin_export_package(
     resource_id: UUID,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> StreamingResponse:
-    _check_admin_resource_type(resource_type)
+    _check_admin_resource_type(resource_type, _ADMIN_EXPORT_ALLOWED_TYPES)
     _require_admin_permission(current_user, _EXPORT_PERMISSION[resource_type])
     adapter = get_adapter(resource_type)
     try:
@@ -136,7 +144,7 @@ async def admin_preview_package_import(
         manifest, _ = ClouislePackageService._read_package(
             file.filename or "package.clouisle", content
         )
-        _check_admin_resource_type(manifest.resource_type)
+        _check_admin_resource_type(manifest.resource_type, _ADMIN_IMPORT_ALLOWED_TYPES)
         _require_admin_permission(
             current_user, _IMPORT_PERMISSION[manifest.resource_type]
         )
@@ -206,7 +214,7 @@ async def admin_install_package_import(
                 status_code=404,
             )
         resource_type = ClouisleResourceType(session.resource_type)
-        _check_admin_resource_type(resource_type)
+        _check_admin_resource_type(resource_type, _ADMIN_IMPORT_ALLOWED_TYPES)
         permission = (
             _IMPORT_PERMISSION[resource_type]
             if install_in.action.value != "update"

@@ -64,6 +64,13 @@ class SystemPermissions:
     ADMIN_CAPABILITY_DELETE = "admin:capability:delete"
     ADMIN_CAPABILITY_EXECUTE = "admin:capability:execute"
 
+    # ============ Admin App Management ============
+    ADMIN_APP_READ = "admin:app:read"
+    ADMIN_APP_UPDATE = "admin:app:update"
+    ADMIN_APP_DELETE = "admin:app:delete"
+    ADMIN_APP_PUBLISH = "admin:app:publish"
+    ADMIN_APP_DUPLICATE = "admin:app:duplicate"
+
     # ============ Admin Knowledge Base Management ============
     ADMIN_KNOWLEDGE_BASE_READ = "admin:knowledge-base:read"
     ADMIN_KNOWLEDGE_BASE_CREATE = "admin:knowledge-base:create"
@@ -300,6 +307,32 @@ class SystemPermissions:
                 "code": cls.ADMIN_CAPABILITY_EXECUTE,
                 "scope": "admin",
                 "description": "Test and execute tools and skills from admin",
+            },
+            # Admin App Management
+            {
+                "code": cls.ADMIN_APP_READ,
+                "scope": "admin",
+                "description": "View agents and workflows across the system",
+            },
+            {
+                "code": cls.ADMIN_APP_UPDATE,
+                "scope": "admin",
+                "description": "Update agents and workflows across the system",
+            },
+            {
+                "code": cls.ADMIN_APP_DELETE,
+                "scope": "admin",
+                "description": "Delete agents and workflows across the system",
+            },
+            {
+                "code": cls.ADMIN_APP_PUBLISH,
+                "scope": "admin",
+                "description": "Publish and unpublish agents and workflows across the system",
+            },
+            {
+                "code": cls.ADMIN_APP_DUPLICATE,
+                "scope": "admin",
+                "description": "Duplicate agents and workflows across the system",
             },
             # Admin Knowledge Base Management
             {

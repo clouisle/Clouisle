@@ -65,6 +65,77 @@
       "knowledge": "Knowledge",
       "tools": "Tools"
     },
-    "searchPlaceholder": "Search apps..."
+    "searchPlaceholder": "Search apps...",
+    "admin": {
+      "title": "App Management",
+      "description": "Manage agents and workflows across the platform",
+      "tabs": {
+        "agents": "Agents",
+        "workflows": "Workflows"
+      },
+      "agents": {
+        "title": "Agent Management",
+        "description": "View and manage all agents across teams",
+        "searchPlaceholder": "Search agents...",
+        "stats": "{conversations} conversations · {messages} messages",
+        "deleteConfirm": "Are you sure you want to delete agent \"{name}\"? This action cannot be undone.",
+        "bulkDeleteConfirm": "Are you sure you want to delete {count} selected agents? This action cannot be undone."
+      },
+      "workflows": {
+        "title": "Workflow Management",
+        "description": "View and manage all workflows across teams",
+        "searchPlaceholder": "Search workflows...",
+        "stats": "{runs} runs · {success} success · {failed} failed",
+        "deleteConfirm": "Are you sure you want to delete workflow \"{name}\"? This action cannot be undone.",
+        "bulkDeleteConfirm": "Are you sure you want to delete {count} selected workflows? This action cannot be undone."
+      },
+      "columns": {
+        "name": "Name",
+        "visibility": "Visibility",
+        "trigger": "Trigger",
+        "team": "Team",
+        "creator": "Creator",
+        "stats": "Stats",
+        "updatedAt": "Updated"
+      },
+      "status": {
+        "draft": "Draft",
+        "published": "Published",
+        "archived": "Archived"
+      },
+      "visibility": {
+        "private": "Private",
+        "team": "Team",
+        "public": "Public"
+      },
+      "trigger": {
+        "manual": "Manual",
+        "cron": "Cron",
+        "webhook": "Webhook"
+      },
+      "actions": {
+        "refresh": "Refresh",
+        "reset": "Reset",
+        "publish": "Publish",
+        "unpublish": "Unpublish",
+        "duplicate": "Duplicate",
+        "edit": "Edit",
+        "export": "Export",
+        "delete": "Delete",
+        "published": "Published successfully",
+        "unpublished": "Unpublished successfully",
+        "duplicated": "Duplicated successfully",
+        "deleted": "Deleted successfully"
+      },
+      "pagination": {
+        "total": "{total} total",
+        "previous": "Previous",
+        "next": "Next"
+      },
+      "bulk": {
+        "selected": "{count} selected"
+      },
+      "empty": "No results found"
+    }
   }
 }

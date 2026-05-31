@@ -65,6 +65,77 @@
       "knowledge": "知识库",
       "tools": "工具"
     },
-    "searchPlaceholder": "搜索应用..."
+    "searchPlaceholder": "搜索应用...",
+    "admin": {
+      "title": "应用管理",
+      "description": "管理平台中的 Agent 与工作流",
+      "tabs": {
+        "agents": "Agent",
+        "workflows": "工作流"
+      },
+      "agents": {
+        "title": "Agent 管理",
+        "description": "查看和管理所有团队下的 Agent",
+        "searchPlaceholder": "搜索 Agent...",
+        "stats": "{conversations} 个对话 · {messages} 条消息",
+        "deleteConfirm": "确定要删除 Agent「{name}」吗？此操作无法撤销。",
+        "bulkDeleteConfirm": "确定要删除选中的 {count} 个 Agent 吗？此操作无法撤销。"
+      },
+      "workflows": {
+        "title": "工作流管理",
+        "description": "查看和管理所有团队下的工作流",
+        "searchPlaceholder": "搜索工作流...",
+        "stats": "{runs} 次运行 · {success} 次成功 · {failed} 次失败",
+        "deleteConfirm": "确定要删除工作流「{name}」吗？此操作无法撤销。",
+        "bulkDeleteConfirm": "确定要删除选中的 {count} 个工作流吗？此操作无法撤销。"
+      },
+      "columns": {
+        "name": "名称",
+        "visibility": "可见性",
+        "trigger": "触发方式",
+        "team": "团队",
+        "creator": "创建人",
+        "stats": "统计",
+        "updatedAt": "更新时间"
+      },
+      "status": {
+        "draft": "草稿",
+        "published": "已发布",
+        "archived": "已归档"
+      },
+      "visibility": {
+        "private": "私有",
+        "team": "团队",
+        "public": "公开"
+      },
+      "trigger": {
+        "manual": "手动",
+        "cron": "定时",
+        "webhook": "Webhook"
+      },
+      "actions": {
+        "refresh": "刷新",
+        "reset": "重置",
+        "publish": "发布",
+        "unpublish": "取消发布",
+        "duplicate": "复制",
+        "edit": "编辑",
+        "export": "导出",
+        "delete": "删除",
+        "published": "发布成功",
+        "unpublished": "取消发布成功",
+        "duplicated": "复制成功",
+        "deleted": "删除成功"
+      },
+      "pagination": {
+        "total": "共 {total} 条",
+        "previous": "上一页",
+        "next": "下一页"
+      },
+      "bulk": {
+        "selected": "已选择 {count} 项"
+      },
+      "empty": "暂无结果"
+    }
   }
 }
