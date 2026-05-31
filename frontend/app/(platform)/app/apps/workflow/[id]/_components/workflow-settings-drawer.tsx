@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ImageUpload } from '@/components/ui/image-upload'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { workflowsApi, type Workflow, type TriggerType, type WorkflowVersionListItem, type WorkflowVisibility } from '@/lib/api/workflows'
+import { workflowsApi, type Workflow, type TriggerType, type WorkflowUpdateInput, type WorkflowVersionListItem, type WorkflowVisibility } from '@/lib/api/workflows'
 
 interface WorkflowSettingsDrawerProps {
   workflow: Workflow | null
@@ -24,9 +24,17 @@ interface WorkflowSettingsDrawerProps {
   onClose: () => void
   onUpdate: (workflow: Workflow) => void
   readOnly?: boolean
+  updateWorkflow?: (id: string, data: WorkflowUpdateInput) => Promise<Workflow>
 }
 
-export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, readOnly = false }: WorkflowSettingsDrawerProps) {
+export function WorkflowSettingsDrawer({
+  workflow,
+  open,
+  onClose,
+  onUpdate,
+  readOnly = false,
+  updateWorkflow = workflowsApi.updateWorkflow,
+}: WorkflowSettingsDrawerProps) {
   const t = useTranslations('workflow')
   // 基本信息
   const [name, setName] = React.useState('')
@@ -262,7 +270,7 @@ export function WorkflowSettingsDrawer({ workflow, open, onClose, onUpdate, read
         triggerConfig.cron_expression = generateCronFromConfig()
       }
       
-      const updated = await workflowsApi.updateWorkflow(workflow.id, {
+      const updated = await updateWorkflow(workflow.id, {
         name,
         description: description || null,
         icon: icon || null,
