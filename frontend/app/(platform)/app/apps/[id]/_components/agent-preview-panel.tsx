@@ -289,9 +289,9 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       <div className="relative pb-4 shrink-0">
         {/* Variable Panel - Collapsible above input */}
         {hasVisibleVariables && (
-          <div className="mx-auto max-w-3xl px-4">
+          <div className="px-4">
             <Collapsible open={variablesOpen} onOpenChange={setVariablesOpen}>
-              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-[70%] mx-auto">
+              <div className="rounded-t-lg border border-b-0 bg-muted/30 overflow-hidden w-full mx-auto">
                 <CollapsibleTrigger className="flex items-center justify-between w-full px-2.5 py-1.5 text-xs hover:bg-muted/50 transition-colors">
                   <span className="text-muted-foreground">
                     {tVars('title')}
@@ -341,6 +341,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
           files={files}
           onFilesChange={setFiles}
           isUploading={isUploading}
+          className="max-w-none"
         />
       </div>
     </div>

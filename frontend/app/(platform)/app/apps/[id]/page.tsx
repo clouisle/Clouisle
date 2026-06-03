@@ -324,7 +324,7 @@ export function AgentEditor({
         <div className="flex-1 flex h-full overflow-hidden p-6 gap-6 min-h-0">
           {/* Orchestration Form */}
           <ScrollArea className="flex-1 min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
-            <div className="max-w-3xl">
+            <div className="w-full">
               <AgentOrchestrationForm
                 agent={agent}
                 onUpdate={handleOrchestrationUpdate}
@@ -333,7 +333,7 @@ export function AgentEditor({
           </ScrollArea>
 
           {/* Preview Panel */}
-          <div className="w-95 min-w-95 shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
+          <div className="w-95 min-w-95 2xl:w-[clamp(30rem,28vw,42rem)] 2xl:min-w-[30rem] shrink-0 h-full min-h-0 overflow-hidden border rounded-lg">
             <AgentPreviewPanel agent={{ ...agent, hide_tool_calls: hideToolCalls }} />
           </div>
         </div>
