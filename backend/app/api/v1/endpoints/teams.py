@@ -519,7 +519,11 @@ async def transfer_ownership(
     new_owner_id: UUID,
     current_user: User = Depends(deps.PermissionChecker("team:manage")),
 ) -> Any:
-    """Transfer team ownership to another member. Only current owner can do this."""
+    """
+    Transfer team ownership to another member.
+
+    Only current owner or superuser can do this.
+    """
     team = await Team.filter(id=team_id).first()
     if not team:
         raise BusinessError(
@@ -529,12 +533,20 @@ async def transfer_ownership(
         )
 
     current_membership = await TeamMember.filter(team=team, user=current_user).first()
-    if not current_membership or current_membership.role != TeamMemberRole.OWNER:
+    if not current_user.is_superuser and (
+        not current_membership or current_membership.role != TeamMemberRole.OWNER
+    ):
         raise BusinessError(
             code=ResponseCode.TEAM_OWNER_REQUIRED,
             msg_key="team_owner_required",
             status_code=403,
         )
+
+    previous_owner_membership = (
+        await TeamMember.filter(team=team, role=TeamMemberRole.OWNER)
+        .prefetch_related("user")
+        .first()
+    )
 
     new_owner = await User.filter(id=new_owner_id).first()
     new_owner_membership = (
@@ -549,8 +561,17 @@ async def transfer_ownership(
             status_code=404,
         )
 
-    current_membership.role = TeamMemberRole.ADMIN
-    await current_membership.save()
+    old_owner = previous_owner_membership.user if previous_owner_membership else None
+    if old_owner and new_owner.id == old_owner.id:
+        raise BusinessError(
+            code=ResponseCode.CANNOT_PROMOTE_TO_OWNER,
+            msg_key="cannot_promote_to_owner",
+            status_code=400,
+        )
+
+    if previous_owner_membership:
+        previous_owner_membership.role = TeamMemberRole.ADMIN
+        await previous_owner_membership.save()
 
     new_owner_membership.role = TeamMemberRole.OWNER
     await new_owner_membership.save()
@@ -569,23 +590,26 @@ async def transfer_ownership(
             "notify_team_ownership_received_content",
             lang=new_owner.locale,
             team_name=team.name,
-            old_owner=current_user.username,
+            old_owner=(
+                old_owner.username if old_owner else t("unknown", lang=new_owner.locale)
+            ),
         ),
     )
 
-    await AutoNotificationService.send_to_user(
-        notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
-        user_id=current_user.id,
-        title=t("notify_team_ownership_transferred_title", lang=current_user.locale),
-        content=t(
-            "notify_team_ownership_transferred_content",
-            lang=current_user.locale,
-            team_name=team.name,
-            new_owner=new_owner.username,
-        ),
-    )
+    if old_owner:
+        await AutoNotificationService.send_to_user(
+            notification_type=AutoNotificationType.TEAM_OWNERSHIP_TRANSFERRED,
+            user_id=old_owner.id,
+            title=t("notify_team_ownership_transferred_title", lang=old_owner.locale),
+            content=t(
+                "notify_team_ownership_transferred_content",
+                lang=old_owner.locale,
+                team_name=team.name,
+                new_owner=new_owner.username,
+            ),
+        )
+        await sync_user_role_from_teams(old_owner)
 
-    await sync_user_role_from_teams(current_user)
     await sync_user_role_from_teams(new_owner)
 
     return success(data=team, msg_key="ownership_transferred")
