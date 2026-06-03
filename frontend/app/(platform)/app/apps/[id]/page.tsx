@@ -324,7 +324,7 @@ export function AgentEditor({
         <div className="flex-1 flex h-full overflow-hidden p-6 gap-6 min-h-0">
           {/* Orchestration Form */}
           <ScrollArea className="flex-1 min-h-0 [&_[data-slot=scroll-area-scrollbar]]:border-l-0">
-            <div className="w-full">
+            <div className="w-full max-w-6xl">
               <AgentOrchestrationForm
                 agent={agent}
                 onUpdate={handleOrchestrationUpdate}
