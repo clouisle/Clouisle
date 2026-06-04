@@ -265,10 +265,13 @@ def process_document_task(self, document_id: str) -> dict:
             clean_text_setting = doc_meta.get("clean_text", True)
 
             if document.file_path:
+                document_processor.delete_media_assets(kb.id, document.id)
                 text, metadata = await document_processor.extract_text(
                     document.file_path,
                     document.doc_type,
                     clean_text=clean_text_setting,
+                    kb_id=kb.id,
+                    document_id=document.id,
                 )
             elif document.source_url:
                 text, metadata = await document_processor.fetch_url_content(
@@ -663,10 +666,13 @@ def rechunk_document_task(self, document_id: str) -> dict:
 
             # Extract text
             if document.file_path:
+                document_processor.delete_media_assets(kb.id, document.id)
                 text, _ = await document_processor.extract_text(
                     document.file_path,
                     document.doc_type,
                     clean_text=clean_text_setting,
+                    kb_id=kb.id,
+                    document_id=document.id,
                 )
             elif document.source_url:
                 text, _ = await document_processor.fetch_url_content(

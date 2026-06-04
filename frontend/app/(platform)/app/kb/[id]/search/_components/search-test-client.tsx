@@ -1,8 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
+import { useTheme } from 'next-themes'
 import {
   ArrowLeft,
   Search,
@@ -33,18 +35,82 @@ import {
   ToggleGroupItem,
 } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
+import { API_BASE_URL } from '@/lib/constants'
 
 interface SearchTestClientProps {
   knowledgeBaseId: string
 }
 
+const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
+
+function resolveMediaUrl(src: string): string {
+  if (src.startsWith('/api/v1/')) {
+    return `${API_BASE_URL.replace(/\/api\/v1\/?$/, '')}${src}`
+  }
+  return src
+}
+
+function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string, alt?: string }) {
+  const [objectUrl, setObjectUrl] = React.useState<string | null>(null)
+  const [failed, setFailed] = React.useState(false)
+
+  React.useEffect(() => {
+    setFailed(false)
+    if (!src) {
+      setObjectUrl(null)
+      return
+    }
+    if (src.startsWith('data:') || src.startsWith('javascript:')) {
+      setObjectUrl(null)
+      setFailed(true)
+      return
+    }
+    if (!src.startsWith('/api/v1/knowledge-bases/')) {
+      setObjectUrl(src)
+      return
+    }
+
+    setObjectUrl(null)
+    const controller = new AbortController()
+    const token = localStorage.getItem('access_token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined
+    let currentObjectUrl: string | null = null
+
+    fetch(resolveMediaUrl(src), { headers, signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error('image_load_failed')
+        return response.blob()
+      })
+      .then(blob => {
+        currentObjectUrl = URL.createObjectURL(blob)
+        setObjectUrl(currentObjectUrl)
+      })
+      .catch(error => {
+        if ((error as Error).name !== 'AbortError') setFailed(true)
+      })
+
+    return () => {
+      controller.abort()
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
+    }
+  }, [src])
+
+  if (failed || !objectUrl) {
+    return <span className="text-muted-foreground">{alt || src}</span>
+  }
+
+  return <img src={objectUrl} alt={alt} loading="lazy" />
+}
+
 export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
   const t = useTranslations('knowledgeBases')
   const router = useRouter()
+  const { resolvedTheme } = useTheme()
   
   // 知识库信息
   const [knowledgeBase, setKnowledgeBase] = React.useState<KnowledgeBase | null>(null)
   const [isLoadingKb, setIsLoadingKb] = React.useState(true)
+  const [mounted, setMounted] = React.useState(false)
   
   // 搜索状态
   const [query, setQuery] = React.useState('')
@@ -64,7 +130,13 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
   
   // 展开的结果
   const [expandedResults, setExpandedResults] = React.useState<Set<string>>(new Set())
-  
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const colorMode = mounted ? (resolvedTheme === 'dark' ? 'dark' : 'light') : 'light'
+
   // 加载知识库信息
   React.useEffect(() => {
     const loadKnowledgeBase = async () => {
@@ -285,10 +357,20 @@ export function SearchTestClient({ knowledgeBaseId }: SearchTestClientProps) {
                           )}
                         </div>
                       )}
-                      <div className="rounded bg-muted/50 p-3">
-                        <p className="text-xs whitespace-pre-wrap leading-relaxed">
-                          {result.content}
-                        </p>
+                      <div className="rounded bg-muted/50 p-3" data-color-mode={colorMode}>
+                        <div className="wmde-markdown text-xs leading-relaxed [&_img]:max-h-80 [&_img]:rounded-md [&_img]:border [&_img]:object-contain">
+                          <MDPreview
+                            source={result.content}
+                            components={{
+                              img: ({ src, alt }) => (
+                                <AuthenticatedMarkdownImage
+                                  src={typeof src === 'string' ? src : undefined}
+                                  alt={alt}
+                                />
+                              ),
+                            }}
+                          />
+                        </div>
                       </div>
                       {result.rerank_reason && (
                         <p className="mt-2 text-[11px] text-muted-foreground">

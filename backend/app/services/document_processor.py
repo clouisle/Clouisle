@@ -3,10 +3,14 @@ Document processing service for knowledge base.
 Handles document parsing, text extraction, and chunking.
 """
 
+import base64
+import binascii
 import hashlib
 import logging
+import mimetypes
 import os
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Any
@@ -21,7 +25,6 @@ from app.models.knowledge_base import (
 logger = logging.getLogger(__name__)
 
 
-# Supported MIME types mapping
 MIME_TYPE_MAP: dict[str, str] = {
     "application/pdf": DocumentType.PDF.value,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocumentType.DOCX.value,
@@ -51,6 +54,23 @@ EXT_TYPE_MAP: dict[str, str] = {
     ".xlsx": DocumentType.XLSX.value,
     ".xls": DocumentType.XLS.value,
     ".json": DocumentType.JSON.value,
+}
+
+MEDIA_ASSETS_METADATA_KEY = "media_assets"
+DATA_URI_IMAGE_RE = re.compile(r"data:(image/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)")
+ALLOWED_MEDIA_MIME_TYPES = {
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/svg+xml",
+    "image/webp",
+}
+MEDIA_MIME_EXTENSIONS = {
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
 }
 
 
@@ -200,8 +220,85 @@ class DocumentProcessor:
             return True
         return False
 
+    def delete_media_assets(self, kb_id: UUID, document_id: UUID) -> None:
+        asset_dir = self._resolve_storage_path(str(kb_id), "media", str(document_id))
+        if asset_dir.exists():
+            shutil.rmtree(asset_dir, ignore_errors=True)
+
+    def _get_media_asset_extension(self, content_type: str) -> str:
+        return MEDIA_MIME_EXTENSIONS.get(
+            content_type,
+            mimetypes.guess_extension(content_type, strict=False) or ".bin",
+        )
+
+    def get_media_asset_path(
+        self, kb_id: UUID, document_id: UUID, filename: str
+    ) -> Path:
+        return self._resolve_storage_path(
+            str(kb_id), "media", str(document_id), self._sanitize_filename(filename)
+        )
+
+    def _save_media_asset(
+        self,
+        *,
+        kb_id: UUID,
+        document_id: UUID,
+        content_type: str,
+        content: bytes,
+    ) -> dict[str, Any]:
+        digest = hashlib.sha256(content).hexdigest()[:16]
+        extension = self._get_media_asset_extension(content_type)
+        filename = self._sanitize_filename(f"{digest}{extension}")
+        file_path = self.get_media_asset_path(kb_id, document_id, filename)
+        os.makedirs(file_path.parent, exist_ok=True)
+        if not file_path.exists():
+            file_path.write_bytes(content)
+        url = (
+            f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/{filename}"
+        )
+        return {
+            "path": str(file_path),
+            "url": url,
+            "filename": filename,
+            "content_type": content_type,
+            "size": len(content),
+        }
+
+    def replace_embedded_media_data_uris(
+        self,
+        text: str,
+        *,
+        kb_id: UUID,
+        document_id: UUID,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        assets: list[dict[str, Any]] = []
+
+        def replace(match: re.Match[str]) -> str:
+            content_type = match.group(1).lower()
+            if content_type not in ALLOWED_MEDIA_MIME_TYPES:
+                return match.group(0)
+            try:
+                content = base64.b64decode(match.group(2), validate=True)
+            except binascii.Error:
+                return match.group(0)
+            asset = self._save_media_asset(
+                kb_id=kb_id,
+                document_id=document_id,
+                content_type=content_type,
+                content=content,
+            )
+            assets.append(asset)
+            return asset["url"]
+
+        return DATA_URI_IMAGE_RE.sub(replace, text), assets
+
     async def extract_text(
-        self, path: str, doc_type: str, clean_text: bool = True
+        self,
+        path: str,
+        doc_type: str,
+        clean_text: bool = True,
+        kb_id: UUID | None = None,
+        document_id: UUID | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """
         Extract text content from a document.
@@ -252,6 +349,14 @@ class DocumentProcessor:
             raise ValueError("document_processing_failed_generic")
 
         # Clean up text
+        if kb_id is not None and document_id is not None:
+            text, media_assets = self.replace_embedded_media_data_uris(
+                text,
+                kb_id=kb_id,
+                document_id=document_id,
+            )
+            if media_assets:
+                metadata[MEDIA_ASSETS_METADATA_KEY] = media_assets
         text = self._clean_text(text, clean=clean_text)
         metadata["char_count"] = len(text)
 
@@ -299,7 +404,7 @@ class DocumentProcessor:
             from markitdown import MarkItDown
 
             md = MarkItDown()
-            result = md.convert(path)
+            result = md.convert(path, keep_data_uris=True)
 
             text = result.text_content
 

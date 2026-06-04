@@ -4,6 +4,8 @@ Provides CRUD operations for knowledge bases and documents.
 """
 
 import logging
+import mimetypes
+import os
 from contextvars import ContextVar
 from typing import Any, Optional
 from uuid import UUID, uuid4
@@ -862,6 +864,9 @@ async def delete_document(
     vector_store = VectorStore()
     await vector_store.delete_document_vectors(doc_id)
 
+    # Delete extracted media assets if exists
+    document_processor.delete_media_assets(kb.id, doc.id)
+
     # Delete file if exists
     if doc.file_path:
         document_processor.delete_file(doc.file_path)
@@ -904,8 +909,6 @@ async def download_document(
             status_code=404,
         )
 
-    import os
-
     if not os.path.exists(doc.file_path):
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,
@@ -933,6 +936,38 @@ async def download_document(
         filename=doc.name,
         media_type=media_type,
     )
+
+
+@router.get("/{kb_id}/documents/{doc_id}/media/{filename}")
+async def get_document_media(
+    kb_id: UUID,
+    doc_id: UUID,
+    filename: str,
+    current_user: User = Depends(require_kb_read),
+) -> FileResponse:
+    """
+    Get extracted media from a processed document.
+    """
+    await check_kb_access(kb_id, current_user, require_write=False)
+
+    doc = await Document.filter(id=doc_id, knowledge_base_id=kb_id).first()
+    if not doc:
+        raise BusinessError(
+            code=ResponseCode.DOCUMENT_NOT_FOUND,
+            msg_key="document_not_found",
+            status_code=404,
+        )
+
+    file_path = document_processor.get_media_asset_path(kb_id, doc_id, filename)
+    if not file_path.exists():
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_not_found",
+            status_code=404,
+        )
+
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(path=file_path, media_type=media_type)
 
 
 @router.post(
@@ -1173,6 +1208,8 @@ async def preview_document_chunks(
                 doc.file_path,
                 doc.doc_type,
                 clean_text=preview_in.clean_text,
+                kb_id=kb_id,
+                document_id=doc_id,
             )
         else:
             text, _ = await document_processor.fetch_url_content(
