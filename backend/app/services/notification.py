@@ -30,6 +30,7 @@ async def create_notification(
     actor: Optional[User] = None,
     meta: Optional[dict] = None,
 ) -> Notification:
+    await notification.save()
     await create_notification_audit(
         notification_id=notification.id,
         action=NotificationAuditAction.CREATE,

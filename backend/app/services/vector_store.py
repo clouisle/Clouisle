@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_REQUEST_TIMEOUT_SECONDS = 120.0
 
+
+class EmbeddingRequestTimeoutError(Exception):
+    pass
+
+
 # Initialize jieba (disable verbose output)
 jieba.setLogLevel(logging.WARNING)
 
@@ -578,8 +583,14 @@ class VectorStore:
         except QuotaExceededError:
             logger.error(f"Team {self.team_id} quota exceeded for embedding")
             raise
-        except Exception as e:
-            logger.error(f"Error generating embeddings: {e}")
+        except asyncio.TimeoutError as e:
+            logger.exception(
+                "Embedding request timed out after %s seconds",
+                EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+            )
+            raise EmbeddingRequestTimeoutError("embedding_request_timeout") from e
+        except Exception:
+            logger.exception("Error generating embeddings")
             raise
 
     async def embed_query(self, query: str) -> list[float]:
@@ -615,8 +626,14 @@ class VectorStore:
         except QuotaExceededError:
             logger.error(f"Team {self.team_id} quota exceeded for query embedding")
             raise
-        except Exception as e:
-            logger.error(f"Error generating query embedding: {e}")
+        except asyncio.TimeoutError as e:
+            logger.exception(
+                "Query embedding request timed out after %s seconds",
+                EMBEDDING_REQUEST_TIMEOUT_SECONDS,
+            )
+            raise EmbeddingRequestTimeoutError("embedding_request_timeout") from e
+        except Exception:
+            logger.exception("Error generating query embedding")
             raise
 
     async def store_chunks(
@@ -1404,7 +1421,8 @@ class VectorStore:
             Exception: If embedding generation or storage fails
         """
         # Generate embedding
-        embedding = await self.embed_query(chunk.content)
+        embeddings = await self.embed_texts([chunk.content])
+        embedding = embeddings[0]
         await _ensure_kb_dimension(kb_id, len(embedding))
 
         # Store embedding reference

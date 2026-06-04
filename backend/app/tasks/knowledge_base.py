@@ -4,6 +4,7 @@ Celery tasks for knowledge base document processing.
 
 import logging
 from datetime import datetime, timezone
+from typing import Any, cast
 from uuid import UUID
 
 from celery import shared_task
@@ -18,7 +19,11 @@ from app.models.knowledge_base import (
 from app.models.notification import AutoNotificationType
 from app.services.auto_notification import AutoNotificationService
 from app.services.document_processor import document_processor
-from app.services.vector_store import VectorStore, DimensionMismatchError
+from app.services.vector_store import (
+    VectorStore,
+    DimensionMismatchError,
+    EmbeddingRequestTimeoutError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +44,19 @@ def _get_dimension_mismatch_error(document: Document, user_locale: str = "en") -
 def _get_generic_processing_error(document: Document, user_locale: str = "en") -> str:
     return t(
         "document_processing_failed_generic",
+        lang=_get_document_error_lang(document, user_locale),
+    )
+
+
+def _get_embedding_error(
+    document: Document, error: Exception, user_locale: str = "en"
+) -> str:
+    if isinstance(error, EmbeddingRequestTimeoutError):
+        return t(
+            "request_timeout", lang=_get_document_error_lang(document, user_locale)
+        )
+    return str(error) or t(
+        "unknown_error_generic",
         lang=_get_document_error_lang(document, user_locale),
     )
 
@@ -252,7 +270,7 @@ def process_document_task(self, document_id: str) -> dict:
 
         existing_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
         if existing_chunks > 0:
-            return embed_document_chunks_task(document_id)
+            return await _embed_existing_document_chunks(document_id, task_id)
 
         try:
             # Update status to processing
@@ -838,6 +856,242 @@ def rechunk_document_task(self, document_id: str) -> dict:
     return loop.run_until_complete(_rechunk())
 
 
+async def _embed_existing_document_chunks(
+    document_id: str, task_id: str | None
+) -> dict:
+    doc_uuid = UUID(document_id)
+
+    document = (
+        await Document.filter(id=doc_uuid)
+        .prefetch_related("knowledge_base", "uploaded_by")
+        .first()
+    )
+
+    if not document:
+        logger.error(f"Document {document_id} not found")
+        default_lang = await get_default_language()
+        return {
+            "status": "error",
+            "message": t("document_not_found", lang=default_lang),
+        }
+
+    if _is_stale_task(document, task_id):
+        return await _finish_stale_task(document, task_id)
+    if _is_finished_task(document, task_id):
+        return await _finish_already_finished_task(document, task_id)
+
+    kb = document.knowledge_base
+    kb_id = cast(UUID, kb.id)
+    kb_team_id = cast(UUID, kb.team_id)
+    user_locale = (
+        getattr(document.uploaded_by, "locale", "en") if document.uploaded_by else "en"
+    )
+
+    async def _refresh_kb_stats() -> None:
+        docs = await Document.filter(
+            knowledge_base_id=kb_id,
+            status=DocumentStatus.COMPLETED.value,
+        ).all()
+        kb.total_chunks = sum(doc.chunk_count for doc in docs)
+        kb.total_tokens = sum(doc.token_count for doc in docs)
+        await kb.save()
+        logger.info(
+            f"KB {kb_id} stats refreshed: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
+        )
+
+    try:
+        chunks = await DocumentChunk.filter(document_id=doc_uuid).order_by(
+            "chunk_index"
+        )
+
+        if not chunks:
+            logger.warning(f"No chunks found for document {document_id}")
+            default_lang = await get_default_language()
+            document.status = DocumentStatus.ERROR.value
+            document.error_message = t("no_chunks_to_embed", lang=default_lang)
+            await document.save()
+            return {
+                "status": "success",
+                "message": t("no_chunks_to_embed", lang=default_lang),
+                "embedded_count": 0,
+            }
+
+        embedding_model_id = (
+            str(kb.embedding_model_id) if kb.embedding_model_id else None
+        )
+        team_id = str(kb.team_id) if kb.team_id else None
+        vector_store = VectorStore(
+            embedding_model_id=embedding_model_id,
+            team_id=team_id,
+        )
+
+        embedded_count = await DocumentChunk.filter(
+            document_id=doc_uuid, status="embedded"
+        ).count()
+        failed_count = 0
+        last_error: str | None = None
+        total_chunks = len(chunks)
+        total_tokens = sum(chunk.token_count for chunk in chunks)
+        for chunk in chunks:
+            if chunk.status == "embedded":
+                continue
+            try:
+                await vector_store.add_chunk_vector(kb_id, chunk)
+                chunk.status = "embedded"
+                chunk.error_message = cast(Any, None)
+                await chunk.save(update_fields=["status", "error_message"])
+                embedded_count += 1
+            except Exception as e:
+                failed_count += 1
+                last_error = _get_embedding_error(document, e, user_locale)
+                chunk.status = "failed"
+                chunk.error_message = last_error[:500]
+                await chunk.save(update_fields=["status", "error_message"])
+                logger.exception("Failed to embed chunk %s", chunk.id)
+
+            document.metadata = document.metadata or {}
+            document.metadata["embed_progress"] = {
+                "embedded": embedded_count,
+                "failed": failed_count,
+                "total": total_chunks,
+            }
+            await document.save(update_fields=["metadata"])
+
+        document.metadata = document.metadata or {}
+        _clear_task_metadata(document)
+
+        if embedded_count == 0 and len(chunks) > 0:
+            document.status = DocumentStatus.ERROR.value
+            document.chunk_count = total_chunks
+            document.token_count = total_tokens
+            document.error_message = t(
+                "all_chunks_failed_to_embed",
+                lang=user_locale,
+                error=last_error or t("unknown_error_generic", lang=user_locale),
+            )[:500]
+            await document.save()
+
+            logger.error(
+                f"Document {document_id} embedding failed: "
+                f"0/{len(chunks)} chunks embedded"
+            )
+
+            localized_error = t(
+                "all_chunks_failed_to_embed",
+                lang=user_locale,
+                error=last_error or t("unknown_error_generic", lang=user_locale),
+            )
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb_team_id,
+                error=localized_error,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": localized_error,
+                "embedded_count": 0,
+                "total_chunks": len(chunks),
+            }
+
+        if failed_count > 0:
+            document.status = DocumentStatus.ERROR.value
+            document.chunk_count = total_chunks
+            document.token_count = total_tokens
+            document.error_message = t(
+                "chunks_failed_to_embed",
+                lang=user_locale,
+                failed_count=failed_count,
+                total_chunks=len(chunks),
+                error=last_error,
+            )[:500]
+            await document.save()
+
+            await _refresh_kb_stats()
+
+            logger.error(
+                f"Document {document_id} embedding partially failed: "
+                f"{embedded_count}/{len(chunks)} chunks embedded, {failed_count} failed"
+            )
+
+            await _send_doc_failed_notification(
+                document=document,
+                kb_name=kb.name,
+                team_id=kb_team_id,
+                error=document.error_message,
+                user_locale=user_locale,
+            )
+
+            return {
+                "status": "error",
+                "document_id": document_id,
+                "message": document.error_message,
+                "embedded_count": embedded_count,
+                "failed_count": failed_count,
+                "total_chunks": len(chunks),
+            }
+
+        document.status = DocumentStatus.COMPLETED.value
+        document.chunk_count = total_chunks
+        document.token_count = total_tokens
+        document.processed_at = datetime.now(timezone.utc)
+        document.error_message = None
+        await document.save()
+        logger.info(
+            f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
+        )
+
+        await _refresh_kb_stats()
+
+        logger.info(
+            f"Document {document_id} embedding completed: "
+            f"{embedded_count}/{len(chunks)} chunks embedded"
+        )
+
+        await _send_doc_indexed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb_team_id,
+            chunk_count=document.chunk_count,
+            token_count=document.token_count,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "success",
+            "document_id": document_id,
+            "embedded_count": embedded_count,
+            "total_chunks": len(chunks),
+        }
+
+    except Exception as e:
+        logger.exception(f"Error embedding document {document_id}: {e}")
+
+        document.status = DocumentStatus.ERROR.value
+        _clear_task_metadata(document)
+        document.error_message = _get_generic_processing_error(document, user_locale)[
+            :500
+        ]
+        await document.save()
+
+        await _send_doc_failed_notification(
+            document=document,
+            kb_name=kb.name,
+            team_id=kb_team_id,
+            error=document.error_message,
+            user_locale=user_locale,
+        )
+
+        return {
+            "status": "error",
+            "document_id": document_id,
+            "message": document.error_message,
+        }
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def embed_document_chunks_task(self, document_id: str) -> dict:
     """
@@ -854,268 +1108,16 @@ def embed_document_chunks_task(self, document_id: str) -> dict:
     """
     import asyncio
 
-    async def _embed():
-        doc_uuid = UUID(document_id)
-
-        # Get document with KB and uploader for locale
-        document = (
-            await Document.filter(id=doc_uuid)
-            .prefetch_related("knowledge_base", "uploaded_by")
-            .first()
-        )
-
-        if not document:
-            logger.error(f"Document {document_id} not found")
-            default_lang = await get_default_language()
-            return {
-                "status": "error",
-                "message": t("document_not_found", lang=default_lang),
-            }
-
-        task_id = getattr(self.request, "id", None)
-        if _is_stale_task(document, task_id):
-            return await _finish_stale_task(document, task_id)
-        if _is_finished_task(document, task_id):
-            return await _finish_already_finished_task(document, task_id)
-
-        kb = document.knowledge_base
-        # Get uploader's locale for notifications
-        user_locale = (
-            getattr(document.uploaded_by, "locale", "en")
-            if document.uploaded_by
-            else "en"
-        )
-
-        async def _refresh_kb_stats() -> None:
-            docs = await Document.filter(
-                knowledge_base_id=kb.id,
-                status=DocumentStatus.COMPLETED.value,
-            ).all()
-            kb.total_chunks = sum(doc.chunk_count for doc in docs)
-            kb.total_tokens = sum(doc.token_count for doc in docs)
-            await kb.save()
-            logger.info(
-                f"KB {kb.id} stats refreshed: chunks={kb.total_chunks}, tokens={kb.total_tokens}"
-            )
-
-        try:
-            # Get all chunks for this document
-            chunks = await DocumentChunk.filter(document_id=doc_uuid).order_by(
-                "chunk_index"
-            )
-
-            if not chunks:
-                logger.warning(f"No chunks found for document {document_id}")
-                default_lang = await get_default_language()
-                document.status = DocumentStatus.ERROR.value
-                document.error_message = t("no_chunks_to_embed", lang=default_lang)
-                await document.save()
-                return {
-                    "status": "success",
-                    "message": t("no_chunks_to_embed", lang=default_lang),
-                    "embedded_count": 0,
-                }
-
-            # Initialize vector store with KB's embedding model and team ID for usage tracking
-            embedding_model_id = (
-                str(kb.embedding_model_id) if kb.embedding_model_id else None
-            )
-            team_id = str(kb.team_id) if kb.team_id else None
-            vector_store = VectorStore(
-                embedding_model_id=embedding_model_id,
-                team_id=team_id,
-            )
-
-            # Generate embeddings and store vectors for each chunk with progress
-            embedded_count = await DocumentChunk.filter(
-                document_id=doc_uuid, status="embedded"
-            ).count()
-            failed_count = 0
-            last_error = None
-            total_chunks = len(chunks)
-            total_tokens = sum(chunk.token_count for chunk in chunks)
-            for chunk in chunks:
-                if chunk.status == "embedded":
-                    continue
-                try:
-                    await vector_store.add_chunk_vector(kb.id, chunk)
-                    chunk.status = "embedded"
-                    chunk.error_message = None
-                    await chunk.save(update_fields=["status", "error_message"])
-                    embedded_count += 1
-                except Exception as e:
-                    failed_count += 1
-                    last_error = str(e)
-                    chunk.status = "failed"
-                    chunk.error_message = _get_generic_processing_error(
-                        document, user_locale
-                    )[:500]
-                    await chunk.save(update_fields=["status", "error_message"])
-                    logger.error(f"Failed to embed chunk {chunk.id}: {e}")
-
-                # Update progress in document metadata
-                document.metadata = document.metadata or {}
-                document.metadata["embed_progress"] = {
-                    "embedded": embedded_count,
-                    "failed": failed_count,
-                    "total": total_chunks,
-                }
-                await document.save(update_fields=["metadata"])
-
-            # Clear progress from metadata
-            document.metadata = document.metadata or {}
-            _clear_task_metadata(document)
-
-            # Check if embedding was successful
-            if embedded_count == 0 and len(chunks) > 0:
-                # All chunks failed - mark as error
-                document.status = DocumentStatus.ERROR.value
-                document.chunk_count = total_chunks
-                document.token_count = total_tokens
-                document.error_message = t(
-                    "all_chunks_failed_to_embed",
-                    lang=user_locale,
-                    error=last_error or t("unknown_error_generic", lang=user_locale),
-                )[:500]
-                await document.save()
-
-                logger.error(
-                    f"Document {document_id} embedding failed: "
-                    f"0/{len(chunks)} chunks embedded"
-                )
-
-                # Send failure notification
-                localized_error = t(
-                    "all_chunks_failed_to_embed",
-                    lang=user_locale,
-                    error=last_error or t("unknown_error_generic", lang=user_locale),
-                )
-                await _send_doc_failed_notification(
-                    document=document,
-                    kb_name=kb.name,
-                    team_id=kb.team_id,
-                    error=localized_error,
-                    user_locale=user_locale,
-                )
-
-                return {
-                    "status": "error",
-                    "document_id": document_id,
-                    "message": localized_error,
-                    "embedded_count": 0,
-                    "total_chunks": len(chunks),
-                }
-
-            # Check if there were any failures
-            if failed_count > 0:
-                # Partial failure - mark as error with details
-                document.status = DocumentStatus.ERROR.value
-                document.chunk_count = total_chunks
-                document.token_count = total_tokens
-                document.error_message = t(
-                    "chunks_failed_to_embed",
-                    lang=user_locale,
-                    failed_count=failed_count,
-                    total_chunks=len(chunks),
-                    error=last_error,
-                )[:500]
-                await document.save()
-
-                await _refresh_kb_stats()
-
-                logger.error(
-                    f"Document {document_id} embedding partially failed: "
-                    f"{embedded_count}/{len(chunks)} chunks embedded, {failed_count} failed"
-                )
-
-                # Send failure notification
-                await _send_doc_failed_notification(
-                    document=document,
-                    kb_name=kb.name,
-                    team_id=kb.team_id,
-                    error=document.error_message,
-                    user_locale=user_locale,
-                )
-
-                return {
-                    "status": "error",
-                    "document_id": document_id,
-                    "message": document.error_message,
-                    "embedded_count": embedded_count,
-                    "failed_count": failed_count,
-                    "total_chunks": len(chunks),
-                }
-
-            # All chunks embedded successfully
-            document.status = DocumentStatus.COMPLETED.value
-            document.chunk_count = total_chunks
-            document.token_count = total_tokens
-            document.processed_at = datetime.now(timezone.utc)
-            document.error_message = None
-            await document.save()
-            logger.info(
-                f"Document {document_id} status updated: {document.status}, chunks={document.chunk_count}, tokens={document.token_count}"
-            )
-
-            # Update KB statistics
-            await _refresh_kb_stats()
-
-            logger.info(
-                f"Document {document_id} embedding completed: "
-                f"{embedded_count}/{len(chunks)} chunks embedded"
-            )
-
-            # Send success notification
-            await _send_doc_indexed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                chunk_count=document.chunk_count,
-                token_count=document.token_count,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "success",
-                "document_id": document_id,
-                "embedded_count": embedded_count,
-                "total_chunks": len(chunks),
-            }
-
-        except Exception as e:
-            logger.exception(f"Error embedding document {document_id}: {e}")
-
-            # Update document status to ERROR
-            document.status = DocumentStatus.ERROR.value
-            _clear_task_metadata(document)
-            document.error_message = _get_generic_processing_error(
-                document, user_locale
-            )[:500]
-            await document.save()
-
-            # Send failure notification
-            await _send_doc_failed_notification(
-                document=document,
-                kb_name=kb.name,
-                team_id=kb.team_id,
-                error=document.error_message,
-                user_locale=user_locale,
-            )
-
-            return {
-                "status": "error",
-                "document_id": document_id,
-                "message": document.error_message,
-            }
-
-    # Run async function
+    task_id = getattr(self.request, "id", None)
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    return loop.run_until_complete(_embed())
+    return loop.run_until_complete(
+        _embed_existing_document_chunks(document_id, task_id)
+    )
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -1214,12 +1216,10 @@ def retry_failed_chunks_task(self, document_id: str) -> dict:
                     embedded_count += 1
                 except Exception as e:
                     still_failed += 1
-                    last_error = str(e)
-                    chunk.error_message = _get_generic_processing_error(
-                        document, user_locale
-                    )[:500]
+                    last_error = _get_embedding_error(document, e, user_locale)
+                    chunk.error_message = last_error[:500]
                     await chunk.save(update_fields=["error_message"])
-                    logger.error(f"Retry failed for chunk {chunk.id}: {e}")
+                    logger.exception("Retry failed for chunk %s", chunk.id)
 
                 # Update progress
                 document.metadata = document.metadata or {}
@@ -1477,10 +1477,9 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
 
         except Exception as e:
             logger.exception(f"Error retrying failed chunk {chunk_id}: {e}")
+            embedding_error = _get_embedding_error(document, e, user_locale)
             chunk.status = "failed"
-            chunk.error_message = _get_generic_processing_error(document, user_locale)[
-                :500
-            ]
+            chunk.error_message = embedding_error[:500]
             await chunk.save(update_fields=["status", "error_message"])
 
             total_chunks = await DocumentChunk.filter(document_id=doc_uuid).count()
@@ -1495,7 +1494,7 @@ def retry_failed_chunk_task(self, document_id: str, chunk_id: str) -> dict:
                 lang=user_locale,
                 failed_count=remaining_failed,
                 total_chunks=total_chunks,
-                error=str(e) or t("unknown_error_generic", lang=user_locale),
+                error=embedding_error,
             )[:500]
             await document.save()
 

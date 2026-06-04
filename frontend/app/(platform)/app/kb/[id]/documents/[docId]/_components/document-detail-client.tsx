@@ -551,6 +551,17 @@ export function DocumentDetailClient({ knowledgeBaseId, documentId }: DocumentDe
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
               <Loader2 className="h-12 w-12 text-blue-500 animate-spin mb-4" />
               <h3 className="text-lg font-medium mb-2">{t('documentProcessingTitle')}</h3>
+              {(() => {
+                const progress = document.metadata?.embed_progress as { embedded?: number; failed?: number; total?: number } | undefined
+                if (progress?.total) {
+                  return (
+                    <p className="text-sm text-blue-500 font-medium mb-2">
+                      {t('embeddingProgress', { embedded: progress.embedded ?? 0, total: progress.total })}
+                    </p>
+                  )
+                }
+                return null
+              })()}
               <p className="text-muted-foreground max-w-md">
                 {t('documentProcessingDescription')}
               </p>

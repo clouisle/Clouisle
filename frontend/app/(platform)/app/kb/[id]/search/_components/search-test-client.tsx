@@ -35,20 +35,12 @@ import {
   ToggleGroupItem,
 } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
-import { API_BASE_URL } from '@/lib/constants'
 
 interface SearchTestClientProps {
   knowledgeBaseId: string
 }
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
-
-function resolveMediaUrl(src: string): string {
-  if (src.startsWith('/api/v1/')) {
-    return `${API_BASE_URL.replace(/\/api\/v1\/?$/, '')}${src}`
-  }
-  return src
-}
 
 function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string, alt?: string }) {
   const [objectUrl, setObjectUrl] = React.useState<string | null>(null)
@@ -76,7 +68,7 @@ function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string, alt?
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined
     let currentObjectUrl: string | null = null
 
-    fetch(resolveMediaUrl(src), { headers, signal: controller.signal })
+    fetch(src, { headers, signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error('image_load_failed')
         return response.blob()

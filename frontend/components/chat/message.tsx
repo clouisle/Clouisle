@@ -1443,6 +1443,73 @@ function PreviewableMarkdownBlock({
   )
 }
 
+function getAuthenticatedApiAssetUrl(src: string): string | null {
+  return src.startsWith('/api/v1/') ? src : null
+}
+
+function isBlockedImageSrc(src: string): boolean {
+  const normalized = src.trim().toLowerCase()
+  return normalized.startsWith('javascript:') || normalized.startsWith('data:')
+}
+
+type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
+  src?: string
+  alt?: string
+}
+
+function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: AuthenticatedMarkdownImageProps) {
+  const [objectUrl, setObjectUrl] = React.useState<string | null>(null)
+  const [failed, setFailed] = React.useState(false)
+
+  React.useEffect(() => {
+    setFailed(false)
+    if (!src) {
+      setObjectUrl(null)
+      return
+    }
+    if (isBlockedImageSrc(src)) {
+      setObjectUrl(null)
+      setFailed(true)
+      return
+    }
+    const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
+    if (!authenticatedUrl) {
+      setObjectUrl(src)
+      return
+    }
+
+    setObjectUrl(null)
+    const controller = new AbortController()
+    const token = localStorage.getItem('access_token')
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined
+    let currentObjectUrl: string | null = null
+
+    fetch(authenticatedUrl, { headers, signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('image_load_failed')
+        return response.blob()
+      })
+      .then((blob) => {
+        currentObjectUrl = URL.createObjectURL(blob)
+        setObjectUrl(currentObjectUrl)
+      })
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setFailed(true)
+      })
+
+    return () => {
+      controller.abort()
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
+    }
+  }, [src])
+
+  if (failed || !objectUrl) {
+    return <span className="text-muted-foreground">{alt || src}</span>
+  }
+
+  return <img {...props} src={objectUrl} alt={alt} loading="lazy" />
+}
+
 function isSameOriginChatLink(url: string) {
   if (typeof window === 'undefined') {
     return false
@@ -1706,6 +1773,9 @@ function TextWithCitations({
   const rehypePlugins = isStreaming ? STREAMING_REHYPE_PLUGINS : undefined
 
   const components = React.useMemo(() => ({
+    img: ({ src, alt, ...props }: React.ComponentProps<'img'>) => (
+      <AuthenticatedMarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt || ''} {...props} />
+    ),
     p: ({ children, node, ...props }: React.ComponentProps<'p'> & {
       node?: {
         children?: Array<{ tagName?: string; type?: string }>
