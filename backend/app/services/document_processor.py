@@ -3,6 +3,7 @@ Document processing service for knowledge base.
 Handles document parsing, text extraction, and chunking.
 """
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -252,7 +253,13 @@ class DocumentProcessor:
         file_path = self.get_media_asset_path(kb_id, document_id, filename)
         os.makedirs(file_path.parent, exist_ok=True)
         if not file_path.exists():
-            file_path.write_bytes(content)
+            temp_file_path = file_path.with_name(f".tmp_{file_path.name}")
+            try:
+                temp_file_path.write_bytes(content)
+                temp_file_path.replace(file_path)
+            except Exception:
+                temp_file_path.unlink(missing_ok=True)
+                raise
         url = (
             f"/api/v1/knowledge-bases/{kb_id}/documents/{document_id}/media/{filename}"
         )
@@ -350,7 +357,8 @@ class DocumentProcessor:
 
         # Clean up text
         if kb_id is not None and document_id is not None:
-            text, media_assets = self.replace_embedded_media_data_uris(
+            text, media_assets = await asyncio.to_thread(
+                self.replace_embedded_media_data_uris,
                 text,
                 kb_id=kb_id,
                 document_id=document_id,

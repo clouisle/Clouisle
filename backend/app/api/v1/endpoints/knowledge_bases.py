@@ -3,6 +3,7 @@ Knowledge Base API endpoints.
 Provides CRUD operations for knowledge bases and documents.
 """
 
+import asyncio
 import logging
 import mimetypes
 import os
@@ -865,7 +866,7 @@ async def delete_document(
     await vector_store.delete_document_vectors(doc_id)
 
     # Delete extracted media assets if exists
-    document_processor.delete_media_assets(kb.id, doc.id)
+    await asyncio.to_thread(document_processor.delete_media_assets, kb.id, doc.id)
 
     # Delete file if exists
     if doc.file_path:
@@ -958,7 +959,14 @@ async def get_document_media(
             status_code=404,
         )
 
-    file_path = document_processor.get_media_asset_path(kb_id, doc_id, filename)
+    try:
+        file_path = document_processor.get_media_asset_path(kb_id, doc_id, filename)
+    except ValueError:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="file_not_found",
+            status_code=404,
+        ) from None
     if not file_path.exists():
         raise BusinessError(
             code=ResponseCode.VALIDATION_ERROR,

@@ -47,6 +47,7 @@ function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string, alt?
   const [failed, setFailed] = React.useState(false)
 
   React.useEffect(() => {
+    let cancelled = false
     setFailed(false)
     if (!src) {
       setObjectUrl(null)
@@ -74,14 +75,17 @@ function AuthenticatedMarkdownImage({ src = '', alt = '' }: { src?: string, alt?
         return response.blob()
       })
       .then(blob => {
+        if (cancelled) return
         currentObjectUrl = URL.createObjectURL(blob)
         setObjectUrl(currentObjectUrl)
       })
       .catch(error => {
+        if (cancelled) return
         if ((error as Error).name !== 'AbortError') setFailed(true)
       })
 
     return () => {
+      cancelled = true
       controller.abort()
       if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
     }
