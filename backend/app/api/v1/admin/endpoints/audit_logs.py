@@ -636,7 +636,7 @@ async def trigger_manual_archive(
 
 @router.get("/export", response_model=None)
 async def export_audit_logs(
-    format: str = Query("csv", regex="^(csv|json)$"),
+    format: str = Query("csv", pattern="^(csv|json)$"),
     user_id: UUID | None = Query(None),
     team_id: UUID | None = Query(None),
     action: list[str] | None = Query(None),

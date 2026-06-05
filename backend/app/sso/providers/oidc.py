@@ -4,7 +4,7 @@ import secrets
 from typing import Any, Dict, Tuple
 
 import httpx
-from authlib.jose import jwt
+from joserfc import jwt
 
 from app.core.i18n import t
 from app.sso.providers.base import BaseSSOProvider
@@ -146,5 +146,5 @@ class OIDCProvider(BaseSSOProvider):
         Note: For production, should fetch JWKS from provider and validate signature
         """
         # For now, decode without verification (should be improved)
-        claims = jwt.decode(id_token, self.config.get("client_secret", ""))
-        return claims
+        token = jwt.decode(id_token, self.config.get("client_secret", ""))
+        return token.claims

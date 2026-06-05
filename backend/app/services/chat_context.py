@@ -67,6 +67,9 @@ AGGRESSIVE_BLOCK_SUMMARY_CHARS = 220
 DEFAULT_FILE_CONTENT_HEAD_CHARS = 12000
 DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
 FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
+MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = """## Markdown Output
+
+When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source."""
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
     "micro_compaction_enabled": True,
@@ -594,6 +597,10 @@ def _build_system_prompt(
             system_prompt = system_prompt.replace(f"{{{{{key}}}}}", str(value))
         system_prompt = system_prompt.replace("{{query}}", user_message)
         system_prompt = system_prompt.replace(FILE_CONTENT_PLACEHOLDER, "")
+
+    system_prompt = _append_prompt_section(
+        system_prompt, MARKDOWN_IMAGE_DISPLAY_INSTRUCTION
+    )
 
     if agent.enable_memory:
         system_prompt = _append_prompt_section(system_prompt, MEMORY_SYSTEM_INSTRUCTION)

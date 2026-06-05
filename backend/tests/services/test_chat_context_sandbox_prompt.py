@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from app.services.chat_context import _build_system_prompt
 
 
-def _agent(*, tools_config=None):
+def _agent(*, tools_config=None, system_prompt="Base prompt"):
     return SimpleNamespace(
         id="agent-1",
-        system_prompt="Base prompt",
+        system_prompt=system_prompt,
         enable_memory=False,
         enable_user_input_request=False,
         tools_config=tools_config or [],
@@ -71,5 +71,20 @@ def test_build_system_prompt_formats_sections_with_clear_spacing():
         user_locale="en",
     )
 
-    assert "Base prompt\n\n## Sandbox Environment Guidance" in prompt
+    assert "Base prompt\n\n## Markdown Output" in prompt
+    assert "## Markdown Output" in prompt
+    assert "## Sandbox Environment Guidance" in prompt
     assert "## Response Language\nYou MUST respond in English only." in prompt
+
+
+def test_build_system_prompt_injects_markdown_image_display_guidance_without_base_prompt():
+    prompt = _build_system_prompt(
+        agent=_agent(system_prompt=""),
+        conversation=_conversation(),
+        user_message="show the generated image",
+        user_locale="en",
+    )
+
+    assert "## Markdown Output" in prompt
+    assert "normal Markdown image syntax" in prompt
+    assert "Do not wrap the Markdown image in a code block" in prompt

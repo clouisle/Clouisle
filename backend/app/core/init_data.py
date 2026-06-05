@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from tortoise import Tortoise
@@ -11,6 +12,18 @@ logger = logging.getLogger(__name__)
 
 # System role name constant
 SUPER_ADMIN_ROLE = "Super Admin"
+STARTUP_MIGRATION_LOCK_TIMEOUT = "2s"
+STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS = 3
+
+
+async def execute_startup_migration_query(conn, query: str):
+    await conn.execute_query(f"SET lock_timeout = '{STARTUP_MIGRATION_LOCK_TIMEOUT}'")
+    try:
+        return await asyncio.wait_for(
+            conn.execute_query(query), timeout=STARTUP_MIGRATION_QUERY_TIMEOUT_SECONDS
+        )
+    finally:
+        await conn.execute_query("RESET lock_timeout")
 
 
 async def sync_role_permissions(
@@ -236,10 +249,13 @@ async def init_agent_tools_credentials():
     if not rows:
         logger.info("Adding tools_credentials column to agents table...")
         try:
-            await conn.execute_query("""
+            await execute_startup_migration_query(
+                conn,
+                """
                 ALTER TABLE agents
                 ADD COLUMN tools_credentials JSONB NOT NULL DEFAULT '{}'::jsonb
-            """)
+                """,
+            )
             logger.info("Added tools_credentials column to agents table")
         except Exception as e:
             logger.error(f"Could not add tools_credentials column: {e}")
@@ -249,12 +265,27 @@ async def init_agent_tools_credentials():
 
     # Update existing agents with NULL tools_credentials (shouldn't happen with DEFAULT, but just in case)
     try:
-        await conn.execute_query("""
-            UPDATE agents
-            SET tools_credentials = '{}'::jsonb
+        _, rows = await execute_startup_migration_query(
+            conn,
+            """
+            SELECT COUNT(*) AS null_count
+            FROM agents
             WHERE tools_credentials IS NULL
-        """)
-        logger.info("Updated existing agents with default tools_credentials")
+            """,
+        )
+        null_count = rows[0]["null_count"] if rows else 0
+        if null_count:
+            await execute_startup_migration_query(
+                conn,
+                """
+                UPDATE agents
+                SET tools_credentials = '{}'::jsonb
+                WHERE tools_credentials IS NULL
+                """,
+            )
+            logger.info("Updated existing agents with default tools_credentials")
+        else:
+            logger.info("No agents require tools_credentials backfill")
     except Exception as e:
         logger.warning(f"Could not update existing agents: {e}")
 
@@ -282,12 +313,27 @@ async def init_agent_visibility_values():
         return
 
     try:
-        await conn.execute_query("""
-            UPDATE agents
-            SET visibility = 'team'
+        _, rows = await execute_startup_migration_query(
+            conn,
+            """
+            SELECT COUNT(*) AS public_count
+            FROM agents
             WHERE visibility = 'public'
-        """)
-        logger.info("Normalized legacy public agent visibility to team")
+            """,
+        )
+        public_count = rows[0]["public_count"] if rows else 0
+        if public_count:
+            await execute_startup_migration_query(
+                conn,
+                """
+                UPDATE agents
+                SET visibility = 'team'
+                WHERE visibility = 'public'
+                """,
+            )
+            logger.info("Normalized legacy public agent visibility to team")
+        else:
+            logger.info("No legacy public agent visibility values found")
     except Exception as e:
         logger.error(f"Could not normalize agent visibility values: {e}")
         raise
@@ -367,10 +413,13 @@ async def init_agent_streaming_config():
     if not rows:
         logger.info("Adding streaming_config column to agents table...")
         try:
-            await conn.execute_query("""
+            await execute_startup_migration_query(
+                conn,
+                """
                 ALTER TABLE agents
                 ADD COLUMN streaming_config JSONB NOT NULL DEFAULT '{}'::jsonb
-            """)
+                """,
+            )
             logger.info("Added streaming_config column to agents table")
         except Exception as e:
             logger.error(f"Could not add streaming_config column: {e}")
@@ -410,10 +459,13 @@ async def init_agent_context_compression_config():
     if not rows:
         logger.info("Adding context_compression_config column to agents table...")
         try:
-            await conn.execute_query("""
+            await execute_startup_migration_query(
+                conn,
+                """
                 ALTER TABLE agents
                 ADD COLUMN context_compression_config JSONB NOT NULL DEFAULT '{}'::jsonb
-            """)
+                """,
+            )
             logger.info("Added context_compression_config column to agents table")
         except Exception as e:
             logger.error(f"Could not add context_compression_config column: {e}")
@@ -733,10 +785,13 @@ async def init_agent_user_input_request():
     if not rows:
         logger.info("Adding enable_user_input_request column to agents table...")
         try:
-            await conn.execute_query("""
+            await execute_startup_migration_query(
+                conn,
+                """
                 ALTER TABLE agents
                 ADD COLUMN enable_user_input_request BOOLEAN NOT NULL DEFAULT FALSE
-            """)
+                """,
+            )
             logger.info("Added enable_user_input_request column to agents table")
         except Exception as e:
             logger.error(f"Could not add enable_user_input_request column: {e}")
@@ -1018,6 +1073,9 @@ async def fix_cascade_delete_policies():
     conn = Tortoise.get_connection("default")
 
     try:
+        await conn.execute_query(
+            f"SET lock_timeout = '{STARTUP_MIGRATION_LOCK_TIMEOUT}'"
+        )
         # 1. Fix Agent.created_by: CASCADE -> SET NULL
         logger.info("Fixing agents.created_by_id foreign key...")
         await conn.execute_query("""
@@ -1188,6 +1246,8 @@ async def fix_cascade_delete_policies():
         logger.error(f"Error fixing CASCADE delete policies: {e}")
         # Don't raise - allow app to continue even if migration fails
         logger.warning("Continuing despite migration errors...")
+    finally:
+        await conn.execute_query("RESET lock_timeout")
 
 
 async def init_sso_tables():
@@ -1479,10 +1539,13 @@ async def init_agent_hide_tool_calls_field():
         )
         return
 
-    await conn.execute_query("""
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS hide_tool_calls BOOLEAN NOT NULL DEFAULT FALSE
-    """)
+        """,
+    )
 
     logger.info("Agent hide_tool_calls field added successfully")
 
@@ -1508,16 +1571,22 @@ async def init_agent_memory_fields():
     logger.info("Adding enable_memory and memory_config fields to agents table...")
 
     # Add enable_memory field
-    await conn.execute_query("""
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS enable_memory BOOLEAN NOT NULL DEFAULT FALSE
-    """)
+        """,
+    )
 
     # Add memory_config field
-    await conn.execute_query("""
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS memory_config JSONB NOT NULL DEFAULT '{}'
-    """)
+        """,
+    )
 
     logger.info("Agent memory fields added successfully")
 
@@ -1541,22 +1610,34 @@ async def init_agent_media_generation_fields():
         )
         return
 
-    await conn.execute_query("""
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS enable_image_generation BOOLEAN NOT NULL DEFAULT FALSE
-    """)
-    await conn.execute_query("""
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS image_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
-    """)
-    await conn.execute_query("""
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS enable_video_generation BOOLEAN NOT NULL DEFAULT FALSE
-    """)
-    await conn.execute_query("""
+        """,
+    )
+    await execute_startup_migration_query(
+        conn,
+        """
         ALTER TABLE agents
         ADD COLUMN IF NOT EXISTS video_generation_config JSONB NOT NULL DEFAULT '{}'::jsonb
-    """)
+        """,
+    )
 
     logger.info("Agent media generation fields added successfully")
 

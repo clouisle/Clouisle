@@ -854,7 +854,7 @@ class ExpiringPasswordUser(BaseModel):
 async def get_expiring_passwords(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    filter: str = Query("all", regex="^(all|expired|expiring|force_change)$"),
+    filter: str = Query("all", pattern="^(all|expired|expiring|force_change)$"),
     current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     """
