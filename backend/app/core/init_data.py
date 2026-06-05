@@ -524,6 +524,10 @@ async def init_message_first_token_field():
     logger.info("Checking message first_token_ms field...")
 
     conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    if dialect != "postgres":
+        logger.info("Skipping first_token_ms migration for non-PostgreSQL database")
+        return
 
     _, tables = await conn.execute_query("""
         SELECT table_name FROM information_schema.tables

@@ -415,9 +415,14 @@ async def get_slow_queries(
             "SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'"
         )
         if not extension_rows:
-            await conn.execute_query(
-                "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
-            )
+            return {
+                "available": False,
+                "reason": "pg_stat_statements extension is not created in the database",
+                "items": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+            }
 
         _, rows = await conn.execute_query(
             """
@@ -1004,6 +1009,14 @@ async def _database_health() -> dict[str, Any]:
     conn = Tortoise.get_connection("default")
     try:
         await conn.execute_query("SELECT 1")
+        dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+        if dialect != "postgres":
+            return {
+                "status": "healthy",
+                "active_connections": 1,
+                "max_connections": None,
+            }
+
         _, rows = await conn.execute_query(
             """
             SELECT

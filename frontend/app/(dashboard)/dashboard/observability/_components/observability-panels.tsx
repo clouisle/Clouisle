@@ -654,6 +654,7 @@ function EntityTable({ headers, rows, empty }: { headers: string[]; rows: Array<
               {headers.map((header, index) => (
                 <TableHead key={header} className={index > 1 ? 'text-right' : undefined}>{header}</TableHead>
               ))}
+              <TableHead className="w-8" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -736,7 +737,7 @@ function ResourceRow({ label, icon: Icon, data, valueKey, suffix }: { label: str
   const t = useTranslations('dashboard.observability')
   const status = String(data.status ?? 'unknown')
   const value = readNumber(data, [valueKey])
-  const progress = suffix === '%' ? Math.min(Math.max(value, 0), 100) : null
+  const progress = suffix === '%' && value !== null ? Math.min(Math.max(value, 0), 100) : null
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-center justify-between gap-3">
@@ -744,7 +745,7 @@ function ResourceRow({ label, icon: Icon, data, valueKey, suffix }: { label: str
           <div className="rounded-md bg-muted p-2"><Icon className="h-4 w-4" /></div>
           <div>
             <div className="font-medium">{label}</div>
-            <div className="text-xs text-muted-foreground">{Number.isFinite(value) ? `${value}${suffix}` : '-'}</div>
+            <div className="text-xs text-muted-foreground">{value !== null ? `${value}${suffix}` : '-'}</div>
           </div>
         </div>
         <StatusPill tone={toneForStatus(status)} label={statusLabel(status, t)} />
@@ -852,13 +853,13 @@ function timeoutTypeLabel(type: string | null | undefined, t: ObservabilityTrans
   return keys.has(normalized) ? t(`timeoutTypes.${normalized}`) : normalized
 }
 
-function readNumber(row: Record<string, unknown>, keys: string[]) {
+function readNumber(row: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = row[key]
     if (typeof value === 'number' && Number.isFinite(value)) return value
     if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
   }
-  return 0
+  return null
 }
 
 function readString(row: Record<string, unknown>, keys: string[]) {
@@ -869,7 +870,8 @@ function readString(row: Record<string, unknown>, keys: string[]) {
   return '-'
 }
 
-function formatNumber(value: number) {
+function formatNumber(value: number | null | undefined) {
+  if (value == null) return '-'
   return new Intl.NumberFormat().format(value)
 }
 
