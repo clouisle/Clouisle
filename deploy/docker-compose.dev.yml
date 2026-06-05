@@ -7,6 +7,7 @@ services:
       POSTGRES_DB: clouisle
     ports:
       - "5432:5432"
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

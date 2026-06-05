@@ -17,6 +17,7 @@ export interface SiteSettingsNavItem {
 
 export const ROUTE_PERMISSION_CONFIG: RoutePermissionConfig[] = [
   { path: '/dashboard', permission: 'admin:dashboard:access' },
+  { path: '/dashboard/observability', permission: 'admin:dashboard:access', matchMode: 'prefix' },
   { path: '/teams', permission: 'team:read' },
   { path: '/knowledge-bases', permission: 'admin:knowledge-base:read' },
   { path: '/activities', permission: 'conversation:read' },

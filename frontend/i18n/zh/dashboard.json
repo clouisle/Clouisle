@@ -154,6 +154,187 @@
         "forceChangeDesc": "需要强制修改密码的用户",
         "allGood": "所有密码均正常"
       }
+    },
+    "observability": {
+      "title": "可观测性",
+      "description": "监控 AI 对话与工作流性能、超时、吞吐和系统健康状态。",
+      "tabs": {
+        "overview": "概览",
+        "health": "系统健康",
+        "agents": "Agent 性能",
+        "workflows": "Workflow 性能",
+        "timeouts": "超时分析",
+        "throughput": "系统吞吐"
+      },
+      "actions": {
+        "refresh": "刷新",
+        "retry": "重试",
+        "viewDetails": "查看详情",
+        "closeDetails": "关闭详情"
+      },
+      "states": {
+        "loading": "正在加载可观测性数据",
+        "refreshing": "正在刷新",
+        "emptyTitle": "暂无数据",
+        "emptyDescription": "当前视图还没有可观测性数据。",
+        "errorTitle": "无法加载可观测性数据",
+        "errorDescription": "请检查服务健康状态后重试。",
+        "lastUpdated": "最后更新 {time}",
+        "cacheTtl": "缓存 {seconds} 秒以降低看板负载。",
+        "autoRefreshHint": "每 30 秒自动刷新"
+      },
+      "status": {
+        "healthy": "健康",
+        "warning": "告警",
+        "danger": "严重",
+        "unhealthy": "不健康",
+        "unknown": "未知",
+        "success": "成功",
+        "failed": "失败",
+        "running": "运行中",
+        "pending": "等待中",
+        "cancelled": "已取消",
+        "timeout": "超时",
+        "error": "错误"
+      },
+      "sources": {
+        "agent": "Agent",
+        "workflow": "Workflow",
+        "system": "系统",
+        "unknown": "未知"
+      },
+      "risk": {
+        "healthy": "健康",
+        "warning": "关注",
+        "critical": "严重"
+      },
+      "metrics": {
+        "totalRequests": "总请求数",
+        "agentWorkflowBreakdown": "Agent {agents} · Workflow {workflows}",
+        "p95Latency": "P95 延迟",
+        "p95Ttft": "P95 首 Token",
+        "firstTokenLatency": "首 Token 延迟",
+        "timeoutRate": "超时率",
+        "successRate": "成功率",
+        "successRateValue": "成功率 {value}",
+        "currentQps": "当前 QPS",
+        "currentTps": "当前 TPS",
+        "peakHourly": "峰值小时请求",
+        "totalTokens": "总 Token",
+        "selectedRange": "所选时间范围"
+      },
+      "overview": {
+        "operationalStatus": "运行状态",
+        "operationalStatusDesc": "聚合展示请求可靠性、延迟和负载。",
+        "trafficMix": "流量构成",
+        "latencyPercentiles": "延迟分位",
+        "requestsBySource": "按来源统计请求",
+        "agentRequests": "Agent 请求",
+        "workflowRuns": "Workflow 运行",
+        "healthSummaryHealthy": "系统运行在预期范围内。",
+        "healthSummaryWarning": "部分指标需要关注，避免演变为事故。",
+        "healthSummaryCritical": "可靠性或延迟已超出安全运行范围。"
+      },
+      "charts": {
+        "requestTrend": "请求趋势",
+        "requestTrendDesc": "Agent 请求与 Workflow 运行随时间变化",
+        "systemTrend": "系统资源趋势",
+        "systemTrendDesc": "健康检查缓存的近期 CPU 与内存采样",
+        "throughputTrend": "吞吐趋势",
+        "throughputTrendDesc": "Agent 与 Workflow 合并请求量"
+      },
+      "health": {
+        "memory": "内存",
+        "disk": "磁盘",
+        "database": "数据库",
+        "resourceUsage": "资源使用",
+        "dependencies": "依赖状态",
+        "workerQueues": "Worker 队列",
+        "workerQueuesDesc": "按队列和任务保留状态查看 Celery 压力。",
+        "activeTasks": "活跃",
+        "reservedTasks": "已保留",
+        "scheduledTasks": "已调度",
+        "pending": "等待中",
+        "queue": "队列",
+        "slowQueries": "慢查询",
+        "slowQueriesDesc": "按执行时间排序的 PostgreSQL 语句。",
+        "query": "查询",
+        "calls": "调用次数",
+        "meanTime": "平均耗时",
+        "totalTime": "总耗时",
+        "workerError": "Worker 检查失败",
+        "noSlowQueries": "当前阈值下没有慢查询。",
+        "slowQueriesUnavailable": "慢查询数据不可用",
+        "slowQueriesSetupHint": "请在 PostgreSQL shared_preload_libraries 中启用 pg_stat_statements，重启 PostgreSQL 后刷新本页。"
+      },
+      "tables": {
+        "name": "名称",
+        "team": "团队",
+        "requests": "请求数",
+        "runs": "运行次数",
+        "successRate": "成功率",
+        "timeoutRate": "超时率",
+        "ttftP95": "首 Token P95",
+        "tokens": "Token",
+        "avgTokens": "平均 Token",
+        "failedNodes": "失败节点",
+        "source": "来源",
+        "type": "类型",
+        "status": "状态",
+        "model": "模型",
+        "duration": "耗时",
+        "time": "时间"
+      },
+      "details": {
+        "agentTitle": "Agent 详情",
+        "workflowTitle": "Workflow 详情",
+        "id": "ID",
+        "team": "团队",
+        "performanceTrend": "性能趋势",
+        "percentiles": "所选时间范围内的 P95 延迟与请求量。",
+        "nodeBreakdown": "节点拆解",
+        "noAgent": "未选择 Agent",
+        "noWorkflow": "未选择 Workflow",
+        "failedRate": "失败率",
+        "avgTokens": "平均 Token",
+        "avgNodes": "平均节点数",
+        "nodeType": "节点类型",
+        "executionCount": "执行次数",
+        "failedCount": "失败次数",
+        "avgDuration": "平均耗时"
+      },
+      "common": {
+        "count": "数量"
+      },
+      "timeouts": {
+        "limitedTitle": "历史 Agent 超时类型受限",
+        "limitedDescription": "消息当前未持久化 idle/global 超时子类型，因此历史 Agent 超时类型显示为 unknown。Workflow 超时统计是精确的。",
+        "distribution": "超时分布",
+        "distributionDesc": "按已持久化子类型聚合超时事件。",
+        "recentEvents": "近期事件",
+        "totalEvents": "事件总数",
+        "mostFrequentType": "最高频类型",
+        "typeAvailable": "Agent 类型数据",
+        "note": "所选时间范围内的近期超时事件"
+      },
+      "timeoutTypes": {
+        "unknown": "未知",
+        "idle": "空闲",
+        "global": "全局",
+        "workflow": "Workflow",
+        "agent": "Agent"
+      },
+      "throughput": {
+        "currentLoad": "当前负载",
+        "runningWorkflows": "运行中 Workflow",
+        "requestVolume": "请求量",
+        "tokenBySource": "按来源统计 Token",
+        "tokenByModel": "按模型统计 Token",
+        "model": "模型",
+        "tokens": "Token",
+        "share": "总 Token 占比",
+        "noTokenData": "该时间范围内没有 Token 数据。"
+      }
     }
   }
 }

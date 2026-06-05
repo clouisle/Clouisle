@@ -22,14 +22,18 @@
 
 #### 1.1 数据源
 - **现有数据**：
-  - `Message` 表：`duration_ms`, `created_at`, `conversation_id`, `round_status`
+  - `Message` 表：`duration_ms`, `created_at`, `conversation_id`, `round_status`, `round_role`, `is_round_canonical`, `model_used`, `token_usage`
   - `Conversation` 表：`agent_id`, `created_at`, `message_count`
   - `Agent` 表：`id`, `name`, `model_id`
-  - 日志系统：timeout 日志中的 `timeout_type`, `timeout_seconds`
+  - `WorkflowRun` 表：`workflow_id`, `status`, `total_duration_ms`, `total_token_usage`, `failed_nodes`, `created_at`, `started_at`, `finished_at`
+  - `NodeExecution` 表：`run_id`, `node_type`, `status`, `execution_duration_ms`, `queue_duration_ms`, `model_used`, `total_tokens`
+  - 系统运行时：psutil、SQLAlchemy/Tortoise 连接状态、Redis INFO、Celery inspect
 
-- **新增数据**：
-  - 时序指标表（可选，用于高性能查询）
-  - 或直接从现有表聚合（初期方案）
+- **初期方案**：
+  - 直接从现有表聚合，Redis 缓存 30 秒。
+  - 不新增时序指标表；如果后续生产数据量导致聚合超过 2 秒，再追加 rollup 表。
+  - `Message` 没有 `agent_id`，Agent 维度聚合必须通过 `Conversation.agent_id` 关联。
+  - 历史 Agent 消息未持久化 `timeout_type` / `timeout_seconds`，因此 idle/global 类型只能在未来埋点后精确区分；当前版本对 Agent 历史超时类型返回 `unknown`，Workflow 超时通过 `WorkflowRun.status = timeout` 精确统计。
 
 #### 1.2 指标定义
 
@@ -276,6 +280,42 @@
 
 4. **成功率趋势**（折线图）
    - 成功率 % 随时间变化
+
+#### 2.3 企业级监控展示重设计
+
+用户反馈第一版 6 个子页面表现力不足，因此在不改变后端 API 的前提下，对 `/dashboard/observability` 进行展示层重设计：
+
+1. **页面状态与加载体验**
+   - `page.tsx` 只负责标签页、时间范围、数据拉取、错误状态和刷新状态。
+   - 内容区使用 Skeleton，不再用全页居中 spinner 覆盖已有缓存数据。
+   - Health 标签页保留 30 秒自动刷新，并在标题区展示自动刷新提示。
+
+2. **概览页：运维驾驶舱**
+   - 左侧运行状态面板按超时率、成功率、首 Token P95（有新数据时）或总耗时 P95（历史回退）推导健康 / 关注 / 严重风险。
+   - 右侧使用 Agent 请求与 Workflow 运行的堆叠面积趋势图。
+   - 下方展示请求总量、Token、峰值小时请求、流量构成与 P50/P90/P95/P99 分位条。
+   - TTFT（Time To First Token / 首 Token 延迟）与完整响应耗时分开统计；历史数据和非流式消息没有真实 TTFT，不从 `duration_ms` 反推。
+
+3. **系统健康页：依赖与资源控制台**
+   - 使用 CPU/内存趋势图作为主视觉。
+   - CPU、内存、磁盘、数据库、Redis、Worker 以依赖状态列表展示主指标、状态和百分比进度。
+   - Worker 队列展示 active/reserved/scheduled 和各队列 pending 分布。
+   - 慢查询区对 `pg_stat_statements` 不可用状态展示可操作启用提示，对可用状态展示防御式字段读取表格。
+
+4. **Agent / Workflow 性能页：排行 + 详情 Sheet**
+   - 列表展示名称、团队、请求/运行数、成功率、超时率、P95/P99、Token 等核心指标。
+   - 行点击打开右侧 Sheet，异步拉取详情，展示分位条、性能趋势图和 Workflow 节点拆解。
+   - 详情请求不阻塞主列表渲染。
+
+5. **超时分析页：分布 + 事件流**
+   - 顶部展示总事件数、最高频超时类型和 Agent 类型数据可用状态。
+   - 使用横向分布条替代简单卡片，近期事件表展示来源、实体、类型、状态、模型、耗时和时间。
+   - 对历史 Agent timeout subtype 不可精确区分的限制保留警告说明。
+
+6. **系统吞吐页：容量与 Token 分析**
+   - 顶部展示 QPS、TPS、运行中 Workflow、总 Token。
+   - 主图使用 Agent/Workflow 请求量堆叠柱状图。
+   - Token 按来源和模型使用横向分布条展示占比，缺失数据只影响 Token 区块，不隐藏吞吐图。
 
 ### 3. 后端 API 设计
 
