@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         init_agent_streaming_config,
         init_agent_context_compression_config,
         init_message_manual_stop_field,
+        init_message_first_token_field,
         init_message_round_fields,
         init_message_branch_parent_field,
         init_conversation_session_memory_table,
@@ -141,6 +142,11 @@ async def lifespan(app: FastAPI):
         await init_message_manual_stop_field()
     except Exception as e:
         logger.warning(f"Message manual stop migration failed: {e}")
+
+    try:
+        await init_message_first_token_field()
+    except Exception as e:
+        logger.warning(f"Message first token migration failed: {e}")
 
     try:
         await init_message_round_fields()

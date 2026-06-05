@@ -43,3 +43,21 @@ export { adminToolsApi } from './tools'
 export { adminSkillsApi, type AdminSkill, type AdminSkillDetail, type AdminSkillListParams } from './skills'
 export { adminAgentsApi, type AdminAgent, type AdminAgentDetail, type AdminAgentListParams } from './agents'
 export { adminWorkflowsApi, type AdminWorkflow, type AdminWorkflowDetail, type AdminWorkflowListParams } from './workflows'
+
+export { observabilityApi } from './observability'
+export type {
+  ObservabilityTimeRange,
+  ObservabilityOverview,
+  ObservabilityPage,
+  AgentPerformanceRow,
+  WorkflowPerformanceRow,
+  AgentDetailResponse,
+  WorkflowDetailResponse,
+  TimeoutResponse,
+  ThroughputResponse,
+  TokenResponse,
+  SystemHealthResponse,
+  SystemTrendResponse,
+  SlowQueriesResponse,
+  WorkerResponse,
+} from './observability'

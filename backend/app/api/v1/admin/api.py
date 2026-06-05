@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin.endpoints import (
     dashboard,
+    observability,
     audit_logs,
     conversations,
     users,
@@ -27,6 +28,9 @@ admin_router = APIRouter()
 
 admin_router.include_router(
     dashboard.router, prefix="/dashboard", tags=["admin-dashboard"]
+)
+admin_router.include_router(
+    observability.router, prefix="/observability", tags=["admin-observability"]
 )
 admin_router.include_router(
     audit_logs.router, prefix="/audit-logs", tags=["admin-audit-logs"]

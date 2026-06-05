@@ -193,6 +193,11 @@ postgresql:
     repository: postgres
     tag: "16"
     pullPolicy: IfNotPresent
+  extraArgs:
+    - "-c"
+    - "shared_preload_libraries=pg_stat_statements"
+    - "-c"
+    - "pg_stat_statements.track=all"
   persistence:
     enabled: true
     existingClaim: ""

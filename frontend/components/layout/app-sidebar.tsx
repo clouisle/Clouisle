@@ -195,6 +195,12 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
 
   const monitoringItems = [
     {
+      title: t('observability'),
+      url: '/dashboard/observability',
+      icon: Activity,
+      permission: ROUTE_PERMISSION_MAP['/dashboard/observability'],
+    },
+    {
       title: t('notifications'),
       url: '/notifications',
       icon: Bell,
@@ -240,7 +246,7 @@ export function AppSidebar({ variant = 'inset', collapsible = 'icon', side = 'le
     (item) => !item.permission || hasPermission(item.permission)
   )
 
-  const isActive = (url: string) => pathname.startsWith(url)
+  const isActive = (url: string) => (url === '/dashboard' ? pathname === url : pathname.startsWith(url))
 
   return (
     <Sidebar variant={variant} collapsible={collapsible} side={side}>

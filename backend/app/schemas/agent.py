@@ -786,6 +786,7 @@ class MessageRoundStep(BaseModel):
     model_used: str | None = None
     token_usage: dict[str, int] | None = None
     duration_ms: int | None = None
+    first_token_ms: int | None = None
     is_manually_stopped: bool = False
     rag_context: list[dict[str, Any]] | None = None
     created_at: datetime
@@ -820,6 +821,7 @@ class MessageOut(BaseModel):
     model_used: str | None = None
     token_usage: dict[str, int] | None = None
     duration_ms: int | None = None
+    first_token_ms: int | None = None
     is_manually_stopped: bool = False
     rag_context: list[dict[str, Any]] | None = None
     created_at: datetime

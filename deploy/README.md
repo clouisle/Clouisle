@@ -277,6 +277,11 @@ kubectl -n clouisle logs -f deployment/frontend
 - Check worker logs for Redis connection or auth errors.
 - Verify `REDIS_HOST` and `REDIS_PASSWORD`.
 
+**Observability slow queries are unavailable**
+- The built-in Compose and Helm PostgreSQL services start with `shared_preload_libraries=pg_stat_statements` and `pg_stat_statements.track=all`.
+- For an existing PostgreSQL container, restart/recreate the database container after applying the updated command so the preload setting takes effect.
+- For external PostgreSQL, ask the database administrator to enable `pg_stat_statements` in `shared_preload_libraries`, restart PostgreSQL, and allow the application database user to run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` or create the extension manually.
+
 **Beat running duplicate schedules**
 - Ensure only one `beat` replica is running.
 

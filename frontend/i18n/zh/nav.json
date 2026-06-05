@@ -26,6 +26,7 @@
     "logout": "退出登录",
     "logoutSuccess": "已成功退出登录",
     "auditLogs": "审计日志",
+    "observability": "可观测性",
     "memories": "记忆"
   }
 }

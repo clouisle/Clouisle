@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-31T04:54:26.525Z
+// GENERATED — 2026-06-05T15:52:08.395Z
 // Source: i18n/en/nav.json
 export type NavMessages = {
   nav: {
@@ -28,6 +28,7 @@ export type NavMessages = {
     logout: string
     logoutSuccess: string
     auditLogs: string
+    observability: string
     memories: string
   }
 }

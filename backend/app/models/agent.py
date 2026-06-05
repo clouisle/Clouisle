@@ -452,6 +452,9 @@ class Message(models.Model):
         null=True, description='Token usage {"prompt": 100, "completion": 50}'
     )
     duration_ms = fields.IntField(null=True, description="Response duration in ms")
+    first_token_ms = fields.IntField(
+        null=True, description="Time to first streamed token in ms"
+    )
     is_manually_stopped = fields.BooleanField(
         default=False, description="Whether generation was manually stopped"
     )

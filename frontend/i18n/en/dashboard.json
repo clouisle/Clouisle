@@ -154,6 +154,187 @@
         "forceChangeDesc": "Users required to change password",
         "allGood": "All passwords are up to date"
       }
+    },
+    "observability": {
+      "title": "Observability",
+      "description": "Monitor AI conversation and workflow performance, timeouts, throughput, and system health.",
+      "tabs": {
+        "overview": "Overview",
+        "health": "System Health",
+        "agents": "Agent Performance",
+        "workflows": "Workflow Performance",
+        "timeouts": "Timeout Analysis",
+        "throughput": "System Throughput"
+      },
+      "actions": {
+        "refresh": "Refresh",
+        "retry": "Retry",
+        "viewDetails": "View details",
+        "closeDetails": "Close details"
+      },
+      "states": {
+        "loading": "Loading observability data",
+        "refreshing": "Refreshing",
+        "emptyTitle": "No data yet",
+        "emptyDescription": "There is no observability data for this view yet.",
+        "errorTitle": "Observability data could not be loaded",
+        "errorDescription": "Check service health and try again.",
+        "lastUpdated": "Last updated {time}",
+        "cacheTtl": "Cached for {seconds}s to reduce dashboard load.",
+        "autoRefreshHint": "Auto-refreshes every 30s"
+      },
+      "status": {
+        "healthy": "Healthy",
+        "warning": "Warning",
+        "danger": "Critical",
+        "unhealthy": "Unhealthy",
+        "unknown": "Unknown",
+        "success": "Success",
+        "failed": "Failed",
+        "running": "Running",
+        "pending": "Pending",
+        "cancelled": "Cancelled",
+        "timeout": "Timeout",
+        "error": "Error"
+      },
+      "sources": {
+        "agent": "Agent",
+        "workflow": "Workflow",
+        "system": "System",
+        "unknown": "Unknown"
+      },
+      "risk": {
+        "healthy": "Healthy",
+        "warning": "Watch",
+        "critical": "Critical"
+      },
+      "metrics": {
+        "totalRequests": "Total Requests",
+        "agentWorkflowBreakdown": "Agents {agents} · Workflows {workflows}",
+        "p95Latency": "P95 Latency",
+        "p95Ttft": "P95 TTFT",
+        "firstTokenLatency": "First token latency",
+        "timeoutRate": "Timeout Rate",
+        "successRate": "Success Rate",
+        "successRateValue": "Success {value}",
+        "currentQps": "Current QPS",
+        "currentTps": "Current TPS",
+        "peakHourly": "Peak Hourly",
+        "totalTokens": "Total Tokens",
+        "selectedRange": "Selected range"
+      },
+      "overview": {
+        "operationalStatus": "Operational Status",
+        "operationalStatusDesc": "A compact readout for request reliability, latency, and load.",
+        "trafficMix": "Traffic Mix",
+        "latencyPercentiles": "Latency Percentiles",
+        "requestsBySource": "Requests by source",
+        "agentRequests": "Agent Requests",
+        "workflowRuns": "Workflow Runs",
+        "healthSummaryHealthy": "Systems are operating within expected bounds.",
+        "healthSummaryWarning": "Some indicators need attention before they become incidents.",
+        "healthSummaryCritical": "Reliability or latency is outside the safe operating range."
+      },
+      "charts": {
+        "requestTrend": "Request Trend",
+        "requestTrendDesc": "Agent requests and workflow runs over time",
+        "systemTrend": "System Resource Trend",
+        "systemTrendDesc": "Recent CPU and memory samples cached from health checks",
+        "throughputTrend": "Throughput Trend",
+        "throughputTrendDesc": "Combined agent and workflow request volume"
+      },
+      "health": {
+        "memory": "Memory",
+        "disk": "Disk",
+        "database": "Database",
+        "resourceUsage": "Resource Usage",
+        "dependencies": "Dependencies",
+        "workerQueues": "Worker Queues",
+        "workerQueuesDesc": "Celery task pressure by queue and reservation state.",
+        "activeTasks": "Active",
+        "reservedTasks": "Reserved",
+        "scheduledTasks": "Scheduled",
+        "pending": "pending",
+        "queue": "Queue",
+        "slowQueries": "Slow Queries",
+        "slowQueriesDesc": "PostgreSQL statements ranked by execution time.",
+        "query": "Query",
+        "calls": "Calls",
+        "meanTime": "Mean Time",
+        "totalTime": "Total Time",
+        "workerError": "Worker inspection failed",
+        "noSlowQueries": "No slow queries were reported for the current threshold.",
+        "slowQueriesUnavailable": "Slow query data unavailable",
+        "slowQueriesSetupHint": "Enable pg_stat_statements in PostgreSQL shared_preload_libraries, restart PostgreSQL, then refresh this page."
+      },
+      "tables": {
+        "name": "Name",
+        "team": "Team",
+        "requests": "Requests",
+        "runs": "Runs",
+        "successRate": "Success Rate",
+        "timeoutRate": "Timeout Rate",
+        "ttftP95": "TTFT P95",
+        "tokens": "Tokens",
+        "avgTokens": "Avg Tokens",
+        "failedNodes": "Failed Nodes",
+        "source": "Source",
+        "type": "Type",
+        "status": "Status",
+        "model": "Model",
+        "duration": "Duration",
+        "time": "Time"
+      },
+      "details": {
+        "agentTitle": "Agent Detail",
+        "workflowTitle": "Workflow Detail",
+        "id": "ID",
+        "team": "Team",
+        "performanceTrend": "Performance Trend",
+        "percentiles": "P95 latency and request volume in the selected range.",
+        "nodeBreakdown": "Node Breakdown",
+        "noAgent": "No agent selected",
+        "noWorkflow": "No workflow selected",
+        "failedRate": "Failed Rate",
+        "avgTokens": "Avg Tokens",
+        "avgNodes": "Avg Nodes",
+        "nodeType": "Node Type",
+        "executionCount": "Executions",
+        "failedCount": "Failures",
+        "avgDuration": "Avg Duration"
+      },
+      "common": {
+        "count": "Count"
+      },
+      "timeouts": {
+        "limitedTitle": "Historical Agent timeout types are limited",
+        "limitedDescription": "Messages do not currently persist idle/global timeout subtype, so historical Agent timeout type is shown as unknown. Workflow timeouts are exact.",
+        "distribution": "Timeout Distribution",
+        "distributionDesc": "Timeout events grouped by persisted subtype.",
+        "recentEvents": "Recent Events",
+        "totalEvents": "Total Events",
+        "mostFrequentType": "Most Frequent Type",
+        "typeAvailable": "Agent Type Data",
+        "note": "Recent timeout events in the selected range"
+      },
+      "timeoutTypes": {
+        "unknown": "Unknown",
+        "idle": "Idle",
+        "global": "Global",
+        "workflow": "Workflow",
+        "agent": "Agent"
+      },
+      "throughput": {
+        "currentLoad": "Current Load",
+        "runningWorkflows": "Running Workflows",
+        "requestVolume": "Request Volume",
+        "tokenBySource": "Token by Source",
+        "tokenByModel": "Token by Model",
+        "model": "Model",
+        "tokens": "Tokens",
+        "share": "Share of total tokens",
+        "noTokenData": "No token data is available for this range."
+      }
     }
   }
 }

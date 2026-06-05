@@ -2,6 +2,14 @@
 
 ## Active
 
+- **yun-75-admin-observability-dashboard** — Complete. Add platform-admin observability APIs and dashboard pages for AI conversation/workflow performance, timeouts, throughput, and system health. See `docs/plan/admin-observability-dashboard.md`
+  - [x] 1. Planning docs and backend API scaffolding
+  - [x] 2. Core backend observability metrics and tests
+  - [x] 3. System health, worker, throughput, and token metrics
+  - [x] 4. Frontend observability API client and route
+  - [x] 5. Six observability subpages, navigation, i18n, and generated types
+  - [x] 6. Validation and regression checks
+
 - **yun-85-admin-agent-workflow-management** — In progress. Add admin dashboard management for Agents and Workflows with tabbed lists and admin-prefixed APIs. See `docs/plan/yun-85-admin-agent-workflow-management.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend admin permissions and APIs

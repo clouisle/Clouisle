@@ -519,6 +519,47 @@ async def init_message_manual_stop_field():
     logger.info("Message manual stop migration complete")
 
 
+async def init_message_first_token_field():
+    """Add first_token_ms field to messages table if it does not exist."""
+    logger.info("Checking message first_token_ms field...")
+
+    conn = Tortoise.get_connection("default")
+    dialect = getattr(getattr(conn, "capabilities", None), "dialect", "")
+    if dialect != "postgres":
+        logger.info("Skipping first_token_ms migration for non-PostgreSQL database")
+        return
+
+    _, tables = await conn.execute_query("""
+        SELECT table_name FROM information_schema.tables
+        WHERE table_name = 'messages' AND table_schema = 'public'
+    """)
+
+    if not tables:
+        logger.info(
+            "Messages table does not exist yet, skipping first_token_ms migration"
+        )
+        return
+
+    _, rows = await conn.execute_query("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'messages' AND column_name = 'first_token_ms'
+    """)
+
+    if rows:
+        logger.info("first_token_ms column already exists")
+        return
+
+    logger.info("Adding first_token_ms column to messages table...")
+    await execute_startup_migration_query(
+        conn,
+        """
+        ALTER TABLE messages
+        ADD COLUMN first_token_ms INT NULL
+        """,
+    )
+    logger.info("Message first_token_ms migration complete")
+
+
 async def init_message_round_fields():
     """
     Add round-aware metadata fields to messages table.

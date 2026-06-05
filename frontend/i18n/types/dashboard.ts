@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-31T04:20:24.498Z
+// GENERATED — 2026-06-05T15:52:08.393Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {
@@ -155,6 +155,187 @@ export type DashboardMessages = {
         forceChange: string
         forceChangeDesc: string
         allGood: string
+      }
+    }
+    observability: {
+      title: string
+      description: string
+      tabs: {
+        overview: string
+        health: string
+        agents: string
+        workflows: string
+        timeouts: string
+        throughput: string
+      }
+      actions: {
+        refresh: string
+        retry: string
+        viewDetails: string
+        closeDetails: string
+      }
+      states: {
+        loading: string
+        refreshing: string
+        emptyTitle: string
+        emptyDescription: string
+        errorTitle: string
+        errorDescription: string
+        lastUpdated: string
+        cacheTtl: string
+        autoRefreshHint: string
+      }
+      status: {
+        healthy: string
+        warning: string
+        danger: string
+        unhealthy: string
+        unknown: string
+        success: string
+        failed: string
+        running: string
+        pending: string
+        cancelled: string
+        timeout: string
+        error: string
+      }
+      sources: {
+        agent: string
+        workflow: string
+        system: string
+        unknown: string
+      }
+      risk: {
+        healthy: string
+        warning: string
+        critical: string
+      }
+      metrics: {
+        totalRequests: string
+        agentWorkflowBreakdown: string
+        p95Latency: string
+        p95Ttft: string
+        firstTokenLatency: string
+        timeoutRate: string
+        successRate: string
+        successRateValue: string
+        currentQps: string
+        currentTps: string
+        peakHourly: string
+        totalTokens: string
+        selectedRange: string
+      }
+      overview: {
+        operationalStatus: string
+        operationalStatusDesc: string
+        trafficMix: string
+        latencyPercentiles: string
+        requestsBySource: string
+        agentRequests: string
+        workflowRuns: string
+        healthSummaryHealthy: string
+        healthSummaryWarning: string
+        healthSummaryCritical: string
+      }
+      charts: {
+        requestTrend: string
+        requestTrendDesc: string
+        systemTrend: string
+        systemTrendDesc: string
+        throughputTrend: string
+        throughputTrendDesc: string
+      }
+      health: {
+        memory: string
+        disk: string
+        database: string
+        resourceUsage: string
+        dependencies: string
+        workerQueues: string
+        workerQueuesDesc: string
+        activeTasks: string
+        reservedTasks: string
+        scheduledTasks: string
+        pending: string
+        queue: string
+        slowQueries: string
+        slowQueriesDesc: string
+        query: string
+        calls: string
+        meanTime: string
+        totalTime: string
+        workerError: string
+        noSlowQueries: string
+        slowQueriesUnavailable: string
+        slowQueriesSetupHint: string
+      }
+      tables: {
+        name: string
+        team: string
+        requests: string
+        runs: string
+        successRate: string
+        timeoutRate: string
+        ttftP95: string
+        tokens: string
+        avgTokens: string
+        failedNodes: string
+        source: string
+        type: string
+        status: string
+        model: string
+        duration: string
+        time: string
+      }
+      details: {
+        agentTitle: string
+        workflowTitle: string
+        id: string
+        team: string
+        performanceTrend: string
+        percentiles: string
+        nodeBreakdown: string
+        noAgent: string
+        noWorkflow: string
+        failedRate: string
+        avgTokens: string
+        avgNodes: string
+        nodeType: string
+        executionCount: string
+        failedCount: string
+        avgDuration: string
+      }
+      common: {
+        count: string
+      }
+      timeouts: {
+        limitedTitle: string
+        limitedDescription: string
+        distribution: string
+        distributionDesc: string
+        recentEvents: string
+        totalEvents: string
+        mostFrequentType: string
+        typeAvailable: string
+        note: string
+      }
+      timeoutTypes: {
+        unknown: string
+        idle: string
+        global: string
+        workflow: string
+        agent: string
+      }
+      throughput: {
+        currentLoad: string
+        runningWorkflows: string
+        requestVolume: string
+        tokenBySource: string
+        tokenByModel: string
+        model: string
+        tokens: string
+        share: string
+        noTokenData: string
       }
     }
   }
