@@ -1,13 +1,49 @@
 import { api, ApiError, type ApiResponse } from './client'
+import type {
+  AgentKnowledgeBaseConfig,
+  FileUploadConfig,
+  ImageGenerationConfig,
+  MemoryConfig,
+  RAGMode,
+  ToolConfig,
+  VariableDefinition,
+  VideoGenerationConfig,
+} from './agents'
 
 // ============ Types ============
+
+export interface PromptGenerateToolContext extends ToolConfig {
+  display_name?: string | null
+  description?: string | null
+}
+
+export interface PromptGenerateKnowledgeBaseContext {
+  name: string
+  description?: string | null
+  config?: AgentKnowledgeBaseConfig | null
+}
+
+export interface PromptGenerateCapabilitiesContext {
+  enable_vision?: boolean
+  enable_file_upload?: boolean
+  file_upload_config?: FileUploadConfig | null
+  enable_user_input_request?: boolean
+  enable_memory?: boolean
+  memory_config?: MemoryConfig | null
+  enable_image_generation?: boolean
+  image_generation_config?: ImageGenerationConfig | null
+  enable_video_generation?: boolean
+  video_generation_config?: VideoGenerationConfig | null
+}
 
 export interface PromptGenerateContext {
   agent_name?: string | null
   agent_description?: string | null
-  tools?: { name?: string; display_name?: string }[] | null
-  knowledge_bases?: { name: string; description?: string }[] | null
-  variables?: { name: string; label?: string }[] | null
+  tools?: PromptGenerateToolContext[] | null
+  knowledge_bases?: PromptGenerateKnowledgeBaseContext[] | null
+  variables?: VariableDefinition[] | null
+  rag_mode?: RAGMode | null
+  capabilities?: PromptGenerateCapabilitiesContext | null
 }
 
 export interface PromptStyle {
