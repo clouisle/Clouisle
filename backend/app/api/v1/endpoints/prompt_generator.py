@@ -198,7 +198,9 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
             if config:
                 item += f" config={compact_json(config)}"
             tool_items.append(item)
-        parts.append(f"- {label('可用工具', 'Available Tools')}: {'; '.join(tool_items)}")
+        parts.append(
+            f"- {label('可用工具', 'Available Tools')}: {'; '.join(tool_items)}"
+        )
 
     if context.knowledge_bases:
         kb_items = []
@@ -241,7 +243,9 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
                 if value not in (None, "", [], {}):
                     details.append(f"{key}={compact_json(value)}")
             variable_items.append(f"{name}({', '.join(details)})")
-        parts.append(f"- {label('自定义变量', 'Custom Variables')}: {'; '.join(variable_items)}")
+        parts.append(
+            f"- {label('自定义变量', 'Custom Variables')}: {'; '.join(variable_items)}"
+        )
 
     if not parts:
         return "无额外上下文" if language == "zh" else "No additional context"
