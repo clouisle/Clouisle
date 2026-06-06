@@ -369,23 +369,38 @@ export function AgentOrchestrationForm({
           (tc.type === 'skill' && t.id === tc.skill_id)
       )
       return {
+        ...tc,
         name: tc.name || tool?.name,
         display_name: tool?.display_name ?? tc.name ?? undefined,
+        description: tool?.description ?? undefined,
       }
-    }).filter((t) => t.name),
+    }).filter((t) => t.name || t.tool_id || t.server_id || t.skill_id),
     knowledge_bases: knowledgeBases
-      .filter((kb) =>
-        knowledgeBaseConfigs.some((c) => c.knowledge_base_id === kb.id)
-      )
-      .map((kb) => ({
-        name: kb.name,
-        description: kb.description ?? undefined,
-      })),
-    variables: variables.map((v) => ({
-      name: v.name,
-      label: v.label ?? undefined,
-    })),
-  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables])
+      .map((kb) => {
+        const config = knowledgeBaseConfigs.find((c) => c.knowledge_base_id === kb.id)
+        if (!config) return null
+        return {
+          name: kb.name,
+          description: kb.description ?? undefined,
+          config,
+        }
+      })
+      .filter((kb): kb is NonNullable<typeof kb> => kb !== null),
+    variables,
+    rag_mode: ragMode,
+    capabilities: {
+      enable_vision: enableVision,
+      enable_file_upload: enableFileUpload,
+      file_upload_config: enableFileUpload ? fileUploadConfig : null,
+      enable_user_input_request: enableUserInputRequest,
+      enable_memory: enableMemory,
+      memory_config: enableMemory ? memoryConfig : null,
+      enable_image_generation: enableImageGeneration,
+      image_generation_config: enableImageGeneration ? imageGenerationConfig : null,
+      enable_video_generation: enableVideoGeneration,
+      video_generation_config: enableVideoGeneration ? videoGenerationConfig : null,
+    },
+  }), [agent.name, agent.description, toolsConfig, availableTools, knowledgeBases, knowledgeBaseConfigs, variables, ragMode, enableVision, enableFileUpload, fileUploadConfig, enableUserInputRequest, enableMemory, memoryConfig, enableImageGeneration, imageGenerationConfig, enableVideoGeneration, videoGenerationConfig])
 
   return (
     <div className="space-y-3">

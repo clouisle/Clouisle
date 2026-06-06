@@ -37,6 +37,8 @@ class PromptGenerateContext(BaseModel):
         None, description="Linked knowledge bases"
     )
     variables: list[dict] | None = Field(None, description="Defined variables")
+    rag_mode: str | None = Field(None, description="RAG retrieval mode")
+    capabilities: dict | None = Field(None, description="Enabled runtime capabilities")
 
 
 class PromptStyle(BaseModel):
@@ -132,39 +134,114 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
     if not context:
         return "无额外上下文" if language == "zh" else "No additional context"
 
+    def label(zh: str, en: str) -> str:
+        return zh if language == "zh" else en
+
+    def compact_json(value: object) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
     parts = []
 
     if context.agent_name:
-        label = "Agent 名称" if language == "zh" else "Agent Name"
-        parts.append(f"- {label}: {context.agent_name}")
+        parts.append(f"- {label('Agent 名称', 'Agent Name')}: {context.agent_name}")
 
     if context.agent_description:
-        label = "Agent 描述" if language == "zh" else "Agent Description"
-        parts.append(f"- {label}: {context.agent_description}")
+        parts.append(
+            f"- {label('Agent 描述', 'Agent Description')}: {context.agent_description}"
+        )
+
+    if context.rag_mode:
+        parts.append(f"- {label('RAG 模式', 'RAG Mode')}: {context.rag_mode}")
+
+    capabilities = context.capabilities or {}
+    enabled_capabilities = []
+    capability_names = {
+        "enable_vision": label("视觉理解", "Vision"),
+        "enable_file_upload": label("文件上传", "File Upload"),
+        "enable_user_input_request": label("用户输入请求", "User Input Request"),
+        "enable_memory": label("记忆", "Memory"),
+        "enable_image_generation": label("图片生成", "Image Generation"),
+        "enable_video_generation": label("视频生成", "Video Generation"),
+    }
+    for key, name in capability_names.items():
+        if capabilities.get(key):
+            enabled_capabilities.append(name)
+    if enabled_capabilities:
+        parts.append(
+            f"- {label('已启用能力', 'Enabled Capabilities')}: {', '.join(enabled_capabilities)}"
+        )
+
+    capability_configs = {
+        "file_upload_config": capabilities.get("file_upload_config"),
+        "memory_config": capabilities.get("memory_config"),
+        "image_generation_config": capabilities.get("image_generation_config"),
+        "video_generation_config": capabilities.get("video_generation_config"),
+    }
+    active_capability_configs = {
+        key: value for key, value in capability_configs.items() if value
+    }
+    if active_capability_configs:
+        parts.append(
+            f"- {label('能力配置', 'Capability Configs')}: {compact_json(active_capability_configs)}"
+        )
 
     if context.tools:
-        label = "可用工具" if language == "zh" else "Available Tools"
-        tool_names = [
-            t.get("name", t.get("display_name", "unknown")) for t in context.tools
-        ]
-        parts.append(f"- {label}: {', '.join(tool_names)}")
+        tool_items = []
+        for tool in context.tools:
+            name = tool.get("display_name") or tool.get("name") or "unknown"
+            tool_type = tool.get("type") or "unknown"
+            description = tool.get("description")
+            config = tool.get("config")
+            item = f"{name}({tool_type})"
+            if description:
+                item += f": {description}"
+            if config:
+                item += f" config={compact_json(config)}"
+            tool_items.append(item)
+        parts.append(f"- {label('可用工具', 'Available Tools')}: {'; '.join(tool_items)}")
 
     if context.knowledge_bases:
-        label = "关联知识库" if language == "zh" else "Linked Knowledge Bases"
-        kb_names = [kb.get("name", "unknown") for kb in context.knowledge_bases]
-        parts.append(f"- {label}: {', '.join(kb_names)}")
+        kb_items = []
+        for kb in context.knowledge_bases:
+            name = kb.get("name", "unknown")
+            description = kb.get("description")
+            config = kb.get("config")
+            item = str(name)
+            if description:
+                item += f": {description}"
+            if config:
+                item += f" config={compact_json(config)}"
+            kb_items.append(item)
+        parts.append(
+            f"- {label('关联知识库', 'Linked Knowledge Bases')}: {'; '.join(kb_items)}"
+        )
 
     if context.variables:
-        label = "自定义变量" if language == "zh" else "Custom Variables"
-        var_list = []
-        for v in context.variables:
-            var_name = v.get("name", "unknown")
-            var_label = v.get("label", "")
-            if var_label:
-                var_list.append(f"{var_name}({var_label})")
-            else:
-                var_list.append(var_name)
-        parts.append(f"- {label}: {', '.join(var_list)}")
+        variable_items = []
+        for variable in context.variables:
+            name = variable.get("name", "unknown")
+            variable_type = variable.get("type", "unknown")
+            required = variable.get("required")
+            label_text = variable.get("label")
+            details = [f"type={variable_type}"]
+            if required is not None:
+                details.append(f"required={required}")
+            if label_text:
+                details.append(f"label={label_text}")
+            for key in (
+                "default",
+                "description",
+                "options",
+                "min",
+                "max",
+                "maxLength",
+                "fileConfig",
+            ):
+                value = variable.get(key)
+                if value not in (None, "", []):
+                    details.append(f"{key}={compact_json(value)}")
+            variable_items.append(f"{name}({', '.join(details)})")
+        parts.append(f"- {label('自定义变量', 'Custom Variables')}: {'; '.join(variable_items)}")
 
     if not parts:
         return "无额外上下文" if language == "zh" else "No additional context"
