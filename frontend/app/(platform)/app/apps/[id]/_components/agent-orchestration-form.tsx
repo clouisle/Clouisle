@@ -376,16 +376,14 @@ export function AgentOrchestrationForm({
       }
     }).filter((t) => t.name || t.tool_id || t.server_id || t.skill_id),
     knowledge_bases: knowledgeBases
-      .map((kb) => {
-        const config = knowledgeBaseConfigs.find((c) => c.knowledge_base_id === kb.id)
-        if (!config) return null
-        return {
-          name: kb.name,
-          description: kb.description ?? undefined,
-          config,
-        }
-      })
-      .filter((kb): kb is NonNullable<typeof kb> => kb !== null),
+      .filter((kb) =>
+        knowledgeBaseConfigs.some((c) => c.knowledge_base_id === kb.id)
+      )
+      .map((kb) => ({
+        name: kb.name,
+        description: kb.description ?? undefined,
+        config: knowledgeBaseConfigs.find((c) => c.knowledge_base_id === kb.id)!,
+      })),
     variables,
     rag_mode: ragMode,
     capabilities: {

@@ -238,7 +238,7 @@ def build_context_string(context: PromptGenerateContext | None, language: str) -
                 "fileConfig",
             ):
                 value = variable.get(key)
-                if value not in (None, "", []):
+                if value not in (None, "", [], {}):
                     details.append(f"{key}={compact_json(value)}")
             variable_items.append(f"{name}({', '.join(details)})")
         parts.append(f"- {label('自定义变量', 'Custom Variables')}: {'; '.join(variable_items)}")
