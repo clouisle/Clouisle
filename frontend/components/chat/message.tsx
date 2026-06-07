@@ -1457,7 +1457,21 @@ type AuthenticatedMarkdownImageCacheEntry = {
   promise?: Promise<string>
 }
 
+const MAX_AUTHENTICATED_MARKDOWN_IMAGE_CACHE_SIZE = 100
 const authenticatedMarkdownImageCache = new Map<string, AuthenticatedMarkdownImageCacheEntry>()
+
+function setAuthenticatedMarkdownImageCache(src: string, entry: AuthenticatedMarkdownImageCacheEntry) {
+  if (entry.objectUrl && authenticatedMarkdownImageCache.size >= MAX_AUTHENTICATED_MARKDOWN_IMAGE_CACHE_SIZE) {
+    const oldestKey = authenticatedMarkdownImageCache.keys().next().value
+    if (oldestKey !== undefined) {
+      const oldestEntry = authenticatedMarkdownImageCache.get(oldestKey)
+      if (oldestEntry?.objectUrl) URL.revokeObjectURL(oldestEntry.objectUrl)
+      authenticatedMarkdownImageCache.delete(oldestKey)
+    }
+  }
+
+  authenticatedMarkdownImageCache.set(src, entry)
+}
 
 type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
   src?: string
@@ -1495,7 +1509,7 @@ function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
     })
     .then((blob) => {
       const objectUrl = URL.createObjectURL(blob)
-      authenticatedMarkdownImageCache.set(src, { objectUrl })
+      setAuthenticatedMarkdownImageCache(src, { objectUrl })
       return objectUrl
     })
     .catch((error) => {
@@ -1503,13 +1517,20 @@ function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
       throw error
     })
 
-  authenticatedMarkdownImageCache.set(src, { promise })
+  setAuthenticatedMarkdownImageCache(src, { promise })
   return promise
 }
 
 function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: AuthenticatedMarkdownImageProps) {
+  const [prevSrc, setPrevSrc] = React.useState(src)
   const [objectUrl, setObjectUrl] = React.useState<string | null>(() => getInitialMarkdownImageUrl(src))
   const [failed, setFailed] = React.useState(() => Boolean(src && isBlockedImageSrc(src)))
+
+  if (src !== prevSrc) {
+    setPrevSrc(src)
+    setObjectUrl(getInitialMarkdownImageUrl(src))
+    setFailed(Boolean(src && isBlockedImageSrc(src)))
+  }
 
   React.useEffect(() => {
     let cancelled = false
