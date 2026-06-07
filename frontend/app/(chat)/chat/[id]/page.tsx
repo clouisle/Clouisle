@@ -342,6 +342,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
       setMessages(chatMessages)
       setConversationId(conv.id)
 
+      suppressUrlConversationReloadRef.current = true
       syncConversationUrl(conv.id)
     } catch (err) {
       console.error('Failed to load conversation:', err)

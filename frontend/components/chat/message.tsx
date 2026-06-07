@@ -1452,54 +1452,109 @@ function isBlockedImageSrc(src: string): boolean {
   return normalized.startsWith('javascript:') || normalized.startsWith('data:')
 }
 
+type AuthenticatedMarkdownImageCacheEntry = {
+  objectUrl?: string
+  promise?: Promise<string>
+}
+
+const authenticatedMarkdownImageCache = new Map<string, AuthenticatedMarkdownImageCacheEntry>()
+
 type AuthenticatedMarkdownImageProps = Omit<React.ComponentProps<'img'>, 'src' | 'alt'> & {
   src?: string
   alt?: string
 }
 
+function getCachedAuthenticatedImageUrl(src: string): string | null {
+  return authenticatedMarkdownImageCache.get(src)?.objectUrl ?? null
+}
+
+function getInitialMarkdownImageUrl(src: string): string | null {
+  if (!src || isBlockedImageSrc(src)) {
+    return null
+  }
+
+  const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
+  return authenticatedUrl ? getCachedAuthenticatedImageUrl(authenticatedUrl) : src
+}
+
+function loadAuthenticatedMarkdownImage(src: string): Promise<string> {
+  const cached = authenticatedMarkdownImageCache.get(src)
+  if (cached?.objectUrl) {
+    return Promise.resolve(cached.objectUrl)
+  }
+  if (cached?.promise) {
+    return cached.promise
+  }
+
+  const token = localStorage.getItem('access_token')
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined
+  const promise = fetch(src, { headers })
+    .then((response) => {
+      if (!response.ok) throw new Error('image_load_failed')
+      return response.blob()
+    })
+    .then((blob) => {
+      const objectUrl = URL.createObjectURL(blob)
+      authenticatedMarkdownImageCache.set(src, { objectUrl })
+      return objectUrl
+    })
+    .catch((error) => {
+      authenticatedMarkdownImageCache.delete(src)
+      throw error
+    })
+
+  authenticatedMarkdownImageCache.set(src, { promise })
+  return promise
+}
+
 function AuthenticatedMarkdownImage({ src = '', alt = '', ...props }: AuthenticatedMarkdownImageProps) {
-  const [objectUrl, setObjectUrl] = React.useState<string | null>(null)
-  const [failed, setFailed] = React.useState(false)
+  const [objectUrl, setObjectUrl] = React.useState<string | null>(() => getInitialMarkdownImageUrl(src))
+  const [failed, setFailed] = React.useState(() => Boolean(src && isBlockedImageSrc(src)))
 
   React.useEffect(() => {
+    let cancelled = false
+
     setFailed(false)
     if (!src) {
       setObjectUrl(null)
-      return
+      return () => {
+        cancelled = true
+      }
     }
     if (isBlockedImageSrc(src)) {
       setObjectUrl(null)
       setFailed(true)
-      return
+      return () => {
+        cancelled = true
+      }
     }
     const authenticatedUrl = getAuthenticatedApiAssetUrl(src)
     if (!authenticatedUrl) {
       setObjectUrl(src)
-      return
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const cachedObjectUrl = getCachedAuthenticatedImageUrl(authenticatedUrl)
+    if (cachedObjectUrl) {
+      setObjectUrl(cachedObjectUrl)
+      return () => {
+        cancelled = true
+      }
     }
 
     setObjectUrl(null)
-    const controller = new AbortController()
-    const token = localStorage.getItem('access_token')
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined
-    let currentObjectUrl: string | null = null
-
-    fetch(authenticatedUrl, { headers, signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('image_load_failed')
-        return response.blob()
-      })
-      .then((blob) => {
-        currentObjectUrl = URL.createObjectURL(blob)
-        setObjectUrl(currentObjectUrl)
+    loadAuthenticatedMarkdownImage(authenticatedUrl)
+      .then((url) => {
+        if (!cancelled) setObjectUrl(url)
       })
       .catch((error) => {
-        if ((error as Error).name !== 'AbortError') setFailed(true)
+        if (!cancelled && (error as Error).name !== 'AbortError') setFailed(true)
       })
 
     return () => {
-      controller.abort()
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
+      cancelled = true
     }
   }, [src])
 
