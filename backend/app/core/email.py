@@ -82,9 +82,9 @@ async def send_email(
         if body_html:
             msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-        # 确定是否使用 TLS/SSL
-        use_tls = config["encryption"] == "tls"
-        start_tls = config["encryption"] == "starttls"
+        encryption = config["encryption"]
+        use_tls = encryption == "ssl"
+        start_tls = encryption == "tls"
 
         # 发送邮件
         await aiosmtplib.send(
