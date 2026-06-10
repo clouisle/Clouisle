@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -119,10 +119,11 @@ async def get_workflow_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
     teams = await Team.all().order_by("name")
-    creator_values = (
-        await Workflow.filter(created_by__isnull=False)
+    creator_values = cast(
+        list[str],
+        await Workflow.filter(created_by_id__not_isnull=True)
         .distinct()
-        .values_list("created_by__username", flat=True)
+        .values_list("created_by__username", flat=True),
     )
     creator_values = sorted(creator_values)
     return success(

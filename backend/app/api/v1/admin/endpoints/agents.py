@@ -130,10 +130,11 @@ async def get_agent_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
     teams = await Team.all().order_by("name")
-    creator_values = (
-        await Agent.filter(created_by__isnull=False)
+    creator_values = cast(
+        list[str],
+        await Agent.filter(created_by_id__not_isnull=True)
         .distinct()
-        .values_list("created_by__username", flat=True)
+        .values_list("created_by__username", flat=True),
     )
     creator_values = sorted(creator_values)
     return success(

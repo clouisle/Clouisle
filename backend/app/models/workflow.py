@@ -145,6 +145,7 @@ class Workflow(models.Model):
         null=True,
         description="Creator",
     )
+    created_by_id: UUID | None  # type: ignore[assignment]
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
