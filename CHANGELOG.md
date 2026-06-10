@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-06-09
+
+### Added
+
+#### Admin and Observability
+- Added an admin observability dashboard for platform usage, performance, errors, and activity monitoring.
+- Added admin management panels and routes for agents and workflows.
+
+#### Packages
+- Added Clouisle package import and export support for moving apps and resources between environments.
+
+#### Knowledge Base
+- Added multimodal knowledge base asset support for uploaded images and media references.
+- Added failed chunk retry and bulk knowledge base document/chunk actions.
+
+#### Chat and Agents
+- Added uploaded chat images as media references.
+- Expanded prompt generation context for agent configuration.
+
+### Changed
+
+#### Chat Experience
+- Reworked chat message rendering, chain-of-thought displays, tool displays, and scrolling behavior to reduce flicker and frozen states.
+- Optimized AI conversation streaming timeout handling.
+
+#### Platform and Permissions
+- Allowed superadmins to transfer team ownership.
+- Improved skill capability views and completed skill action mappings.
+- Simplified media generation selectors to show model names only.
+
+#### Automation and Dependencies
+- Updated GitHub automation action versions and dependency lockfiles.
+- Removed generated repository activity and documentation sync workflow reports from version control.
+
+### Fixed
+
+#### Chat and Workflow
+- Fixed agent chat flicker, thought-chain scroll state, chat scrolling, agentic workflow rendering, and production chat collapsible freezes.
+- Fixed agent message version branch context when continuing conversations.
+
+#### Knowledge Base
+- Fixed knowledge base bulk action review issues and media asset processing/search paths.
+
+#### Admin and Tools
+- Fixed admin tool management copy and skill capability page regressions.
+
+### Security
+
+#### Dependencies
+- Updated backend `aiohttp`, `starlette`, and `idna` dependencies for security maintenance.
+
 ## [0.2.5] - 2026-05-20
 
 ### Changed
@@ -255,7 +306,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - shadcn/ui + Tailwind CSS
 - TypeScript
 
-[Unreleased]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.5...v0.2.9
+[0.2.5]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.1...v0.2.5
 [0.2.1]: https://github.com/yunhai-dev/Clouisle/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/yunhai-dev/Clouisle/compare/v0.1.1...v0.1.2
