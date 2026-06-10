@@ -34,6 +34,10 @@ const errorMessages: Record<string, Record<string, string>> = {
     en: 'The requested resource could not be found',
     zh: '请求的资源不存在或已被移除',
   },
+  permissionDenied: {
+    en: 'You do not have permission to perform this action.',
+    zh: '当前没有该操作权限。',
+  },
   sessionExpired: {
     en: 'Session expired. Please login again.',
     zh: '会话已过期，请重新登录。',
@@ -77,6 +81,7 @@ function shouldUseBackendMessage(message: string): boolean {
 
 function getStatusErrorMessage(status: number): string {
   if (isAuthErrorCode(status)) return getErrorMessage('sessionExpired')
+  if (isPermissionErrorCode(status)) return getErrorMessage('permissionDenied')
   if (status === 404) return getErrorMessage('resourceNotFound')
   if (status >= 500 && status < 600) return getErrorMessage('serverError')
   return getErrorMessage('requestFailed')
@@ -84,6 +89,7 @@ function getStatusErrorMessage(status: number): string {
 
 function resolveApiErrorMessage(code: number, message: unknown): string {
   if (isAuthErrorCode(code)) return getErrorMessage('sessionExpired')
+  if (isPermissionErrorCode(code)) return getErrorMessage('permissionDenied')
   if (code === 404 || (code >= 4000 && code < 5000)) return getErrorMessage('resourceNotFound')
   if (code >= 500 && code < 600) return getErrorMessage('serverError')
 
@@ -95,7 +101,11 @@ function resolveApiErrorMessage(code: number, message: unknown): string {
 }
 
 function isAuthErrorCode(code: number): boolean {
-  return code === 401 || code === 403 || code === 2000 || code === 2001 || code === 2002 || code === 2004
+  return code === 401 || code === 2000 || code === 2001 || code === 2002 || code === 2004
+}
+
+function isPermissionErrorCode(code: number): boolean {
+  return code === 403 || code === 1004 || (code >= 3000 && code < 4000)
 }
 
 // 防止重复重定向
@@ -298,7 +308,7 @@ axiosInstance.interceptors.response.use(
     }
     
     // 其他 HTTP 错误
-    if ((error.response.status === 401 || error.response.status === 403) && !shouldSkipAuthRedirect(config)) {
+    if (isAuthErrorCode(error.response.status) && !shouldSkipAuthRedirect(config)) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token')
       }

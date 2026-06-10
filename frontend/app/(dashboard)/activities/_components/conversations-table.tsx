@@ -109,12 +109,17 @@ export function ConversationsTable() {
 
   const loadUsers = React.useCallback(async (searchQuery?: string) => {
     try {
-      const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: searchQuery || undefined })
+      const data = await usersApi.getUsers({
+        page: 1,
+        pageSize: 100,
+        search: searchQuery || undefined,
+        excludeUserIds: userFilter,
+      })
       setUsers(data.items)
     } catch (error) {
       console.error('Failed to load user filter options:', error)
     }
-  }, [])
+  }, [userFilter])
 
   // Load filter options
   React.useEffect(() => {

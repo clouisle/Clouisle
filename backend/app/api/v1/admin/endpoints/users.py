@@ -126,6 +126,9 @@ async def read_users(
     ),
     search: Optional[str] = Query(None, description="Search by username or email"),
     role: Optional[List[str]] = Query(None, description="Filter by role name"),
+    exclude_user_id: Optional[List[UUID]] = Query(
+        None, description="User IDs to exclude from the result"
+    ),
     current_user: User = Depends(deps.PermissionChecker("admin:user:read")),
 ) -> Any:
     skip = (page - 1) * page_size
@@ -147,6 +150,9 @@ async def read_users(
 
     if role:
         query = query.filter(roles__name__in=role).distinct()
+
+    if exclude_user_id:
+        query = query.exclude(id__in=exclude_user_id)
 
     total = await query.count()
     users = (
