@@ -91,7 +91,7 @@ async def check_team_access(
             status_code=403,
         )
 
-    if require_admin and membership.role not in ["owner", "admin"]:
+    if require_admin and membership.role not in ["owner", "admin", "member"]:
         raise BusinessError(
             code=ResponseCode.TEAM_ADMIN_REQUIRED,
             msg_key="team_admin_required",
