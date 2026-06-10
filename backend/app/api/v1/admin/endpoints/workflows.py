@@ -122,7 +122,6 @@ async def get_workflow_filter_options(
     creator_values = cast(
         list[str],
         await Workflow.filter(created_by_id__isnull=False)
-        .order_by("created_by__username")
         .distinct()
         .values_list("created_by__username", flat=True),
     )
