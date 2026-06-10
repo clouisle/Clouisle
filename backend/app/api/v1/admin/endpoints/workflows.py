@@ -119,9 +119,9 @@ async def get_workflow_filter_options(
     current_user: User = Depends(deps.PermissionChecker("admin:app:read")),
 ) -> Any:
     teams = await Team.all().order_by("name")
-    creator_values_raw = await Workflow.filter(
-        created_by_id__isnull=False
-    ).values_list("created_by__username", flat=True)
+    creator_values_raw = await Workflow.filter(created_by_id__isnull=False).values_list(
+        "created_by__username", flat=True
+    )
     creator_values = sorted({value for value in creator_values_raw if value})
     return success(
         data={
