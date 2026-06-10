@@ -26,6 +26,7 @@ interface DataTableFacetedFilterProps {
   selectedValues: Set<string>
   onSelectionChange: (values: Set<string>) => void
   searchable?: boolean
+  onSearchChange?: (query: string) => void
 }
 
 export function DataTableFacetedFilter({
@@ -34,17 +35,23 @@ export function DataTableFacetedFilter({
   selectedValues,
   onSelectionChange,
   searchable = false,
+  onSearchChange,
 }: DataTableFacetedFilterProps) {
   const t = useTranslations('common')
   const [searchQuery, setSearchQuery] = React.useState('')
   const [open, setOpen] = React.useState(false)
 
   const filteredOptions = React.useMemo(() => {
-    if (!searchQuery) return options
+    if (onSearchChange || !searchQuery) return options
     return options.filter((option) =>
       option.label.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [options, searchQuery])
+  }, [options, searchQuery, onSearchChange])
+
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query)
+    onSearchChange?.(query)
+  }
 
   const toggleOption = (value: string) => {
     const newSelected = new Set(selectedValues)
@@ -104,7 +111,7 @@ export function DataTableFacetedFilter({
               <Input
                 placeholder={title}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="h-8 pl-8"
               />
             </div>
