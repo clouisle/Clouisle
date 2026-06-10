@@ -55,6 +55,8 @@ interface AppCreateDialogProps {
 
 type AppType = 'agent' | 'workflow'
 
+const EMPTY_TEAMS: Team[] = []
+
 export function AppCreateDialog({
   open,
   onOpenChange,
@@ -64,7 +66,7 @@ export function AppCreateDialog({
     createWorkflow: workflowsApi.createWorkflow,
   },
   teamId,
-  teams = [],
+  teams = EMPTY_TEAMS,
   initialType = 'agent',
   allowedTypes = ['agent', 'workflow'],
   agentEditHref = (id: string) => `/app/apps/${id}`,
