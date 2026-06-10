@@ -1,4 +1,5 @@
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
@@ -8,6 +9,7 @@ from app.models import (
     SiteSetting,
     DEFAULT_SETTINGS,
     User,
+    Team,
     KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB,
     KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB,
 )
@@ -30,7 +32,7 @@ from app.tasks.audit_log import archive_old_audit_logs
 router = APIRouter()
 
 
-def _validate_setting_value(key: str, value: object) -> None:
+async def _validate_setting_value(key: str, value: object) -> None:
     """Validate site setting values.
 
     Args:
@@ -47,6 +49,37 @@ def _validate_setting_value(key: str, value: object) -> None:
                 msg_key="validation_error",
             )
         if value not in {"centered", "split"}:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key == "default_team_role":
+        if not isinstance(value, str) or value not in {"viewer", "member", "admin"}:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
+    if key == "default_team_id":
+        if value in (None, ""):
+            return
+        if not isinstance(value, str):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        try:
+            team_id = UUID(value)
+        except ValueError as exc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            ) from exc
+        team = await Team.filter(id=team_id, is_deleted=False).first()
+        if not team:
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="validation_error",
@@ -203,7 +236,7 @@ async def update_setting(
 
     if key == "sso_allow_password_login" and data.value is False:
         await _ensure_superadmin_sso_bound()
-    _validate_setting_value(key, data.value)
+    await _validate_setting_value(key, data.value)
 
     setting = await SiteSetting.filter(key=key).first()
     if not setting:
@@ -270,7 +303,7 @@ async def bulk_update_settings(
     if data.settings.get("sso_allow_password_login") is False:
         await _ensure_superadmin_sso_bound()
     for key, value in data.settings.items():
-        _validate_setting_value(key, value)
+        await _validate_setting_value(key, value)
 
     updated_keys = []
     for key, value in data.settings.items():

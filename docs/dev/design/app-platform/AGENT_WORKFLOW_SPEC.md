@@ -47,6 +47,12 @@ type AppType = "agent" | "workflow" | "chatflow";  // 未来可扩展
 - 功能：展示团队下所有应用，支持按类型筛选
 - 创建：统一创建入口，通过类型选择器区分
 
+### 1.4 团队角色写权限边界
+
+Agent 和 Workflow 是团队协作应用资源。具备对应全局 RBAC 权限的团队 `owner`、`admin`、`member` 均可创建和保存团队内 Agent/Workflow；`viewer` 只能查看、对话或运行，不能保存。
+
+工具和 Skill 不属于该放宽范围。Tool/Skill 可能调用外部系统、执行代码或改变共享运行时行为，创建、编辑和删除仍必须限制为团队 `owner` / `admin`。
+
 ---
 
 ## 2. 智能 Agent

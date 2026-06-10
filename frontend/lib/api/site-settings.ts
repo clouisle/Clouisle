@@ -48,6 +48,8 @@ export interface SecuritySettings {
   email_verification: boolean
   allow_account_deletion: boolean
   default_role_id: string
+  default_team_id: string
+  default_team_role: 'viewer' | 'member' | 'admin'
   min_password_length: number
   require_uppercase: boolean
   require_number: boolean

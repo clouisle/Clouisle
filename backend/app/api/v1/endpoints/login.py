@@ -768,10 +768,11 @@ async def register(
             msg_key="registration_successful_superadmin",
         )
 
-    # Assign default role to new user
-    from app.services.team_role_sync import assign_default_role
+    # Assign default role and team to new user
+    from app.services.team_role_sync import assign_default_role, assign_default_team
 
     await assign_default_role(user)
+    default_team_assigned = await assign_default_team(user)
 
     # Reload user with roles and sso_connections (empty but need to be lists)
     user = await User.get(id=user.id).prefetch_related(
@@ -791,6 +792,7 @@ async def register(
         metadata={
             "require_approval": require_approval,
             "email_verification": email_verification,
+            "default_team_assigned": default_team_assigned,
         },
     )
 

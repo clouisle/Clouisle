@@ -2,6 +2,12 @@
 
 ## Active
 
+- **default-team-registration** — Complete. Let admins configure a default team and team role assigned to newly registered users. See `docs/plan/default-team-registration.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend settings, validation, and registration assignment
+  - [x] 3. Frontend security settings UI and i18n
+  - [x] 4. Tests and validation
+
 - **yun-75-admin-observability-dashboard** — Complete. Add platform-admin observability APIs and dashboard pages for AI conversation/workflow performance, timeouts, throughput, and system health. See `docs/plan/admin-observability-dashboard.md`
   - [x] 1. Planning docs and backend API scaffolding
   - [x] 2. Core backend observability metrics and tests

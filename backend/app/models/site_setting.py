@@ -206,6 +206,20 @@ DEFAULT_SETTINGS: dict[str, SettingConfig] = {
         "public": False,
         "desc": "Default role ID for new users",
     },
+    "default_team_id": {
+        "value": "",
+        "type": "string",
+        "category": "security",
+        "public": False,
+        "desc": "Default team ID for new users",
+    },
+    "default_team_role": {
+        "value": "member",
+        "type": "string",
+        "category": "security",
+        "public": False,
+        "desc": "Default team role for new users",
+    },
     # Security
     "min_password_length": {
         "value": 8,

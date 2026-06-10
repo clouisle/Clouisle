@@ -76,6 +76,7 @@ from .sso_provider import SSOProvider
 from .user_sso_connection import UserSSOConnection
 from .sso_session import SSOSession
 from .memory import MemoryEntity, MemoryRelation, EntityType, RelationType
+from .password_history import PasswordHistory
 
 __all__ = [
     "User",
@@ -154,4 +155,5 @@ __all__ = [
     "MemoryRelation",
     "EntityType",
     "RelationType",
+    "PasswordHistory",
 ]

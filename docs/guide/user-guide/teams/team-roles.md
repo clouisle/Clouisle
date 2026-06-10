@@ -40,18 +40,19 @@ Viewer (lowest permissions)
 | Change member roles | ✅ | ✅ | ❌ | ❌ |
 | **Agents** |
 | Create agents | ✅ | ✅ | ✅ | ❌ |
-| Update own agents | ✅ | ✅ | ✅ | ❌ |
-| Update others' agents | ✅ | ✅ | ❌ | ❌ |
-| Delete own agents | ✅ | ✅ | ✅ | ❌ |
-| Delete others' agents | ✅ | ✅ | ❌ | ❌ |
+| Save team agents | ✅ | ✅ | ✅ | ❌ |
+| Delete agents | ✅ | ✅ | ✅ | ❌ |
 | Chat with agents | ✅ | ✅ | ✅ | ✅ |
 | **Workflows** |
 | Create workflows | ✅ | ✅ | ✅ | ❌ |
-| Update own workflows | ✅ | ✅ | ✅ | ❌ |
-| Update others' workflows | ✅ | ✅ | ❌ | ❌ |
-| Delete own workflows | ✅ | ✅ | ✅ | ❌ |
-| Delete others' workflows | ✅ | ✅ | ❌ | ❌ |
+| Save team workflows | ✅ | ✅ | ✅ | ❌ |
+| Delete workflows | ✅ | ✅ | ✅ | ❌ |
 | Run workflows | ✅ | ✅ | ✅ | ✅ |
+| **Tools & Skills** |
+| Create/edit/delete tools | ✅ | ✅ | ❌ | ❌ |
+| Create/edit/delete skills | ✅ | ✅ | ❌ | ❌ |
+| Execute approved tools | ✅ | ✅ | ✅ | ✅ |
+| Execute approved skills | ✅ | ✅ | ✅ | ✅ |
 | **Knowledge Bases** |
 | Create knowledge bases | ✅ | ✅ | ✅ | ❌ |
 | Upload documents | ✅ | ✅ | ✅ | ❌ |
@@ -210,6 +211,11 @@ Viewer (lowest permissions)
 - Upload documents
 - Create API keys
 
+**App collaboration:**
+- Save team agents
+- Save team workflows
+- Delete team agents and workflows when permitted by global RBAC
+
 **Resource usage:**
 - Chat with all team agents
 - Run all team workflows
@@ -217,11 +223,12 @@ Viewer (lowest permissions)
 - Use team tools
 
 **Own resource management:**
-- Update own agents
-- Update own workflows
-- Update own documents
-- Delete own resources
 - Manage own API keys
+- Update own knowledge base documents
+
+**Safety boundary:**
+- Creating, editing, or deleting tools requires team Owner/Admin because tools can call external systems or execute code
+- Creating, editing, or deleting skills requires team Owner/Admin because skills can execute automation and affect shared runtime behavior
 
 ### Member Limitations
 

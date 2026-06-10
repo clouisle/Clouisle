@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-31T04:20:24.496Z
+// GENERATED — 2026-06-10T06:40:00.151Z
 // Source: i18n/en/apps.json
 export type AppsMessages = {
   apps: {
@@ -18,6 +18,7 @@ export type AppsMessages = {
       }
     }
     name: string
+    team: string
     namePlaceholder: string
     nameRequired: string
     teamRequired: string
@@ -118,6 +119,7 @@ export type AppsMessages = {
       actions: {
         refresh: string
         reset: string
+        create: string
         publish: string
         unpublish: string
         duplicate: string

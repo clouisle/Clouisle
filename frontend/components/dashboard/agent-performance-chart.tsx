@@ -30,6 +30,10 @@ interface AgentPerformanceChartProps {
 
 const COLORS = CHART_SURFACE_COLORS
 
+function isIconUrl(icon: string | null): icon is string {
+  return Boolean(icon && (icon.startsWith('http') || icon.startsWith('/')))
+}
+
 function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoading }: AgentPerformanceChartProps) {
   const t = useTranslations('dashboard')
 
@@ -163,12 +167,11 @@ function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoadin
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   const data = payload[0].payload as TopAgent
-                  const isIconUrl = data.icon?.startsWith('http://') || data.icon?.startsWith('https://')
                   return (
                     <div className="rounded-lg border border-chart-tooltip-border bg-chart-tooltip-bg p-3 text-chart-tooltip-text shadow-md">
                       <div className="flex items-center gap-2 mb-2">
                         {data.icon ? (
-                          isIconUrl ? (
+                          isIconUrl(data.icon) ? (
                             <img src={data.icon} alt="" className="h-5 w-5 rounded object-cover" />
                           ) : (
                             <span className="text-xl">{data.icon}</span>
