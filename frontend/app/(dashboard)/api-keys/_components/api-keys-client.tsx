@@ -129,12 +129,17 @@ export function APIKeysClient() {
     // 加载用户列表（用于筛选，搜索词交给后端处理，避免只匹配首页数据）
     const loadUsers = React.useCallback(async (search?: string) => {
         try {
-            const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: search || undefined })
+            const data = await usersApi.getUsers({
+                page: 1,
+                pageSize: 100,
+                search: search || undefined,
+                excludeUserIds: selectedUsers,
+            })
             setUsers(data.items)
         } catch {
             // 忽略错误
         }
-    }, [])
+    }, [selectedUsers])
 
     // 加载 API Key 列表
     const loadAPIKeys = React.useCallback(async () => {

@@ -148,19 +148,27 @@ export function TeamDetailDialog({
   // 加载用户列表（用于添加成员，搜索词交给后端处理，避免只匹配首页数据）
   const loadUsers = React.useCallback(async (search?: string) => {
     try {
-      const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: search || undefined })
+      const excludeUserIds = [
+        ...(team?.members.map(m => m.user_id) ?? []),
+        ...(selectedUserId ? [selectedUserId] : []),
+      ]
+      const data = await usersApi.getUsers({
+        page: 1,
+        pageSize: 100,
+        search: search || undefined,
+        excludeUserIds,
+      })
       setUsers(data.items)
     } catch {
       // 错误已由 API 客户端处理
     }
-  }, [])
+  }, [team, selectedUserId])
 
   React.useEffect(() => {
     if (open && teamId) {
       loadTeam()
-      loadUsers()
     }
-  }, [open, teamId, loadTeam, loadUsers])
+  }, [open, teamId, loadTeam])
 
   // 搜索词变化时防抖请求后端（仅在弹窗打开时）
   React.useEffect(() => {
@@ -181,12 +189,8 @@ export function TeamDetailDialog({
     return name.slice(0, 2).toUpperCase()
   }
   
-  // 可添加的用户（排除已是成员的用户；搜索过滤已由后端完成）
-  const filteredUsers = React.useMemo(() => {
-    if (!team) return users
-    const memberIds = new Set(team.members.map(m => m.user_id))
-    return users.filter(u => !memberIds.has(u.id))
-  }, [users, team])
+  // 可添加的用户（已有成员和当前已选用户由后端查询排除）
+  const filteredUsers = users
   
   // 添加成员
   const handleAddMember = async () => {

@@ -78,8 +78,7 @@ async def _validate_setting_value(key: str, value: object) -> None:
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="validation_error",
             ) from exc
-        team = await Team.filter(id=team_id, is_deleted=False).first()
-        if not team:
+        if not await Team.filter(id=team_id, is_deleted=False).exists():
             raise BusinessError(
                 code=ResponseCode.VALIDATION_ERROR,
                 msg_key="validation_error",

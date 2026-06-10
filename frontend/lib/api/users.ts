@@ -72,6 +72,7 @@ export interface UserQueryParams {
   status?: Array<'active' | 'inactive' | 'pending'>
   roles?: string[]
   search?: string
+  excludeUserIds?: string[]
 }
 
 export const usersApi = {
