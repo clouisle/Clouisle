@@ -132,7 +132,8 @@ async def get_agent_filter_options(
     teams = await Team.all().order_by("name")
     creator_values = cast(
         list[str],
-        await Agent.filter(created_by_id__not_isnull=True)
+        await Agent.filter(created_by_id__isnull=False)
+        .order_by("created_by__username")
         .distinct()
         .values_list("created_by__username", flat=True),
     )

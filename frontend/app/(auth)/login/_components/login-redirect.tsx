@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { authApi } from '@/lib/api'
+import { ApiError } from '@/lib/api/client'
 
 export function LoginRedirect() {
   const router = useRouter()
@@ -21,8 +22,12 @@ export function LoginRedirect() {
 
         const redirect = searchParams?.get('redirect')
         router.replace(redirect || '/app')
-      } catch {
-        if (typeof window !== 'undefined') {
+      } catch (error) {
+        if (
+          typeof window !== 'undefined' &&
+          error instanceof ApiError &&
+          (error.code === 401 || error.code === 403)
+        ) {
           localStorage.removeItem('access_token')
         }
       }
