@@ -1,4 +1,4 @@
-// GENERATED — 2026-05-31T04:20:24.504Z
+// GENERATED — 2026-06-10T06:40:00.161Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -290,6 +290,15 @@ export type SiteSettingsMessages = {
     emailVerificationDescription: string
     defaultRole: string
     defaultRoleDescription: string
+    defaultTeam: string
+    defaultTeamDescription: string
+    noDefaultTeam: string
+    noTeams: string
+    defaultTeamRole: string
+    defaultTeamRoleDescription: string
+    teamRoleviewer: string
+    teamRolemember: string
+    teamRoleadmin: string
     passwordPolicy: string
     passwordPolicyDescription: string
     minPasswordLength: string

@@ -88,5 +88,7 @@ uploads
 **/uploads
 storage
 **/storage
+!frontend/app/**/storage/
+!frontend/app/**/storage/**
 .claude
 **/.claude

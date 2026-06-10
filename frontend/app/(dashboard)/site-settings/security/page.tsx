@@ -9,11 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectEmpty, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2 } from 'lucide-react'
 import { FieldError } from '@/components/ui/field'
 import { siteSettingsApi, type SecuritySettings } from '@/lib/api/admin/site-settings'
 import { rolesApi, type Role } from '@/lib/api/admin/roles'
+import { teamsApi } from '@/lib/api/admin/teams'
+import type { Team } from '@/lib/api/teams'
 import {
   clearValidationError,
   getValidationSummaryEntries,
@@ -23,6 +25,9 @@ import {
 } from '@/lib/validation'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
+const DEFAULT_TEAM_ROLE_OPTIONS: SecuritySettings['default_team_role'][] = ['viewer', 'member', 'admin']
+const NO_DEFAULT_TEAM_VALUE = '__none__'
+
 export default function SiteSettingsSecurityPage() {
   const t = useTranslations('siteSettings')
   const { canPerform } = useCanPerform()
@@ -31,6 +36,7 @@ export default function SiteSettingsSecurityPage() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [roles, setRoles] = React.useState<Role[]>([])
+  const [teams, setTeams] = React.useState<Team[]>([])
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [settings, setSettings] = React.useState<SecuritySettings>({
     allow_registration: true,
@@ -38,6 +44,8 @@ export default function SiteSettingsSecurityPage() {
     email_verification: true,
     allow_account_deletion: true,
     default_role_id: '',
+    default_team_id: '',
+    default_team_role: 'member',
     min_password_length: 8,
   require_uppercase: true,
     require_number: true,
@@ -74,6 +82,8 @@ export default function SiteSettingsSecurityPage() {
   const summaryEntries = React.useMemo(
     () => getValidationSummaryEntries(fieldErrors, [
       'default_role_id',
+      'default_team_id',
+      'default_team_role',
       'min_password_length',
       'password_expiration_days',
       'password_expiration_warning_days',
@@ -89,11 +99,13 @@ export default function SiteSettingsSecurityPage() {
   const loadSettings = React.useCallback(async () => {
     try {
       setLoading(true)
-      const [data, rolesData] = await Promise.all([
+      const [data, rolesData, teamsData] = await Promise.all([
         siteSettingsApi.getSecurity(),
         rolesApi.getRoles(),
+        teamsApi.getTeams(1, 200),
       ])
       setRoles(rolesData.items)
+      setTeams(teamsData.items)
       // 确保所有布尔值字段都有明确的值
       setSettings({
         allow_registration: data.allow_registration ?? true,
@@ -101,6 +113,8 @@ export default function SiteSettingsSecurityPage() {
         email_verification: data.email_verification ?? true,
         allow_account_deletion: data.allow_account_deletion ?? true,
         default_role_id: data.default_role_id ?? '',
+        default_team_id: data.default_team_id ?? '',
+        default_team_role: data.default_team_role ?? 'member',
         min_password_length: data.min_password_length ?? 8,
         require_uppercase: data.require_uppercase ?? true,
         require_number: data.require_number ?? true,
@@ -294,6 +308,63 @@ export default function SiteSettingsSecurityPage() {
               </Select>
             </div>
             <FieldError>{fieldErrors.default_role_id}</FieldError>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label>{t('defaultTeam')}</Label>
+                <p className="text-sm text-muted-foreground">{t('defaultTeamDescription')}</p>
+              </div>
+              <Select
+                value={settings.default_team_id || NO_DEFAULT_TEAM_VALUE}
+                onValueChange={(value) => updateSetting('default_team_id', !value || value === NO_DEFAULT_TEAM_VALUE ? '' : value)}
+                disabled={!canUpdate}
+              >
+                <SelectTrigger className="w-48" aria-invalid={!!fieldErrors.default_team_id}>
+                  <SelectValue>
+                    {teams.find((team) => team.id === settings.default_team_id)?.name || t('noDefaultTeam')}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectItem value={NO_DEFAULT_TEAM_VALUE}>{t('noDefaultTeam')}</SelectItem>
+                  {teams.length > 0 ? (
+                    teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectEmpty>{t('noTeams')}</SelectEmpty>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <FieldError>{fieldErrors.default_team_id}</FieldError>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label>{t('defaultTeamRole')}</Label>
+                <p className="text-sm text-muted-foreground">{t('defaultTeamRoleDescription')}</p>
+              </div>
+              <Select
+                value={settings.default_team_role}
+                onValueChange={(value) => updateSetting('default_team_role', value as SecuritySettings['default_team_role'])}
+                disabled={!canUpdate || !settings.default_team_id}
+              >
+                <SelectTrigger className="w-48" aria-invalid={!!fieldErrors.default_team_role}>
+                  <SelectValue>{t(`teamRole${settings.default_team_role}`)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {DEFAULT_TEAM_ROLE_OPTIONS.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      {t(`teamRole${role}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <FieldError>{fieldErrors.default_team_role}</FieldError>
           </div>
         </CardContent>
       </Card>

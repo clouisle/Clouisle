@@ -78,6 +78,8 @@ export const siteSettingsApi = {
       email_verification: (settings.email_verification as boolean) ?? true,
       allow_account_deletion: (settings.allow_account_deletion as boolean) ?? true,
       default_role_id: (settings.default_role_id as string) ?? '',
+      default_team_id: (settings.default_team_id as string) ?? '',
+      default_team_role: (settings.default_team_role as 'viewer' | 'member' | 'admin') ?? 'member',
       min_password_length: (settings.min_password_length as number) ?? 8,
       require_uppercase: (settings.require_uppercase as boolean) ?? true,
       require_number: (settings.require_number as boolean) ?? true,
