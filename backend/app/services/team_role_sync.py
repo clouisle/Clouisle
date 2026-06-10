@@ -46,12 +46,16 @@ async def assign_default_team(user: User) -> bool:
     try:
         team_id = UUID(str(default_team_id))
     except ValueError:
-        logger.warning("Invalid default_team_id %r; skipping assignment", default_team_id)
+        logger.warning(
+            "Invalid default_team_id %r; skipping assignment", default_team_id
+        )
         return False
 
     team = await Team.filter(id=team_id, is_deleted=False).first()
     if not team:
-        logger.warning("Default team %s not found; skipping assignment", default_team_id)
+        logger.warning(
+            "Default team %s not found; skipping assignment", default_team_id
+        )
         return False
 
     _, created = await TeamMember.get_or_create(
