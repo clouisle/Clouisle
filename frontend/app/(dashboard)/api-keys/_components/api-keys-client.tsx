@@ -88,6 +88,7 @@ export function APIKeysClient() {
     const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
     const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
     const [userFilter, setUserFilter] = React.useState<Set<string>>(new Set())
+    const [userSearch, setUserSearch] = React.useState('')
     const [users, setUsers] = React.useState<User[]>([])
     const selectedStatuses = React.useMemo(() => Array.from(statusFilter), [statusFilter])
     const selectedUsers = React.useMemo(() => Array.from(userFilter), [userFilter])
@@ -125,10 +126,10 @@ export function APIKeysClient() {
         }
     }, [])
 
-    // 加载用户列表（用于筛选）
-    const loadUsers = React.useCallback(async () => {
+    // 加载用户列表（用于筛选，搜索词交给后端处理，避免只匹配首页数据）
+    const loadUsers = React.useCallback(async (search?: string) => {
         try {
-            const data = await usersApi.getUsers({ pageSize: 100 })
+            const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: search || undefined })
             setUsers(data.items)
         } catch {
             // 忽略错误
@@ -158,8 +159,14 @@ export function APIKeysClient() {
     React.useEffect(() => {
         loadAPIKeys()
         loadStats()
-        loadUsers()
-    }, [loadAPIKeys, loadStats, loadUsers])
+    }, [loadAPIKeys, loadStats])
+
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            loadUsers(userSearch)
+        }, 300)
+        return () => clearTimeout(timer)
+    }, [userSearch, loadUsers])
 
     // 检查是否有筛选条件
     const isFiltered = searchQuery || statusFilter.size > 0 || userFilter.size > 0
@@ -182,6 +189,7 @@ export function APIKeysClient() {
         setDebouncedSearchQuery('')
         setStatusFilter(new Set())
         setUserFilter(new Set())
+        setUserSearch('')
         setPage(1)
         setSelectedKeys(new Set())
     }
@@ -377,6 +385,7 @@ export function APIKeysClient() {
                         selectedValues={userFilter}
                         onSelectionChange={handleUserFilterChange}
                         searchable
+                        onSearchChange={setUserSearch}
                     />
 
                     {isFiltered && (

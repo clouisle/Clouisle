@@ -166,24 +166,32 @@ export function WorkflowRunsTable() {
   const [statusFilter, setStatusFilter] = React.useState<string[]>([])
   const [triggerTypeFilter, setTriggerTypeFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])
+  const [userSearch, setUserSearch] = React.useState('')
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
   const [workflows, setWorkflows] = React.useState<WorkflowListItem[]>([])
   const [users, setUsers] = React.useState<User[]>([])
 
+  const loadUsers = React.useCallback(async (searchQuery?: string) => {
+    try {
+      const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: searchQuery || undefined })
+      setUsers(data.items)
+    } catch (error) {
+      console.error('Failed to load user filter options:', error)
+    }
+  }, [])
+
   // Load filter options
   React.useEffect(() => {
     const loadOptions = async () => {
       try {
-        const [teamsData, workflowsData, usersData] = await Promise.all([
+        const [teamsData, workflowsData] = await Promise.all([
           teamsApi.getTeams(1, 100),
           workflowsApi.getWorkflows({ page: 1, pageSize: 100 }),
-          usersApi.getUsers({ page: 1, pageSize: 100 }),
         ])
         setTeams(teamsData.items)
         setWorkflows(workflowsData.items)
-        setUsers(usersData.items)
       } catch (error) {
         console.error('Failed to load filter options:', error)
       }
@@ -191,6 +199,13 @@ export function WorkflowRunsTable() {
 
     loadOptions()
   }, [])
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      loadUsers(userSearch)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [userSearch, loadUsers])
 
   // Load workflow runs
   const loadRuns = React.useCallback(async () => {
@@ -277,6 +292,7 @@ export function WorkflowRunsTable() {
     setStatusFilter([])
     setTriggerTypeFilter([])
     setUserFilter([])
+    setUserSearch('')
     setPage(1)
   }
 
@@ -380,6 +396,7 @@ export function WorkflowRunsTable() {
                   setPage(1)
                 }}
                 searchable
+                onSearchChange={setUserSearch}
               />
             )}
 

@@ -100,24 +100,32 @@ export function ConversationsTable() {
   const [teamFilter, setTeamFilter] = React.useState<string[]>([])
   const [agentFilter, setAgentFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])
+  const [userSearch, setUserSearch] = React.useState('')
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
   const [agents, setAgents] = React.useState<AgentListItem[]>([])
   const [users, setUsers] = React.useState<User[]>([])
 
+  const loadUsers = React.useCallback(async (searchQuery?: string) => {
+    try {
+      const data = await usersApi.getUsers({ page: 1, pageSize: 100, search: searchQuery || undefined })
+      setUsers(data.items)
+    } catch (error) {
+      console.error('Failed to load user filter options:', error)
+    }
+  }, [])
+
   // Load filter options
   React.useEffect(() => {
     const loadOptions = async () => {
       try {
-        const [teamsData, agentsData, usersData] = await Promise.all([
+        const [teamsData, agentsData] = await Promise.all([
           teamsApi.getTeams(1, 100),
           agentsApi.getAgents({ page: 1, pageSize: 100 }),
-          usersApi.getUsers({ page: 1, pageSize: 100 }),
         ])
         setTeams(teamsData.items)
         setAgents(agentsData.items)
-        setUsers(usersData.items)
       } catch (error) {
         console.error('Failed to load filter options:', error)
       }
@@ -125,6 +133,13 @@ export function ConversationsTable() {
 
     loadOptions()
   }, [])
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      loadUsers(userSearch)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [userSearch, loadUsers])
 
   // Load conversations
   const loadConversations = React.useCallback(async () => {
@@ -220,6 +235,7 @@ export function ConversationsTable() {
     setTeamFilter([])
     setAgentFilter([])
     setUserFilter([])
+    setUserSearch('')
     setPage(1)
   }
 
@@ -282,6 +298,7 @@ export function ConversationsTable() {
                   setPage(1)
                 }}
                 searchable
+                onSearchChange={setUserSearch}
               />
             )}
 
