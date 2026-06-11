@@ -7,18 +7,21 @@ const platformSteps: OnboardingStep[] = [
     content: 'onboarding.step1.description',
     title: 'onboarding.step1.title',
     placement: 'auto',
+    route: '/app',
   },
   {
     target: '[data-testid="platform-home-stat-cards"]',
     content: 'onboarding.step2.description',
     title: 'onboarding.step2.title',
     placement: 'auto',
+    route: '/app',
   },
   {
     target: '[data-testid="platform-home-quick-actions"]',
     content: 'onboarding.step3.description',
     title: 'onboarding.step3.title',
     placement: 'auto',
+    route: '/app',
   },
 
   // P2: Model configuration
