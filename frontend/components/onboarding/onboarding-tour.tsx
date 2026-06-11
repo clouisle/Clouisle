@@ -102,23 +102,6 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   // Get current step data
   const currentStep = steps[currentStepIndex]
 
-  // Handle navigation when step has a route
-  React.useEffect(() => {
-    if (!currentStep?.route || isNavigating) return
-
-    // Check if we need to navigate
-    const needsNavigation = !pathname.startsWith(currentStep.route)
-    if (needsNavigation) {
-      setIsNavigating(true)
-      router.push(currentStep.route)
-      // Wait for navigation to complete
-      const timer = setTimeout(() => {
-        setIsNavigating(false)
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-  }, [currentStep, pathname, router, isNavigating])
-
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
       const { action, type } = data
@@ -144,21 +127,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
             nextStep()
           }
         } else if (action === ACTIONS.PREV) {
-          // Check if previous step requires navigation
-          const prevStepIndex = currentStepIndex - 1
-          const prevStepData = steps[prevStepIndex]
-
-          if (prevStepData?.route && !pathname.startsWith(prevStepData.route)) {
-            // Navigate first, then go back
-            setIsNavigating(true)
-            router.push(prevStepData.route)
-            setTimeout(() => {
-              setIsNavigating(false)
-              prevStep()
-            }, 500)
-          } else {
-            prevStep()
-          }
+          // For PREV, just go back - the step will update and we'll check navigation
+          prevStep()
         }
       }
 
@@ -169,41 +139,33 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     [steps, currentStepIndex, pathname, router, nextStep, prevStep, completeTour, tourId]
   )
 
-  const handleNext = React.useCallback(() => {
-    const nextStepIndex = currentStepIndex + 1
-    const nextStepData = steps[nextStepIndex]
+  // Handle navigation when step changes and requires a different route
+  React.useEffect(() => {
+    if (!currentStep?.route || isNavigating) return
 
-    if (nextStepData?.route && !pathname.startsWith(nextStepData.route)) {
-      // Navigate first, then advance step
+    // Check if we need to navigate to the step's route
+    const needsNavigation = !pathname.startsWith(currentStep.route)
+    if (needsNavigation) {
       setIsNavigating(true)
-      router.push(nextStepData.route)
-      setTimeout(() => {
+      router.push(currentStep.route)
+      const timer = setTimeout(() => {
         setIsNavigating(false)
-        nextStep()
       }, 500)
-    } else if (currentStepIndex < steps.length - 1) {
+      return () => clearTimeout(timer)
+    }
+  }, [currentStep, pathname, router, isNavigating])
+
+  const handleNext = React.useCallback(() => {
+    if (currentStepIndex < steps.length - 1) {
       nextStep()
     } else {
       completeTour(tourId)
     }
-  }, [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId])
+  }, [currentStepIndex, steps.length, nextStep, completeTour, tourId])
 
   const handleBack = React.useCallback(() => {
-    const prevStepIndex = currentStepIndex - 1
-    const prevStepData = steps[prevStepIndex]
-
-    if (prevStepData?.route && !pathname.startsWith(prevStepData.route)) {
-      // Navigate first, then go back
-      setIsNavigating(true)
-      router.push(prevStepData.route)
-      setTimeout(() => {
-        setIsNavigating(false)
-        prevStep()
-      }, 500)
-    } else {
-      prevStep()
-    }
-  }, [steps, currentStepIndex, pathname, router, prevStep])
+    prevStep()
+  }, [prevStep])
 
   const handleSkip = React.useCallback(() => {
     completeTour(tourId)
