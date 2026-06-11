@@ -95,6 +95,7 @@ export default function AppsPage() {
   const [apps, setApps] = React.useState<AppItem[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
+  const [initialCreateType, setInitialCreateType] = React.useState<'agent' | 'workflow'>('agent')
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [deletingApp, setDeletingApp] = React.useState<AppItem | null>(null)
@@ -105,7 +106,23 @@ export default function AppsPage() {
     if (tabParam === 'agent' || tabParam === 'workflow') {
       setActiveTab(tabParam)
     }
-  }, [searchParams])
+
+    // Auto-open create dialog when navigated with ?action=create
+    const actionParam = searchParams.get('action')
+    if (actionParam === 'create') {
+      const typeParam = searchParams.get('type')
+      if (typeParam === 'agent' || typeParam === 'workflow') {
+        setInitialCreateType(typeParam)
+      }
+      setCreateDialogOpen(true)
+      // Clear URL params to avoid re-opening on refresh
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('action')
+      params.delete('type')
+      const queryString = params.toString()
+      router.replace(window.location.pathname + (queryString ? `?${queryString}` : ''), { scroll: false })
+    }
+  }, [searchParams, router])
 
   // Fetch all apps (agents + workflows)
   const fetchApps = React.useCallback(async () => {
@@ -505,6 +522,7 @@ export default function AppsPage() {
       <AppCreateDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        initialType={initialCreateType}
         onSuccess={() => {
           setCreateDialogOpen(false)
           fetchApps()
