@@ -95,6 +95,16 @@ export default function CapabilitiesPage() {
     const requestedTab: CapabilityTab = tab === 'skills' ? 'skills' : 'tools'
     const fallbackTab: CapabilityTab = canReadTools ? 'tools' : 'skills'
     setActiveTab(requestedTab === 'skills' && canReadSkills ? 'skills' : fallbackTab)
+
+    // Auto-open create dialog when navigated with ?action=create
+    const actionParam = searchParams.get('action')
+    if (actionParam === 'create') {
+      setHttpDialogOpen(true)
+      // Clear URL params to avoid re-opening on refresh
+      const url = new URL(window.location.href)
+      url.searchParams.delete('action')
+      window.history.replaceState({}, '', url.toString())
+    }
   }, [searchParams, canReadTools, canReadSkills])
 
   const handleTabChange = (value: string) => {

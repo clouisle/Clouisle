@@ -3,6 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { 
   Database, 
@@ -63,6 +64,7 @@ export default function KnowledgeBasePage() {
   const commonT = useTranslations('common')
   const { currentTeam } = useTeam()
   const { canPerform } = useCanPerform()
+  const searchParams = useSearchParams()
 
   // 没有团队时重定向到首页
   useRequireTeam()
@@ -96,6 +98,18 @@ export default function KnowledgeBasePage() {
   React.useEffect(() => {
     fetchKnowledgeBases()
   }, [fetchKnowledgeBases])
+
+  // Auto-open create dialog when navigated with ?action=create
+  React.useEffect(() => {
+    const actionParam = searchParams.get('action')
+    if (actionParam === 'create') {
+      setDialogOpen(true)
+      // Clear URL params to avoid re-opening on refresh
+      const url = new URL(window.location.href)
+      url.searchParams.delete('action')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [searchParams])
 
   const handleCreate = () => {
     setEditingKb(null)

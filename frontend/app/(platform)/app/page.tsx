@@ -570,25 +570,25 @@ export default function PlatformHomePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link href="/app/apps" className="block">
+              <Link href="/app/apps?action=create&type=agent" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Plus className="mr-2 h-4 w-4" />
                   {t('actions.createAgent.title')}
                 </Button>
               </Link>
-              <Link href="/app/apps" className="block">
+              <Link href="/app/apps?action=create&type=workflow" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Plus className="mr-2 h-4 w-4" />
                   {t('actions.createWorkflow.title')}
                 </Button>
               </Link>
-              <Link href="/app/kb" className="block">
+              <Link href="/app/kb?action=create" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Plus className="mr-2 h-4 w-4" />
                   {t('actions.createKB.title')}
                 </Button>
               </Link>
-              <Link href="/app/capabilities" className="block">
+              <Link href="/app/capabilities?action=create" className="block">
                 <Button variant="outline" className="w-full justify-start" size="sm">
                   <Wrench className="mr-2 h-4 w-4" />
                   {t('actions.manageTools.title')}
