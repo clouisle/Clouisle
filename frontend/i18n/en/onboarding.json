@@ -26,7 +26,7 @@
     },
     "step5": {
       "title": "Available Models",
-      "description": "Here you can see the models available for your team. Contact your administrator to enable additional models."
+      "description": "Here you can see the models available for your team. Click on a model card to view detailed quota information."
     },
     "step6": {
       "title": "Knowledge Bases",
