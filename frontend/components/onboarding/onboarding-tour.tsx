@@ -65,7 +65,6 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { state, startTour, nextStep, prevStep, completeTour } = useOnboarding()
-  const [isNavigating, setIsNavigating] = React.useState(false)
   const controlsRef = React.useRef<Controls | null>(null)
   const hasAutoStarted = React.useRef(false)
 
@@ -141,19 +140,14 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
   // Handle navigation when step changes and requires a different route
   React.useEffect(() => {
-    if (!currentStep?.route || isNavigating) return
+    if (!currentStep?.route) return
 
     // Check if we need to navigate to the step's route
     const needsNavigation = !pathname.startsWith(currentStep.route)
     if (needsNavigation) {
-      setIsNavigating(true)
       router.push(currentStep.route)
-      const timer = setTimeout(() => {
-        setIsNavigating(false)
-      }, 500)
-      return () => clearTimeout(timer)
     }
-  }, [currentStep, pathname, router, isNavigating])
+  }, [currentStep, pathname, router])
 
   const handleNext = React.useCallback(() => {
     if (currentStepIndex < steps.length - 1) {
@@ -171,7 +165,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     completeTour(tourId)
   }, [completeTour, tourId])
 
-  if (!config || state.currentTour !== tourId || !state.isRunning || isNavigating) {
+  if (!config || state.currentTour !== tourId || !state.isRunning) {
     return null
   }
 
