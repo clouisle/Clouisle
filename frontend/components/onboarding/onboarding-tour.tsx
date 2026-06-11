@@ -116,12 +116,18 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
           const nextStepIndex = currentStepIndex + 1
           const nextStepData = steps[nextStepIndex]
 
-          if (nextStepData?.route && !pathname.startsWith(nextStepData.route)) {
-            // Navigate first, then advance step
-            router.push(nextStepData.route)
-            setTimeout(() => {
+          if (nextStepData?.route) {
+            const isOnCorrectRoute = pathname === nextStepData.route ||
+              pathname.startsWith(nextStepData.route + '/')
+            if (!isOnCorrectRoute) {
+              // Navigate first, then advance step
+              router.push(nextStepData.route)
+              setTimeout(() => {
+                nextStep()
+              }, 500)
+            } else {
               nextStep()
-            }, 500)
+            }
           } else {
             nextStep()
           }
@@ -140,8 +146,10 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     if (!currentStep?.route) return
 
     // Check if we need to navigate to the step's route
-    const needsNavigation = !pathname.startsWith(currentStep.route)
-    if (needsNavigation) {
+    // Use exact matching to avoid /app matching /app/models
+    const isOnCorrectRoute = pathname === currentStep.route ||
+      pathname.startsWith(currentStep.route + '/')
+    if (!isOnCorrectRoute) {
       router.push(currentStep.route)
     }
   }, [currentStep, pathname, router])
