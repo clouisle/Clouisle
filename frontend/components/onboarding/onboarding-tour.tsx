@@ -64,11 +64,31 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const t = useTranslations()
   const router = useRouter()
   const pathname = usePathname()
-  const { state, nextStep, prevStep, completeTour } = useOnboarding()
+  const { state, startTour, nextStep, prevStep, completeTour } = useOnboarding()
   const [isNavigating, setIsNavigating] = React.useState(false)
   const controlsRef = React.useRef<Controls | null>(null)
+  const hasAutoStarted = React.useRef(false)
 
   const config = getTourConfig(tourId)
+
+  // Auto-start tour for new users on the home page
+  React.useEffect(() => {
+    if (
+      tourId === 'platform' &&
+      config?.autoStart &&
+      !state.isRunning &&
+      !state.completedTours.includes('platform') &&
+      pathname === '/app' &&
+      !hasAutoStarted.current
+    ) {
+      hasAutoStarted.current = true
+      // Small delay to ensure the page is fully loaded
+      const timer = setTimeout(() => {
+        startTour('platform')
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [tourId, config, state.isRunning, state.completedTours, pathname, startTour])
 
   // Get steps filtered by current route for platform tour
   const steps = React.useMemo(() => {
