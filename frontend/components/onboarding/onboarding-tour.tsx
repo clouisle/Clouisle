@@ -212,11 +212,6 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         zIndex: 10000,
         scrollDuration: 300,
         scrollOffset: 200,
-        offset: 20,
-        placement: 'auto',
-        placementOptions: {
-          autoPlacement: true,
-        },
       }}
       onEvent={handleJoyrideEvent}
       tooltipComponent={({
