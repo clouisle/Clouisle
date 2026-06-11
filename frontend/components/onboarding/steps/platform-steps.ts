@@ -55,6 +55,13 @@ const platformSteps: OnboardingStep[] = [
     placement: 'auto',
     route: '/app/kb',
   },
+  {
+    target: '[data-testid="kb-import-button"]',
+    content: 'onboarding.step7b.description',
+    title: 'onboarding.step7b.title',
+    placement: 'auto',
+    route: '/app/kb',
+  },
 
   // P4: Create Agent
   {

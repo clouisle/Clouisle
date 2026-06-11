@@ -198,7 +198,7 @@ export default function KnowledgeBasePage() {
           </p>
         </div>
         {currentTeam && canPerform('kb:create') && (
-          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+          <Button data-testid="kb-import-button" variant="outline" onClick={() => setImportDialogOpen(true)}>
             <Upload className="mr-2 h-4 w-4" />
             {packageT('import')}
           </Button>

@@ -36,6 +36,10 @@
       "title": "Create Knowledge Base",
       "description": "Click this card to create your first Knowledge Base. You can upload documents, web pages, or connect data sources."
     },
+    "step7b": {
+      "title": "Import Knowledge Base",
+      "description": "You can also import an existing Knowledge Base from a package file. Click this button to import."
+    },
     "step8": {
       "title": "Apps Section",
       "description": "Click here to manage your Agents and Workflows. This is where you build AI applications."
