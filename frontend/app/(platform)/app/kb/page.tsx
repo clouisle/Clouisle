@@ -3,7 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { 
   Database, 
@@ -65,6 +65,7 @@ export default function KnowledgeBasePage() {
   const { currentTeam } = useTeam()
   const { canPerform } = useCanPerform()
   const searchParams = useSearchParams()
+  const router = useRouter()
 
   // 没有团队时重定向到首页
   useRequireTeam()
@@ -105,11 +106,12 @@ export default function KnowledgeBasePage() {
     if (actionParam === 'create') {
       setDialogOpen(true)
       // Clear URL params to avoid re-opening on refresh
-      const url = new URL(window.location.href)
-      url.searchParams.delete('action')
-      window.history.replaceState({}, '', url.toString())
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('action')
+      const queryString = params.toString()
+      router.replace(window.location.pathname + (queryString ? `?${queryString}` : ''), { scroll: false })
     }
-  }, [searchParams])
+  }, [searchParams, router])
 
   const handleCreate = () => {
     setEditingKb(null)

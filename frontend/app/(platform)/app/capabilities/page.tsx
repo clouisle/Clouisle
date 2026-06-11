@@ -101,11 +101,12 @@ export default function CapabilitiesPage() {
     if (actionParam === 'create') {
       setHttpDialogOpen(true)
       // Clear URL params to avoid re-opening on refresh
-      const url = new URL(window.location.href)
-      url.searchParams.delete('action')
-      window.history.replaceState({}, '', url.toString())
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('action')
+      const queryString = params.toString()
+      router.replace(window.location.pathname + (queryString ? `?${queryString}` : ''), { scroll: false })
     }
-  }, [searchParams, canReadTools, canReadSkills])
+  }, [searchParams, canReadTools, canReadSkills, router])
 
   const handleTabChange = (value: string) => {
     const fallbackTab: CapabilityTab = canReadTools ? 'tools' : 'skills'

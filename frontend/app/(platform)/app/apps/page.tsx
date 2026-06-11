@@ -116,12 +116,13 @@ export default function AppsPage() {
       }
       setCreateDialogOpen(true)
       // Clear URL params to avoid re-opening on refresh
-      const url = new URL(window.location.href)
-      url.searchParams.delete('action')
-      url.searchParams.delete('type')
-      window.history.replaceState({}, '', url.toString())
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('action')
+      params.delete('type')
+      const queryString = params.toString()
+      router.replace(window.location.pathname + (queryString ? `?${queryString}` : ''), { scroll: false })
     }
-  }, [searchParams])
+  }, [searchParams, router])
 
   // Fetch all apps (agents + workflows)
   const fetchApps = React.useCallback(async () => {
