@@ -204,16 +204,16 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
             <div className="flex items-center gap-2">
               {!isFirstStep && (
                 <Button variant="ghost" size="sm" onClick={handleBack}>
-                  {t('platform.onboarding.back')}
+                  {t('onboarding.back')}
                 </Button>
               )}
               <Button variant="ghost" size="sm" onClick={handleSkip}>
-                {t('platform.onboarding.skip')}
+                {t('onboarding.skip')}
               </Button>
               <Button size="sm" onClick={handleNext}>
                 {tooltipIsLastStep
-                  ? t('platform.onboarding.finish')
-                  : t('platform.onboarding.next')}
+                  ? t('onboarding.finish')
+                  : t('onboarding.next')}
               </Button>
             </div>
           </div>

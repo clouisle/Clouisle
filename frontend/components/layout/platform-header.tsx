@@ -97,6 +97,7 @@ const navItems: PlatformNavItem[] = [
 export function PlatformHeader() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
+  const tOnboarding = useTranslations('onboarding')
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = React.useState<UserType | null>(null)
@@ -396,8 +397,8 @@ export function PlatformHeader() {
                 <DropdownMenuItem onClick={() => onboarding.startTour('platform')}>
                   <GraduationCap className="mr-2 h-4 w-4" />
                   {onboarding.isTourCompleted('platform')
-                    ? t('onboarding.restartTour')
-                    : t('onboarding.startTour')}
+                    ? tOnboarding('restartTour')
+                    : tOnboarding('startTour')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => setAboutOpen(true)}>
