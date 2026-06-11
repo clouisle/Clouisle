@@ -6,15 +6,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from passlib.context import CryptContext
-
+from app.core import security
 from app.models.user import User
 from app.models.password_history import PasswordHistory
 from app.models.site_setting import SiteSetting
 
 logger = logging.getLogger(__name__)
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class PasswordExpirationService:
@@ -161,9 +158,10 @@ class PasswordExpirationService:
             .limit(history_count)
         )
 
-        # Check against each historical password using bcrypt
+        # Check against each historical password using the same bcrypt
+        # normalization as password creation.
         for entry in history_entries:
-            if pwd_context.verify(new_password, entry.hashed_password):
+            if security.verify_password(new_password, entry.hashed_password):
                 return True
 
         return False

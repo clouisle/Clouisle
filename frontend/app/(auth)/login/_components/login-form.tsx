@@ -559,7 +559,7 @@ export function LoginForm() {
           )}
 
       <div className="space-y-2">
-        <Label htmlFor="username">{t('username')}</Label>
+        <Label htmlFor="username">{t('usernameOrEmail')}</Label>
         <Input
           id="username"
           type="text"
