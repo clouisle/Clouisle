@@ -21,26 +21,26 @@ interface OnboardingTourProps {
 
 // Custom CSS styles for the tooltip
 const tooltipStyles: React.CSSProperties = {
-  borderRadius: 'var(--radius)',
-  border: '1px solid hsl(var(--border))',
+  borderRadius: '8px',
+  border: '1px solid #e5e7eb',
   boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   padding: '16px',
   maxWidth: '360px',
-  backgroundColor: 'hsl(var(--card))',
-  color: 'hsl(var(--card-foreground))',
+  backgroundColor: '#ffffff',
+  color: '#111827',
 }
 
 const tooltipTitleStyles: React.CSSProperties = {
   fontSize: '15px',
   fontWeight: '600',
   marginBottom: '8px',
-  color: 'hsl(var(--foreground))',
+  color: '#111827',
 }
 
 const tooltipContentStyles: React.CSSProperties = {
   fontSize: '14px',
   lineHeight: '1.5',
-  color: 'hsl(var(--muted-foreground))',
+  color: '#6b7280',
 }
 
 const tooltipFooterStyles: React.CSSProperties = {
@@ -192,11 +192,11 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         skipBeacon: true,
         overlayClickAction: 'close',
         dismissKeyAction: false,
-        primaryColor: 'hsl(var(--primary))',
-        backgroundColor: 'hsl(var(--card))',
-        textColor: 'hsl(var(--card-foreground))',
-        overlayColor: 'hsl(var(--background) / 0.8)',
-        arrowColor: 'hsl(var(--card))',
+        primaryColor: '#3b82f6',
+        backgroundColor: '#ffffff',
+        textColor: '#111827',
+        overlayColor: 'rgba(0, 0, 0, 0.5)',
+        arrowColor: '#ffffff',
         zIndex: 10000,
       }}
       onEvent={handleJoyrideEvent}
