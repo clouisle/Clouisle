@@ -106,8 +106,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     if (!state.isRunning || !currentStep?.route) return
 
     // Check if we need to navigate to the step's route
-    const isOnCorrectRoute = pathname === currentStep.route ||
-      pathname.startsWith(currentStep.route + '/')
+    // Use exact matching - each step has a specific page
+    const isOnCorrectRoute = pathname === currentStep.route
     if (!isOnCorrectRoute) {
       router.push(currentStep.route)
     }
@@ -129,8 +129,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
           const nextStepData = steps[nextStepIndex]
 
           if (nextStepData?.route) {
-            const isOnCorrectRoute = pathname === nextStepData.route ||
-              pathname.startsWith(nextStepData.route + '/')
+            // Use exact matching for route check
+            const isOnCorrectRoute = pathname === nextStepData.route
             if (!isOnCorrectRoute) {
               // Navigate first, then advance step
               router.push(nextStepData.route)
