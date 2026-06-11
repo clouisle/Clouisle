@@ -109,6 +109,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       controlsRef.current = controls
 
       if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
+        // Only handle NEXT action from Joyride
+        // PREV is handled by our custom back button
         if (action === ACTIONS.NEXT) {
           // Check if next step requires navigation
           const nextStepIndex = currentStepIndex + 1
@@ -116,18 +118,13 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
           if (nextStepData?.route && !pathname.startsWith(nextStepData.route)) {
             // Navigate first, then advance step
-            setIsNavigating(true)
             router.push(nextStepData.route)
             setTimeout(() => {
-              setIsNavigating(false)
               nextStep()
             }, 500)
           } else {
             nextStep()
           }
-        } else if (action === ACTIONS.PREV) {
-          // For PREV, just go back - the step will update and we'll check navigation
-          prevStep()
         }
       }
 
@@ -135,7 +132,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         completeTour(tourId)
       }
     },
-    [steps, currentStepIndex, pathname, router, nextStep, prevStep, completeTour, tourId]
+    [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId]
   )
 
   // Handle navigation when step changes and requires a different route
