@@ -6,19 +6,19 @@ const platformSteps: OnboardingStep[] = [
     target: '[data-testid="platform-header-nav"]',
     content: 'onboarding.step1.description',
     title: 'onboarding.step1.title',
-    placement: 'bottom',
+    placement: 'auto',
   },
   {
     target: '[data-testid="platform-home-stat-cards"]',
     content: 'onboarding.step2.description',
     title: 'onboarding.step2.title',
-    placement: 'bottom',
+    placement: 'auto',
   },
   {
     target: '[data-testid="platform-home-quick-actions"]',
     content: 'onboarding.step3.description',
     title: 'onboarding.step3.title',
-    placement: 'left',
+    placement: 'auto',
   },
 
   // P2: Model configuration
@@ -26,14 +26,14 @@ const platformSteps: OnboardingStep[] = [
     target: '[data-testid="nav-models"]',
     content: 'onboarding.step4.description',
     title: 'onboarding.step4.title',
-    placement: 'bottom-end',
+    placement: 'auto',
     route: '/app/models',
   },
   {
     target: '[data-testid="models-grid"]',
     content: 'onboarding.step5.description',
     title: 'onboarding.step5.title',
-    placement: 'top',
+    placement: 'auto',
     route: '/app/models',
   },
 
@@ -42,14 +42,14 @@ const platformSteps: OnboardingStep[] = [
     target: '[data-testid="nav-kb"]',
     content: 'onboarding.step6.description',
     title: 'onboarding.step6.title',
-    placement: 'bottom-end',
+    placement: 'auto',
     route: '/app/kb',
   },
   {
     target: '[data-testid="kb-create-card"]',
     content: 'onboarding.step7.description',
     title: 'onboarding.step7.title',
-    placement: 'right',
+    placement: 'auto',
     route: '/app/kb',
   },
 
@@ -58,14 +58,14 @@ const platformSteps: OnboardingStep[] = [
     target: '[data-testid="nav-apps"]',
     content: 'onboarding.step8.description',
     title: 'onboarding.step8.title',
-    placement: 'bottom-end',
+    placement: 'auto',
     route: '/app/apps',
   },
   {
     target: '[data-testid="apps-create-button"]',
     content: 'onboarding.step9.description',
     title: 'onboarding.step9.title',
-    placement: 'bottom-end',
+    placement: 'auto',
     route: '/app/apps',
   },
 
@@ -74,7 +74,7 @@ const platformSteps: OnboardingStep[] = [
     target: '[data-testid="chat-input"]',
     content: 'onboarding.step10.description',
     title: 'onboarding.step10.title',
-    placement: 'top',
+    placement: 'auto',
     route: '/chat',
   },
 ]
