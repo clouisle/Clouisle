@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-10T06:40:00.160Z
+// GENERATED — 2026-06-11T08:12:52.100Z
 // Source: i18n/en/run.json
 export type RunMessages = {
   run: {
