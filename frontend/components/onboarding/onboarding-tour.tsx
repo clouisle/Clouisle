@@ -198,6 +198,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       stepIndex={currentStepIndex}
       run={state.isRunning && state.currentTour === tourId}
       continuous
+      scrollToFirstStep
+      scrollOffset={100}
       options={{
         showProgress: true,
         skipBeacon: true,
@@ -209,6 +211,8 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         overlayColor: 'rgba(0, 0, 0, 0.5)',
         arrowColor: '#ffffff',
         zIndex: 10000,
+        scrollDuration: 300,
+        scrollOffset: 100,
       }}
       onEvent={handleJoyrideEvent}
       tooltipComponent={({
