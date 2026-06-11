@@ -3,7 +3,6 @@ from typing import Any, Optional
 
 import jwt
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Form
-from tortoise.exceptions import DoesNotExist
 
 from app.api import deps
 from app.core import security
@@ -71,7 +70,7 @@ async def get_captcha() -> Any:
 @router.post("/login/access-token", response_model=Response[Token])
 async def login_access_token(
     request: Request,
-    username: str = Form(...),
+    identifier: str = Form(..., alias="username"),
     password: str = Form(...),
     captcha_id: Optional[str] = Form(None),
     captcha_answer: Optional[str] = Form(None),
@@ -105,16 +104,20 @@ async def login_access_token(
                 msg_key="captcha_invalid",
             )
 
-    try:
-        user = await User.get(username=username)
-    except DoesNotExist:
+    # Allow login by username or email
+    if "@" in identifier:
+        user = await User.filter(email=identifier).first()
+    else:
+        user = await User.filter(username=identifier).first()
+
+    if not user:
         # 记录失败的登录（用户不存在）
         await AuditLogService.log(
             user=None,
             action="login_failed",
             resource_type="user",
             resource_id=None,
-            resource_name=username,
+            resource_name=identifier,
             operation="read",
             status="failed",
             request=request,
@@ -1093,8 +1096,6 @@ async def reset_password(
     # Reset login attempts
     user.failed_login_attempts = 0
     user.locked_until = None  # type: ignore[assignment]
-    # Force password change after admin reset
-    user.force_password_change = True
     await user.save()
 
     # 记录密码重置
