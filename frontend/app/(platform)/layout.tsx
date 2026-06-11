@@ -5,6 +5,8 @@ import { PlatformHeader } from '@/components/layout/platform-header'
 import { TeamProvider } from '@/contexts/team-context'
 import { PasswordExpirationBanner } from '@/components/password-expiration-banner'
 import { AuthGuard } from '@/components/auth-guard'
+import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
+import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
 
 export default function PlatformLayout({
   children,
@@ -22,11 +24,14 @@ export default function PlatformLayout({
     return (
       <AuthGuard>
         <TeamProvider>
-          <div className="h-screen flex flex-col overflow-hidden">
-            <main className="flex-1 relative overflow-hidden">
-              {children}
-            </main>
-          </div>
+          <OnboardingProvider>
+            <div className="h-screen flex flex-col overflow-hidden">
+              <main className="flex-1 relative overflow-hidden">
+                {children}
+              </main>
+              <OnboardingTour tourId="platform" />
+            </div>
+          </OnboardingProvider>
         </TeamProvider>
       </AuthGuard>
     )
@@ -35,13 +40,16 @@ export default function PlatformLayout({
   return (
     <AuthGuard>
       <TeamProvider>
-        <div className="h-screen flex flex-col overflow-hidden">
-          <PlatformHeader />
-          <PasswordExpirationBanner />
-          <main className={`flex-1 relative ${isAgentConfig ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-            {children}
-          </main>
-        </div>
+        <OnboardingProvider>
+          <div className="h-screen flex flex-col overflow-hidden">
+            <PlatformHeader />
+            <PasswordExpirationBanner />
+            <main className={`flex-1 relative ${isAgentConfig ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+              {children}
+            </main>
+            <OnboardingTour tourId="platform" />
+          </div>
+        </OnboardingProvider>
       </TeamProvider>
     </AuthGuard>
   )

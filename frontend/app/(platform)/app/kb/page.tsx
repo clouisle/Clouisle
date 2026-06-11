@@ -223,6 +223,7 @@ export default function KnowledgeBasePage() {
         {/* Create New Card */}
         {canPerform('kb:create') && (
           <Card
+            data-testid="kb-create-card"
             size="sm"
             className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-muted/50 transition-colors group py-0! h-36"
             onClick={handleCreate}

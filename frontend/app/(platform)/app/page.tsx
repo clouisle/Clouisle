@@ -406,7 +406,7 @@ export default function PlatformHomePage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-testid="platform-home-stat-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title={t('stats.totalConversations')}
           value={stats.totalConversations}
@@ -562,7 +562,7 @@ export default function PlatformHomePage() {
         {/* Sidebar - 1/3 width */}
         <div className="space-y-6">
           {/* Quick Actions */}
-          <Card>
+          <Card data-testid="platform-home-quick-actions">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Zap className="h-4 w-4" />

@@ -1,0 +1,52 @@
+{
+  "onboarding": {
+    "tourTitle": "新手引导",
+    "tourDescription": "让我们带您了解云屿的核心功能",
+    "startTour": "开始引导",
+    "restartTour": "重新引导",
+    "back": "上一步",
+    "next": "下一步",
+    "skip": "跳过",
+    "finish": "开始使用",
+    "step1": {
+      "title": "欢迎使用云屿",
+      "description": "这是您的工作区导航栏。通过这些链接可以访问不同功能模块：首页、应用、知识库、能力和模型。"
+    },
+    "step2": {
+      "title": "仪表盘概览",
+      "description": "在这里可以查看团队的关键指标：对话数、消息数、Token 使用量和成功率。"
+    },
+    "step3": {
+      "title": "快捷操作",
+      "description": "使用这些快捷按钮可以快速创建 Agent、工作流、知识库，或管理工具。"
+    },
+    "step4": {
+      "title": "模型配置",
+      "description": "点击这里配置和启用团队的 AI 模型。您需要至少启用一个模型才能创建 Agent。"
+    },
+    "step5": {
+      "title": "可用模型",
+      "description": "浏览并启用不同提供商的模型。点击模型卡片查看详情或切换启用状态。"
+    },
+    "step6": {
+      "title": "知识库",
+      "description": "点击这里管理您的知识库。知识库可以让您的 Agent 访问您的文档和数据。"
+    },
+    "step7": {
+      "title": "创建知识库",
+      "description": "点击此卡片创建您的第一个知识库。您可以上传文档、网页或连接数据源。"
+    },
+    "step8": {
+      "title": "应用模块",
+      "description": "点击这里管理您的 Agent 和工作流。这是您构建 AI 应用的地方。"
+    },
+    "step9": {
+      "title": "创建第一个 Agent",
+      "description": "点击此按钮创建新的 Agent。您可以配置其人格、知识和能力。"
+    },
+    "step10": {
+      "title": "与 Agent 对话",
+      "description": "这是对话界面。在此输入消息并按回车或点击发送，即可与您的 Agent 交互。"
+    }
+  }
+}

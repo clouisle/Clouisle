@@ -1,0 +1,52 @@
+{
+  "onboarding": {
+    "tourTitle": "Getting Started Guide",
+    "tourDescription": "Let us walk you through the key features of Clouisle",
+    "startTour": "Start Tour",
+    "restartTour": "Restart Tour",
+    "back": "Back",
+    "next": "Next",
+    "skip": "Skip",
+    "finish": "Get Started",
+    "step1": {
+      "title": "Welcome to Clouisle",
+      "description": "This is your workspace navigation. Use these links to access different sections: Home, Apps, Knowledge Bases, Capabilities, and Models."
+    },
+    "step2": {
+      "title": "Dashboard Overview",
+      "description": "Here you can see key metrics for your team: conversations, messages, tokens used, and success rate."
+    },
+    "step3": {
+      "title": "Quick Actions",
+      "description": "Use these shortcuts to quickly create Agents, Workflows, Knowledge Bases, or manage Tools."
+    },
+    "step4": {
+      "title": "Model Configuration",
+      "description": "Click here to configure and enable AI models for your team. You need at least one model enabled to create Agents."
+    },
+    "step5": {
+      "title": "Available Models",
+      "description": "Browse and enable models from different providers. Click on a model card to see details or toggle it on/off."
+    },
+    "step6": {
+      "title": "Knowledge Bases",
+      "description": "Click here to manage your Knowledge Bases. Knowledge Bases allow your Agents to access your documents and data."
+    },
+    "step7": {
+      "title": "Create Knowledge Base",
+      "description": "Click this card to create your first Knowledge Base. You can upload documents, web pages, or connect data sources."
+    },
+    "step8": {
+      "title": "Apps Section",
+      "description": "Click here to manage your Agents and Workflows. This is where you build AI applications."
+    },
+    "step9": {
+      "title": "Create Your First Agent",
+      "description": "Click this button to create a new Agent. You can configure its personality, knowledge, and capabilities."
+    },
+    "step10": {
+      "title": "Chat with Your Agent",
+      "description": "This is the chat interface. Type your message here and press Enter or click Send to interact with your Agent."
+    }
+  }
+}

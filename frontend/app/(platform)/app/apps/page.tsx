@@ -295,7 +295,7 @@ export default function AppsPage() {
             </Button>
           )}
           <PermissionGuard permission={['agent:create', 'workflow:create']}>
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button data-testid="apps-create-button" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               {t('createApp')}
             </Button>

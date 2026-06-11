@@ -22,12 +22,14 @@ import {
   Menu,
   X,
   Key,
+  GraduationCap,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
+import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -107,6 +109,7 @@ export function PlatformHeader() {
   const { platformHeaderVariant, mounted } = useSettings()
   const { canAccessDashboard, hasAnyPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const onboarding = useOptionalOnboarding()
 
   // 没有团队时隐藏导航
   const hideNav = !isTeamLoading && !currentTeam
@@ -248,7 +251,7 @@ export function PlatformHeader() {
 
         {/* Desktop Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
         {!hideNav && (
-          <nav className={cn(
+          <nav data-testid="platform-header-nav" className={cn(
             'hidden md:flex items-center gap-1',
             effectiveHeaderVariant === 'centered' && 'absolute left-1/2 -translate-x-1/2',
             effectiveHeaderVariant === 'default' && 'ml-6'
@@ -256,7 +259,7 @@ export function PlatformHeader() {
             {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
-                <Link key={item.key} href={item.href}>
+                <Link key={item.key} href={item.href} data-testid={`nav-${item.key}`}>
                   <Button
                     variant={isActive(item.href, 'exact' in item ? item.exact : false) ? 'secondary' : 'ghost'}
                     size="sm"
@@ -389,6 +392,14 @@ export function PlatformHeader() {
 
               {/* System */}
               <DropdownMenuSeparator />
+              {onboarding && (
+                <DropdownMenuItem onClick={() => onboarding.startTour('platform')}>
+                  <GraduationCap className="mr-2 h-4 w-4" />
+                  {onboarding.isTourCompleted('platform')
+                    ? t('onboarding.restartTour')
+                    : t('onboarding.startTour')}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setAboutOpen(true)}>
                 <Info className="mr-2 h-4 w-4" />
                 {t('about')}

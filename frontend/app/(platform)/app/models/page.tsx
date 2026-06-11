@@ -254,7 +254,7 @@ export default function ModelsPage() {
         </div>
       ) : typeFilter.size === 0 ? (
         // 按类型分组显示（没有类型筛选时）
-        <div className="space-y-8">
+        <div data-testid="models-grid" className="space-y-8">
           {MODEL_TYPES.filter(type => groupedModels[type]?.length > 0).map((type) => (
             <div key={type}>
               <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
