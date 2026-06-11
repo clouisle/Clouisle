@@ -106,7 +106,7 @@ async def login_access_token(
 
     # Allow login by username or email
     if "@" in identifier:
-        user = await User.filter(email=identifier).first()
+        user = await User.filter(email__iexact=identifier).first()
     else:
         user = await User.filter(username=identifier).first()
 
