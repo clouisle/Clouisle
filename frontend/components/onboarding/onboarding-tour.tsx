@@ -199,7 +199,6 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       run={state.isRunning && state.currentTour === tourId}
       continuous
       scrollToFirstStep
-      scrollOffset={100}
       options={{
         showProgress: true,
         skipBeacon: true,
