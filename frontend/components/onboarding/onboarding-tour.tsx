@@ -13,7 +13,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { useOnboarding, type OnboardingTourId } from './onboarding-provider'
-import { platformTourConfig, getPlatformStepsForRoute } from './steps/platform-steps'
+import { platformTourConfig } from './steps/platform-steps'
 
 interface OnboardingTourProps {
   tourId: OnboardingTourId
@@ -90,51 +90,59 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     }
   }, [tourId, config, state.isRunning, state.completedTours, pathname, startTour])
 
-  // Get steps filtered by current route for platform tour
+  // Get all steps (no filtering by route)
   const steps = React.useMemo(() => {
     if (!config) return []
-    if (tourId === 'platform') {
-      return getPlatformStepsForRoute(pathname)
-    }
     return config.steps
-  }, [config, tourId, pathname])
+  }, [config])
 
-  // Calculate the effective step index based on route filtering
-  const effectiveStepIndex = React.useMemo(() => {
-    if (tourId !== 'platform') return state.currentStep
+  // Current step index
+  const currentStepIndex = state.currentStep
 
-    // For platform tour, map global step index to filtered step index
-    const allSteps = config?.steps || []
-    const currentGlobalStep = allSteps[state.currentStep]
-    if (!currentGlobalStep) return 0
+  // Get current step data
+  const currentStep = steps[currentStepIndex]
 
-    const filteredIndex = steps.findIndex(s => s.target === currentGlobalStep.target)
-    return filteredIndex >= 0 ? filteredIndex : 0
-  }, [tourId, state.currentStep, config, steps])
+  // Handle navigation when step has a route
+  React.useEffect(() => {
+    if (!currentStep?.route || isNavigating) return
+
+    // Check if we need to navigate
+    const needsNavigation = !pathname.startsWith(currentStep.route)
+    if (needsNavigation) {
+      setIsNavigating(true)
+      router.push(currentStep.route)
+      // Wait for navigation to complete
+      const timer = setTimeout(() => {
+        setIsNavigating(false)
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [currentStep, pathname, router, isNavigating])
 
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
-      const { action, index, type } = data
+      const { action, type } = data
 
       // Store controls reference
       controlsRef.current = controls
 
       if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
-        // Handle navigation for steps that require route changes
-        const currentStep = steps[index]
-        if (currentStep?.route && action === ACTIONS.NEXT) {
-          setIsNavigating(true)
-          router.push(currentStep.route)
-          // Wait for navigation to complete
-          setTimeout(() => {
-            setIsNavigating(false)
-            nextStep()
-          }, 500)
-          return
-        }
-
         if (action === ACTIONS.NEXT) {
-          nextStep()
+          // Check if next step requires navigation
+          const nextStepIndex = currentStepIndex + 1
+          const nextStepData = steps[nextStepIndex]
+
+          if (nextStepData?.route && !pathname.startsWith(nextStepData.route)) {
+            // Navigate first, then advance step
+            setIsNavigating(true)
+            router.push(nextStepData.route)
+            setTimeout(() => {
+              setIsNavigating(false)
+              nextStep()
+            }, 500)
+          } else {
+            nextStep()
+          }
         } else if (action === ACTIONS.PREV) {
           prevStep()
         }
@@ -144,24 +152,27 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         completeTour(tourId)
       }
     },
-    [steps, router, nextStep, prevStep, completeTour, tourId]
+    [steps, currentStepIndex, pathname, router, nextStep, prevStep, completeTour, tourId]
   )
 
   const handleNext = React.useCallback(() => {
-    const currentStepData = steps[effectiveStepIndex]
-    if (currentStepData?.route && pathname !== currentStepData.route) {
+    const nextStepIndex = currentStepIndex + 1
+    const nextStepData = steps[nextStepIndex]
+
+    if (nextStepData?.route && !pathname.startsWith(nextStepData.route)) {
+      // Navigate first, then advance step
       setIsNavigating(true)
-      router.push(currentStepData.route)
+      router.push(nextStepData.route)
       setTimeout(() => {
         setIsNavigating(false)
         nextStep()
       }, 500)
-    } else if (effectiveStepIndex < steps.length - 1) {
+    } else if (currentStepIndex < steps.length - 1) {
       nextStep()
     } else {
       completeTour(tourId)
     }
-  }, [steps, effectiveStepIndex, pathname, router, nextStep, completeTour, tourId])
+  }, [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId])
 
   const handleBack = React.useCallback(() => {
     prevStep()
@@ -179,12 +190,12 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     return null
   }
 
-  const isFirstStep = effectiveStepIndex === 0
+  const isFirstStep = currentStepIndex === 0
 
   return (
     <Joyride
       steps={steps}
-      stepIndex={effectiveStepIndex}
+      stepIndex={currentStepIndex}
       run={state.isRunning && state.currentTour === tourId}
       continuous
       options={{
