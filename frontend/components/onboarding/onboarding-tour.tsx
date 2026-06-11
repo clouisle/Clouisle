@@ -144,7 +144,21 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
             nextStep()
           }
         } else if (action === ACTIONS.PREV) {
-          prevStep()
+          // Check if previous step requires navigation
+          const prevStepIndex = currentStepIndex - 1
+          const prevStepData = steps[prevStepIndex]
+
+          if (prevStepData?.route && !pathname.startsWith(prevStepData.route)) {
+            // Navigate first, then go back
+            setIsNavigating(true)
+            router.push(prevStepData.route)
+            setTimeout(() => {
+              setIsNavigating(false)
+              prevStep()
+            }, 500)
+          } else {
+            prevStep()
+          }
         }
       }
 
@@ -175,8 +189,21 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   }, [steps, currentStepIndex, pathname, router, nextStep, completeTour, tourId])
 
   const handleBack = React.useCallback(() => {
-    prevStep()
-  }, [prevStep])
+    const prevStepIndex = currentStepIndex - 1
+    const prevStepData = steps[prevStepIndex]
+
+    if (prevStepData?.route && !pathname.startsWith(prevStepData.route)) {
+      // Navigate first, then go back
+      setIsNavigating(true)
+      router.push(prevStepData.route)
+      setTimeout(() => {
+        setIsNavigating(false)
+        prevStep()
+      }, 500)
+    } else {
+      prevStep()
+    }
+  }, [steps, currentStepIndex, pathname, router, prevStep])
 
   const handleSkip = React.useCallback(() => {
     completeTour(tourId)
