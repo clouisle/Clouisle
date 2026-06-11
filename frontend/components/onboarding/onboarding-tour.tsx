@@ -101,6 +101,18 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
   // Get current step data
   const currentStep = steps[currentStepIndex]
 
+  // Handle navigation when step changes and requires a different route
+  React.useEffect(() => {
+    if (!state.isRunning || !currentStep?.route) return
+
+    // Check if we need to navigate to the step's route
+    const isOnCorrectRoute = pathname === currentStep.route ||
+      pathname.startsWith(currentStep.route + '/')
+    if (!isOnCorrectRoute) {
+      router.push(currentStep.route)
+    }
+  }, [state.isRunning, currentStep, pathname, router])
+
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
       const { action, type } = data
