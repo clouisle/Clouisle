@@ -46,7 +46,11 @@
     },
     "step9": {
       "title": "创建第一个 Agent",
-      "description": "点击此按钮创建新的 Agent。您可以配置其人格、知识和能力。"
+      "description": "点击此按钮打开 Agent 创建对话框。创建完成后，您将进入 Agent 配置页面，在那里可以设置提示词、知识库等。"
+    },
+    "step9b": {
+      "title": "Agent 配置",
+      "description": "创建 Agent 后，在列表中点击它进入配置页面。在那里可以配置提示词、连接知识库，并测试您的 Agent。"
     },
     "step10": {
       "title": "与 Agent 对话",

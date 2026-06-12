@@ -78,6 +78,13 @@ const platformSteps: OnboardingStep[] = [
     placement: 'auto',
     route: '/app/apps',
   },
+  {
+    target: '[data-testid="apps-grid"]',
+    content: 'onboarding.step9b.description',
+    title: 'onboarding.step9b.title',
+    placement: 'auto',
+    route: '/app/apps',
+  },
 
   // P5: Chat
   {

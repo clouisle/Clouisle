@@ -46,7 +46,11 @@
     },
     "step9": {
       "title": "Create Your First Agent",
-      "description": "Click this button to create a new Agent. You can configure its personality, knowledge, and capabilities."
+      "description": "Click this button to open the Agent creation dialog. After creating your Agent, you'll be taken to its configuration page where you can set up prompts, knowledge bases, and more."
+    },
+    "step9b": {
+      "title": "Agent Configuration",
+      "description": "After creating your Agent, click on it in the list to open its configuration page. There you can configure prompts, connect knowledge bases, and test your Agent."
     },
     "step10": {
       "title": "Chat with Your Agent",
