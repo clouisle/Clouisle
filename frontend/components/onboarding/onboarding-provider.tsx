@@ -1,8 +1,9 @@
 'use client'
 
 import * as React from 'react'
+import type { OnboardingTourId } from './steps/types'
 
-export type OnboardingTourId = 'platform' | 'dashboard'
+export type { OnboardingTourId }
 
 interface OnboardingState {
   completedTours: OnboardingTourId[]
@@ -13,7 +14,7 @@ interface OnboardingState {
 
 interface OnboardingContextType {
   state: OnboardingState
-  startTour: (tourId: OnboardingTourId) => void
+  startTour: (tourId: OnboardingTourId, initialStep?: number) => void
   stopTour: () => void
   nextStep: () => void
   prevStep: () => void
@@ -74,11 +75,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     saveState(state)
   }, [state])
 
-  const startTour = React.useCallback((tourId: OnboardingTourId) => {
+  const startTour = React.useCallback((tourId: OnboardingTourId, initialStep: number = 0) => {
     setState(prev => ({
       ...prev,
       currentTour: tourId,
-      currentStep: 0,
+      currentStep: initialStep,
       isRunning: true,
     }))
   }, [])

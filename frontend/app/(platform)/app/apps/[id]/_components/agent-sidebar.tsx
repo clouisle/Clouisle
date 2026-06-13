@@ -63,7 +63,9 @@ export function AgentSidebar({
   }
 
   return (
-    <aside className={cn(
+    <aside
+      data-testid="agent-sidebar"
+      className={cn(
       'border-r flex flex-col h-full transition-all duration-200',
       collapsed ? 'w-0 overflow-hidden' : 'w-52'
     )}>
@@ -105,12 +107,17 @@ export function AgentSidebar({
       {/* Navigation */}
       <nav className="flex-1 p-2">
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
             const isActive = pathname === item.href
+            const testId = index === 0 ? 'agent-nav-orchestration' :
+                          index === 1 ? 'agent-nav-api' :
+                          index === 2 ? 'agent-nav-logs' :
+                          'agent-nav-monitor'
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  data-testid={testId}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive

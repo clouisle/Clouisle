@@ -2,6 +2,16 @@
   "onboarding": {
     "tourTitle": "Getting Started Guide",
     "tourDescription": "Let us walk you through the key features of Clouisle",
+    "tourOverviewTitle": "Overview",
+    "tourOverviewDescription": "Learn about the home page and workspace navigation",
+    "tourModelsTitle": "Models",
+    "tourModelsDescription": "Learn about available AI models and configuration",
+    "tourKBTitle": "Knowledge Base",
+    "tourKBDescription": "Learn how to create and manage Knowledge Bases",
+    "tourAppCreateTitle": "Create App",
+    "tourAppCreateDescription": "Create your first Agent or Workflow",
+    "tourAppConfigTitle": "Configure App",
+    "tourAppConfigDescription": "Configure prompts, knowledge bases, tools, and publish your Agent",
     "startTour": "Start Tour",
     "restartTour": "Restart Tour",
     "back": "Back",
@@ -12,13 +22,29 @@
       "title": "Welcome to Clouisle",
       "description": "This is your workspace navigation. Use these links to access different sections: Home, Apps, Knowledge Bases, Capabilities, and Models."
     },
+    "step1b": {
+      "title": "Workspace Overview",
+      "description": "This is the workspace home page, where you can quickly understand recent team usage, resource distribution, and common entry points."
+    },
     "step2": {
       "title": "Dashboard Overview",
       "description": "Here you can see key metrics for your team: conversations, messages, tokens used, and success rate."
     },
+    "step2b": {
+      "title": "Usage Trends",
+      "description": "This chart shows recent conversation and token usage trends, helping you understand team growth, activity changes, and resource consumption."
+    },
+    "step2c": {
+      "title": "Resource Overview",
+      "description": "This chart shows how many resources your team has by type, including Agents, Workflows, Knowledge Bases, and Models."
+    },
     "step3": {
       "title": "Quick Actions",
       "description": "Use these shortcuts to quickly create Agents, Workflows, Knowledge Bases, or manage Tools."
+    },
+    "step3b": {
+      "title": "Recent Items",
+      "description": "This area shows recently created or updated apps and resources, so you can quickly return to what you are configuring or using."
     },
     "step4": {
       "title": "Model Configuration",
@@ -49,8 +75,172 @@
       "description": "Click this button to open the Agent creation dialog. After creating your Agent, you'll be taken to its configuration page where you can set up prompts, knowledge bases, and more."
     },
     "step9b": {
-      "title": "Agent Configuration",
-      "description": "After creating your Agent, click on it in the list to open its configuration page. There you can configure prompts, connect knowledge bases, and test your Agent."
+      "title": "Select App Type",
+      "description": "Choose the type of app you want to create: Agent for conversational scenarios, Workflow for process orchestration. Click either one to continue."
+    },
+    "step9c": {
+      "title": "Enter Name",
+      "description": "Enter a name for your app. The name is required. Click \"Next\" when you're ready to continue."
+    },
+    "step9d": {
+      "title": "Description (Optional)",
+      "description": "You can add a description for your app. This is optional. Click \"Next\" when you're ready to continue."
+    },
+    "step9e": {
+      "title": "Create App",
+      "description": "You're all set! Click this button to create your app."
+    },
+    "step11": {
+      "title": "Configure Prompt",
+      "description": "This is the system prompt where you define your Agent's behavior. Describe what your Agent should do, its personality, and any rules it should follow. You can also use the \"AI Generate\" button for assistance."
+    },
+    "step11b": {
+      "title": "AI Generate Prompt",
+      "description": "Click this button to let AI automatically generate a prompt based on your description. You just provide a simple description, and AI will generate a detailed prompt."
+    },
+    "step11c": {
+      "title": "Variables",
+      "description": "Variables allow you to define placeholders in your prompt that users can fill in when using the Agent. For example, you can define a variable called 'username'."
+    },
+    "step12": {
+      "title": "Link Knowledge Base",
+      "description": "Optionally link a Knowledge Base to give your Agent access to your documents and data. The Agent will use this information to answer questions."
+    },
+    "step13": {
+      "title": "Add Tools",
+      "description": "Optionally add tools to extend your Agent's capabilities. Tools allow your Agent to perform actions like web searches, calculations, or API calls."
+    },
+    "step14": {
+      "title": "Save Configuration",
+      "description": "Click here to save your Agent configuration. Remember to save after making changes!"
+    },
+    "step14a": {
+      "title": "Image Understanding",
+      "description": "When enabled, your Agent can understand and analyze image content. Useful for scenarios that require processing images or extracting information from pictures."
+    },
+    "step14b": {
+      "title": "File Upload",
+      "description": "When enabled, users can upload files to your Agent. Supports PDF, Word, Excel, and other formats. The Agent can read file content to answer questions."
+    },
+    "step14c": {
+      "title": "User Input Request",
+      "description": "When enabled, your Agent can proactively request additional information from users during conversations. The Agent will ask you when it needs more details to complete a task."
+    },
+    "step14d": {
+      "title": "Memory",
+      "description": "When enabled, your Agent remembers important information from conversations and maintains context across sessions. Ideal for personal assistants or customer service scenarios requiring long-term memory."
+    },
+    "step14e": {
+      "title": "Image Generation",
+      "description": "When enabled, your Agent can generate images from text descriptions. Suitable for creative design, content production, and other scenarios requiring visual content generation."
+    },
+    "step14f": {
+      "title": "Video Generation",
+      "description": "When enabled, your Agent can generate videos from text descriptions. Suitable for marketing, tutorial creation, and other scenarios requiring video content generation."
+    },
+    "step14g": {
+      "title": "Embed Configuration",
+      "description": "Click this button to open the embed configuration dialog. Here you can generate embed code to integrate your Agent into your website or application. You can choose from three embed modes: Bubble (floating chat button), Fullscreen (full-page embed), or Mobile (mobile-optimized). You can also customize the theme, colors, and bubble position. Once configured, simply copy the generated code and paste it into your website's HTML to embed your Agent."
+    },
+    "step14l": {
+      "title": "Agent Settings",
+      "description": "Click this button to open the Agent settings drawer. Here you can configure basic information, model settings, and conversation settings for your Agent."
+    },
+    "step14m": {
+      "title": "Agent Icon",
+      "description": "Upload an icon for your Agent. This icon will be displayed in the conversation interface and app list. You can click to upload an image or select from available icons."
+    },
+    "step14n": {
+      "title": "Agent Name",
+      "description": "Set the name of your Agent. The name will be displayed in the conversation interface and app list. Choose a clear and descriptive name."
+    },
+    "step14o": {
+      "title": "Agent Description",
+      "description": "Add a description for your Agent. The description helps users understand what your Agent does and what it's suitable for. This is optional but recommended."
+    },
+    "step14p": {
+      "title": "Visibility",
+      "description": "Set the visibility of your Agent: Private means only you can see and use it; Team means all team members can see and use it. Choose based on your needs."
+    },
+    "step14q": {
+      "title": "Model Selection",
+      "description": "Select the AI model for your Agent. Different models have different capabilities and performance. You can switch models here based on your needs."
+    },
+    "step14r": {
+      "title": "Max Iterations",
+      "description": "Set the maximum number of iterations for the Agent. This controls how many rounds the Agent can execute in a single conversation. Higher values allow more complex tasks but consume more tokens."
+    },
+    "step14s": {
+      "title": "Hide Tool Calls",
+      "description": "When enabled, the Agent's tool call process will be hidden from the conversation interface. Suitable for scenarios where you don't want users to see the technical details of tool usage."
+    },
+    "step14t": {
+      "title": "Conversation Settings",
+      "description": "This is the conversation settings section. Click to expand and collapse this section. Here you can configure the opening message and suggested questions for your Agent."
+    },
+    "step14u": {
+      "title": "Opening Message",
+      "description": "Set the opening message for your Agent. This message will be displayed when the user first opens the conversation, helping users understand how to use the Agent."
+    },
+    "step14v": {
+      "title": "Suggested Questions",
+      "description": "Set suggested questions for your Agent. These questions will appear as quick options at the beginning of the conversation, helping users get started faster. Enter one question per line."
+    },
+    "step14w": {
+      "title": "Close Settings",
+      "description": "Click this button to close the settings drawer and return to the Agent configuration page. Your settings will be automatically saved."
+    },
+    "step15": {
+      "title": "Save Configuration",
+      "description": "Click here to save your Agent configuration. Remember to save after making changes!"
+    },
+    "step15b": {
+      "title": "Configuration Saved",
+      "description": "After saving, your Agent is ready for publishing. Next, you can publish it so it can be officially accessed and used."
+    },
+    "step16": {
+      "title": "Publish Agent",
+      "description": "Click this button to open the publish confirmation menu. Once published, your Agent will be available for use. You can also unpublish it later if needed."
+    },
+    "step16b": {
+      "title": "Confirm Publish",
+      "description": "Click confirm publish to make this Agent active and available to users with access."
+    },
+    "step16c": {
+      "title": "Published Successfully",
+      "description": "After publishing, you can use the Agent from the more professional chat page, or integrate it into business scenarios through embed or API access."
+    },
+    "step17": {
+      "title": "Your Agent Card",
+      "description": "This is your Agent card. It shows the Agent's name, description, and status. Hover over the card and click the three-dot menu to access more actions like chatting with your Agent, publishing/unpublishing, or managing settings."
+    },
+    "step17a": {
+      "title": "More Actions",
+      "description": "Click the three-dot menu to open more actions for this Agent."
+    },
+    "step17b": {
+      "title": "Chat with Agent",
+      "description": "Click the chat button to open a more professional and user-friendly chat page, where you can use and interact with this Agent in a focused experience."
+    },
+    "step18": {
+      "title": "Enter Configuration",
+      "description": "Click this Agent card to enter the configuration page. Here you can set up prompts, link knowledge bases, add tools, and configure all aspects of your Agent."
+    },
+    "step10a": {
+      "title": "Orchestration",
+      "description": "This is the Agent's orchestration configuration page. Here you can set up prompts, knowledge bases, tools, and other core features."
+    },
+    "step10b": {
+      "title": "API",
+      "description": "View your Agent's API information. Here you can get API keys, endpoint addresses, and learn how to call your Agent through code."
+    },
+    "step10c": {
+      "title": "Logs",
+      "description": "View your Agent's run logs. Records all conversation history and Agent execution processes for debugging and analysis."
+    },
+    "step10d": {
+      "title": "Monitor",
+      "description": "Monitor your Agent's runtime status. View key metrics: conversations, success rate, token usage, etc., to understand Agent performance."
     },
     "step10": {
       "title": "Chat with Your Agent",

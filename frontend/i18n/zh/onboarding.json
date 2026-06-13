@@ -2,6 +2,16 @@
   "onboarding": {
     "tourTitle": "新手引导",
     "tourDescription": "让我们带您了解云屿的核心功能",
+    "tourOverviewTitle": "概览介绍",
+    "tourOverviewDescription": "了解首页和工作区导航",
+    "tourModelsTitle": "模型",
+    "tourModelsDescription": "了解可用的 AI 模型和配置",
+    "tourKBTitle": "知识库",
+    "tourKBDescription": "了解如何创建和管理知识库",
+    "tourAppCreateTitle": "创建应用",
+    "tourAppCreateDescription": "创建您的第一个 Agent 或工作流",
+    "tourAppConfigTitle": "配置应用",
+    "tourAppConfigDescription": "配置提示词、知识库、工具，并发布您的 Agent",
     "startTour": "开始引导",
     "restartTour": "重新引导",
     "back": "上一步",
@@ -12,13 +22,29 @@
       "title": "欢迎使用云屿",
       "description": "这是您的工作区导航栏。通过这些链接可以访问不同功能模块：首页、应用、知识库、能力和模型。"
     },
+    "step1b": {
+      "title": "工作台概览",
+      "description": "这里是工作台首页，用于快速了解团队近期使用情况、资源分布和常用入口。"
+    },
     "step2": {
       "title": "仪表盘概览",
       "description": "在这里可以查看团队的关键指标：对话数、消息数、Token 使用量和成功率。"
     },
+    "step2b": {
+      "title": "使用趋势",
+      "description": "这里展示近期对话量和 Token 使用趋势，帮助您判断团队使用增长、活跃度变化和资源消耗情况。"
+    },
+    "step2c": {
+      "title": "资源概览",
+      "description": "这里按类型展示团队已有资源数量，包括 Agent、工作流、知识库和模型，方便快速了解当前建设情况。"
+    },
     "step3": {
       "title": "快捷操作",
       "description": "使用这些快捷按钮可以快速创建 Agent、工作流、知识库，或管理工具。"
+    },
+    "step3b": {
+      "title": "最近项目",
+      "description": "这里展示最近创建或更新的应用与资源。您可以从这里快速回到正在配置或使用的内容。"
     },
     "step4": {
       "title": "模型配置",
@@ -49,8 +75,172 @@
       "description": "点击此按钮打开 Agent 创建对话框。创建完成后，您将进入 Agent 配置页面，在那里可以设置提示词、知识库等。"
     },
     "step9b": {
-      "title": "Agent 配置",
-      "description": "创建 Agent 后，在列表中点击它进入配置页面。在那里可以配置提示词、连接知识库，并测试您的 Agent。"
+      "title": "选择应用类型",
+      "description": "选择您要创建的应用类型：Agent 适合对话场景，Workflow 适合流程编排。点击其中一个即可继续。"
+    },
+    "step9c": {
+      "title": "输入名称",
+      "description": "为您的应用输入一个名称。名称是必填项，填写完成后点击「下一步」继续。"
+    },
+    "step9d": {
+      "title": "描述（可选）",
+      "description": "您可以为应用添加描述信息，这是可选的。填写完成后点击「下一步」继续。"
+    },
+    "step9e": {
+      "title": "创建应用",
+      "description": "信息填写完成，点击此按钮创建您的应用。"
+    },
+    "step11": {
+      "title": "配置提示词",
+      "description": "这是系统提示词，用于定义 Agent 的行为。描述您的 Agent 应该做什么、它的性格特点以及需要遵循的规则。您也可以使用「AI 生成」按钮来获取帮助。"
+    },
+    "step11b": {
+      "title": "AI 生成提示词",
+      "description": "点击此按钮，AI 会根据您的描述自动生成提示词。您只需提供简单的描述，AI 会生成详细的提示词。"
+    },
+    "step11c": {
+      "title": "变量",
+      "description": "变量允许您在提示词中定义占位符,用户在使用 Agent 时可以填入具体的值。例如,您可以定义一个名为「用户名」的变量。"
+    },
+    "step12": {
+      "title": "关联知识库",
+      "description": "可选：关联知识库，让您的 Agent 访问您的文档和数据。Agent 会使用这些信息来回答问题。"
+    },
+    "step13": {
+      "title": "添加工具",
+      "description": "可选：添加工具来扩展 Agent 的能力。工具可以让 Agent 执行搜索、计算或调用 API 等操作。"
+    },
+    "step14": {
+      "title": "保存配置",
+      "description": "点击这里保存您的 Agent 配置。修改后记得保存！"
+    },
+    "step14a": {
+      "title": "图像理解",
+      "description": "开启后，Agent 可以理解和分析图片内容。适用于需要处理图像或从图片提取信息的场景。"
+    },
+    "step14b": {
+      "title": "文件上传",
+      "description": "开启后，用户可以向 Agent 上传文件。支持 PDF、Word、Excel 等格式，Agent 可以读取文件内容来回答问题。"
+    },
+    "step14c": {
+      "title": "用户输入请求",
+      "description": "开启后，Agent 可以在对话中主动向用户请求额外信息。当 Agent 需要更多细节来完成任务时，会询问您。"
+    },
+    "step14d": {
+      "title": "记忆",
+      "description": "开启后，Agent 会记住对话中的重要信息，跨对话保持上下文。适合需要长期记忆的个人助手或客服场景。"
+    },
+    "step14e": {
+      "title": "图像生成",
+      "description": "开启后，Agent 可以根据文字描述生成图像。适用于创意设计、内容制作等需要生成视觉内容的场景。"
+    },
+    "step14f": {
+      "title": "视频生成",
+      "description": "开启后，Agent 可以根据文字描述生成视频。适用于营销、教程制作等需要生成视频内容的场景。"
+    },
+    "step14g": {
+      "title": "嵌入配置",
+      "description": "点击此按钮打开嵌入配置对话框。在这里您可以生成嵌入代码，将 Agent 集成到您的网站或应用中。您可以选择三种嵌入模式：气泡模式（浮动对话按钮）、全屏模式（完整页面嵌入）或移动模式（移动端优化）。您还可以自定义主题、颜色和气泡位置。配置完成后，只需复制生成的代码并粘贴到您网站的 HTML 中即可嵌入您的 Agent。"
+    },
+    "step14l": {
+      "title": "Agent 设置",
+      "description": "点击此按钮打开 Agent 设置抽屉。在这里您可以配置 Agent 的基本信息、模型设置和对话设置。"
+    },
+    "step14m": {
+      "title": "Agent 图标",
+      "description": "为 Agent 上传图标。此图标将显示在对话界面和应用列表中。您可以点击上传图片或从可用图标中选择。"
+    },
+    "step14n": {
+      "title": "Agent 名称",
+      "description": "设置 Agent 的名称。名称将显示在对话界面和应用列表中。请选择清晰且具有描述性的名称。"
+    },
+    "step14o": {
+      "title": "Agent 描述",
+      "description": "为 Agent 添加描述。描述帮助用户了解您的 Agent 的功能和适用场景。这是可选的，但建议填写。"
+    },
+    "step14p": {
+      "title": "可见性",
+      "description": "设置 Agent 的可见性：私有表示只有您可以看到和使用；团队表示所有团队成员都可以看到和使用。请根据需求选择。"
+    },
+    "step14q": {
+      "title": "模型选择",
+      "description": "为 Agent 选择 AI 模型。不同模型具有不同的能力和性能。您可以根据需求在此切换模型。"
+    },
+    "step14r": {
+      "title": "最大迭代次数",
+      "description": "设置 Agent 的最大迭代次数。这控制 Agent 在单次对话中可以执行的轮数。更高的值允许更复杂的任务，但会消耗更多 Token。"
+    },
+    "step14s": {
+      "title": "隐藏工具调用",
+      "description": "开启后，Agent 的工具调用过程将在对话界面中隐藏。适用于不希望用户看到工具使用技术细节的场景。"
+    },
+    "step14t": {
+      "title": "对话设置",
+      "description": "这是对话设置部分。点击可展开和折叠此部分。在这里您可以配置 Agent 的开场消息和建议问题。"
+    },
+    "step14u": {
+      "title": "开场消息",
+      "description": "设置 Agent 的开场消息。此消息将在用户首次打开对话时显示，帮助用户了解如何使用 Agent。"
+    },
+    "step14v": {
+      "title": "建议问题",
+      "description": "设置 Agent 的建议问题。这些问题将作为快捷选项出现在对话开始时，帮助用户更快上手。每行输入一个问题。"
+    },
+    "step14w": {
+      "title": "关闭设置",
+      "description": "点击此按钮关闭设置抽屉，返回 Agent 配置页面。您的设置将自动保存。"
+    },
+    "step15": {
+      "title": "保存配置",
+      "description": "点击这里保存您的 Agent 配置。修改后记得保存！"
+    },
+    "step15b": {
+      "title": "保存完成",
+      "description": "配置保存后，您的 Agent 已经准备好进入发布流程。接下来可以发布 Agent，让它可以被正式访问和使用。"
+    },
+    "step16": {
+      "title": "发布 Agent",
+      "description": "点击此按钮打开发布确认菜单。发布后，您的 Agent 将可供使用。如果需要，您也可以稍后取消发布。"
+    },
+    "step16b": {
+      "title": "确认发布",
+      "description": "点击确认发布，正式让此 Agent 生效并对可访问用户开放。"
+    },
+    "step16c": {
+      "title": "发布完成",
+      "description": "发布完成后，您可以通过更专业的对话页面使用 Agent，也可以通过嵌入、API 等方式将它集成到业务场景中。"
+    },
+    "step17": {
+      "title": "Agent 卡片",
+      "description": "这是您的 Agent 卡片。显示 Agent 的名称、描述和状态。将鼠标悬停在卡片上并点击三点菜单，可以访问更多操作，如与 Agent 对话、发布/取消发布或管理设置。"
+    },
+    "step17a": {
+      "title": "更多操作",
+      "description": "点击三点菜单，打开此 Agent 的更多操作。"
+    },
+    "step17b": {
+      "title": "与 Agent 对话",
+      "description": "点击对话按钮，前往更专业、更友好的对话页面，在那里与此 Agent 进行正式使用和交互。"
+    },
+    "step18": {
+      "title": "进入配置",
+      "description": "点击此 Agent 卡片进入配置页面。在这里您可以设置提示词、关联知识库、添加工具，以及配置 Agent 的各个方面。"
+    },
+    "step10a": {
+      "title": "编排配置",
+      "description": "这是 Agent 的编排配置页面。您可以在这里设置提示词、知识库、工具等核心功能。"
+    },
+    "step10b": {
+      "title": "API 接口",
+      "description": "查看 Agent 的 API 接口信息。您可以在这里获取 API 密钥、端点地址，以及了解如何通过代码调用您的 Agent。"
+    },
+    "step10c": {
+      "title": "运行日志",
+      "description": "查看 Agent 的运行日志。记录所有对话历史和 Agent 的执行过程，方便调试和分析。"
+    },
+    "step10d": {
+      "title": "监控面板",
+      "description": "监控 Agent 的运行状态。查看关键指标：对话数、成功率、Token 使用量等，了解 Agent 的性能表现。"
     },
     "step10": {
       "title": "与 Agent 对话",

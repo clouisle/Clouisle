@@ -398,7 +398,7 @@ export default function PlatformHomePage() {
   return (
     <div className="py-6 px-8 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div data-testid="platform-home-header" className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
           <p className="text-muted-foreground mt-1">{t('description')}</p>
@@ -442,7 +442,7 @@ export default function PlatformHomePage() {
         {/* Main Content - 2/3 width */}
         <div className="space-y-6 lg:col-span-2">
           {/* Usage Trend Chart */}
-          <Card>
+          <Card data-testid="platform-home-usage-trend">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="h-4 w-4" />
@@ -507,7 +507,7 @@ export default function PlatformHomePage() {
           </Card>
 
           {/* Resource Overview */}
-          <Card>
+          <Card data-testid="platform-home-resource-overview">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Grid3x3 className="h-4 w-4" />
@@ -598,7 +598,7 @@ export default function PlatformHomePage() {
           </Card>
 
           {/* Recent Items */}
-          <Card>
+          <Card data-testid="platform-home-recent-items">
             <CardHeader>
               <CardTitle className="text-base flex items-center justify-between">
                 <span className="flex items-center gap-2">

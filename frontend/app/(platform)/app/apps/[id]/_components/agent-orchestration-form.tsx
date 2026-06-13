@@ -66,6 +66,7 @@ interface ConfigCardProps {
   className?: string
   collapsed?: boolean
   onToggle?: () => void
+  'data-testid'?: string
 }
 
 function ConfigCard({
@@ -79,9 +80,10 @@ function ConfigCard({
   className,
   collapsed,
   onToggle,
+  'data-testid': testId,
 }: ConfigCardProps) {
   return (
-    <div className={cn('rounded-xl bg-muted overflow-hidden', className)}>
+    <div data-testid={testId} className={cn('rounded-xl bg-muted overflow-hidden', className)}>
       <div
         className={cn(
           'flex items-center gap-3 px-4 py-3',
@@ -414,7 +416,7 @@ export function AgentOrchestrationForm({
       />
 
       {/* Prompt Section - Always expanded, highlighted */}
-      <div className="rounded-xl bg-linear-to-br from-primary/5 to-primary/10 border border-primary/20 overflow-hidden">
+      <div data-testid="agent-prompt-section" className="rounded-xl bg-linear-to-br from-primary/5 to-primary/10 border border-primary/20 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
@@ -429,6 +431,7 @@ export function AgentOrchestrationForm({
             </Tooltip>
           </div>
           <Button
+            data-testid="agent-prompt-ai-generate"
             variant="ghost"
             size="sm"
             className="h-7 text-xs gap-1.5 cursor-pointer bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
@@ -468,6 +471,7 @@ export function AgentOrchestrationForm({
 
       {/* Variables Section */}
       <ConfigCard
+        data-testid="agent-variables-section"
         icon={Variable}
         iconColor="text-blue-500"
         title={t('variables.title')}
@@ -511,6 +515,7 @@ export function AgentOrchestrationForm({
 
       {/* Knowledge Base Section */}
       <ConfigCard
+        data-testid="agent-kb-section"
         icon={Database}
         iconColor="text-emerald-500"
         title={t('knowledgeBase.title')}
@@ -569,6 +574,7 @@ export function AgentOrchestrationForm({
 
       {/* Tools Section */}
       <ConfigCard
+        data-testid="agent-tools-section"
         icon={Wrench}
         iconColor="text-orange-500"
         title={t('tools.title')}
@@ -646,6 +652,7 @@ export function AgentOrchestrationForm({
 
       {/* Vision Section */}
       <ConfigCard
+        data-testid="agent-vision-section"
         icon={Eye}
         iconColor="text-purple-500"
         title={t('vision.title')}
@@ -666,6 +673,7 @@ export function AgentOrchestrationForm({
 
       {/* File Upload Section */}
       <ConfigCard
+        data-testid="agent-file-upload-section"
         icon={FileUp}
         iconColor="text-cyan-500"
         title={t('fileUpload.title')}
@@ -832,6 +840,7 @@ export function AgentOrchestrationForm({
 
       {/* User Input Request Section */}
       <ConfigCard
+        data-testid="agent-user-input-section"
         icon={MessageSquare}
         iconColor="text-purple-500"
         title={t('userInputRequest.title')}
@@ -854,6 +863,7 @@ export function AgentOrchestrationForm({
 
       {/* Memory Section */}
       <ConfigCard
+        data-testid="agent-memory-section"
         icon={Brain}
         iconColor="text-pink-500"
         title={t('memory.title')}
@@ -925,6 +935,7 @@ export function AgentOrchestrationForm({
 
       {/* Image Generation Section */}
       <ConfigCard
+        data-testid="agent-image-generation-section"
         icon={ImageIcon}
         iconColor="text-amber-500"
         title={t('imageGeneration.title')}
@@ -1057,6 +1068,7 @@ export function AgentOrchestrationForm({
 
       {/* Video Generation Section */}
       <ConfigCard
+        data-testid="agent-video-generation-section"
         icon={Clapperboard}
         iconColor="text-rose-500"
         title={t('videoGeneration.title')}

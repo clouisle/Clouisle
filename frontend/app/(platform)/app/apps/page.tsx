@@ -353,7 +353,7 @@ export default function AppsPage() {
             // Check if icon is a URL or emoji
             const isIconUrl = app.icon && (app.icon.startsWith('http') || app.icon.startsWith('/'))
             return (
-              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36">
+              <Card key={app.id} size="sm" className="group relative hover:shadow-md transition-shadow py-0! h-36" data-testid={`app-card-${app.id}`}>
                 <Link href={getAppLink(app)} className="flex flex-col justify-between px-2.5 py-3 h-full">
                   {/* Header */}
                   <div className="flex items-center gap-2">
@@ -431,7 +431,7 @@ export default function AppsPage() {
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={(props) => (
-                        <Button {...props} variant="ghost" size="icon" className="h-7 w-7">
+                        <Button {...props} variant="ghost" size="icon" className="h-7 w-7" data-testid={`app-actions-button-${app.id}`}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       )}
@@ -445,7 +445,7 @@ export default function AppsPage() {
                       </Link>
                       {app.type === 'agent' && (
                         <Link href={`/chat/${app.id}`} target="_blank">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem data-testid={`app-chat-button-${app.id}`}>
                             <MessageSquare className="mr-2 h-4 w-4" />
                             {t('chat')}
                           </DropdownMenuItem>

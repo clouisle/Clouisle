@@ -6,7 +6,7 @@ import { TeamProvider } from '@/contexts/team-context'
 import { PasswordExpirationBanner } from '@/components/password-expiration-banner'
 import { AuthGuard } from '@/components/auth-guard'
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider'
-import { OnboardingTour } from '@/components/onboarding/onboarding-tour'
+import { OnboardingTour, allTourIds } from '@/components/onboarding/onboarding-tour'
 
 export default function PlatformLayout({
   children,
@@ -20,6 +20,15 @@ export default function PlatformLayout({
   // 代理编排页使用内部滚动，避免 main 被撑高
   const isAgentConfig = pathname?.match(/^\/app\/apps\/[^/]+$/)
 
+  // Render all onboarding tours
+  const renderTours = () => (
+    <>
+      {allTourIds.map(tourId => (
+        <OnboardingTour key={tourId} tourId={tourId} />
+      ))}
+    </>
+  )
+
   if (isWorkflowEditor) {
     return (
       <AuthGuard>
@@ -29,7 +38,7 @@ export default function PlatformLayout({
               <main className="flex-1 relative overflow-hidden">
                 {children}
               </main>
-              <OnboardingTour tourId="platform" />
+              {renderTours()}
             </div>
           </OnboardingProvider>
         </TeamProvider>
@@ -47,7 +56,7 @@ export default function PlatformLayout({
             <main className={`flex-1 relative ${isAgentConfig ? 'overflow-hidden' : 'overflow-y-auto'}`}>
               {children}
             </main>
-            <OnboardingTour tourId="platform" />
+            {renderTours()}
           </div>
         </OnboardingProvider>
       </TeamProvider>

@@ -30,6 +30,7 @@ import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
 import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
+import { allTourConfigs } from '@/components/onboarding/steps/platform-steps'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -38,6 +39,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -106,6 +110,7 @@ export function PlatformHeader() {
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [aboutOpen, setAboutOpen] = React.useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
+  const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
   const { canAccessDashboard, hasAnyPermission } = usePermissions()
@@ -213,6 +218,17 @@ export function PlatformHeader() {
     router.push('/login')
   }
 
+  // 启动引导（先关闭菜单）
+  const handleStartTour = (tourId: 'overview' | 'models' | 'kb' | 'appCreate' | 'appConfig') => {
+    setUserMenuOpen(false)
+    // 延迟启动引导，确保菜单完全关闭
+    setTimeout(() => {
+      if (onboarding) {
+        onboarding.startTour(tourId)
+      }
+    }, 300)
+  }
+
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
@@ -313,7 +329,7 @@ export function PlatformHeader() {
           </Tooltip>
 
           {/* User Menu */}
-          <DropdownMenu>
+          <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger
               render={(props) => (
                 <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -394,12 +410,33 @@ export function PlatformHeader() {
               {/* System */}
               <DropdownMenuSeparator />
               {onboarding && (
-                <DropdownMenuItem onClick={() => onboarding.startTour('platform')}>
-                  <GraduationCap className="mr-2 h-4 w-4" />
-                  {onboarding.isTourCompleted('platform')
-                    ? tOnboarding('restartTour')
-                    : tOnboarding('startTour')}
-                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <GraduationCap className="mr-2 h-4 w-4" />
+                    {tOnboarding('tourTitle')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {allTourConfigs.map((tourConfig) => {
+                      const isCompleted = onboarding.isTourCompleted(tourConfig.id)
+                      // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
+                      const titleKey = tourConfig.title.replace('onboarding.', '')
+                      return (
+                        <DropdownMenuItem
+                          key={tourConfig.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStartTour(tourConfig.id)
+                          }}
+                        >
+                          {isCompleted && (
+                            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                          )}
+                          {tOnboarding(titleKey as 'tourOverviewTitle' | 'tourModelsTitle' | 'tourKBTitle' | 'tourAppCreateTitle')}
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               )}
               <DropdownMenuItem onClick={() => setAboutOpen(true)}>
                 <Info className="mr-2 h-4 w-4" />

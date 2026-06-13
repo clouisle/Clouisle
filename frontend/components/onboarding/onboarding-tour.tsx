@@ -9,11 +9,12 @@ import {
   type EventData,
   type Controls,
 } from 'react-joyride'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { useOnboarding, type OnboardingTourId } from './onboarding-provider'
-import { platformTourConfig } from './steps/platform-steps'
+import { getTourConfigById, allTourConfigs } from './steps/platform-steps'
+import type { OnboardingStep } from './steps/types'
 
 interface OnboardingTourProps {
   tourId: OnboardingTourId
@@ -29,6 +30,14 @@ const tooltipStyles: React.CSSProperties = {
   backgroundColor: '#ffffff',
   color: '#111827',
 }
+
+// CSS to make overlay pass-through clicks when on dialog steps
+// The overlay is still visible but clicks go through to the dialog
+const joyrideDialogOverlayFix = `
+  body.joyride-dialog-active .react-joyride__overlay {
+    pointer-events: none !important;
+  }
+`
 
 const tooltipTitleStyles: React.CSSProperties = {
   fontSize: '15px',
@@ -52,38 +61,61 @@ const tooltipFooterStyles: React.CSSProperties = {
 }
 
 function getTourConfig(tourId: OnboardingTourId) {
-  switch (tourId) {
-    case 'platform':
-      return platformTourConfig
-    default:
-      return null
-  }
+  return getTourConfigById(tourId) || null
 }
+
+function targetExists(step: OnboardingStep | undefined) {
+  const target = step?.target
+  if (typeof target !== 'string') return true
+  return document.querySelector(target) !== null
+}
+
+function findStartingStep(steps: OnboardingStep[]) {
+  return steps.findIndex(step => targetExists(step))
+}
+
+function routeMatches(pathname: string, route: string) {
+  if (pathname === route) return true
+  if (route === '/app') return false
+  return pathname.startsWith(`${route}/`)
+}
+
+// Export all tour IDs for rendering
+export const allTourIds: OnboardingTourId[] = allTourConfigs.map(c => c.id)
 
 export function OnboardingTour({ tourId }: OnboardingTourProps) {
   const t = useTranslations()
   const router = useRouter()
   const pathname = usePathname()
-  const { state, startTour, nextStep, prevStep, completeTour } = useOnboarding()
+  const searchParams = useSearchParams()
+  const pathnameRef = React.useRef(pathname)
+  const { state, startTour, nextStep, goToStep, completeTour } = useOnboarding()
   const controlsRef = React.useRef<Controls | null>(null)
   const hasAutoStarted = React.useRef(false)
+  const urlTriggeredRef = React.useRef(false)
+  const advanceTriggeredRef = React.useRef(false)
+
+  // Keep pathnameRef in sync with latest pathname
+  React.useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   const config = getTourConfig(tourId)
 
   // Auto-start tour for new users on the home page
   React.useEffect(() => {
     if (
-      tourId === 'platform' &&
+      tourId === 'overview' &&
       config?.autoStart &&
       !state.isRunning &&
-      !state.completedTours.includes('platform') &&
+      !state.completedTours.includes('overview') &&
       pathname === '/app' &&
       !hasAutoStarted.current
     ) {
       hasAutoStarted.current = true
       // Small delay to ensure the page is fully loaded
       const timer = setTimeout(() => {
-        startTour('platform')
+        startTour('overview')
       }, 500)
       return () => clearTimeout(timer)
     }
@@ -95,23 +127,54 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     return config.steps
   }, [config])
 
+  // Allow external links to trigger tours, e.g. /app/apps?tour=appCreate or
+  // /app/apps/:id?tour=appConfig&step=1.
+  React.useEffect(() => {
+    if (!config || urlTriggeredRef.current) return
+
+    const requestedTour = searchParams.get('tour')
+    if (requestedTour !== tourId) return
+
+    const requestedStep = Number(searchParams.get('step') || '0')
+    const initialStep = Number.isInteger(requestedStep)
+      ? Math.min(Math.max(requestedStep, 0), Math.max(steps.length - 1, 0))
+      : 0
+
+    urlTriggeredRef.current = true
+    startTour(tourId, initialStep)
+  }, [config, searchParams, startTour, steps.length, tourId])
+
+  // Detect the best starting step when a tour starts, then jump to it
+  const startingStepDetectedRef = React.useRef<OnboardingTourId | null>(null)
+  React.useEffect(() => {
+    if (!state.isRunning || state.currentTour !== tourId) {
+      if (startingStepDetectedRef.current === tourId) {
+        startingStepDetectedRef.current = null
+      }
+      return
+    }
+
+    if (startingStepDetectedRef.current === tourId) return
+
+    // Delay to allow page transitions/animations to settle
+    const timer = setTimeout(() => {
+      if (startingStepDetectedRef.current === tourId) return
+      startingStepDetectedRef.current = tourId
+
+      const startIdx = findStartingStep(steps)
+      if (startIdx > 0 && state.currentStep === 0) {
+        goToStep(startIdx)
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [state.isRunning, state.currentTour, tourId, state.currentStep, steps, goToStep])
+
   // Current step index
   const currentStepIndex = state.currentStep
 
   // Get current step data
   const currentStep = steps[currentStepIndex]
-
-  // Handle navigation when step changes and requires a different route
-  React.useEffect(() => {
-    if (!state.isRunning || !currentStep?.route) return
-
-    // Check if we need to navigate to the step's route
-    // Use exact matching - each step has a specific page
-    const isOnCorrectRoute = pathname === currentStep.route
-    if (!isOnCorrectRoute) {
-      router.push(currentStep.route)
-    }
-  }, [state.isRunning, currentStep, pathname, router])
 
   const handleJoyrideEvent = React.useCallback(
     (data: EventData, controls: Controls) => {
@@ -130,7 +193,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
           if (nextStepData?.route) {
             // Use exact matching for route check
-            const isOnCorrectRoute = pathname === nextStepData.route
+            const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
             if (!isOnCorrectRoute) {
               // Navigate first, then advance step
               router.push(nextStepData.route)
@@ -155,16 +218,18 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
   // Handle navigation when step changes and requires a different route
   React.useEffect(() => {
-    if (!currentStep?.route) return
+    if (!state.isRunning || state.currentTour !== tourId || !currentStep?.route) return
 
-    // Check if we need to navigate to the step's route
-    // Use exact matching to avoid /app matching /app/models
-    const isOnCorrectRoute = pathname === currentStep.route ||
-      pathname.startsWith(currentStep.route + '/')
-    if (!isOnCorrectRoute) {
+    // Pure navigation steps should wait for the user to click the highlighted
+    // nav item. Their route is used by the click handler to detect completion,
+    // not for automatic navigation.
+    if (currentStep.advanceOnClick && currentStep.waitForRouteChange) return
+
+    // Use strict equality so /app does not match /app/models etc.
+    if (pathname !== currentStep.route) {
       router.push(currentStep.route)
     }
-  }, [currentStep, pathname, router])
+  }, [state.isRunning, state.currentTour, tourId, currentStep, pathname, router])
 
   const handleNext = React.useCallback(() => {
     if (currentStepIndex < steps.length - 1) {
@@ -174,13 +239,178 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     }
   }, [currentStepIndex, steps.length, nextStep, completeTour, tourId])
 
-  const handleBack = React.useCallback(() => {
-    prevStep()
-  }, [prevStep])
+  // Keyboard shortcut: Ctrl+Enter to advance (only when Next button is visible)
+  React.useEffect(() => {
+    if (!state.isRunning || state.currentTour !== tourId) return
+
+    // Check if current step should hide the Next button
+    const isAdvanceOnClick = currentStep?.advanceOnClick
+    const isAdvanceOnInput = currentStep?.advanceOnInput
+    const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput
+
+    // Only enable shortcut if Next button is visible
+    if (shouldHideNextButton) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if focus is in an input, textarea, or contenteditable element
+      const activeElement = document.activeElement
+      const isInputFocused =
+        activeElement?.tagName === 'INPUT' ||
+        activeElement?.tagName === 'TEXTAREA' ||
+        activeElement?.getAttribute('contenteditable') === 'true'
+
+      if (isInputFocused) return
+
+      // Ctrl/⌘+Enter triggers next step
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleNext()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [state.isRunning, state.currentTour, tourId, currentStep, handleNext])
+
+  // Handle advanceOnClick: listen for clicks on the target element
+  React.useEffect(() => {
+    if (!state.isRunning || state.currentTour !== tourId || !currentStep?.advanceOnClick) return
+
+    const target = currentStep.target
+    if (typeof target !== 'string') return
+
+    // Reset advance flag when step changes
+    advanceTriggeredRef.current = false
+
+    // Wait a bit for the element to appear
+    const findAndBind = () => {
+      const element = document.querySelector(target)
+      if (!element) return
+
+      const handleClick = () => {
+        // Prevent multiple advances for the same step
+        if (advanceTriggeredRef.current) return
+        advanceTriggeredRef.current = true
+
+        // If waitForRouteChange is set, wait until the expected route is reached before advancing
+        if (currentStep.waitForRouteChange) {
+          const originalPathname = pathnameRef.current
+          let elapsed = 0
+          const maxWait = 10000 // 10 seconds max wait
+          const checkRouteChange = () => {
+            const reachedExpectedRoute = currentStep.route
+              ? routeMatches(pathnameRef.current, currentStep.route)
+              : pathnameRef.current !== originalPathname
+
+            if (reachedExpectedRoute) {
+              // Route reached/changed, now advance
+              handleNext()
+            } else if (elapsed < maxWait) {
+              // Keep checking
+              elapsed += 200
+              setTimeout(checkRouteChange, 200)
+            } else {
+              // Timeout - just advance anyway
+              handleNext()
+            }
+          }
+          // Start checking after a short delay (to let the click action start)
+          setTimeout(checkRouteChange, 300)
+        } else {
+          // Small delay to let the click action happen first (e.g., open a dialog)
+          setTimeout(() => {
+            handleNext()
+          }, 300)
+        }
+      }
+
+      element.addEventListener('click', handleClick)
+      return () => element.removeEventListener('click', handleClick)
+    }
+
+    // Try immediately, then retry after a short delay if not found
+    let cleanup = findAndBind()
+    if (!cleanup) {
+      const timer = setTimeout(() => {
+        cleanup = findAndBind()
+      }, 500)
+      return () => {
+        clearTimeout(timer)
+        cleanup?.()
+      }
+    }
+    return cleanup
+  }, [state.isRunning, state.currentTour, tourId, currentStep, handleNext, currentStepIndex])
+
+  // Handle advanceOnInput: listen for input events on the target element
+  React.useEffect(() => {
+    if (!state.isRunning || state.currentTour !== tourId || !currentStep?.advanceOnInput) return
+
+    const target = currentStep.target
+    if (typeof target !== 'string') return
+
+    // Reset advance flag when step changes
+    advanceTriggeredRef.current = false
+
+    // Wait a bit for the element to appear
+    const findAndBind = () => {
+      const element = document.querySelector(target) as HTMLInputElement | null
+      if (!element) return
+
+      const handleInput = () => {
+        // Prevent multiple advances for the same step
+        if (advanceTriggeredRef.current) return
+        // Advance when user types something
+        if (element.value.trim().length > 0) {
+          advanceTriggeredRef.current = true
+          setTimeout(() => {
+            handleNext()
+          }, 300)
+        }
+      }
+
+      element.addEventListener('input', handleInput)
+      return () => element.removeEventListener('input', handleInput)
+    }
+
+    // Try immediately, then retry after a short delay if not found
+    let cleanup = findAndBind()
+    if (!cleanup) {
+      const timer = setTimeout(() => {
+        cleanup = findAndBind()
+      }, 500)
+      return () => {
+        clearTimeout(timer)
+        cleanup?.()
+      }
+    }
+    return cleanup
+  }, [state.isRunning, state.currentTour, tourId, currentStep, handleNext, currentStepIndex])
 
   const handleSkip = React.useCallback(() => {
     completeTour(tourId)
   }, [completeTour, tourId])
+
+  // Add body class when on dialog steps to make overlay pass-through clicks
+  // This effect must be before early returns to maintain hook order
+  const targetSelector = typeof currentStep?.target === 'string' ? currentStep.target : ''
+  const isDialogStep = state.isRunning && state.currentTour === tourId && targetSelector && (
+    targetSelector.includes('app-create-type-selector') ||
+    targetSelector.includes('app-create-name-input') ||
+    targetSelector.includes('app-create-description-input') ||
+    targetSelector.includes('app-create-submit')
+  )
+
+  React.useEffect(() => {
+    if (isDialogStep) {
+      document.body.classList.add('joyride-dialog-active')
+    } else {
+      document.body.classList.remove('joyride-dialog-active')
+    }
+    return () => {
+      document.body.classList.remove('joyride-dialog-active')
+    }
+  }, [isDialogStep])
 
   if (!config || state.currentTour !== tourId || !state.isRunning) {
     return null
@@ -190,10 +420,10 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     return null
   }
 
-  const isFirstStep = currentStepIndex === 0
-
   return (
-    <Joyride
+    <>
+      <style>{joyrideDialogOverlayFix}</style>
+      <Joyride
       steps={steps}
       stepIndex={currentStepIndex}
       run={state.isRunning && state.currentTour === tourId}
@@ -219,7 +449,12 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
         isLastStep: tooltipIsLastStep,
         step,
         size,
-      }) => (
+      }) => {
+        const currentOnboardingStep = steps[currentStepIndex] as OnboardingStep | undefined
+        const isAdvanceOnClick = currentOnboardingStep?.advanceOnClick
+        const isAdvanceOnInput = currentOnboardingStep?.advanceOnInput
+        const shouldHideNextButton = isAdvanceOnClick || isAdvanceOnInput
+        return (
         <div style={tooltipStyles}>
           {step.title && (
             <div style={tooltipTitleStyles}>
@@ -236,23 +471,23 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {!isFirstStep && (
-                <Button variant="ghost" size="sm" onClick={handleBack}>
-                  {t('onboarding.back')}
-                </Button>
-              )}
               <Button variant="ghost" size="sm" onClick={handleSkip}>
                 {t('onboarding.skip')}
               </Button>
-              <Button size="sm" onClick={handleNext}>
-                {tooltipIsLastStep
-                  ? t('onboarding.finish')
-                  : t('onboarding.next')}
-              </Button>
+              {!shouldHideNextButton && (
+                <Button size="sm" onClick={handleNext}>
+                  {tooltipIsLastStep
+                    ? t('onboarding.finish')
+                    : t('onboarding.next')}
+                  <kbd className="ml-1.5 rounded border border-current/20 bg-current/5 px-1 py-0.5 font-mono text-[10px] opacity-60">⌘↵</kbd>
+                </Button>
+              )}
             </div>
           </div>
         </div>
-      )}
+        )
+      }}
     />
+    </>
   )
 }
