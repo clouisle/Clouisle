@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-13T15:38:12.925Z
+// GENERATED — 2026-06-14T13:59:23.069Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
@@ -10,10 +10,13 @@ export type OnboardingMessages = {
     tourModelsDescription: string
     tourKBTitle: string
     tourKBDescription: string
-    tourAppCreateTitle: string
     tourAppCreateDescription: string
     tourAppConfigTitle: string
     tourAppConfigDescription: string
+    tourWorkflowConfigTitle: string
+    tourWorkflowConfigDescription: string
+    tourCapabilitiesTitle: string
+    tourCapabilitiesDescription: string
     startTour: string
     restartTour: string
     back: string
@@ -64,7 +67,51 @@ export type OnboardingMessages = {
       title: string
       description: string
     }
+    step7a: {
+      title: string
+      description: string
+    }
     step7b: {
+      title: string
+      description: string
+    }
+    step7c: {
+      title: string
+      description: string
+    }
+    step7d: {
+      title: string
+      description: string
+    }
+    step7e: {
+      title: string
+      description: string
+    }
+    step7f: {
+      title: string
+      description: string
+    }
+    step7g: {
+      title: string
+      description: string
+    }
+    step7h: {
+      title: string
+      description: string
+    }
+    step7i: {
+      title: string
+      description: string
+    }
+    step7j: {
+      title: string
+      description: string
+    }
+    step7k: {
+      title: string
+      description: string
+    }
+    step7l: {
       title: string
       description: string
     }
@@ -245,6 +292,86 @@ export type OnboardingMessages = {
       description: string
     }
     step10: {
+      title: string
+      description: string
+    }
+    step20a: {
+      title: string
+      description: string
+    }
+    step20b: {
+      title: string
+      description: string
+    }
+    step20c: {
+      title: string
+      description: string
+    }
+    step20d: {
+      title: string
+      description: string
+    }
+    step20e: {
+      title: string
+      description: string
+    }
+    step20f: {
+      title: string
+      description: string
+    }
+    step20g: {
+      title: string
+      description: string
+    }
+    step20h: {
+      title: string
+      description: string
+    }
+    step20i: {
+      title: string
+      description: string
+    }
+    step20j: {
+      title: string
+      description: string
+    }
+    step20k: {
+      title: string
+      description: string
+    }
+    step21: {
+      title: string
+      description: string
+    }
+    step22: {
+      title: string
+      description: string
+    }
+    step23: {
+      title: string
+      description: string
+    }
+    step24: {
+      title: string
+      description: string
+    }
+    step25: {
+      title: string
+      description: string
+    }
+    step26: {
+      title: string
+      description: string
+    }
+    step27: {
+      title: string
+      description: string
+    }
+    step28: {
+      title: string
+      description: string
+    }
+    step29: {
       title: string
       description: string
     }

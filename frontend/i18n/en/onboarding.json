@@ -8,19 +8,98 @@
     "tourModelsDescription": "Learn about available AI models and configuration",
     "tourKBTitle": "Knowledge Base",
     "tourKBDescription": "Learn how to create and manage Knowledge Bases",
-    "tourAppCreateTitle": "Create App",
     "tourAppCreateDescription": "Create your first Agent or Workflow",
     "tourAppConfigTitle": "Configure App",
     "tourAppConfigDescription": "Configure prompts, knowledge bases, tools, and publish your Agent",
+    "tourWorkflowConfigTitle": "Configure Workflow",
+    "tourWorkflowConfigDescription": "Build your workflow by adding and connecting nodes, then test and publish",
+    "tourCapabilitiesTitle": "Capabilities",
+    "tourCapabilitiesDescription": "Learn how to manage tools and skills",
     "startTour": "Start Tour",
     "restartTour": "Restart Tour",
     "back": "Back",
     "next": "Next",
     "skip": "Skip",
     "finish": "Get Started",
+    "step0a": {
+      "title": "Logo & Home",
+      "description": "Click the logo to return to the home page from anywhere. It's always visible in the top-left corner."
+    },
+    "step0b": {
+      "title": "Team Switcher",
+      "description": "Switch between different teams you belong to. Each team has its own apps, knowledge bases, and settings. Click to see all available teams."
+    },
     "step1": {
       "title": "Welcome to Clouisle",
       "description": "This is your workspace navigation. Use these links to access different sections: Home, Apps, Knowledge Bases, Capabilities, and Models."
+    },
+    "step1a": {
+      "title": "Home",
+      "description": "Return to the home page to view overview data, recent activities, and quick actions."
+    },
+    "step1c": {
+      "title": "Apps",
+      "description": "Manage all your AI applications, including Agents and Workflows. Create, edit, and run applications from here."
+    },
+    "step1d": {
+      "title": "Knowledge Base",
+      "description": "Manage knowledge bases for RAG (Retrieval-Augmented Generation). Upload documents, configure embedding models, and organize knowledge."
+    },
+    "step1e": {
+      "title": "Capabilities",
+      "description": "Manage tools and skills that can be used by Agents and Workflows. Import custom tools or use built-in capabilities."
+    },
+    "step1f": {
+      "title": "Models",
+      "description": "Configure and manage LLM providers and models. Set up API keys, configure model parameters, and manage available models."
+    },
+    "step1g": {
+      "title": "Theme & Appearance",
+      "description": "Click here to customize the interface theme and appearance. You can switch between light and dark modes, adjust layout styles, and personalize your workspace."
+    },
+    "step1g2": {
+      "title": "Theme Selection",
+      "description": "Choose your preferred theme: System (follows OS settings), Light, or Dark mode. Click on a theme card to apply it instantly."
+    },
+    "step1g3": {
+      "title": "Header Layout",
+      "description": "Choose the navigation bar layout: Default (left-aligned), Centered (centered navigation), or Minimal (icon-only). This affects how the top navigation is displayed."
+    },
+    "step1g4": {
+      "title": "Language",
+      "description": "Select your preferred language. The interface will be displayed in the selected language. Changes are applied immediately."
+    },
+    "step1h": {
+      "title": "User Menu",
+      "description": "Click your avatar to open the user menu. Here you can access account settings, API keys, notifications, memories, view tutorials, and log out."
+    },
+    "step1h2": {
+      "title": "Account Settings",
+      "description": "Manage your account settings, including profile information, avatar, and password. Click here to open the account settings dialog."
+    },
+    "step1h3": {
+      "title": "API Keys",
+      "description": "Manage your API keys for programmatic access. Create, view, and revoke API keys used for integrating with external applications."
+    },
+    "step1h4": {
+      "title": "Notifications",
+      "description": "View all notifications including system alerts, team activities, and app updates. Unread notifications are indicated by a badge."
+    },
+    "step1h5": {
+      "title": "Memories",
+      "description": "Access your AI memories. Memories help the AI remember important information from conversations to provide better personalized assistance."
+    },
+    "step1h6": {
+      "title": "Getting Started Guide",
+      "description": "Restart the interactive tutorials. These guides will walk you through the key features of Clouisle step by step."
+    },
+    "step1h7": {
+      "title": "About",
+      "description": "View application information including version, build date, and links to documentation and GitHub."
+    },
+    "step1h8": {
+      "title": "Logout",
+      "description": "Sign out of your account. You will be redirected to the login page and need to log in again to continue."
     },
     "step1b": {
       "title": "Workspace Overview",
@@ -62,9 +141,53 @@
       "title": "Create Knowledge Base",
       "description": "Click this card to create your first Knowledge Base. You can upload documents, web pages, or connect data sources."
     },
+    "step7a": {
+      "title": "Knowledge Base Name",
+      "description": "Enter a name for the knowledge base. The name is required and used to identify the knowledge base. For example: Product Docs, Technical Manual, Customer FAQ, etc."
+    },
     "step7b": {
       "title": "Import Knowledge Base",
       "description": "You can also import an existing Knowledge Base from a package file. Click this button to import."
+    },
+    "step7c": {
+      "title": "Description (Optional)",
+      "description": "Add a description for the knowledge base, explaining its purpose and content. This is optional but recommended for easier management."
+    },
+    "step7d": {
+      "title": "Embedding Model",
+      "description": "Select an embedding model to convert documents into vectors. The embedding model is the core component of a knowledge base and determines the accuracy of document retrieval."
+    },
+    "step7e": {
+      "title": "Create Knowledge Base",
+      "description": "After filling in the required information, click this button to create the knowledge base. Once created, you can upload documents to it."
+    },
+    "step7f": {
+      "title": "Rerank Model (Optional)",
+      "description": "Optionally select a rerank model to improve retrieval accuracy. Reranking re-scores and re-orders the initial retrieval results to surface the most relevant documents."
+    },
+    "step7g": {
+      "title": "Chunk Settings",
+      "description": "Set the chunk size and chunk overlap. Chunk size determines how large each text segment is when splitting documents. Overlap ensures context continuity between adjacent chunks."
+    },
+    "step7h": {
+      "title": "Custom Separator (Optional)",
+      "description": "Optionally specify a custom separator for splitting text. Leave empty to use the default separators. You can use characters like '\\n\\n' or custom delimiters."
+    },
+    "step7i": {
+      "title": "Rerank Settings",
+      "description": "Configure reranking behavior. This section allows you to enable or disable reranking and fine-tune its parameters to balance retrieval quality and performance."
+    },
+    "step7j": {
+      "title": "Enable Rerank",
+      "description": "Toggle reranking on or off. When enabled, retrieved results will be re-scored and re-ordered by the rerank model for improved accuracy."
+    },
+    "step7k": {
+      "title": "Rerank Parameters",
+      "description": "Candidate K is the number of top results passed to the rerank model. Score threshold filters out results below a certain score. Adjust both based on your needs."
+    },
+    "step7l": {
+      "title": "Rerank Fail Open",
+      "description": "When enabled, if the rerank model fails, the original retrieval results are returned instead of raising an error. Recommended to keep enabled for production stability."
     },
     "step8": {
       "title": "Apps Section",
@@ -245,6 +368,86 @@
     "step10": {
       "title": "Chat with Your Agent",
       "description": "This is the chat interface. Type your message here and press Enter or click Send to interact with your Agent."
+    },
+    "step20a": {
+      "title": "Workflow Canvas",
+      "description": "This is the workflow canvas where you build your workflow visually. Drag and drop nodes, connect them to define the execution flow of your workflow."
+    },
+    "step20b": {
+      "title": "Edit Modes",
+      "description": "Two editing modes are available: Pointer mode allows you to select and drag nodes. Hand mode lets you pan and navigate the canvas. Use Pointer mode when building, Hand mode when viewing."
+    },
+    "step20c": {
+      "title": "Add Node",
+      "description": "Click this button to open the node selector. You can also drag from a node's output handle to add a connected node directly. Each node type has different functionality — LLM, Condition, Tool, and more."
+    },
+    "step20d": {
+      "title": "Connect Nodes",
+      "description": "To connect nodes, drag from a node's output handle to another node's input handle. Connections define the execution order and data flow of your workflow."
+    },
+    "step20e": {
+      "title": "Configure Nodes",
+      "description": "Click any node to open its configuration panel. Here you can set detailed parameters like prompts, conditions, tools, and more depending on the node type."
+    },
+    "step20f": {
+      "title": "Validation Checklist",
+      "description": "This button shows workflow validation results. It automatically checks for missing connections, unconfigured nodes, and other issues. Click to see and fix any problems."
+    },
+    "step20g": {
+      "title": "Test Run",
+      "description": "Click this button to test your workflow. You can input test data and see the execution result of each node step by step. Test before publishing to ensure your workflow works correctly."
+    },
+    "step20h": {
+      "title": "Save Workflow",
+      "description": "Click this button to save your workflow. Remember to save after making changes! You can also use the keyboard shortcut to save."
+    },
+    "step20i": {
+      "title": "Workflow Settings",
+      "description": "Click this button to open workflow settings. Here you can configure the workflow name, description, icon, visibility, and other basic settings."
+    },
+    "step20j": {
+      "title": "Embed Workflow",
+      "description": "Click this button to open the embed configuration dialog. You can generate embed code to integrate your workflow into your website or application."
+    },
+    "step20k": {
+      "title": "Publish Workflow",
+      "description": "Click this button to publish your workflow. Once published, your workflow can be accessed via API or embed. You can unpublish it anytime if needed."
+    },
+    "step21": {
+      "title": "Tools & Skills Tabs",
+      "description": "Use these tabs to switch between tools and skills. Tools are functions the AI can call, and skills are reusable capability packages."
+    },
+    "step22": {
+      "title": "Tools List",
+      "description": "Here you can see all available tools, grouped by category: time, math, search, web, file, code, API, and more. Built-in tools are ready to use, and you can create custom tools or import MCP tools."
+    },
+    "step23": {
+      "title": "Create New Tool",
+      "description": "Click this button to create a new tool. You can choose between HTTP tools, code tools, or MCP tools."
+    },
+    "step24": {
+      "title": "Tool Types",
+      "description": "Choose the type of tool to create: HTTP tools call external APIs, code tools run custom code, and MCP tools connect to Model Context Protocol servers."
+    },
+    "step25": {
+      "title": "Import Tools",
+      "description": "Click this button to import tools from package files. You can share tools with others by exporting and importing packages."
+    },
+    "step26": {
+      "title": "Refresh Tools",
+      "description": "Click this button to refresh the tools list and get the latest data from the server."
+    },
+    "step27": {
+      "title": "Switch to Skills Tab",
+      "description": "Click to view the skills tab. Skills are reusable capability packages that can be applied to multiple Agents."
+    },
+    "step28": {
+      "title": "Import Skills",
+      "description": "Click this button to import skill packages. You can import skills from ZIP files or Git repositories. Skills are complete capability packages containing tools, prompts, and configurations."
+    },
+    "step29": {
+      "title": "Refresh Skills",
+      "description": "Click this button to refresh the skills list and get the latest data from the server."
     }
   }
 }

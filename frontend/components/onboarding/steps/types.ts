@@ -1,6 +1,6 @@
 import type { Step, Placement } from 'react-joyride'
 
-export type OnboardingTourId = 'overview' | 'models' | 'kb' | 'appCreate' | 'appConfig'
+export type OnboardingTourId = 'overview' | 'models' | 'kb' | 'appCreate' | 'appConfig' | 'capabilities'
 
 export interface OnboardingStep extends Step {
   /** Route path for cross-page navigation */

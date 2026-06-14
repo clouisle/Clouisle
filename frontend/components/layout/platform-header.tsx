@@ -29,7 +29,7 @@ import { notificationsApi } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
-import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
+import { useOptionalOnboarding, type OnboardingTourId } from '@/components/onboarding/onboarding-provider'
 import { allTourConfigs } from '@/components/onboarding/steps/platform-steps'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -219,7 +219,7 @@ export function PlatformHeader() {
   }
 
   // 启动引导（先关闭菜单）
-  const handleStartTour = (tourId: 'overview' | 'models' | 'kb' | 'appCreate' | 'appConfig') => {
+  const handleStartTour = (tourId: OnboardingTourId) => {
     setUserMenuOpen(false)
     // 延迟启动引导，确保菜单完全关闭
     setTimeout(() => {
@@ -238,7 +238,7 @@ export function PlatformHeader() {
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
-          <Link href="/app" className="flex items-center space-x-2 shrink-0">
+          <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
             <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
               {siteSettings.site_icon ? (
                 <Image
@@ -259,7 +259,7 @@ export function PlatformHeader() {
           {!hideNav && (
             <>
               <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
-              <div className="min-w-0 flex-1 sm:flex-initial">
+              <div className="min-w-0 flex-1 sm:flex-initial" data-testid="platform-team-switcher">
                 <TeamSwitcher />
               </div>
             </>
@@ -320,6 +320,7 @@ export function PlatformHeader() {
                 size="icon"
                 className="h-8 w-8 cursor-pointer"
                 onClick={() => setSettingsOpen(true)}
+                data-testid="platform-theme-button"
               >
                 <Palette className="h-4 w-4" />
                 <span className="sr-only">{tCommon('appearanceSettings')}</span>
@@ -332,7 +333,7 @@ export function PlatformHeader() {
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger
               render={(props) => (
-                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="platform-user-menu">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user?.avatar_url || undefined} alt={user?.username || 'User'} />
                     <AvatarFallback>
@@ -362,13 +363,13 @@ export function PlatformHeader() {
               <DropdownMenuSeparator />
 
               {/* Account Settings */}
-              <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+              <DropdownMenuItem onClick={() => setProfileOpen(true)} data-testid="user-menu-settings">
                 <Settings className="mr-2 h-4 w-4" />
                 {t('profile.title')}
               </DropdownMenuItem>
 
               {/* API Keys */}
-              <DropdownMenuItem onClick={() => router.push('/app/api-keys')}>
+              <DropdownMenuItem onClick={() => router.push('/app/api-keys')} data-testid="user-menu-api-keys">
                 <Key className="mr-2 h-4 w-4" />
                 {t('apiKeys')}
               </DropdownMenuItem>
@@ -380,6 +381,7 @@ export function PlatformHeader() {
                   requestNotificationPermission()
                   router.push('/app/notifications')
                 }}
+                data-testid="user-menu-notifications"
               >
            <Bell className="mr-2 h-4 w-4" />
                 <span className="flex-1">{t('nav.notifications')}</span>
@@ -389,7 +391,7 @@ export function PlatformHeader() {
                   </span>
                 )}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/app/memories')}>
+              <DropdownMenuItem onClick={() => router.push('/app/memories')} data-testid="user-menu-memories">
                 <Brain className="mr-2 h-4 w-4" />
                 {t('nav.memories')}
               </DropdownMenuItem>
@@ -399,7 +401,7 @@ export function PlatformHeader() {
                 <>
                   <DropdownMenuSeparator />
                   <Link href="/dashboard">
-                    <DropdownMenuItem>
+                    <DropdownMenuItem data-testid="user-menu-admin">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       {t('admin')}
                     </DropdownMenuItem>
@@ -411,7 +413,7 @@ export function PlatformHeader() {
               <DropdownMenuSeparator />
               {onboarding && (
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
+                  <DropdownMenuSubTrigger data-testid="user-menu-tours">
                     <GraduationCap className="mr-2 h-4 w-4" />
                     {tOnboarding('tourTitle')}
                   </DropdownMenuSubTrigger>
@@ -438,11 +440,11 @@ export function PlatformHeader() {
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}
-              <DropdownMenuItem onClick={() => setAboutOpen(true)}>
+              <DropdownMenuItem onClick={() => setAboutOpen(true)} data-testid="user-menu-about">
                 <Info className="mr-2 h-4 w-4" />
                 {t('about')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLogout}>
+              <DropdownMenuItem onClick={handleLogout} data-testid="user-menu-logout">
                 <LogOut className="mr-2 h-4 w-4" />
                 {t('logout')}
               </DropdownMenuItem>

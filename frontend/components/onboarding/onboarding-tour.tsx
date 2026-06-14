@@ -183,7 +183,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
       // Store controls reference
       controlsRef.current = controls
 
-      if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
+      if (type === EVENTS.STEP_AFTER) {
         // Only handle NEXT action from Joyride
         // PREV is handled by our custom back button
         if (action === ACTIONS.NEXT) {
@@ -206,6 +206,44 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
           } else {
             nextStep()
           }
+        }
+      }
+
+      // Handle TARGET_NOT_FOUND: wait for drawer/menu elements to render
+      if (type === EVENTS.TARGET_NOT_FOUND) {
+        if (action === ACTIONS.NEXT) {
+          // Wait 500ms for drawer/menu elements to render
+          setTimeout(() => {
+            const nextStepIndex = currentStepIndex + 1
+            const nextStepData = steps[nextStepIndex]
+
+            if (nextStepData) {
+              // Check if the target element exists in DOM
+              const targetExists = !!document.querySelector(nextStepData.target as string)
+              if (targetExists) {
+                if (nextStepData.route) {
+                  const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
+                  if (!isOnCorrectRoute) {
+                    router.push(nextStepData.route)
+                    setTimeout(() => {
+                      nextStep()
+                    }, 500)
+                  } else {
+                    nextStep()
+                  }
+                } else {
+                  nextStep()
+                }
+              } else {
+                // Target still not found, skip this step
+                if (nextStepIndex < steps.length - 1) {
+                  nextStep()
+                } else {
+                  completeTour(tourId)
+                }
+              }
+            }
+          }, 500)
         }
       }
 
