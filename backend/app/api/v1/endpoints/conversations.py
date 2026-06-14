@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import Q
 from tortoise.functions import Count
 
@@ -32,6 +32,7 @@ from app.schemas.response import (
 )
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.services.message_branching import get_visible_conversation_messages
+from app.services.audit_log import AuditLogService
 
 
 router = APIRouter()
@@ -530,6 +531,7 @@ async def get_conversation_detail(
 @router.delete("/{conversation_id}", response_model=Response[dict])
 async def delete_conversation_admin(
     conversation_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """
@@ -586,8 +588,20 @@ async def delete_conversation_admin(
         message_count=F("message_count") - conversation.message_count,
     )
 
+    conv_title = conversation.title or str(conversation_id)
     # Delete conversation (cascades to messages)
     await conversation.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_conversation",
+        resource_type="conversation",
+        resource_id=conversation_id,
+        resource_name=conv_title,
+        operation="delete",
+        status="success",
+        request=request,
+    )
 
     return success(data={"id": str(conversation_id)}, msg_key="conversation_deleted")
 
@@ -595,6 +609,7 @@ async def delete_conversation_admin(
 @router.delete("", response_model=Response[dict])
 async def batch_delete_conversations(
     ids: list[UUID] = Query(..., description="Conversation IDs to delete"),
+    request: Request = None,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """
@@ -656,6 +671,18 @@ async def batch_delete_conversations(
 
     # Delete conversations
     deleted_count = await Conversation.filter(id__in=ids).delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="batch_delete_conversations",
+        resource_type="conversation",
+        resource_id=ids[0],
+        resource_name=f"{deleted_count} conversations",
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"deleted_count": deleted_count, "ids": [str(id) for id in ids]},
+    )
 
     return success(
         data={

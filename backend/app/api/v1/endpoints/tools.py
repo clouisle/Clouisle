@@ -12,7 +12,7 @@ from typing import Any
 from app.services.sandbox.models import SandboxArtifact
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api import deps
 from app.core.i18n import has_translation, t
@@ -27,6 +27,7 @@ from app.llm.tools import tool_registry
 from app.llm.tools.mcp_client import execute_mcp_tool, list_mcp_tools
 from app.llm.tools.executors import execute_http_tool
 from app.services.error_messages import resolve_user_visible_error
+from app.services.audit_log import AuditLogService
 from app.services.sandbox.compiler import compile_code_config_job
 from app.services.sandbox.gateway import sandbox_gateway
 from app.services.sandbox.models import SandboxJobSource
@@ -652,6 +653,7 @@ async def get_mcp_tools(
 async def create_tool(
     team_id: UUID,
     tool_in: ToolCreateInput,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:create")),
 ) -> Any:
     """创建自定义工具"""
@@ -685,6 +687,18 @@ async def create_tool(
         credentials=tool_in.credentials,
         is_enabled=tool_in.is_enabled,
         created_by=current_user,
+    )
+
+    await AuditLogService.log(
+        user=current_user,
+        action="create_tool",
+        resource_type="tool",
+        resource_id=tool.id,
+        resource_name=tool.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"team_id": str(team_id), "tool_type": tool_in.type.value},
     )
 
     return success(
@@ -755,6 +769,7 @@ async def get_tool_by_name(
 async def update_tool(
     tool_id: UUID,
     tool_in: ToolUpdateInput,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """更新工具"""
@@ -805,6 +820,18 @@ async def update_tool(
 
     await tool.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="update_tool",
+        resource_type="tool",
+        resource_id=tool.id,
+        resource_name=tool.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"team_id": str(tool.team_id)},
+    )
+
     creator_name = tool.created_by.username if tool.created_by else None
     return success(
         data=db_tool_to_detail(tool, creator_name),
@@ -815,6 +842,7 @@ async def update_tool(
 @router.delete("/{tool_id}", response_model=Response[None])
 async def delete_tool(
     tool_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:delete")),
 ) -> Any:
     """删除工具"""
@@ -828,7 +856,21 @@ async def delete_tool(
 
     await check_team_access(tool.team_id, current_user, require_admin=True)
 
+    tool_name = tool.name
+    tool_team_id = tool.team_id
     await tool.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_tool",
+        resource_type="tool",
+        resource_id=tool_id,
+        resource_name=tool_name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"team_id": str(tool_team_id)},
+    )
 
     return success(
         data=None,
@@ -1122,6 +1164,7 @@ async def execute_code_directly(
 @router.post("/{tool_id}/toggle", response_model=Response[ToolDetailOut])
 async def toggle_tool(
     tool_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """切换工具启用状态"""
@@ -1138,6 +1181,18 @@ async def toggle_tool(
     tool.is_enabled = not tool.is_enabled
     await tool.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="toggle_tool",
+        resource_type="tool",
+        resource_id=tool.id,
+        resource_name=tool.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"team_id": str(tool.team_id), "is_enabled": tool.is_enabled},
+    )
+
     creator_name = tool.created_by.username if tool.created_by else None
     return success(
         data=db_tool_to_detail(tool, creator_name),
@@ -1148,6 +1203,7 @@ async def toggle_tool(
 @router.post("/{tool_id}/duplicate", response_model=Response[ToolDetailOut])
 async def duplicate_tool(
     tool_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:create")),
 ) -> Any:
     """复制工具"""
@@ -1186,6 +1242,18 @@ async def duplicate_tool(
         credentials=tool.credentials,
         is_enabled=False,  # 副本默认禁用
         created_by=current_user,
+    )
+
+    await AuditLogService.log(
+        user=current_user,
+        action="duplicate_tool",
+        resource_type="tool",
+        resource_id=new_tool.id,
+        resource_name=new_tool.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"team_id": str(tool.team_id), "source_tool_id": str(tool_id)},
     )
 
     return success(
@@ -1288,6 +1356,7 @@ async def get_tool_config(
 @router.post("/config", response_model=Response[dict])
 async def create_tool_config(
     data: dict,
+    request: Request,
     team_id: UUID | None = None,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
@@ -1328,6 +1397,18 @@ async def create_tool_config(
         credentials=config_data.credentials,
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="create_tool_config",
+        resource_type="tool_config",
+        resource_id=config.id,
+        resource_name=config_data.tool_name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"team_id": str(team_id) if team_id else "global"},
+    )
+
     return success(
         data=ToolConfigOut.model_validate(config).model_dump(),
         msg_key="tool_config_created",
@@ -1338,6 +1419,7 @@ async def create_tool_config(
 async def update_tool_config(
     tool_name: str,
     data: dict,
+    request: Request,
     team_id: UUID | None = None,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
@@ -1372,6 +1454,18 @@ async def update_tool_config(
     config.credentials = config_data.credentials
     await config.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="update_tool_config",
+        resource_type="tool_config",
+        resource_id=config.id,
+        resource_name=tool_name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"team_id": str(team_id) if team_id else "global"},
+    )
+
     return success(
         data=ToolConfigOut.model_validate(config).model_dump(),
         msg_key="tool_config_updated",
@@ -1381,6 +1475,7 @@ async def update_tool_config(
 @router.delete("/config/{tool_name}", response_model=Response[None])
 async def delete_tool_config(
     tool_name: str,
+    request: Request,
     team_id: UUID | None = None,
     current_user: User = Depends(deps.PermissionChecker("tool:delete")),
 ) -> Any:
@@ -1408,7 +1503,20 @@ async def delete_tool_config(
             status_code=404,
         )
 
+    config_id = config.id
     await config.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_tool_config",
+        resource_type="tool_config",
+        resource_id=config_id,
+        resource_name=tool_name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"team_id": str(team_id) if team_id else "global"},
+    )
 
     return success(
         data=None,
@@ -1423,6 +1531,7 @@ async def delete_tool_config(
 async def share_tool(
     tool_id: UUID,
     share_data: ToolShareInput,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
@@ -1481,6 +1590,22 @@ async def share_tool(
 
     # 预加载关联数据
     await share.fetch_related("tool", "shared_with_team", "shared_by")
+
+    await AuditLogService.log(
+        user=current_user,
+        action="share_tool",
+        resource_type="tool",
+        resource_id=tool_id,
+        resource_name=tool.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(tool.team_id),
+            "shared_with_team_id": str(share_data.team_id),
+            "permission": share_data.permission,
+        },
+    )
 
     return success(
         data=ToolShareOut(
@@ -1556,6 +1681,7 @@ async def list_tool_shares(
 async def unshare_tool(
     tool_id: UUID,
     team_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("tool:update")),
 ) -> Any:
     """
@@ -1587,6 +1713,21 @@ async def unshare_tool(
 
     # 删除共享记录
     await share.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="unshare_tool",
+        resource_type="tool",
+        resource_id=tool_id,
+        resource_name=tool.name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(tool.team_id),
+            "unshared_from_team_id": str(team_id),
+        },
+    )
 
     return success(
         data=None,

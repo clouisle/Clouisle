@@ -7,7 +7,7 @@
 from typing import Any, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api import deps
 from app.core.i18n import t
@@ -31,6 +31,7 @@ from app.schemas.response import (
 )
 from app.schemas.team import TeamMemberRole
 from app.services.auto_notification import AutoNotificationService
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 
@@ -108,6 +109,7 @@ async def list_team_models(
 @router.post("/{team_id}/models", response_model=Response[TeamModelResponse])
 async def add_team_model(
     team_id: UUID,
+    request: Request,
     auth_in: TeamModelCreate,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
@@ -175,6 +177,22 @@ async def add_team_model(
         },
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="add_team_model",
+        resource_type="team_model",
+        resource_id=team_model.id,
+        resource_name=f"{team.name} - {model.name}",
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team_id),
+            "model_id": str(auth_in.model_id),
+            "model_name": model.name,
+        },
+    )
+
     return success(
         data={
             "id": team_model.id,
@@ -208,6 +226,7 @@ async def add_team_model(
 async def update_team_model(
     team_id: UUID,
     model_id: UUID,
+    request: Request,
     auth_in: TeamModelUpdate,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
@@ -233,6 +252,22 @@ async def update_team_model(
         setattr(team_model, field, value)
 
     await team_model.save()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="update_team_model",
+        resource_type="team_model",
+        resource_id=team_model.id,
+        resource_name=f"{team_id} - {team_model.model.name}",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team_id),
+            "model_id": str(model_id),
+            "updated_fields": list(update_data.keys()),
+        },
+    )
 
     return success(
         data={
@@ -267,6 +302,7 @@ async def update_team_model(
 async def remove_team_model(
     team_id: UUID,
     model_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
@@ -310,6 +346,22 @@ async def remove_team_model(
         },
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="remove_team_model",
+        resource_type="team_model",
+        resource_id=model_id,
+        resource_name=f"{team_name} - {model_name}",
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team_id),
+            "model_id": str(model_id),
+            "model_name": model_name,
+        },
+    )
+
     return success(
         data={"team_id": str(team_id), "model_id": str(model_id)},
         msg_key="team_model_revoked",
@@ -324,6 +376,7 @@ async def remove_team_model(
 )
 async def batch_add_team_models(
     team_id: UUID,
+    request: Request,
     batch_in: TeamModelBatchCreate,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
@@ -413,12 +466,29 @@ async def batch_add_team_models(
             },
         )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="batch_add_team_models",
+        resource_type="team_model",
+        resource_name=f"{team.name} - {len(results)} models",
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team_id),
+            "team_name": team.name,
+            "model_count": len(results),
+            "model_ids": [str(m) for m in batch_in.model_ids],
+        },
+    )
+
     return success(data=results, msg_key="team_models_authorized")
 
 
 @router.delete("/{team_id}/models/batch", response_model=Response[dict])
 async def batch_remove_team_models(
     team_id: UUID,
+    request: Request,
     batch_in: TeamModelBatchDelete,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
@@ -462,6 +532,22 @@ async def batch_remove_team_models(
                 "team_name": team.name,
             },
         )
+
+    await AuditLogService.log(
+        user=current_user,
+        action="batch_remove_team_models",
+        resource_type="team_model",
+        resource_name=f"{team.name} - {deleted_count} models",
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={
+            "team_id": str(team_id),
+            "team_name": team.name,
+            "deleted_count": deleted_count,
+            "model_names": model_names,
+        },
+    )
 
     return success(
         data={"deleted_count": deleted_count},
