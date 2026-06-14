@@ -356,7 +356,7 @@ export default function CapabilitiesPage() {
         <p className="text-muted-foreground mt-1">{t('tools.description')}</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4" data-testid="capabilities-tabs">
         <TabsList>
           {canReadTools && (
             <TabsTrigger value="tools">
@@ -365,7 +365,7 @@ export default function CapabilitiesPage() {
             </TabsTrigger>
           )}
           {canReadSkills && (
-            <TabsTrigger value="skills">
+            <TabsTrigger value="skills" data-testid="capabilities-skills-tab">
               <PackageOpen className="mr-2 h-4 w-4" />
               {t('tools.tabs.skills')}
             </TabsTrigger>
@@ -373,20 +373,20 @@ export default function CapabilitiesPage() {
         </TabsList>
 
         {canReadTools && (
-          <TabsContent value="tools" className="space-y-4">
+          <TabsContent value="tools" className="space-y-4" data-testid="capabilities-tools-panel">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-semibold tracking-tight">{t('tools.tabs.tools')}</h2>
               <p className="text-sm text-muted-foreground mt-1">{t('tools.description')}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={loadTools} disabled={loading}>
+              <Button variant="outline" onClick={loadTools} disabled={loading} data-testid="capabilities-refresh-button">
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 {t('tools.refresh')}
               </Button>
 
               <PermissionGuard permission="tool:create">
-                <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-testid="capabilities-import-button">
                   <Upload className="mr-2 h-4 w-4" />
                   {packagesT('import')}
                 </Button>
@@ -396,14 +396,14 @@ export default function CapabilitiesPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
-                      <Button>
+                      <Button data-testid="capabilities-create-tool-button">
                         <Plus className="mr-2 h-4 w-4" />
                         {t('tools.createTool')}
                         <ChevronDown className="ml-2 h-4 w-4" />
                       </Button>
                     }
                   />
-                  <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuContent align="end" className="w-56" data-testid="capabilities-create-tool-menu">
                     <DropdownMenuItem onClick={handleCreateHttpTool}>
                       <Globe className="mr-2 h-4 w-4" />
                       <div className="flex flex-col">
@@ -493,7 +493,7 @@ export default function CapabilitiesPage() {
         )}
 
         {canReadSkills && (
-          <TabsContent value="skills" className="space-y-4">
+          <TabsContent value="skills" className="space-y-4" data-testid="capabilities-skills-panel">
             <SkillsPanel />
           </TabsContent>
         )}
