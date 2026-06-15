@@ -8,9 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
@@ -26,7 +23,7 @@ import { isValidEmail } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FieldError } from '@/components/ui/field'
 import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
-import { LegalMarkdown } from '../../_components/legal-markdown'
+import { LegalMarkdownDialogContent } from '../../_components/legal-markdown'
 
 type Step = 'form' | 'verification' | 'success'
 
@@ -66,14 +63,7 @@ function RegisterLegalEntry({ label, url, text }: { label: string; url: string; 
       <DialogTrigger className="underline underline-offset-4 hover:text-foreground">
         {label}
       </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto text-sm text-foreground">
-          <LegalMarkdown source={text} />
-        </div>
-      </DialogContent>
+      <LegalMarkdownDialogContent title={label} source={text} />
     </Dialog>
   )
 }

@@ -4,14 +4,11 @@ import * as React from 'react'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useTranslations } from 'next-intl'
 import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
-import { LegalMarkdown, preloadLegalMarkdown } from './legal-markdown'
+import { LegalMarkdownDialogContent, preloadLegalMarkdown } from './legal-markdown'
 
 type LegalSettings = Pick<
   PublicSiteSettings,
@@ -50,14 +47,7 @@ function LegalEntry({ label, url, text }: { label: string; url: string; text: st
       <DialogTrigger className="hover:text-foreground underline underline-offset-4">
         {label}
       </DialogTrigger>
-      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto text-sm text-foreground">
-          <LegalMarkdown source={text} />
-        </div>
-      </DialogContent>
+      <LegalMarkdownDialogContent title={label} source={text} />
     </Dialog>
   )
 }

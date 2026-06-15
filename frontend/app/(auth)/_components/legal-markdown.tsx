@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import dynamic from 'next/dynamic'
+import { DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTheme } from 'next-themes'
 
 const MarkdownPreview = dynamic(
@@ -16,6 +17,21 @@ export function preloadLegalMarkdown() {
   if (typeof window !== 'undefined') {
     import('@uiw/react-md-editor').catch(() => {})
   }
+}
+
+export function LegalMarkdownDialogContent({ title, source }: { title: string; source: string }) {
+  return (
+    <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-xl">
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+      </DialogHeader>
+      <div className="flex min-h-[180px] max-h-[calc(80vh-8rem)] flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-6 text-sm text-foreground">
+          <LegalMarkdown source={source} />
+        </div>
+      </div>
+    </DialogContent>
+  )
 }
 
 function LegalMarkdownSkeleton() {
