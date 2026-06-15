@@ -62,6 +62,15 @@ export const siteSettingsApi = {
       site_icon: (settings.site_icon as string) ?? '',
       default_language: (settings.default_language as string) ?? 'en',
       auth_page_layout: settings.auth_page_layout === 'split' ? 'split' : 'centered',
+      icp_record_number: (settings.icp_record_number as string) ?? '',
+      icp_record_url: (settings.icp_record_url as string) ?? '',
+      terms_enabled: (settings.terms_enabled as boolean) ?? false,
+      terms_url: (settings.terms_url as string) ?? '',
+      terms_text: (settings.terms_text as string) ?? '',
+      privacy_enabled: (settings.privacy_enabled as boolean) ?? false,
+      privacy_url: (settings.privacy_url as string) ?? '',
+      privacy_text: (settings.privacy_text as string) ?? '',
+      require_terms_acceptance_on_register: (settings.require_terms_acceptance_on_register as boolean) ?? false,
     }
   },
 

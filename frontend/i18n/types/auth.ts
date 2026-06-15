@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-11T08:12:52.092Z
+// GENERATED — 2026-06-15T12:08:39.721Z
 // Source: i18n/en/auth.json
 export type AuthMessages = {
   auth: {
@@ -142,6 +142,11 @@ export type AuthMessages = {
     twoFactorEnabledSuccess: string
     setupFailed: string
     sessionExpired: string
+    termsOfService: string
+    privacyPolicy: string
+    agreement: string
+    agreeToLegalEntries: string
+    termsAcceptanceRequired: string
     previewImageAlt: string
   }
 }

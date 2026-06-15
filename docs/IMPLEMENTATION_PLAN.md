@@ -2,6 +2,13 @@
 
 ## Active
 
+- **yun-96-site-legal-settings** — In progress. Add configurable ICP record and login/register terms/privacy entries with optional required registration acceptance. See `docs/plan/yun-96-site-legal-settings.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend public settings and registration enforcement
+  - [x] 3. Frontend admin settings UI and i18n
+  - [x] 4. Auth legal footer and registration checkbox
+  - [x] 5. Validation and regression checks
+
 - **default-team-registration** — Complete. Let admins configure a default team and team role assigned to newly registered users. See `docs/plan/default-team-registration.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend settings, validation, and registration assignment
