@@ -376,9 +376,9 @@ async def embed_run_workflow(
         operation="execute",
         status="success",
         request=request,
+        api_key=api_key,
         metadata={
             "run_id": str(run.id),
-            "api_key_id": str(api_key.id),
             "source": "embed",
         },
     )

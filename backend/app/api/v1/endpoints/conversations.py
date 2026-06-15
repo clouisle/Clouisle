@@ -608,8 +608,9 @@ async def delete_conversation_admin(
 
 @router.delete("", response_model=Response[dict])
 async def batch_delete_conversations(
+    *,
     ids: list[UUID] = Query(..., description="Conversation IDs to delete"),
-    request: Request = None,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("conversation:delete")),
 ) -> Any:
     """

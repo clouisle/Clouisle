@@ -468,7 +468,7 @@ async def upload_sandbox_artifact(
 
     # Log audit for authenticated users (skip for signature-only uploads)
     if authenticated is not None:
-        user, _ = authenticated
+        user, api_key = authenticated
         await AuditLogService.log(
             user=user,
             action="upload_sandbox_artifact",
@@ -477,6 +477,7 @@ async def upload_sandbox_artifact(
             operation="create",
             status="success",
             request=request,
+            api_key=api_key,
             metadata={
                 "content_type": content_type,
                 "size": upload_info["size"],
