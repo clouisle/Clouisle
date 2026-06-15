@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { useTranslations } from 'next-intl'
 import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
-import { LegalMarkdown } from './legal-markdown'
+import { LegalMarkdown, preloadLegalMarkdown } from './legal-markdown'
 
 type LegalSettings = Pick<
   PublicSiteSettings,
@@ -114,6 +114,15 @@ export function AuthLayoutShell({
   legalSettings,
 }: AuthLayoutShellProps) {
   const isSplit = layout === 'split'
+
+  React.useEffect(() => {
+    if (
+      (legalSettings.terms_enabled && legalSettings.terms_text && !legalSettings.terms_url) ||
+      (legalSettings.privacy_enabled && legalSettings.privacy_text && !legalSettings.privacy_url)
+    ) {
+      preloadLegalMarkdown()
+    }
+  }, [legalSettings])
 
   if (!isSplit) {
     return (

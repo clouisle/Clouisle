@@ -12,6 +12,12 @@ const MarkdownPreview = dynamic(
   },
 )
 
+export function preloadLegalMarkdown() {
+  if (typeof window !== 'undefined') {
+    import('@uiw/react-md-editor').catch(() => {})
+  }
+}
+
 function LegalMarkdownSkeleton() {
   return (
     <div className="animate-pulse space-y-3" aria-hidden="true">
