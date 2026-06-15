@@ -918,7 +918,10 @@ async def duplicate_workflow(
         operation="create",
         status="success",
         request=request,
-        metadata={"source_workflow_id": str(workflow_id), "source_workflow_name": workflow.name},
+        metadata={
+            "source_workflow_id": str(workflow_id),
+            "source_workflow_name": workflow.name,
+        },
     )
 
     # Reload with relations

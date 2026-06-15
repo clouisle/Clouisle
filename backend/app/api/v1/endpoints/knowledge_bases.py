@@ -65,6 +65,7 @@ from app.schemas.response import (
 )
 from app.services.document_processor import document_processor
 from app.services.error_messages import is_safe_user_visible_error
+from app.services.audit_log import AuditLogService
 from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
@@ -840,7 +841,11 @@ async def add_url_document(
         operation="create",
         status="success",
         request=request,
-        metadata={"kb_id": str(kb_id), "kb_name": kb.name, "source_url": doc_in.source_url},
+        metadata={
+            "kb_id": str(kb_id),
+            "kb_name": kb.name,
+            "source_url": doc_in.source_url,
+        },
     )
 
     return success(data=await serialize_document(doc), msg_key="document_created")
