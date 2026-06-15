@@ -248,6 +248,9 @@ export interface WorkflowRunQueryParams {
   pageSize?: number
   status?: RunStatus
   isDebug?: boolean
+  search?: string
+  createdAfter?: string
+  createdBefore?: string
 }
 
 export interface WorkflowRunInput {
@@ -434,12 +437,15 @@ export const workflowsApi = {
     workflowId: string,
     params: WorkflowRunQueryParams = {}
   ): Promise<PageData<WorkflowRunListItem>> => {
-    const { page = 1, pageSize = 20, status, isDebug } = params
+    const { page = 1, pageSize = 20, status, isDebug, search, createdAfter, createdBefore } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
     if (status) queryParams.append('status', status)
     if (isDebug !== undefined) queryParams.append('is_debug', String(isDebug))
+    if (search) queryParams.append('search', search)
+    if (createdAfter) queryParams.append('created_after', createdAfter)
+    if (createdBefore) queryParams.append('created_before', createdBefore)
     return api.get<PageData<WorkflowRunListItem>>(
       `/workflows/${workflowId}/runs?${queryParams.toString()}`
     )

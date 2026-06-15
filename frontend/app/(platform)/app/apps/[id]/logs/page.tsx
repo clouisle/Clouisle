@@ -38,6 +38,26 @@ import { ConversationDrawer } from './_components/conversation-drawer'
 
 const PAGE_SIZE = 20
 
+function getCreatedAfter(dateFilter: string): string | undefined {
+  if (dateFilter === 'all') return undefined
+
+  const cutoff = new Date()
+  switch (dateFilter) {
+    case '7d':
+      cutoff.setDate(cutoff.getDate() - 7)
+      break
+    case '30d':
+      cutoff.setDate(cutoff.getDate() - 30)
+      break
+    case '90d':
+      cutoff.setDate(cutoff.getDate() - 90)
+      break
+    default:
+      return undefined
+  }
+  return cutoff.toISOString()
+}
+
 // Helper to format datetime
 function formatDateTime(dateString: string, locale: string): string {
   const date = new Date(dateString)
@@ -76,8 +96,9 @@ export default function LogsPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
   const [dateFilter, setDateFilter] = React.useState('all')
-  const [sortBy, setSortBy] = React.useState('created_at')
+  const [sortBy, setSortBy] = React.useState<'created_at' | 'updated_at' | 'message_count'>('created_at')
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = React.useState(false)
@@ -108,9 +129,13 @@ export default function LogsPage() {
 
     try {
       setIsLoadingConversations(true)
+      const search = debouncedSearchQuery.trim()
       const result = await agentsApi.getAgentConversations(agentId, {
         page,
         pageSize: PAGE_SIZE,
+        search: search || undefined,
+        createdAfter: getCreatedAfter(dateFilter),
+        sortBy,
       })
       setConversations(result.items)
       setTotalConversations(result.total)
@@ -120,7 +145,7 @@ export default function LogsPage() {
     } finally {
       setIsLoadingConversations(false)
     }
-  }, [agentId])
+  }, [agentId, debouncedSearchQuery, dateFilter, sortBy])
 
   // Fetch conversation detail
   const handleRowClick = async (conversationId: string) => {
@@ -161,43 +186,18 @@ export default function LogsPage() {
   }, [fetchAgent])
 
   React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
+  React.useEffect(() => {
     if (agent) {
       fetchConversations()
     }
   }, [agent, fetchConversations])
-
-  // Filter conversations (client-side for now)
-  const filteredConversations = React.useMemo(() => {
-    let result = [...conversations]
-    
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter((c) => 
-        c.title?.toLowerCase().includes(query)
-      )
-    }
-    
-    // Date filter
-    if (dateFilter !== 'all') {
-      const now = new Date()
-      const cutoff = new Date()
-      switch (dateFilter) {
-        case '7d':
-          cutoff.setDate(now.getDate() - 7)
-          break
-        case '30d':
-          cutoff.setDate(now.getDate() - 30)
-          break
-        case '90d':
-          cutoff.setDate(now.getDate() - 90)
-          break
-      }
-      result = result.filter((c) => new Date(c.created_at) >= cutoff)
-    }
-    
-    return result
-  }, [conversations, searchQuery, dateFilter])
 
   const totalPages = Math.ceil(totalConversations / PAGE_SIZE)
 
@@ -298,7 +298,7 @@ export default function LogsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : filteredConversations.length === 0 ? (
+          ) : conversations.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-16">
               <div className="text-center text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -306,7 +306,7 @@ export default function LogsPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -317,7 +317,7 @@ export default function LogsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredConversations.map((conv) => (
+                  {conversations.map((conv) => (
                     <TableRow
                       key={conv.id}
                       className="cursor-pointer hover:bg-muted/50"

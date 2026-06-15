@@ -141,6 +141,7 @@
     "last30Days": "Last 30 Days",
     "last90Days": "Last 90 Days",
     "noRuns": "No workflow runs yet",
+    "searchRunIdPlaceholder": "Search by full run ID",
     "runId": "Run ID",
     "triggerType": "Trigger Type",
     "duration": "Duration",

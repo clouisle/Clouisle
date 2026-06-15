@@ -141,6 +141,7 @@
     "last30Days": "最近 30 天",
     "last90Days": "最近 90 天",
     "noRuns": "暂无运行记录",
+    "searchRunIdPlaceholder": "按完整运行 ID 搜索",
     "runId": "运行 ID",
     "triggerType": "触发类型",
     "duration": "执行时长",
