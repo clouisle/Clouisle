@@ -1,14 +1,23 @@
 'use client'
 
 import * as React from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, ApiError, User } from '@/lib/api'
+import { authApi, ApiError, User, siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import {
   clearValidationError,
   formatValidationSummaryMessage,
@@ -16,10 +25,28 @@ import {
   normalizeValidationErrorsRaw,
 } from '@/lib/validation'
 import { isValidEmail } from '@/lib/utils'
+import { Checkbox } from '@/components/ui/checkbox'
 import { FieldError } from '@/components/ui/field'
 import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
 
 type Step = 'form' | 'verification' | 'success'
+
+const MarkdownPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
+
+function LegalMarkdown({ source }: { source: string }) {
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  return (
+    <div className="wmde-markdown text-sm" data-color-mode={mounted && resolvedTheme === 'dark' ? 'dark' : 'light'}>
+      <MarkdownPreview source={source} />
+    </div>
+  )
+}
 
 /**
  * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }
@@ -39,6 +66,36 @@ function parseErrorKey(errorKey: string): { key: string; params: Record<string, 
   return { key, params }
 }
 
+function RegisterLegalEntry({ label, url, text }: { label: string; url: string; text: string }) {
+  if (url) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">
+        {label}
+      </a>
+    )
+  }
+
+  if (!text) {
+    return null
+  }
+
+  return (
+    <Dialog>
+      <DialogTrigger className="underline underline-offset-4 hover:text-foreground">
+        {label}
+      </DialogTrigger>
+      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto text-sm text-foreground">
+          <LegalMarkdown source={text} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function RegisterForm() {
   const t = useTranslations('auth')
   const router = useRouter()
@@ -54,8 +111,16 @@ export function RegisterForm() {
   const [resendCooldown, setResendCooldown] = React.useState(0)
   const [registeredUser, setRegisteredUser] = React.useState<User | null>(null)
   const [showCodeInput, setShowCodeInput] = React.useState(false)
+  const [termsAccepted, setTermsAccepted] = React.useState(false)
+  const [siteSettings, setSiteSettings] = React.useState<PublicSiteSettings | null>(null)
 
   // 倒计时
+  React.useEffect(() => {
+    siteSettingsApi.getPublic()
+      .then(setSiteSettings)
+      .catch(() => setSiteSettings(null))
+  }, [])
+
   React.useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000)
@@ -81,7 +146,7 @@ export function RegisterForm() {
   }
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'code']),
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'terms_accepted', 'code']),
     [fieldErrors]
   )
   const summaryFieldLabels = React.useMemo(
@@ -90,6 +155,7 @@ export function RegisterForm() {
       email: t('email'),
       password: t('password'),
       confirmPassword: t('confirmPassword'),
+      terms_accepted: t('agreement'),
       code: t('verificationCode'),
     }),
     [t]
@@ -118,10 +184,20 @@ export function RegisterForm() {
       return
     }
 
+    if (siteSettings?.require_terms_acceptance_on_register && !termsAccepted) {
+      setFieldErrors({ terms_accepted: t('termsAcceptanceRequired') })
+      return
+    }
+
     setLoading(true)
 
     try {
-      const user = await authApi.register({ username, email, password })
+      const user = await authApi.register({
+        username,
+        email,
+        password,
+        terms_accepted: siteSettings?.require_terms_acceptance_on_register ? termsAccepted : undefined,
+      })
       setRegisteredUser(user)
 
       // 如果是第一个用户（超级管理员），直接成功
@@ -283,7 +359,48 @@ export function RegisterForm() {
           />
           <FieldError>{fieldErrors.confirmPassword}</FieldError>
         </div>
-        
+        {siteSettings?.require_terms_acceptance_on_register && (
+          <div className="space-y-2">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="termsAccepted"
+                checked={termsAccepted}
+                onCheckedChange={(checked) => {
+                  setTermsAccepted(checked === true)
+                  setFieldErrors((prev) => clearValidationError(prev, 'terms_accepted'))
+                }}
+                disabled={loading}
+                aria-invalid={!!fieldErrors.terms_accepted}
+                className="mt-0.5"
+              />
+              <Label htmlFor="termsAccepted" className="text-sm font-normal leading-relaxed">
+                {t('agreeToLegalEntries')}
+                {siteSettings.terms_enabled && (siteSettings.terms_url || siteSettings.terms_text) && (
+                  <>
+                    {' '}
+                    <RegisterLegalEntry
+                      label={t('termsOfService')}
+                      url={siteSettings.terms_url}
+                      text={siteSettings.terms_text}
+                    />
+                  </>
+                )}
+                {siteSettings.privacy_enabled && (siteSettings.privacy_url || siteSettings.privacy_text) && (
+                  <>
+                    {' '}
+                    <RegisterLegalEntry
+                      label={t('privacyPolicy')}
+                      url={siteSettings.privacy_url}
+                      text={siteSettings.privacy_text}
+                    />
+                  </>
+                )}
+              </Label>
+            </div>
+            <FieldError>{fieldErrors.terms_accepted}</FieldError>
+          </div>
+        )}
+
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {loading ? t('registering') : t('register')}

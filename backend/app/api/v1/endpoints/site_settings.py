@@ -32,6 +32,17 @@ async def get_public_settings():
             site_url=settings.get("site_url", ""),
             site_icon=settings.get("site_icon", ""),
             auth_page_layout=settings.get("auth_page_layout", "centered"),
+            icp_record_number=settings.get("icp_record_number", ""),
+            icp_record_url=settings.get("icp_record_url", ""),
+            terms_enabled=settings.get("terms_enabled", False),
+            terms_url=settings.get("terms_url", ""),
+            terms_text=settings.get("terms_text", ""),
+            privacy_enabled=settings.get("privacy_enabled", False),
+            privacy_url=settings.get("privacy_url", ""),
+            privacy_text=settings.get("privacy_text", ""),
+            require_terms_acceptance_on_register=settings.get(
+                "require_terms_acceptance_on_register", False
+            ),
             allow_registration=settings.get("allow_registration", True),
             require_approval=settings.get("require_approval", False),
             email_verification=settings.get("email_verification", True),

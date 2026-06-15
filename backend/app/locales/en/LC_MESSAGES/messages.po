@@ -1674,6 +1674,9 @@ msgstr "Profile updated successfully"
 msgid "registration_disabled"
 msgstr "Registration is currently disabled"
 
+msgid "terms_acceptance_required"
+msgstr "Please agree to the terms and privacy policy before registering"
+
 msgid "registration_pending_approval"
 msgstr "Registration successful. Your account is pending admin approval."
 

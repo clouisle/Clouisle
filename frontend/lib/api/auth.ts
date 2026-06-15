@@ -64,6 +64,7 @@ export interface RegisterData {
   username: string
   email: string
   password: string
+  terms_accepted?: boolean
 }
 
 export interface VerificationResponse {

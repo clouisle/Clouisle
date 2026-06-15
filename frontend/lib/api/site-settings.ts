@@ -23,6 +23,15 @@ export interface PublicSiteSettings {
   site_url: string
   site_icon: string
   auth_page_layout: AuthPageLayout
+  icp_record_number: string
+  icp_record_url: string
+  terms_enabled: boolean
+  terms_url: string
+  terms_text: string
+  privacy_enabled: boolean
+  privacy_url: string
+  privacy_text: string
+  require_terms_acceptance_on_register: boolean
   allow_registration: boolean
   require_approval: boolean
   email_verification: boolean
@@ -40,6 +49,15 @@ export interface GeneralSettings {
   site_icon: string
   default_language: string
   auth_page_layout: AuthPageLayout
+  icp_record_number: string
+  icp_record_url: string
+  terms_enabled: boolean
+  terms_url: string
+  terms_text: string
+  privacy_enabled: boolean
+  privacy_url: string
+  privacy_text: string
+  require_terms_acceptance_on_register: boolean
 }
 
 export interface SecuritySettings {
