@@ -58,6 +58,7 @@
       "result": "Result",
       "modelUsed": "Model used",
       "tokenBreakdown": "Prompt: {prompt}, Completion: {completion}",
+      "tokenCount": "{count} tokens",
       "responseDuration": "Response duration",
       "ragContext": "{count} sources",
       "segment": "Segment {index}",

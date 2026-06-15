@@ -58,6 +58,7 @@
       "result": "结果",
       "modelUsed": "使用的模型",
       "tokenBreakdown": "输入: {prompt}，输出: {completion}",
+      "tokenCount": "{count} tokens",
       "responseDuration": "响应耗时",
       "ragContext": "{count} 个来源",
       "segment": "片段 {index}",

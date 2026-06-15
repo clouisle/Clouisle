@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations, useLocale } from 'next-intl'
-import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Search, Calendar, ArrowUpDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
 import { agentsApi, type Agent, type ConversationListItem, type ConversationWithMessages } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
@@ -48,7 +48,6 @@ function formatDateTime(dateString: string, locale: string): string {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
     })
   } else {
     return date.toLocaleString('en-US', {
@@ -57,7 +56,6 @@ function formatDateTime(dateString: string, locale: string): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
     })
   }
 }
@@ -308,40 +306,43 @@ export default function LogsPage() {
               </div>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-70">{t('table.title')}</TableHead>
-                  <TableHead className="w-25 text-center">{t('table.messageCount')}</TableHead>
-                  <TableHead className="w-45">{t('table.updatedAt')}</TableHead>
-                  <TableHead className="w-45">{t('table.createdAt')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredConversations.map((conv) => (
-                  <TableRow
-                    key={conv.id}
-                    className="cursor-pointer"
-                    onClick={() => handleRowClick(conv.id)}
-                  >
-                    <TableCell className="font-medium">
-                      <span className="truncate block max-w-65">
-                        {conv.title || t('untitledConversation')}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {conv.message_count}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(conv.updated_at, locale)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(conv.created_at, locale)}
-                    </TableCell>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('table.title')}</TableHead>
+                    <TableHead>{t('table.messageCount')}</TableHead>
+                    <TableHead>{t('table.updatedAt')}</TableHead>
+                    <TableHead>{t('table.createdAt')}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredConversations.map((conv) => (
+                    <TableRow
+                      key={conv.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleRowClick(conv.id)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium truncate">
+                            {conv.title || t('untitledConversation')}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{conv.message_count}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(conv.updated_at, locale)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(conv.created_at, locale)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
 
@@ -358,24 +359,42 @@ export default function LogsPage() {
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                size="sm"
+                size="icon"
+                className="h-8 w-8"
+                disabled={currentPage === 1}
+                onClick={() => fetchConversations(1)}
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
                 disabled={currentPage === 1}
                 onClick={() => fetchConversations(currentPage - 1)}
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                {t('prev')}
+                <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="text-sm text-muted-foreground px-2">
                 {currentPage} / {totalPages}
               </span>
               <Button
                 variant="outline"
-                size="sm"
+                size="icon"
+                className="h-8 w-8"
                 disabled={currentPage === totalPages}
                 onClick={() => fetchConversations(currentPage + 1)}
               >
-                {t('next')}
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={currentPage === totalPages}
+                onClick={() => fetchConversations(totalPages)}
+              >
+                <ChevronsRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
