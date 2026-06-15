@@ -2225,6 +2225,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "zh": "需要团队所有者权限",
     },
     "team_updated": {"en": "Team updated successfully", "zh": "团队更新成功"},
+    "terms_acceptance_required": {
+        "en": "Please agree to the terms and privacy policy before registering",
+        "zh": "请先同意用户协议和隐私政策再注册",
+    },
     "test_dingtalk_content": {
         "en": "This is a test message. If you received this, your DingTalk configuration is working correctly.",
         "zh": "这是一条测试消息，如果您收到此消息，说明钉钉通知配置正确。",
