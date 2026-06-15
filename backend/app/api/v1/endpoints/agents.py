@@ -988,7 +988,11 @@ async def list_agent_conversations(
     if created_before:
         query = query.filter(created_at__lte=created_before)
 
-    sort_field = sort_by if sort_by in {"created_at", "updated_at", "message_count"} else "updated_at"
+    sort_field = (
+        sort_by
+        if sort_by in {"created_at", "updated_at", "message_count"}
+        else "updated_at"
+    )
     total = await query.count()
     skip = (page - 1) * page_size
     conversations = await query.order_by(f"-{sort_field}").offset(skip).limit(page_size)
