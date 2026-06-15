@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslations } from 'next-intl'
 import { Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,6 +29,7 @@ export function ConversationDrawer({
   onOpenChange,
   onDelete,
 }: ConversationDrawerProps) {
+  const t = useTranslations('conversations')
   const { canPerform } = useCanPerform()
   const canDeleteConversation = canPerform('conversation:delete')
 
@@ -68,6 +70,7 @@ export function ConversationDrawer({
                     size="icon"
                     className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => onDelete(conversation.id)}
+                    aria-label={t('delete')}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

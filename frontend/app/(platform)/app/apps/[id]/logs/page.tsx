@@ -316,19 +316,19 @@ export default function LogsPage() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => handleRowClick(conv.id)}
                     >
-                      <TableCell>
+                      <TableCell className="max-w-[300px]">
                         <div className="flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                          <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="font-medium truncate">
                             {conv.title || t('untitledConversation')}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>{conv.message_count}</TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-muted-foreground" suppressHydrationWarning>
                         {formatDateTime(conv.updated_at, locale)}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="text-muted-foreground" suppressHydrationWarning>
                         {formatDateTime(conv.created_at, locale)}
                       </TableCell>
                     </TableRow>
@@ -356,6 +356,7 @@ export default function LogsPage() {
                 className="h-8 w-8"
                 disabled={currentPage === 1}
                 onClick={() => fetchConversations(1)}
+                aria-label={t('pagination.first')}
               >
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
@@ -365,6 +366,7 @@ export default function LogsPage() {
                 className="h-8 w-8"
                 disabled={currentPage === 1}
                 onClick={() => fetchConversations(currentPage - 1)}
+                aria-label={t('prev')}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -377,6 +379,7 @@ export default function LogsPage() {
                 className="h-8 w-8"
                 disabled={currentPage === totalPages}
                 onClick={() => fetchConversations(currentPage + 1)}
+                aria-label={t('next')}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -386,6 +389,7 @@ export default function LogsPage() {
                 className="h-8 w-8"
                 disabled={currentPage === totalPages}
                 onClick={() => fetchConversations(totalPages)}
+                aria-label={t('pagination.last')}
               >
                 <ChevronsRight className="h-4 w-4" />
               </Button>

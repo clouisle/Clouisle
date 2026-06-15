@@ -58,7 +58,7 @@ export function ConversationDrawerHeader({
             {title || t('untitled')}
           </SheetTitle>
           <SheetDescription className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1" suppressHydrationWarning>
               <Clock className="h-3.5 w-3.5" />
               {formatDateTime(createdAt, locale)}
             </span>

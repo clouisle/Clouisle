@@ -395,7 +395,9 @@
         "createdAt": "创建时间"
       },
       "pagination": {
-        "showing": "显示 {from}-{to} 条，共 {total} 条"
+        "showing": "显示 {from}-{to} 条，共 {total} 条",
+        "first": "第一页",
+        "last": "最后一页"
       },
       "drawer": {
         "conversationDetail": "会话详情",
