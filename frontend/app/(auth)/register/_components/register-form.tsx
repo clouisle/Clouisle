@@ -1,10 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -28,25 +26,9 @@ import { isValidEmail } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FieldError } from '@/components/ui/field'
 import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
+import { LegalMarkdown } from '../../_components/legal-markdown'
 
 type Step = 'form' | 'verification' | 'success'
-
-const MarkdownPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
-
-function LegalMarkdown({ source }: { source: string }) {
-  const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  return (
-    <div className="wmde-markdown text-sm" data-color-mode={mounted && resolvedTheme === 'dark' ? 'dark' : 'light'}>
-      <MarkdownPreview source={source} />
-    </div>
-  )
-}
 
 /**
  * 解析带参数的错误 key，如 "password_min_length:8" -> { key: "password_min_length", params: { length: "8" } }

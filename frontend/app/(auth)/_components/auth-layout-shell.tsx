@@ -1,7 +1,6 @@
 'use client'
 
 import * as React from 'react'
-import dynamic from 'next/dynamic'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import {
   Dialog,
@@ -11,10 +10,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useTranslations } from 'next-intl'
-import { useTheme } from 'next-themes'
 import type { AuthPageLayout, PublicSiteSettings } from '@/lib/api/site-settings'
-
-const MarkdownPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
+import { LegalMarkdown } from './legal-markdown'
 
 type LegalSettings = Pick<
   PublicSiteSettings,
@@ -33,21 +30,6 @@ interface AuthLayoutShellProps {
   layout: AuthPageLayout
   previewImageAlt: string
   legalSettings: LegalSettings
-}
-
-function LegalMarkdown({ source }: { source: string }) {
-  const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  return (
-    <div className="wmde-markdown text-sm" data-color-mode={mounted && resolvedTheme === 'dark' ? 'dark' : 'light'}>
-      <MarkdownPreview source={source} />
-    </div>
-  )
 }
 
 function LegalEntry({ label, url, text }: { label: string; url: string; text: string }) {
