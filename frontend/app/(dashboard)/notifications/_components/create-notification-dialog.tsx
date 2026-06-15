@@ -20,6 +20,7 @@ import {
   formatValidationSummaryMessage
 } from '@/lib/validation'
 import { toast } from 'sonner'
+import { useDebounce } from '@/hooks/use-debounce'
 import {
   Combobox,
   ComboboxContent,
@@ -54,7 +55,7 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
   const [formUserId, setFormUserId] = React.useState('')
   const [userOptions, setUserOptions] = React.useState<Array<{ value: string; label: string }>>([])
   const [userSearch, setUserSearch] = React.useState('')
-  const [debouncedUserSearch, setDebouncedUserSearch] = React.useState('')
+  const debouncedUserSearch = useDebounce(userSearch.trim(), 300)
   const [selectedUserOption, setSelectedUserOption] = React.useState<{ value: string; label: string } | null>(null)
   const [formType, setFormType] = React.useState('system_announcement')
   const [formTitle, setFormTitle] = React.useState('')
@@ -91,7 +92,6 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
       setSelectedUserOption(null)
       setFormUserId('')
       setUserSearch('')
-      setDebouncedUserSearch('')
       setFieldErrors((prev) => clearValidationError(clearValidationError(prev, 'user_id'), 'user_ids'))
     }
     if (formScope !== 'team') {
@@ -99,13 +99,6 @@ export function CreateNotificationDialog({ open, onOpenChange, onSuccess }: Crea
       setFieldErrors((prev) => clearValidationError(prev, 'team_id'))
     }
   }, [formScope])
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedUserSearch(userSearch.trim())
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [userSearch])
 
   React.useEffect(() => {
     const fetchUsers = async () => {

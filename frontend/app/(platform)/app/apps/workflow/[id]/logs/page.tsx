@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { useDebounce } from '@/hooks/use-debounce'
 import { WorkflowRunDrawer } from '@/app/(dashboard)/activities/_components/workflow-run-drawer'
 
 const PAGE_SIZE = 20
@@ -163,7 +164,7 @@ export default function WorkflowLogsPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [dateFilter, setDateFilter] = React.useState('all')
   const [drawerOpen, setDrawerOpen] = React.useState(false)
@@ -212,14 +213,6 @@ export default function WorkflowLogsPage() {
   React.useEffect(() => {
     fetchWorkflow()
   }, [fetchWorkflow])
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchQuery])
 
   React.useEffect(() => {
     if (workflow) {
@@ -305,7 +298,7 @@ export default function WorkflowLogsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden pt-20">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-20">
         {/* Filters Bar */}
         <div className="px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
@@ -371,7 +364,7 @@ export default function WorkflowLogsPage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto px-6">
+        <div className="flex-1 min-h-0 overflow-auto px-6">
           {isLoadingRuns ? (
             <div className="py-6 space-y-3">
               {[...Array(5)].map((_, i) => (

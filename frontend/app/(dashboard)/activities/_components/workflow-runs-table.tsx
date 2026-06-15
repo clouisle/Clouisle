@@ -70,6 +70,7 @@ import { DataTableFacetedFilter } from '@/components/ui/data-table-faceted-filte
 import { WorkflowRunDrawer } from './workflow-run-drawer'
 import { useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 // Helper to format datetime
 function formatDateTime(dateString: string): string {
@@ -167,6 +168,7 @@ export function WorkflowRunsTable() {
   const [triggerTypeFilter, setTriggerTypeFilter] = React.useState<string[]>([])
   const [userFilter, setUserFilter] = React.useState<string[]>([])
   const [userSearch, setUserSearch] = React.useState('')
+  const debouncedUserSearch = useDebounce(userSearch, 300)
 
   // Filter options
   const [teams, setTeams] = React.useState<Team[]>([])
@@ -206,11 +208,8 @@ export function WorkflowRunsTable() {
   }, [])
 
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      loadUsers(userSearch)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [userSearch, loadUsers])
+    loadUsers(debouncedUserSearch)
+  }, [debouncedUserSearch, loadUsers])
 
   // Load workflow runs
   const loadRuns = React.useCallback(async () => {

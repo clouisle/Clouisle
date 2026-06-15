@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
+import { useDebounce } from '@/hooks/use-debounce'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), {
   ssr: false,
@@ -76,7 +77,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300)
   const [readFilter, setReadFilter] = React.useState<Set<string>>(new Set())
   const [detailOpen, setDetailOpen] = React.useState(false)
   const [selectedItem, setSelectedItem] = React.useState<NotificationItem | null>(null)
@@ -127,13 +128,6 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   React.useEffect(() => {
     setPage(1)
   }, [scopeFilter, levelFilter, readFilter, debouncedSearchQuery])
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery.trim())
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [searchQuery])
 
   const handleMarkRead = async (id: string) => {
     try {

@@ -70,6 +70,7 @@ import { DeleteAPIKeyDialog } from './delete-api-key-dialog'
 import { ShowKeyDialog } from './show-key-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function APIKeysClient() {
     const t = useTranslations('apiKeys')
@@ -85,26 +86,19 @@ export function APIKeysClient() {
 
     // 筛选状态
     const [searchQuery, setSearchQuery] = useUrlSearchState()
-    const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+    const debouncedSearchQuery = useDebounce(searchQuery, 500)
     const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
     const [userFilter, setUserFilter] = React.useState<Set<string>>(new Set())
     const [userSearch, setUserSearch] = React.useState('')
+    const debouncedUserSearch = useDebounce(userSearch, 300)
     const [users, setUsers] = React.useState<User[]>([])
     const selectedStatuses = React.useMemo(() => Array.from(statusFilter), [statusFilter])
     const selectedUsers = React.useMemo(() => Array.from(userFilter), [userFilter])
 
-    // 防抖搜索
     React.useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearchQuery(searchQuery)
-            if (searchQuery !== debouncedSearchQuery) {
-                setPage(1)
-                setSelectedKeys(new Set())
-            }
-        }, 500)
-        return () => clearTimeout(timer)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchQuery])
+        setPage(1)
+        setSelectedKeys(new Set())
+    }, [debouncedSearchQuery])
 
     // 选择状态
     const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(new Set())
@@ -167,11 +161,8 @@ export function APIKeysClient() {
     }, [loadAPIKeys, loadStats])
 
     React.useEffect(() => {
-        const timer = setTimeout(() => {
-            loadUsers(userSearch)
-        }, 300)
-        return () => clearTimeout(timer)
-    }, [userSearch, loadUsers])
+        loadUsers(debouncedUserSearch)
+    }, [debouncedUserSearch, loadUsers])
 
     // 检查是否有筛选条件
     const isFiltered = searchQuery || statusFilter.size > 0 || userFilter.size > 0
@@ -191,7 +182,6 @@ export function APIKeysClient() {
     // 重置所有筛选
     const resetFilters = () => {
         setSearchQuery('')
-        setDebouncedSearchQuery('')
         setStatusFilter(new Set())
         setUserFilter(new Set())
         setUserSearch('')

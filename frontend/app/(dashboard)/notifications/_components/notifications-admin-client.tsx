@@ -20,6 +20,7 @@ import { CreateNotificationDialog } from './create-notification-dialog'
 import { NotificationDetailDialog } from './notification-detail-dialog'
 import { formatDateTime } from '@/lib/utils'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
@@ -106,7 +107,7 @@ export function NotificationsAdminClient() {
 
   // Filter states
   const [searchQuery, setSearchQuery] = useUrlSearchState()
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
 
@@ -139,20 +140,12 @@ export function NotificationsAdminClient() {
     setSelectedIds(new Set())
   }, [scopeFilter, levelFilter, debouncedSearchQuery])
 
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery.trim())
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [searchQuery])
-
   // Check if filters are active
   const isFiltered = searchQuery || scopeFilter.size > 0 || levelFilter.size > 0
 
   // Reset all filters
   const resetFilters = () => {
     setSearchQuery('')
-    setDebouncedSearchQuery('')
     setScopeFilter(new Set())
     setLevelFilter(new Set())
     setPage(1)

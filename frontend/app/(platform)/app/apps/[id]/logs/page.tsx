@@ -33,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useDebounce } from '@/hooks/use-debounce'
 import { AgentSidebar } from '../_components/agent-sidebar'
 import { ConversationDrawer } from './_components/conversation-drawer'
 
@@ -96,7 +97,7 @@ export default function LogsPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [dateFilter, setDateFilter] = React.useState('all')
   const [sortBy, setSortBy] = React.useState<'created_at' | 'updated_at' | 'message_count'>('created_at')
 
@@ -186,14 +187,6 @@ export default function LogsPage() {
   }, [fetchAgent])
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-    }, 300)
-
-    return () => window.clearTimeout(timer)
-  }, [searchQuery])
-
-  React.useEffect(() => {
     if (agent) {
       fetchConversations()
     }
@@ -224,7 +217,7 @@ export default function LogsPage() {
       <AgentSidebar agent={agent} />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b px-6 py-4 shrink-0">
           <p className="text-sm text-muted-foreground">{t('description')}</p>
@@ -291,7 +284,7 @@ export default function LogsPage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           {isLoadingConversations ? (
             <div className="p-6 space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -347,7 +340,7 @@ export default function LogsPage() {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {totalConversations > 0 && (
           <div className="px-6 py-3 border-t flex items-center justify-between shrink-0">
             <p className="text-sm text-muted-foreground">
               {t('pagination.showing', {
