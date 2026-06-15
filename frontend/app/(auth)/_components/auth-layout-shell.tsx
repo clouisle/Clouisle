@@ -65,13 +65,8 @@ function LegalEntry({ label, url, text }: { label: string; url: string; text: st
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="bg-transparent border-none p-0 hover:text-foreground underline underline-offset-4"
-        >
-          {label}
-        </button>
+      <DialogTrigger className="hover:text-foreground underline underline-offset-4">
+        {label}
       </DialogTrigger>
       <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>

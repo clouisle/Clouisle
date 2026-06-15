@@ -81,13 +81,8 @@ function RegisterLegalEntry({ label, url, text }: { label: string; url: string; 
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="bg-transparent border-none p-0 underline underline-offset-4 hover:text-foreground"
-        >
-          {label}
-        </button>
+      <DialogTrigger className="underline underline-offset-4 hover:text-foreground">
+        {label}
       </DialogTrigger>
       <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
