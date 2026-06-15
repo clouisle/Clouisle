@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, UploadFile, File, Query, Header
+from fastapi import APIRouter, Depends, UploadFile, File, Query, Header, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -27,6 +27,7 @@ from app.services.file_parser import (
     file_parser_service,
     FileParseConfig,
 )
+from app.services.audit_log import AuditLogService
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +295,7 @@ def _validate_allowed_content_type(
 
 @router.post("/image", response_model=Response[dict])
 async def upload_image(
+    request: Request,
     file: UploadFile = File(...),
     category: str = Query("general", description="文件分类：general, avatar, icon 等"),
     current_user: User = Depends(deps.get_current_active_user),
@@ -329,6 +331,22 @@ async def upload_image(
         filename=file.filename,
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="upload_image",
+        resource_type="file",
+        resource_name=file.filename,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "category": category,
+            "content_type": content_type,
+            "size": upload_info["size"],
+            "url": upload_info["url"],
+        },
+    )
+
     return success(
         data={
             "url": upload_info["url"],
@@ -343,6 +361,7 @@ async def upload_image(
 
 @router.post("/file", response_model=Response[dict])
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     category: str = Query("general", description="文件分类"),
     current_user: User = Depends(deps.get_current_active_user),
@@ -373,6 +392,22 @@ async def upload_file(
         filename=file.filename,
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="upload_file",
+        resource_type="file",
+        resource_name=file.filename,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "category": category,
+            "content_type": content_type,
+            "size": upload_info["size"],
+            "url": upload_info["url"],
+        },
+    )
+
     return success(
         data={
             "url": upload_info["url"],
@@ -387,6 +422,7 @@ async def upload_file(
 
 @router.post("/sandbox-artifact", response_model=Response[dict])
 async def upload_sandbox_artifact(
+    request: Request,
     file: UploadFile = File(...),
     authenticated: tuple[User, APIKey | None] | None = Depends(
         deps.get_current_user_or_api_key_optional
@@ -429,6 +465,25 @@ async def upload_sandbox_artifact(
         content_type=content_type,
         filename=file.filename,
     )
+
+    # Log audit for authenticated users (skip for signature-only uploads)
+    if authenticated is not None:
+        user, api_key = authenticated
+        await AuditLogService.log(
+            user=user,
+            action="upload_sandbox_artifact",
+            resource_type="file",
+            resource_name=file.filename,
+            operation="create",
+            status="success",
+            request=request,
+            api_key=api_key,
+            metadata={
+                "content_type": content_type,
+                "size": upload_info["size"],
+                "url": upload_info["url"],
+            },
+        )
 
     return success(
         data={
@@ -477,6 +532,7 @@ async def delete_file(
     year: str,
     month: str,
     filename: str,
+    request: Request,
     current_user: User = Depends(deps.get_current_active_superuser),
 ) -> Any:
     """
@@ -496,6 +552,20 @@ async def delete_file(
         )
 
     os.remove(file_path)
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_file",
+        resource_type="file",
+        resource_name=f"{category}/{year}/{month}/{filename}",
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={
+            "category": category,
+            "path": f"{year}/{month}/{filename}",
+        },
+    )
 
     return success(msg_key="file_deleted")
 

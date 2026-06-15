@@ -65,6 +65,7 @@ from app.schemas.response import (
 )
 from app.services.document_processor import document_processor
 from app.services.error_messages import is_safe_user_visible_error
+from app.services.audit_log import AuditLogService
 from app.services.vector_store import VectorStore, DimensionMismatchError
 
 router = APIRouter()
@@ -434,6 +435,7 @@ async def list_knowledge_bases(
 async def create_knowledge_base(
     *,
     kb_in: KnowledgeBaseCreate,
+    request: Request,
     current_user: User = Depends(require_kb_create),
 ) -> Any:
     """
@@ -472,6 +474,19 @@ async def create_knowledge_base(
 
     # Reload with relations
     kb = await KnowledgeBase.get(id=kb.id).prefetch_related("team", "created_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="create_knowledge_base",
+        resource_type="knowledge_base",
+        resource_id=kb.id,
+        resource_name=kb.name,
+        operation="create",
+        status="success",
+        request=request,
+    )
+
     kb_data = await kb_with_model_info(kb)
     return success(data=kb_data, msg_key="kb_created")
 
@@ -494,6 +509,7 @@ async def update_knowledge_base(
     *,
     kb_id: UUID,
     kb_in: KnowledgeBaseUpdate,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -550,6 +566,19 @@ async def update_knowledge_base(
 
     # Reload with relations
     kb = await KnowledgeBase.get(id=kb_id).prefetch_related("team", "created_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="update_knowledge_base",
+        resource_type="knowledge_base",
+        resource_id=kb.id,
+        resource_name=kb.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     kb_data = await kb_with_model_info(kb)
     return success(data=kb_data, msg_key="kb_updated")
 
@@ -557,6 +586,7 @@ async def update_knowledge_base(
 @router.delete("/{kb_id}", response_model=Response[dict])
 async def delete_knowledge_base(
     kb_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
@@ -564,9 +594,22 @@ async def delete_knowledge_base(
     Requires admin permission in the team.
     """
     kb = await check_kb_access(kb_id, current_user, require_write=True)
+    kb_name = kb.name
 
     # Delete all documents and chunks (cascades)
     await kb.delete()
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_knowledge_base",
+        resource_type="knowledge_base",
+        resource_id=kb_id,
+        resource_name=kb_name,
+        operation="delete",
+        status="success",
+        request=request,
+    )
 
     return success(data={"id": str(kb_id)}, msg_key="kb_deleted")
 
@@ -671,6 +714,7 @@ async def list_documents(
 @router.post("/{kb_id}/documents/upload", response_model=Response[DocumentSchema])
 async def upload_document(
     kb_id: UUID,
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(require_kb_update),
 ) -> Any:
@@ -730,6 +774,20 @@ async def upload_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="upload_document",
+        resource_type="document",
+        resource_id=doc.id,
+        resource_name=doc.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"kb_id": str(kb_id), "kb_name": kb.name, "doc_type": doc_type},
+    )
+
     return success(data=await serialize_document(doc), msg_key="document_uploaded")
 
 
@@ -737,6 +795,7 @@ async def upload_document(
 async def add_url_document(
     kb_id: UUID,
     doc_in: DocumentCreate,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -771,6 +830,24 @@ async def add_url_document(
 
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="add_url_document",
+        resource_type="document",
+        resource_id=doc.id,
+        resource_name=doc.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "kb_id": str(kb_id),
+            "kb_name": kb.name,
+            "source_url": doc_in.source_url,
+        },
+    )
+
     return success(data=await serialize_document(doc), msg_key="document_created")
 
 
@@ -806,6 +883,7 @@ async def update_document(
     kb_id: UUID,
     doc_id: UUID,
     doc_in: DocumentUpdate,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -825,6 +903,18 @@ async def update_document(
         doc.name = doc_in.name
         await doc.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="update_document",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id)},
+    )
+
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(data=await serialize_document(doc), msg_key="document_updated")
 
@@ -833,6 +923,7 @@ async def update_document(
 async def delete_document(
     kb_id: UUID,
     doc_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
@@ -848,6 +939,8 @@ async def delete_document(
             msg_key="document_not_found",
             status_code=404,
         )
+
+    doc_name = doc.name
 
     # Cancel Celery task if document is pending or processing
     if doc.status in [DocumentStatus.PENDING.value, DocumentStatus.PROCESSING.value]:
@@ -880,6 +973,18 @@ async def delete_document(
 
     # Delete document (chunks cascade)
     await doc.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_document",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc_name,
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id)},
+    )
 
     return success(data={"id": str(doc_id)}, msg_key="document_deleted")
 
@@ -984,6 +1089,7 @@ async def get_document_media(
 async def process_document(
     kb_id: UUID,
     doc_id: UUID,
+    request: Request,
     process_in: Optional[ProcessRequest] = Body(default=None),
     current_user: User = Depends(require_kb_update),
 ) -> Any:
@@ -1030,6 +1136,18 @@ async def process_document(
     except Exception:
         logger.warning("Celery task not dispatched - worker may not be running")
 
+    await AuditLogService.log(
+        user=current_user,
+        action="process_document",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id)},
+    )
+
     # Reload with relations
     doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
     return success(
@@ -1045,7 +1163,8 @@ async def process_document_with_chunks(
     *,
     kb_id: UUID,
     doc_id: UUID,
-    request: ProcessWithChunksRequest,
+    request: Request,
+    process_request: ProcessWithChunksRequest,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1110,7 +1229,7 @@ async def process_document_with_chunks(
         total_chars = 0
         chunks_created = []
 
-        for chunk_input in request.chunks:
+        for chunk_input in process_request.chunks:
             content = chunk_input.content.strip()
             if not content:
                 continue
@@ -1156,6 +1275,21 @@ async def process_document_with_chunks(
                 code=ResponseCode.UNKNOWN_ERROR,
                 msg_key="task_dispatch_failed",
             )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="process_document_with_chunks",
+            resource_type="document",
+            resource_id=doc_id,
+            resource_name=doc.name,
+            operation="update",
+            status="success",
+            request=request,
+            metadata={
+                "knowledge_base_id": str(kb_id),
+                "chunks_count": len(chunks_created),
+            },
+        )
 
         # Reload with relations
         doc = await Document.get(id=doc.id).prefetch_related("uploaded_by")
@@ -1275,6 +1409,7 @@ async def preview_document_chunks(
 async def reprocess_document(
     kb_id: UUID,
     doc_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1318,6 +1453,18 @@ async def reprocess_document(
 
         logging.warning("Celery task not dispatched - worker may not be running")
 
+    await AuditLogService.log(
+        user=current_user,
+        action="reprocess_document",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id)},
+    )
+
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
         data=await serialize_document(doc), msg_key="document_reprocess_started"
@@ -1331,6 +1478,7 @@ async def reprocess_document(
 async def retry_failed_chunks(
     kb_id: UUID,
     doc_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1381,6 +1529,18 @@ async def retry_failed_chunks(
 
         logging.warning("Celery task not dispatched - worker may not be running")
 
+    await AuditLogService.log(
+        user=current_user,
+        action="retry_failed_chunks",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id), "failed_chunks_count": failed_count},
+    )
+
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
         data=await serialize_document(doc), msg_key="retry_failed_chunks_started"
@@ -1395,6 +1555,7 @@ async def retry_failed_chunk(
     kb_id: UUID,
     doc_id: UUID,
     chunk_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1445,6 +1606,18 @@ async def retry_failed_chunk(
         doc.status = DocumentStatus.ERROR.value
         doc.error_message = "task_dispatch_failed"
         await doc.save(update_fields=["status", "error_message"])
+
+    await AuditLogService.log(
+        user=current_user,
+        action="retry_failed_chunk",
+        resource_type="document_chunk",
+        resource_id=chunk_id,
+        resource_name=f"chunk_{chunk.chunk_index}",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+    )
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(
@@ -1505,6 +1678,7 @@ async def update_document_chunk(
     doc_id: UUID,
     chunk_id: UUID,
     chunk_in: DocumentChunkUpdate,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1572,6 +1746,18 @@ async def update_document_chunk(
             msg_key="vector_update_failed",
         )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="update_document_chunk",
+        resource_type="document_chunk",
+        resource_id=chunk_id,
+        resource_name=f"chunk_{chunk.chunk_index}",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+    )
+
     return success(data=await serialize_chunk(chunk), msg_key="chunk_updated")
 
 
@@ -1583,6 +1769,7 @@ async def delete_document_chunk(
     kb_id: UUID,
     doc_id: UUID,
     chunk_id: UUID,
+    request: Request,
     current_user: User = Depends(require_kb_delete),
 ) -> Any:
     """
@@ -1606,6 +1793,9 @@ async def delete_document_chunk(
             status_code=404,
         )
 
+    chunk_index = chunk.chunk_index
+    chunk_token_count = chunk.token_count
+
     # Delete vector
     try:
         embedding_model_id = (
@@ -1620,11 +1810,11 @@ async def delete_document_chunk(
 
     # Update statistics
     kb.total_chunks = max(0, kb.total_chunks - 1)
-    kb.total_tokens = max(0, kb.total_tokens - chunk.token_count)
+    kb.total_tokens = max(0, kb.total_tokens - chunk_token_count)
     await kb.save()
 
     doc.chunk_count = max(0, doc.chunk_count - 1)
-    doc.token_count = max(0, doc.token_count - chunk.token_count)
+    doc.token_count = max(0, doc.token_count - chunk_token_count)
     await doc.save()
 
     # Delete chunk
@@ -1635,6 +1825,18 @@ async def delete_document_chunk(
     await DocumentChunk.filter(
         document_id=doc_id, chunk_index__gt=deleted_index
     ).update(chunk_index=F("chunk_index") - 1)
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_document_chunk",
+        resource_type="document_chunk",
+        resource_id=chunk_id,
+        resource_name=f"chunk_{chunk_index}",
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+    )
 
     return success(data={"id": str(chunk_id)}, msg_key="chunk_deleted")
 
@@ -1648,6 +1850,7 @@ async def create_document_chunk(
     kb_id: UUID,
     doc_id: UUID,
     chunk_in: DocumentChunkUpdate,
+    request: Request,
     after_index: int | None = None,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
@@ -1716,6 +1919,18 @@ async def create_document_chunk(
 
         logging.warning(f"Failed to create vector embedding: {e}")
 
+    await AuditLogService.log(
+        user=current_user,
+        action="create_document_chunk",
+        resource_type="document_chunk",
+        resource_id=chunk.id,
+        resource_name=f"chunk_{new_index}",
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"knowledge_base_id": str(kb_id), "document_id": str(doc_id)},
+    )
+
     return success(data=await serialize_chunk(chunk), msg_key="chunk_created")
 
 
@@ -1728,6 +1943,7 @@ async def rechunk_document(
     kb_id: UUID,
     doc_id: UUID,
     rechunk_in: RechunkRequest,
+    request: Request,
     current_user: User = Depends(require_kb_update),
 ) -> Any:
     """
@@ -1781,6 +1997,22 @@ async def rechunk_document(
         import logging
 
         logging.warning("Celery task not dispatched - worker may not be running")
+
+    await AuditLogService.log(
+        user=current_user,
+        action="rechunk_document",
+        resource_type="document",
+        resource_id=doc_id,
+        resource_name=doc.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "knowledge_base_id": str(kb_id),
+            "chunk_size": rechunk_in.chunk_size,
+            "chunk_overlap": rechunk_in.chunk_overlap,
+        },
+    )
 
     doc = await Document.get(id=doc_id).prefetch_related("uploaded_by")
     return success(

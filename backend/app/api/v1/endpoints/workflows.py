@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Header
+from fastapi import APIRouter, Depends, Query, Header, Request
 from fastapi.responses import StreamingResponse
 from tortoise.expressions import Q
 
@@ -48,6 +48,7 @@ from app.schemas.response import (
     BusinessError,
     success,
 )
+from app.services.audit_log import AuditLogService
 from app.services.workflow.errors import (
     get_public_workflow_error_key,
     translate_public_workflow_error,
@@ -465,6 +466,7 @@ async def list_workflows(
 async def create_workflow(
     *,
     workflow_in: WorkflowCreate,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:create")),
 ) -> Any:
     """Create a new workflow."""
@@ -517,6 +519,18 @@ async def create_workflow(
         definition=default_definition,
         variables=[],
         created_by=current_user,
+    )
+
+    await AuditLogService.log(
+        user=current_user,
+        action="create_workflow",
+        resource_type="workflow",
+        resource_id=workflow.id,
+        resource_name=workflow.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"team_id": str(workflow_in.team_id)},
     )
 
     # Reload with relations
@@ -693,6 +707,7 @@ async def update_workflow(
     *,
     workflow_id: UUID,
     workflow_in: WorkflowUpdate,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Update a workflow."""
@@ -739,6 +754,18 @@ async def update_workflow(
 
     await workflow.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="update_workflow",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"team_id": str(workflow.team_id)},
+    )
+
     # Reload with relations
     workflow = await Workflow.get(id=workflow_id).prefetch_related("team", "created_by")
 
@@ -751,6 +778,7 @@ async def update_workflow(
 @router.delete("/{workflow_id}", response_model=Response[dict])
 async def delete_workflow(
     workflow_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:delete")),
 ) -> Any:
     """Delete a workflow and all its runs."""
@@ -758,8 +786,21 @@ async def delete_workflow(
         workflow_id, current_user, require_write=True
     )
 
+    workflow_name = workflow.name
+
     # Delete workflow (cascades to runs and node executions)
     await workflow.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_workflow",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow_name,
+        operation="delete",
+        status="success",
+        request=request,
+    )
 
     return success(data={"id": str(workflow_id)}, msg_key="workflow_deleted")
 
@@ -767,6 +808,7 @@ async def delete_workflow(
 @router.post("/{workflow_id}/publish", response_model=Response[WorkflowOut])
 async def publish_workflow(
     workflow_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Publish a workflow and save a version snapshot."""
@@ -795,6 +837,17 @@ async def publish_workflow(
     workflow.status = WorkflowStatus.PUBLISHED
     await workflow.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="publish_workflow",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     return success(
         data=WorkflowOut.model_validate(workflow).model_dump(),
         msg_key="workflow_published",
@@ -804,6 +857,7 @@ async def publish_workflow(
 @router.post("/{workflow_id}/unpublish", response_model=Response[WorkflowOut])
 async def unpublish_workflow(
     workflow_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:publish")),
 ) -> Any:
     """Unpublish a workflow."""
@@ -814,6 +868,17 @@ async def unpublish_workflow(
     workflow.status = WorkflowStatus.DRAFT
     await workflow.save()
 
+    await AuditLogService.log(
+        user=current_user,
+        action="unpublish_workflow",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
+
     return success(
         data=WorkflowOut.model_validate(workflow).model_dump(),
         msg_key="workflow_unpublished",
@@ -823,6 +888,7 @@ async def unpublish_workflow(
 @router.post("/{workflow_id}/duplicate", response_model=Response[WorkflowOut])
 async def duplicate_workflow(
     workflow_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:create")),
 ) -> Any:
     """Duplicate a workflow."""
@@ -843,6 +909,21 @@ async def duplicate_workflow(
         created_by=current_user,
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="duplicate_workflow",
+        resource_type="workflow",
+        resource_id=new_workflow.id,
+        resource_name=new_workflow.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "source_workflow_id": str(workflow_id),
+            "source_workflow_name": workflow.name,
+        },
+    )
+
     # Reload with relations
     new_workflow = await Workflow.get(id=new_workflow.id).prefetch_related(
         "team", "created_by"
@@ -857,6 +938,7 @@ async def duplicate_workflow(
 @router.post("/{workflow_id}/regenerate-webhook-token", response_model=Response[dict])
 async def regenerate_webhook_token(
     workflow_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Regenerate webhook token for a workflow."""
@@ -866,6 +948,17 @@ async def regenerate_webhook_token(
 
     workflow.webhook_token = secrets.token_urlsafe(32)
     await workflow.save()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="regenerate_webhook_token",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+    )
 
     return success(
         data={"webhook_token": workflow.webhook_token},
@@ -1031,6 +1124,7 @@ async def trigger_workflow_webhook(
 async def run_workflow(
     workflow_id: UUID,
     run_request: WorkflowRunRequest,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """
@@ -1070,6 +1164,18 @@ async def run_workflow(
             team_id=str(workflow.team_id) if workflow.team_id else None,
         )
 
+        await AuditLogService.log(
+            user=current_user,
+            action="run_workflow",
+            resource_type="workflow_run",
+            resource_id=run.id,
+            resource_name=workflow.name,
+            operation="create",
+            status="success",
+            request=request,
+            metadata={"workflow_id": str(workflow_id), "is_debug": False},
+        )
+
         return success(
             data={
                 "run_id": str(run.id),
@@ -1090,6 +1196,7 @@ async def run_workflow(
 async def debug_workflow(
     workflow_id: UUID,
     run_request: WorkflowRunRequest,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """
@@ -1122,6 +1229,18 @@ async def debug_workflow(
             user_id=str(current_user.id),
             team_id=str(workflow.team_id) if workflow.team_id else None,
             is_debug=True,
+        )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="debug_workflow",
+            resource_type="workflow_run",
+            resource_id=run.id,
+            resource_name=workflow.name,
+            operation="create",
+            status="success",
+            request=request,
+            metadata={"workflow_id": str(workflow_id), "is_debug": True},
         )
 
         return success(
@@ -1210,6 +1329,7 @@ async def stream_workflow_run(
 @router.post("/runs/{run_id}/cancel", response_model=Response[dict])
 async def cancel_workflow_run(
     run_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:run")),
 ) -> Any:
     """Cancel a running workflow."""
@@ -1233,6 +1353,18 @@ async def cancel_workflow_run(
 
     orchestrator = WorkflowOrchestrator()
     cancelled = await orchestrator.cancel(str(run_id))
+
+    await AuditLogService.log(
+        user=current_user,
+        action="cancel_workflow_run",
+        resource_type="workflow_run",
+        resource_id=run_id,
+        resource_name=str(run_id),
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"workflow_id": str(run.workflow_id), "cancelled": cancelled},
+    )
 
     if cancelled:
         return success(data={"cancelled": True}, msg_key="workflow_run_cancelled")
@@ -1368,6 +1500,7 @@ async def list_run_node_executions(
 @router.delete("/runs/{run_id}", response_model=Response[dict])
 async def delete_workflow_run(
     run_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:delete")),
 ) -> Any:
     """Delete a workflow run."""
@@ -1389,7 +1522,20 @@ async def delete_workflow_run(
     # Check write access through workflow
     await check_workflow_access(run.workflow_id, current_user, require_write=True)
 
+    workflow_id = run.workflow_id
     await run.delete()
+
+    await AuditLogService.log(
+        user=current_user,
+        action="delete_workflow_run",
+        resource_type="workflow_run",
+        resource_id=run_id,
+        resource_name=str(run_id),
+        operation="delete",
+        status="success",
+        request=request,
+        metadata={"workflow_id": str(workflow_id)},
+    )
 
     return success(data={"id": str(run_id)}, msg_key="workflow_run_deleted")
 
@@ -1459,6 +1605,7 @@ async def get_workflow_version(
 async def create_workflow_version(
     workflow_id: UUID,
     version_in: WorkflowVersionCreate,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Manually create a version snapshot of the current workflow state."""
@@ -1478,6 +1625,18 @@ async def create_workflow_version(
         created_by=current_user,
     )
 
+    await AuditLogService.log(
+        user=current_user,
+        action="create_workflow_version",
+        resource_type="workflow_version",
+        resource_id=workflow_version.id,
+        resource_name=workflow.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"workflow_id": str(workflow_id), "version": workflow.version},
+    )
+
     return success(
         data=WorkflowVersionOut.model_validate(workflow_version).model_dump(),
         msg_key="workflow_version_created",
@@ -1491,6 +1650,7 @@ async def restore_workflow_version(
     workflow_id: UUID,
     version: int,
     restore_in: WorkflowVersionRestore,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("workflow:update")),
 ) -> Any:
     """Restore a workflow to a specific version."""
@@ -1546,6 +1706,18 @@ async def restore_workflow_version(
 
     # Reload with relations
     workflow = await Workflow.get(id=workflow_id).prefetch_related("team", "created_by")
+
+    await AuditLogService.log(
+        user=current_user,
+        action="restore_workflow_version",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="update",
+        status="success",
+        request=request,
+        metadata={"workflow_id": str(workflow_id), "restored_from_version": version},
+    )
 
     return success(
         data=WorkflowOut.model_validate(workflow).model_dump(),

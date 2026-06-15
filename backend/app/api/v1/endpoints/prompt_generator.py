@@ -6,7 +6,7 @@ Provides streaming SSE response for generating agent system prompts.
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.core.i18n import t
 from fastapi.responses import StreamingResponse
@@ -18,6 +18,7 @@ from app.models.model import Model
 from app.schemas.response import (
     ResponseCode,
 )
+from app.services.audit_log import AuditLogService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -320,7 +321,8 @@ def build_style_requirements(style: PromptStyle | None, language: str) -> str:
 
 @router.post("/generate")
 async def generate_prompt(
-    request: PromptGenerateRequest,
+    request: Request,
+    body: PromptGenerateRequest,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> StreamingResponse:
     """
@@ -334,6 +336,20 @@ async def generate_prompt(
     - complete: Generation complete
     - error: {"code": ..., "msg": "..."}
     """
+
+    # Audit log before generation starts
+    await AuditLogService.log(
+        user=current_user,
+        action="generate_prompt",
+        resource_type="prompt",
+        operation="create",
+        status="success",
+        request=request,
+        metadata={
+            "language": body.language,
+            "has_context": body.context is not None,
+        },
+    )
 
     async def event_generator():
         try:
@@ -349,10 +365,10 @@ async def generate_prompt(
                 return
 
             # Build meta-prompt
-            language = request.language or "zh"
-            style = request.style or PromptStyle()
+            language = body.language or "zh"
+            style = body.style or PromptStyle()
 
-            context_str = build_context_string(request.context, language)
+            context_str = build_context_string(body.context, language)
             tone_desc = get_tone_description(style.tone, language)
             focus_desc = get_focus_description(style.focus, language)
             style_requirements = build_style_requirements(style, language)
@@ -361,7 +377,7 @@ async def generate_prompt(
                 META_PROMPT_ZH if language == "zh" else META_PROMPT_EN
             )
             meta_prompt = meta_prompt_template.format(
-                description=request.description,
+                description=body.description,
                 context=context_str,
                 tone_desc=tone_desc,
                 focus_desc=focus_desc,
@@ -405,6 +421,7 @@ async def generate_prompt(
 
 @router.post("/optimize")
 async def optimize_prompt(
+    request: Request,
     current_prompt: str,
     feedback: str,
     current_user: User = Depends(deps.get_current_active_user),
@@ -414,6 +431,20 @@ async def optimize_prompt(
 
     This endpoint is for iterative improvement of prompts.
     """
+
+    # Audit log before optimization starts
+    await AuditLogService.log(
+        user=current_user,
+        action="optimize_prompt",
+        resource_type="prompt",
+        operation="update",
+        status="success",
+        request=request,
+        metadata={
+            "prompt_length": len(current_prompt),
+            "feedback_length": len(feedback),
+        },
+    )
 
     async def event_generator():
         try:

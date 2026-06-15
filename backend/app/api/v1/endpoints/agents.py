@@ -858,6 +858,7 @@ async def unpublish_agent(
 @router.post("/{agent_id}/duplicate", response_model=Response[AgentOut])
 async def duplicate_agent(
     agent_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("agent:create")),
 ) -> Any:
     """Duplicate an agent."""
@@ -919,6 +920,20 @@ async def duplicate_agent(
 
     # Reload with relations
     new_agent = await Agent.get(id=new_agent.id).prefetch_related("team", "created_by")
+
+    # 记录审计日志
+    await AuditLogService.log(
+        user=current_user,
+        action="duplicate_agent",
+        resource_type="agent",
+        resource_id=new_agent.id,
+        resource_name=new_agent.name,
+        operation="create",
+        status="success",
+        request=request,
+        metadata={"source_agent_id": str(agent.id), "source_agent_name": agent.name},
+    )
+
     agent_data = await build_agent_out(new_agent)
     return success(data=agent_data, msg_key="agent_duplicated")
 
