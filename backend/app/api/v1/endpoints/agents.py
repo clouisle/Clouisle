@@ -4,10 +4,11 @@ Provides CRUD operations for agents and conversations.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from tortoise.expressions import F, Q
 from tortoise.functions import Count
 
@@ -968,17 +969,33 @@ async def get_agent_video_generation_status(
 )
 async def list_agent_conversations(
     agent_id: UUID,
-    page: int = 1,
-    page_size: int = 20,
+    search: str | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
+    sort_by: str = Query("updated_at"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.PermissionChecker("conversation:read")),
 ) -> Any:
     """List conversations for an agent (only user's own conversations)."""
     agent = await check_agent_access(agent_id, current_user)
 
     query = Conversation.filter(agent_id=agent_id, user=current_user)
+    if search_text := (search or "").strip():
+        query = query.filter(title__icontains=search_text)
+    if created_after:
+        query = query.filter(created_at__gte=created_after)
+    if created_before:
+        query = query.filter(created_at__lte=created_before)
+
+    sort_field = (
+        sort_by
+        if sort_by in {"created_at", "updated_at", "message_count"}
+        else "updated_at"
+    )
     total = await query.count()
     skip = (page - 1) * page_size
-    conversations = await query.offset(skip).limit(page_size)
+    conversations = await query.order_by(f"-{sort_field}").offset(skip).limit(page_size)
 
     # Add agent info to each conversation
     conv_list = []

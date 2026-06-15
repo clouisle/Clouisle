@@ -67,6 +67,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TeamModelsTab } from './team-models-tab'
+import { useDebounce } from '@/hooks/use-debounce'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 
 type TeamRole = 'owner' | 'admin' | 'member' | 'viewer'
@@ -117,6 +118,7 @@ export function TeamDetailDialog({
   const [selectedRole, setSelectedRole] = React.useState<AddableRole>('member')
   const [isAddingMember, setIsAddingMember] = React.useState(false)
   const [userSearch, setUserSearch] = React.useState('')
+  const debouncedUserSearch = useDebounce(userSearch, 300)
   
   const [removeMemberDialogOpen, setRemoveMemberDialogOpen] = React.useState(false)
   const [memberToRemove, setMemberToRemove] = React.useState<TeamMember | null>(null)
@@ -170,14 +172,10 @@ export function TeamDetailDialog({
     }
   }, [open, teamId, loadTeam])
 
-  // 搜索词变化时防抖请求后端（仅在弹窗打开时）
   React.useEffect(() => {
     if (!open || !teamId) return
-    const timer = setTimeout(() => {
-      loadUsers(userSearch)
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [userSearch, open, teamId, loadUsers])
+    loadUsers(debouncedUserSearch)
+  }, [debouncedUserSearch, open, teamId, loadUsers])
   
   // 获取用户首字母
   const getUserInitials = (username: string) => {

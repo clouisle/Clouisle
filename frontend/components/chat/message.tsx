@@ -1168,7 +1168,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought
                   isStreaming={isChainOfThoughtStreaming}
-                  open={chainOfThoughtOpen ?? false}
+                  open={chainOfThoughtOpen}
                   onOpenChange={onChainOfThoughtOpenChange}
                   defaultOpen={false}
                 >

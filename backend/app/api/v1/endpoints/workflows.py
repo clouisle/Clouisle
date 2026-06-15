@@ -1252,8 +1252,11 @@ async def list_workflow_runs(
     workflow_id: UUID,
     status: RunStatus | None = None,
     is_debug: bool | None = None,
-    page: int = 1,
-    page_size: int = 20,
+    search: str | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(deps.PermissionChecker("workflow:read")),
 ) -> Any:
     """List runs for a workflow."""
@@ -1267,9 +1270,21 @@ async def list_workflow_runs(
     if is_debug is not None:
         query = query.filter(is_debug=is_debug)
 
+    if search_text := (search or "").strip():
+        try:
+            query = query.filter(id=UUID(search_text))
+        except ValueError:
+            query = query.filter(id__isnull=True)
+
+    if created_after:
+        query = query.filter(created_at__gte=created_after)
+
+    if created_before:
+        query = query.filter(created_at__lte=created_before)
+
     total = await query.count()
     skip = (page - 1) * page_size
-    runs = await query.offset(skip).limit(page_size).order_by("-created_at")
+    runs = await query.order_by("-created_at").offset(skip).limit(page_size)
 
     run_list = [WorkflowRunListItem.model_validate(r) for r in runs]
 

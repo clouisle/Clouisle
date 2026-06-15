@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-15T10:10:18.003Z
+// GENERATED — 2026-06-15T13:23:53.488Z
 // Source: i18n/en/workflow.json
 export type WorkflowMessages = {
   workflow: {
@@ -200,6 +200,7 @@ export type WorkflowMessages = {
     last30Days: string
     last90Days: string
     noRuns: string
+    searchRunIdPlaceholder: string
     runId: string
     triggerType: string
     duration: string
