@@ -1674,6 +1674,9 @@ msgstr "个人资料更新成功"
 msgid "registration_disabled"
 msgstr "注册功能已关闭"
 
+msgid "terms_acceptance_required"
+msgstr "请先同意用户协议和隐私政策再注册"
+
 msgid "registration_pending_approval"
 msgstr "注册成功。您的账户正在等待管理员审核。"
 
