@@ -1658,14 +1658,19 @@ function LinkSafetyModal({
   )
 }
 
-const CODE_BLOCK_REGEX = /(```[\s\S]*?```|`[^`]*`)/g
+const CODE_BLOCK_REGEX = /(```[\s\S]*?(?:```|$)|`[^`]*?(?:`|$))/g
 const ESCAPED_MATH_BLOCK_REGEX = /\\\[([\s\S]*?)\\\]/g
 const ESCAPED_MATH_INLINE_REGEX = /\\\(([\s\S]*?)\\\)/g
-const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[\s*([\s\S]*?\\(?:text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)[\s\S]*?)\s*\]\s*(?=\n|$)/g
-const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*(\\[A-Za-z]+(?:\{[^()]*\}|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
+const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[((?:\[[^\[\]]*\]|[^\[\]])*)\]\s*(?=\n|$)/g
+const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*((?:\([^()]*\)|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
 const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
+const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
 
 function normalizeBareLatexFormulaLines(input: string) {
+  if (!input) {
+    return ''
+  }
+
   let insideMathBlock = false
   return input
     .split('\n')
@@ -1687,17 +1692,34 @@ function normalizeBareLatexFormulaLines(input: string) {
 }
 
 function normalizeBareMathDelimiters(input: string) {
+  if (!input) {
+    return ''
+  }
+
   return input
     .split(CODE_BLOCK_REGEX)
     .map((segment) => {
+      if (!segment) {
+        return ''
+      }
       if (segment.startsWith('`')) {
         return segment
       }
       return normalizeBareLatexFormulaLines(segment)
         .replace(ESCAPED_MATH_BLOCK_REGEX, (_, formula: string) => `\n\n$$\n${formula}\n$$`)
         .replace(ESCAPED_MATH_INLINE_REGEX, (_, formula: string) => `$${formula}$`)
-        .replace(BARE_MATH_BLOCK_REGEX, (_, prefix: string, formula: string) => `${prefix}\n\n$$\n${formula}\n$$`)
-        .replace(BARE_LATEX_INLINE_REGEX, (_, prefix: string, formula: string) => `${prefix}$${formula}$`)
+        .replace(BARE_MATH_BLOCK_REGEX, (match, prefix: string, formula: string) => {
+          if (!MATH_COMMAND_REGEX.test(formula)) {
+            return match
+          }
+          return `${prefix}\n\n$$\n${formula.trim()}\n$$`
+        })
+        .replace(BARE_LATEX_INLINE_REGEX, (match, prefix: string, formula: string) => {
+          if (!MATH_COMMAND_REGEX.test(formula)) {
+            return match
+          }
+          return `${prefix}$${formula.trim()}$`
+        })
     })
     .join('')
 }
