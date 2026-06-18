@@ -64,7 +64,6 @@ const overviewSteps: OnboardingStep[] = [
     title: 'onboarding.step1g.title',
     placement: 'auto',
     route: '/app',
-    advanceOnClick: true,
   },
   {
     target: '[data-testid="platform-user-menu"]',
@@ -72,7 +71,6 @@ const overviewSteps: OnboardingStep[] = [
     title: 'onboarding.step1h.title',
     placement: 'auto',
     route: '/app',
-    advanceOnClick: true,
   },
   {
     target: '[data-testid="platform-home-header"]',
