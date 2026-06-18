@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-14T13:59:23.069Z
+// GENERATED — 2026-06-18T05:58:50.227Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
@@ -23,7 +23,83 @@ export type OnboardingMessages = {
     next: string
     skip: string
     finish: string
+    step0a: {
+      title: string
+      description: string
+    }
+    step0b: {
+      title: string
+      description: string
+    }
     step1: {
+      title: string
+      description: string
+    }
+    step1a: {
+      title: string
+      description: string
+    }
+    step1c: {
+      title: string
+      description: string
+    }
+    step1d: {
+      title: string
+      description: string
+    }
+    step1e: {
+      title: string
+      description: string
+    }
+    step1f: {
+      title: string
+      description: string
+    }
+    step1g: {
+      title: string
+      description: string
+    }
+    step1g2: {
+      title: string
+      description: string
+    }
+    step1g3: {
+      title: string
+      description: string
+    }
+    step1g4: {
+      title: string
+      description: string
+    }
+    step1h: {
+      title: string
+      description: string
+    }
+    step1h2: {
+      title: string
+      description: string
+    }
+    step1h3: {
+      title: string
+      description: string
+    }
+    step1h4: {
+      title: string
+      description: string
+    }
+    step1h5: {
+      title: string
+      description: string
+    }
+    step1h6: {
+      title: string
+      description: string
+    }
+    step1h7: {
+      title: string
+      description: string
+    }
+    step1h8: {
       title: string
       description: string
     }

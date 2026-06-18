@@ -681,6 +681,15 @@ async def register(
                 code=ResponseCode.REGISTRATION_DISABLED,
                 msg_key="registration_disabled",
             )
+        require_terms_acceptance = await SiteSetting.get_value(
+            "require_terms_acceptance_on_register", False
+        )
+        if require_terms_acceptance and not user_in.terms_accepted:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="terms_acceptance_required",
+                data={"errors": {"terms_accepted": ["terms_acceptance_required"]}},
+            )
 
     # Validate password strength
     password_valid, password_errors = await validate_password(user_in.password)

@@ -27,8 +27,36 @@ import {
 } from '@/components/ui/dialog'
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
+import { useDebounce } from '@/hooks/use-debounce'
 
-const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), { ssr: false })
+const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), {
+  ssr: false,
+  loading: () => <NotificationMarkdownSkeleton />,
+})
+
+function preloadNotificationMarkdown() {
+  if (typeof window !== 'undefined') {
+    import('@uiw/react-md-editor').catch(() => {})
+  }
+}
+
+function NotificationMarkdownSkeleton() {
+  return (
+    <div className="space-y-3" aria-hidden="true">
+      <Skeleton className="h-5 w-1/3" />
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-5/6" />
+        <Skeleton className="h-3 w-4/6" />
+      </div>
+      <Skeleton className="h-4 w-1/4" />
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-3/4" />
+      </div>
+    </div>
+  )
+}
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
@@ -49,7 +77,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const [levelFilter, setLevelFilter] = React.useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 300)
   const [readFilter, setReadFilter] = React.useState<Set<string>>(new Set())
   const [detailOpen, setDetailOpen] = React.useState(false)
   const [selectedItem, setSelectedItem] = React.useState<NotificationItem | null>(null)
@@ -57,6 +85,7 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
 
   React.useEffect(() => {
     setMounted(true)
+    preloadNotificationMarkdown()
   }, [])
 
   const colorMode = mounted ? (resolvedTheme === 'dark' ? 'dark' : 'light') : 'light'
@@ -99,13 +128,6 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
   React.useEffect(() => {
     setPage(1)
   }, [scopeFilter, levelFilter, readFilter, debouncedSearchQuery])
-
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery.trim())
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [searchQuery])
 
   const handleMarkRead = async (id: string) => {
     try {
@@ -289,19 +311,19 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
       </div>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-xl min-h-[260px]">
+        <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{selectedItem?.title || t('title')}</DialogTitle>
           </DialogHeader>
           {selectedItem && (
-            <div className="flex min-h-[180px] flex-col gap-4">
+            <div className="flex min-h-[180px] max-h-[calc(80vh-8rem)] flex-col gap-4 overflow-hidden">
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="secondary">{t(`scopeOptions.${selectedItem.scope}`)}</Badge>
                 <Badge variant="outline">{t(`levelOptions.${selectedItem.level}`)}</Badge>
                 <span className="mx-1 h-3 w-px bg-border/70" />
                 <span>{t('createdAt')}: {new Date(selectedItem.created_at).toLocaleString()}</span>
               </div>
-              <div className="flex-1 rounded-lg border bg-muted/30 p-6 text-sm text-foreground" data-color-mode={colorMode}>
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-6 text-sm text-foreground" data-color-mode={colorMode}>
                 <div className="wmde-markdown">
                   <MDPreview source={selectedItem.content} />
                 </div>

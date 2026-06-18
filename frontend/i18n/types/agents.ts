@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-14T13:59:23.074Z
+// GENERATED — 2026-06-18T05:58:50.221Z
 // Source: i18n/en/agents.json
 export type AgentsMessages = {
   agents: {
@@ -398,6 +398,8 @@ export type AgentsMessages = {
       }
       pagination: {
         showing: string
+        first: string
+        last: string
       }
       drawer: {
         conversationDetail: string

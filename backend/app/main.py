@@ -370,7 +370,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         # 获取请求信息
         method = request.method
         url = str(request.url)
-        client_ip = request.client.host if request.client else "unknown"
+        # 优先从 X-Forwarded-For / X-Real-IP 获取真实客户端 IP（支持代理透传）
+        forwarded_for = request.headers.get("x-forwarded-for")
+        real_ip = request.headers.get("x-real-ip")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[0].strip()
+        elif real_ip:
+            client_ip = real_ip.strip()
+        elif request.client:
+            client_ip = request.client.host
+        else:
+            client_ip = "unknown"
 
         # 检查是否是流式请求（SSE）
         is_stream_request = "/stream" in url or "/chat" in url

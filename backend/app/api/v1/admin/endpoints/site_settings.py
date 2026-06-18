@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
@@ -42,6 +43,22 @@ async def _validate_setting_value(key: str, value: object) -> None:
     Raises:
         BusinessError: If validation fails
     """
+    if key in {"icp_record_url", "terms_url", "privacy_url"}:
+        if value in (None, ""):
+            return
+        if not isinstance(value, str):
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="validation_error",
+            )
+        return
+
     if key == "auth_page_layout":
         if not isinstance(value, str):
             raise BusinessError(

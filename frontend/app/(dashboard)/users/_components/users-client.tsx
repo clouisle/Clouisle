@@ -79,6 +79,7 @@ import { DeleteUserDialog } from './delete-user-dialog'
 import { SendNotificationDialog } from './send-notification-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 type Role = {
   id: string
@@ -106,23 +107,16 @@ export function UsersClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = useUrlSearchState()
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
   const [statusFilter, setStatusFilter] = React.useState<Set<string>>(new Set())
   const [roleFilter, setRoleFilter] = React.useState<Set<string>>(new Set())
   const selectedStatuses = React.useMemo(() => Array.from(statusFilter), [statusFilter])
   const selectedRoles = React.useMemo(() => Array.from(roleFilter), [roleFilter])
 
-  // 防抖搜索
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-      if (searchQuery !== debouncedSearchQuery) {
-        setPage(1) // 搜索时重置到第一页
-      }
-    }, 500)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
+    setPage(1)
+    setSelectedUsers(new Set())
+  }, [debouncedSearchQuery])
   
   // 选择状态
   const [selectedUsers, setSelectedUsers] = React.useState<Set<string>>(new Set())
@@ -213,7 +207,6 @@ export function UsersClient() {
   // 重置所有筛选
   const resetFilters = () => {
     setSearchQuery('')
-    setDebouncedSearchQuery('')
     setStatusFilter(new Set())
     setRoleFilter(new Set())
     setPage(1)

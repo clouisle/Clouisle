@@ -13,6 +13,7 @@ import {
 import type { CodeHighlighterPlugin, PluginConfig, LinkSafetyModalProps } from 'streamdown'
 import { bundledLanguages, codeToTokens } from 'shiki'
 import type { BundledLanguage, BundledTheme } from 'shiki'
+import { createMathPlugin } from '@streamdown/math'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Popover,
@@ -109,8 +110,10 @@ const chatCodeHighlighter: CodeHighlighterPlugin = {
   getSupportedLanguages: () => Object.keys(bundledLanguages) as BundledLanguage[],
   getThemes: () => CHAT_CODE_THEMES,
 }
+const chatMathPlugin = createMathPlugin({ singleDollarTextMath: true })
 const chatStreamdownPlugins: PluginConfig = {
   code: chatCodeHighlighter,
+  math: chatMathPlugin,
 }
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
@@ -1168,7 +1171,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
               {isAssistant && hasChainOfThought && (
                 <ChainOfThought
                   isStreaming={isChainOfThoughtStreaming}
-                  open={chainOfThoughtOpen ?? false}
+                  open={chainOfThoughtOpen}
                   onOpenChange={onChainOfThoughtOpenChange}
                   defaultOpen={false}
                 >
@@ -1655,6 +1658,72 @@ function LinkSafetyModal({
   )
 }
 
+const CODE_BLOCK_REGEX = /(```[\s\S]*?(?:```|$)|`[^`]*?(?:`|$))/g
+const ESCAPED_MATH_BLOCK_REGEX = /\\\[([\s\S]*?)\\\]/g
+const ESCAPED_MATH_INLINE_REGEX = /\\\(([\s\S]*?)\\\)/g
+const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[((?:\[[^\[\]]*\]|[^\[\]])*)\]\s*(?=\n|$)/g
+const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*((?:\([^()]*\)|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
+const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
+const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
+
+function normalizeBareLatexFormulaLines(input: string) {
+  if (!input) {
+    return ''
+  }
+
+  let insideMathBlock = false
+  return input
+    .split('\n')
+    .map((line) => {
+      if (line.trim() === '$$') {
+        insideMathBlock = !insideMathBlock
+        return line
+      }
+      if (insideMathBlock) {
+        return line
+      }
+      const match = line.match(BARE_LATEX_FORMULA_LINE_REGEX)
+      if (!match) {
+        return line
+      }
+      return `${match[1]}$$\n${match[2].trim()}\n${match[1]}$$`
+    })
+    .join('\n')
+}
+
+function normalizeBareMathDelimiters(input: string) {
+  if (!input) {
+    return ''
+  }
+
+  return input
+    .split(CODE_BLOCK_REGEX)
+    .map((segment) => {
+      if (!segment) {
+        return ''
+      }
+      if (segment.startsWith('`')) {
+        return segment
+      }
+      return normalizeBareLatexFormulaLines(segment)
+        .replace(ESCAPED_MATH_BLOCK_REGEX, (_, formula: string) => `\n\n$$\n${formula}\n$$`)
+        .replace(ESCAPED_MATH_INLINE_REGEX, (_, formula: string) => `$${formula}$`)
+        .replace(BARE_MATH_BLOCK_REGEX, (match, prefix: string, formula: string) => {
+          if (!MATH_COMMAND_REGEX.test(formula)) {
+            return match
+          }
+          return `${prefix}\n\n$$\n${formula.trim()}\n$$`
+        })
+        .replace(BARE_LATEX_INLINE_REGEX, (match, prefix: string, formula: string) => {
+          if (!MATH_COMMAND_REGEX.test(formula)) {
+            return match
+          }
+          return `${prefix}$${formula.trim()}$`
+        })
+    })
+    .join('')
+}
+
 function TextWithCitations({
   text,
   sources,
@@ -1677,7 +1746,7 @@ function TextWithCitations({
 
   // Citation marker formats: [[cite:N]] and common variants like (ref:N), [ref:N], [[ref:N]]
   const normalizeCitations = (input: string) =>
-    input
+    normalizeBareMathDelimiters(input)
       .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
       .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
       .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')

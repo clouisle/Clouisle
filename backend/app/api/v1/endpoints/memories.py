@@ -6,7 +6,7 @@ Provides CRUD operations for user memory entities and relations.
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.deps import get_current_user
 from app.core.i18n import t
@@ -23,6 +23,7 @@ from app.schemas.memory import (
     MemoryGraphResponse,
 )
 from app.services.memory import MemoryService
+from app.services.audit_log import AuditLogService
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +61,30 @@ async def list_entities(
 
 @router.post("/entities", summary="Create a memory entity")
 async def create_entity(
-    request: CreateEntityRequest,
+    request: Request,
+    body: CreateEntityRequest,
     current_user: User = Depends(get_current_user),
 ):
     """Create a new memory entity manually."""
     try:
         entity = await MemoryService.create_entity(
             user_id=current_user.id,
-            name=request.name,
-            entity_type=request.entity_type,
-            description=request.description,
-            properties=request.properties,
+            name=body.name,
+            entity_type=body.entity_type,
+            description=body.description,
+            properties=body.properties,
+        )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="create_memory_entity",
+            resource_type="memory_entity",
+            resource_id=entity.id,
+            resource_name=entity.name,
+            operation="create",
+            status="success",
+            request=request,
+            metadata={"entity_type": body.entity_type.value},
         )
 
         return success(EntityResponse.model_validate(entity))
@@ -126,7 +140,8 @@ async def get_entity(
 @router.put("/entities/{entity_id}", summary="Update entity")
 async def update_entity(
     entity_id: UUID,
-    request: UpdateEntityRequest,
+    request: Request,
+    body: UpdateEntityRequest,
     current_user: User = Depends(get_current_user),
 ):
     """Update a memory entity."""
@@ -144,18 +159,29 @@ async def update_entity(
             )
 
         # Update fields
-        if request.name is not None:
-            entity.name = request.name
-        if request.description is not None:
-            entity.description = request.description
-        if request.properties is not None:
-            entity.properties = {**entity.properties, **request.properties}
+        if body.name is not None:
+            entity.name = body.name
+        if body.description is not None:
+            entity.description = body.description
+        if body.properties is not None:
+            entity.properties = {**entity.properties, **body.properties}
 
         await entity.save()
 
         # Update embedding if content changed
-        if request.name or request.description:
+        if body.name or body.description:
             await MemoryService._update_entity_embedding(entity)
+
+        await AuditLogService.log(
+            user=current_user,
+            action="update_memory_entity",
+            resource_type="memory_entity",
+            resource_id=entity.id,
+            resource_name=entity.name,
+            operation="update",
+            status="success",
+            request=request,
+        )
 
         return success(EntityResponse.model_validate(entity))
     except BusinessError:
@@ -171,13 +197,31 @@ async def update_entity(
 @router.delete("/entities/{entity_id}", summary="Delete entity")
 async def delete_entity(
     entity_id: UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
     """Delete a memory entity and its relations."""
     try:
+        # Capture entity name before deletion
+        entity = await MemoryEntity.filter(
+            id=entity_id, user_id=current_user.id
+        ).first()
+        entity_name = entity.name if entity else str(entity_id)
+
         await MemoryService.delete_entity(
             user_id=current_user.id,
             entity_id=entity_id,
+        )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="delete_memory_entity",
+            resource_type="memory_entity",
+            resource_id=entity_id,
+            resource_name=entity_name,
+            operation="delete",
+            status="success",
+            request=request,
         )
 
         return success(
@@ -241,18 +285,35 @@ async def list_relations(
 
 @router.post("/relations", summary="Create a memory relation")
 async def create_relation(
-    request: CreateRelationRequest,
+    request: Request,
+    body: CreateRelationRequest,
     current_user: User = Depends(get_current_user),
 ):
     """Create a new memory relation manually."""
     try:
         relation = await MemoryService.create_relation(
             user_id=current_user.id,
-            source_entity_id=request.source_entity_id,
-            target_entity_id=request.target_entity_id,
-            relation_type=request.relation_type,
-            description=request.description,
-            properties=request.properties,
+            source_entity_id=body.source_entity_id,
+            target_entity_id=body.target_entity_id,
+            relation_type=body.relation_type,
+            description=body.description,
+            properties=body.properties,
+        )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="create_memory_relation",
+            resource_type="memory_relation",
+            resource_id=relation.id,
+            resource_name=str(relation.id),
+            operation="create",
+            status="success",
+            request=request,
+            metadata={
+                "source_entity_id": str(body.source_entity_id),
+                "target_entity_id": str(body.target_entity_id),
+                "relation_type": body.relation_type.value,
+            },
         )
 
         return success(RelationResponse.model_validate(relation))
@@ -281,6 +342,7 @@ async def create_relation(
 @router.delete("/relations/{relation_id}", summary="Delete relation")
 async def delete_relation(
     relation_id: UUID,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
     """Delete a memory relation."""
@@ -288,6 +350,17 @@ async def delete_relation(
         await MemoryService.delete_relation(
             user_id=current_user.id,
             relation_id=relation_id,
+        )
+
+        await AuditLogService.log(
+            user=current_user,
+            action="delete_memory_relation",
+            resource_type="memory_relation",
+            resource_id=relation_id,
+            resource_name=str(relation_id),
+            operation="delete",
+            status="success",
+            request=request,
         )
 
         return success(

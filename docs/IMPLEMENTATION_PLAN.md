@@ -2,6 +2,19 @@
 
 ## Active
 
+- **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend log search/date filters
+  - [x] 3. Frontend API params and log pages
+  - [x] 4. Validation and regression checks
+
+- **yun-96-site-legal-settings** — In progress. Add configurable ICP record and login/register terms/privacy entries with optional required registration acceptance. See `docs/plan/yun-96-site-legal-settings.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Backend public settings and registration enforcement
+  - [x] 3. Frontend admin settings UI and i18n
+  - [x] 4. Auth legal footer and registration checkbox
+  - [x] 5. Validation and regression checks
+
 - **default-team-registration** — Complete. Let admins configure a default team and team role assigned to newly registered users. See `docs/plan/default-team-registration.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend settings, validation, and registration assignment

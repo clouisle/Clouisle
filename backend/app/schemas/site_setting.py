@@ -35,6 +35,15 @@ class PublicSiteSettingsResponse(BaseModel):
     site_url: str = ""
     site_icon: str = ""
     auth_page_layout: str = "centered"
+    icp_record_number: str = ""
+    icp_record_url: str = ""
+    terms_enabled: bool = False
+    terms_url: str = ""
+    terms_text: str = ""
+    privacy_enabled: bool = False
+    privacy_url: str = ""
+    privacy_text: str = ""
+    require_terms_acceptance_on_register: bool = False
     allow_registration: bool = True
     require_approval: bool = False
     email_verification: bool = True
