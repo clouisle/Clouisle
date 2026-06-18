@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-15T13:23:53.480Z
+// GENERATED — 2026-06-18T05:58:50.224Z
 // Source: i18n/en/dashboard.json
 export type DashboardMessages = {
   dashboard: {

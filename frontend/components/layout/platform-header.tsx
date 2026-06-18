@@ -22,12 +22,16 @@ import {
   Menu,
   X,
   Key,
+  GraduationCap,
 } from 'lucide-react'
 import { authApi, type User as UserType } from '@/lib/api'
 import { notificationsApi } from '@/lib/api'
 import { useSiteSettings } from '@/contexts/site-settings-context'
 import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
+import { useOptionalOnboarding, type OnboardingTourId } from '@/components/onboarding/onboarding-provider'
+import { allTourConfigs } from '@/components/onboarding/steps/platform-steps'
+import type { OnboardingMessages } from '@/i18n/types/onboarding'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -36,6 +40,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -95,6 +102,7 @@ const navItems: PlatformNavItem[] = [
 export function PlatformHeader() {
   const t = useTranslations('platform')
   const tCommon = useTranslations('common')
+  const tOnboarding = useTranslations('onboarding')
   const pathname = usePathname()
   const router = useRouter()
   const [user, setUser] = React.useState<UserType | null>(null)
@@ -103,10 +111,12 @@ export function PlatformHeader() {
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [aboutOpen, setAboutOpen] = React.useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
+  const [userMenuOpen, setUserMenuOpen] = React.useState(false)
   const { settings: siteSettings } = useSiteSettings()
   const { platformHeaderVariant, mounted } = useSettings()
   const { canAccessDashboard, hasAnyPermission } = usePermissions()
   const { currentTeam, isLoading: isTeamLoading } = useTeam()
+  const onboarding = useOptionalOnboarding()
 
   // 没有团队时隐藏导航
   const hideNav = !isTeamLoading && !currentTeam
@@ -209,6 +219,17 @@ export function PlatformHeader() {
     router.push('/login')
   }
 
+  // 启动引导（先关闭菜单）
+  const handleStartTour = (tourId: OnboardingTourId) => {
+    setUserMenuOpen(false)
+    // 延迟启动引导，确保菜单完全关闭
+    setTimeout(() => {
+      if (onboarding) {
+        onboarding.startTour(tourId)
+      }
+    }, 300)
+  }
+
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname.startsWith(href)
 
@@ -218,7 +239,7 @@ export function PlatformHeader() {
         {/* Left Side - Logo and Team Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           {/* Logo */}
-          <Link href="/app" className="flex items-center space-x-2 shrink-0">
+          <Link href="/app" className="flex items-center space-x-2 shrink-0" data-testid="platform-logo">
             <div className={`flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden ${siteSettings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
               {siteSettings.site_icon ? (
                 <Image
@@ -239,7 +260,7 @@ export function PlatformHeader() {
           {!hideNav && (
             <>
               <span className="text-muted-foreground/40 text-xl font-light select-none hidden sm:inline">/</span>
-              <div className="min-w-0 flex-1 sm:flex-initial">
+              <div className="min-w-0 flex-1 sm:flex-initial" data-testid="platform-team-switcher">
                 <TeamSwitcher />
               </div>
             </>
@@ -248,7 +269,7 @@ export function PlatformHeader() {
 
         {/* Desktop Navigation - 根据布局变体调整位置，没有团队时隐藏 */}
         {!hideNav && (
-          <nav className={cn(
+          <nav data-testid="platform-header-nav" className={cn(
             'hidden md:flex items-center gap-1',
             effectiveHeaderVariant === 'centered' && 'absolute left-1/2 -translate-x-1/2',
             effectiveHeaderVariant === 'default' && 'ml-6'
@@ -256,7 +277,7 @@ export function PlatformHeader() {
             {visibleNavItems.map((item) => {
               const Icon = item.icon
               return (
-                <Link key={item.key} href={item.href}>
+                <Link key={item.key} href={item.href} data-testid={`nav-${item.key}`}>
                   <Button
                     variant={isActive(item.href, 'exact' in item ? item.exact : false) ? 'secondary' : 'ghost'}
                     size="sm"
@@ -300,6 +321,7 @@ export function PlatformHeader() {
                 size="icon"
                 className="h-8 w-8 cursor-pointer"
                 onClick={() => setSettingsOpen(true)}
+                data-testid="platform-theme-button"
               >
                 <Palette className="h-4 w-4" />
                 <span className="sr-only">{tCommon('appearanceSettings')}</span>
@@ -309,10 +331,10 @@ export function PlatformHeader() {
           </Tooltip>
 
           {/* User Menu */}
-          <DropdownMenu>
+          <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger
               render={(props) => (
-                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Button {...props} variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="platform-user-menu">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={user?.avatar_url || undefined} alt={user?.username || 'User'} />
                     <AvatarFallback>
@@ -342,13 +364,13 @@ export function PlatformHeader() {
               <DropdownMenuSeparator />
 
               {/* Account Settings */}
-              <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+              <DropdownMenuItem onClick={() => setProfileOpen(true)} data-testid="user-menu-settings">
                 <Settings className="mr-2 h-4 w-4" />
                 {t('profile.title')}
               </DropdownMenuItem>
 
               {/* API Keys */}
-              <DropdownMenuItem onClick={() => router.push('/app/api-keys')}>
+              <DropdownMenuItem onClick={() => router.push('/app/api-keys')} data-testid="user-menu-api-keys">
                 <Key className="mr-2 h-4 w-4" />
                 {t('apiKeys')}
               </DropdownMenuItem>
@@ -360,6 +382,7 @@ export function PlatformHeader() {
                   requestNotificationPermission()
                   router.push('/app/notifications')
                 }}
+                data-testid="user-menu-notifications"
               >
            <Bell className="mr-2 h-4 w-4" />
                 <span className="flex-1">{t('nav.notifications')}</span>
@@ -369,7 +392,7 @@ export function PlatformHeader() {
                   </span>
                 )}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/app/memories')}>
+              <DropdownMenuItem onClick={() => router.push('/app/memories')} data-testid="user-menu-memories">
                 <Brain className="mr-2 h-4 w-4" />
                 {t('nav.memories')}
               </DropdownMenuItem>
@@ -379,7 +402,7 @@ export function PlatformHeader() {
                 <>
                   <DropdownMenuSeparator />
                   <Link href="/dashboard">
-                    <DropdownMenuItem>
+                    <DropdownMenuItem data-testid="user-menu-admin">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       {t('admin')}
                     </DropdownMenuItem>
@@ -389,11 +412,40 @@ export function PlatformHeader() {
 
               {/* System */}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setAboutOpen(true)}>
+              {onboarding && (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger data-testid="user-menu-tours">
+                    <GraduationCap className="mr-2 h-4 w-4" />
+                    {tOnboarding('tourTitle')}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {allTourConfigs.map((tourConfig) => {
+                      const isCompleted = onboarding.isTourCompleted(tourConfig.id)
+                      // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
+                      const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
+                      return (
+                        <DropdownMenuItem
+                          key={tourConfig.id}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleStartTour(tourConfig.id)
+                          }}
+                        >
+                          {isCompleted && (
+                            <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                          )}
+                          {tOnboarding(titleKey)}
+                        </DropdownMenuItem>
+                      )
+                    })}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+              <DropdownMenuItem onClick={() => setAboutOpen(true)} data-testid="user-menu-about">
                 <Info className="mr-2 h-4 w-4" />
                 {t('about')}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLogout}>
+              <DropdownMenuItem onClick={handleLogout} data-testid="user-menu-logout">
                 <LogOut className="mr-2 h-4 w-4" />
                 {t('logout')}
               </DropdownMenuItem>

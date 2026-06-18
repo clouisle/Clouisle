@@ -273,7 +273,7 @@ export function KnowledgeBaseDialog({
               </div>
             )}
             {/* 名称 */}
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="kb-dialog-name">
               <Label htmlFor="name">{t('name')}</Label>
               <Input
                 id="name"
@@ -287,9 +287,9 @@ export function KnowledgeBaseDialog({
               />
               <FieldError>{fieldErrors.name}</FieldError>
             </div>
-            
+
             {/* 描述 */}
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="kb-dialog-description">
               <Label htmlFor="description">{t('descriptionLabel')}</Label>
               <Textarea
                 id="description"
@@ -304,9 +304,9 @@ export function KnowledgeBaseDialog({
               />
               <FieldError>{fieldErrors.description}</FieldError>
             </div>
-            
+
             {/* Embedding 模型 */}
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="kb-dialog-embedding">
               <Label htmlFor="embeddingModel">{t('embeddingModel')}</Label>
               <Select
                 value={embeddingModelId ?? ''}
@@ -339,7 +339,7 @@ export function KnowledgeBaseDialog({
               <FieldError>{fieldErrors.embedding_model_id}</FieldError>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="kb-dialog-rerank-model">
               <Label htmlFor="rerankModel">{t('rerankModel')}</Label>
               <Select
                 value={rerankModelId ?? '__none__'}
@@ -372,7 +372,7 @@ export function KnowledgeBaseDialog({
             </div>
             
             {/* 分块设置 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4" data-testid="kb-dialog-chunk-settings">
               <div className="space-y-2">
                 <Label htmlFor="chunkSize">{t('chunkSize')}</Label>
                 <Input
@@ -390,7 +390,7 @@ export function KnowledgeBaseDialog({
                 <p className="text-xs text-muted-foreground">{t('chunkSizeHint')}</p>
                 <FieldError>{fieldErrors.chunk_size}</FieldError>
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="chunkOverlap">{t('chunkOverlap')}</Label>
                 <Input
@@ -411,7 +411,7 @@ export function KnowledgeBaseDialog({
             </div>
             
             {/* 自定义分隔符 */}
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="kb-dialog-separator">
               <Label htmlFor="separator">{t('separator')}</Label>
               <Input
                 id="separator"
@@ -427,8 +427,8 @@ export function KnowledgeBaseDialog({
               <FieldError>{fieldErrors.separator}</FieldError>
             </div>
 
-            <div className="rounded-lg border p-4 space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="rounded-lg border p-4 space-y-4" data-testid="kb-dialog-rerank-section">
+              <div className="flex items-center justify-between" data-testid="kb-dialog-rerank-enabled">
                 <div className="space-y-0.5">
                   <Label htmlFor="rerankEnabled">{t('rerankEnabled')}</Label>
                   <p className="text-xs text-muted-foreground">{t('rerankEnabledHint')}</p>
@@ -440,7 +440,7 @@ export function KnowledgeBaseDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4" data-testid="kb-dialog-rerank-params">
                 <div className="space-y-2">
                   <Label htmlFor="rerankCandidateK">{t('rerankCandidateK')}</Label>
                   <Input
@@ -480,7 +480,7 @@ export function KnowledgeBaseDialog({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center justify-between rounded-lg border p-3" data-testid="kb-dialog-rerank-fail-open">
                 <div className="space-y-0.5">
                   <Label htmlFor="rerankFailOpen">{t('rerankFailOpen')}</Label>
                   <p className="text-xs text-muted-foreground">{t('rerankFailOpenHint')}</p>
@@ -495,7 +495,7 @@ export function KnowledgeBaseDialog({
             
             {/* 状态切换 - 仅编辑时显示 */}
             {isEditing && (
-              <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center justify-between rounded-lg border p-3" data-testid="kb-dialog-status">
                 <div className="space-y-0.5">
                   <Label htmlFor="status">{t('enableKb')}</Label>
                   <p className="text-xs text-muted-foreground">{t('enableKbHint')}</p>
@@ -513,7 +513,7 @@ export function KnowledgeBaseDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {commonT('cancel')}
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading} data-testid="kb-dialog-submit">
               {isLoading ? commonT('loading') : (isEditing ? commonT('save') : commonT('create'))}
             </Button>
           </DialogFooter>

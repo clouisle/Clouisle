@@ -72,7 +72,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
 
         <div className="flex-1 overflow-y-auto px-4 space-y-6">
           {/* Theme Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="settings-theme-section">
             <Label className="text-sm font-medium text-primary">{t('theme')}</Label>
             <div className="grid grid-cols-3 gap-2">
               <ThemeCard
@@ -98,7 +98,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
 
           {/* Sidebar Selection - 仅在 showSidebarStyle 为 true 时显示 */}
           {showSidebarStyle && (
-            <div className="space-y-3">
+            <div className="space-y-3" data-testid="settings-sidebar-section">
               <Label className="text-sm font-medium text-primary">{t('sidebar')}</Label>
               <div className="grid grid-cols-3 gap-2">
                 <SidebarCard
@@ -125,7 +125,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
 
           {/* Layout Selection - 仅在不显示中台 header 时显示 */}
           {!showPlatformHeader && (
-            <div className="space-y-3">
+            <div className="space-y-3" data-testid="settings-layout-section">
               <Label className="text-sm font-medium text-primary">{t('layout')}</Label>
               <div className="grid grid-cols-3 gap-2">
                 <LayoutCard
@@ -152,7 +152,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
 
           {/* Platform Header Layout - 仅在 showPlatformHeader 为 true 时显示 */}
           {showPlatformHeader && (
-            <div className="space-y-3">
+            <div className="space-y-3" data-testid="settings-header-layout-section">
               <Label className="text-sm font-medium text-primary">{t('headerLayout')}</Label>
               <div className="grid grid-cols-3 gap-2">
                 <PlatformHeaderCard
@@ -178,7 +178,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
           )}
 
           {/* Direction Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="settings-direction-section">
             <Label className="text-sm font-medium text-primary">{t('direction')}</Label>
             <div className="grid grid-cols-3 gap-2">
               <DirectionCard
@@ -197,7 +197,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
           </div>
 
           {/* Language Selection */}
-          <div className="space-y-3">
+          <div className="space-y-3" data-testid="settings-language-section">
             <Label className="text-sm font-medium text-primary">{t('language')}</Label>
             <div className="grid grid-cols-2 gap-2">
               {locales.map((l) => (
@@ -222,7 +222,7 @@ export function SettingsDrawer({ open, onOpenChange, showSidebarStyle = true, sh
         </div>
 
         <SheetFooter>
-          <Button variant="destructive" className="w-full" onClick={handleReset}>
+          <Button variant="destructive" className="w-full" onClick={handleReset} data-testid="settings-reset-button">
             {t('reset')}
           </Button>
         </SheetFooter>
