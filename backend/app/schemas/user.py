@@ -63,6 +63,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    terms_accepted: bool = False
 
 
 class UserUpdate(BaseModel):

@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-11T08:12:52.099Z
+// GENERATED — 2026-06-18T05:58:50.229Z
 // Source: i18n/en/promptGenerator.json
 export type PromptGeneratorMessages = {
   promptGenerator: {

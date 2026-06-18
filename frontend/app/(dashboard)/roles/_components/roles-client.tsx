@@ -64,6 +64,7 @@ import { RoleDialog } from './role-dialog'
 import { DeleteRoleDialog } from './delete-role-dialog'
 import { PermissionGuard, useCanPerform } from '@/components/permission-guard'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function RolesClient() {
   const t = useTranslations('roles')
@@ -79,19 +80,11 @@ export function RolesClient() {
   
   // 筛选状态
   const [searchQuery, setSearchQuery] = useUrlSearchState()
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
 
-  // 防抖搜索
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-      if (searchQuery !== debouncedSearchQuery) {
-        setPage(1) // 搜索时重置到第一页
-      }
-    }, 500)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
+    setPage(1)
+  }, [debouncedSearchQuery])
 
   // 选择状态
   const [selectedRoles, setSelectedRoles] = React.useState<Set<string>>(new Set())

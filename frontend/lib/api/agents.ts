@@ -344,6 +344,15 @@ export interface ConversationListItem {
   updated_at: string
 }
 
+export interface AgentConversationQueryParams {
+  page?: number
+  pageSize?: number
+  search?: string
+  createdAfter?: string
+  createdBefore?: string
+  sortBy?: 'created_at' | 'updated_at' | 'message_count'
+}
+
 export interface ConversationUpdateInput {
   title?: string
 }
@@ -736,12 +745,16 @@ export const agentsApi = {
    */
   getAgentConversations: async (
     agentId: string,
-    params: { page?: number; pageSize?: number } = {}
+    params: AgentConversationQueryParams = {}
   ): Promise<PageData<ConversationListItem>> => {
-    const { page = 1, pageSize = 20 } = params
+    const { page = 1, pageSize = 20, search, createdAfter, createdBefore, sortBy } = params
     const queryParams = new URLSearchParams()
     queryParams.append('page', String(page))
     queryParams.append('page_size', String(pageSize))
+    if (search) queryParams.append('search', search)
+    if (createdAfter) queryParams.append('created_after', createdAfter)
+    if (createdBefore) queryParams.append('created_before', createdBefore)
+    if (sortBy) queryParams.append('sort_by', sortBy)
     return api.get<PageData<ConversationListItem>>(
       `/agents/${agentId}/conversations?${queryParams.toString()}`
     )

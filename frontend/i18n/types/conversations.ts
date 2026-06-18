@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-11T08:12:52.094Z
+// GENERATED — 2026-06-18T05:58:50.224Z
 // Source: i18n/en/conversations.json
 export type ConversationsMessages = {
   conversations: {
@@ -60,6 +60,7 @@ export type ConversationsMessages = {
       result: string
       modelUsed: string
       tokenBreakdown: string
+      tokenCount: string
       responseDuration: string
       ragContext: string
       segment: string

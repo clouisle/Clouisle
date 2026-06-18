@@ -68,6 +68,7 @@ import {
 import { PermissionDialog } from './permission-dialog'
 import { DeletePermissionDialog } from './delete-permission-dialog'
 import { useUrlSearchState } from '@/hooks/use-url-search-state'
+import { useDebounce } from '@/hooks/use-debounce'
 
 export function PermissionsClient() {
   const t = useTranslations('permissions')
@@ -84,21 +85,13 @@ export function PermissionsClient() {
 
   // 筛选状态
   const [searchQuery, setSearchQuery] = useUrlSearchState()
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 500)
   const [scopeFilter, setScopeFilter] = React.useState<Set<string>>(new Set())
   const selectedScopes = React.useMemo(() => Array.from(scopeFilter), [scopeFilter])
 
-  // 防抖搜索
   React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-      if (searchQuery !== debouncedSearchQuery) {
-        setPage(1) // 搜索时重置到第一页
-      }
-    }, 500)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
+    setPage(1)
+  }, [debouncedSearchQuery])
 
   // 选择状态
   const [selectedPermissions, setSelectedPermissions] = React.useState<Set<string>>(new Set())
@@ -159,7 +152,6 @@ export function PermissionsClient() {
   // 重置筛选
   const resetFilters = () => {
     setSearchQuery('')
-    setDebouncedSearchQuery('')
     setScopeFilter(new Set())
     setPage(1)
     setSelectedPermissions(new Set())

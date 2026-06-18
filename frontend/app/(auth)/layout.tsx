@@ -7,7 +7,31 @@ function normalizeAuthPageLayout(value: string | undefined): AuthPageLayout {
   return value === 'split' ? 'split' : 'centered'
 }
 
-async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name' | 'auth_page_layout'>> {
+async function getPublicSettings(): Promise<Pick<PublicSiteSettings,
+  | 'site_name'
+  | 'auth_page_layout'
+  | 'icp_record_number'
+  | 'icp_record_url'
+  | 'terms_enabled'
+  | 'terms_url'
+  | 'terms_text'
+  | 'privacy_enabled'
+  | 'privacy_url'
+  | 'privacy_text'
+>> {
+  const fallback = {
+    site_name: 'Clouisle',
+    auth_page_layout: 'centered' as AuthPageLayout,
+    icp_record_number: '',
+    icp_record_url: '',
+    terms_enabled: false,
+    terms_url: '',
+    terms_text: '',
+    privacy_enabled: false,
+    privacy_url: '',
+    privacy_text: '',
+  }
+
   try {
     const response = await fetch(`${getServerApiBaseUrl()}/site-settings/public`, {
       next: { revalidate: 300 }, // Cache for 5 minutes
@@ -18,24 +42,26 @@ async function getPublicSettings(): Promise<Pick<PublicSiteSettings, 'site_name'
 
     if (!response.ok) {
       console.warn(`Failed to fetch public settings: ${response.status}`)
-      return {
-        site_name: 'Clouisle',
-        auth_page_layout: 'centered',
-      }
+      return fallback
     }
 
     const body = await response.json() as { data?: Partial<PublicSiteSettings> }
 
     return {
-    site_name: body.data?.site_name || 'Clouisle',
+      site_name: body.data?.site_name || 'Clouisle',
       auth_page_layout: normalizeAuthPageLayout(body.data?.auth_page_layout),
+      icp_record_number: body.data?.icp_record_number || '',
+      icp_record_url: body.data?.icp_record_url || '',
+      terms_enabled: body.data?.terms_enabled ?? false,
+      terms_url: body.data?.terms_url || '',
+      terms_text: body.data?.terms_text || '',
+      privacy_enabled: body.data?.privacy_enabled ?? false,
+      privacy_url: body.data?.privacy_url || '',
+      privacy_text: body.data?.privacy_text || '',
     }
   } catch (error) {
     console.error('Error fetching public settings:', error)
-    return {
-      site_name: 'Clouisle',
-      auth_page_layout: 'centered',
-    }
+    return fallback
   }
 }
 
@@ -52,6 +78,7 @@ export default async function AuthLayout({
     <AuthLayoutShell
       layout={settings.auth_page_layout}
       previewImageAlt={t('previewImageAlt', { siteName: settings.site_name })}
+      legalSettings={settings}
     >
       {children}
     </AuthLayoutShell>

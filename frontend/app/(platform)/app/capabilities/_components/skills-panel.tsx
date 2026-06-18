@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { AlertCircle, CheckCircle2, FileArchive, GitBranch, Loader2, PackageOpen, Plus, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle2, FileArchive, GitBranch, Loader2, PackageOpen, RefreshCw, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -298,13 +298,13 @@ export function SkillsPanel() {
           <p className="text-sm text-muted-foreground mt-1">{t('description')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={loadSkills} disabled={loading}>
+          <Button variant="outline" onClick={loadSkills} disabled={loading} data-testid="skills-refresh-button">
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             {t('refresh')}
           </Button>
           <PermissionGuard permission="skill:create">
-            <Button onClick={openImportDialog}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button variant="outline" onClick={openImportDialog} data-testid="skills-import-button">
+              <Upload className="mr-2 h-4 w-4" />
               {t('import.open')}
             </Button>
           </PermissionGuard>
@@ -323,7 +323,7 @@ export function SkillsPanel() {
             <CardDescription className="mt-2">{t('noSkillsHint')}</CardDescription>
             <PermissionGuard permission="skill:create">
               <Button className="mt-4" onClick={openImportDialog}>
-                <Plus className="mr-2 h-4 w-4" />
+                <Upload className="mr-2 h-4 w-4" />
                 {t('import.open')}
               </Button>
             </PermissionGuard>

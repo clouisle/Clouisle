@@ -40,21 +40,25 @@ export function AgentSidebar({
       title: t('orchestration'),
       href: baseUrl,
       icon: LayoutGrid,
+      testId: 'agent-nav-orchestration',
     },
     {
       title: t('api'),
       href: `${baseUrl}/api`,
       icon: Code2,
+      testId: 'agent-nav-api',
     },
     {
       title: t('logs'),
       href: `${baseUrl}/logs`,
       icon: FileText,
+      testId: 'agent-nav-logs',
     },
     {
       title: t('monitor'),
       href: `${baseUrl}/monitor`,
       icon: Activity,
+      testId: 'agent-nav-monitor',
     },
   ]
 
@@ -63,7 +67,9 @@ export function AgentSidebar({
   }
 
   return (
-    <aside className={cn(
+    <aside
+      data-testid="agent-sidebar"
+      className={cn(
       'border-r flex flex-col h-full transition-all duration-200',
       collapsed ? 'w-0 overflow-hidden' : 'w-52'
     )}>
@@ -111,6 +117,7 @@ export function AgentSidebar({
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  data-testid={item.testId}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive

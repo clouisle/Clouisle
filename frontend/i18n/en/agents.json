@@ -395,7 +395,9 @@
         "createdAt": "Created At"
       },
       "pagination": {
-        "showing": "Showing {from}-{to} of {total}"
+        "showing": "Showing {from}-{to} of {total}",
+        "first": "First page",
+        "last": "Last page"
       },
       "drawer": {
         "conversationDetail": "Conversation Detail",

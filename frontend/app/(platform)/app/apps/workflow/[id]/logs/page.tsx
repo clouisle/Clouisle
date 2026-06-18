@@ -18,6 +18,8 @@ import {
   Clock,
   Ban,
   AlertTriangle,
+  Search,
+  X,
   Loader2 as LoaderIcon
 } from 'lucide-react'
 import Image from 'next/image'
@@ -46,9 +48,31 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { useDebounce } from '@/hooks/use-debounce'
 import { WorkflowRunDrawer } from '@/app/(dashboard)/activities/_components/workflow-run-drawer'
 
 const PAGE_SIZE = 20
+
+function getCreatedAfter(dateFilter: string): string | undefined {
+  if (dateFilter === 'all') return undefined
+
+  const cutoff = new Date()
+  switch (dateFilter) {
+    case '7d':
+      cutoff.setDate(cutoff.getDate() - 7)
+      break
+    case '30d':
+      cutoff.setDate(cutoff.getDate() - 30)
+      break
+    case '90d':
+      cutoff.setDate(cutoff.getDate() - 90)
+      break
+    default:
+      return undefined
+  }
+  return cutoff.toISOString()
+}
 
 // Helper to format datetime
 function formatDateTime(dateString: string, locale: string): string {
@@ -139,6 +163,8 @@ export default function WorkflowLogsPage() {
   const [isLoadingRuns, setIsLoadingRuns] = React.useState(false)
 
   // Search and filter state
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [statusFilter, setStatusFilter] = React.useState('all')
   const [dateFilter, setDateFilter] = React.useState('all')
   const [drawerOpen, setDrawerOpen] = React.useState(false)
@@ -161,10 +187,13 @@ export default function WorkflowLogsPage() {
   const fetchRuns = React.useCallback(async (page: number = 1) => {
     try {
       setIsLoadingRuns(true)
+      const search = debouncedSearchQuery.trim()
       const result = await workflowsApi.getWorkflowRuns(workflowId, {
         page,
         pageSize: PAGE_SIZE,
         status: statusFilter !== 'all' ? statusFilter as 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | 'timeout' : undefined,
+        search: search || undefined,
+        createdAfter: getCreatedAfter(dateFilter),
       })
       setRuns(result.items)
       setTotalRuns(result.total)
@@ -174,7 +203,7 @@ export default function WorkflowLogsPage() {
     } finally {
       setIsLoadingRuns(false)
     }
-  }, [workflowId, statusFilter])
+  }, [workflowId, statusFilter, dateFilter, debouncedSearchQuery])
 
   const handleRowClick = (runId: string) => {
     setSelectedRunId(runId)
@@ -190,31 +219,6 @@ export default function WorkflowLogsPage() {
       fetchRuns()
     }
   }, [workflow, fetchRuns])
-
-  // Filter runs (client-side for search)
-  const filteredRuns = React.useMemo(() => {
-    let result = [...runs]
-
-    // Date filter
-    if (dateFilter !== 'all') {
-      const now = new Date()
-      const cutoff = new Date()
-      switch (dateFilter) {
-        case '7d':
-          cutoff.setDate(now.getDate() - 7)
-          break
-        case '30d':
-          cutoff.setDate(now.getDate() - 30)
-          break
-        case '90d':
-          cutoff.setDate(now.getDate() - 90)
-          break
-      }
-      result = result.filter((r) => new Date(r.created_at) >= cutoff)
-    }
-
-    return result
-  }, [runs, dateFilter])
 
   const totalPages = Math.ceil(totalRuns / PAGE_SIZE)
 
@@ -294,7 +298,7 @@ export default function WorkflowLogsPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden pt-20">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-20">
         {/* Filters Bar */}
         <div className="px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
@@ -319,6 +323,25 @@ export default function WorkflowLogsPage() {
               </SelectContent>
             </Select>
 
+            {/* Run ID Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t('searchRunIdPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
             {/* Date Filter */}
             <Select value={dateFilter} onValueChange={(v) => v && setDateFilter(v)}>
               <SelectTrigger className="w-40" size="default">
@@ -341,14 +364,14 @@ export default function WorkflowLogsPage() {
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto px-6">
+        <div className="flex-1 min-h-0 overflow-auto px-6">
           {isLoadingRuns ? (
             <div className="py-6 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : filteredRuns.length === 0 ? (
+          ) : runs.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-16">
               <div className="text-center text-muted-foreground">
                 <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -367,7 +390,7 @@ export default function WorkflowLogsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRuns.map((run) => (
+                {runs.map((run) => (
                   <TableRow
                     key={run.id}
                     className="cursor-pointer"

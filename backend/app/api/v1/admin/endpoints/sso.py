@@ -206,6 +206,7 @@ async def delete_provider(
 @router.post("/providers/{provider_id}/test", response_model=Response[dict])
 async def test_provider_connection(
     provider_id: UUID,
+    request: Request,
     current_user: User = Depends(deps.PermissionChecker("admin:sso:update")),
 ):
     """Test SSO provider connection (admin)"""
@@ -257,6 +258,7 @@ async def test_provider_connection(
                 status="failed",
                 error_message=str(e),
                 metadata={"provider": provider.name},
+                request=request,
             )
         return success(
             data={

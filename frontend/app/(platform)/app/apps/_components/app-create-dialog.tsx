@@ -34,6 +34,7 @@ import { agentsApi, type Agent, type AgentCreateInput } from '@/lib/api/agents'
 import { workflowsApi, type Workflow, type WorkflowCreateInput } from '@/lib/api/workflows'
 import type { Team } from '@/lib/api/teams'
 import { useOptionalTeam } from '@/contexts/team-context'
+import { useOptionalOnboarding } from '@/components/onboarding/onboarding-provider'
 
 interface AppCreateApi {
   createAgent: (data: AgentCreateInput) => Promise<Agent>
@@ -76,6 +77,7 @@ export function AppCreateDialog({
   const tCommon = useTranslations('common')
   const router = useRouter()
   const teamContext = useOptionalTeam()
+  const onboarding = useOptionalOnboarding()
   const currentTeam = teamContext?.currentTeam
 
   const [appType, setAppType] = React.useState<AppType>('agent')
@@ -115,20 +117,28 @@ export function AppCreateDialog({
 
     try {
       if (appType === 'agent') {
+        const shouldStartConfigTour = onboarding?.state.isRunning && onboarding.state.currentTour === 'appCreate'
         const agent = await api.createAgent({
           team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
         })
+        onOpenChange(false)
         toast.success(t('appCreated'))
         onSuccess?.()
         router.push(agentEditHref(agent.id))
+        if (shouldStartConfigTour) {
+          setTimeout(() => {
+            onboarding?.startTour('appConfig', 1)
+          }, 700)
+        }
       } else {
         const workflow = await api.createWorkflow({
           team_id: targetTeamId,
           name: name.trim(),
           description: description.trim() || undefined,
         })
+        onOpenChange(false)
         toast.success(t('appCreated'))
         onSuccess?.()
         router.push(workflowEditHref(workflow.id))
@@ -167,7 +177,7 @@ export function AppCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent data-testid="app-create-dialog" className="sm:max-w-[500px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{t('createApp')}</DialogTitle>
@@ -188,6 +198,7 @@ export function AppCreateDialog({
               <div className="space-y-3">
                 <Label>{t('selectType')}</Label>
                 <RadioGroup
+                  data-testid="app-create-type-selector"
                   value={appType}
                   onValueChange={(v) => setAppType(v as AppType)}
                   className="grid grid-cols-2 gap-3"
@@ -260,6 +271,7 @@ export function AppCreateDialog({
               <Label htmlFor="name">{t('name')}</Label>
               <Input
                 id="name"
+                data-testid="app-create-name-input"
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value)
@@ -280,6 +292,7 @@ export function AppCreateDialog({
               </Label>
               <Textarea
                 id="description"
+                data-testid="app-create-description-input"
                 value={description}
                 onChange={(e) => {
                   setDescription(e.target.value)
@@ -303,7 +316,7 @@ export function AppCreateDialog({
             >
               {tCommon('cancel')}
             </Button>
-            <Button type="submit" disabled={isSubmitting || !name.trim()}>
+            <Button type="submit" data-testid="app-create-submit" disabled={isSubmitting || !name.trim()}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {tCommon('create')}
             </Button>

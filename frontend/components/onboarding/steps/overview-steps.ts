@@ -1,0 +1,125 @@
+import type { OnboardingStep, OnboardingTourConfig } from './types'
+
+const overviewSteps: OnboardingStep[] = [
+  // Home page overview
+  {
+    target: '[data-testid="platform-logo"]',
+    content: 'onboarding.step0a.description',
+    title: 'onboarding.step0a.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-team-switcher"]',
+    content: 'onboarding.step0b.description',
+    title: 'onboarding.step0b.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-header-nav"]',
+    content: 'onboarding.step1.description',
+    title: 'onboarding.step1.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="nav-home"]',
+    content: 'onboarding.step1a.description',
+    title: 'onboarding.step1a.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="nav-apps"]',
+    content: 'onboarding.step1c.description',
+    title: 'onboarding.step1c.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="nav-kb"]',
+    content: 'onboarding.step1d.description',
+    title: 'onboarding.step1d.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="nav-capabilities"]',
+    content: 'onboarding.step1e.description',
+    title: 'onboarding.step1e.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="nav-models"]',
+    content: 'onboarding.step1f.description',
+    title: 'onboarding.step1f.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-theme-button"]',
+    content: 'onboarding.step1g.description',
+    title: 'onboarding.step1g.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-user-menu"]',
+    content: 'onboarding.step1h.description',
+    title: 'onboarding.step1h.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-header"]',
+    content: 'onboarding.step1b.description',
+    title: 'onboarding.step1b.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-stat-cards"]',
+    content: 'onboarding.step2.description',
+    title: 'onboarding.step2.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-usage-trend"]',
+    content: 'onboarding.step2b.description',
+    title: 'onboarding.step2b.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-resource-overview"]',
+    content: 'onboarding.step2c.description',
+    title: 'onboarding.step2c.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-quick-actions"]',
+    content: 'onboarding.step3.description',
+    title: 'onboarding.step3.title',
+    placement: 'auto',
+    route: '/app',
+  },
+  {
+    target: '[data-testid="platform-home-recent-items"]',
+    content: 'onboarding.step3b.description',
+    title: 'onboarding.step3b.title',
+    placement: 'auto',
+    route: '/app',
+  },
+]
+
+export const overviewTourConfig: OnboardingTourConfig = {
+  id: 'overview',
+  title: 'onboarding.tourOverviewTitle',
+  description: 'onboarding.tourOverviewDescription',
+  steps: overviewSteps,
+  autoStart: true,
+}

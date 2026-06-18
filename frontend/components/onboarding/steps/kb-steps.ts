@@ -1,0 +1,115 @@
+import type { OnboardingStep, OnboardingTourConfig } from './types'
+
+const kbSteps: OnboardingStep[] = [
+  // Knowledge base
+  {
+    target: '[data-testid="nav-kb"]',
+    content: 'onboarding.step6.description',
+    title: 'onboarding.step6.title',
+    placement: 'auto',
+    route: '/app/kb',
+    advanceOnClick: true,
+    waitForRouteChange: true,
+  },
+  {
+    target: '[data-testid="kb-import-button"]',
+    content: 'onboarding.step7b.description',
+    title: 'onboarding.step7b.title',
+    placement: 'auto',
+    route: '/app/kb',
+  },
+  {
+    target: '[data-testid="kb-create-card"]',
+    content: 'onboarding.step7.description',
+    title: 'onboarding.step7.title',
+    placement: 'auto',
+    route: '/app/kb',
+    advanceOnClick: true,
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-name"]',
+    content: 'onboarding.step7a.description',
+    title: 'onboarding.step7a.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-description"]',
+    content: 'onboarding.step7c.description',
+    title: 'onboarding.step7c.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-embedding"]',
+    content: 'onboarding.step7d.description',
+    title: 'onboarding.step7d.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-rerank-model"]',
+    content: 'onboarding.step7f.description',
+    title: 'onboarding.step7f.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-chunk-settings"]',
+    content: 'onboarding.step7g.description',
+    title: 'onboarding.step7g.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-separator"]',
+    content: 'onboarding.step7h.description',
+    title: 'onboarding.step7h.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-rerank-section"]',
+    content: 'onboarding.step7i.description',
+    title: 'onboarding.step7i.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-rerank-enabled"]',
+    content: 'onboarding.step7j.description',
+    title: 'onboarding.step7j.title',
+    placement: 'left',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-rerank-params"]',
+    content: 'onboarding.step7k.description',
+    title: 'onboarding.step7k.title',
+    placement: 'bottom',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-rerank-fail-open"]',
+    content: 'onboarding.step7l.description',
+    title: 'onboarding.step7l.title',
+    placement: 'top',
+    overlayClickAction: false,
+  },
+  {
+    target: '[data-testid="kb-dialog-submit"]',
+    content: 'onboarding.step7e.description',
+    title: 'onboarding.step7e.title',
+    placement: 'top',
+    overlayClickAction: false,
+  },
+]
+
+export const kbTourConfig: OnboardingTourConfig = {
+  id: 'kb',
+  title: 'onboarding.tourKBTitle',
+  description: 'onboarding.tourKBDescription',
+  steps: kbSteps,
+  autoStart: false,
+}

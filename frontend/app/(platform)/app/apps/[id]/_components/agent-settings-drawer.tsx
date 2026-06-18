@@ -75,14 +75,15 @@ interface SettingsSectionProps {
   title: string
   children: React.ReactNode
   defaultOpen?: boolean
+  testid?: string
 }
 
-function SettingsSection({ title, children, defaultOpen = true }: SettingsSectionProps) {
+function SettingsSection({ title, children, defaultOpen = true, testid }: SettingsSectionProps) {
   const [isOpen, setIsOpen] = React.useState(defaultOpen)
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <CollapsibleTrigger className="flex items-center justify-between w-full py-2 text-sm font-medium hover:text-foreground text-muted-foreground">
+      <CollapsibleTrigger data-testid={testid} className="flex items-center justify-between w-full py-2 text-sm font-medium hover:text-foreground text-muted-foreground">
         {title}
         <ChevronDown
           className={cn(
@@ -169,7 +170,7 @@ export function AgentSettingsDrawer({
             {/* Basic Info Section */}
             <SettingsSection title={ts('basicInfo')}>
               {/* Icon */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-icon-upload" className="space-y-1.5">
                 <Label className="text-xs">{ts('icon')}</Label>
                 <ImageUpload
                   value={icon}
@@ -181,7 +182,7 @@ export function AgentSettingsDrawer({
               </div>
 
               {/* Name */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-name-input" className="space-y-1.5">
                 <Label htmlFor="name" className="text-xs">{t('name')}</Label>
                 <Input
                   id="name"
@@ -192,7 +193,7 @@ export function AgentSettingsDrawer({
               </div>
 
               {/* Description */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-description-input" className="space-y-1.5">
                 <Label htmlFor="description" className="text-xs">{t('descriptionLabel')}</Label>
                 <Textarea
                   id="description"
@@ -205,7 +206,7 @@ export function AgentSettingsDrawer({
               </div>
 
               {/* Visibility */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-visibility-select" className="space-y-1.5">
                 <Label htmlFor="visibility" className="text-xs">{t('visibility')}</Label>
                 <Select value={visibility} onValueChange={(v) => v && onVisibilityChange(v as AgentVisibility)}>
                   <SelectTrigger id="visibility">
@@ -224,7 +225,7 @@ export function AgentSettingsDrawer({
             {/* Model Settings Section */}
             <SettingsSection title={ts('modelConfig')}>
               {/* Model Selector */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-model-select" className="space-y-1.5">
                 <Label className="text-xs">{t('model')}</Label>
                 <DropdownMenu>
                   <DropdownMenuTrigger className="w-full inline-flex items-center justify-between gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-9 px-3">
@@ -285,7 +286,7 @@ export function AgentSettingsDrawer({
               </p>
 
               {/* Max Iterations */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-max-iterations" className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <Label className="text-xs">{ts('maxIterationsLabel')}</Label>
                   <Tooltip>
@@ -314,7 +315,7 @@ export function AgentSettingsDrawer({
                 </p>
               </div>
 
-              <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+              <div data-testid="settings-hide-tool-calls" className="flex items-start justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
                   <Label className="text-xs">{ts('hideToolCalls')}</Label>
                   <p className="text-xs text-muted-foreground">{ts('hideToolCallsDesc')}</p>
@@ -324,9 +325,9 @@ export function AgentSettingsDrawer({
             </SettingsSection>
 
             {/* Conversation Settings Section */}
-            <SettingsSection title={ts('conversationConfig')} defaultOpen={false}>
+            <SettingsSection title={ts('conversationConfig')} defaultOpen={false} testid="settings-conversation-section">
               {/* Opening Message */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-opening-message" className="space-y-1.5">
                 <Label htmlFor="openingMessage" className="text-xs">{t('openingMessage')}</Label>
                 <Textarea
                   id="openingMessage"
@@ -339,7 +340,7 @@ export function AgentSettingsDrawer({
               </div>
 
               {/* Suggested Questions */}
-              <div className="space-y-1.5">
+              <div data-testid="settings-suggested-questions" className="space-y-1.5">
                 <Label htmlFor="suggestedQuestions" className="text-xs">{t('suggestedQuestions')}</Label>
                 <Textarea
                   id="suggestedQuestions"

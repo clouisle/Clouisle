@@ -30,6 +30,7 @@ from app.schemas.agent import ChatRequest, EmbedAgentInfo
 from app.api.v1.endpoints.chat import build_message_round_payloads
 from app.schemas.response import BusinessError, ResponseCode, success
 from app.services.message_branching import get_visible_conversation_messages
+from app.services.audit_log import AuditLogService
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +365,22 @@ async def embed_run_workflow(
         inputs=inputs,
         user_id=str(user.id),
         team_id=str(workflow.team_id) if workflow.team_id else None,
+    )
+
+    await AuditLogService.log(
+        user=user,
+        action="run_workflow_embed",
+        resource_type="workflow",
+        resource_id=workflow_id,
+        resource_name=workflow.name,
+        operation="execute",
+        status="success",
+        request=request,
+        api_key=api_key,
+        metadata={
+            "run_id": str(run.id),
+            "source": "embed",
+        },
     )
 
     return success(

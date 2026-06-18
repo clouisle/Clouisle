@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2 } from 'lucide-react'
@@ -40,6 +41,15 @@ export default function SiteSettingsGeneralPage() {
     site_icon: '',
     default_language: 'en',
     auth_page_layout: 'centered',
+    icp_record_number: '',
+    icp_record_url: '',
+    terms_enabled: false,
+    terms_url: '',
+    terms_text: '',
+    privacy_enabled: false,
+    privacy_url: '',
+    privacy_text: '',
+    require_terms_acceptance_on_register: false,
   })
 
   const errorPathMap = React.useMemo(
@@ -53,8 +63,8 @@ export default function SiteSettingsGeneralPage() {
   )
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['site_name', 'site_description', 'site_url', 'site_icon', 'default_language', 'auth_page_layout']),
-    [fieldErrors]
+    () => getValidationSummaryEntries(fieldErrors, Object.keys(settings)),
+    [fieldErrors, settings]
   )
 
   const loadSettings = React.useCallback(async () => {
@@ -78,6 +88,32 @@ export default function SiteSettingsGeneralPage() {
 
     if (!settings.site_name.trim()) {
       nextErrors.site_name = t('required')
+    }
+
+    const validateUrl = (key: keyof GeneralSettings) => {
+      const value = settings[key]
+      if (typeof value !== 'string' || !value.trim()) {
+        return
+      }
+      try {
+        const url = new URL(value)
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          nextErrors[key] = t('invalidUrl')
+        }
+      } catch {
+        nextErrors[key] = t('invalidUrl')
+      }
+    }
+
+    validateUrl('icp_record_url')
+    validateUrl('terms_url')
+    validateUrl('privacy_url')
+
+    if (settings.terms_enabled && !settings.terms_url.trim() && !settings.terms_text.trim()) {
+      nextErrors.terms_url = t('legalEntryRequired')
+    }
+    if (settings.privacy_enabled && !settings.privacy_url.trim() && !settings.privacy_text.trim()) {
+      nextErrors.privacy_url = t('legalEntryRequired')
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -253,6 +289,134 @@ export default function SiteSettingsGeneralPage() {
               </SelectContent>
             </Select>
             <FieldError>{fieldErrors.auth_page_layout}</FieldError>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('legalCompliance')}</CardTitle>
+          <CardDescription>{t('legalComplianceDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="icpRecordNumber">{t('icpRecordNumber')}</Label>
+              <Input
+                id="icpRecordNumber"
+                placeholder={t('icpRecordNumberPlaceholder')}
+                value={settings.icp_record_number}
+                onChange={(e) => updateSetting('icp_record_number', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.icp_record_number}
+              />
+              <FieldError>{fieldErrors.icp_record_number}</FieldError>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="icpRecordUrl">{t('icpRecordUrl')}</Label>
+              <Input
+                id="icpRecordUrl"
+                placeholder="https://beian.miit.gov.cn"
+                value={settings.icp_record_url}
+                onChange={(e) => updateSetting('icp_record_url', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.icp_record_url}
+              />
+              <FieldError>{fieldErrors.icp_record_url}</FieldError>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="termsEnabled">{t('termsEnabled')}</Label>
+                <p className="text-sm text-muted-foreground">{t('termsEnabledDescription')}</p>
+              </div>
+              <Switch
+                id="termsEnabled"
+                checked={settings.terms_enabled}
+                onCheckedChange={(checked) => updateSetting('terms_enabled', checked)}
+                disabled={!canUpdate}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="termsUrl">{t('termsUrl')}</Label>
+              <Input
+                id="termsUrl"
+                placeholder="https://example.com/terms"
+                value={settings.terms_url}
+                onChange={(e) => updateSetting('terms_url', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.terms_url}
+              />
+              <FieldError>{fieldErrors.terms_url}</FieldError>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="termsText">{t('termsText')}</Label>
+              <Textarea
+                id="termsText"
+                rows={5}
+                placeholder={t('termsTextPlaceholder')}
+                value={settings.terms_text}
+                onChange={(e) => updateSetting('terms_text', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.terms_text}
+              />
+              <FieldError>{fieldErrors.terms_text}</FieldError>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="privacyEnabled">{t('privacyEnabled')}</Label>
+                <p className="text-sm text-muted-foreground">{t('privacyEnabledDescription')}</p>
+              </div>
+              <Switch
+                id="privacyEnabled"
+                checked={settings.privacy_enabled}
+                onCheckedChange={(checked) => updateSetting('privacy_enabled', checked)}
+                disabled={!canUpdate}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="privacyUrl">{t('privacyUrl')}</Label>
+              <Input
+                id="privacyUrl"
+                placeholder="https://example.com/privacy"
+                value={settings.privacy_url}
+                onChange={(e) => updateSetting('privacy_url', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.privacy_url}
+              />
+              <FieldError>{fieldErrors.privacy_url}</FieldError>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="privacyText">{t('privacyText')}</Label>
+              <Textarea
+                id="privacyText"
+                rows={5}
+                placeholder={t('privacyTextPlaceholder')}
+                value={settings.privacy_text}
+                onChange={(e) => updateSetting('privacy_text', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.privacy_text}
+              />
+              <FieldError>{fieldErrors.privacy_text}</FieldError>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+            <div className="space-y-1">
+              <Label htmlFor="requireTermsAcceptanceOnRegister">{t('requireTermsAcceptanceOnRegister')}</Label>
+              <p className="text-sm text-muted-foreground">{t('requireTermsAcceptanceOnRegisterDescription')}</p>
+            </div>
+            <Switch
+              id="requireTermsAcceptanceOnRegister"
+              checked={settings.require_terms_acceptance_on_register}
+              onCheckedChange={(checked) => updateSetting('require_terms_acceptance_on_register', checked)}
+              disabled={!canUpdate}
+            />
           </div>
         </CardContent>
       </Card>

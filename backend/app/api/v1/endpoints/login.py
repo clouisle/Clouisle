@@ -263,7 +263,7 @@ async def login_access_token(
     await reset_login_attempts(user)
 
     # Check for login anomaly (new IP or device)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = AuditLogService.get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
     is_anomaly, anomaly_details = await check_login_anomaly(
         user_id=user.id,
@@ -493,7 +493,7 @@ async def verify_totp(
         force_change_required = True
 
     # Check for login anomaly
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = AuditLogService.get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
     is_anomaly, anomaly_details = await check_login_anomaly(
         user_id=user.id,
@@ -680,6 +680,15 @@ async def register(
             raise BusinessError(
                 code=ResponseCode.REGISTRATION_DISABLED,
                 msg_key="registration_disabled",
+            )
+        require_terms_acceptance = await SiteSetting.get_value(
+            "require_terms_acceptance_on_register", False
+        )
+        if require_terms_acceptance and not user_in.terms_accepted:
+            raise BusinessError(
+                code=ResponseCode.VALIDATION_ERROR,
+                msg_key="terms_acceptance_required",
+                data={"errors": {"terms_accepted": ["terms_acceptance_required"]}},
             )
 
     # Validate password strength
