@@ -125,7 +125,7 @@ function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoadin
   }
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -147,8 +147,9 @@ function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoadin
           </Select>
         </div>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={data}
             margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
@@ -199,7 +200,8 @@ function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoadin
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )

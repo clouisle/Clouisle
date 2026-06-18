@@ -63,7 +63,7 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
   }
 
   return (
-    <Card className="h-full">
+    <Card className="flex h-full flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Cpu className="h-5 w-5" />
@@ -71,8 +71,9 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
         </CardTitle>
         <CardDescription>{t('charts.modelDistributionDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data as Array<ModelDistribution & Record<string, unknown>>}
@@ -110,7 +111,8 @@ export function ModelDistributionChart({ data, isLoading }: ModelDistributionCha
               }}
             />
           </PieChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )

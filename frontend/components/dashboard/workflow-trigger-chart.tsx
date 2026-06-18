@@ -76,7 +76,7 @@ function WorkflowTriggerChartComponent({ data, isLoading }: WorkflowTriggerChart
   }
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Zap className="h-5 w-5" />
@@ -84,8 +84,9 @@ function WorkflowTriggerChartComponent({ data, isLoading }: WorkflowTriggerChart
         </CardTitle>
         <CardDescription>{t('analytics.workflowTriggersDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
@@ -124,7 +125,8 @@ function WorkflowTriggerChartComponent({ data, isLoading }: WorkflowTriggerChart
               }}
             />
           </PieChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )

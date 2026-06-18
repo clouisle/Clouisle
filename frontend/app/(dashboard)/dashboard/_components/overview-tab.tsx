@@ -156,7 +156,7 @@ function StatCard({
   const displayValue = typeof value === 'number' ? formatNumber(animatedValue) : value
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card size="sm" className="hover:shadow-md transition-shadow">
       <CardContent className="py-0">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
@@ -218,8 +218,8 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
 
       {/* 2FA Stats */}
       {totpStats && (
-        <Card className="border-green-200 dark:border-green-900">
-          <CardContent className="pt-6">
+        <Card size="sm" className="border-green-200 dark:border-green-900">
+          <CardContent className="py-0">
             <div className="flex items-start justify-between">
               <div className="space-y-2">
                 <p className="text-sm font-medium text-muted-foreground">{t('stats.twoFactorAuth')}</p>
@@ -250,8 +250,8 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
               </CardTitle>
               <CardDescription className="text-xs">{t('userGrowthDesc')}</CardDescription>
             </CardHeader>
-            <CardContent className="flex-1 pt-0">
-              <div className="h-[180px] min-w-0 w-full">
+            <CardContent className="flex flex-1 flex-col pt-0">
+              <div className="min-h-[180px] min-w-0 flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={trendsData}>
                   <defs>
@@ -339,8 +339,8 @@ export function OverviewTab({ stats, trendsData, isLoading, totpStats }: Overvie
               </CardTitle>
               <CardDescription className="text-xs">{t('activityTrendDesc')}</CardDescription>
             </CardHeader>
-            <CardContent className="flex-1 pt-0">
-              <div className="h-[180px] min-w-0 w-full">
+            <CardContent className="flex flex-1 flex-col pt-0">
+              <div className="min-h-[180px] min-w-0 flex-1 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={trendsData}>
                   <defs>

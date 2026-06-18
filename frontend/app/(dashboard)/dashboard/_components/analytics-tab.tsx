@@ -98,7 +98,7 @@ function StatCard({
   const displayValue = typeof value === 'number' ? formatter(animatedValue) : value
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card size="sm" className="hover:shadow-md transition-shadow">
       <CardContent className="py-0">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
@@ -197,7 +197,7 @@ function AnalyticsTabComponent({ stats, workflowData, topAgentsData, isLoading, 
             />
 
             {/* System Stats */}
-            <Card>
+            <Card size="sm">
               <CardContent className="py-0">
                 <div className="space-y-3">
                   <div>

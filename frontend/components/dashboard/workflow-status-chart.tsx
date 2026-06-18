@@ -76,7 +76,7 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
   }
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5" />
@@ -84,8 +84,9 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
         </CardTitle>
         <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
       </CardHeader>
-      <CardContent className="pt-0">
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col pt-0">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={data}
@@ -124,7 +125,8 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
               }}
             />
           </PieChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )
