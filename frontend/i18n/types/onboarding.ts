@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.227Z
+// GENERATED — 2026-06-18T07:33:26.136Z
 // Source: i18n/en/onboarding.json
 export type OnboardingMessages = {
   onboarding: {
@@ -10,6 +10,7 @@ export type OnboardingMessages = {
     tourModelsDescription: string
     tourKBTitle: string
     tourKBDescription: string
+    tourAppCreateTitle: string
     tourAppCreateDescription: string
     tourAppConfigTitle: string
     tourAppConfigDescription: string

@@ -31,6 +31,7 @@ import { usePermissions } from '@/hooks/use-permissions'
 import { useTeam } from '@/contexts/team-context'
 import { useOptionalOnboarding, type OnboardingTourId } from '@/components/onboarding/onboarding-provider'
 import { allTourConfigs } from '@/components/onboarding/steps/platform-steps'
+import type { OnboardingMessages } from '@/i18n/types/onboarding'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -421,7 +422,7 @@ export function PlatformHeader() {
                     {allTourConfigs.map((tourConfig) => {
                       const isCompleted = onboarding.isTourCompleted(tourConfig.id)
                       // tourConfig.title is like 'onboarding.tourOverviewTitle', we need 'tourOverviewTitle'
-                      const titleKey = tourConfig.title.replace('onboarding.', '')
+                      const titleKey = tourConfig.title.replace('onboarding.', '') as keyof OnboardingMessages['onboarding']
                       return (
                         <DropdownMenuItem
                           key={tourConfig.id}
@@ -433,7 +434,7 @@ export function PlatformHeader() {
                           {isCompleted && (
                             <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
                           )}
-                          {tOnboarding(titleKey as 'tourOverviewTitle' | 'tourModelsTitle' | 'tourKBTitle' | 'tourAppCreateTitle')}
+                          {tOnboarding(titleKey)}
                         </DropdownMenuItem>
                       )
                     })}

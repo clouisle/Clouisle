@@ -40,21 +40,25 @@ export function AgentSidebar({
       title: t('orchestration'),
       href: baseUrl,
       icon: LayoutGrid,
+      testId: 'agent-nav-orchestration',
     },
     {
       title: t('api'),
       href: `${baseUrl}/api`,
       icon: Code2,
+      testId: 'agent-nav-api',
     },
     {
       title: t('logs'),
       href: `${baseUrl}/logs`,
       icon: FileText,
+      testId: 'agent-nav-logs',
     },
     {
       title: t('monitor'),
       href: `${baseUrl}/monitor`,
       icon: Activity,
+      testId: 'agent-nav-monitor',
     },
   ]
 
@@ -107,17 +111,13 @@ export function AgentSidebar({
       {/* Navigation */}
       <nav className="flex-1 p-2">
         <ul className="space-y-1">
-          {navItems.map((item, index) => {
+          {navItems.map((item) => {
             const isActive = pathname === item.href
-            const testId = index === 0 ? 'agent-nav-orchestration' :
-                          index === 1 ? 'agent-nav-api' :
-                          index === 2 ? 'agent-nav-logs' :
-                          'agent-nav-monitor'
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  data-testid={testId}
+                  data-testid={item.testId}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                     isActive

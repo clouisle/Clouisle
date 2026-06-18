@@ -8,6 +8,7 @@
     "tourModelsDescription": "Learn about available AI models and configuration",
     "tourKBTitle": "Knowledge Base",
     "tourKBDescription": "Learn how to create and manage Knowledge Bases",
+    "tourAppCreateTitle": "Create App",
     "tourAppCreateDescription": "Create your first Agent or Workflow",
     "tourAppConfigTitle": "Configure App",
     "tourAppConfigDescription": "Configure prompts, knowledge bases, tools, and publish your Agent",

@@ -219,7 +219,10 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
             if (nextStepData) {
               // Check if the target element exists in DOM
-              const targetExists = !!document.querySelector(nextStepData.target as string)
+              const target = nextStepData.target
+              const targetExists = typeof target === 'string'
+                ? !!document.querySelector(target)
+                : !!target
               if (targetExists) {
                 if (nextStepData.route) {
                   const isOnCorrectRoute = routeMatches(pathname, nextStepData.route)
@@ -317,6 +320,14 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     const target = currentStep.target
     if (typeof target !== 'string') return
 
+    let isMounted = true
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const schedule = (callback: () => void, delay: number) => {
+      const timer = setTimeout(callback, delay)
+      timers.push(timer)
+      return timer
+    }
+
     // Reset advance flag when step changes
     advanceTriggeredRef.current = false
 
@@ -327,7 +338,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
 
       const handleClick = () => {
         // Prevent multiple advances for the same step
-        if (advanceTriggeredRef.current) return
+        if (!isMounted || advanceTriggeredRef.current) return
         advanceTriggeredRef.current = true
 
         // If waitForRouteChange is set, wait until the expected route is reached before advancing
@@ -336,6 +347,7 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
           let elapsed = 0
           const maxWait = 10000 // 10 seconds max wait
           const checkRouteChange = () => {
+            if (!isMounted) return
             const reachedExpectedRoute = currentStep.route
               ? routeMatches(pathnameRef.current, currentStep.route)
               : pathnameRef.current !== originalPathname
@@ -346,17 +358,18 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
             } else if (elapsed < maxWait) {
               // Keep checking
               elapsed += 200
-              setTimeout(checkRouteChange, 200)
+              schedule(checkRouteChange, 200)
             } else {
               // Timeout - just advance anyway
               handleNext()
             }
           }
           // Start checking after a short delay (to let the click action start)
-          setTimeout(checkRouteChange, 300)
+          schedule(checkRouteChange, 300)
         } else {
           // Small delay to let the click action happen first (e.g., open a dialog)
-          setTimeout(() => {
+          schedule(() => {
+            if (!isMounted) return
             handleNext()
           }, 300)
         }
@@ -369,15 +382,16 @@ export function OnboardingTour({ tourId }: OnboardingTourProps) {
     // Try immediately, then retry after a short delay if not found
     let cleanup = findAndBind()
     if (!cleanup) {
-      const timer = setTimeout(() => {
+      schedule(() => {
+        if (!isMounted) return
         cleanup = findAndBind()
       }, 500)
-      return () => {
-        clearTimeout(timer)
-        cleanup?.()
-      }
     }
-    return cleanup
+    return () => {
+      isMounted = false
+      timers.forEach(clearTimeout)
+      cleanup?.()
+    }
   }, [state.isRunning, state.currentTour, tourId, currentStep, handleNext, currentStepIndex])
 
   // Handle advanceOnInput: listen for input events on the target element

@@ -29,27 +29,11 @@ const STORAGE_KEY = 'clouisle-onboarding-state'
 
 const OnboardingContext = React.createContext<OnboardingContextType | undefined>(undefined)
 
-function loadState(): OnboardingState {
-  if (typeof window === 'undefined') {
-    return { completedTours: [], currentTour: null, currentStep: 0, isRunning: false }
-  }
-
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      return {
-        completedTours: parsed.completedTours || [],
-        currentTour: null,
-        currentStep: 0,
-        isRunning: false,
-      }
-    }
-  } catch {
-    // Ignore parse errors
-  }
-
-  return { completedTours: [], currentTour: null, currentStep: 0, isRunning: false }
+const DEFAULT_STATE: OnboardingState = {
+  completedTours: [],
+  currentTour: null,
+  currentStep: 0,
+  isRunning: false,
 }
 
 function saveState(state: OnboardingState) {
@@ -68,12 +52,30 @@ function saveState(state: OnboardingState) {
 }
 
 export function OnboardingProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = React.useState<OnboardingState>(loadState)
+  const [state, setState] = React.useState<OnboardingState>(DEFAULT_STATE)
+  const [isLoaded, setIsLoaded] = React.useState(false)
+
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setState(prev => ({
+          ...prev,
+          completedTours: Array.isArray(parsed.completedTours) ? parsed.completedTours : [],
+        }))
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    setIsLoaded(true)
+  }, [])
 
   // Persist completed tours to localStorage
   React.useEffect(() => {
+    if (!isLoaded) return
     saveState(state)
-  }, [state])
+  }, [state, isLoaded])
 
   const startTour = React.useCallback((tourId: OnboardingTourId, initialStep: number = 0) => {
     setState(prev => ({
