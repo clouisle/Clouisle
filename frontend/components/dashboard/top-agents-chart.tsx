@@ -92,7 +92,7 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
   }
 
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="h-full">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5" />

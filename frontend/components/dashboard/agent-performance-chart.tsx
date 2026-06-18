@@ -125,7 +125,7 @@ function AgentPerformanceChartComponent({ data, metric, onMetricChange, isLoadin
   }
 
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="h-full">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

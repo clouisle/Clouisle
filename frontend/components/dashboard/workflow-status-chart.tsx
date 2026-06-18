@@ -76,7 +76,7 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
   }
 
   return (
-    <Card className="flex h-full flex-col">
+    <Card className="h-full">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5" />

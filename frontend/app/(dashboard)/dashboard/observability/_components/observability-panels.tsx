@@ -711,7 +711,7 @@ function ConsoleMetric({ label, value, description, tone = 'neutral' }: { label:
 
 function ObservabilityChartCard({ title, description, empty, className, children }: { title: string; description?: string; empty?: boolean; className?: string; children: React.ReactNode }) {
   return (
-    <Card className={cn('flex h-full flex-col', className)}>
+    <Card className={cn('h-full', className)}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
