@@ -1663,6 +1663,28 @@ const ESCAPED_MATH_BLOCK_REGEX = /\\\[([\s\S]*?)\\\]/g
 const ESCAPED_MATH_INLINE_REGEX = /\\\(([\s\S]*?)\\\)/g
 const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[\s*([\s\S]*?\\(?:text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)[\s\S]*?)\s*\]\s*(?=\n|$)/g
 const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*(\\[A-Za-z]+(?:\{[^()]*\}|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
+const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
+
+function normalizeBareLatexFormulaLines(input: string) {
+  let insideMathBlock = false
+  return input
+    .split('\n')
+    .map((line) => {
+      if (line.trim() === '$$') {
+        insideMathBlock = !insideMathBlock
+        return line
+      }
+      if (insideMathBlock) {
+        return line
+      }
+      const match = line.match(BARE_LATEX_FORMULA_LINE_REGEX)
+      if (!match) {
+        return line
+      }
+      return `${match[1]}$$\n${match[2].trim()}\n${match[1]}$$`
+    })
+    .join('\n')
+}
 
 function normalizeBareMathDelimiters(input: string) {
   return input
@@ -1671,7 +1693,7 @@ function normalizeBareMathDelimiters(input: string) {
       if (segment.startsWith('`')) {
         return segment
       }
-      return segment
+      return normalizeBareLatexFormulaLines(segment)
         .replace(ESCAPED_MATH_BLOCK_REGEX, (_, formula: string) => `\n\n$$\n${formula}\n$$`)
         .replace(ESCAPED_MATH_INLINE_REGEX, (_, formula: string) => `$${formula}$`)
         .replace(BARE_MATH_BLOCK_REGEX, (_, prefix: string, formula: string) => `${prefix}\n\n$$\n${formula}\n$$`)
