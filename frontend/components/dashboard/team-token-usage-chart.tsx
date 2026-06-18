@@ -81,8 +81,9 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
         </CardTitle>
         <CardDescription>{t('models.teamRankingDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={filteredData}
             margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
@@ -127,7 +128,8 @@ export function TeamTokenUsageChart({ data, isLoading }: TeamTokenUsageChartProp
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )

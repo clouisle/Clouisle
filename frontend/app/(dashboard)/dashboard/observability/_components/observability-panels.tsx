@@ -35,6 +35,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { CHART_COLOR_ORDER, CHART_GRID_COLOR, CHART_TOOLTIP_STYLE } from '@/lib/chart-theme'
+import { cn } from '@/lib/utils'
 import {
   observabilityApi,
   type AgentDetailResponse,
@@ -159,7 +160,8 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
         </Card>
 
         <ObservabilityChartCard className="lg:col-span-7" title={t('charts.requestTrend')} description={t('charts.requestTrendDesc')} empty={!throughput?.buckets.length}>
-          <ResponsiveContainer width="100%" height={310}>
+          <div className="min-h-[310px] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={throughput?.buckets ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
               <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
@@ -170,6 +172,7 @@ export function OverviewPanel({ overview, throughput }: OverviewPanelProps) {
               <Area name={t('overview.workflowRuns')} type="monotone" dataKey="workflow_runs" stackId="requests" stroke={CHART_COLOR_ORDER[1]} fill={CHART_COLOR_ORDER[1]} fillOpacity={0.35} />
             </AreaChart>
           </ResponsiveContainer>
+          </div>
         </ObservabilityChartCard>
       </div>
 
@@ -211,7 +214,8 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-12">
         <ObservabilityChartCard className="lg:col-span-8" title={t('health.resourceUsage')} description={t('charts.systemTrendDesc')} empty={!trend?.items.length}>
-          <ResponsiveContainer width="100%" height={320}>
+          <div className="min-h-[320px] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trend?.items ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
               <XAxis dataKey="generated_at" tickFormatter={formatBucket} minTickGap={24} />
@@ -222,6 +226,7 @@ export function HealthPanel({ health, trend, slowQueries, workers }: HealthPanel
               <Line name={t('health.memory')} type="monotone" dataKey="memory_percent" stroke={CHART_COLOR_ORDER[1]} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </ObservabilityChartCard>
 
         <Card className="lg:col-span-4">
@@ -426,7 +431,8 @@ export function ThroughputPanel({ throughput, tokens }: { throughput: Throughput
       </div>
       <div className="grid gap-6 lg:grid-cols-12">
         <ObservabilityChartCard className="lg:col-span-8" title={t('throughput.requestVolume')} description={t('charts.throughputTrendDesc')} empty={!throughput.buckets.length}>
-          <ResponsiveContainer width="100%" height={320}>
+          <div className="min-h-[320px] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
             <BarChart data={throughput.buckets}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
               <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
@@ -437,6 +443,7 @@ export function ThroughputPanel({ throughput, tokens }: { throughput: Throughput
               <Bar name={t('overview.workflowRuns')} dataKey="workflow_runs" stackId="requests" fill={CHART_COLOR_ORDER[1]} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
         </ObservabilityChartCard>
         <Card className="lg:col-span-4">
           <CardHeader>
@@ -524,7 +531,8 @@ function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[];
   const t = useTranslations('dashboard.observability')
   return (
     <ObservabilityChartCard title={t('details.performanceTrend')} description={t('details.percentiles')} empty={!data.length}>
-      <ResponsiveContainer width="100%" height={260}>
+      <div className="min-h-[260px] flex-1">
+        <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
           <XAxis dataKey="bucket" tickFormatter={formatBucket} minTickGap={24} />
@@ -535,6 +543,7 @@ function DetailTrendChart({ data, countKey }: { data: ObservabilityTrendPoint[];
           <Line name={t('common.count')} type="monotone" dataKey={countKey} stroke={CHART_COLOR_ORDER[1]} dot={false} />
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </ObservabilityChartCard>
   )
 }
@@ -702,13 +711,13 @@ function ConsoleMetric({ label, value, description, tone = 'neutral' }: { label:
 
 function ObservabilityChartCard({ title, description, empty, className, children }: { title: string; description?: string; empty?: boolean; className?: string; children: React.ReactNode }) {
   return (
-    <Card className={className}>
+    <Card className={cn('h-full', className)}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      <CardContent>
-        {empty ? <ObservabilityEmpty /> : children}
+      <CardContent className="flex flex-1 flex-col">
+        {empty ? <div className="flex flex-1 items-center justify-center"><ObservabilityEmpty /></div> : children}
       </CardContent>
     </Card>
   )

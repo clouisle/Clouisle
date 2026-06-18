@@ -100,8 +100,9 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
         </CardTitle>
         <CardDescription>{t('charts.topAgentsDesc')}</CardDescription>
       </CardHeader>
-      <CardContent className="py-0">
-        <ResponsiveContainer width="100%" height={400}>
+      <CardContent className="flex flex-1 flex-col py-0">
+        <div className="min-h-[400px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={filteredData}
             margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
@@ -152,7 +153,8 @@ export function TopAgentsChart({ data, metric, isLoading }: TopAgentsChartProps)
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )

@@ -75,8 +75,9 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
         </CardTitle>
         <CardDescription>{t('models.tokenTrendDesc')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+      <CardContent className="flex flex-1 flex-col">
+        <div className="min-h-[300px] flex-1">
+          <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
             <defs>
               <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
@@ -121,7 +122,8 @@ export function TokenTrendChart({ data, isLoading }: TokenTrendChartProps) {
               fill="url(#colorTokens)"
             />
           </AreaChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   )
