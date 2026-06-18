@@ -13,6 +13,7 @@ import {
 import type { CodeHighlighterPlugin, PluginConfig, LinkSafetyModalProps } from 'streamdown'
 import { bundledLanguages, codeToTokens } from 'shiki'
 import type { BundledLanguage, BundledTheme } from 'shiki'
+import { createMathPlugin } from '@streamdown/math'
 import { ImageLightbox, useLightbox } from './image-lightbox'
 import {
   Popover,
@@ -109,8 +110,10 @@ const chatCodeHighlighter: CodeHighlighterPlugin = {
   getSupportedLanguages: () => Object.keys(bundledLanguages) as BundledLanguage[],
   getThemes: () => CHAT_CODE_THEMES,
 }
+const chatMathPlugin = createMathPlugin({ singleDollarTextMath: true })
 const chatStreamdownPlugins: PluginConfig = {
   code: chatCodeHighlighter,
+  math: chatMathPlugin,
 }
 const SPEECH_STARTED_EVENT = 'clouisle:chat-speech-started'
 const SPEECH_HIGHLIGHT_CLASS = 'rounded-sm bg-yellow-200/80 px-0.5 text-foreground shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.45)] dark:bg-yellow-300/35 dark:shadow-[inset_0_-0.45em_0_rgba(250,204,21,0.28)]'
@@ -1655,6 +1658,28 @@ function LinkSafetyModal({
   )
 }
 
+const FENCED_CODE_BLOCK_REGEX = /(```[\s\S]*?```)/g
+const ESCAPED_MATH_BLOCK_REGEX = /\\\[([\s\S]*?)\\\]/g
+const ESCAPED_MATH_INLINE_REGEX = /\\\(([\s\S]*?)\\\)/g
+const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[\s*([\s\S]*?\\(?:text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)[\s\S]*?)\s*\]\s*(?=\n|$)/g
+const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*(\\[A-Za-z]+(?:\{[^()]*\}|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
+
+function normalizeBareMathDelimiters(input: string) {
+  return input
+    .split(FENCED_CODE_BLOCK_REGEX)
+    .map((segment) => {
+      if (segment.startsWith('```')) {
+        return segment
+      }
+      return segment
+        .replace(ESCAPED_MATH_BLOCK_REGEX, '\n\n$$\n$1\n$$')
+        .replace(ESCAPED_MATH_INLINE_REGEX, '$$$1$')
+        .replace(BARE_MATH_BLOCK_REGEX, '$1\n\n$$\n$2\n$$')
+        .replace(BARE_LATEX_INLINE_REGEX, '$1$$$2$')
+    })
+    .join('')
+}
+
 function TextWithCitations({
   text,
   sources,
@@ -1677,7 +1702,7 @@ function TextWithCitations({
 
   // Citation marker formats: [[cite:N]] and common variants like (ref:N), [ref:N], [[ref:N]]
   const normalizeCitations = (input: string) =>
-    input
+    normalizeBareMathDelimiters(input)
       .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
       .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
       .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')

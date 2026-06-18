@@ -77,6 +77,27 @@ def test_build_system_prompt_formats_sections_with_clear_spacing():
     assert "## Response Language\nYou MUST respond in English only." in prompt
 
 
+def test_build_system_prompt_injects_standard_math_markdown_guidance():
+    prompt = _build_system_prompt(
+        agent=_agent(system_prompt="Base prompt"),
+        conversation=_conversation(),
+        user_message="explain cosine similarity",
+        user_locale="en",
+    )
+
+    assert "## Markdown Output" in prompt
+    assert "$...$" in prompt
+    assert "$$...$$" in prompt
+    assert "inline math" in prompt
+    assert "display/block math" in prompt
+    assert "[ ... ]" in prompt
+    assert r"\[ ... \]" in prompt
+    assert r"\( ... \)" in prompt
+    assert r"(\mathbf{A})" in prompt
+    assert r"$\mathbf{A}$" in prompt
+    assert "Keep the whole formula inside one delimiter pair" in prompt
+
+
 def test_build_system_prompt_injects_markdown_image_display_guidance_without_base_prompt():
     prompt = _build_system_prompt(
         agent=_agent(system_prompt=""),

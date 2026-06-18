@@ -69,7 +69,12 @@ DEFAULT_FILE_CONTENT_TAIL_CHARS = 4000
 FILE_CONTENT_PLACEHOLDER = "{{fileContent}}"
 MARKDOWN_IMAGE_DISPLAY_INSTRUCTION = """## Markdown Output
 
-When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source."""
+When the user asks you to show or display an image, output the image using normal Markdown image syntax, for example `![alt text](image-url)`. Do not wrap the Markdown image in a code block unless the user explicitly asks for the literal Markdown source.
+
+When writing math, use standard Markdown/LaTeX delimiters that render correctly:
+- Use `$...$` for inline math.
+- Use `$$...$$` on separate lines for display/block math.
+- Do not use nonstandard math delimiters such as `[ ... ]`, `\[ ... \]`, `( ... )`, `\( ... \)`, or bare parenthesized TeX like `(\mathbf{A})`. Write those as `$\mathbf{A}$` inline, or use `$$...$$` for standalone equations. Keep the whole formula inside one delimiter pair; do not put only part of an equation in `$...$`."""
 DEFAULT_CONTEXT_COMPRESSION_CONFIG = {
     "enabled": True,
     "micro_compaction_enabled": True,
