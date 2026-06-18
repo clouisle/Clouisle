@@ -39,7 +39,7 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5" />
@@ -47,8 +47,8 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
           </CardTitle>
           <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
         </CardHeader>
-        <CardContent className="pt-0">
-          <div className="h-[240px] flex items-center justify-center">
+        <CardContent className="flex flex-1 flex-col pt-0">
+          <div className="min-h-[300px] flex flex-1 items-center justify-center">
             <div className="text-muted-foreground">{t('common.loading')}</div>
           </div>
         </CardContent>
@@ -58,7 +58,7 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
 
   if (!data || data.length === 0) {
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5" />
@@ -66,8 +66,8 @@ function WorkflowStatusChartComponent({ data, isLoading }: WorkflowStatusChartPr
           </CardTitle>
           <CardDescription>{t('analytics.workflowStatusDesc')}</CardDescription>
         </CardHeader>
-        <CardContent className="pt-0">
-          <div className="h-[240px] flex items-center justify-center">
+        <CardContent className="flex flex-1 flex-col pt-0">
+          <div className="min-h-[300px] flex flex-1 items-center justify-center">
             <div className="text-muted-foreground">{t('common.noData')}</div>
           </div>
         </CardContent>
