@@ -325,9 +325,13 @@ async def execute_tool_call(
     sandbox_tool_class = tool_registry.get_sandbox_tool_class(tool_name)
     if (tool_info and tool_info.handler) or sandbox_tool_class:
         try:
+            credentials = None
+            if tool_info and _tool_accepts_credentials(tool_info.handler):
+                credentials = await _get_builtin_tool_credentials(tool_name, agent)
             return await tool_registry.execute(
                 tool_name,
                 arguments,
+                credentials=credentials,
                 session_id=session_id,
                 agent=agent,
                 user=user,
@@ -348,6 +352,37 @@ async def execute_tool_call(
     return json.dumps(
         {"error": t("tool_not_found", tool_name=tool_name)}, ensure_ascii=False
     )
+
+
+def _tool_accepts_credentials(handler: Any) -> bool:
+    import inspect
+
+    return "credentials" in inspect.signature(handler).parameters
+
+
+async def _get_builtin_tool_credentials(tool_name: str, agent: "Agent | None") -> dict[str, str]:
+    from app.models.tool_config import ToolConfig
+
+    credentials: dict[str, str] = {}
+    team_id = getattr(agent, "team_id", None) if agent else None
+
+    if team_id:
+        tool_config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
+        if tool_config:
+            credentials = tool_config.credentials or {}
+
+    if not credentials:
+        global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+        if global_config:
+            credentials = global_config.credentials or {}
+
+    if not credentials and tool_name == "web_search":
+        from app.core.config import settings
+
+        if settings.TAVILY_API_KEY:
+            credentials["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
+
+    return credentials
 
 
 async def _execute_code_tool(
