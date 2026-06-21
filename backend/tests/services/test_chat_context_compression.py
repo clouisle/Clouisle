@@ -137,11 +137,12 @@ async def test_session_memory_compaction_runs_again_after_file_trim(monkeypatch)
     revert to the original raw history.
     """
 
-    rebuild_calls = {"count": 0}
+    call_order = {"index": 0}
+    file_rebuild_calls = {"count": 0}
     session_memory_calls: list[int] = []
 
     async def fake_rebuild(*args, **kwargs):
-        rebuild_calls["count"] += 1
+        file_rebuild_calls["count"] += 1
         rebuilt = [
             Message(role=MessageRole.SYSTEM, content="SYSTEM"),
             Message(
@@ -153,13 +154,21 @@ async def test_session_memory_compaction_runs_again_after_file_trim(monkeypatch)
         return rebuilt, {len(rebuilt) - 1}
 
     def _apply_session_memory(messages, **kwargs):
-        phase = rebuild_calls["count"]
+        # First call = preflight (phase 2). Every later call has phase > 2
+        # and can only be produced after fake_rebuild has run, which is the
+        # exact "runs again after rebuild" contract the test enforces.
+        call_order["index"] += 1
+        phase = 1 + call_order["index"]
         session_memory_calls.append(phase)
+        # Include enough content that the post-rebuild token estimate still
+        # exceeds the trigger budget, forcing file_content_trimmed=True and
+        # therefore a second rebuild that re-invokes session memory.
+        filler = "OLD_RAW_HISTORY " * 200
         rebuilt = [
             messages[0],
             Message(
                 role=MessageRole.ASSISTANT,
-                content=f"COMPRESSED_SUMMARY phase={phase}",
+                content=f"COMPRESSED_SUMMARY phase={phase} {filler}",
             ),
             messages[-1],
         ]
@@ -225,6 +234,7 @@ async def test_session_memory_compaction_runs_again_after_file_trim(monkeypatch)
         include_current_user_message=True,
     )
 
-    assert rebuild_calls["count"] >= 1
+    assert file_rebuild_calls["count"] >= 1
     assert session_memory_calls, session_memory_calls
-    assert 1 in session_memory_calls, session_memory_calls
+    assert 2 in session_memory_calls, session_memory_calls
+    assert any(phase > 2 for phase in session_memory_calls), session_memory_calls
