@@ -326,7 +326,11 @@ async def execute_tool_call(
     if (tool_info and tool_info.handler) or sandbox_tool_class:
         try:
             credentials = None
-            if tool_info and _tool_accepts_credentials(tool_info.handler):
+            if (
+                tool_info
+                and tool_info.handler
+                and _tool_accepts_credentials(tool_info.handler)
+            ):
                 credentials = await _get_builtin_tool_credentials(tool_name, agent)
             return await tool_registry.execute(
                 tool_name,

@@ -1735,6 +1735,7 @@ async def persist_compacted_context_snapshot(
         ConversationSessionMemory,
         ConversationSessionMemoryStatus,
     )
+    from app.services.session_memory import MACRO_COMPACTION_ORIGIN
 
     if not summary_text.strip():
         return
@@ -1750,7 +1751,10 @@ async def persist_compacted_context_snapshot(
     snapshot.source_message_id = source_message_id
     snapshot.status = ConversationSessionMemoryStatus.READY
     snapshot.summary_text = summary_text
-    snapshot.snapshot_payload = {"overview": summary_text}
+    snapshot.snapshot_payload = {
+        "overview": summary_text,
+        "origin": MACRO_COMPACTION_ORIGIN,
+    }
     snapshot.token_estimate = count_tokens(summary_text, model_id=model_id or "gpt-4")
     snapshot.extractor_model = model_id
     snapshot.failure_count = 0
@@ -2018,6 +2022,14 @@ async def prepare_model_context(
     preflight_guard_enabled = bool(
         compression_config.get("preflight_guard_enabled", True)
     )
+    session_memory_compaction_kwargs = {
+        "conversation": conversation,
+        "model_id": model_id,
+        "provider": provider,
+        "recent_raw_turns": configured_recent_raw_turns,
+        "recent_tool_turns": configured_recent_tool_turns,
+        "before_created_at": history_before_message_created_at,
+    }
     if compression_enabled and preflight_guard_enabled:
         (
             baseline_messages,
@@ -2025,13 +2037,8 @@ async def prepare_model_context(
             baseline_protected_indexes,
         ) = await _apply_session_memory_compaction(
             untrimmed_messages,
-            conversation=conversation,
-            model_id=model_id,
-            provider=provider,
-            recent_raw_turns=configured_recent_raw_turns,
-            recent_tool_turns=configured_recent_tool_turns,
             protected_indexes=untrimmed_protected_indexes,
-            before_created_at=history_before_message_created_at,
+            **session_memory_compaction_kwargs,
         )
         if baseline_session_memory_compacted:
             untrimmed_messages = baseline_messages
@@ -2106,6 +2113,15 @@ async def prepare_model_context(
             tool_timeouts=tool_timeouts,
             user=user,
             protected_round_id=protected_round_id,
+        )
+        (
+            base_messages,
+            _,
+            base_protected_indexes,
+        ) = await _apply_session_memory_compaction(
+            base_messages,
+            protected_indexes=base_protected_indexes,
+            **session_memory_compaction_kwargs,
         )
 
     base_tokens = _estimate_message_tokens(

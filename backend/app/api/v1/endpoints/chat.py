@@ -502,6 +502,34 @@ def enqueue_session_memory_extraction(
         )
 
 
+async def persist_macro_summary_best_effort(
+    *,
+    conversation: Conversation,
+    source_message_id: UUID,
+    messages: list[Any],
+    model_id: str | None,
+) -> None:
+    """Best-effort persistence for prompt-derived macro compaction summaries."""
+    macro_summary = extract_macro_summary_text(messages)
+    if not macro_summary:
+        return
+    try:
+        await persist_compacted_context_snapshot(
+            conversation=conversation,
+            source_message_id=source_message_id,
+            summary_text=macro_summary,
+            model_id=model_id,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to persist compacted context snapshot for conversation %s "
+            "message %s",
+            conversation.id,
+            source_message_id,
+            exc_info=True,
+        )
+
+
 def get_round_terminal_status(
     *,
     completed: bool,
@@ -1436,14 +1464,12 @@ async def chat(
             conversation.id,
             [*branch_prefix, user_msg, assistant_msg],
         )
-        macro_summary = extract_macro_summary_text(prepared_context.messages)
-        if macro_summary:
-            await persist_compacted_context_snapshot(
-                conversation=conversation,
-                source_message_id=assistant_msg.id,
-                summary_text=macro_summary,
-                model_id=model_id,
-            )
+        await persist_macro_summary_best_effort(
+            conversation=conversation,
+            source_message_id=assistant_msg.id,
+            messages=prepared_context.messages,
+            model_id=model_id,
+        )
         enqueue_session_memory_extraction(agent, conversation, assistant_msg)
 
         return success(
@@ -2380,16 +2406,12 @@ async def chat_stream(
                         conversation.id,
                         [*branch_prefix, user_msg, assistant_msg],
                     )
-                    macro_summary = extract_macro_summary_text(
-                        final_prepared_context.messages
+                    await persist_macro_summary_best_effort(
+                        conversation=conversation,
+                        source_message_id=assistant_msg.id,
+                        messages=final_prepared_context.messages,
+                        model_id=model_id,
                     )
-                    if macro_summary:
-                        await persist_compacted_context_snapshot(
-                            conversation=conversation,
-                            source_message_id=assistant_msg.id,
-                            summary_text=macro_summary,
-                            model_id=model_id,
-                        )
                     enqueue_session_memory_extraction(
                         agent, conversation, assistant_msg
                     )
@@ -3564,16 +3586,12 @@ async def regenerate_message(
                     await stale_session_memory_if_source_outside_active_branch(
                         conversation.id
                     )
-                    macro_summary = extract_macro_summary_text(
-                        final_prepared_context.messages
+                    await persist_macro_summary_best_effort(
+                        conversation=conversation,
+                        source_message_id=new_message.id,
+                        messages=final_prepared_context.messages,
+                        model_id=model_id,
                     )
-                    if macro_summary:
-                        await persist_compacted_context_snapshot(
-                            conversation=conversation,
-                            source_message_id=new_message.id,
-                            summary_text=macro_summary,
-                            model_id=model_id,
-                        )
                     enqueue_session_memory_extraction(agent, conversation, new_message)
 
                     # Update agent and team stats for regenerated message
