@@ -1445,6 +1445,9 @@ def _summarize_block(
     return " ; ".join(items)
 
 
+MACRO_SUMMARY_PREFIX = "Compressed earlier conversation summary:"
+
+
 def _build_macro_summary_message(
     blocks: Sequence[Sequence[Message]],
     *,
@@ -1454,7 +1457,7 @@ def _build_macro_summary_message(
     if not blocks:
         return None
 
-    lines = ["Compressed earlier conversation summary:"]
+    lines = [MACRO_SUMMARY_PREFIX]
     for index, block in enumerate(blocks, start=1):
         lines.append(
             f"- Turn {index}: {_summarize_block(block, block_summary_chars=block_summary_chars)}"
@@ -1707,6 +1710,57 @@ async def _apply_micro_compaction(
         ),
         session_memory_protected_indexes,
     )
+
+
+def extract_macro_summary_text(messages: Sequence[Message]) -> str | None:
+    for message in messages:
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        content = _stringify_content(message.content).strip()
+        if content.startswith(MACRO_SUMMARY_PREFIX):
+            return content
+    return None
+
+
+async def persist_compacted_context_snapshot(
+    *,
+    conversation: Conversation,
+    source_message_id: UUID,
+    summary_text: str,
+    model_id: str | None = None,
+) -> None:
+    from app.core.timezone import now_utc
+    from app.llm.token_counter import count_tokens
+    from app.models.agent import (
+        ConversationSessionMemory,
+        ConversationSessionMemoryStatus,
+    )
+    from app.services.session_memory import MACRO_COMPACTION_ORIGIN
+
+    if not summary_text.strip():
+        return
+
+    snapshot = await ConversationSessionMemory.filter(
+        conversation_id=conversation.id,
+    ).first()
+    if snapshot is None:
+        snapshot = await ConversationSessionMemory.create(
+            conversation_id=conversation.id,
+        )
+
+    snapshot.source_message_id = source_message_id
+    snapshot.status = ConversationSessionMemoryStatus.READY
+    snapshot.summary_text = summary_text
+    snapshot.snapshot_payload = {
+        "overview": summary_text,
+        "origin": MACRO_COMPACTION_ORIGIN,
+    }
+    snapshot.token_estimate = count_tokens(summary_text, model_id=model_id or "gpt-4")
+    snapshot.extractor_model = model_id
+    snapshot.failure_count = 0
+    snapshot.last_error = None  # type: ignore[assignment]
+    snapshot.last_extracted_at = now_utc()
+    await snapshot.save()
 
 
 def _apply_budget_compaction(
@@ -1963,15 +2017,37 @@ async def prepare_model_context(
         user=user,
         protected_round_id=protected_round_id,
     )
-    untrimmed_tokens = _estimate_message_tokens(
-        untrimmed_messages,
-        model_id=model_id,
-        provider=provider,
-    )
 
     compression_enabled = bool(compression_config.get("enabled", True))
     preflight_guard_enabled = bool(
         compression_config.get("preflight_guard_enabled", True)
+    )
+    session_memory_compaction_kwargs = {
+        "conversation": conversation,
+        "model_id": model_id,
+        "provider": provider,
+        "recent_raw_turns": configured_recent_raw_turns,
+        "recent_tool_turns": configured_recent_tool_turns,
+        "before_created_at": history_before_message_created_at,
+    }
+    if compression_enabled and preflight_guard_enabled:
+        (
+            baseline_messages,
+            baseline_session_memory_compacted,
+            baseline_protected_indexes,
+        ) = await _apply_session_memory_compaction(
+            untrimmed_messages,
+            protected_indexes=untrimmed_protected_indexes,
+            **session_memory_compaction_kwargs,
+        )
+        if baseline_session_memory_compacted:
+            untrimmed_messages = baseline_messages
+            untrimmed_protected_indexes = baseline_protected_indexes
+
+    untrimmed_tokens = _estimate_message_tokens(
+        untrimmed_messages,
+        model_id=model_id,
+        provider=provider,
     )
     initial_pressure = _assess_context_pressure(
         before_tokens=untrimmed_tokens,
@@ -2037,6 +2113,15 @@ async def prepare_model_context(
             tool_timeouts=tool_timeouts,
             user=user,
             protected_round_id=protected_round_id,
+        )
+        (
+            base_messages,
+            _,
+            base_protected_indexes,
+        ) = await _apply_session_memory_compaction(
+            base_messages,
+            protected_indexes=base_protected_indexes,
+            **session_memory_compaction_kwargs,
         )
 
     base_tokens = _estimate_message_tokens(

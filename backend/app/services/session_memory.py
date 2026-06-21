@@ -34,6 +34,20 @@ MAX_TRANSCRIPT_CHARS_PER_MESSAGE = 1200
 MAX_LIST_ITEMS = 6
 MAX_LIST_ITEM_CHARS = 240
 MAX_OVERVIEW_CHARS = 600
+MACRO_COMPACTION_ORIGIN = "macro_compaction"
+
+
+def _should_skip_already_extracted_snapshot(
+    snapshot: ConversationSessionMemory | None,
+    source_uuid: UUID,
+) -> bool:
+    if not snapshot or snapshot.source_message_id != source_uuid:
+        return False
+    snapshot_origin = (snapshot.snapshot_payload or {}).get("origin")
+    return (
+        snapshot.status == ConversationSessionMemoryStatus.READY
+        and snapshot_origin != MACRO_COMPACTION_ORIGIN
+    )
 
 
 async def get_ready_session_memory(
@@ -140,9 +154,8 @@ async def extract_session_memory_for_message(
     snapshot = await ConversationSessionMemory.filter(
         conversation_id=conversation_uuid
     ).first()
-    if snapshot and snapshot.source_message_id == source_uuid:
-        if snapshot.status == ConversationSessionMemoryStatus.READY:
-            return {"status": "skipped", "reason": "already_extracted"}
+    if _should_skip_already_extracted_snapshot(snapshot, source_uuid):
+        return {"status": "skipped", "reason": "already_extracted"}
 
     if snapshot and snapshot.source_message_id:
         existing_source = await Message.filter(
