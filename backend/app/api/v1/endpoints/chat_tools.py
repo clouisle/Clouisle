@@ -360,19 +360,25 @@ def _tool_accepts_credentials(handler: Any) -> bool:
     return "credentials" in inspect.signature(handler).parameters
 
 
-async def _get_builtin_tool_credentials(tool_name: str, agent: "Agent | None") -> dict[str, str]:
+async def _get_builtin_tool_credentials(
+    tool_name: str, agent: "Agent | None"
+) -> dict[str, str]:
     from app.models.tool_config import ToolConfig
 
     credentials: dict[str, str] = {}
     team_id = getattr(agent, "team_id", None) if agent else None
 
     if team_id:
-        tool_config = await ToolConfig.filter(tool_name=tool_name, team_id=team_id).first()
+        tool_config = await ToolConfig.filter(
+            tool_name=tool_name, team_id=team_id
+        ).first()
         if tool_config:
             credentials = tool_config.credentials or {}
 
     if not credentials:
-        global_config = await ToolConfig.filter(tool_name=tool_name, team_id=None).first()
+        global_config = await ToolConfig.filter(
+            tool_name=tool_name, team_id=None
+        ).first()
         if global_config:
             credentials = global_config.credentials or {}
 
