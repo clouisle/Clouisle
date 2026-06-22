@@ -534,6 +534,42 @@ DEFAULT_SEPARATORS = [
 
 CHARS_PER_TOKEN = 4
 
+# Escape sequences the user can type in a custom-separator field (e.g. "\n")
+# so that a literal backslash-n in the request body splits on a real newline.
+_ESCAPE_SEQUENCES: dict[str, str] = {
+    "\\n": "\n",
+    "\\r": "\r",
+    "\\t": "\t",
+    "\\\\": "\\",
+}
+
+
+def _decode_separator_escapes(separator: str) -> str:
+    """
+    Interpret common escape sequences in a user-supplied separator string.
+
+    The frontend renders separator hints like ``\\n\\n`` (literal backslash-n),
+    so the API receives the two-character sequence ``\\n`` rather than a real
+    newline. LangChain's splitter does a literal match, so it would never
+    split on actual newlines. This helper turns the typed escape sequences
+    into the characters they represent before they reach the splitter.
+    """
+    if "\\" not in separator:
+        return separator
+
+    decoded: list[str] = []
+    i = 0
+    while i < len(separator):
+        if separator[i] == "\\" and i + 1 < len(separator):
+            pair = separator[i : i + 2]
+            if pair in _ESCAPE_SEQUENCES:
+                decoded.append(_ESCAPE_SEQUENCES[pair])
+                i += 2
+                continue
+        decoded.append(separator[i])
+        i += 1
+    return "".join(decoded)
+
 
 def chunk_text(
     text: str,
@@ -551,11 +587,20 @@ def chunk_text(
     split with overlap=0 first, then prepend the exact trailing characters
     from the previous chunk.
 
+    When the caller provides a custom separator it is treated as a hard split
+    boundary: the text is pre-split on the (escape-decoded) separator first,
+    and each piece is then passed through the splitter so that pieces still
+    larger than ``chunk_size`` are broken down further. Without this,
+    LangChain returns the whole text as a single chunk whenever it already
+    fits in ``chunk_size``, ignoring the user's separator entirely.
+
     Args:
         text: Text to chunk
         chunk_size: Target chunk size in characters
         chunk_overlap: Overlap between chunks in characters
-        separators: Optional custom separators
+        separators: Optional custom separators. Each separator may contain
+            escape sequences (``\\n``, ``\\r``, ``\\t``, ``\\\\``) which are
+            decoded to their real characters before splitting.
 
     Returns:
         List of chunk dicts with content, chunk_index, token_count, char_count
@@ -566,19 +611,37 @@ def chunk_text(
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     if separators:
-        custom = [s for s in separators if s]
+        custom = [_decode_separator_escapes(s) for s in separators if s]
         seps = custom + [s for s in DEFAULT_SEPARATORS if s not in custom]
     else:
         seps = list(DEFAULT_SEPARATORS)
 
-    # Split with overlap=0 to get clean boundaries
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=0,
-        separators=seps,
-        length_function=len,
-    )
-    texts = splitter.split_text(text)
+    # Pre-split on the user's primary custom separator so it acts as a hard
+    # boundary, even when the whole text fits within chunk_size.
+    texts = _split_on_custom_separator(text, seps[0]) if seps else [text]
+
+    # If no piece is over chunk_size we still need to honour the splitter's
+    # secondary separators (e.g. when the custom separator is not present in
+    # the text at all, leave the splitter's default behaviour in charge).
+    if len(texts) == 1 and texts[0] == text:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=0,
+            separators=seps,
+            length_function=len,
+        )
+        texts = splitter.split_text(text)
+    else:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=0,
+            separators=seps[1:] if len(seps) > 1 else [""],
+            length_function=len,
+        )
+        chunked: list[str] = []
+        for piece in texts:
+            chunked.extend(splitter.split_text(piece) if piece else [])
+        texts = chunked
 
     # Apply exact character-level overlap and track overlap lengths
     overlap_lengths: list[int] = [0] * len(texts)
@@ -601,6 +664,19 @@ def chunk_text(
         }
         for idx, t in enumerate(texts)
     ]
+
+
+def _split_on_custom_separator(text: str, separator: str) -> list[str]:
+    """
+    Split ``text`` on ``separator`` only when the separator actually appears.
+
+    Returns ``[text]`` unchanged when the separator is the empty-string fallback
+    or when it is not present, so the caller can fall back to the default
+    splitter.
+    """
+    if not separator or separator not in text:
+        return [text]
+    return text.split(separator)
 
 
 # Global instance
