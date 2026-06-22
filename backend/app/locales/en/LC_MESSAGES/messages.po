@@ -2377,6 +2377,18 @@ msgstr "Memory tool execution failed"
 msgid "tool_execution_failed"
 msgstr "Tool execution failed"
 
+msgid "http_tool_request_failed_status"
+msgstr "HTTP request failed with status {status_code}"
+
+msgid "http_tool_url_invalid"
+msgstr "Invalid HTTP URL"
+
+msgid "http_tool_url_host_not_allowed"
+msgstr "HTTP URL host is not allowed"
+
+msgid "http_tool_url_host_cannot_be_resolved"
+msgstr "HTTP URL host cannot be resolved"
+
 msgid "code_tool_execution_failed"
 msgstr "Code tool execution failed"
 

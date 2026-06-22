@@ -2331,6 +2331,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     },
     "tool_execute_success": {"en": "Tool executed successfully", "zh": "工具执行成功"},
     "tool_execution_failed": {"en": "Tool execution failed", "zh": "工具执行失败"},
+    "http_tool_request_failed_status": {
+        "en": "HTTP request failed with status {status_code}",
+        "zh": "HTTP 请求失败，状态码：{status_code}",
+    },
+    "http_tool_url_invalid": {"en": "Invalid HTTP URL", "zh": "HTTP URL 无效"},
+    "http_tool_url_host_not_allowed": {
+        "en": "HTTP URL host is not allowed",
+        "zh": "不允许访问该 HTTP URL 主机",
+    },
+    "http_tool_url_host_cannot_be_resolved": {
+        "en": "HTTP URL host cannot be resolved",
+        "zh": "无法解析 HTTP URL 主机",
+    },
     "tool_knowledge_search": {"en": "Knowledge Search", "zh": "知识库搜索"},
     "tool_name_exists": {
         "en": "Tool with this name already exists",
