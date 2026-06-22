@@ -1077,14 +1077,18 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       setError(null)
       setStatus('loading')
       setMessages((prev) => {
-        const beforeAndEditedUser = prev.slice(0, targetIndex + 1).map((message) => {
+        const currentTargetIndex = prev.findIndex((message) => message.id === messageId)
+        if (currentTargetIndex === -1) return prev
+
+        const beforeAndEditedUser = prev.slice(0, currentTargetIndex + 1).map((message) => {
           if (message.id !== messageId) return message
-          return {
-            ...message,
-            parts: message.parts.map((part) => (
-              part.type === 'text' ? { ...part, text: content } : part
-            )),
-          }
+          const hasTextPart = message.parts.some((part) => part.type === 'text')
+          const parts = hasTextPart
+            ? message.parts.map((part) => (
+                part.type === 'text' ? { ...part, text: content } : part
+              ))
+            : [{ type: 'text' as const, text: content }, ...message.parts]
+          return { ...message, parts }
         })
         const assistantPlaceholder: ChatMessage = {
           id: placeholderId,
@@ -1106,14 +1110,56 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
         setStatus('streaming')
         onStreamStart?.()
+        let assistantMessageId = placeholderId
+        let assistantText = ''
         for await (const event of parseSSEStream(response)) {
           if (event.event === 'message_start') {
-            const data = event.data as SSEMessageStart
-            if (data.message_id) {
-              setMessages((prev) => prev.map((message) => (
-                message.id === placeholderId ? { ...message, id: data.message_id } : message
-              )))
+            const data = event.data as SSEMessageStart & {
+              edited_message_id?: string
+              edited_version_number?: number
+              edited_version_count?: number
             }
+            if (data.message_id) {
+              assistantMessageId = data.message_id
+            }
+            setMessages((prev) => prev.map((message) => {
+              if (message.id === messageId) {
+                return {
+                  ...message,
+                  id: data.edited_message_id ?? message.id,
+                  versionNumber: data.edited_version_number ?? message.versionNumber,
+                  versionCount: data.edited_version_count ?? message.versionCount,
+                }
+              }
+              if (message.id === placeholderId) {
+                return { ...message, id: assistantMessageId }
+              }
+              return message
+            }))
+            continue
+          }
+
+          if (event.event === 'content_delta') {
+            const data = event.data as SSEContentDelta
+            assistantText += data.delta
+            setMessages((prev) => prev.map((message) => (
+              message.id === assistantMessageId
+                ? {
+                    ...message,
+                    parts: [{ type: 'text' as const, text: assistantText }],
+                    metadata: { ...message.metadata, isLoading: false },
+                  }
+                : message
+            )))
+            continue
+          }
+
+          if (event.event === 'message_end') {
+            setMessages((prev) => prev.map((message) => (
+              message.id === assistantMessageId
+                ? { ...message, metadata: { ...message.metadata, isLoading: false } }
+                : message
+            )))
           }
         }
         await reloadConversationMessages()
