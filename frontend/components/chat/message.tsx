@@ -521,10 +521,11 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const saveEdit = React.useCallback(async () => {
       const nextContent = editDraft.trim()
       if (!onEditMessage || !nextContent || nextContent === textContent) return
+      setIsEditing(false)
+      setEditDraft('')
       setIsSavingEdit(true)
       try {
         await onEditMessage(nextContent)
-        setIsEditing(false)
       } finally {
         setIsSavingEdit(false)
       }
