@@ -2,6 +2,12 @@
 
 ## Active
 
+- **yun-101-edit-agent-user-message-history** — In progress. Let users edit their own Agent conversation messages, store edits as message versions, and keep downstream context on the active edited branch. See `docs/plan/yun-101-edit-agent-user-message-history.md`
+  - [x] 1. Design docs and implementation index
+  - [ ] 2. Backend edit endpoint, branching, audit, and tests
+  - [ ] 3. Frontend edit API, UI, and i18n
+  - [ ] 4. Validation and regression checks
+
 - **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend log search/date filters
