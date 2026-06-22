@@ -859,6 +859,12 @@ class RegenerateRequest(BaseModel):
     variables: dict[str, Any] = Field(default_factory=dict)
 
 
+class EditMessageRequest(BaseModel):
+    """Request to edit a user message"""
+
+    content: str = Field(..., min_length=1, description="Updated message content")
+
+
 class ConversationWithMessages(ConversationOut):
     """Conversation with messages"""
 

@@ -95,6 +95,10 @@ export type ChatMessages = {
       helpful: string
       notHelpful: string
       regenerate: string
+      edit: string
+      saveEdit: string
+      cancelEdit: string
+      editPlaceholder: string
       listen: string
       stopListening: string
       speechUnavailable: string

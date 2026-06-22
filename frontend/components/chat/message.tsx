@@ -3,7 +3,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { useLocale, useTranslations } from 'next-intl'
-import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2 } from 'lucide-react'
+import { Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Loader2, SearchIcon, SparklesIcon, Wrench, ChevronLeft, ChevronRight, AlertTriangle, Timer, Brain, Square, Eye, Volume2, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Block,
@@ -26,6 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Tooltip,
   TooltipContent,
@@ -409,6 +411,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   showFeedback?: boolean
   /** Callback for regenerate */
   onRegenerate?: () => void
+  /** Callback for editing user messages */
+  onEditMessage?: (content: string) => Promise<void>
   /** Callback for feedback */
   onFeedback?: (type: 'positive' | 'negative') => void
   /** Callback for switching version */
@@ -436,6 +440,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       showCopy = true,
       showFeedback = false,
       onRegenerate,
+      onEditMessage,
       onFeedback,
       onSwitchVersion,
       onSelectOption,
@@ -458,6 +463,9 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const [speechVoices, setSpeechVoices] = React.useState<SpeechSynthesisVoice[]>([])
     const [isSpeakingThisMessage, setIsSpeakingThisMessage] = React.useState(false)
     const [activeSpeechSentence, setActiveSpeechSentence] = React.useState<string | null>(null)
+    const [isEditing, setIsEditing] = React.useState(false)
+    const [editDraft, setEditDraft] = React.useState('')
+    const [isSavingEdit, setIsSavingEdit] = React.useState(false)
     const speechUtteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null)
     const speechSessionRef = React.useRef(0)
     const isUser = message.role === 'user'
@@ -499,6 +507,28 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         console.error('Failed to copy:', err)
       }
     }
+
+    const startEdit = React.useCallback(() => {
+      setEditDraft(textContent)
+      setIsEditing(true)
+    }, [textContent])
+
+    const cancelEdit = React.useCallback(() => {
+      setIsEditing(false)
+      setEditDraft('')
+    }, [])
+
+    const saveEdit = React.useCallback(async () => {
+      const nextContent = editDraft.trim()
+      if (!onEditMessage || !nextContent || nextContent === textContent) return
+      setIsSavingEdit(true)
+      try {
+        await onEditMessage(nextContent)
+        setIsEditing(false)
+      } finally {
+        setIsSavingEdit(false)
+      }
+    }, [editDraft, onEditMessage, textContent])
 
     const resetSpeechState = React.useCallback(() => {
       speechUtteranceRef.current = null
@@ -1182,7 +1212,48 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                 </ChainOfThought>
               )}
               {/* Loading state */}
-              {isLoadingMessage ? (
+              {isEditing ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={editDraft}
+                    onChange={(event) => setEditDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        cancelEdit()
+                      }
+                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                        event.preventDefault()
+                        void saveEdit()
+                      }
+                    }}
+                    placeholder={t('editPlaceholder')}
+                    className="min-h-24 resize-y bg-background text-foreground"
+                    disabled={isSavingEdit}
+                    autoFocus
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={cancelEdit}
+                      disabled={isSavingEdit}
+                    >
+                      {t('cancelEdit')}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void saveEdit()}
+                      disabled={isSavingEdit || !editDraft.trim() || editDraft.trim() === textContent}
+                    >
+                      {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                      {t('saveEdit')}
+                    </Button>
+                  </div>
+                </div>
+              ) : isLoadingMessage ? (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-sm">{t('thinking')}</span>
@@ -1209,6 +1280,38 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
             {/* Sources (grouped at bottom) */}
             {isAssistant && allSources.length > 0 && (
               <SourceContent sources={allSources} />
+            )}
+
+            {/* Actions for user messages */}
+            {isUser && !isStreaming && !isEditing && textContent && (onEditMessage || onSwitchVersion) && (
+              <MessageActions className="transition-opacity opacity-0 group-hover:opacity-100 justify-end">
+                {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
+                  <div className="flex items-center gap-0.5 text-muted-foreground">
+                    <button
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                      onClick={() => onSwitchVersion((message.versionNumber ?? 1) - 2)}
+                      disabled={(message.versionNumber ?? 1) <= 1}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-xs tabular-nums min-w-[3ch] text-center">
+                      {message.versionNumber ?? 1}/{message.versionCount ?? 1}
+                    </span>
+                    <button
+                      className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                      onClick={() => onSwitchVersion(message.versionNumber ?? 1)}
+                      disabled={(message.versionNumber ?? 1) >= (message.versionCount ?? 1)}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                {onEditMessage && (
+                  <MessageAction tooltip={t('edit')} onClick={startEdit}>
+                    <Pencil className="h-4 w-4" />
+                  </MessageAction>
+                )}
+              </MessageActions>
             )}
 
             {/* Actions for assistant messages */}

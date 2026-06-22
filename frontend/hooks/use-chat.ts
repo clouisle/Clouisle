@@ -83,6 +83,8 @@ export interface UseChatReturn {
   sendMessage: (message: string, images?: ChatImageContent[], fileUrls?: ChatFileUrl[]) => Promise<void>
   /** Regenerate (retry) a message by ID */
   regenerate: (messageId: string) => Promise<void>
+  /** Edit a user message and regenerate the downstream response */
+  editMessage: (messageId: string, content: string) => Promise<void>
   /** Switch to a different version of a message */
   switchVersion: (messageId: string, versionIndex: number) => Promise<void>
   /** Stop current streaming */
@@ -1016,6 +1018,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
    * Switch to a different version of a message using backend API
    * This loads versions from backend and switches to the specified version
    */
+  const reloadConversationMessages = useCallback(async () => {
+    if (!conversationId) return
+
+    const conversationData = await agentsApi.getConversation(conversationId)
+    const { convertBackendMessages } = await import('@/lib/utils/message-converter')
+    const convertedMessages = convertBackendMessages(conversationData.messages as BackendMessage[])
+    setMessages(convertedMessages)
+  }, [conversationId])
+
   const switchVersion = useCallback(
     async (messageId: string, versionIndex: number) => {
       if (isLoading) return
@@ -1046,35 +1057,90 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         const result = await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
         console.log('switchVersion: switch result', result)
 
-        // Reload the entire conversation to get the correct message history
-        // This ensures tool messages and subsequent messages are correctly loaded
-        if (conversationId) {
-          console.log('switchVersion: reloading conversation', conversationId)
-          const conversationData = await agentsApi.getConversation(conversationId)
-          console.log('switchVersion: conversation data', conversationData)
-          console.log('switchVersion: messages count', conversationData.messages?.length)
-
-          const { convertBackendMessages } = await import('@/lib/utils/message-converter')
-          const convertedMessages = convertBackendMessages(conversationData.messages as BackendMessage[])
-          console.log('switchVersion: converted messages count', convertedMessages.length)
-          console.log('switchVersion: converted messages', convertedMessages)
-
-          // Update all messages
-          setMessages(convertedMessages)
-        } else {
-          console.warn('switchVersion: no conversationId, cannot reload conversation')
-        }
+        // Reload the entire conversation to get the correct message history.
+        await reloadConversationMessages()
       } catch (err) {
         console.error('Failed to switch version:', err)
       }
     },
-    [agentId, messages, isLoading, conversationId]
+    [agentId, messages, isLoading, reloadConversationMessages]
+  )
+
+  const editMessage = useCallback(
+    async (messageId: string, content: string) => {
+      if (isLoading || !isValidUUID(messageId)) return
+
+      const targetIndex = messages.findIndex((message) => message.id === messageId)
+      if (targetIndex === -1 || messages[targetIndex].role !== 'user') return
+
+      const placeholderId = `editing-${Date.now()}`
+      setError(null)
+      setStatus('loading')
+      setMessages((prev) => {
+        const beforeAndEditedUser = prev.slice(0, targetIndex + 1).map((message) => {
+          if (message.id !== messageId) return message
+          return {
+            ...message,
+            parts: message.parts.map((part) => (
+              part.type === 'text' ? { ...part, text: content } : part
+            )),
+          }
+        })
+        const assistantPlaceholder: ChatMessage = {
+          id: placeholderId,
+          role: 'assistant',
+          parts: [],
+          createdAt: new Date(),
+          metadata: { isLoading: true },
+        }
+        return [...beforeAndEditedUser, assistantPlaceholder]
+      })
+
+      try {
+        const { stream, abort } = agentsApi.editMessageStream(agentId, messageId, content)
+        abortRef.current = abort
+        const response = await stream
+        if (!response.ok) {
+          throw new Error(getHttpErrorMessage(response.status, tError, tAuth))
+        }
+
+        setStatus('streaming')
+        onStreamStart?.()
+        for await (const event of parseSSEStream(response)) {
+          if (event.event === 'message_start') {
+            const data = event.data as SSEMessageStart
+            if (data.message_id) {
+              setMessages((prev) => prev.map((message) => (
+                message.id === placeholderId ? { ...message, id: data.message_id } : message
+              )))
+            }
+          }
+        }
+        await reloadConversationMessages()
+        setStatus('idle')
+        onStreamEnd?.()
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          setStatus('idle')
+          return
+        }
+        const chatError: ChatError = {
+          message: err instanceof Error ? err.message : '',
+        }
+        onError?.(chatError)
+        await reloadConversationMessages().catch(() => undefined)
+        setStatus('idle')
+      } finally {
+        abortRef.current = null
+      }
+    },
+    [agentId, isLoading, messages, onError, onStreamEnd, onStreamStart, reloadConversationMessages, tAuth, tError]
   )
 
   /**
    * Check if a message ID is a valid UUID (from backend) vs temporary ID (from frontend)
    */
-  const isValidUUID = (id: string): boolean => {
+  function isValidUUID(id: string): boolean {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     return uuidRegex.test(id)
   }
@@ -1834,6 +1900,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     isStreaming,
     sendMessage,
     regenerate,
+    editMessage,
     switchVersion,
     stop,
     reset,

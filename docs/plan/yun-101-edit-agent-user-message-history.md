@@ -34,7 +34,7 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
 - **Specific logic**: Register YUN-101 in the implementation index and keep this design document current as implementation details are confirmed.
 - **Validation**: Confirm the index links to this file and task status reflects completed stages.
 
-### Stage 2: Backend edit schema, endpoint, and branch activation
+### Stage 2: Backend edit schema, endpoint, and branch activation — Complete
 
 - **Files modified**: `backend/app/schemas/agent.py`, `backend/app/api/v1/endpoints/chat.py`
 - **Specific logic**:
@@ -49,7 +49,7 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
   - Restore the original branch if generation fails before a usable assistant message is persisted.
 - **Validation**: Backend tests cover new version creation, active branch contents, old downstream deactivation, version switching back, and validation failures.
 
-### Stage 3: Audit and i18n for backend errors
+### Stage 3: Audit and i18n for backend errors — Complete
 
 - **Files modified**: `backend/app/api/v1/endpoints/chat.py`, backend i18n resources if required by existing conventions, audit i18n resources if required
 - **Specific logic**:
@@ -59,7 +59,7 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
   - Add backend i18n message keys for edit validation failures.
 - **Validation**: Tests assert audit metadata exists and validation errors return the expected business-error path.
 
-### Stage 4: Frontend API and hook
+### Stage 4: Frontend API and hook — Complete
 
 - **Files modified**: `frontend/lib/api/agents.ts`, `frontend/hooks/use-chat.ts`
 - **Specific logic**:
@@ -69,7 +69,7 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
   - Process stream events consistently with regenerate and reload the conversation at completion or after errors.
 - **Validation**: Type/lint checks pass and manual chat edit produces streamed assistant output.
 
-### Stage 5: Frontend inline edit UI and i18n
+### Stage 5: Frontend inline edit UI and i18n — Complete
 
 - **Files modified**: `frontend/components/chat/message.tsx`, `frontend/components/chat/chat-container.tsx`, `frontend/app/(chat)/chat/[id]/page.tsx`, `frontend/i18n/en/chat.json`, `frontend/i18n/zh/chat.json`, generated `frontend/i18n/types/*`
 - **Specific logic**:
@@ -82,7 +82,7 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
   - Add English and Chinese translation keys and regenerate i18n types.
 - **Validation**: Manual browser verification confirms edit, cancel, validation, version switching, and page-refresh persistence.
 
-### Stage 6: Tests and regression checks
+### Stage 6: Tests and regression checks — Complete
 
 - **Files modified**: `backend/tests/api/v1/test_chat_message_edit.py` and frontend tests if existing infrastructure is practical
 - **Specific logic**:

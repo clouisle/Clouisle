@@ -16,6 +16,8 @@ interface ChatContainerProps {
   emptyState?: React.ReactNode;
   /** Callback when regenerate is clicked for a message */
   onRegenerate?: (messageId: string) => void;
+  /** Callback when a user message is edited */
+  onEditMessage?: (messageId: string, content: string) => Promise<void>;
   /** Callback when version is switched for a message */
   onSwitchVersion?: (messageId: string, versionIndex: number) => void;
   /** Callback when user selects an option from user input request */
@@ -62,6 +64,7 @@ export function ChatContainer({
   renderPart,
   emptyState,
   onRegenerate,
+  onEditMessage,
   onSwitchVersion,
   onSelectOption,
   showScrollToBottom = true,
@@ -155,8 +158,13 @@ export function ChatContainer({
           onRegenerate={
             message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined
           }
+          onEditMessage={
+            message.role === 'user' && onEditMessage
+              ? (content) => onEditMessage(message.id, content)
+              : undefined
+          }
           onSwitchVersion={
-            message.role === 'assistant' && onSwitchVersion
+            onSwitchVersion
               ? (versionIndex) => onSwitchVersion(message.id, versionIndex)
               : undefined
           }
@@ -180,6 +188,7 @@ export function ChatContainer({
       isStreaming,
       renderPart,
       onRegenerate,
+      onEditMessage,
       onSwitchVersion,
       onSelectOption,
       onOpenCodePreview,
