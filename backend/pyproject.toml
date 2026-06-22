@@ -44,7 +44,7 @@ dependencies = [
     "authlib>=1.7.0",
     "python3-saml>=1.16.0",
     "python-cas>=1.7.1",
-    "cryptography>=46.0.7",
+    "cryptography>=48.0.1",
     # Markdown processing
     "markdown>=3.10.2",
     "pyyaml>=6.0.0",
