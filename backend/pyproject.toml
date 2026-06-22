@@ -57,7 +57,7 @@ dependencies = [
     "aiohttp>=3.14.0",
     "urllib3>=2.6.3",
     "Babel>=2.17.0",
-    "msgpack>=1.1.0",
+    "msgpack>=1.2.1",
     "psutil>=7.1.3",
 ]
 
