@@ -44,6 +44,8 @@ interface ToolTestPanelProps {
   api?: ToolTestApi
 }
 
+const EMPTY_SELECT_VALUE = '__empty__'
+
 function formatResultPayload(result: ToolExecuteResponse): unknown {
   if (!result.logs && !result.artifacts?.length) {
     return result.result
@@ -455,16 +457,23 @@ function McpParameterInputs({
     // 布尔类型
     if (schema.type === 'boolean') {
       return (
-        <select
-          id={name}
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        <Select
+          value={value || EMPTY_SELECT_VALUE}
+          onValueChange={(v) => handleChange(v === EMPTY_SELECT_VALUE ? '' : v ?? '')}
         >
-          <option value="">{t('selectOption')}</option>
-          <option value="true">{commonT('yes')}</option>
-          <option value="false">{commonT('no')}</option>
-        </select>
+          <SelectTrigger id={name} className="w-full">
+            <SelectValue>
+              {value === 'true' ? commonT('yes') : value === 'false' ? commonT('no') : t('selectOption')}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {!required.includes(name) && (
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('selectOption')}</SelectItem>
+            )}
+            <SelectItem value="true">{commonT('yes')}</SelectItem>
+            <SelectItem value="false">{commonT('no')}</SelectItem>
+          </SelectContent>
+        </Select>
       )
     }
 
@@ -580,19 +589,26 @@ function ParameterInput({
       )
     }
 
-    // 布尔类型 - 下拉选择
+    // 布尔类型
     if (parameter.type === 'boolean') {
       return (
-        <select
-          id={parameter.name}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus:ring-2 focus:ring-ring"
+        <Select
+          value={value || EMPTY_SELECT_VALUE}
+          onValueChange={(v) => onChange(v === EMPTY_SELECT_VALUE ? '' : v ?? '')}
         >
-          <option value="">{t('selectOption')}</option>
-          <option value="true">{commonT('yes')}</option>
-          <option value="false">{commonT('no')}</option>
-        </select>
+          <SelectTrigger id={parameter.name} className="w-full">
+            <SelectValue>
+              {value === 'true' ? commonT('yes') : value === 'false' ? commonT('no') : t('selectOption')}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {!parameter.required && (
+              <SelectItem value={EMPTY_SELECT_VALUE}>{t('selectOption')}</SelectItem>
+            )}
+            <SelectItem value="true">{commonT('yes')}</SelectItem>
+            <SelectItem value="false">{commonT('no')}</SelectItem>
+          </SelectContent>
+        </Select>
       )
     }
 

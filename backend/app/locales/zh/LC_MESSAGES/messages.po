@@ -2377,6 +2377,18 @@ msgstr "Memory 工具执行失败"
 msgid "tool_execution_failed"
 msgstr "工具执行失败"
 
+msgid "http_tool_request_failed_status"
+msgstr "HTTP 请求失败，状态码：{status_code}"
+
+msgid "http_tool_url_invalid"
+msgstr "HTTP URL 无效"
+
+msgid "http_tool_url_host_not_allowed"
+msgstr "不允许访问该 HTTP URL 主机"
+
+msgid "http_tool_url_host_cannot_be_resolved"
+msgstr "无法解析 HTTP URL 主机"
+
 msgid "code_tool_execution_failed"
 msgstr "代码工具执行失败"
 
