@@ -30,14 +30,17 @@ import {
   HealthPanel,
   ObservabilitySkeleton,
   OverviewPanel,
+  SlowQueriesPanel,
   ThroughputPanel,
   TimeoutsPanel,
+  TokensPanel,
+  WorkersPanel,
   WorkflowsPanel,
 } from './_components/observability-panels'
 
-type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput'
+type ObservabilityTab = 'overview' | 'health' | 'agents' | 'workflows' | 'timeouts' | 'throughput' | 'tokens' | 'workers' | 'slow-queries'
 
-const TAB_VALUES: ObservabilityTab[] = ['overview', 'health', 'agents', 'workflows', 'timeouts', 'throughput']
+const TAB_VALUES: ObservabilityTab[] = ['overview', 'health', 'agents', 'workflows', 'timeouts', 'throughput', 'tokens', 'workers', 'slow-queries']
 
 export default function ObservabilityPage() {
   const t = useTranslations('dashboard.observability')
@@ -98,12 +101,17 @@ export default function ObservabilityPage() {
         const data = await observabilityApi.getTimeouts({ time_range: timeRange, page_size: 20 })
         setTimeouts(data)
       } else if (activeTab === 'throughput') {
-        const [throughputData, tokenData] = await Promise.all([
-          observabilityApi.getThroughput({ time_range: timeRange }),
-          observabilityApi.getTokens(timeRange),
-        ])
+        const throughputData = await observabilityApi.getThroughput({ time_range: timeRange })
         setThroughput(throughputData)
+      } else if (activeTab === 'tokens') {
+        const tokenData = await observabilityApi.getTokens(timeRange)
         setTokens(tokenData)
+      } else if (activeTab === 'workers') {
+        const workerData = await observabilityApi.getWorkers()
+        setWorkers(workerData)
+      } else if (activeTab === 'slow-queries') {
+        const slowQueryData = await observabilityApi.getSlowQueries({ page_size: 20 })
+        setSlowQueries(slowQueryData)
       }
       setLastUpdatedAt(new Date())
     } catch (fetchError) {
@@ -130,7 +138,8 @@ export default function ObservabilityPage() {
     router.push(`/dashboard/observability?tab=${newTab}`, { scroll: false })
   }
 
-  const showSkeleton = isLoading && !hasTabData(activeTab, { overview, health, agents, workflows, timeouts, throughput })
+  const showSkeleton = isLoading && !hasTabData(activeTab, { overview, health, agents, workflows, timeouts, throughput, tokens, workers, slowQueries })
+  const showTimeRange = activeTab !== 'health' && activeTab !== 'workers' && activeTab !== 'slow-queries'
 
   return (
     <RoutePermissionGuard>
@@ -152,7 +161,7 @@ export default function ObservabilityPage() {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {activeTab !== 'health' && <TimeRangeSelector value={timeRange} onChange={setTimeRange} />}
+                {showTimeRange && <TimeRangeSelector value={timeRange} onChange={setTimeRange} />}
                 <Button variant="outline" size="icon" onClick={fetchCurrentTab} disabled={isLoading} aria-label={t('actions.refresh')}>
                   <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
@@ -176,7 +185,10 @@ export default function ObservabilityPage() {
             {!showSkeleton && activeTab === 'agents' && <AgentsPanel rows={agents} timeRange={timeRange} />}
             {!showSkeleton && activeTab === 'workflows' && <WorkflowsPanel rows={workflows} timeRange={timeRange} />}
             {!showSkeleton && activeTab === 'timeouts' && <TimeoutsPanel data={timeouts} />}
-            {!showSkeleton && activeTab === 'throughput' && <ThroughputPanel throughput={throughput} tokens={tokens} />}
+            {!showSkeleton && activeTab === 'throughput' && <ThroughputPanel throughput={throughput} />}
+            {!showSkeleton && activeTab === 'tokens' && <TokensPanel tokens={tokens} />}
+            {!showSkeleton && activeTab === 'workers' && <WorkersPanel workers={workers} />}
+            {!showSkeleton && activeTab === 'slow-queries' && <SlowQueriesPanel slowQueries={slowQueries} />}
           </div>
         </div>
       </div>
@@ -193,6 +205,9 @@ function hasTabData(
     workflows: WorkflowPerformanceRow[]
     timeouts: TimeoutResponse | null
     throughput: ThroughputResponse | null
+    tokens: TokenResponse | null
+    workers: WorkerResponse | null
+    slowQueries: SlowQueriesResponse | null
   }
 ) {
   if (tab === 'overview') return Boolean(data.overview)
@@ -200,5 +215,8 @@ function hasTabData(
   if (tab === 'agents') return data.agents.length > 0
   if (tab === 'workflows') return data.workflows.length > 0
   if (tab === 'timeouts') return Boolean(data.timeouts)
-  return Boolean(data.throughput)
+  if (tab === 'throughput') return Boolean(data.throughput)
+  if (tab === 'tokens') return Boolean(data.tokens)
+  if (tab === 'workers') return Boolean(data.workers)
+  return Boolean(data.slowQueries)
 }
