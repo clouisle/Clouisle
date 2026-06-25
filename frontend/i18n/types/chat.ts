@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.223Z
+// GENERATED — 2026-06-25T12:46:51.601Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -52,6 +52,11 @@ export type ChatMessages = {
       page: string
       segment: string
       segmentCount: string
+      showMoreSources: string
+      showMoreSegments: string
+      loadingSources: string
+      contentTruncated: string
+      close: string
       relevance: string
     }
     file: {

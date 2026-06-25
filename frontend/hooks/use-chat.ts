@@ -144,6 +144,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     taskState: { rag: 'pending', generating: 'pending', toolCalling: 'pending', compression: 'pending' },
   })
 
+  const scheduledStreamingFlushRef = useRef<
+    | { id: number; type: 'frame' }
+    | { id: ReturnType<typeof setTimeout>; type: 'timeout' }
+    | null
+  >(null)
+
   const isLoading = status === 'loading' || status === 'streaming'
   const isStreaming = status === 'streaming'
 
@@ -299,6 +305,53 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         let receivedTerminalEvent = false
+        let userInputRequestCandidateSeen = false
+        let userInputRequestScanTail = ''
+
+        const cancelScheduledStreamingFlush = () => {
+          const scheduled = scheduledStreamingFlushRef.current
+          if (!scheduled) return
+          if (scheduled.type === 'frame') {
+            window.cancelAnimationFrame(scheduled.id)
+          } else {
+            globalThis.clearTimeout(scheduled.id)
+          }
+          scheduledStreamingFlushRef.current = null
+        }
+
+        const flushStreamingMessage = (streaming = true) => {
+          cancelScheduledStreamingFlush()
+          const state = streamingStateRef.current
+          if (!state.assistantMessageId) return
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === state.assistantMessageId
+                ? {
+                    ...msg,
+                    parts: buildMessageParts(state.segments, state.reasoningBlocks, state.ragSources, streaming, state.taskState),
+                  }
+                : msg
+            )
+          )
+        }
+
+        const scheduleStreamingMessageFlush = () => {
+          if (scheduledStreamingFlushRef.current) return
+          if (typeof window !== 'undefined' && 'requestAnimationFrame' in window) {
+            const id = window.requestAnimationFrame(() => {
+              scheduledStreamingFlushRef.current = null
+              flushStreamingMessage(true)
+            })
+            scheduledStreamingFlushRef.current = { id, type: 'frame' }
+            return
+          }
+
+          const id = globalThis.setTimeout(() => {
+            scheduledStreamingFlushRef.current = null
+            flushStreamingMessage(true)
+          }, 16)
+          scheduledStreamingFlushRef.current = { id, type: 'timeout' }
+        }
 
         // Parse SSE stream
         for await (const event of parseSSEStream(response)) {
@@ -391,17 +444,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 }
               }
 
-              // Update assistant message with current reasoning blocks
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
+              // Batch reasoning deltas so each SSE chunk does not rerender the message tree.
+              scheduleStreamingMessageFlush()
               break
             }
 
@@ -447,69 +491,65 @@ export function useChat(options: UseChatOptions): UseChatReturn {
               const textSegment = getCurrentTextSegment()
               textSegment.text = (textSegment.text || '') + data.delta
 
-              // Collect all text from all text segments to check for complete XML
-              const allText = segments
-                .filter(s => s.type === 'text')
-                .map(s => s.text || '')
-                .join('')
+              const startTag = '<user_input_request>'
+              const endTag = '</user_input_request>'
+              userInputRequestScanTail = `${userInputRequestScanTail}${data.delta}`.slice(-startTag.length)
+              if (!userInputRequestCandidateSeen) {
+                userInputRequestCandidateSeen = data.delta.includes(startTag) || userInputRequestScanTail.includes(startTag)
+              }
 
-              const hasStartTag = allText.includes('<user_input_request>')
-              const hasEndTag = allText.includes('</user_input_request>')
+              if (userInputRequestCandidateSeen) {
+                // Only collect all text after a possible user-input XML block has started.
+                const allText = segments
+                  .filter(s => s.type === 'text')
+                  .map(s => s.text || '')
+                  .join('')
 
-              console.log('[XML Debug] hasStartTag:', hasStartTag, 'hasEndTag:', hasEndTag, 'allTextLength:', allText.length)
+                if (allText.includes(startTag) && allText.includes(endTag)) {
+                  // Complete XML detected - parse it
+                  const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
+                  if (xmlMatch) {
+                    const xmlContent = xmlMatch[1]
+                    const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
+                    const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
 
-              if (hasStartTag && hasEndTag) {
-                // Complete XML detected - parse it
-                console.log('[XML Debug] Complete XML detected, parsing...')
-                const xmlMatch = allText.match(/<user_input_request>([\s\S]*?)<\/user_input_request>/)
-                if (xmlMatch) {
-                  console.log('[XML Debug] XML matched:', xmlMatch[0].substring(0, 100))
-                  const xmlContent = xmlMatch[1]
-                  const questionMatch = xmlContent.match(/<question>([\s\S]*?)<\/question>/)
-                  const optionsMatch = xmlContent.match(/<options>([\s\S]*?)<\/options>/)
-
-                  console.log('[XML Debug] questionMatch:', !!questionMatch, 'optionsMatch:', !!optionsMatch)
-
-                  if (questionMatch && optionsMatch) {
-                    const question = questionMatch[1].trim()
-                    const options: string[] = []
-                    const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
-                    for (const match of optionMatches) {
-                      options.push(match[1].trim())
-                    }
-
-                    console.log('[XML Debug] Parsed - question:', question, 'options count:', options.length)
-
-                    if (question && options.length >= 2) {
-                      // Remove XML from all text segments
-                      const textBeforeXML = allText.substring(0, allText.indexOf('<user_input_request>'))
-                      const textAfterXML = allText.substring(allText.indexOf('</user_input_request>') + '</user_input_request>'.length)
-                      const cleanedText = (textBeforeXML + textAfterXML).trim()
-
-                      console.log('[XML Debug] Text before XML:', textBeforeXML.length, 'after XML:', textAfterXML.length)
-
-                      // Replace all text segments with a single cleaned one
-                      segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
-                      if (cleanedText) {
-                        segments.push({
-                          type: 'text',
-                          text: cleanedText
-                        })
+                    if (questionMatch && optionsMatch) {
+                      const question = questionMatch[1].trim()
+                      const options: string[] = []
+                      const optionMatches = optionsMatch[1].matchAll(/<option>([\s\S]*?)<\/option>/g)
+                      for (const match of optionMatches) {
+                        options.push(match[1].trim())
                       }
 
-                      // Add user input request segment
-                      const userInputSegment: ContentSegment = {
-                        type: 'user-input-request',
-                        userInputRequest: {
-                          type: 'user-input-request',
-                          question,
-                          options,
-                          state: 'pending',
+                      if (question && options.length >= 2) {
+                        // Remove XML from all text segments
+                        const textBeforeXML = allText.substring(0, allText.indexOf(startTag))
+                        const textAfterXML = allText.substring(allText.indexOf(endTag) + endTag.length)
+                        const cleanedText = (textBeforeXML + textAfterXML).trim()
+
+                        // Replace all text segments with a single cleaned one
+                        segments = segments.filter(s => s.type !== 'text' && s.type !== 'user-input-request')
+                        if (cleanedText) {
+                          segments.push({
+                            type: 'text',
+                            text: cleanedText
+                          })
                         }
-                      }
-                      segments.push(userInputSegment)
 
-                      console.log('[XML Debug] Segments after processing:', segments.length)
+                        // Add user input request segment
+                        const userInputSegment: ContentSegment = {
+                          type: 'user-input-request',
+                          userInputRequest: {
+                            type: 'user-input-request',
+                            question,
+                            options,
+                            state: 'pending',
+                          }
+                        }
+                        segments.push(userInputSegment)
+                        userInputRequestCandidateSeen = false
+                        userInputRequestScanTail = ''
+                      }
                     }
                   }
                 }
@@ -527,17 +567,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
                 streamingStateRef.current.taskState = taskState
               }
 
-              // Update assistant message with current text
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessageId
-                    ? {
-                        ...msg,
-                        parts: buildMessageParts(segments, reasoningBlocks, ragSources, true, taskState),
-                      }
-                    : msg
-                )
-              )
+              // Batch text deltas so each token does not rerender the message tree.
+              scheduleStreamingMessageFlush()
               break
             }
 
@@ -767,6 +798,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'message_end': {
               receivedTerminalEvent = true
+              cancelScheduledStreamingFlush()
               // Get version info from event data
               const endData = event.data as SSEMessageEnd & { version_number?: number; version_count?: number }
               // Finalize message - pass taskState to keep RAG steps visible
@@ -817,6 +849,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
             case 'error': {
               receivedTerminalEvent = true
+              cancelScheduledStreamingFlush()
               if (taskState.compression === 'running') {
                 taskState.compression = 'error'
                 streamingStateRef.current.taskState = taskState
@@ -926,6 +959,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         setStatus('idle')
       } finally {
         abortRef.current = null
+        const scheduled = scheduledStreamingFlushRef.current
+        if (scheduled) {
+          if (scheduled.type === 'frame') {
+            window.cancelAnimationFrame(scheduled.id)
+          } else {
+            globalThis.clearTimeout(scheduled.id)
+          }
+          scheduledStreamingFlushRef.current = null
+        }
         // Reset streaming state
         streamingStateRef.current = {
           assistantMessageId: null,
@@ -1040,9 +1082,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       try {
         // Fetch all versions from backend
-        console.log('switchVersion: fetching versions for message', messageId)
         const versions = await agentsApi.getMessageVersions(agentId, messageId)
-        console.log('switchVersion: got versions', versions)
 
         if (versionIndex < 0 || versionIndex >= versions.length) {
           console.error('switchVersion: invalid versionIndex', versionIndex, 'versions.length', versions.length)
@@ -1050,12 +1090,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
 
         const targetVersion = versions[versionIndex]
-        console.log('switchVersion: switching to version', targetVersion)
 
         // Call backend to switch version (this updates is_active in database)
         // Backend will also deactivate messages that came after this message
-        const result = await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
-        console.log('switchVersion: switch result', result)
+        await agentsApi.switchMessageVersion(agentId, messageId, targetVersion.id)
 
         // Reload the entire conversation to get the correct message history.
         await reloadConversationMessages()

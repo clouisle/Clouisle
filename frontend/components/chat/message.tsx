@@ -29,11 +29,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
   Message as AIMessage,
   MessageContent,
   MessageActions,
@@ -168,6 +163,8 @@ function getSpeechSynthesis() {
   return window.speechSynthesis
 }
 
+const SPEECH_EMOJI_REGEX = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[☀-➿])[️︎]?(?:‍(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[☀-➿])[️︎]?)*|[\u{1F3FB}-\u{1F3FF}]/gu
+
 function getSpeechText(text: string) {
   return text
     .replace(/```[\s\S]*?```/g, '')
@@ -179,6 +176,7 @@ function getSpeechText(text: string) {
     .replace(/^\s*[-*+]\s+/gm, '')
     .replace(/^\s*\d+\.\s+/gm, '')
     .replace(/[*_~]+/g, '')
+    .replace(SPEECH_EMOJI_REGEX, '')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -431,8 +429,8 @@ export interface MessageProps extends React.HTMLAttributes<HTMLDivElement> {
   onRequestScrollIntoView?: () => void
 }
 
-export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
-  (
+const MessageComponent = React.forwardRef<HTMLDivElement, MessageProps>(
+  function MessageComponent(
     {
       message,
       isStreaming = false,
@@ -453,7 +451,7 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       ...props
     },
     ref
-  ) => {
+  ) {
     const t = useTranslations('chat.message')
     const locale = useLocale()
     const tReasoning = useTranslations('chat.reasoning')
@@ -479,21 +477,93 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const timing = message.metadata?.timing as { first_token_ms: number | null; duration_ms: number; tokens_per_second: number | null } | undefined
 
     // Group sources together (only document sources for citations)
-    const allSources = message.parts.filter(isSourcePart) as (SourceUrlPart | SourceDocumentPart)[]
-    const documentSources = message.parts.filter(isSourceDocumentPart) as SourceDocumentPart[]
-    const otherParts = message.parts.filter((p) => !isSourcePart(p))
-    const hasIterationCapMarker = otherParts.some(isIterationCapReachedPart)
+    const {
+      allSources,
+      documentSources,
+      otherParts,
+      taskParts,
+      reasoningParts,
+      toolCallParts,
+      textParts,
+      contentParts,
+      hasIterationCapMarker,
+    } = React.useMemo(() => {
+      const nextAllSources: (SourceUrlPart | SourceDocumentPart)[] = []
+      const nextDocumentSources: SourceDocumentPart[] = []
+      const nextOtherParts: MessagePart[] = []
+      const nextTaskParts: TaskPart[] = []
+      const nextReasoningParts: ReasoningPart[] = []
+      const nextToolCallParts: ToolCallPart[] = []
+      const nextTextParts: TextPart[] = []
+      const nextContentParts: MessagePart[] = []
+      let nextHasIterationCapMarker = false
+
+      for (const part of message.parts) {
+        if (isSourcePart(part)) {
+          nextAllSources.push(part as SourceUrlPart | SourceDocumentPart)
+          if (isSourceDocumentPart(part)) {
+            nextDocumentSources.push(part as SourceDocumentPart)
+          }
+          continue
+        }
+
+        nextOtherParts.push(part)
+        if (isIterationCapReachedPart(part)) {
+          nextHasIterationCapMarker = true
+        }
+        if (isTaskPart(part)) {
+          nextTaskParts.push(part as TaskPart)
+          continue
+        }
+        if (isReasoningPart(part)) {
+          nextReasoningParts.push(part as ReasoningPart)
+          continue
+        }
+        if (isToolCallPart(part)) {
+          nextToolCallParts.push(part as ToolCallPart)
+        }
+        if (isTextPart(part)) {
+          nextTextParts.push(part as TextPart)
+        }
+        if (
+          !isFilePart(part)
+          && !isToolResultPart(part)
+          && !isMcpToolResultPart(part)
+          && !isTaskPart(part)
+          && !isReasoningPart(part)
+          && !(hideToolCalls && (isToolCallPart(part) || isMcpToolCallPart(part)))
+        ) {
+          nextContentParts.push(part)
+        }
+      }
+
+      return {
+        allSources: nextAllSources,
+        documentSources: nextDocumentSources,
+        otherParts: nextOtherParts,
+        taskParts: nextTaskParts,
+        reasoningParts: nextReasoningParts,
+        toolCallParts: nextToolCallParts,
+        textParts: nextTextParts,
+        contentParts: nextContentParts,
+        hasIterationCapMarker: nextHasIterationCapMarker,
+      }
+    }, [hideToolCalls, message.parts])
     const iterationCapLabel = t('iterationCapReached').trim()
 
     // Get text content for copying (strip citation markers)
-    const textContent = message.parts
-      .filter((part): part is TextPart => (
-        isTextPart(part)
-        && !(hasIterationCapMarker && part.text.trim() === iterationCapLabel)
-      ))
-      .map((part) => part.text.replace(/\[\[cite:\d+\]\]/g, ''))
-      .join('\n')
-      .trim()
+    const textContent = React.useMemo(() => {
+      const parts: string[] = []
+      for (const part of message.parts) {
+        if (
+          isTextPart(part)
+          && !(hasIterationCapMarker && part.text.trim() === iterationCapLabel)
+        ) {
+          parts.push(part.text.replace(/\[\[cite:\d+\]\]/g, ''))
+        }
+      }
+      return parts.join('\n').trim()
+    }, [hasIterationCapMarker, iterationCapLabel, message.parts])
 
     // Handle copy
     const handleCopy = async () => {
@@ -625,13 +695,15 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       speechSynthesis.speak(utterance)
     }, [isSpeakingThisMessage, locale, message.id, resetSpeechState, speechVoices, textContent])
 
+    const hasReasoning = reasoningParts.length > 0
+
     React.useEffect(() => {
       if (isSpeakingThisMessage) {
         onRequestScrollIntoView?.()
       }
     }, [isSpeakingThisMessage, onRequestScrollIntoView])
 
-    const renderToolResultContent = (output: unknown, isError?: boolean) => {
+    const renderToolResultContent = React.useCallback((output: unknown, isError?: boolean) => {
       const parsedOutput = parseToolResultOutput(output)
 
       if (isMediaImageToolResult(parsedOutput)) {
@@ -733,10 +805,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
           errorText={isError ? t('toolExecutionFailed') : undefined}
         />
       )
-    }
+    }, [openLightbox, t])
 
     // Render a single part
-    const renderDefaultPart = (part: MessagePart, index: number) => {
+    const renderDefaultPart = React.useCallback((part: MessagePart, index: number) => {
       if (isTextPart(part)) {
         if (hasIterationCapMarker && part.text.trim() === iterationCapLabel) {
           return null
@@ -895,7 +967,21 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
 
       return null
-    }
+    }, [
+      activeSpeechSentence,
+      documentSources,
+      hasIterationCapMarker,
+      hasReasoning,
+      hideToolCalls,
+      isStreaming,
+      iterationCapLabel,
+      message.parts,
+      onOpenCodePreview,
+      onSelectOption,
+      openLightbox,
+      renderToolResultContent,
+      t,
+    ])
 
     // Get task parts and reasoning parts for ChainOfThought
     const isManuallyStoppedMessage = Boolean(message.metadata?.isManuallyStopped) || otherParts.some(isStoppedPart)
@@ -907,18 +993,13 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     const showPreservedErrorNote = Boolean(
       isErroredMessage && message.metadata?.preservedPartialProgress
     )
-    const taskParts = otherParts.filter(isTaskPart) as TaskPart[]
-    const reasoningParts = otherParts.filter(isReasoningPart) as ReasoningPart[]
-    const toolCallParts = otherParts.filter(isToolCallPart) as ToolCallPart[]
     // Check if we should show ChainOfThought
     // Only show if there are reasoning parts OR tasks (RAG/generating)
     // Tool calls should only be in ChainOfThought if there's reasoning
-    const hasReasoning = reasoningParts.length > 0
     const hasTasks = taskParts.length > 0
     const hasChainOfThought = hasReasoning || hasTasks
 
     // Get text parts to check if content has started
-    const textParts = otherParts.filter(isTextPart) as TextPart[]
     const hasTextContent = textParts.some(t => t.text && t.text.length > 0)
 
     // Check if any step is still active (streaming)
@@ -932,27 +1013,27 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
     )
 
     // Convert task state to step status
-    const getStepStatus = (state: TaskPart['state']) => {
+    const getStepStatus = React.useCallback((state: TaskPart['state']) => {
       switch (state) {
         case 'running': return 'active' as const
         case 'completed': return 'complete' as const
         case 'error': return 'error' as const
         default: return 'pending' as const
       }
-    }
+    }, [])
 
     // Convert tool call state to step status
-    const getToolCallStepStatus = (state: ToolCallPart['state']) => {
+    const getToolCallStepStatus = React.useCallback((state: ToolCallPart['state']) => {
       switch (state) {
         case 'running': return 'active' as const
         case 'done': return 'complete' as const
         case 'error': return 'error' as const
         default: return 'pending' as const
       }
-    }
+    }, [])
 
     // Get tool call label with state
-    const getToolCallLabel = (toolPart: ToolCallPart) => {
+    const getToolCallLabel = React.useCallback((toolPart: ToolCallPart) => {
       const name = toolPart.toolDisplayName || toolPart.toolName
       switch (toolPart.state) {
         case 'running': return t('toolRunning', { name })
@@ -960,10 +1041,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
         case 'error': return t('toolFailed', { name })
         default: return name
       }
-    }
+    }, [t])
 
     // Render task title based on type and state
-    const getTaskTitle = (taskPart: TaskPart) => {
+    const getTaskTitle = React.useCallback((taskPart: TaskPart) => {
       if (taskPart.taskType === 'rag') {
         if (taskPart.state === 'completed' && typeof taskPart.info === 'number') {
           return tTask('foundSources', { count: taskPart.info })
@@ -1011,10 +1092,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       }
       // Skip 'thinking' type - we now show individual tool calls instead
       return ''
-    }
+    }, [tTask])
 
     // Build chain of thought steps in order: maintain original order from parts
-    const buildChainOfThoughtSteps = () => {
+    const buildChainOfThoughtSteps = React.useCallback(() => {
       const steps: React.ReactNode[] = []
 
       // 1. RAG steps first (always at the beginning)
@@ -1149,25 +1230,28 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       })
 
       return steps
-    }
+    }, [
+      getStepStatus,
+      getTaskTitle,
+      getToolCallLabel,
+      getToolCallStepStatus,
+      hasReasoning,
+      hideToolCalls,
+      message.parts,
+      otherParts,
+      renderToolResultContent,
+      tReasoning,
+      taskParts,
+    ])
 
     // Filter parts for file attachments
-    const fileParts = otherParts.filter(isFilePart)
-    const contentParts = otherParts.filter((p) => (
-      !isFilePart(p)
-      && !isToolResultPart(p)
-      && !isMcpToolResultPart(p)
-      && !isTaskPart(p)
-      && !isReasoningPart(p)
-      && !(hideToolCalls && (isToolCallPart(p) || isMcpToolCallPart(p)))
-    ))
-    const visibleContentParts = (
-      isErroredMessage
-      && !showPreservedErrorNote
-      && streamErrorMessage
-    )
-      ? contentParts.filter((part) => !(isTextPart(part) && part.text.trim() === streamErrorMessage.trim()))
-      : contentParts
+    const fileParts = React.useMemo(() => otherParts.filter(isFilePart), [otherParts])
+    const visibleContentParts = React.useMemo(() => {
+      if (isErroredMessage && !showPreservedErrorNote && streamErrorMessage) {
+        return contentParts.filter((part) => !(isTextPart(part) && part.text.trim() === streamErrorMessage.trim()))
+      }
+      return contentParts
+    }, [contentParts, isErroredMessage, showPreservedErrorNote, streamErrorMessage])
 
     // Check if this is a loading placeholder message (only show if no ChainOfThought)
     const isLoadingMessage = message.metadata?.isLoading && visibleContentParts.length === 0 && !hasChainOfThought
@@ -1179,6 +1263,129 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       && !isLoadingMessage
     )
 
+    const messageBody = React.useMemo(() => (
+      <>
+        {isUser && fileParts.length > 0 && (
+          <MessageAttachments>
+            {fileParts.map((part, index) =>
+              renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
+            )}
+          </MessageAttachments>
+        )}
+
+        <MessageContent>
+          {isAssistant && hasChainOfThought && (
+            <ChainOfThought
+              isStreaming={isChainOfThoughtStreaming}
+              open={chainOfThoughtOpen}
+              onOpenChange={onChainOfThoughtOpenChange}
+              defaultOpen={false}
+            >
+              <ChainOfThoughtHeader title={tReasoning('thought')} />
+              <ChainOfThoughtContent containScroll className="max-h-80 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
+                {buildChainOfThoughtSteps()}
+              </ChainOfThoughtContent>
+            </ChainOfThought>
+          )}
+          {isEditing ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editDraft}
+                onChange={(event) => setEditDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelEdit()
+                  }
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault()
+                    void saveEdit()
+                  }
+                }}
+                placeholder={t('editPlaceholder')}
+                className="min-h-24 resize-y bg-background text-foreground"
+                disabled={isSavingEdit}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={cancelEdit}
+                  disabled={isSavingEdit}
+                >
+                  {t('cancelEdit')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void saveEdit()}
+                  disabled={isSavingEdit || !editDraft.trim() || editDraft.trim() === textContent}
+                >
+                  {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                  {t('saveEdit')}
+                </Button>
+              </div>
+            </div>
+          ) : isLoadingMessage ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">{t('thinking')}</span>
+            </div>
+          ) : (
+            visibleContentParts.map((part, index) =>
+              renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
+            )
+          )}
+          {isErroredMessage && (
+            <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
+              <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
+              <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
+            </div>
+          )}
+          {isAssistant && isManuallyStoppedMessage && (
+            <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Square className="h-3 w-3 shrink-0 fill-current" />
+              <span>{t('manuallyStopped')}</span>
+            </div>
+          )}
+        </MessageContent>
+
+        {isAssistant && allSources.length > 0 && (
+          <SourceContent sources={allSources} />
+        )}
+      </>
+    ), [
+      allSources,
+      buildChainOfThoughtSteps,
+      cancelEdit,
+      chainOfThoughtOpen,
+      editDraft,
+      fileParts,
+      hasChainOfThought,
+      isAssistant,
+      isChainOfThoughtStreaming,
+      isEditing,
+      isErroredMessage,
+      isLoadingMessage,
+      isManuallyStoppedMessage,
+      isSavingEdit,
+      isStandaloneErrorMessage,
+      isUser,
+      onChainOfThoughtOpenChange,
+      preservedErrorNote,
+      renderDefaultPart,
+      renderPart,
+      saveEdit,
+      showPreservedErrorNote,
+      streamErrorMessage,
+      t,
+      tReasoning,
+      textContent,
+      visibleContentParts,
+    ])
+
     return (
       <div
         ref={ref}
@@ -1188,103 +1395,10 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
       >
         <div className="mx-auto max-w-3xl px-4">
           <AIMessage from={message.role}>
-            {/* File attachments for user messages */}
-            {isUser && fileParts.length > 0 && (
-              <MessageAttachments>
-                {fileParts.map((part, index) =>
-                  renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
-                )}
-              </MessageAttachments>
-            )}
-
-            <MessageContent>
-              {/* Chain of Thought: shows RAG, reasoning, tool calls, and generating steps in order */}
-              {isAssistant && hasChainOfThought && (
-                <ChainOfThought
-                  isStreaming={isChainOfThoughtStreaming}
-                  open={chainOfThoughtOpen}
-                  onOpenChange={onChainOfThoughtOpenChange}
-                  defaultOpen={false}
-                >
-                  <ChainOfThoughtHeader title={tReasoning('thought')} />
-                  <ChainOfThoughtContent containScroll className="max-h-80 overflow-y-auto pr-2 [scrollbar-gutter:stable]">
-                    {buildChainOfThoughtSteps()}
-                  </ChainOfThoughtContent>
-                </ChainOfThought>
-              )}
-              {/* Loading state */}
-              {isEditing ? (
-                <div className="space-y-2">
-                  <Textarea
-                    value={editDraft}
-                    onChange={(event) => setEditDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') {
-                        event.preventDefault()
-                        cancelEdit()
-                      }
-                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                        event.preventDefault()
-                        void saveEdit()
-                      }
-                    }}
-                    placeholder={t('editPlaceholder')}
-                    className="min-h-24 resize-y bg-background text-foreground"
-                    disabled={isSavingEdit}
-                    autoFocus
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={cancelEdit}
-                      disabled={isSavingEdit}
-                    >
-                      {t('cancelEdit')}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void saveEdit()}
-                      disabled={isSavingEdit || !editDraft.trim() || editDraft.trim() === textContent}
-                    >
-                      {isSavingEdit && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
-                      {t('saveEdit')}
-                    </Button>
-                  </div>
-                </div>
-              ) : isLoadingMessage ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">{t('thinking')}</span>
-                </div>
-              ) : (
-                visibleContentParts.map((part, index) =>
-                  renderPart ? renderPart(part, index) : renderDefaultPart(part, index)
-                )
-              )}
-              {isErroredMessage && (
-                <div className={cn('flex items-start gap-1.5 text-xs text-destructive', !isStandaloneErrorMessage && 'mt-3')}>
-                  <AlertTriangle className={cn('h-3.5 w-3.5 shrink-0', !isStandaloneErrorMessage && 'mt-0.5')} />
-                  <span>{showPreservedErrorNote ? preservedErrorNote : (streamErrorMessage ?? t('error'))}</span>
-                </div>
-              )}
-              {isAssistant && isManuallyStoppedMessage && (
-                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Square className="h-3 w-3 shrink-0 fill-current" />
-                  <span>{t('manuallyStopped')}</span>
-                </div>
-              )}
-            </MessageContent>
-
-            {/* Sources (grouped at bottom) */}
-            {isAssistant && allSources.length > 0 && (
-              <SourceContent sources={allSources} />
-            )}
+            {messageBody}
 
             {/* Actions for user messages */}
-            {isUser && !isStreaming && !isEditing && textContent && (onEditMessage || onSwitchVersion) && (
+            {isUser && !isStreaming && !isEditing && textContent && (showCopy || onEditMessage || onSwitchVersion) && (
               <MessageActions className="transition-opacity opacity-0 group-hover:opacity-100 justify-end">
                 {(message.versionCount ?? 1) > 1 && onSwitchVersion && (
                   <div className="flex items-center gap-0.5 text-muted-foreground">
@@ -1306,6 +1420,14 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
                       <ChevronRight className="h-3.5 w-3.5" />
                     </button>
                   </div>
+                )}
+                {showCopy && (
+                  <MessageAction
+                    tooltip={copied ? t('copied') : t('copy')}
+                    onClick={handleCopy}
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </MessageAction>
                 )}
                 {onEditMessage && (
                   <MessageAction tooltip={t('edit')} onClick={startEdit}>
@@ -1411,6 +1533,27 @@ export const Message = React.forwardRef<HTMLDivElement, MessageProps>(
   }
 )
 
+function areMessagePropsEqual(prev: Readonly<MessageProps>, next: Readonly<MessageProps>) {
+  return prev.message === next.message
+    && prev.isStreaming === next.isStreaming
+    && prev.renderPart === next.renderPart
+    && prev.showCopy === next.showCopy
+    && prev.showFeedback === next.showFeedback
+    && prev.onRegenerate === next.onRegenerate
+    && prev.onEditMessage === next.onEditMessage
+    && prev.onFeedback === next.onFeedback
+    && prev.onSwitchVersion === next.onSwitchVersion
+    && prev.onSelectOption === next.onSelectOption
+    && prev.onOpenCodePreview === next.onOpenCodePreview
+    && prev.hideToolCalls === next.hideToolCalls
+    && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
+    && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
+    && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
+    && prev.className === next.className
+}
+
+export const Message = React.memo(MessageComponent, areMessagePropsEqual)
+
 Message.displayName = 'Message'
 
 /**
@@ -1463,54 +1606,9 @@ function TokenStatsContent({
 }
 
 /**
- * Citation badge component with tooltip
- */
-function CitationBadge({
-  index,
-  source,
-}: {
-  index: number
-  source?: SourceDocumentPart
-}) {
-  const t = useTranslations('chat.source')
-  const badge = (
-    <span
-      className={cn(
-        'inline-flex items-center justify-center',
-        'min-w-5 h-5 px-1.5 mx-0.5',
-        'text-xs font-medium rounded-full',
-        'bg-primary/10 text-primary hover:bg-primary/20',
-        'transition-colors cursor-help',
-        'align-middle'
-      )}
-    >
-      {index}
-    </span>
-  )
-
-  if (!source) {
-    return badge
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger render={badge} />
-      <TooltipContent side="top" className="max-w-80 p-3">
-        <div className="space-y-2">
-          <div className="font-medium text-sm">{source.documentName || t('documentDefault')}</div>
-          <div className="text-xs text-muted-foreground line-clamp-4">
-            {source.content}
-          </div>
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
-/**
- * Text content with inline citations rendered as badges with tooltips
- * Uses MutationObserver to detect when Streamdown finishes rendering,
- * then replaces citation markers with portal targets
+ * Text content with lightweight inline citation markers.
+ * Keep citation handling in string preprocessing so message rendering does not
+ * run DOM TreeWalker / MutationObserver / portal work on every Streamdown update.
  */
 function PreviewableMarkdownBlock({
   content,
@@ -1769,6 +1867,23 @@ const BARE_MATH_BLOCK_REGEX = /(^|\n)\s*\[((?:\[[^\[\]]*\]|[^\[\]])*)\]\s*(?=\n|
 const BARE_LATEX_INLINE_REGEX = /(^|[\s，。；：、])\(\s*((?:\([^()]*\)|[^()])*)\s*\)(?=$|[\s，。；：、,.!?])/g
 const BARE_LATEX_FORMULA_LINE_REGEX = /^(\s*)(\\(?:cos|sin|tan|log|ln|text|frac|sqrt|sum|prod|int|mathbf|mathrm|mathbb|cdot|times|leq|geq)\b.*(?:=|\\frac|\\sum|\\sqrt|\\cdot).*)\s*$/
 const MATH_COMMAND_REGEX = /\\[A-Za-z]+/
+const TIGHT_STRONG_MARKER_REGEX = /\*\*([^*\n]+?)\*\*(?=[\p{Script=Han}\p{Letter}\p{Number}])/gu
+
+function normalizeTightStrongMarkers(input: string) {
+  if (!input) {
+    return ''
+  }
+
+  return input
+    .split(CODE_BLOCK_REGEX)
+    .map((segment) => {
+      if (!segment || segment.startsWith('`')) {
+        return segment
+      }
+      return segment.replace(TIGHT_STRONG_MARKER_REGEX, '<strong>$1</strong>')
+    })
+    .join('')
+}
 
 function normalizeBareLatexFormulaLines(input: string) {
   if (!input) {
@@ -1828,7 +1943,24 @@ function normalizeBareMathDelimiters(input: string) {
     .join('')
 }
 
-function TextWithCitations({
+const CITE_MARKER_REGEX = /\[\[cite:(\d+)\]\]/g
+
+function normalizeCitationMarkers(input: string, normalizeMath: boolean) {
+  const normalized = normalizeMath ? normalizeBareMathDelimiters(input) : input
+  return normalizeTightStrongMarkers(normalized)
+    .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
+    .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
+    .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
+}
+
+function formatCitationMarker(index: number, sources: SourceDocumentPart[]) {
+  if (index < 1 || index > sources.length) {
+    return ''
+  }
+  return ` [${index}]`
+}
+
+const TextWithCitations = React.memo(function TextWithCitations({
   text,
   sources,
   isStreaming = false,
@@ -1842,29 +1974,17 @@ function TextWithCitations({
   onOpenCodePreview?: (payload: CodePreviewPayload) => void
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const [portalTargets, setPortalTargets] = React.useState<Array<{
-    element: HTMLSpanElement
-    index: number
-  }>>([])
   const hasSources = sources.length > 0
 
-  // Citation marker formats: [[cite:N]] and common variants like (ref:N), [ref:N], [[ref:N]]
-  const normalizeCitations = (input: string) =>
-    normalizeBareMathDelimiters(input)
-      .replace(/\[\[ref:(\d+)\]\]/gi, '[[cite:$1]]')
-      .replace(/\[ref:(\d+)\]/gi, '[[cite:$1]]')
-      .replace(/\(ref:(\d+)\)/gi, '[[cite:$1]]')
-
-  const createCiteRegex = () => /\[\[cite:(\d+)\]\]/g
-
-  // Process text: strip citations if no sources
   const processedText = React.useMemo(() => {
-    const normalized = normalizeCitations(text)
+    const normalized = normalizeCitationMarkers(text, !isStreaming)
     if (!hasSources) {
-      return normalized.replace(createCiteRegex(), '')
+      return normalized.replace(CITE_MARKER_REGEX, '')
     }
-    return normalized
-  }, [text, hasSources])
+    return normalized.replace(CITE_MARKER_REGEX, (_, rawIndex: string) => (
+      formatCitationMarker(Number.parseInt(rawIndex, 10), sources)
+    ))
+  }, [text, hasSources, sources, isStreaming])
 
   const clearSpeechHighlight = React.useCallback(() => {
     const highlightedElements = containerRef.current?.querySelectorAll('mark[data-speech-highlight="true"]')
@@ -1892,7 +2012,7 @@ function TextWithCitations({
       {
         acceptNode: (node) => {
           const parent = node.parentElement
-          if (!parent || parent.closest('[data-streamdown="code-block"], .cite-portal, [data-speech-highlight="true"]')) {
+          if (!parent || parent.closest('[data-streamdown="code-block"], [data-speech-highlight="true"]')) {
             return NodeFilter.FILTER_REJECT
           }
           return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
@@ -1947,78 +2067,6 @@ function TextWithCitations({
     })
   }, [activeSpeechSentence, clearSpeechHighlight])
 
-  // Function to find and replace citation markers in DOM
-  const processCitations = React.useCallback(() => {
-    if (!containerRef.current || !hasSources) {
-      setPortalTargets([])
-      return
-    }
-
-    // Walk through all text nodes
-    const walker = document.createTreeWalker(
-      containerRef.current,
-      NodeFilter.SHOW_TEXT,
-      null
-    )
-
-    const nodesToProcess: Text[] = []
-    let node: Text | null
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent && createCiteRegex().test(node.textContent)) {
-        nodesToProcess.push(node)
-      }
-    }
-
-    if (nodesToProcess.length === 0) {
-      return
-    }
-
-    const newTargets: Array<{ element: HTMLSpanElement; index: number }> = []
-
-    // Process each text node
-    nodesToProcess.forEach((textNode) => {
-      const content = textNode.textContent || ''
-      const fragment = document.createDocumentFragment()
-      let lastIndex = 0
-      let match
-      const citeRegex = createCiteRegex()
-
-      while ((match = citeRegex.exec(content)) !== null) {
-        // Add text before citation
-        if (match.index > lastIndex) {
-          fragment.appendChild(
-            document.createTextNode(content.slice(lastIndex, match.index))
-          )
-        }
-
-        // Create placeholder span for portal
-        const citationIndex = parseInt(match[1], 10)
-        const span = document.createElement('span')
-        span.className = 'cite-portal'
-        span.style.display = 'inline'
-        span.dataset.citeIndex = String(citationIndex)
-        fragment.appendChild(span)
-
-        newTargets.push({ element: span, index: citationIndex })
-        lastIndex = citeRegex.lastIndex
-      }
-
-      // Add remaining text
-      if (lastIndex < content.length) {
-        fragment.appendChild(
-          document.createTextNode(content.slice(lastIndex))
-        )
-      }
-
-      // Replace the text node with the fragment
-      if (textNode.parentNode) {
-        textNode.parentNode.replaceChild(fragment, textNode)
-      }
-    })
-
-    setPortalTargets((prev) => [...prev, ...newTargets])
-  }, [hasSources])
-
   const rehypePlugins = isStreaming ? STREAMING_REHYPE_PLUGINS : undefined
 
   const components = React.useMemo(() => ({
@@ -2045,65 +2093,17 @@ function TextWithCitations({
     },
   }), [])
 
-  // Use MutationObserver to detect when Streamdown renders content
   React.useEffect(() => {
-    if (!containerRef.current || !hasSources) {
-      setPortalTargets([])
+    if (!activeSpeechSentence) {
+      clearSpeechHighlight()
       return
     }
-
-    // Reset portal targets when text changes
-    setPortalTargets([])
-
-    // Process any existing content
-    const timeoutId = setTimeout(processCitations, 0)
-
-    // Watch for DOM changes (streaming content)
-    const observer = new MutationObserver(() => {
-      processCitations()
-    })
-
-    observer.observe(containerRef.current, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    })
-
-    return () => {
-      clearTimeout(timeoutId)
-      observer.disconnect()
-    }
-  }, [processedText, hasSources, processCitations])
-
-  React.useEffect(() => {
     const timeoutId = setTimeout(applySpeechHighlight, 0)
     return () => {
       clearTimeout(timeoutId)
       clearSpeechHighlight()
     }
   }, [activeSpeechSentence, applySpeechHighlight, clearSpeechHighlight, processedText])
-
-  React.useEffect(() => {
-    if (!isStreaming || !containerRef.current) {
-      return
-    }
-
-    const scrollCodeBlocksToBottom = () => {
-      containerRef.current?.querySelectorAll<HTMLElement>('[data-streamdown="code-block-body"]').forEach((block) => {
-        block.scrollTop = block.scrollHeight
-      })
-    }
-
-    scrollCodeBlocksToBottom()
-    const observer = new MutationObserver(scrollCodeBlocksToBottom)
-    observer.observe(containerRef.current, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    })
-
-    return () => observer.disconnect()
-  }, [isStreaming, processedText])
 
   return (
     <div
@@ -2131,19 +2131,14 @@ function TextWithCitations({
       >
         {processedText}
       </Streamdown>
-      {/* Render citation badges via portals */}
-      {portalTargets.map(({ element, index }) =>
-        ReactDOM.createPortal(
-          <CitationBadge
-            key={`cite-${index}-${element.dataset.citeIndex}`}
-            index={index}
-            source={sources[index - 1]}
-          />,
-          element
-        )
-      )}
     </div>
   )
-}
+}, (prevProps, nextProps) => (
+  prevProps.text === nextProps.text
+  && prevProps.sources === nextProps.sources
+  && prevProps.isStreaming === nextProps.isStreaming
+  && prevProps.activeSpeechSentence === nextProps.activeSpeechSentence
+  && prevProps.onOpenCodePreview === nextProps.onOpenCodePreview
+))
 
 export { type ChatMessage }

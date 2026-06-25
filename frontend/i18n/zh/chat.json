@@ -50,6 +50,11 @@
       "page": "第 {page} 页",
       "segment": "片段 {index}",
       "segmentCount": "{count} 个片段",
+      "showMoreSources": "再显示 {count} 个来源",
+      "showMoreSegments": "再显示 {count} 个片段",
+      "loadingSources": "正在加载来源...",
+      "contentTruncated": "为避免卡顿已截断内容。全文长度：{length} 个字符。",
+      "close": "关闭",
       "relevance": "相关度 {score}%"
     },
     "file": {

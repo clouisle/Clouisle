@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,8 @@ interface ChatContainerProps {
 }
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+const INITIAL_RENDERED_MESSAGE_COUNT = 20;
+const MESSAGE_RENDER_BATCH_SIZE = 20;
 
 function hasOpenCodeFence(content: string) {
   let openFence: '`' | '~' | null = null;
@@ -56,6 +58,95 @@ function hasOpenCodeFence(content: string) {
   return openFence !== null;
 }
 
+interface ChatMessageRowProps {
+  message: ChatMessage;
+  isCurrentStreaming: boolean;
+  renderPart?: (part: MessagePart, index: number) => React.ReactNode;
+  onRegenerate?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, content: string) => Promise<void>;
+  onSwitchVersion?: (messageId: string, versionIndex: number) => void;
+  onSelectOption?: (option: string) => void;
+  onOpenCodePreview?: (payload: CodePreviewPayload) => void;
+  hideToolCalls: boolean;
+  chainOfThoughtOpen?: boolean;
+  onChainOfThoughtOpenChange: (messageId: string, open: boolean) => void;
+  onRequestScrollIntoView: (messageId: string) => void;
+  setMessageElement: (messageId: string, element: HTMLDivElement | null) => void;
+}
+
+const ChatMessageRow = memo(function ChatMessageRow({
+  message,
+  isCurrentStreaming,
+  renderPart,
+  onRegenerate,
+  onEditMessage,
+  onSwitchVersion,
+  onSelectOption,
+  onOpenCodePreview,
+  hideToolCalls,
+  chainOfThoughtOpen,
+  onChainOfThoughtOpenChange,
+  onRequestScrollIntoView,
+  setMessageElement,
+}: ChatMessageRowProps) {
+  const handleRegenerate = useCallback(() => {
+    onRegenerate?.(message.id);
+  }, [message.id, onRegenerate]);
+
+  const handleEditMessage = useCallback((content: string) => {
+    return onEditMessage?.(message.id, content) ?? Promise.resolve();
+  }, [message.id, onEditMessage]);
+
+  const handleSwitchVersion = useCallback((versionIndex: number) => {
+    onSwitchVersion?.(message.id, versionIndex);
+  }, [message.id, onSwitchVersion]);
+
+  const handleChainOfThoughtOpenChange = useCallback((open: boolean) => {
+    onChainOfThoughtOpenChange(message.id, open);
+  }, [message.id, onChainOfThoughtOpenChange]);
+
+  const handleRequestScrollIntoView = useCallback(() => {
+    onRequestScrollIntoView(message.id);
+  }, [message.id, onRequestScrollIntoView]);
+
+  const setRef = useCallback((element: HTMLDivElement | null) => {
+    setMessageElement(message.id, element);
+  }, [message.id, setMessageElement]);
+
+  return (
+    <div ref={setRef}>
+      <Message
+        message={message}
+        isStreaming={isCurrentStreaming}
+        renderPart={renderPart}
+        onRegenerate={message.role === 'assistant' && onRegenerate ? handleRegenerate : undefined}
+        onEditMessage={message.role === 'user' && onEditMessage ? handleEditMessage : undefined}
+        onSwitchVersion={onSwitchVersion ? handleSwitchVersion : undefined}
+        chainOfThoughtOpen={chainOfThoughtOpen}
+        onChainOfThoughtOpenChange={handleChainOfThoughtOpenChange}
+        onSelectOption={onSelectOption}
+        onOpenCodePreview={onOpenCodePreview}
+        hideToolCalls={hideToolCalls}
+        onRequestScrollIntoView={handleRequestScrollIntoView}
+      />
+    </div>
+  );
+}, (prev, next) => (
+  prev.message === next.message
+  && prev.isCurrentStreaming === next.isCurrentStreaming
+  && prev.renderPart === next.renderPart
+  && prev.onRegenerate === next.onRegenerate
+  && prev.onEditMessage === next.onEditMessage
+  && prev.onSwitchVersion === next.onSwitchVersion
+  && prev.onSelectOption === next.onSelectOption
+  && prev.onOpenCodePreview === next.onOpenCodePreview
+  && prev.hideToolCalls === next.hideToolCalls
+  && prev.chainOfThoughtOpen === next.chainOfThoughtOpen
+  && prev.onChainOfThoughtOpenChange === next.onChainOfThoughtOpenChange
+  && prev.onRequestScrollIntoView === next.onRequestScrollIntoView
+  && prev.setMessageElement === next.setMessageElement
+));
+
 export function ChatContainer({
   messages,
   className,
@@ -72,11 +163,14 @@ export function ChatContainer({
   hideToolCalls = false,
 }: ChatContainerProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const showScrollButtonRef = useRef(false);
+  const previousMessageLengthRef = useRef(messages.length);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
+  const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
 
   const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
     setChainOfThoughtOpenByMessageId((current) => ({
@@ -88,7 +182,15 @@ export function ChatContainer({
   const lastMessage = messages[messages.length - 1];
   const lastMessageId = lastMessage?.id;
   const lastMessageRole = lastMessage?.role;
+  const visibleMessages = useMemo(
+    () => messages.slice(Math.max(0, messages.length - renderedMessageCount)),
+    [messages, renderedMessageCount]
+  );
+  const hiddenMessageCount = messages.length - visibleMessages.length;
 
+  useEffect(() => {
+    setRenderedMessageCount((count) => Math.min(Math.max(count, INITIAL_RENDERED_MESSAGE_COUNT), messages.length));
+  }, [messages.length]);
   useEffect(() => {
     if (!isStreaming || !lastMessageId || lastMessageRole !== 'assistant') {
       return;
@@ -101,12 +203,15 @@ export function ChatContainer({
 
   // Last text content for "do not snap during open code fence" rule
   const lastMessageText = useMemo(() => {
-    if (messages.length === 0) return '';
-    return messages[messages.length - 1].parts
-      .filter((p) => p.type === 'text')
-      .map((p) => (p as { text: string }).text)
-      .join('');
-  }, [messages]);
+    if (!lastMessage) return '';
+    let text = '';
+    for (const part of lastMessage.parts) {
+      if (part.type === 'text') {
+        text += (part as { text: string }).text;
+      }
+    }
+    return text;
+  }, [lastMessage]);
 
   const atBottomThreshold = 24;
 
@@ -114,7 +219,7 @@ export function ChatContainer({
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
-    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < atBottomThreshold;
+    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= atBottomThreshold;
     isAtBottomRef.current = atBottom;
 
     const nextShowButton = !atBottom && messages.length > 0;
@@ -128,8 +233,25 @@ export function ChatContainer({
     const scroller = scrollerRef.current;
     if (!scroller) return;
 
-    scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+    const bottom = scroller.scrollHeight + 1;
+    scroller.scrollTo({ top: bottom, behavior });
   }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    const previousLength = previousMessageLengthRef.current;
+    previousMessageLengthRef.current = messages.length;
+
+    if (!autoScroll || messages.length <= previousLength) {
+      return;
+    }
+
+    scrollToBottom('auto');
+    isAtBottomRef.current = true;
+    if (showScrollButtonRef.current) {
+      showScrollButtonRef.current = false;
+      setShowScrollButton(false);
+    }
+  }, [autoScroll, messages.length, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
     if (!autoScroll || !isAtBottomRef.current) {
@@ -143,60 +265,46 @@ export function ChatContainer({
     }
 
     scrollToBottom('auto');
-  }, [autoScroll, isStreaming, lastMessageText, messages, scrollToBottom, updateAtBottomState]);
+  }, [autoScroll, isStreaming, lastMessageText, lastMessageId, scrollToBottom, updateAtBottomState]);
 
-  const itemContent = useCallback(
-    (index: number, message: ChatMessage) => {
-      const isLast = index === messages.length - 1;
-      const isCurrentStreaming = isStreaming && isLast;
+  useIsomorphicLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const content = contentRef.current;
+    if (!scroller || !content || !autoScroll || !isAtBottomRef.current) return;
 
-      return (
-        <Message
-          message={message}
-          isStreaming={isCurrentStreaming}
-          renderPart={renderPart}
-          onRegenerate={
-            message.role === 'assistant' && onRegenerate ? () => onRegenerate(message.id) : undefined
-          }
-          onEditMessage={
-            message.role === 'user' && onEditMessage
-              ? (content) => onEditMessage(message.id, content)
-              : undefined
-          }
-          onSwitchVersion={
-            onSwitchVersion
-              ? (versionIndex) => onSwitchVersion(message.id, versionIndex)
-              : undefined
-          }
-          chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
-          onChainOfThoughtOpenChange={(open) => setChainOfThoughtOpen(message.id, open)}
-          onSelectOption={onSelectOption}
-          onOpenCodePreview={onOpenCodePreview}
-          hideToolCalls={hideToolCalls}
-          onRequestScrollIntoView={() => {
-            const scroller = scrollerRef.current;
-            const target = messageRefs.current[message.id];
-            if (!scroller || !target) return;
+    let frameId: number | null = null;
+    const resizeObserver = new ResizeObserver(() => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
 
-            scroller.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
-          }}
-        />
-      );
-    },
-    [
-      messages.length,
-      isStreaming,
-      renderPart,
-      onRegenerate,
-      onEditMessage,
-      onSwitchVersion,
-      onSelectOption,
-      onOpenCodePreview,
-      hideToolCalls,
-      chainOfThoughtOpenByMessageId,
-      setChainOfThoughtOpen,
-    ],
-  );
+      frameId = requestAnimationFrame(() => {
+        const currentScroller = scrollerRef.current;
+        if (!currentScroller || !isAtBottomRef.current) return;
+        currentScroller.scrollTo({ top: currentScroller.scrollHeight + 1, behavior: 'auto' });
+      });
+    });
+
+    resizeObserver.observe(content);
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      resizeObserver.disconnect();
+    };
+  }, [autoScroll, lastMessageId]);
+
+  const setMessageElement = useCallback((messageId: string, element: HTMLDivElement | null) => {
+    messageRefs.current[messageId] = element;
+  }, []);
+
+  const requestMessageScrollIntoView = useCallback((messageId: string) => {
+    const scroller = scrollerRef.current;
+    const target = messageRefs.current[messageId];
+    if (!scroller || !target) return;
+
+    scroller.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+  }, []);
 
   if (messages.length === 0 && emptyState) {
     return (
@@ -211,17 +319,43 @@ export function ChatContainer({
         className="absolute inset-0 overflow-y-auto overflow-x-hidden [overflow-anchor:none] [scrollbar-gutter:stable]"
         onScroll={updateAtBottomState}
       >
-        {messages.map((message, index) => (
-          <div
-            key={message.id}
-            ref={(element) => {
-              messageRefs.current[message.id] = element;
-            }}
-          >
-            {itemContent(index, message)}
-          </div>
-        ))}
-        <div className="h-4" />
+        <div ref={contentRef}>
+          {hiddenMessageCount > 0 && (
+            <div className="flex justify-center py-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setRenderedMessageCount((count) => Math.min(messages.length, count + MESSAGE_RENDER_BATCH_SIZE))}
+              >
+                Load {Math.min(hiddenMessageCount, MESSAGE_RENDER_BATCH_SIZE)} older messages
+              </Button>
+            </div>
+          )}
+          {visibleMessages.map((message, index) => {
+            const messageIndex = hiddenMessageCount + index;
+            const isCurrentStreaming = isStreaming && messageIndex === messages.length - 1;
+            return (
+              <ChatMessageRow
+                key={message.id}
+                message={message}
+                isCurrentStreaming={isCurrentStreaming}
+                renderPart={renderPart}
+                onRegenerate={onRegenerate}
+                onEditMessage={onEditMessage}
+                onSwitchVersion={onSwitchVersion}
+                onSelectOption={onSelectOption}
+                onOpenCodePreview={onOpenCodePreview}
+                hideToolCalls={hideToolCalls}
+                chainOfThoughtOpen={chainOfThoughtOpenByMessageId[message.id]}
+                onChainOfThoughtOpenChange={setChainOfThoughtOpen}
+                onRequestScrollIntoView={requestMessageScrollIntoView}
+                setMessageElement={setMessageElement}
+              />
+            );
+          })}
+          <div className="h-4" />
+        </div>
       </div>
 
       {showScrollToBottom && showScrollButton && (

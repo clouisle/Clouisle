@@ -173,7 +173,8 @@ while (true) {
   for (const line of lines) {
     if (line.startsWith("data: ")) {
       const data = JSON.parse(line.slice(6));
-      console.log(data);
+      // Handle event payload (e.g. dispatch to UI state)
+      handleEvent(data);
     }
   }
 }`

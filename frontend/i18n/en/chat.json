@@ -50,6 +50,11 @@
       "page": "Page {page}",
       "segment": "Segment {index}",
       "segmentCount": "{count} segments",
+      "showMoreSources": "Show {count} more sources",
+      "showMoreSegments": "Show {count} more segments",
+      "loadingSources": "Loading sources...",
+      "contentTruncated": "Content truncated for performance. Full length: {length} characters.",
+      "close": "Close",
       "relevance": "Relevance {score}%"
     },
     "file": {

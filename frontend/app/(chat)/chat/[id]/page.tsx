@@ -769,6 +769,7 @@ export default function PublicChatPage({ params }: PublicChatPageProps) {
           ) : (
             /* Messages using ChatContainer */
             <ChatContainer
+              key={conversationId ?? 'new-chat'}
               messages={messages}
               isStreaming={isStreaming}
               hideToolCalls={agent.hide_tool_calls}
