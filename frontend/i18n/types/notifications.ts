@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.227Z
+// GENERATED — 2026-06-25T19:42:59.244Z
 // Source: i18n/en/notifications.json
 export type NotificationsMessages = {
   notifications: {
@@ -29,6 +29,14 @@ export type NotificationsMessages = {
       medium: string
       high: string
     }
+    kindOptions: {
+      announcement: string
+      security: string
+      action: string
+      delivery: string
+      general: string
+    }
+    announcementHint: string
     channel: {
       email: string
       dingtalk: string

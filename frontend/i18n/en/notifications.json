@@ -27,6 +27,14 @@
       "medium": "Medium",
       "high": "High"
     },
+    "kindOptions": {
+      "announcement": "Announcement",
+      "security": "Security",
+      "action": "Action needed",
+      "delivery": "Status update",
+      "general": "Notification"
+    },
+    "announcementHint": "Pinned-style system notice",
     "channel": {
       "email": "Email",
       "dingtalk": "DingTalk",

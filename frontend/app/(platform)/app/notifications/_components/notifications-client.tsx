@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useTranslations } from 'next-intl'
-import { Check, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Megaphone, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { notificationsApi, type NotificationItem, type NotificationLevel, type NotificationScope } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,7 @@ import {
 import dynamic from 'next/dynamic'
 import { useTheme } from 'next-themes'
 import { useDebounce } from '@/hooks/use-debounce'
+import { getNotificationDisplayMeta, type NotificationDisplayKind } from '@/lib/notifications/display'
 
 const MDPreview = dynamic(() => import('@uiw/react-md-editor').then(mod => mod.default.Markdown), {
   ssr: false,
@@ -60,6 +61,38 @@ function NotificationMarkdownSkeleton() {
 
 const LEVELS: NotificationLevel[] = ['low', 'medium', 'high']
 const SCOPES: NotificationScope[] = ['global', 'team', 'user']
+
+const KIND_ICON: Record<NotificationDisplayKind, React.ComponentType<{ className?: string }>> = {
+  announcement: Megaphone,
+  security: ShieldAlert,
+  action: Sparkles,
+  delivery: Check,
+  general: Sparkles,
+}
+
+function getRowClassName(item: NotificationItem) {
+  const meta = getNotificationDisplayMeta(item)
+
+  return cn(
+    'cursor-pointer border-l-4 border-l-transparent',
+    !item.is_read && 'bg-primary/5',
+    meta.isAnnouncement && 'border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15',
+    meta.kind === 'security' && !meta.isAnnouncement && 'border-l-destructive bg-destructive/5',
+    meta.isProminent && 'shadow-sm',
+  )
+}
+
+function NotificationKindBadge({ item, label }: { item: NotificationItem; label: string }) {
+  const meta = getNotificationDisplayMeta(item)
+  const Icon = KIND_ICON[meta.kind]
+
+  return (
+    <Badge variant={meta.isAnnouncement ? 'default' : 'secondary'} className="gap-1">
+      <Icon className="size-3" />
+      <span>{label}</span>
+    </Badge>
+  )
+}
 
 interface NotificationsClientProps {
   onReadUpdated?: () => void
@@ -247,42 +280,56 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
                 </TableCell>
               </TableRow>
             ) : (
-              items.map((item) => (
-                <TableRow
-                  key={item.id}
-                  className={cn('cursor-pointer', !item.is_read && 'bg-primary/5')}
-                  onClick={() => openDetail(item)}
-                >
-                  <TableCell className="max-w-[320px] truncate">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.title}</span>
-                      {!item.is_read && <span className="inline-flex size-2 rounded-full bg-primary" />}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{t(`scopeOptions.${item.scope}`)}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{t(`levelOptions.${item.level}`)}</Badge>
-                  </TableCell>
-                  <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
-                  <TableCell className="text-right">
-                    {!item.is_read ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="cursor-pointer"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          handleMarkRead(item.id)
-                        }}
-                      >
-                        {t('markRead')}
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))
+              items.map((item) => {
+                const meta = getNotificationDisplayMeta(item)
+
+                return (
+                  <TableRow
+                    key={item.id}
+                    className={getRowClassName(item)}
+                    onClick={() => openDetail(item)}
+                  >
+                    <TableCell className="max-w-[320px]">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className={cn('truncate font-medium', meta.isAnnouncement && 'font-semibold')}>{item.title}</span>
+                          {!item.is_read && <span className="inline-flex size-2 shrink-0 rounded-full bg-primary" />}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <NotificationKindBadge item={item} label={t(`kindOptions.${meta.kind}`)} />
+                          {meta.isAnnouncement && (
+                            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                              {t('announcementHint')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{t(`scopeOptions.${item.scope}`)}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={meta.priorityScore >= 5 ? 'default' : 'outline'}>{t(`levelOptions.${item.level}`)}</Badge>
+                    </TableCell>
+                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      {!item.is_read ? (
+                        <Button
+                          variant={meta.isAnnouncement ? 'default' : 'outline'}
+                          size="sm"
+                          className="cursor-pointer"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleMarkRead(item.id)
+                          }}
+                        >
+                          {t('markRead')}
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -315,21 +362,29 @@ export function NotificationsClient({ onReadUpdated }: NotificationsClientProps)
           <DialogHeader>
             <DialogTitle>{selectedItem?.title || t('title')}</DialogTitle>
           </DialogHeader>
-          {selectedItem && (
-            <div className="flex min-h-[180px] max-h-[calc(80vh-8rem)] flex-col gap-4 overflow-hidden">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="secondary">{t(`scopeOptions.${selectedItem.scope}`)}</Badge>
-                <Badge variant="outline">{t(`levelOptions.${selectedItem.level}`)}</Badge>
-                <span className="mx-1 h-3 w-px bg-border/70" />
-                <span>{t('createdAt')}: {new Date(selectedItem.created_at).toLocaleString()}</span>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-6 text-sm text-foreground" data-color-mode={colorMode}>
-                <div className="wmde-markdown">
-                  <MDPreview source={selectedItem.content} />
+          {selectedItem && (() => {
+            const meta = getNotificationDisplayMeta(selectedItem)
+
+            return (
+              <div className="flex min-h-[180px] max-h-[calc(80vh-8rem)] flex-col gap-4 overflow-hidden">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <NotificationKindBadge item={selectedItem} label={t(`kindOptions.${meta.kind}`)} />
+                  <Badge variant="secondary">{t(`scopeOptions.${selectedItem.scope}`)}</Badge>
+                  <Badge variant={meta.priorityScore >= 5 ? 'default' : 'outline'}>{t(`levelOptions.${selectedItem.level}`)}</Badge>
+                  <span className="mx-1 h-3 w-px bg-border/70" />
+                  <span>{t('createdAt')}: {new Date(selectedItem.created_at).toLocaleString()}</span>
+                </div>
+                <div className={cn(
+                  'min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/30 p-6 text-sm text-foreground',
+                  meta.isAnnouncement && 'border-amber-500/50 bg-amber-500/10',
+                )} data-color-mode={colorMode}>
+                  <div className="wmde-markdown">
+                    <MDPreview source={selectedItem.content} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </DialogContent>
       </Dialog>
     </div>
