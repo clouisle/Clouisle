@@ -1,8 +1,7 @@
 """
-验证码服务 - 简单数学验证码实现
+验证码服务 - 点击式人机验证实现
 """
 
-import random
 import secrets
 from typing import Optional, Tuple
 
@@ -15,68 +14,46 @@ CAPTCHA_TTL = 300  # 5 分钟过期
 
 async def generate_captcha() -> Tuple[str, str, str]:
     """
-    生成数学验证码
+    生成点击式验证码
 
     Returns:
-        Tuple[captcha_id, question, answer]: 验证码ID、题目、答案
+        Tuple[captcha_id, challenge, token]: 验证码ID、前端点击令牌、校验令牌
     """
-    # 生成唯一 ID
     captcha_id = secrets.token_urlsafe(16)
+    token = secrets.token_urlsafe(24)
 
-    # 生成数学题
-    operators = ["+", "-", "×"]
-    op = random.choice(operators)
-
-    if op == "+":
-        a = random.randint(1, 50)
-        b = random.randint(1, 50)
-        answer = str(a + b)
-        question = f"{a} + {b} = ?"
-    elif op == "-":
-        a = random.randint(10, 99)
-        b = random.randint(1, a)  # 确保结果为正
-        answer = str(a - b)
-        question = f"{a} - {b} = ?"
-    else:  # 乘法
-        a = random.randint(1, 9)
-        b = random.randint(1, 9)
-        answer = str(a * b)
-        question = f"{a} × {b} = ?"
-
-    # 存储到 Redis
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
-    await r.setex(key, CAPTCHA_TTL, answer)
+    await r.setex(key, CAPTCHA_TTL, token)
 
-    return captcha_id, question, answer
+    return captcha_id, token, token
 
 
-async def verify_captcha(captcha_id: str, user_answer: str) -> bool:
+async def verify_captcha(captcha_id: str, user_token: str) -> bool:
     """
-    验证验证码
+    验证点击式验证码
 
     Args:
         captcha_id: 验证码 ID
-        user_answer: 用户输入的答案
+        user_token: 用户点击后提交的令牌
 
     Returns:
         True 如果验证通过
     """
-    if not captcha_id or not user_answer:
+    if not captcha_id or not user_token:
         return False
 
     r = await get_redis()
     key = f"{CAPTCHA_PREFIX}{captcha_id}"
 
     # 获取并删除（一次性使用）
-    stored_answer = await r.get(key)
+    stored_token = await r.get(key)
     await r.delete(key)
 
-    if stored_answer is None:
+    if stored_token is None:
         return False
 
-    # 比较答案（去除空格）
-    return user_answer.strip() == stored_answer.strip()
+    return secrets.compare_digest(user_token.strip(), stored_token.strip())
 
 
 async def get_captcha_answer(captcha_id: str) -> Optional[str]:

@@ -26,7 +26,7 @@ export function LoginForm() {
   const [step, setStep] = React.useState<LoginStep>('login')
   const [username, setUsername] = React.useState('')
   const [password, setPassword] = React.useState('')
-  const [captchaAnswer, setCaptchaAnswer] = React.useState('')
+  const [captchaToken, setCaptchaToken] = React.useState('')
   const [captcha, setCaptcha] = React.useState<CaptchaResponse | null>(null)
   const [captchaEnabled, setCaptchaEnabled] = React.useState(false)
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
@@ -60,7 +60,8 @@ export function LoginForm() {
     try {
       const data = await authApi.getCaptcha()
       setCaptcha(data)
-      setCaptchaAnswer('')
+      setCaptchaToken('')
+      clearFieldError('captcha')
     } catch {
       // 获取验证码失败
     } finally {
@@ -136,7 +137,7 @@ export function LoginForm() {
     setFieldErrors({})
     
     // 验证码检查
-    if (captchaEnabled && !captchaAnswer) {
+    if (captchaEnabled && !captchaToken) {
       setFieldErrors({ captcha: t('captchaRequired') })
       return
     }
@@ -148,7 +149,7 @@ export function LoginForm() {
         username,
         password,
         captcha_id: captcha?.captcha_id,
-        captcha_answer: captchaAnswer || undefined,
+        captcha_token: captchaToken || undefined,
       })
 
       // 检查是否需要 TOTP 验证
@@ -594,44 +595,42 @@ export function LoginForm() {
         <FieldError>{fieldErrors.password}</FieldError>
       </div>
       
-      {/* 验证码输入 */}
+      {/* 点击式人机验证 */}
       {captchaEnabled && (
         <div className="space-y-2">
-          <Label htmlFor="captcha">{t('captcha')}</Label>
+          <Label>{t('captcha')}</Label>
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2">
-              <div className="flex-shrink-0 px-3 py-2 bg-muted rounded-md font-mono text-sm min-w-[120px] text-center">
-                {captchaLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin mx-auto" />
-                ) : (
-                  captcha?.question || '...'
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={loadCaptcha}
-                disabled={captchaLoading}
-                className="flex-shrink-0"
-              >
-                <RefreshCw className={`h-4 w-4 ${captchaLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-            <Input
-              id="captcha"
-              type="text"
-              value={captchaAnswer}
-              onChange={(e) => {
-                setCaptchaAnswer(e.target.value)
+            <Button
+              type="button"
+              variant={captchaToken ? 'secondary' : 'outline'}
+              onClick={() => {
+                if (!captcha?.challenge) {
+                  setFieldErrors({ captcha: t('captchaLoadFailed') })
+                  return
+                }
+                setCaptchaToken(captcha.challenge)
                 clearFieldError('captcha')
               }}
-              placeholder={t('captchaPlaceholder')}
-              className="w-24"
-              disabled={loading}
+              disabled={loading || captchaLoading || !captcha}
+              className="flex-1 justify-center"
               aria-invalid={!!fieldErrors.captcha}
-            />
+            >
+              {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {captchaToken ? t('captchaVerified') : t('captchaClickPrompt')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={loadCaptcha}
+              disabled={captchaLoading}
+              className="flex-shrink-0"
+              aria-label={t('captchaRetry')}
+            >
+              <RefreshCw className={`h-4 w-4 ${captchaLoading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
+          <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
           <FieldError>{fieldErrors.captcha}</FieldError>
         </div>
       )}

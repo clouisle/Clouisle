@@ -65,6 +65,8 @@ export interface RegisterData {
   email: string
   password: string
   terms_accepted?: boolean
+  captcha_id?: string
+  captcha_token?: string
 }
 
 export interface VerificationResponse {
@@ -74,14 +76,16 @@ export interface VerificationResponse {
 
 export interface CaptchaResponse {
   captcha_id: string
-  question: string
+  challenge: string
+  prompt: string
+  expires_in: number
 }
 
 export interface LoginData {
   username: string
   password: string
   captcha_id?: string
-  captcha_answer?: string
+  captcha_token?: string
 }
 
 export const authApi = {
@@ -102,8 +106,8 @@ export const authApi = {
     if (data.captcha_id) {
       formData.append('captcha_id', data.captcha_id)
     }
-    if (data.captcha_answer) {
-      formData.append('captcha_answer', data.captcha_answer)
+    if (data.captcha_token) {
+      formData.append('captcha_token', data.captcha_token)
     }
     return api.postForm<Token>('/login/access-token', formData, { skipAuthRedirect: true })
   },

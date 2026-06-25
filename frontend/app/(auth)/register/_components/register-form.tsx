@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
-import { authApi, ApiError, User, siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
+import { authApi, ApiError, User, siteSettingsApi, type CaptchaResponse, type PublicSiteSettings } from '@/lib/api'
 import {
   clearValidationError,
   formatValidationSummaryMessage,
@@ -22,7 +22,7 @@ import {
 import { isValidEmail } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FieldError } from '@/components/ui/field'
-import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown } from 'lucide-react'
+import { Loader2, Mail, CheckCircle2, ArrowLeft, ChevronDown, RefreshCw } from 'lucide-react'
 import { LegalMarkdownDialogContent } from '../../_components/legal-markdown'
 
 type Step = 'form' | 'verification' | 'success'
@@ -85,13 +85,35 @@ export function RegisterForm() {
   const [showCodeInput, setShowCodeInput] = React.useState(false)
   const [termsAccepted, setTermsAccepted] = React.useState(false)
   const [siteSettings, setSiteSettings] = React.useState<PublicSiteSettings | null>(null)
+  const [captcha, setCaptcha] = React.useState<CaptchaResponse | null>(null)
+  const [captchaToken, setCaptchaToken] = React.useState('')
+  const [captchaLoading, setCaptchaLoading] = React.useState(false)
+
+  const loadCaptcha = React.useCallback(async () => {
+    setCaptchaLoading(true)
+    try {
+      const data = await authApi.getCaptcha()
+      setCaptcha(data)
+      setCaptchaToken('')
+      setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
+    } catch {
+      setFieldErrors({ captcha: t('captchaLoadFailed') })
+    } finally {
+      setCaptchaLoading(false)
+    }
+  }, [t])
 
   // 倒计时
   React.useEffect(() => {
     siteSettingsApi.getPublic()
-      .then(setSiteSettings)
+      .then((settings) => {
+        setSiteSettings(settings)
+        if (settings.enable_captcha) {
+          loadCaptcha()
+        }
+      })
       .catch(() => setSiteSettings(null))
-  }, [])
+  }, [loadCaptcha])
 
   React.useEffect(() => {
     if (resendCooldown > 0) {
@@ -118,7 +140,7 @@ export function RegisterForm() {
   }
 
   const summaryEntries = React.useMemo(
-    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'terms_accepted', 'code']),
+    () => getValidationSummaryEntries(fieldErrors, ['username', 'email', 'password', 'confirmPassword', 'terms_accepted', 'captcha', 'code']),
     [fieldErrors]
   )
   const summaryFieldLabels = React.useMemo(
@@ -128,6 +150,7 @@ export function RegisterForm() {
       password: t('password'),
       confirmPassword: t('confirmPassword'),
       terms_accepted: t('agreement'),
+      captcha: t('captcha'),
       code: t('verificationCode'),
     }),
     [t]
@@ -161,6 +184,11 @@ export function RegisterForm() {
       return
     }
 
+    if (siteSettings?.enable_captcha && !captchaToken) {
+      setFieldErrors({ captcha: t('captchaRequired') })
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -169,6 +197,8 @@ export function RegisterForm() {
         email,
         password,
         terms_accepted: siteSettings?.require_terms_acceptance_on_register ? termsAccepted : undefined,
+        captcha_id: captcha?.captcha_id,
+        captcha_token: captchaToken || undefined,
       })
       setRegisteredUser(user)
 
@@ -195,6 +225,12 @@ export function RegisterForm() {
       const rawErrors = normalizeValidationErrorsRaw(err)
       if (Object.keys(rawErrors).length > 0) {
         setFieldErrors(translateErrors(rawErrors))
+      }
+      if (err instanceof ApiError && (err.code === 5302 || err.code === 5303)) {
+        setFieldErrors({ captcha: t('captchaInvalid') })
+        if (siteSettings?.enable_captcha) {
+          loadCaptcha()
+        }
       }
     } finally {
       setLoading(false)
@@ -370,6 +406,45 @@ export function RegisterForm() {
               </Label>
             </div>
             <FieldError>{fieldErrors.terms_accepted}</FieldError>
+          </div>
+        )}
+
+        {siteSettings?.enable_captcha && (
+          <div className="space-y-2">
+            <Label>{t('captcha')}</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={captchaToken ? 'secondary' : 'outline'}
+                onClick={() => {
+                  if (!captcha?.challenge) {
+                    setFieldErrors({ captcha: t('captchaLoadFailed') })
+                    return
+                  }
+                  setCaptchaToken(captcha.challenge)
+                  setFieldErrors((prev) => clearValidationError(prev, 'captcha'))
+                }}
+                disabled={loading || captchaLoading || !captcha}
+                className="flex-1 justify-center"
+                aria-invalid={!!fieldErrors.captcha}
+              >
+                {captchaLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {captchaToken ? t('captchaVerified') : t('captchaClickPrompt')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={loadCaptcha}
+                disabled={captchaLoading}
+                className="flex-shrink-0"
+                aria-label={t('captchaRetry')}
+              >
+                <RefreshCw className={`h-4 w-4 ${captchaLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('captchaRetryHint')}</p>
+            <FieldError>{fieldErrors.captcha}</FieldError>
           </div>
         )}
 

@@ -61,10 +61,28 @@ router = APIRouter()
 @router.get("/captcha", response_model=Response[CaptchaResponse])
 async def get_captcha() -> Any:
     """
-    Get a new captcha for login
+    Get a new click captcha for human verification
     """
-    captcha_id, question, _ = await generate_captcha()
-    return success(data=CaptchaResponse(captcha_id=captcha_id, question=question))
+    captcha_id, challenge, _ = await generate_captcha()
+    return success(data=CaptchaResponse(captcha_id=captcha_id, challenge=challenge))
+
+
+async def validate_human_verification(
+    captcha_id: Optional[str], captcha_token: Optional[str]
+) -> None:
+    """Validate the one-time click captcha token."""
+    if not captcha_id or not captcha_token:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_REQUIRED,
+            msg_key="captcha_required",
+        )
+
+    is_valid = await verify_captcha(captcha_id, captcha_token)
+    if not is_valid:
+        raise BusinessError(
+            code=ResponseCode.CAPTCHA_INVALID,
+            msg_key="captcha_invalid",
+        )
 
 
 @router.post("/login/access-token", response_model=Response[Token])
@@ -73,6 +91,7 @@ async def login_access_token(
     identifier: str = Form(..., alias="username"),
     password: str = Form(...),
     captcha_id: Optional[str] = Form(None),
+    captcha_token: Optional[str] = Form(None),
     captcha_answer: Optional[str] = Form(None),
 ) -> Any:
     """
@@ -91,18 +110,7 @@ async def login_access_token(
     # Check if captcha is enabled and verify it
     enable_captcha = await SiteSetting.get_value("enable_captcha", False)
     if enable_captcha:
-        if not captcha_id or not captcha_answer:
-            raise BusinessError(
-                code=ResponseCode.CAPTCHA_REQUIRED,
-                msg_key="captcha_required",
-            )
-
-        is_valid = await verify_captcha(captcha_id, captcha_answer)
-        if not is_valid:
-            raise BusinessError(
-                code=ResponseCode.CAPTCHA_INVALID,
-                msg_key="captcha_invalid",
-            )
+        await validate_human_verification(captcha_id, captcha_token or captcha_answer)
 
     # Allow login by username or email
     if "@" in identifier:
@@ -681,6 +689,9 @@ async def register(
                 code=ResponseCode.REGISTRATION_DISABLED,
                 msg_key="registration_disabled",
             )
+        enable_captcha = await SiteSetting.get_value("enable_captcha", False)
+        if enable_captcha:
+            await validate_human_verification(user_in.captcha_id, user_in.captcha_token)
         require_terms_acceptance = await SiteSetting.get_value(
             "require_terms_acceptance_on_register", False
         )

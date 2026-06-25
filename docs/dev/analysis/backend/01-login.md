@@ -7,21 +7,23 @@
 
 ### GET /captcha
 
-获取登录验证码
+获取点击式人机验证码
 
 | 属性 | 值 |
 |------|-----|
 | 认证 | 无 |
 | 权限 | 公开 |
-| 说明 | 当站点设置启用验证码时，登录前需要获取验证码 |
+| 说明 | 当站点设置启用验证码时，登录和非首个用户注册前需要获取一次性点击验证 |
 
 **响应**:
 ```json
 {
   "code": 0,
   "data": {
-    "captcha_id": "uuid",
-    "captcha_image": "base64_image_data"
+    "captcha_id": "token id",
+    "challenge": "one-time click token",
+    "prompt": "captcha_click_prompt",
+    "expires_in": 300
   }
 }
 ```
@@ -43,8 +45,8 @@
 {
   "username": "string",
   "password": "string",
-  "captcha_id": "string (可选)",
-  "captcha_code": "string (可选)"
+  "captcha_id": "string (启用验证码时必填)",
+  "captcha_token": "string (点击验证后返回)"
 }
 ```
 
@@ -69,7 +71,8 @@
 **安全特性**:
 - 登录失败次数限制
 - 账户锁定机制
-- 验证码支持
+- 验证码支持：启用 `enable_captcha` 后，登录和非首个用户注册必须提交一次性点击令牌
+- 验证失败、超时、重复使用或 Redis 异常导致令牌缺失时返回 `5302/5303`，前端应刷新验证码并提供重试入口
 - 单会话模式支持（可选）
 - 审计日志记录
 
@@ -112,7 +115,9 @@
   "username": "string",
   "email": "string",
   "password": "string",
-  "full_name": "string (可选)"
+  "terms_accepted": false,
+  "captcha_id": "string (启用验证码且非首个用户时必填)",
+  "captcha_token": "string (点击验证后返回)"
 }
 ```
 
