@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-18T05:58:50.230Z
+// GENERATED — 2026-06-25T19:52:27.189Z
 // Source: i18n/en/siteSettings.json
 export type SiteSettingsMessages = {
   siteSettings: {
@@ -278,6 +278,21 @@ export type SiteSettingsMessages = {
     authPageLayoutDescription: string
     authPageLayoutCentered: string
     authPageLayoutSplit: string
+    themeMode: string
+    themeModeDescription: string
+    themeModeSystem: string
+    themeModeLight: string
+    themeModeDark: string
+    brandingDisplay: string
+    brandingDisplayDescription: string
+    brandingDisplayFull: string
+    brandingDisplayNameOnly: string
+    brandingDisplayIconOnly: string
+    brandingDisplayHidden: string
+    themePrimaryColor: string
+    themePrimaryForegroundColor: string
+    themeColorHint: string
+    invalidThemeColor: string
     legalCompliance: string
     legalComplianceDescription: string
     icpRecordNumber: string

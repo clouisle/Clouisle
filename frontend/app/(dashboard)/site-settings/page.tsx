@@ -41,6 +41,10 @@ export default function SiteSettingsGeneralPage() {
     site_icon: '',
     default_language: 'en',
     auth_page_layout: 'centered',
+    theme_mode: 'system',
+    theme_primary_color: '',
+    theme_primary_foreground_color: '',
+    theme_branding_display: 'full',
     icp_record_number: '',
     icp_record_url: '',
     terms_enabled: false,
@@ -108,6 +112,16 @@ export default function SiteSettingsGeneralPage() {
     validateUrl('icp_record_url')
     validateUrl('terms_url')
     validateUrl('privacy_url')
+
+    const validateHexColor = (key: 'theme_primary_color' | 'theme_primary_foreground_color') => {
+      const value = settings[key].trim()
+      if (value && !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)) {
+        nextErrors[key] = t('invalidThemeColor')
+      }
+    }
+
+    validateHexColor('theme_primary_color')
+    validateHexColor('theme_primary_foreground_color')
 
     if (settings.terms_enabled && !settings.terms_url.trim() && !settings.terms_text.trim()) {
       nextErrors.terms_url = t('legalEntryRequired')
@@ -246,6 +260,94 @@ export default function SiteSettingsGeneralPage() {
               <p className="text-xs text-muted-foreground mt-2">{t('siteIconHint')}</p>
             </div>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="themeMode">{t('themeMode')}</Label>
+            <p className="text-sm text-muted-foreground">{t('themeModeDescription')}</p>
+            <Select
+              value={settings.theme_mode}
+              onValueChange={(value) => {
+                if (value === 'system' || value === 'light' || value === 'dark') {
+                  updateSetting('theme_mode', value)
+                }
+              }}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger id="themeMode" className="w-48">
+                <SelectValue>
+                  {settings.theme_mode === 'light'
+                    ? t('themeModeLight')
+                    : settings.theme_mode === 'dark'
+                      ? t('themeModeDark')
+                      : t('themeModeSystem')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="system">{t('themeModeSystem')}</SelectItem>
+                <SelectItem value="light">{t('themeModeLight')}</SelectItem>
+                <SelectItem value="dark">{t('themeModeDark')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <FieldError>{fieldErrors.theme_mode}</FieldError>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="brandingDisplay">{t('brandingDisplay')}</Label>
+            <p className="text-sm text-muted-foreground">{t('brandingDisplayDescription')}</p>
+            <Select
+              value={settings.theme_branding_display}
+              onValueChange={(value) => {
+                if (value === 'full' || value === 'name_only' || value === 'icon_only' || value === 'hidden') {
+                  updateSetting('theme_branding_display', value)
+                }
+              }}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger id="brandingDisplay" className="w-56">
+                <SelectValue>
+                  {settings.theme_branding_display === 'name_only'
+                    ? t('brandingDisplayNameOnly')
+                    : settings.theme_branding_display === 'icon_only'
+                      ? t('brandingDisplayIconOnly')
+                      : settings.theme_branding_display === 'hidden'
+                        ? t('brandingDisplayHidden')
+                        : t('brandingDisplayFull')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full">{t('brandingDisplayFull')}</SelectItem>
+                <SelectItem value="name_only">{t('brandingDisplayNameOnly')}</SelectItem>
+                <SelectItem value="icon_only">{t('brandingDisplayIconOnly')}</SelectItem>
+                <SelectItem value="hidden">{t('brandingDisplayHidden')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <FieldError>{fieldErrors.theme_branding_display}</FieldError>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="themePrimaryColor">{t('themePrimaryColor')}</Label>
+              <Input
+                id="themePrimaryColor"
+                placeholder="#3b82f6"
+                value={settings.theme_primary_color}
+                onChange={(e) => updateSetting('theme_primary_color', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.theme_primary_color}
+              />
+              <FieldError>{fieldErrors.theme_primary_color}</FieldError>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="themePrimaryForegroundColor">{t('themePrimaryForegroundColor')}</Label>
+              <Input
+                id="themePrimaryForegroundColor"
+                placeholder="#ffffff"
+                value={settings.theme_primary_foreground_color}
+                onChange={(e) => updateSetting('theme_primary_foreground_color', e.target.value)}
+                disabled={!canUpdate}
+                aria-invalid={!!fieldErrors.theme_primary_foreground_color}
+              />
+              <FieldError>{fieldErrors.theme_primary_foreground_color}</FieldError>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('themeColorHint')}</p>
           <div className="space-y-2">
             <Label htmlFor="defaultLanguage">{t('defaultLanguage')}</Label>
             <p className="text-sm text-muted-foreground">{t('defaultLanguageDescription')}</p>

@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTheme } from 'next-themes'
 import { useTranslations } from 'next-intl'
 import { siteSettingsApi, type PublicSiteSettings } from '@/lib/api'
 import { KNOWLEDGE_BASE_DOCUMENT_DEFAULT_MAX_UPLOAD_SIZE_MB } from '@/lib/constants'
@@ -16,6 +17,10 @@ const defaultSettings: PublicSiteSettings = {
   site_description: '',
   site_url: '',
   site_icon: '',
+  theme_mode: 'system',
+  theme_primary_color: '',
+  theme_primary_foreground_color: '',
+  theme_branding_display: 'full',
   icp_record_number: '',
   icp_record_url: '',
   terms_enabled: false,
@@ -41,6 +46,32 @@ const SiteSettingsContext = React.createContext<SiteSettingsContextType>({
   loading: true,
   refresh: async () => {},
 })
+
+function PublicThemeApplicator({ settings }: { settings: PublicSiteSettings }) {
+  const { setTheme } = useTheme()
+  const { theme_mode, theme_primary_color, theme_primary_foreground_color } = settings
+
+  React.useEffect(() => {
+    setTheme(theme_mode)
+  }, [theme_mode, setTheme])
+
+  React.useEffect(() => {
+    const root = document.documentElement
+    if (theme_primary_color) {
+      root.style.setProperty('--primary', theme_primary_color)
+    } else {
+      root.style.removeProperty('--primary')
+    }
+
+    if (theme_primary_foreground_color) {
+      root.style.setProperty('--primary-foreground', theme_primary_foreground_color)
+    } else {
+      root.style.removeProperty('--primary-foreground')
+    }
+  }, [theme_primary_color, theme_primary_foreground_color])
+
+  return null
+}
 
 interface SiteSettingsProviderProps {
   children: React.ReactNode
@@ -95,6 +126,7 @@ export function SiteSettingsProvider({
 
   return (
     <SiteSettingsContext.Provider value={{ settings, loading, refresh: loadSettings }}>
+      <PublicThemeApplicator settings={settings} />
       {children}
     </SiteSettingsContext.Provider>
   )

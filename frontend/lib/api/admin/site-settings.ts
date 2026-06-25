@@ -11,6 +11,8 @@ import type {
   WebhookSettings,
   SlackSettings,
   AutoNotificationConfig,
+  ThemeBrandingDisplay,
+  ThemeMode,
 } from '../site-settings'
 
 export type {
@@ -25,6 +27,23 @@ export type {
   WebhookSettings,
   SlackSettings,
   AutoNotificationConfig,
+}
+
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+function normalizeThemeMode(value: unknown): ThemeMode {
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
+}
+
+function normalizeBrandingDisplay(value: unknown): ThemeBrandingDisplay {
+  if (value === 'name_only' || value === 'icon_only' || value === 'hidden') {
+    return value
+  }
+  return 'full'
+}
+
+function normalizeThemeColor(value: unknown): string {
+  return typeof value === 'string' && HEX_COLOR_PATTERN.test(value.trim()) ? value.trim() : ''
 }
 
 export const siteSettingsApi = {
@@ -62,6 +81,10 @@ export const siteSettingsApi = {
       site_icon: (settings.site_icon as string) ?? '',
       default_language: (settings.default_language as string) ?? 'en',
       auth_page_layout: settings.auth_page_layout === 'split' ? 'split' : 'centered',
+      theme_mode: normalizeThemeMode(settings.theme_mode),
+      theme_primary_color: normalizeThemeColor(settings.theme_primary_color),
+      theme_primary_foreground_color: normalizeThemeColor(settings.theme_primary_foreground_color),
+      theme_branding_display: normalizeBrandingDisplay(settings.theme_branding_display),
       icp_record_number: (settings.icp_record_number as string) ?? '',
       icp_record_url: (settings.icp_record_url as string) ?? '',
       terms_enabled: (settings.terms_enabled as boolean) ?? false,

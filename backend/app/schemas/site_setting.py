@@ -35,6 +35,10 @@ class PublicSiteSettingsResponse(BaseModel):
     site_url: str = ""
     site_icon: str = ""
     auth_page_layout: str = "centered"
+    theme_mode: str = "system"
+    theme_primary_color: str = ""
+    theme_primary_foreground_color: str = ""
+    theme_branding_display: str = "full"
     icp_record_number: str = ""
     icp_record_url: str = ""
     terms_enabled: bool = False

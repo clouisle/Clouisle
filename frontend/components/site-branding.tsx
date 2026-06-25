@@ -46,26 +46,37 @@ export function SiteBranding({ size = 'md', showDescription = false, className =
     )
   }
 
+  if (settings.theme_branding_display === 'hidden') {
+    return null
+  }
+
+  const showIcon = settings.theme_branding_display !== 'name_only'
+  const showName = settings.theme_branding_display !== 'icon_only'
+
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
-      <div className={`${iconSizes[size]} rounded-lg flex items-center justify-center overflow-hidden ${settings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
-        {settings.site_icon ? (
-          <Image
-            src={settings.site_icon}
-            alt={settings.site_name}
-            width={64}
-            height={64}
-            className="size-full object-cover"
-            unoptimized
-          />
-        ) : (
-          <DefaultSiteIcon width={iconPixelSizes[size]} height={iconPixelSizes[size]} className="size-full" />
-        )}
-      </div>
-      <h1 className={`font-bold ${textSizes[size]}`}>
-        {settings.site_name || 'Clouisle'}
-      </h1>
-      {showDescription && settings.site_description && (
+      {showIcon && (
+        <div className={`${iconSizes[size]} rounded-lg flex items-center justify-center overflow-hidden ${settings.site_icon ? 'bg-primary text-primary-foreground' : ''}`}>
+          {settings.site_icon ? (
+            <Image
+              src={settings.site_icon}
+              alt={settings.site_name}
+              width={64}
+              height={64}
+              className="size-full object-cover"
+              unoptimized
+            />
+          ) : (
+            <DefaultSiteIcon width={iconPixelSizes[size]} height={iconPixelSizes[size]} className="size-full" />
+          )}
+        </div>
+      )}
+      {showName && (
+        <h1 className={`font-bold ${textSizes[size]}`}>
+          {settings.site_name || 'Clouisle'}
+        </h1>
+      )}
+      {showName && showDescription && settings.site_description && (
         <p className={`text-muted-foreground text-center ${descSizes[size]}`}>
           {settings.site_description}
         </p>

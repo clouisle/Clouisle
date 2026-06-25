@@ -43,51 +43,65 @@ async def _validate_setting_value(key: str, value: object) -> None:
     Raises:
         BusinessError: If validation fails
     """
+
+    def raise_validation_error() -> None:
+        raise BusinessError(
+            code=ResponseCode.VALIDATION_ERROR,
+            msg_key="validation_error",
+        )
+
     if key in {"icp_record_url", "terms_url", "privacy_url"}:
         if value in (None, ""):
             return
         if not isinstance(value, str):
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
+            raise_validation_error()
         parsed = urlparse(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
+            raise_validation_error()
         return
 
     if key == "auth_page_layout":
+        if not isinstance(value, str) or value not in {"centered", "split"}:
+            raise_validation_error()
+        return
+
+    if key == "theme_mode":
+        if not isinstance(value, str) or value not in {"system", "light", "dark"}:
+            raise_validation_error()
+        return
+
+    if key == "theme_branding_display":
+        if not isinstance(value, str) or value not in {
+            "full",
+            "name_only",
+            "icon_only",
+            "hidden",
+        }:
+            raise_validation_error()
+        return
+
+    if key in {"theme_primary_color", "theme_primary_foreground_color"}:
+        if value == "":
+            return
         if not isinstance(value, str):
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
-        if value not in {"centered", "split"}:
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
+            raise_validation_error()
+        color = value.strip()
+        if len(color) not in {4, 7} or not color.startswith("#"):
+            raise_validation_error()
+        if not all(char in "0123456789abcdefABCDEF" for char in color[1:]):
+            raise_validation_error()
         return
 
     if key == "default_team_role":
         if not isinstance(value, str) or value not in {"viewer", "member", "admin"}:
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
+            raise_validation_error()
         return
 
     if key == "default_team_id":
         if value in (None, ""):
             return
         if not isinstance(value, str):
-            raise BusinessError(
-                code=ResponseCode.VALIDATION_ERROR,
-                msg_key="validation_error",
-            )
+            raise_validation_error()
         try:
             team_id = UUID(value)
         except ValueError as exc:
@@ -105,18 +119,12 @@ async def _validate_setting_value(key: str, value: object) -> None:
     if key != "kb_document_max_upload_size_mb":
         return
     if not isinstance(value, int) or isinstance(value, bool):
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="validation_error",
-        )
+        raise_validation_error()
     if (
         value < KB_DOCUMENT_MIN_MAX_UPLOAD_SIZE_MB
         or value > KB_DOCUMENT_MAX_MAX_UPLOAD_SIZE_MB
     ):
-        raise BusinessError(
-            code=ResponseCode.VALIDATION_ERROR,
-            msg_key="validation_error",
-        )
+        raise_validation_error()
 
 
 async def _ensure_superadmin_sso_bound() -> None:

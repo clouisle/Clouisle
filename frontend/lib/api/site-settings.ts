@@ -1,6 +1,8 @@
 import { api } from './client'
 
 export type AuthPageLayout = 'centered' | 'split'
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type ThemeBrandingDisplay = 'full' | 'name_only' | 'icon_only' | 'hidden'
 
 export interface SiteSetting {
   key: string
@@ -23,6 +25,10 @@ export interface PublicSiteSettings {
   site_url: string
   site_icon: string
   auth_page_layout: AuthPageLayout
+  theme_mode: ThemeMode
+  theme_primary_color: string
+  theme_primary_foreground_color: string
+  theme_branding_display: ThemeBrandingDisplay
   icp_record_number: string
   icp_record_url: string
   terms_enabled: boolean
@@ -49,6 +55,10 @@ export interface GeneralSettings {
   site_icon: string
   default_language: string
   auth_page_layout: AuthPageLayout
+  theme_mode: ThemeMode
+  theme_primary_color: string
+  theme_primary_foreground_color: string
+  theme_branding_display: ThemeBrandingDisplay
   icp_record_number: string
   icp_record_url: string
   terms_enabled: boolean
