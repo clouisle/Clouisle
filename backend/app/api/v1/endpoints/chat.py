@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from tortoise.expressions import F
+from tortoise.expressions import F, Q
+from tortoise.transactions import in_transaction
 
 from app.api import deps
 from app.core.i18n import t
@@ -2925,8 +2926,6 @@ async def edit_user_message_stream(
             async with asyncio.timeout(global_timeout):
                 try:
                     root_id = get_version_root_id(message)
-                    current_version_count = await get_branch_version_count(message)
-                    new_user_version_number = current_version_count + 1
                     branch_parent_id = message.branch_parent_id
                     if branch_parent_id is None:
                         prefix = await get_prefix_path_before(message)
@@ -2953,26 +2952,41 @@ async def edit_user_message_stream(
                             )
 
                     round_id = uuid4()
-                    edited_user_msg = await Message.create(
-                        conversation=conversation,
-                        role=MessageRole.USER,
-                        content=edited_content,
-                        parent_id=root_id,
-                        is_active=True,
-                        version_number=new_user_version_number,
-                        branch_parent_id=branch_parent_id,
-                        images=message.images,
-                        file_urls=message.file_urls,
-                        rag_context=rag_contexts if rag_contexts else None,
-                        round_id=round_id,
-                        round_index=0,
-                        round_role=MessageRoundRole.USER_INPUT,
-                        is_round_canonical=True,
-                    )
-                    await activate_conversation_branch(
-                        conversation.id,
-                        [*original_prefix, edited_user_msg],
-                    )
+                    async with in_transaction() as conn:
+                        await (
+                            Message.filter(Q(id=root_id) | Q(parent_id=root_id))
+                            .using_db(conn)
+                            .select_for_update()
+                            .all()
+                        )
+                        current_version_count = await (
+                            Message.filter(Q(id=root_id) | Q(parent_id=root_id))
+                            .using_db(conn)
+                            .count()
+                        )
+                        new_user_version_number = current_version_count + 1
+                        edited_user_msg = await Message.create(
+                            conversation=conversation,
+                            role=MessageRole.USER,
+                            content=edited_content,
+                            parent_id=root_id,
+                            is_active=True,
+                            version_number=new_user_version_number,
+                            branch_parent_id=branch_parent_id,
+                            images=message.images,
+                            file_urls=message.file_urls,
+                            rag_context=rag_contexts if rag_contexts else None,
+                            round_id=round_id,
+                            round_index=0,
+                            round_role=MessageRoundRole.USER_INPUT,
+                            is_round_canonical=True,
+                            using_db=conn,
+                        )
+                        await activate_conversation_branch(
+                            conversation.id,
+                            [*original_prefix, edited_user_msg],
+                            using_db=conn,
+                        )
 
                     assistant_msg = await Message.create(
                         conversation=conversation,
@@ -2985,28 +2999,6 @@ async def edit_user_message_stream(
                         is_round_canonical=True,
                     )
                     assistant_msg_id = str(assistant_msg.id)
-
-                    await AuditLogService.log(
-                        user=current_user,
-                        action="edit_message",
-                        resource_type="message",
-                        resource_id=edited_user_msg.id,
-                        resource_name=str(conversation.id),
-                        operation="update",
-                        status="success",
-                        request=request,
-                        changes={
-                            "before": _message_content_audit_preview(message.content),
-                            "after": _message_content_audit_preview(edited_content),
-                        },
-                        metadata={
-                            "agent_id": str(agent.id),
-                            "conversation_id": str(conversation.id),
-                            "original_message_id": str(message.id),
-                            "new_message_id": str(edited_user_msg.id),
-                            "version_number": new_user_version_number,
-                        },
-                    )
 
                     yield f"event: {SSEEventType.MESSAGE_START}\ndata: {json.dumps({'conversation_id': str(conversation.id), 'message_id': assistant_msg_id, 'edited_message_id': str(edited_user_msg.id), 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number, 'edited_parent_id': str(root_id)})}\n\n"
                     last_event_time = time.time()
@@ -3040,6 +3032,10 @@ async def edit_user_message_stream(
                     next_round_index = 2
                     max_iterations_reached = False
                     working_history_override: list[dict[str, Any]] | None = None
+                    aggregate_input_tokens = 0
+                    aggregate_output_tokens = 0
+                    terminal_input_tokens = 0
+                    created_message_count = 2
 
                     while iteration < max_iterations:
                         iteration += 1
@@ -3158,12 +3154,18 @@ async def edit_user_message_stream(
                             if compression_end:
                                 yield compression_end
                                 last_event_time = time.time()
-                            context_retry_used = True
-
                         messages_for_llm = [
                             item.model_dump(exclude_none=True)
                             for item in prepared_context.messages
                         ]
+                        iteration_input_tokens = sum(
+                            len(message_content or "") // 4
+                            for message_content in (
+                                item.get("content") if isinstance(item, dict) else None
+                                for item in messages_for_llm
+                            )
+                            if isinstance(message_content, str)
+                        )
 
                         try:
                             stream = model_manager.team_chat_stream(
@@ -3252,6 +3254,16 @@ async def edit_user_message_stream(
                                 item.model_dump(exclude_none=True)
                                 for item in prepared_context.messages
                             ]
+                            iteration_input_tokens = sum(
+                                len(message_content or "") // 4
+                                for message_content in (
+                                    item.get("content")
+                                    if isinstance(item, dict)
+                                    else None
+                                    for item in messages_for_llm
+                                )
+                                if isinstance(message_content, str)
+                            )
                             stream = model_manager.team_chat_stream(
                                 team_id=str(agent.team_id),
                                 messages=messages_for_llm,
@@ -3312,6 +3324,8 @@ async def edit_user_message_stream(
                             return
 
                         if collected_tool_calls:
+                            aggregate_input_tokens += iteration_input_tokens
+                            aggregate_output_tokens += len(full_content) // 4
                             for tc in collected_tool_calls:
                                 if await request.is_disconnected():
                                     assistant_msg.content = full_content
@@ -3355,6 +3369,7 @@ async def edit_user_message_stream(
                                 display_result, llm_result = (
                                     get_tool_execution_payloads(result)
                                 )
+                                aggregate_output_tokens += len(llm_result) // 4
                                 pending_tool_calls.append(
                                     {
                                         "id": tc.id,
@@ -3434,6 +3449,7 @@ async def edit_user_message_stream(
                                     iteration_index=iteration,
                                 )
                                 next_round_index += 1
+                                created_message_count += 2
                                 if working_history_override is None:
                                     working_history_override = []
                                 append_round_history_entry(
@@ -3502,15 +3518,11 @@ async def edit_user_message_stream(
                     assistant_msg.is_manually_stopped = False
                     assistant_msg.round_status = terminal_round_status
                     assistant_msg.created_at = now_utc()
-                    input_tokens = sum(
-                        len(message_content or "") // 4
-                        for message_content in (
-                            item.get("content") if isinstance(item, dict) else None
-                            for item in messages_for_llm
-                        )
-                        if isinstance(message_content, str)
+                    terminal_input_tokens = (
+                        0 if max_iterations_reached else iteration_input_tokens
                     )
-                    output_tokens = len(terminal_content) // 4
+                    input_tokens = aggregate_input_tokens + terminal_input_tokens
+                    output_tokens = aggregate_output_tokens + len(terminal_content) // 4
                     assistant_msg.token_usage = {
                         "prompt": input_tokens,
                         "completion": output_tokens,
@@ -3528,21 +3540,42 @@ async def edit_user_message_stream(
                     )
                     total_tokens = input_tokens + output_tokens
                     await Agent.filter(id=agent.id).update(
-                        message_count=F("message_count") + 2,
+                        message_count=F("message_count") + created_message_count,
                         total_tokens=F("total_tokens") + total_tokens,
                     )
                     await Team.filter(id=agent.team.id).update(
-                        total_messages=F("total_messages") + 2,
+                        total_messages=F("total_messages") + created_message_count,
                         total_tokens=F("total_tokens") + total_tokens,
                     )
                     await Conversation.filter(id=conversation.id).update(
-                        message_count=F("message_count") + 2,
+                        message_count=F("message_count") + created_message_count,
                         token_usage=F("token_usage") + total_tokens,
                     )
                     tokens_per_second = (
                         round(output_tokens / (duration_ms / 1000), 1)
                         if duration_ms > 0 and output_tokens > 0
                         else None
+                    )
+                    await AuditLogService.log(
+                        user=current_user,
+                        action="edit_message",
+                        resource_type="message",
+                        resource_id=edited_user_msg.id,
+                        resource_name=str(conversation.id),
+                        operation="update",
+                        status="success",
+                        request=request,
+                        changes={
+                            "before": _message_content_audit_preview(message.content),
+                            "after": _message_content_audit_preview(edited_content),
+                        },
+                        metadata={
+                            "agent_id": str(agent.id),
+                            "conversation_id": str(conversation.id),
+                            "original_message_id": str(message.id),
+                            "new_message_id": str(edited_user_msg.id),
+                            "version_number": new_user_version_number,
+                        },
                     )
                     yield f"event: {SSEEventType.MESSAGE_END}\ndata: {json.dumps({'usage': {'prompt_tokens': input_tokens, 'completion_tokens': output_tokens, 'total_tokens': total_tokens}, 'timing': {'first_token_ms': assistant_msg.first_token_ms, 'duration_ms': duration_ms, 'tokens_per_second': tokens_per_second}, 'edited_version_number': new_user_version_number, 'edited_version_count': new_user_version_number})}\n\n"
                 except (QuotaExceededError, InsufficientQuotaError) as e:

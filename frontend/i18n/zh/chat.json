@@ -91,6 +91,7 @@
     "message": {
       "copy": "复制",
       "copied": "已复制",
+      "loadOlderMessages": "加载前 {count} 条消息",
       "retry": "重试",
       "user": "用户",
       "assistant": "助手",

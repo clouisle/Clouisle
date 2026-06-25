@@ -1,4 +1,4 @@
-// GENERATED — 2026-06-25T12:46:51.601Z
+// GENERATED — 2026-06-25T19:04:31.338Z
 // Source: i18n/en/chat.json
 export type ChatMessages = {
   chat: {
@@ -93,6 +93,7 @@ export type ChatMessages = {
     message: {
       copy: string
       copied: string
+      loadOlderMessages: string
       retry: string
       user: string
       assistant: string

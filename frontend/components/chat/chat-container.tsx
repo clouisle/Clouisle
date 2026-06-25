@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -172,6 +173,7 @@ export function ChatContainer({
   const previousMessageLengthRef = useRef(messages.length);
   const [chainOfThoughtOpenByMessageId, setChainOfThoughtOpenByMessageId] = useState<Record<string, boolean>>({});
   const [renderedMessageCount, setRenderedMessageCount] = useState(INITIAL_RENDERED_MESSAGE_COUNT);
+  const t = useTranslations('chat');
 
   const setChainOfThoughtOpen = useCallback((messageId: string, open: boolean) => {
     setChainOfThoughtOpenByMessageId((current) => ({
@@ -331,7 +333,7 @@ export function ChatContainer({
                 size="sm"
                 onClick={() => setRenderedMessageCount((count) => Math.min(messages.length, count + MESSAGE_RENDER_BATCH_SIZE))}
               >
-                Load {Math.min(hiddenMessageCount, MESSAGE_RENDER_BATCH_SIZE)} older messages
+                {t('message.loadOlderMessages', { count: Math.min(hiddenMessageCount, MESSAGE_RENDER_BATCH_SIZE) })}
               </Button>
             </div>
           )}

@@ -862,7 +862,7 @@ class RegenerateRequest(BaseModel):
 class EditMessageRequest(BaseModel):
     """Request to edit a user message"""
 
-    content: str = Field(..., min_length=1, description="Updated message content")
+    content: str = Field(..., description="Updated message content")
 
 
 class ConversationWithMessages(ConversationOut):

@@ -51,13 +51,13 @@ Frontend adds an inline edit state for user messages, calls a new edit stream AP
 
 ### Stage 3: Audit and i18n for backend errors — Complete
 
-- **Files modified**: `backend/app/api/v1/endpoints/chat.py`, backend i18n resources if required by existing conventions, audit i18n resources if required
+- **Files modified**: `backend/app/api/v1/endpoints/chat.py`, backend i18n resources required by backend error conventions, audit i18n resources if required
 - **Specific logic**:
   - Log message edits with `AuditLogService.log(...)` directly.
   - Include agent/conversation/original/new message/version metadata.
   - Store bounded before/after text information to avoid unbounded sensitive audit payloads.
-  - Add backend i18n message keys for edit validation failures.
-- **Validation**: Tests assert audit metadata exists and validation errors return the expected business-error path.
+  - Add backend i18n message keys for every edit validation failure introduced by the chat endpoint.
+- **Validation**: Tests assert audit metadata exists and validation errors return the expected localized business-error path.
 
 ### Stage 4: Frontend API and hook — Complete
 

@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from uuid import UUID
 
 from tortoise.expressions import Q
+from tortoise.transactions import BaseDBAsyncClient
 
 from app.models.agent import (
     ConversationSessionMemory,
@@ -114,6 +115,8 @@ async def find_descendant_branch_from(message: Message) -> list[Message]:
 async def activate_conversation_branch(
     conversation_id: UUID,
     canonical_path: Iterable[Message],
+    *,
+    using_db: BaseDBAsyncClient | None = None,
 ) -> None:
     canonical_ids = [message.id for message in canonical_path]
     round_ids = [
@@ -122,16 +125,28 @@ async def activate_conversation_branch(
 
     active_ids = set(canonical_ids)
     if round_ids:
-        round_steps = await Message.filter(
-            conversation_id=conversation_id,
-            round_id__in=round_ids,
-            is_round_canonical=False,
-        ).all()
+        round_steps = (
+            await Message.filter(
+                conversation_id=conversation_id,
+                round_id__in=round_ids,
+                is_round_canonical=False,
+            )
+            .using_db(using_db)
+            .all()
+        )
         active_ids.update(message.id for message in round_steps)
 
-    await Message.filter(conversation_id=conversation_id).update(is_active=False)
+    await (
+        Message.filter(conversation_id=conversation_id)
+        .using_db(using_db)
+        .update(is_active=False)
+    )
     if active_ids:
-        await Message.filter(id__in=list(active_ids)).update(is_active=True)
+        await (
+            Message.filter(id__in=list(active_ids))
+            .using_db(using_db)
+            .update(is_active=True)
+        )
 
 
 async def is_message_on_active_branch(

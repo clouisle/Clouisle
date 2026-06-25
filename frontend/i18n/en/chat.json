@@ -91,6 +91,7 @@
     "message": {
       "copy": "Copy",
       "copied": "Copied",
+      "loadOlderMessages": "Load {count} older messages",
       "retry": "Retry",
       "user": "User",
       "assistant": "Assistant",

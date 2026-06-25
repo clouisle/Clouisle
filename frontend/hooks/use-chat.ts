@@ -1151,6 +1151,19 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         let assistantMessageId = placeholderId
         let assistantText = ''
         for await (const event of parseSSEStream(response)) {
+          if (event.event === 'error') {
+            const data = event.data as SSEError
+            const chatError: ChatError = {
+              code: data.code,
+              message: data.msg,
+              quotaType: data.quota_type,
+            }
+            onError?.(chatError)
+            await reloadConversationMessages().catch(() => undefined)
+            setStatus('idle')
+            return
+          }
+
           if (event.event === 'message_start') {
             const data = event.data as SSEMessageStart & {
               edited_message_id?: string

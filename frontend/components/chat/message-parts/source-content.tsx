@@ -222,7 +222,7 @@ export const SourceContent = memo(function SourceContent({ sources, className }:
               <div className="space-y-2">
                 {visibleSegments.map((segment, index) => (
                   <SegmentItem
-                    key={index}
+                    key={segment.sourceId ?? `${selectedDocument.documentId}:${segment.metadata?.page ?? index}:${index}`}
                     segment={segment}
                     index={index}
                   />
