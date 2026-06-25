@@ -166,6 +166,7 @@ export function ChatContainer({
   const contentRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isAtBottomRef = useRef(true);
+  const shouldAutoFollowRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const showScrollButtonRef = useRef(false);
   const previousMessageLengthRef = useRef(messages.length);
@@ -221,6 +222,7 @@ export function ChatContainer({
 
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= atBottomThreshold;
     isAtBottomRef.current = atBottom;
+    shouldAutoFollowRef.current = atBottom;
 
     const nextShowButton = !atBottom && messages.length > 0;
     if (showScrollButtonRef.current !== nextShowButton) {
@@ -235,6 +237,8 @@ export function ChatContainer({
 
     const bottom = scroller.scrollHeight + 1;
     scroller.scrollTo({ top: bottom, behavior });
+    isAtBottomRef.current = true;
+    shouldAutoFollowRef.current = true;
   }, []);
 
   useIsomorphicLayoutEffect(() => {
@@ -246,7 +250,6 @@ export function ChatContainer({
     }
 
     scrollToBottom('auto');
-    isAtBottomRef.current = true;
     if (showScrollButtonRef.current) {
       showScrollButtonRef.current = false;
       setShowScrollButton(false);
@@ -254,7 +257,7 @@ export function ChatContainer({
   }, [autoScroll, messages.length, scrollToBottom]);
 
   useIsomorphicLayoutEffect(() => {
-    if (!autoScroll || !isAtBottomRef.current) {
+    if (!autoScroll || !shouldAutoFollowRef.current) {
       updateAtBottomState();
       return;
     }
@@ -270,7 +273,7 @@ export function ChatContainer({
   useIsomorphicLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const content = contentRef.current;
-    if (!scroller || !content || !autoScroll || !isAtBottomRef.current) return;
+    if (!scroller || !content || !autoScroll || !shouldAutoFollowRef.current) return;
 
     let frameId: number | null = null;
     const resizeObserver = new ResizeObserver(() => {
@@ -280,7 +283,7 @@ export function ChatContainer({
 
       frameId = requestAnimationFrame(() => {
         const currentScroller = scrollerRef.current;
-        if (!currentScroller || !isAtBottomRef.current) return;
+        if (!currentScroller || !shouldAutoFollowRef.current) return;
         currentScroller.scrollTo({ top: currentScroller.scrollHeight + 1, behavior: 'auto' });
       });
     });
