@@ -11,6 +11,7 @@ from app.services.workflow.executor import NodeExecutor
 from app.services.workflow.executors.code import CodeNodeExecutor
 from app.services.workflow.executors.condition import ConditionNodeExecutor
 from app.services.workflow.executors.llm import LLMNodeExecutor
+from app.services.workflow.executors.tool import ToolNodeExecutor
 from app.services.workflow.executors.variable import ParameterExtractorNodeExecutor
 from app.services.workflow.types import NodeOutputDecl, TypeSpec
 
@@ -109,6 +110,42 @@ class TestCodeOverride:
             {"outputs": [{"type": "string"}, {"name": "ok", "type": "number"}]}
         )
         assert [d.name for d in decls] == ["ok"]
+
+
+class TestToolOverride:
+    def test_non_media_tool_keeps_base_outputs(self):
+        decls = ToolNodeExecutor().get_output_specs(
+            {"toolType": "builtin", "toolName": "get_current_time"}
+        )
+        assert [d.name for d in decls] == ["result", "status", "executionTime"]
+
+    def test_media_tool_adds_artifact_outputs(self):
+        decls = ToolNodeExecutor().get_output_specs(
+            {
+                "toolType": "builtin",
+                "toolName": "generate_image",
+                "outputVariable": "generatedMedia",
+            }
+        )
+        by_name = {d.name: d for d in decls}
+        assert set(by_name) == {
+            "generatedMedia",
+            "result",
+            "status",
+            "executionTime",
+            "mediaKind",
+            "artifact",
+            "artifacts",
+            "error",
+        }
+        assert by_name["generatedMedia"].type.kind == "any"
+        assert by_name["mediaKind"].type.kind == "string"
+        assert by_name["artifact"].type.kind == "object"
+        assert by_name["artifact"].type.nullable is True
+        assert by_name["artifacts"].type.kind == "array"
+        assert by_name["artifacts"].type.item is not None
+        assert by_name["artifacts"].type.item.kind == "object"
+        assert by_name["error"].type.nullable is True
 
 
 class TestParameterExtractorOverride:

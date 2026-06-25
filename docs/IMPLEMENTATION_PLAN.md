@@ -2,6 +2,12 @@
 
 ## Active
 
+- **yun-107-media-workflow** — Complete. Improve text-to-image/text-to-video workflow integration by exposing media tool artifacts, statuses, retry-ready errors, and typed outputs without changing base workflow behavior. See `docs/plan/yun-107-media-workflow.md`
+  - [x] 1. Design docs and implementation index
+  - [x] 2. Workflow media tool output normalization
+  - [x] 3. Typed workflow output specs for generated artifacts
+  - [x] 4. Regression tests and validation
+
 - **yun-95-log-server-side-search-pagination** — Complete. Move Agent and workflow log search/date filtering to backend queries before pagination. See `docs/plan/yun-95-log-server-side-search-pagination.md`
   - [x] 1. Design docs and implementation index
   - [x] 2. Backend log search/date filters

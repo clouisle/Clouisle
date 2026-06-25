@@ -113,15 +113,18 @@ class ToolNodeExecutor(NodeExecutor):
 
             duration_ms = int((time.time() - start_time) * 1000)
 
-            outputs = {
-                "result": result,
-                "status": "success",
-                "executionTime": duration_ms,
-            }
-            if output_var and output_var != "result":
-                outputs[output_var] = result
+            outputs = self._build_outputs(
+                result=result,
+                output_var=output_var,
+                duration_ms=duration_ms,
+            )
 
-            return ExecutionResult(outputs=outputs)
+            return ExecutionResult(
+                outputs=outputs,
+                error=outputs.get("error")
+                if outputs.get("status") == "error"
+                else None,
+            )
 
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
@@ -140,6 +143,79 @@ class ToolNodeExecutor(NodeExecutor):
                 error=public_error,
             )
 
+    def _build_outputs(
+        self,
+        *,
+        result: Any,
+        output_var: str,
+        duration_ms: int,
+    ) -> dict[str, WorkflowValue]:
+        outputs: dict[str, WorkflowValue] = {
+            "result": result,
+            "status": "success",
+            "executionTime": duration_ms,
+        }
+        if output_var and output_var != "result":
+            outputs[output_var] = result
+
+        media_outputs = self._extract_media_outputs(result)
+        if media_outputs:
+            outputs.update(media_outputs)
+
+        return outputs
+
+    def _extract_media_outputs(self, result: Any) -> dict[str, WorkflowValue]:
+        if not isinstance(result, dict):
+            return {}
+
+        display_result = result.get("display_result")
+        if not isinstance(display_result, dict):
+            return {}
+
+        kind = display_result.get("kind")
+        if kind == "media.image":
+            artifacts = display_result.get("images") or []
+            media_kind = "image"
+        elif kind == "media.video":
+            video = display_result.get("video")
+            artifacts = [video] if isinstance(video, dict) else []
+            media_kind = "video"
+        else:
+            return {}
+
+        success = bool(display_result.get("success"))
+        error = display_result.get("error")
+        outputs: dict[str, WorkflowValue] = {
+            "status": "success" if success else "error",
+            "mediaKind": media_kind,
+            "artifact": artifacts[0] if artifacts else None,
+            "artifacts": artifacts,
+        }
+        if error:
+            outputs["error"] = str(error)
+        return outputs
+
+    def _is_media_tool_config(self, config: dict) -> bool:
+        return config.get("toolType") == "builtin" and config.get("toolName") in {
+            "generate_image",
+            "generate_video",
+        }
+
+    def _media_output_specs(self) -> list["NodeOutputDecl"]:
+        artifact_spec = TypeSpec(kind="object")
+        return [
+            NodeOutputDecl(name="mediaKind", type=TypeSpec(kind="string")),
+            NodeOutputDecl(
+                name="artifact",
+                type=artifact_spec.model_copy(update={"nullable": True}),
+            ),
+            NodeOutputDecl(
+                name="artifacts",
+                type=TypeSpec(kind="array", item=artifact_spec),
+            ),
+            NodeOutputDecl(name="error", type=TypeSpec(kind="string", nullable=True)),
+        ]
+
     def get_output_variables(self, config: dict) -> list[dict]:
         """Get output variables."""
         output_var = config.get("outputVariable", "result")
@@ -150,6 +226,15 @@ class ToolNodeExecutor(NodeExecutor):
         ]
         if output_var and output_var != "result":
             variables.insert(0, {"name": output_var, "type": "any"})
+        if self._is_media_tool_config(config):
+            variables.extend(
+                [
+                    {"name": "mediaKind", "type": "string"},
+                    {"name": "artifact", "type": "object"},
+                    {"name": "artifacts", "type": "array"},
+                    {"name": "error", "type": "string"},
+                ]
+            )
         return variables
 
     def get_output_specs(self, config: dict) -> list["NodeOutputDecl"]:
@@ -162,6 +247,8 @@ class ToolNodeExecutor(NodeExecutor):
         ]
         if output_var and output_var != "result":
             specs.insert(0, NodeOutputDecl(name=output_var, type=TypeSpec(kind="any")))
+        if self._is_media_tool_config(config):
+            specs.extend(self._media_output_specs())
         return specs
 
 
