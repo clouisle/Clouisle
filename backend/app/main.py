@@ -64,6 +64,11 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for database initialization and cleanup"""
     from tortoise import Tortoise
 
+    # Validate upload storage before accepting requests.
+    from app.api.v1.endpoints.upload import validate_upload_storage_config
+
+    await validate_upload_storage_config()
+
     # Initialize Tortoise connection with global fallback enabled
     await Tortoise.init(
         db_url=settings.DATABASE_URL
